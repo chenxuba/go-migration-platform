@@ -103,9 +103,12 @@ export interface InstitutionPageParams {
   mobile?: string
   registerTimeBegin?: string
   registerTimeEnd?: string
+  expireEndTimeBegin?: string
+  expireEndTimeEnd?: string
   enabled?: boolean
   status?: number
   openType?: number
+  moduleId?: number
   provinceCode?: number
   cityCode?: number
   regionCode?: number

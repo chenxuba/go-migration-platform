@@ -381,7 +381,7 @@ func (svc *Service) PageModules(ctx tenant.Context, claims authx.Claims, current
 	return svc.repo.PageModules(context.Background(), current, size, name, moduleType, tenantID)
 }
 
-func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int, filterTenantID string) (model.InstitutionPage, error) {
+func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd string, enabled *bool, status, openType, moduleID, provinceCode, cityCode, regionCode *int, filterTenantID string) (model.InstitutionPage, error) {
 	role, err := svc.requireTenantManageRole(ctx, claims)
 	if err != nil {
 		return model.InstitutionPage{}, err
@@ -390,7 +390,7 @@ func (svc *Service) PageInstitutions(ctx tenant.Context, claims authx.Claims, cu
 	if role != "platform_admin" {
 		tenantID = ctx.TenantID
 	}
-	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, registerTimeBegin, registerTimeEnd, enabled, status, openType, provinceCode, cityCode, regionCode, tenantID)
+	return svc.repo.PageInstitutions(context.Background(), current, size, keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd, enabled, status, openType, moduleID, provinceCode, cityCode, regionCode, tenantID)
 }
 
 func (svc *Service) GetGovernmentOverview(claims authx.Claims) (model.GovernmentOverview, error) {

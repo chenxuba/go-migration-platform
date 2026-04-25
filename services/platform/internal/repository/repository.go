@@ -163,7 +163,7 @@ func institutionStatusExpr(alias string) string {
 		"ELSE 1 END"
 }
 
-func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int) (string, []any) {
+func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd string, enabled *bool, status, openType, moduleID, provinceCode, cityCode, regionCode *int) (string, []any) {
 	filters := []string{"oi.del_flag = 0"}
 	args := make([]any, 0, 8)
 	statusExpr := institutionStatusExpr("oi")
@@ -189,6 +189,16 @@ func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTim
 		args = append(args, trimmed+" 23:59:59")
 	}
 
+	if trimmed := strings.TrimSpace(expireEndTimeBegin); trimmed != "" {
+		filters = append(filters, "oi.expire_end_time >= ?")
+		args = append(args, trimmed+" 00:00:00")
+	}
+
+	if trimmed := strings.TrimSpace(expireEndTimeEnd); trimmed != "" {
+		filters = append(filters, "oi.expire_end_time <= ?")
+		args = append(args, trimmed+" 23:59:59")
+	}
+
 	if enabled != nil {
 		filters = append(filters, "IFNULL(oi.enabled, 0) = ?")
 		if *enabled {
@@ -206,6 +216,16 @@ func buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTim
 	if openType != nil && *openType > 0 {
 		filters = append(filters, "IFNULL(oi.open_type, 2) = ?")
 		args = append(args, *openType)
+	}
+
+	if moduleID != nil && *moduleID > 0 {
+		filters = append(filters, `EXISTS (
+			SELECT 1 FROM org_module om_filter
+			WHERE om_filter.org_id = oi.id
+			  AND om_filter.del_flag = 0
+			  AND om_filter.module_id = ?
+		)`)
+		args = append(args, *moduleID)
 	}
 
 	if provinceCode != nil && *provinceCode > 0 {
@@ -2555,7 +2575,7 @@ func institutionStatusValue(enabled bool, expireEnd sql.NullTime) int {
 	return 1
 }
 
-func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd string, enabled *bool, status, openType, provinceCode, cityCode, regionCode *int, tenantID string) (model.InstitutionPage, error) {
+func (repo *Repository) PageInstitutions(ctx context.Context, current, size int, keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd string, enabled *bool, status, openType, moduleID, provinceCode, cityCode, regionCode *int, tenantID string) (model.InstitutionPage, error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -2564,7 +2584,7 @@ func (repo *Repository) PageInstitutions(ctx context.Context, current, size int,
 	}
 	offset := (current - 1) * size
 
-	whereClause, args := buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd, enabled, status, openType, provinceCode, cityCode, regionCode)
+	whereClause, args := buildInstitutionWhereClause(keyword, mobile, registerTimeBegin, registerTimeEnd, expireEndTimeBegin, expireEndTimeEnd, enabled, status, openType, moduleID, provinceCode, cityCode, regionCode)
 	statusExpr := institutionStatusExpr("oi")
 	tenantJoinClause := ""
 	queryArgs := append([]any{}, args...)

@@ -2,6 +2,7 @@
 import type { TableColumnsType } from 'ant-design-vue'
 import { DownOutlined, PlusOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { useUserStore } from '@/stores/user'
 import AllFilter from '@/components/common/all-filter.vue'
 import {
   pageInstitutionsApi,
@@ -17,7 +18,12 @@ import InstitutionPermissionModal from './components/institution-permission-moda
 import InstitutionRenewalModal from './components/institution-renewal-modal.vue'
 import InstitutionVersionModal from './components/institution-version-modal.vue'
 import { listTenantsApi } from '@/api/platform/tenants'
+import { pageVersionsApi } from '@/api/platform/versions'
+import { sortVersionsByDisplayOrder } from '../shared/version-order'
 import messageService from '@/utils/messageService'
+
+const userStore = useUserStore()
+const isPlatformAdmin = computed(() => userStore.userInfo?.tenantRole === 'platform_admin')
 
 const displayArray = ['customSearch', 'createTime', 'enableStatus']
 const institutionStatusOptions = [
@@ -42,6 +48,7 @@ const directCountyCityLabels = new Set([
 const listLoading = ref(false)
 const tenantLoading = ref(false)
 const tenantOptions = ref<Array<{ id: string, value: string }>>([])
+const versionOptions = ref<Array<{ id: number, value: string }>>([])
 const statusSubmittingId = ref<number | null>(null)
 const dataSource = ref<InstitutionItem[]>([])
 const institutionDrawerOpen = ref(false)
@@ -67,6 +74,7 @@ const filters = reactive<{
   keyword?: string
   mobile?: string
   registerTime?: string[]
+  expireEndTime?: string[]
   status?: number
   openType?: number
   provinceCode?: string
@@ -77,6 +85,7 @@ const filters = reactive<{
   keyword: undefined,
   mobile: undefined,
   registerTime: undefined,
+  expireEndTime: undefined,
   status: undefined,
   openType: undefined,
   provinceCode: undefined,
@@ -115,13 +124,20 @@ const customSearchFilters = computed(() => [
     id: 'openType',
     fieldKey: '开通版本',
     fieldType: 4,
-    optionsList: institutionOpenTypeOptions,
+    optionsList: versionOptions.value.length ? versionOptions.value : institutionOpenTypeOptions,
   },
+  isPlatformAdmin.value
+    ? {
+        id: 'tenantId',
+        fieldKey: '所属租户',
+        fieldType: 4,
+        optionsList: tenantOptions.value,
+      }
+    : null,
   {
-    id: 'tenantId',
-    fieldKey: '所属租户',
-    fieldType: 4,
-    optionsList: tenantOptions.value,
+    id: 'expireEndTime',
+    fieldKey: '到期时间',
+    fieldType: 3,
   },
   {
     id: 'provinceCode',
@@ -141,13 +157,14 @@ const customSearchFilters = computed(() => [
     fieldType: 4,
     optionsList: regionFilterOptions.value,
   },
-])
+].filter(Boolean))
 
 const customSearchValues = computed(() => ({
   keyword: filters.keyword ?? '',
   mobile: filters.mobile ?? '',
   openType: filters.openType ?? '',
   tenantId: filters.tenantId ?? '',
+  expireEndTime: filters.expireEndTime ?? '',
   provinceCode: filters.provinceCode ?? '',
   cityCode: filters.cityCode ?? '',
   regionCode: filters.regionCode ?? '',
@@ -161,7 +178,7 @@ const pagination = reactive({
   showTotal: (total: number) => `共 ${total} 家机构`,
 })
 
-const columns: TableColumnsType<InstitutionItem> = [
+const columns = computed<TableColumnsType<InstitutionItem>>(() => [
   {
     title: '机构信息',
     dataIndex: 'organName',
@@ -169,11 +186,13 @@ const columns: TableColumnsType<InstitutionItem> = [
     width: 220,
     fixed: 'left' as const,
   },
-  {
-    title: '所属租户',
-    key: 'tenant',
-    width: 160,
-  },
+  isPlatformAdmin.value
+    ? {
+        title: '所属租户',
+        key: 'tenant',
+        width: 160,
+      }
+    : null,
   {
     title: '账号信息',
     key: 'account',
@@ -212,7 +231,7 @@ const columns: TableColumnsType<InstitutionItem> = [
     width: 220,
     fixed: 'right' as const,
   },
-]
+].filter(Boolean) as TableColumnsType<InstitutionItem>)
 
 let requestSerial = 0
 
@@ -220,6 +239,7 @@ function resetFilters() {
   filters.keyword = undefined
   filters.mobile = undefined
   filters.registerTime = undefined
+  filters.expireEndTime = undefined
   filters.status = undefined
   filters.openType = undefined
   filters.provinceCode = undefined
@@ -490,12 +510,15 @@ async function fetchInstitutions() {
       mobile: filters.mobile,
       registerTimeBegin: filters.registerTime?.[0],
       registerTimeEnd: filters.registerTime?.[1],
+      expireEndTimeBegin: filters.expireEndTime?.[0],
+      expireEndTimeEnd: filters.expireEndTime?.[1],
       status: filters.status,
-      openType: filters.openType,
+      openType: versionOptions.value.length ? undefined : filters.openType,
+      moduleId: versionOptions.value.length ? filters.openType : undefined,
       provinceCode: filters.provinceCode ? Number(filters.provinceCode) : undefined,
       cityCode: filters.cityCode ? Number(filters.cityCode) : undefined,
       regionCode: filters.regionCode ? Number(filters.regionCode) : undefined,
-      tenantId: filters.tenantId,
+      tenantId: isPlatformAdmin.value ? filters.tenantId : undefined,
     })
 
     if (currentRequest !== requestSerial)
@@ -563,8 +586,15 @@ const filterUpdateHandlers = {
       if (fieldId === 'openType')
         filters.openType = value ? Number(value) : undefined
 
-      if (fieldId === 'tenantId')
+      if (fieldId === 'tenantId' && isPlatformAdmin.value)
         filters.tenantId = value
+
+      if (fieldId === 'expireEndTime') {
+        const normalized = Array.isArray(payload?.value)
+          ? payload.value.map((item: any) => String(item || '').trim()).filter(Boolean)
+          : []
+        filters.expireEndTime = normalized.length === 2 ? normalized : undefined
+      }
 
       if (fieldId === 'provinceCode') {
         filters.provinceCode = value
@@ -611,6 +641,21 @@ const filterUpdateHandlers = {
   },
 }
 
+async function loadVersionOptions() {
+  try {
+    const res = await pageVersionsApi({ current: 1, size: 200, type: 1 })
+    const rows = sortVersionsByDisplayOrder(Array.isArray(res.result) ? res.result : [])
+    versionOptions.value = rows.map(item => ({
+      id: Number(item.id),
+      value: item.name,
+    })).filter(item => item.id > 0 && item.value)
+  }
+  catch (error) {
+    console.warn('load version options failed', error)
+    versionOptions.value = []
+  }
+}
+
 async function loadTenantOptions() {
   tenantLoading.value = true
   try {
@@ -633,6 +678,7 @@ async function loadTenantOptions() {
 onMounted(() => {
   fetchInstitutions()
   loadTenantOptions()
+  loadVersionOptions()
 })
 
 watch(institutionDrawerOpen, (open) => {
@@ -708,7 +754,7 @@ watch(institutionRenewalOpen, (open) => {
           :loading="listLoading"
           :pagination="pagination"
           :row-selection="rowSelection"
-          :scroll="{ x: 1520 }"
+          :scroll="{ x: isPlatformAdmin ? 1520 : 1360 }"
           :row-class-name="getRowClassName"
           row-key="id"
           size="small"
