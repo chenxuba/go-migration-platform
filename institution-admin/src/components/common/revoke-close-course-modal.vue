@@ -37,6 +37,8 @@ const formState = reactive({
 })
 
 const tuitionAccountId = computed(() => String(props.record?.id || props.record?.tuitionAccountId || ''))
+const closeTuitionAccountOrderId = computed(() => String(props.record?.closeTuitionAccountOrderId || ''))
+const isOrderVoidCloseRecord = computed(() => closeTuitionAccountOrderId.value.startsWith('ordervoid:'))
 
 watch(
   () => props.open,
@@ -117,7 +119,10 @@ async function loadPreviewData() {
   loading.value = true
   try {
     const [previewRes, subAccountRes] = await Promise.all([
-      getRevertCloseTuitionAccountPreviewApi({ tuitionAccountId: tuitionAccountId.value }),
+      getRevertCloseTuitionAccountPreviewApi({
+        tuitionAccountId: tuitionAccountId.value,
+        closeTuitionAccountOrderId: closeTuitionAccountOrderId.value || undefined,
+      }),
       getTuitionAccountSubAccountDateInfoApi({ tuitionAccountId: tuitionAccountId.value }),
     ])
     if (previewRes.code !== 200)
@@ -145,7 +150,7 @@ const lessonChargingMode = computed(() =>
 )
 
 const startDateRules = computed(() => (
-  lessonChargingMode.value === 2 ? [{ required: true, message: '请选择日期' }] : []
+  lessonChargingMode.value === 2 && !isOrderVoidCloseRecord.value ? [{ required: true, message: '请选择日期' }] : []
 ))
 
 const courseName = computed(() =>
@@ -303,6 +308,12 @@ const summaryTags = computed(() => [
   { text: getChargingModeText(lessonChargingMode.value), color: '#e6f0ff', textColor: '#0066ff' },
 ])
 
+const alertMessage = computed(() => (
+  isOrderVoidCloseRecord.value
+    ? '撤销结课后，课程将恢复为未结课状态，课时和学费保持为 0。'
+    : '撤销结课后，学员报读课程将恢复计费，并可为其进行点名操作。'
+))
+
 async function handleSubmit() {
   try {
     await formRef.value?.validate?.()
@@ -317,10 +328,10 @@ async function handleSubmit() {
 
     let startDate
     let expireDate
-    if (lessonChargingMode.value === 2) {
+    if (!isOrderVoidCloseRecord.value && lessonChargingMode.value === 2) {
       startDate = formState.startDate
     }
-    else {
+    else if (!isOrderVoidCloseRecord.value) {
       expireDate = formState.startDate
     }
 
@@ -376,7 +387,7 @@ async function handleSubmit() {
     </template>
 
     <a-alert
-      message="撤销结课后，学员报读课程将恢复计费，并可为其进行点名操作。"
+      :message="alertMessage"
       show-icon
       type="info"
       class="border-none rounded-none text-#06f bg-#e6f0ff mt--8px"
@@ -431,7 +442,7 @@ async function handleSubmit() {
 
         <a-divider class="my-0" />
 
-        <div class="px-24px pt-26px pb-8px">
+        <div v-if="!isOrderVoidCloseRecord" class="px-24px pt-26px pb-8px">
           <a-form ref="formRef" :model="formState" :wrapper-col="{ span: 17 }">
             <a-form-item
               :label="currentValidFieldLabel"

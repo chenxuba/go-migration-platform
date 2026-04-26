@@ -103,6 +103,18 @@ func buildOrderVoidAutoCloseRecordID(orderID int64) string {
 	return fmt.Sprintf("%s%d", orderVoidAutoCloseRecordIDPrefix, orderID)
 }
 
+func parseOrderVoidAutoCloseRecordID(raw string) (int64, bool, error) {
+	value := strings.TrimSpace(raw)
+	if !strings.HasPrefix(value, orderVoidAutoCloseRecordIDPrefix) {
+		return 0, false, nil
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(strings.TrimPrefix(value, orderVoidAutoCloseRecordIDPrefix)), 10, 64)
+	if err != nil || id <= 0 {
+		return 0, true, errors.New("closeTuitionAccountOrderId 无效")
+	}
+	return id, true, nil
+}
+
 func parseRefundAutoCloseRevertID(raw string) (int64, bool, error) {
 	value := strings.TrimSpace(raw)
 	if !strings.HasPrefix(value, refundAutoCloseRevertIDPrefix) {
@@ -1062,6 +1074,10 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 	if err != nil || tuitionAccountID <= 0 {
 		return model.RevertCloseTuitionAccountPreview{}, errors.New("tuitionAccountId 无效")
 	}
+	orderVoidOrderID, isOrderVoidClose, err := parseOrderVoidAutoCloseRecordID(dto.CloseTuitionAccountOrderID)
+	if err != nil {
+		return model.RevertCloseTuitionAccountPreview{}, err
+	}
 
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
@@ -1072,6 +1088,16 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 	selected, accountIDs, err := repo.listCloseOrderBucketAccountIDsTx(ctx, tx, instID, tuitionAccountID)
 	if err != nil {
 		return model.RevertCloseTuitionAccountPreview{}, err
+	}
+	if isOrderVoidClose {
+		preview, previewErr := repo.getOrderVoidAutoClosePreviewTx(ctx, tx, instID, tuitionAccountID, orderVoidOrderID, selected, accountIDs)
+		if previewErr != nil {
+			return model.RevertCloseTuitionAccountPreview{}, previewErr
+		}
+		if err := tx.Commit(); err != nil {
+			return model.RevertCloseTuitionAccountPreview{}, err
+		}
+		return preview, nil
 	}
 	orderRow, err := repo.loadLatestClosableCloseOrderTx(ctx, tx, instID, accountIDs)
 	isRefundAutoClose := false
@@ -1151,6 +1177,78 @@ func firstNonEmpty(values ...string) string {
 		}
 	}
 	return ""
+}
+
+func (repo *Repository) getOrderVoidAutoClosePreviewTx(ctx context.Context, tx *sql.Tx, instID, tuitionAccountID, orderID int64, selected closeTuitionAccountSnapshot, accountIDs []int64) (model.RevertCloseTuitionAccountPreview, error) {
+	if len(accountIDs) == 0 {
+		return model.RevertCloseTuitionAccountPreview{}, errors.New("暂无可撤销的结课记录")
+	}
+	args := []any{instID, model.TuitionAccountFlowSourceOrderVoid, orderID}
+	for _, id := range accountIDs {
+		args = append(args, id)
+	}
+	var (
+		closeTime          sql.NullTime
+		lessonName         string
+		lessonType         int
+		lessonChargingMode int
+		orderType          int
+	)
+	err := tx.QueryRowContext(ctx, `
+		SELECT
+			COALESCE(MAX(ta.class_ending_time), MAX(taf.created_time)),
+			IFNULL(MAX(ic.name), ''),
+			IFNULL(MAX(ic.teach_method), 0),
+			IFNULL(MAX(taf.lesson_charging_mode), 0),
+			IFNULL(MAX(so.order_type), 0)
+		FROM tuition_account_flow taf
+		INNER JOIN tuition_account ta
+			ON ta.id = taf.tuition_account_id
+			AND ta.inst_id = taf.inst_id
+			AND ta.del_flag = 0
+		LEFT JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order so ON so.id = taf.source_id AND so.inst_id = taf.inst_id AND so.del_flag = 0
+		WHERE taf.inst_id = ?
+		  AND taf.del_flag = 0
+		  AND taf.source_type = ?
+		  AND taf.source_id = ?
+		  AND taf.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+	`, args...).Scan(&closeTime, &lessonName, &lessonType, &lessonChargingMode, &orderType)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RevertCloseTuitionAccountPreview{}, errors.New("暂无可撤销的结课记录")
+		}
+		return model.RevertCloseTuitionAccountPreview{}, err
+	}
+	subRows, err := repo.loadSubAccountDateInfoRowsTx(ctx, tx, instID, accountIDs)
+	if err != nil {
+		return model.RevertCloseTuitionAccountPreview{}, err
+	}
+	preview := model.RevertCloseTuitionAccountPreview{
+		TuitionAccountID:           strconv.FormatInt(tuitionAccountID, 10),
+		LessonName:                 firstNonEmpty(strings.TrimSpace(lessonName), strconv.FormatInt(selected.courseID, 10)),
+		LessonType:                 lessonType,
+		LessonChargingMode:         lessonChargingMode,
+		CloseTuitionAccountOrderID: buildOrderVoidAutoCloseRecordID(orderID),
+		Quantity:                   0,
+		FreeQuantity:               0,
+		Tuition:                    0,
+		Remark:                     "订单作废自动结课",
+		OrderID:                    strconv.FormatInt(orderID, 10),
+		OrderType:                  orderType,
+		SubTuitionAccounts:         buildPreviewSubPeriods(subRows),
+	}
+	if preview.LessonType == 0 && selected.teachMethod.Valid {
+		preview.LessonType = int(selected.teachMethod.Int64)
+	}
+	if preview.LessonChargingMode == 0 {
+		preview.LessonChargingMode = selected.flowChargingMode()
+	}
+	if closeTime.Valid {
+		t := closeTime.Time
+		preview.CloseTime = &t
+	}
+	return preview, nil
 }
 
 func (repo *Repository) revertRefundAutoClosedTuitionAccount(ctx context.Context, instID, operatorID, tuitionAccountID, refundOrderID int64) (int64, error) {
@@ -1252,6 +1350,101 @@ func (repo *Repository) revertRefundAutoClosedTuitionAccount(ctx context.Context
 	return refundOrderID, nil
 }
 
+func (repo *Repository) revertOrderVoidAutoClosedTuitionAccount(ctx context.Context, instID, operatorID, tuitionAccountID, orderID int64) (int64, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	selected, accountIDs, err := repo.listCloseOrderBucketAccountIDsTx(ctx, tx, instID, tuitionAccountID)
+	if err != nil {
+		return 0, err
+	}
+	if len(accountIDs) == 0 {
+		return 0, errors.New("暂无可撤销的结课记录")
+	}
+
+	args := []any{instID, model.TuitionAccountFlowSourceOrderVoid, orderID}
+	for _, id := range accountIDs {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT DISTINCT ta.id
+		FROM tuition_account_flow taf
+		INNER JOIN tuition_account ta
+			ON ta.id = taf.tuition_account_id
+			AND ta.inst_id = taf.inst_id
+			AND ta.del_flag = 0
+		WHERE taf.inst_id = ?
+		  AND taf.del_flag = 0
+		  AND taf.source_type = ?
+		  AND taf.source_id = ?
+		  AND taf.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND IFNULL(ta.status, 0) = ?
+		FOR UPDATE
+	`, append(args, model.TuitionAccountStatusClosed)...)
+	if err != nil {
+		return 0, err
+	}
+	revertAccountIDs := make([]int64, 0, len(accountIDs))
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		revertAccountIDs = append(revertAccountIDs, id)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if len(revertAccountIDs) == 0 {
+		return 0, errors.New("暂无可撤销的结课记录")
+	}
+
+	now := time.Now()
+	updateArgs := []any{model.TuitionAccountStatusActive, now, operatorID, instID}
+	for _, id := range revertAccountIDs {
+		updateArgs = append(updateArgs, id)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE tuition_account
+		SET status = ?,
+		    status_change_time = ?,
+		    class_ending_time = NULL,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ?
+		  AND del_flag = 0
+		  AND id IN (`+buildPlaceholders(len(revertAccountIDs))+`)
+	`, updateArgs...); err != nil {
+		return 0, err
+	}
+
+	if err := repo.reopenRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID); err != nil {
+		return 0, err
+	}
+	if err := repo.reopenRelatedGroupClassesByDeductCourseTx(ctx, tx, instID, operatorID, selected.studentID, selected.courseID); err != nil {
+		return 0, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_student s
+		SET s.student_status = ?,
+		    s.update_id = ?,
+		    s.update_time = NOW()
+		WHERE s.id = ? AND s.inst_id = ? AND s.del_flag = 0
+	`, 1, operatorID, selected.studentID, instID); err != nil {
+		return 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return orderID, nil
+}
+
 func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, operatorID int64, dto model.RevertCloseTuitionAccountDTO) (int64, error) {
 	tuitionAccountID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
 	if err != nil || tuitionAccountID <= 0 {
@@ -1263,6 +1456,13 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	}
 	if isRefundAutoClose {
 		return repo.revertRefundAutoClosedTuitionAccount(ctx, instID, operatorID, tuitionAccountID, refundOrderID)
+	}
+	orderVoidOrderID, isOrderVoidClose, err := parseOrderVoidAutoCloseRecordID(dto.CloseTuitionAccountOrderID)
+	if err != nil {
+		return 0, err
+	}
+	if isOrderVoidClose {
+		return repo.revertOrderVoidAutoClosedTuitionAccount(ctx, instID, operatorID, tuitionAccountID, orderVoidOrderID)
 	}
 
 	closeOrderID, err := strconv.ParseInt(strings.TrimSpace(dto.CloseTuitionAccountOrderID), 10, 64)
@@ -1759,7 +1959,10 @@ func (repo *Repository) listOrderVoidAutoCloseTuitionAccountOrdersTx(ctx context
 			CAST(MIN(taf.tuition_account_id) AS CHAR),
 			SUM(IFNULL(taf.quantity, 0)),
 			0,
-			?,
+			CASE
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = ? THEN 1 ELSE 0 END) > 0 THEN ?
+				ELSE ?
+			END,
 			CAST(MAX(IFNULL(taf.create_id, 0)) AS CHAR),
 			IFNULL(MAX(u.nick_name), ''),
 			MAX(taf.update_time),
@@ -1774,9 +1977,14 @@ func (repo *Repository) listOrderVoidAutoCloseTuitionAccountOrdersTx(ctx context
 		  AND taf.del_flag = 0
 		  AND taf.source_type = ?
 		  AND taf.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
-		  AND IFNULL(ta.status, 0) = ?
 		GROUP BY taf.source_id
-	`, append([]any{model.CloseTuitionAccountOrderStatusClosed, instID, model.TuitionAccountFlowSourceOrderVoid}, append(int64SliceToAny(accountIDs), model.TuitionAccountStatusClosed)...)...)
+	`, append([]any{
+		model.TuitionAccountStatusClosed,
+		model.CloseTuitionAccountOrderStatusClosed,
+		model.CloseTuitionAccountOrderStatusRevoked,
+		instID,
+		model.TuitionAccountFlowSourceOrderVoid,
+	}, int64SliceToAny(accountIDs)...)...)
 	if err != nil {
 		return nil, err
 	}

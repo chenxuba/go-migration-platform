@@ -305,7 +305,7 @@ export function getSubTuitionAccountPriorityConfigListApi() {
   return usePost<SubTuitionAccountPriorityConfigResult>('/api/v1/tuition-accounts/sub-account-priority-configs/list', {})
 }
 
-export function getRevertCloseTuitionAccountPreviewApi(data: { tuitionAccountId: string }) {
+export function getRevertCloseTuitionAccountPreviewApi(data: { tuitionAccountId: string, closeTuitionAccountOrderId?: string }) {
   return usePost<RevertCloseTuitionAccountPreview>('/api/v1/tuition-accounts/revert-close-preview', data)
 }
 

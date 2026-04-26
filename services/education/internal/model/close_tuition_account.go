@@ -179,7 +179,8 @@ type SubTuitionAccountPriorityConfigResult struct {
 }
 
 type RevertCloseTuitionAccountPreviewQueryDTO struct {
-	TuitionAccountID string `json:"tuitionAccountId"`
+	TuitionAccountID           string `json:"tuitionAccountId"`
+	CloseTuitionAccountOrderID string `json:"closeTuitionAccountOrderId"`
 }
 
 type RevertCloseTuitionAccountSubPeriod struct {
