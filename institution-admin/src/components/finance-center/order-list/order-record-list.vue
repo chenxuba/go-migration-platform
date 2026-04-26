@@ -984,7 +984,7 @@ defineExpose({
               <template v-else-if="column.key === 'orderType'">
                 <span
                   :class="
-                    Number(record.orderType) === 4
+                    Number(record.orderType) === 3 || Number(record.orderType) === 4
                       ? 'text-#ff3333 font-normal'
                       : ''
                   "
