@@ -546,20 +546,6 @@ function createPointMarker(point: InstitutionPoint, index: number) {
   group.userData.pointId = point.id
   group.userData.offset = index * 0.55
 
-  const halo = new THREE.Mesh(
-    new THREE.RingGeometry(4.5, 8.5, 36),
-    new THREE.MeshBasicMaterial({
-      color,
-      transparent: true,
-      opacity: point.risk === 'danger' ? 0.16 : 0.1,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  )
-  halo.userData.halo = true
-  group.add(halo)
-
   const pointer = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getMarkerTexture(point.risk),
     transparent: true,
@@ -567,10 +553,11 @@ function createPointMarker(point: InstitutionPoint, index: number) {
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   }))
-  pointer.scale.set(18, 24, 1)
-  pointer.position.z = 37
+  pointer.scale.set(18, 23, 1)
+  pointer.position.z = 26
   pointer.userData.pointer = true
   group.add(pointer)
+  group.userData.pinHoleZ = pointer.position.z + 3.5
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getIconTexture(point.risk),
@@ -587,7 +574,7 @@ function createPointMarker(point: InstitutionPoint, index: number) {
     new THREE.SphereGeometry(14, 12, 12),
     new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
   )
-  hit.position.z = 30
+  hit.position.z = 26
   hit.userData.pointId = point.id
   group.add(hit)
   pointHitMeshes.push(hit)
@@ -730,7 +717,7 @@ function updateTooltipPosition(pointId: number) {
 
   const world = new THREE.Vector3()
   group.getWorldPosition(world)
-  world.z += 48
+  world.z += group.userData.pinHoleZ || 26
   const projected = world.project(camera)
   const canvasRect = renderer.domElement.getBoundingClientRect()
   const moduleRect = moduleRef.value.getBoundingClientRect()
@@ -978,11 +965,11 @@ function getMarkerTexture(risk: RiskType) {
   ctx.shadowColor = color
   ctx.shadowBlur = 10
   ctx.beginPath()
-  ctx.moveTo(64, 144)
-  ctx.bezierCurveTo(54, 128, 24, 93, 24, 62)
-  ctx.bezierCurveTo(24, 35, 42, 16, 64, 16)
-  ctx.bezierCurveTo(86, 16, 104, 35, 104, 62)
-  ctx.bezierCurveTo(104, 93, 74, 128, 64, 144)
+  ctx.moveTo(64, 150)
+  ctx.bezierCurveTo(53, 133, 23, 105, 23, 80)
+  ctx.bezierCurveTo(23, 53, 42, 34, 64, 34)
+  ctx.bezierCurveTo(86, 34, 105, 53, 105, 80)
+  ctx.bezierCurveTo(105, 105, 75, 133, 64, 150)
   ctx.closePath()
   ctx.fillStyle = color
   ctx.fill()
@@ -993,7 +980,7 @@ function getMarkerTexture(risk: RiskType) {
   ctx.stroke()
 
   ctx.beginPath()
-  ctx.arc(64, 61, 22, 0, Math.PI * 2)
+  ctx.arc(64, 80, 21, 0, Math.PI * 2)
   ctx.fillStyle = 'rgba(3,38,64,.72)'
   ctx.fill()
   ctx.strokeStyle = 'rgba(228,255,255,.86)'
