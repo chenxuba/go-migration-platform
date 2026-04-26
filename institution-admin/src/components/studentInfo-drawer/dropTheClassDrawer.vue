@@ -1119,6 +1119,7 @@ function handleModify() {
     height: 80px;
     line-height: 80px;
     font-family: "DIN alternate", sans-serif;
+    padding-left: 0;
   }
 
   :deep(.ant-input-number-group-addon) {
