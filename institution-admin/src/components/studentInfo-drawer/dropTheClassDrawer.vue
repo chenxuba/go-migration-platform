@@ -7,6 +7,9 @@ import {
   estimateRefundTuitionAccountValuableTuitionApi,
   getTuitionAccountRefundOwedSummaryApi,
 } from '@/api/edu-center/tuition-account'
+import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
+import StaffSelect from '@/components/common/staff-select.vue'
+import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -26,6 +29,8 @@ const openDrawer = computed({
   set: value => emit('update:open', value),
 })
 
+const userStore = useUserStore()
+const currentInstUserId = computed(() => userStore.instUserId)
 const getCurrentDate = () => dayjs().format('YYYY-MM-DD')
 
 function initFormState() {
@@ -41,7 +46,7 @@ function initFormState() {
     dropPayAccount: '1',
     date: getCurrentDate(),
     orderLabel: [],
-    salesperson: undefined,
+    salesperson: currentInstUserId.value || undefined,
     remarks1: '',
     remarks2: '',
     billRemarks: '',
@@ -97,9 +102,11 @@ const previewTitle = ref('')
 const readonly = ref(true)
 const nextLoading = ref(false)
 const estimateLoading = ref(false)
+const orderLabelLoading = ref(false)
 const owedSummary = ref(createDefaultOwedSummary())
 const estimateResult = ref(createDefaultEstimate())
 const calcResult = ref(createDefaultCalcResult())
+const orderLabelOptions = ref([])
 
 const formState = reactive(initFormState())
 
@@ -282,6 +289,12 @@ watch(isFullRefund, (value) => {
   formState.autoFinishCourse = value
 })
 
+watch(currentInstUserId, (value) => {
+  if (value && !formState.salesperson) {
+    formState.salesperson = value
+  }
+}, { immediate: true })
+
 watch(
   () => props.open,
   async (value) => {
@@ -289,7 +302,10 @@ watch(
     if (!value)
       return
     hydrateFormStateFromRecord()
-    await loadOwedSummary()
+    await Promise.all([
+      loadOwedSummary(),
+      loadOrderLabelOptions(),
+    ])
   },
 )
 
@@ -312,22 +328,42 @@ const items = computed(() => [
   },
 ])
 
-const orderLabelOptions = ref([
-  { id: '1', name: '内荐' },
-  { id: '2', name: '转介绍' },
-  { id: '3', name: '双11订单' },
-  { id: '4', name: '会员日订单' },
-])
-const salespersonOptions = ref([
-  { id: '1', name: '陈瑞生', phone: '17601241636' },
-  { id: '2', name: '刘明', phone: '18876552232' },
-  { id: '3', name: '张望名', phone: '17601241636' },
-  { id: '4', name: '李元芳', phone: '17601241636' },
-])
 function orderLabelFilterOption(input, option) {
   const keyword = input.toLowerCase()
-  const nameMatch = option.name.toLowerCase().includes(keyword)
-  return nameMatch
+  return String(option?.name || '').toLowerCase().includes(keyword)
+}
+async function loadOrderLabelOptions() {
+  orderLabelLoading.value = true
+  try {
+    const res = await getOrderTagListPagedApi({
+      queryModel: { enable: true },
+      sortModel: {},
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 50,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+    })
+    if (res.code === 200) {
+      orderLabelOptions.value = Array.isArray(res.result?.list) ? res.result.list : []
+      return
+    }
+    orderLabelOptions.value = []
+    messageService.error(res.message || '加载订单标签失败')
+  }
+  catch (error) {
+    orderLabelOptions.value = []
+    messageService.error(error?.message || '加载订单标签失败')
+  }
+  finally {
+    orderLabelLoading.value = false
+  }
+}
+function handleOrderLabelChange(value) {
+  if (Array.isArray(value) && value.length > 5) {
+    formState.orderLabel = value.slice(0, 5)
+  }
 }
 function disabledDate(currentDate) {
   return currentDate > dayjs().endOf('day')
@@ -803,7 +839,8 @@ function handleModify() {
               <a-select
                 v-model:value="formState.orderLabel" mode="multiple" placeholder="请选择订单标签" show-search
                 class="multiple-select" style="width: 100%" :options="orderLabelOptions"
-                :filter-option="orderLabelFilterOption" :field-names="{ label: 'name', value: 'id' }"
+                :loading="orderLabelLoading" :filter-option="orderLabelFilterOption"
+                :field-names="{ label: 'name', value: 'id' }" @change="handleOrderLabelChange"
               />
             </a-form-item>
             <!-- 订单销售员 -->
@@ -811,17 +848,7 @@ function handleModify() {
               <div class="text-#666 flex flex-items-center mb-6px">
                 订单销售员：
               </div>
-              <a-select
-                v-model:value="formState.salesperson" placeholder="请选择销售员" show-search style="width: 320px"
-                :options="salespersonOptions" :field-names="{ label: 'name', value: 'id' }"
-              >
-                <template #option="{ name, phone }">
-                  <div class="flex justify-between flex-items-center">
-                    <span>{{ name }}</span>
-                    <span class="text-#999 text-3">{{ phone }}</span>
-                  </div>
-                </template>
-              </a-select>
+              <StaffSelect v-model="formState.salesperson" placeholder="请选择销售员" width="320px" :status="0" />
             </a-form-item>
             <a-form-item>
               <div class="text-#666 flex flex-items-center mb-6px">
