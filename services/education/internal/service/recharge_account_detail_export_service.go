@@ -241,6 +241,8 @@ func formatRechargeAccountFlowType(value int) string {
 		return "场地预约退回"
 	case model.RechargeAccountFlowTypeVoidRefund:
 		return "作废储值退费"
+	case model.RechargeAccountFlowTypeVoidOrderExpend:
+		return "作废报名订单支出"
 	default:
 		return ""
 	}

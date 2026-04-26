@@ -322,7 +322,7 @@ export function checkObsoleteOrderApi(data: { orderId: string }) {
   return useGet<CheckObsoleteOrderResult>('/api/v1/orders/check-obsolete', data)
 }
 
-export function obsoleteOrderApi(data: { orderId: string, obsoleteReason: string }) {
+export function obsoleteOrderApi(data: { orderId: string, obsoleteReason: string, autoCloseTuition?: boolean }) {
   return usePost<void>('/api/v1/orders/obsolete', data)
 }
 

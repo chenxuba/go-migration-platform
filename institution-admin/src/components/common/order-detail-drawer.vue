@@ -1108,15 +1108,13 @@ async function handleVoidOrderSubmit() {
     messageService.warning('请填写作废原因')
     return
   }
-  if (Number(detail.value?.orderType || 0) !== 3) {
-    messageService.info('已完成订单废除逻辑开发中')
-    return
-  }
   try {
     voidOrderSubmitting.value = true
+    const isRefundOrder = Number(detail.value?.orderType || 0) === 3
     const res = await obsoleteOrderApi({
       orderId: detail.value.orderId,
       obsoleteReason: reason,
+      autoCloseTuition: isRefundOrder ? undefined : voidOrderCloseCourse.value === 1,
     })
     if (res.code !== 200) {
       messageService.error(res.message || '废除订单失败')

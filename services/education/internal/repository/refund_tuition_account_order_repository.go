@@ -570,17 +570,21 @@ func (repo *Repository) PayRefundTuitionAccountOrderBySchoolPal(ctx context.Cont
 
 func (repo *Repository) completeRefundTuitionAccountOrderTx(ctx context.Context, tx *sql.Tx, instID, operatorID, refundOrderID, saleOrderID int64) error {
 	var (
-		studentID        int64
-		courseID         int64
-		orderNumber      string
-		autoCloseTuition bool
+		studentID         int64
+		courseID          int64
+		orderNumber       string
+		autoCloseTuition  bool
+		isRechargeAccount bool
+		rechargeAccountID int64
+		realAmount        float64
 	)
 	if err := tx.QueryRowContext(ctx, `
-		SELECT student_id, course_id, IFNULL(order_number, ''), IFNULL(auto_close_tuition, 0)
+		SELECT student_id, course_id, IFNULL(order_number, ''), IFNULL(auto_close_tuition, 0),
+		       IFNULL(is_recharge_account, 0), IFNULL(recharge_account_id, 0), IFNULL(real_amount, 0)
 		FROM refund_tuition_account_order
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
-	`, refundOrderID, instID).Scan(&studentID, &courseID, &orderNumber, &autoCloseTuition); err != nil {
+	`, refundOrderID, instID).Scan(&studentID, &courseID, &orderNumber, &autoCloseTuition, &isRechargeAccount, &rechargeAccountID, &realAmount); err != nil {
 		return err
 	}
 
@@ -727,6 +731,14 @@ func (repo *Repository) completeRefundTuitionAccountOrderTx(ctx context.Context,
 	`, model.OrderStatusCompleted, operatorID, saleOrderID, instID); err != nil {
 		return err
 	}
+	if isRechargeAccount && rechargeAccountID > 0 && realAmount > 0.000001 {
+		if err := repo.increaseRechargeAccountBalanceTx(ctx, tx, instID, operatorID, rechargeAccountID, realAmount, 0, 0); err != nil {
+			return err
+		}
+		if err := repo.insertRechargeAccountFlowTx(ctx, tx, instID, operatorID, rechargeAccountID, studentID, orderNumber, model.RechargeAccountFlowTypeRefundOrderReturn, realAmount, 0, 0, "退费订单退回"); err != nil {
+			return err
+		}
+	}
 
 	if autoCloseTuition {
 		if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {
@@ -770,6 +782,9 @@ func (repo *Repository) ObsoleteRefundTuitionAccountOrder(ctx context.Context, i
 		studentID     int64
 		courseID      int64
 		refundNumber  string
+		isRecharge    bool
+		rechargeID    int64
+		realAmount    float64
 	)
 	if err := tx.QueryRowContext(ctx, `
 		SELECT
@@ -779,7 +794,10 @@ func (repo *Repository) ObsoleteRefundTuitionAccountOrder(ctx context.Context, i
 			IFNULL(ro.status, 0),
 			IFNULL(ro.student_id, 0),
 			IFNULL(ro.course_id, 0),
-			IFNULL(ro.order_number, '')
+			IFNULL(ro.order_number, ''),
+			IFNULL(ro.is_recharge_account, 0),
+			IFNULL(ro.recharge_account_id, 0),
+			IFNULL(ro.real_amount, 0)
 		FROM sale_order so
 		LEFT JOIN refund_tuition_account_order ro
 			ON ro.sale_order_id = so.id
@@ -796,6 +814,9 @@ func (repo *Repository) ObsoleteRefundTuitionAccountOrder(ctx context.Context, i
 		&studentID,
 		&courseID,
 		&refundNumber,
+		&isRecharge,
+		&rechargeID,
+		&realAmount,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return errors.New("订单不存在")
@@ -972,6 +993,14 @@ func (repo *Repository) ObsoleteRefundTuitionAccountOrder(ctx context.Context, i
 			  AND del_flag = 0
 		`, operatorID, instID, saleOrderID, model.LedgerSourceSystem, model.LedgerSystemTypeOrderPayment); err != nil {
 			return err
+		}
+		if isRecharge && rechargeID > 0 && realAmount > 0.000001 {
+			if err := repo.decreaseRechargeAccountBalanceTx(ctx, tx, instID, operatorID, rechargeID, realAmount, 0, 0); err != nil {
+				return err
+			}
+			if err := repo.insertRechargeAccountFlowTx(ctx, tx, instID, operatorID, rechargeID, studentID, refundNumber, model.RechargeAccountFlowTypeVoidRefund, -realAmount, 0, 0, "作废储值退费"); err != nil {
+				return err
+			}
 		}
 
 		if err := repo.reopenRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {

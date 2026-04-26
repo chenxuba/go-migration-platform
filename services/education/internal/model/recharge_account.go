@@ -66,6 +66,7 @@ const (
 	RechargeAccountFlowTypeVenueExpend        = 10
 	RechargeAccountFlowTypeVenueReturn        = 11
 	RechargeAccountFlowTypeVoidRefund         = 12
+	RechargeAccountFlowTypeVoidOrderExpend    = 13
 )
 
 type RechargeAccountDetailQueryDTO struct {

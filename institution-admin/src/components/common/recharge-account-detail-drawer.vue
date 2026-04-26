@@ -21,6 +21,7 @@ const FLOW_TYPE_OPTIONS = [
   { id: 10, value: '场地预约支出' },
   { id: 11, value: '场地预约退回' },
   { id: 12, value: '作废储值退费' },
+  { id: 13, value: '作废报名订单支出' },
 ]
 
 const FLOW_TYPE_LABEL_MAP = FLOW_TYPE_OPTIONS.reduce((acc, item) => {
@@ -631,6 +632,7 @@ function closeDrawer() {
                     <div>场地预约支出：场地预约订单使用储值账户时</div>
                     <div>场地预约退回：场地预约订单作废/订单关闭时</div>
                     <div>作废储值退费：作废储值退费订单时</div>
+                    <div>作废报名订单支出：作废已完成报名订单并退回储值支付时</div>
                   </div>
                 </template>
                 <InfoCircleOutlined class="cursor-pointer text-#999 hover:text-#1677ff" />

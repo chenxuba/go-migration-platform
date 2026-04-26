@@ -292,8 +292,9 @@ type BadDebtDTO struct {
 }
 
 type ObsoleteOrderDTO struct {
-	OrderID        string `json:"orderId"`
-	ObsoleteReason string `json:"obsoleteReason"`
+	OrderID          string `json:"orderId"`
+	ObsoleteReason   string `json:"obsoleteReason"`
+	AutoCloseTuition bool   `json:"autoCloseTuition"`
 }
 
 const (

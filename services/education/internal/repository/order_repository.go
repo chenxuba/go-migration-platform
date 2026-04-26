@@ -1350,7 +1350,7 @@ func (repo *Repository) CheckObsoleteOrder(ctx context.Context, instID, orderID 
 	return result, nil
 }
 
-func (repo *Repository) ObsoleteOrder(ctx context.Context, instID, operatorID, orderID int64, reason string) error {
+func (repo *Repository) ObsoleteOrder(ctx context.Context, instID, operatorID, orderID int64, reason string, autoCloseTuition bool) error {
 	var orderType int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT IFNULL(order_type, 0)
@@ -1367,9 +1367,547 @@ func (repo *Repository) ObsoleteOrder(ctx context.Context, instID, operatorID, o
 	switch orderType {
 	case model.OrderTypeRefundCourse:
 		return repo.ObsoleteRefundTuitionAccountOrder(ctx, instID, operatorID, orderID, reason)
+	case model.OrderTypeRegistrationRenewal:
+		return repo.ObsoleteRegistrationOrder(ctx, instID, operatorID, orderID, reason, autoCloseTuition)
+	case model.OrderTypeTransferCourse:
+		return errors.New("转课订单废除暂未开放")
 	default:
-		return errors.New("当前仅支持废除退课订单")
+		return errors.New("当前订单类型暂不支持废除")
 	}
+}
+
+type obsoleteOrderTeachingRecordRow struct {
+	StudentTeachingRecordID int64
+	TeachingRecordID        int64
+	TuitionAccountID        int64
+	Quantity                float64
+	ActualDeduct            float64
+	ActualTuition           float64
+	ArrearQuantity          float64
+}
+
+type obsoleteOrderLinkedRechargeRow struct {
+	ID                int64
+	RechargeAccountID int64
+	StudentID         int64
+	OrderNumber       string
+	Status            int
+	Amount            float64
+	ResidualAmount    float64
+	GivingAmount      float64
+}
+
+func normalizeObsoleteOrderAccount(account rollCallConfirmAccount) rollCallConfirmAccount {
+	effectiveTotalQuantity := closeOrderRoundMoney(account.UsedQuantity + account.RemainingQuantity)
+	if effectiveTotalQuantity > account.TotalQuantity {
+		account.TotalQuantity = effectiveTotalQuantity
+	}
+	effectiveTotalTuition := closeOrderRoundMoney(account.UsedTuition + account.RemainingTuition)
+	if effectiveTotalTuition > account.TotalTuition {
+		account.TotalTuition = effectiveTotalTuition
+	}
+	return account
+}
+
+func applyObsoleteOrderConsumeRevert(account *rollCallConfirmAccount, quantity, tuition float64) {
+	account.UsedQuantity = math.Max(closeOrderRoundMoney(account.UsedQuantity-quantity), 0)
+	account.UsedTuition = math.Max(closeOrderRoundMoney(account.UsedTuition-tuition), 0)
+	account.ConfirmedTuition = math.Max(closeOrderRoundMoney(account.ConfirmedTuition-tuition), 0)
+	account.RemainingQuantity = closeOrderRoundMoney(math.Max(account.TotalQuantity-account.UsedQuantity, 0))
+	account.RemainingTuition = closeOrderRoundMoney(math.Max(account.TotalTuition-account.UsedTuition, 0))
+}
+
+func (repo *Repository) listObsoleteOrderTeachingRecordRowsTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) (map[int64][]obsoleteOrderTeachingRecordRow, error) {
+	if len(accountIDs) == 0 {
+		return map[int64][]obsoleteOrderTeachingRecordRow{}, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(id, 0),
+			IFNULL(teaching_record_id, 0),
+			IFNULL(tuition_account_id, 0),
+			IFNULL(quantity, 0),
+			IFNULL(actual_deduct, 0),
+			IFNULL(actual_tuition, 0),
+			IFNULL(arrear_quantity, 0)
+		FROM student_teaching_record
+		WHERE inst_id = ?
+		  AND tuition_account_id IN (`+sqlPlaceholders(len(accountIDs))+`)
+		  AND del_flag = 0
+		  AND (IFNULL(actual_deduct, 0) > 0.000001 OR IFNULL(arrear_quantity, 0) > 0.000001)
+		ORDER BY tuition_account_id ASC, id ASC
+		FOR UPDATE
+	`, append([]any{instID}, int64SliceToAny(accountIDs)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make(map[int64][]obsoleteOrderTeachingRecordRow, len(accountIDs))
+	for rows.Next() {
+		var item obsoleteOrderTeachingRecordRow
+		if err := rows.Scan(
+			&item.StudentTeachingRecordID,
+			&item.TeachingRecordID,
+			&item.TuitionAccountID,
+			&item.Quantity,
+			&item.ActualDeduct,
+			&item.ActualTuition,
+			&item.ArrearQuantity,
+		); err != nil {
+			return nil, err
+		}
+		result[item.TuitionAccountID] = append(result[item.TuitionAccountID], item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) listObsoleteOrderLinkedRechargeRowsTx(ctx context.Context, tx *sql.Tx, instID, saleOrderID int64) ([]obsoleteOrderLinkedRechargeRow, error) {
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			id,
+			recharge_account_id,
+			student_id,
+			IFNULL(order_number, ''),
+			IFNULL(status, 0),
+			IFNULL(amount, 0),
+			IFNULL(residual_amount, 0),
+			IFNULL(giving_amount, 0)
+		FROM recharge_account_order
+		WHERE inst_id = ? AND sale_order_id = ? AND del_flag = 0
+		ORDER BY id ASC
+		FOR UPDATE
+	`, instID, saleOrderID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	result := make([]obsoleteOrderLinkedRechargeRow, 0, 1)
+	for rows.Next() {
+		var item obsoleteOrderLinkedRechargeRow
+		if err := rows.Scan(
+			&item.ID,
+			&item.RechargeAccountID,
+			&item.StudentID,
+			&item.OrderNumber,
+			&item.Status,
+			&item.Amount,
+			&item.ResidualAmount,
+			&item.GivingAmount,
+		); err != nil {
+			return nil, err
+		}
+		result = append(result, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (repo *Repository) softDeleteOrderPaymentTx(ctx context.Context, tx *sql.Tx, instID, operatorID, saleOrderID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sale_order_pay_detail
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND order_id = ? AND del_flag = 0
+	`, operatorID, instID, saleOrderID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_ledger
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ?
+		  AND order_id = ?
+		  AND source_type = ?
+		  AND system_type = ?
+		  AND del_flag = 0
+	`, operatorID, instID, saleOrderID, model.LedgerSourceSystem, model.LedgerSystemTypeOrderPayment); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (repo *Repository) ObsoleteRegistrationOrder(ctx context.Context, instID, operatorID, saleOrderID int64, reason string, autoCloseTuition bool) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	var (
+		orderStatus int
+		orderType   int
+		studentID   int64
+		orderNumber string
+	)
+	if err := tx.QueryRowContext(ctx, `
+		SELECT IFNULL(order_status, 0), IFNULL(order_type, 0), IFNULL(student_id, 0), IFNULL(order_number, '')
+		FROM sale_order
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+		FOR UPDATE
+	`, saleOrderID, instID).Scan(&orderStatus, &orderType, &studentID, &orderNumber); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("订单不存在")
+		}
+		return err
+	}
+	if orderType != model.OrderTypeRegistrationRenewal {
+		return errors.New("当前仅支持废除报名订单")
+	}
+	if orderStatus == model.OrderStatusVoided {
+		return errors.New("订单已作废")
+	}
+	if orderStatus != model.OrderStatusApproving && orderStatus != model.OrderStatusCompleted {
+		return errors.New("当前订单状态不支持作废")
+	}
+
+	now := time.Now()
+	trimmedReason := strings.TrimSpace(reason)
+
+	if orderStatus == model.OrderStatusCompleted {
+		detailRows, err := tx.QueryContext(ctx, `
+			SELECT IFNULL(course_id, 0), IFNULL(count, 0)
+			FROM sale_order_course_detail
+			WHERE order_id = ? AND del_flag = 0
+			ORDER BY id ASC
+		`, saleOrderID)
+		if err != nil {
+			return err
+		}
+		type orderCourseMutation struct {
+			CourseID int64
+			Count    int64
+		}
+		courseMutations := make([]orderCourseMutation, 0, 4)
+		for detailRows.Next() {
+			var item orderCourseMutation
+			if err := detailRows.Scan(&item.CourseID, &item.Count); err != nil {
+				detailRows.Close()
+				return err
+			}
+			courseMutations = append(courseMutations, item)
+		}
+		if err := detailRows.Err(); err != nil {
+			detailRows.Close()
+			return err
+		}
+		detailRows.Close()
+
+		for _, item := range courseMutations {
+			if item.CourseID <= 0 || item.Count <= 0 {
+				continue
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE inst_course
+				SET sale_volume = GREATEST(IFNULL(sale_volume, 0) - ?, 0),
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND del_flag = 0
+			`, item.Count, operatorID, item.CourseID); err != nil {
+				return err
+			}
+		}
+
+		accountRows, err := tx.QueryContext(ctx, `
+			SELECT id
+			FROM tuition_account
+			WHERE inst_id = ? AND order_id = ? AND del_flag = 0
+			ORDER BY id ASC
+			FOR UPDATE
+		`, instID, saleOrderID)
+		if err != nil {
+			return err
+		}
+		accountIDs := make([]int64, 0, 4)
+		for accountRows.Next() {
+			var accountID int64
+			if err := accountRows.Scan(&accountID); err != nil {
+				accountRows.Close()
+				return err
+			}
+			accountIDs = append(accountIDs, accountID)
+		}
+		if err := accountRows.Err(); err != nil {
+			accountRows.Close()
+			return err
+		}
+		accountRows.Close()
+
+		accountMap, err := repo.loadRollCallConfirmAccountMapTx(ctx, tx, instID, accountIDs)
+		if err != nil {
+			return err
+		}
+		recordMap, err := repo.listObsoleteOrderTeachingRecordRowsTx(ctx, tx, instID, accountIDs)
+		if err != nil {
+			return err
+		}
+		operatorName := firstNonEmptyString(repo.GetStaffNameByID(ctx, &operatorID), "系统")
+		courseIDSet := make(map[int64]struct{}, len(accountIDs))
+
+		for _, accountID := range accountIDs {
+			accountKey := strconv.FormatInt(accountID, 10)
+			account, ok := accountMap[accountKey]
+			if !ok {
+				continue
+			}
+			account = normalizeObsoleteOrderAccount(account)
+			courseIDSet[account.CourseID] = struct{}{}
+
+			for _, record := range recordMap[accountID] {
+				if record.ActualDeduct > 0.000001 || record.ActualTuition > 0.000001 {
+					if err := repo.revertTeachingRecordConsumeTx(ctx, tx, instID, operatorID, record.TeachingRecordID, teachingRecordDeleteStudentRow{
+						StudentTeachingRecordID: record.StudentTeachingRecordID,
+						TuitionAccountID:        record.TuitionAccountID,
+						ActualDeduct:            record.ActualDeduct,
+						ActualTuition:           record.ActualTuition,
+					}, account); err != nil {
+						return err
+					}
+					applyObsoleteOrderConsumeRevert(&account, record.ActualDeduct, record.ActualTuition)
+				}
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE student_teaching_record
+					SET actual_deduct = 0,
+					    actual_tuition = 0,
+					    arrear_quantity = ?,
+					    updated_staff_id = ?,
+					    updated_staff_name = ?,
+					    updated_time = NOW(),
+					    update_id = ?,
+					    update_time = NOW()
+					WHERE inst_id = ? AND id = ? AND del_flag = 0
+				`, closeOrderRoundMoney(record.Quantity), operatorID, operatorName, operatorID, instID, record.StudentTeachingRecordID); err != nil {
+					return err
+				}
+			}
+
+			if account.UsedQuantity > 0.000001 || account.UsedTuition > 0.000001 {
+				restoreQuantity := closeOrderRoundMoney(account.UsedQuantity)
+				restoreTuition := closeOrderRoundMoney(account.UsedTuition)
+				account.UsedQuantity = 0
+				account.UsedTuition = 0
+				account.ConfirmedTuition = math.Max(closeOrderRoundMoney(account.ConfirmedTuition-restoreTuition), 0)
+				account.RemainingQuantity = closeOrderRoundMoney(account.TotalQuantity)
+				account.RemainingTuition = closeOrderRoundMoney(account.TotalTuition)
+				sourceType := model.TuitionAccountFlowSourceConsumeReturn
+				if account.LessonChargingMode == 2 {
+					sourceType = model.TuitionAccountFlowSourceRevokeAutoConsume
+				}
+				lessonTypeValue := any(nil)
+				if account.LessonType > 0 {
+					lessonTypeValue = account.LessonType
+				}
+				if _, err := tx.ExecContext(ctx, `
+					UPDATE tuition_account
+					SET used_quantity = ?,
+					    remaining_quantity = ?,
+					    used_tuition = ?,
+					    remaining_tuition = ?,
+					    confirmed_tuition = ?,
+					    update_id = ?,
+					    update_time = NOW()
+					WHERE id = ? AND inst_id = ? AND del_flag = 0
+				`, account.UsedQuantity, account.RemainingQuantity, account.UsedTuition, account.RemainingTuition, account.ConfirmedTuition, operatorID, account.ID, instID); err != nil {
+					return err
+				}
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO tuition_account_flow (
+						uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+						source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+						create_id, create_time, update_id, update_time, del_flag
+					) VALUES (
+						UUID(), 0, ?, ?, ?, ?, ?, ?,
+						?, ?, NULL, ?, ?, ?, ?, ?, ?,
+						?, NOW(), ?, NOW(), 0
+					)
+					ON DUPLICATE KEY UPDATE
+						quantity = round(IFNULL(quantity, 0) + VALUES(quantity), 2),
+						tuition = round(IFNULL(tuition, 0) + VALUES(tuition), 2),
+						balance_quantity = VALUES(balance_quantity),
+						balance_tuition = VALUES(balance_tuition),
+						update_id = VALUES(update_id),
+						update_time = VALUES(update_time),
+						del_flag = VALUES(del_flag)
+				`,
+					instID,
+					account.ID,
+					account.StudentID,
+					account.CourseID,
+					lessonTypeValue,
+					account.LessonChargingMode,
+					sourceType,
+					saleOrderID,
+					orderNumber,
+					now,
+					restoreQuantity,
+					closeOrderRoundMoney(-restoreTuition),
+					account.RemainingQuantity,
+					account.RemainingTuition,
+					operatorID,
+					operatorID,
+				); err != nil {
+					return err
+				}
+			}
+
+			account = normalizeObsoleteOrderAccount(account)
+			voidQuantity := closeOrderRoundMoney(account.RemainingQuantity)
+			voidTuition := closeOrderRoundMoney(account.RemainingTuition)
+			if voidQuantity > 0.000001 || voidTuition > 0.000001 {
+				lessonTypeValue := any(nil)
+				if account.LessonType > 0 {
+					lessonTypeValue = account.LessonType
+				}
+				if _, err := tx.ExecContext(ctx, `
+					INSERT INTO tuition_account_flow (
+						uuid, version, inst_id, tuition_account_id, student_id, product_id, lesson_type, lesson_charging_mode,
+						source_type, source_id, teaching_record_id, order_number, created_time, quantity, tuition, balance_quantity, balance_tuition,
+						create_id, create_time, update_id, update_time, del_flag
+					) VALUES (
+						UUID(), 0, ?, ?, ?, ?, ?, ?,
+						?, ?, NULL, ?, ?, ?, ?, 0, 0,
+						?, NOW(), ?, NOW(), 0
+					)
+				`,
+					instID,
+					account.ID,
+					account.StudentID,
+					account.CourseID,
+					lessonTypeValue,
+					account.LessonChargingMode,
+					model.TuitionAccountFlowSourceOrderVoid,
+					saleOrderID,
+					orderNumber,
+					now,
+					voidQuantity,
+					voidTuition,
+					operatorID,
+					operatorID,
+				); err != nil {
+					if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+						return errors.New("请勿重复提交废除订单")
+					}
+					return err
+				}
+			}
+
+			nextStatus := account.Status
+			statusChangeTime := any(nil)
+			classEndingTime := any(nil)
+			if autoCloseTuition {
+				nextStatus = model.TuitionAccountStatusClosed
+				statusChangeTime = now
+				classEndingTime = now
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE tuition_account
+				SET total_quantity = 0,
+				    free_quantity = 0,
+				    used_quantity = 0,
+				    remaining_quantity = 0,
+				    total_tuition = 0,
+				    paid_tuition = 0,
+				    used_tuition = 0,
+				    remaining_tuition = 0,
+				    confirmed_tuition = 0,
+				    status = ?,
+				    status_change_time = CASE WHEN ? IS NOT NULL THEN ? ELSE status_change_time END,
+				    class_ending_time = CASE WHEN ? IS NOT NULL THEN ? ELSE class_ending_time END,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`, nextStatus, statusChangeTime, statusChangeTime, classEndingTime, classEndingTime, operatorID, account.ID, instID); err != nil {
+				return err
+			}
+		}
+
+		if autoCloseTuition {
+			for courseID := range courseIDSet {
+				if err := repo.closeRelatedOneToOneClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {
+					return err
+				}
+				if err := repo.closeRelatedGroupClassesByDeductCourseTx(ctx, tx, instID, operatorID, studentID, courseID); err != nil {
+					return err
+				}
+			}
+		}
+
+		linkedRechargeRows, err := repo.listObsoleteOrderLinkedRechargeRowsTx(ctx, tx, instID, saleOrderID)
+		if err != nil {
+			return err
+		}
+		for _, item := range linkedRechargeRows {
+			if item.Status == 2 && (item.Amount > 0.000001 || item.ResidualAmount > 0.000001 || item.GivingAmount > 0.000001) {
+				if err := repo.increaseRechargeAccountBalanceTx(ctx, tx, instID, operatorID, item.RechargeAccountID, item.Amount, item.ResidualAmount, item.GivingAmount); err != nil {
+					return err
+				}
+				if err := repo.insertRechargeAccountFlowTx(ctx, tx, instID, operatorID, item.RechargeAccountID, item.StudentID, item.OrderNumber, rechargeAccountFlowTypeForOrderObsoleteReturn(), item.Amount, item.ResidualAmount, item.GivingAmount, "作废报名订单支出"); err != nil {
+					return err
+				}
+			}
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE recharge_account_order
+				SET order_obsolete = ?,
+				    del_flag = CASE WHEN status = 1 THEN 1 ELSE del_flag END,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`, trimmedReason, operatorID, item.ID, instID); err != nil {
+				return err
+			}
+		}
+	}
+	if orderStatus != model.OrderStatusCompleted {
+		linkedRechargeRows, err := repo.listObsoleteOrderLinkedRechargeRowsTx(ctx, tx, instID, saleOrderID)
+		if err != nil {
+			return err
+		}
+		for _, item := range linkedRechargeRows {
+			if _, err := tx.ExecContext(ctx, `
+				UPDATE recharge_account_order
+				SET order_obsolete = ?,
+				    del_flag = CASE WHEN status = 1 THEN 1 ELSE del_flag END,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`, trimmedReason, operatorID, item.ID, instID); err != nil {
+				return err
+			}
+		}
+	}
+
+	if err := repo.softDeleteOrderPaymentTx(ctx, tx, instID, operatorID, saleOrderID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE sale_order
+		SET order_status = ?, update_id = ?, update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, model.OrderStatusVoided, operatorID, saleOrderID, instID); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE inst_student s
+		SET s.student_status = ?,
+		    s.update_id = ?,
+		    s.update_time = NOW()
+		WHERE s.id = ? AND s.inst_id = ? AND s.del_flag = 0
+		  AND s.student_status = ?
+		  AND NOT EXISTS (
+			SELECT 1 FROM tuition_account ta
+			WHERE ta.del_flag = 0 AND ta.inst_id = s.inst_id AND ta.student_id = s.id
+			  AND (IFNULL(ta.remaining_quantity, 0) > 0.02 OR IFNULL(ta.remaining_tuition, 0) > 0.02)
+			LIMIT 1
+		  )
+	`, model.InstStudentStatusHistory, operatorID, studentID, instID, model.InstStudentStatusEnrolled); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) ([]string, error) {

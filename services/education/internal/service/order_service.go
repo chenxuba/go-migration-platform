@@ -227,7 +227,7 @@ func (svc *Service) ObsoleteOrder(userID int64, dto model.ObsoleteOrderDTO) erro
 	if strings.TrimSpace(dto.ObsoleteReason) == "" {
 		return errors.New("作废原因不能为空")
 	}
-	return svc.repo.ObsoleteOrder(context.Background(), instID, instUserID, orderID, dto.ObsoleteReason)
+	return svc.repo.ObsoleteOrder(context.Background(), instID, instUserID, orderID, dto.ObsoleteReason, dto.AutoCloseTuition)
 }
 
 func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTypeDTO) ([]model.CourseEnrollTypeVO, error) {
