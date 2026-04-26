@@ -159,6 +159,7 @@ interface InstitutionFlow {
   pointId: number
   line: THREE.Line
   glow: THREE.Mesh
+  trail: THREE.Mesh
   comet: THREE.Sprite[]
   curve: THREE.CatmullRomCurve3
 }
@@ -486,11 +487,87 @@ function createInstitutionFlows(targetRoot: THREE.Group) {
     glow.userData.pointId = point.id
     targetRoot.add(glow)
 
+    const trail = new THREE.Mesh(
+      createTaperedFlowGeometry(curve, 0, 0.2),
+      new THREE.MeshBasicMaterial({
+        color: point.risk === 'danger' || point.risk === 'warn' ? 0xff983d : 0xffd06a,
+        transparent: true,
+        opacity: 0.72,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    trail.userData.pointId = point.id
+    trail.userData.offset = index * 0.073
+    trail.userData.speed = 0.105 + (index % 5) * 0.008
+    trail.userData.length = 0.2
+    targetRoot.add(trail)
+
     const comet = createFlowComet(point, index)
     comet.forEach(sprite => targetRoot.add(sprite))
 
-    institutionFlows.push({ pointId: point.id, line, glow, comet, curve })
+    institutionFlows.push({ pointId: point.id, line, glow, trail, comet, curve })
   })
+}
+
+function createTaperedFlowGeometry(curve: THREE.CatmullRomCurve3, progress: number, length: number) {
+  const groupGeometry = new THREE.BufferGeometry()
+  const geometries: THREE.BufferGeometry[] = []
+  const segments = 9
+  const clampedProgress = Math.min(1, Math.max(0, progress))
+  const start = Math.max(0, clampedProgress - length)
+
+  for (let index = 0; index < segments; index += 1) {
+    const a = start + (clampedProgress - start) * (index / segments)
+    const b = start + (clampedProgress - start) * ((index + 1) / segments)
+    if (b <= 0 || a >= 1 || b - a < 0.001) continue
+    const curvePart = new THREE.CatmullRomCurve3([
+      curve.getPointAt(1 - Math.min(1, b)),
+      curve.getPointAt(1 - Math.min(1, (a + b) / 2)),
+      curve.getPointAt(1 - Math.max(0, a)),
+    ])
+    const headFactor = (index + 1) / segments
+    const radius = 0.25 + Math.pow(headFactor, 1.9) * 1.65
+    geometries.push(new THREE.TubeGeometry(curvePart, 5, radius, 8, false))
+  }
+
+  if (!geometries.length) return new THREE.BufferGeometry()
+
+  return mergeBufferGeometries(geometries, groupGeometry)
+}
+
+function mergeBufferGeometries(geometries: THREE.BufferGeometry[], target: THREE.BufferGeometry) {
+  const positions: number[] = []
+  const normals: number[] = []
+  const uvs: number[] = []
+  const indices: number[] = []
+  let vertexOffset = 0
+
+  geometries.forEach((geometry) => {
+    const position = geometry.getAttribute('position')
+    const normal = geometry.getAttribute('normal')
+    const uv = geometry.getAttribute('uv')
+    const index = geometry.getIndex()
+
+    for (let i = 0; i < position.count; i += 1) {
+      positions.push(position.getX(i), position.getY(i), position.getZ(i))
+      if (normal) normals.push(normal.getX(i), normal.getY(i), normal.getZ(i))
+      if (uv) uvs.push(uv.getX(i), uv.getY(i))
+    }
+
+    if (index) {
+      for (let i = 0; i < index.count; i += 1) indices.push(index.getX(i) + vertexOffset)
+    }
+
+    vertexOffset += position.count
+    geometry.dispose()
+  })
+
+  target.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  if (normals.length) target.setAttribute('normal', new THREE.Float32BufferAttribute(normals, 3))
+  if (uvs.length) target.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  target.setIndex(indices)
+  return target
 }
 
 function createFlowComet(point: InstitutionPoint, flowIndex: number) {
@@ -498,12 +575,12 @@ function createFlowComet(point: InstitutionPoint, flowIndex: number) {
   const texture = getFlowCometTexture()
   const warmColor = point.risk === 'danger' || point.risk === 'warn' ? 0xff9b3d : 0xffd76b
 
-  for (let index = 0; index < 8; index += 1) {
+  for (let index = 0; index < 5; index += 1) {
     const material = new THREE.SpriteMaterial({
       map: texture,
       color: index === 0 ? 0xffffff : warmColor,
       transparent: true,
-      opacity: index === 0 ? 0.92 : Math.max(0.1, 0.52 - index * 0.055),
+      opacity: index === 0 ? 0.86 : Math.max(0.1, 0.36 - index * 0.055),
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     })
@@ -512,7 +589,7 @@ function createFlowComet(point: InstitutionPoint, flowIndex: number) {
     sprite.userData.flowOffset = flowIndex * 0.073
     sprite.userData.speed = 0.105 + (flowIndex % 5) * 0.008
     sprite.userData.tailIndex = index
-    sprite.userData.baseSize = index === 0 ? 12 : Math.max(4.4, 10 - index * 0.78)
+    sprite.userData.baseSize = index === 0 ? 9 : Math.max(3.2, 6 - index * 0.5)
     sprite.visible = false
     sprites.push(sprite)
   }
@@ -685,13 +762,14 @@ function refreshVisibleObjects() {
     material.opacity = activeDistrict.value && active ? 0.48 : 0.38
   })
 
-  institutionFlows.forEach(({ pointId, line, glow, comet }) => {
+  institutionFlows.forEach(({ pointId, line, glow, trail, comet }) => {
     const point = institutionMap.get(pointId)
     const visible = !!point
       && (riskFilter.value === 'all' || point.risk === riskFilter.value)
       && (!activeDistrict.value || point.district === activeDistrict.value)
     line.visible = visible
     glow.visible = visible
+    trail.visible = visible
     comet.forEach(sprite => {
       sprite.visible = visible
     })
@@ -760,7 +838,7 @@ function updateTooltipPosition(pointId: number) {
   const moduleRect = moduleRef.value.getBoundingClientRect()
   const left = canvasRect.left - moduleRect.left + (projected.x * 0.5 + 0.5) * canvasRect.width
   const top = canvasRect.top - moduleRect.top + (-projected.y * 0.5 + 0.5) * canvasRect.height
-  const pointScreen = { x: left - 1, y: top - 2 }
+  const pointScreen = { x: left - 2, y: top + 10 }
   tooltipPosition.value = {
     left: Math.max(140, Math.min(left, moduleRect.width - cardWidth - cardOffsetX - 24)),
     top: Math.max(196, Math.min(top, moduleRect.height - 190)),
@@ -810,18 +888,20 @@ function tick() {
     ;(border.material as THREE.LineDashedMaterial).dashOffset = -elapsed * (18 + index * 1.5)
   })
 
-  institutionFlows.forEach(({ line, glow, comet, curve }, index) => {
+  institutionFlows.forEach(({ line, glow, trail, comet, curve }, index) => {
     if (!line.visible) return
+    const trailProgress = (elapsed * trail.userData.speed + trail.userData.offset) % 1
     const material = line.material as THREE.LineBasicMaterial
     material.opacity = (line.userData.baseOpacity || 0.18) * (0.78 + Math.sin(elapsed * 2.1 + index) * 0.18)
     const glowMaterial = glow.material as THREE.MeshBasicMaterial
     glowMaterial.opacity = 0.045 + Math.sin(elapsed * 1.7 + index) * 0.012
+    trail.geometry.dispose()
+    trail.geometry = createTaperedFlowGeometry(curve, trailProgress, trail.userData.length)
 
     comet.forEach((sprite) => {
       const tailIndex = sprite.userData.tailIndex as number
-      const progress = (elapsed * sprite.userData.speed + sprite.userData.flowOffset) % 1
-      const tailProgress = progress - tailIndex * 0.012
-      if (tailProgress <= 0 || tailProgress >= 1) {
+      const tailProgress = trailProgress - tailIndex * 0.028
+      if (tailProgress <= 0 || tailProgress >= 1 || tailIndex > 1) {
         sprite.visible = false
         return
       }
