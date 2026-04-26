@@ -147,21 +147,8 @@ function hasLessonConsumeArrear(item) {
   return roundMoneyAmount(item?.lessonConsumeArrearQuantity || 0) > 0
 }
 
-function hasConsumedTuitionAccount(item) {
-  const chargingMode = Number(item?.lessonChargingMode || 0)
-  if (chargingMode === 3) {
-    return getDisplayedRemainTuition(item) < Number(item?.totalTuition || 0)
-  }
-
-  const remainQuantity = getDisplayedRemainQuantity(item)
-  const remainFreeQuantity = getDisplayedRemainFreeQuantity(item)
-  const totalQuantity = Number(item?.totalQuantity || 0)
-  const totalFreeQuantity = Number(item?.totalFreeQuantity || 0)
-  return remainQuantity + remainFreeQuantity < totalQuantity + totalFreeQuantity
-}
-
 function shouldShowArrearBadge(item) {
-  return hasArrearTuition(item) && hasConsumedTuitionAccount(item)
+  return hasArrearTuition(item)
 }
 
 function shouldShowLessonConsumeArrearBadge(item) {
