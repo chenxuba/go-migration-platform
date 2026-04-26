@@ -78,6 +78,7 @@ const badDebtRemark = ref('')
 const badDebtOperateLoading = ref(false)
 const voidOrderReason = ref('')
 const voidOrderSubmitting = ref(false)
+const voidOrderCloseCourse = ref(1)
 const decryptedPhone = ref('')
 const isPhoneDecrypted = ref(false)
 const phoneLoading = ref(false)
@@ -1065,6 +1066,7 @@ function getObsoleteBlockedMessage(resultType) {
 function handleCloseVoidOrderModal() {
   openVoidOrderModal.value = false
   voidOrderReason.value = ''
+  voidOrderCloseCourse.value = 1
 }
 
 async function handleVoidOrder() {
@@ -1085,11 +1087,7 @@ async function handleVoidOrder() {
       showCannotVoidOrderModal(blockedMessage)
       return
     }
-    if (Number(detail.value?.orderType || 0) !== 3) {
-      messageService.info('废除订单功能开发中')
-      return
-    }
-    voidOrderReason.value = ''
+    handleCloseVoidOrderModal()
     openVoidOrderModal.value = true
   }
   catch (error) {
@@ -1108,6 +1106,10 @@ async function handleVoidOrderSubmit() {
   const reason = voidOrderReason.value.trim()
   if (!reason) {
     messageService.warning('请填写作废原因')
+    return
+  }
+  if (Number(detail.value?.orderType || 0) !== 3) {
+    messageService.info('已完成订单废除逻辑开发中')
     return
   }
   try {
@@ -2130,15 +2132,42 @@ function isHandledApprovalFlow(flow) {
               小贴士
             </div>
             <div class="tipsText">
-              <p class="void-order-tips-title">
-                退课订单作废后：
-              </p>
-              <p>1.返还本订单的已退学费至原退课的学费账户中</p>
-              <p>2.财务到账确认、订单业绩、储值账户变动记录、积分记录、出入库记录、报表也将同步按规则进行反向处理。</p>
+              <template v-if="isRefundCourseOrderDetail">
+                <p class="void-order-tips-title">
+                  退课订单作废后：
+                </p>
+                <p>1.返还本订单的已退学费至原退课的学费账户中</p>
+                <p>2.财务到账确认、订单业绩、储值账户变动记录、积分记录、出入库记录、报表也将同步按规则进行反向处理。</p>
+              </template>
+              <template v-else>
+                <p class="void-order-tips-title">
+                  订单作废后：
+                </p>
+                <p>1.已产生上课记录的课程将记录为课时消超，此订单相关课程的课时数将被清空；若为转课订单，将会把转入课时返回至原学费账户中。</p>
+                <p>2.若存在教学用品，对应收入也将被扣除，财务到账确认、订单业绩将被废除，储值账户变动记录、积分记录、出入库记录、报表也将同步按规则处理。</p>
+              </template>
               <div class="void-order-warning">
                 <ExclamationCircleFilled />
                 <span>谨慎操作，作废后不可恢复</span>
               </div>
+            </div>
+          </div>
+          <div v-if="!isRefundCourseOrderDetail" class="void-order-form-row void-order-form-row-radio">
+            <div class="void-order-form-label">
+              <span class="required-mark">*</span>是否结课
+              <a-tooltip title="作废订单后是否将订单关联课程同步结课">
+                <QuestionCircleOutlined class="void-order-help-icon" />
+              </a-tooltip>
+            </div>
+            <div class="void-order-form-control">
+              <a-radio-group v-model:value="voidOrderCloseCourse" class="custom-radio">
+                <a-radio :value="1">
+                  作废后结课
+                </a-radio>
+                <a-radio :value="0">
+                  作废后不结课
+                </a-radio>
+              </a-radio-group>
             </div>
           </div>
           <div class="void-order-form-row">
@@ -2428,6 +2457,11 @@ span.dot {
   margin-top: 24px;
 }
 
+.void-order-form-row-radio {
+  align-items: center;
+  margin-top: 28px;
+}
+
 .void-order-form-label {
   display: flex;
   align-items: center;
@@ -2441,8 +2475,35 @@ span.dot {
   margin-right: 2px;
 }
 
+.void-order-help-icon {
+  margin-left: 4px;
+  color: #999;
+  font-size: 14px;
+}
+
 .void-order-form-control {
   flex: 1;
+}
+
+.void-order-form-row-radio .void-order-form-label {
+  min-height: auto;
+}
+
+.void-order-form-row-radio .void-order-form-control {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.void-order-form-row-radio :deep(.ant-radio-group) {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.void-order-form-row-radio :deep(.ant-radio-wrapper) {
+  margin-inline-start: 0;
+  line-height: 32px;
 }
 
 .void-order-modal-footer {
