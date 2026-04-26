@@ -203,10 +203,16 @@ const cashierRefundTipText = computed(() => {
   if (cashierRefundDiff.value > 0.009)
     return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，手续费 ¥${formatMoney(cashierRefundDiff.value)}`
   if (cashierRefundDiff.value < -0.009)
-    return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，亏损费 ¥${formatMoney(Math.abs(cashierRefundDiff.value))}`
-  return `应退金额：¥${formatTrimMoney(cashierRefundAmount.value)}`
+    return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，亏损费 ¥${formatTrimMoney(Math.abs(cashierRefundDiff.value))}`
+  return `应退金额：¥${formatMoney(cashierRefundAmount.value)}`
 })
-const showCashierHandlingFeeTip = computed(() => cashierRefundDiff.value > 0.009)
+const showCashierFeeTip = computed(() => Math.abs(cashierRefundDiff.value) > 0.009)
+const cashierFeeTipTitle = computed(() => (cashierRefundDiff.value < -0.009 ? '亏损费' : '手续费'))
+const cashierFeeTipContent = computed(() => (
+  cashierRefundDiff.value < -0.009
+    ? '指机构需要补偿学员的费用'
+    : '指机构在办理业务时额外向学员收取的费用'
+))
 const shouldShowCalcPreviewModal = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
 const showPreviewHandlingFee = computed(() => formState.originalPriceRefund && (previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009))
 const previewStatusText = computed(() => {
@@ -757,9 +763,9 @@ function handleModify() {
                       class="text-3.5 text-#888 relative top--27px"
                     >
                       {{ cashierRefundTipText }}
-                      <a-popover v-if="showCashierHandlingFeeTip" title="手续费" placement="top">
+                      <a-popover v-if="showCashierFeeTip" :title="cashierFeeTipTitle" placement="top">
                         <template #content>
-                          <div>指机构在办理业务时额外向学员收取的费用</div>
+                          <div>{{ cashierFeeTipContent }}</div>
                         </template>
                         <QuestionCircleOutlined class="ml-4px text-#1677ff cursor-pointer" />
                       </a-popover>
