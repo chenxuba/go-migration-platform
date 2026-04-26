@@ -58,6 +58,23 @@ const currentStopCourseRecord = ref(null)
 const currentResumeCourseRecord = ref(null)
 const currentRemainingDetailsRecord = ref(null)
 const currentDropCourseRecord = ref(null)
+const openCourseActionMenuKey = ref('')
+
+function getCourseActionMenuKey(item, index) {
+  return String(item?.id || item?.tuitionAccountId || index)
+}
+
+function isCourseActionMenuOpen(item, index) {
+  return openCourseActionMenuKey.value === getCourseActionMenuKey(item, index)
+}
+
+function handleCourseActionMenuOpenChange(open, item, index) {
+  openCourseActionMenuKey.value = open ? getCourseActionMenuKey(item, index) : ''
+}
+
+function closeCourseActionMenu() {
+  openCourseActionMenuKey.value = ''
+}
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -215,10 +232,17 @@ function isTuitionAccountCourseEnded(item) {
   return isTuitionAccountClosedByStatus(item)
 }
 
+function onMenuTransferClass() {
+  closeCourseActionMenu()
+  transferClassDrawerOpen.value = true
+}
+
 function onEndedMenuRenew() {
+  closeCourseActionMenu()
   messageService.info('续费功能开发中')
 }
 function onEndedMenuRevokeGraduate(item) {
+  closeCourseActionMenu()
   currentRevokeCourseRecord.value = item || null
   revokeCloseCourseModalOpen.value = true
 }
@@ -252,16 +276,19 @@ async function handleCloseCourseRecordSuccess() {
 }
 
 function onMenuCloseCourse(item) {
+  closeCourseActionMenu()
   currentEndCourseRecord.value = item || null
   endTheClassDrawerOpen.value = true
 }
 
 function onMenuStopCourse(item) {
+  closeCourseActionMenu()
   currentStopCourseRecord.value = item || null
   stopTheClassDrawerOpen.value = true
 }
 
 function onMenuRefundCourse(item) {
+  closeCourseActionMenu()
   currentDropCourseRecord.value = item || null
   dropTheClassDrawerOpen.value = true
 }
@@ -273,6 +300,7 @@ async function handleRefundCourseSuccess() {
 }
 
 function onMenuResumeCourse(item) {
+  closeCourseActionMenu()
   currentResumeCourseRecord.value = item || null
   resumeTheClassDrawerOpen.value = true
 }
@@ -283,8 +311,19 @@ function onMenuRemainingDetails(item) {
 }
 
 function onEndedMenuCloseRecord(item) {
+  closeCourseActionMenu()
   currentCloseRecordCourse.value = item || null
   closeCourseRecordModalOpen.value = true
+}
+
+function onMenuFeeChange() {
+  closeCourseActionMenu()
+  feeChangeDrawerOpen.value = true
+}
+
+function onMenuSuspensionResumeRecord() {
+  closeCourseActionMenu()
+  suspensionResumeDrawerOpen.value = true
 }
 
 // 格式化有效期文本
@@ -431,17 +470,26 @@ watch(endTheClassDrawerOpen, (value) => {
               class="text-4 text-#222 font-500 flex-1 line-clamp-1 mr-10"
               :class="{ 'course-ended-faded': isTuitionAccountCourseEnded(item) }"
             >{{ item.lessonName || '-' }}</span>
-          <a-dropdown placement="bottom" :arrow="{ pointAtCenter: true }">
-            <a class="ant-dropdown-link rounded-10 hover:bg-#e6f0ff w-24px h-24px" @click.prevent>
+          <a-dropdown
+            placement="bottom"
+            :arrow="{ pointAtCenter: true }"
+            :open="isCourseActionMenuOpen(item, index)"
+            @update:open="value => handleCourseActionMenuOpenChange(value, item, index)"
+          >
+            <a
+              class="ant-dropdown-link course-action-trigger rounded-10 hover:bg-#e6f0ff w-24px h-24px"
+              :class="{ 'is-open': isCourseActionMenuOpen(item, index) }"
+              @click.prevent
+            >
               <img
                 src="https://prod-tbu-next-erp-cdn.schoolpal.cn/next-pc-static/static/12181/static/menu-normal.3cae936f.svg"
                 alt=""
               >
             </a>
             <template #overlay>
-              <a-space direction="vertical" :size="1">
+              <a-space direction="vertical" :size="1" @click="closeCourseActionMenu">
                 <template v-if="!isTuitionAccountCourseEnded(item)">
-                <div class="flex items-center gap-2" @click="transferClassDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuTransferClass">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -585,11 +633,11 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666 w-90px">续费</span>
                 </div>
-                <div class="flex items-center gap-2" @click="feeChangeDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuFeeChange">
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
-                <div class="flex items-center gap-2" @click="suspensionResumeDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord">
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
@@ -654,11 +702,11 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666 w-90px">撤销结课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="feeChangeDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuFeeChange">
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
-                <div class="flex items-center gap-2" @click="suspensionResumeDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord">
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
@@ -868,6 +916,10 @@ watch(endTheClassDrawerOpen, (value) => {
 .suspendResumen {
   background-size: 14px auto;
   background-image: url(data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABwAAAAcCAYAAAByDd+UAAAAAXNSR0IArs4c6QAAAQlJREFUSEvt1b0uRUEUhuHni1CoNW7BFShcgIRW6yfR+akkKgWJRKJ0aIVGoncRoncJElHoVGJkJ5ugOPaRfXYUZ5ppVtY76501a6LjlY55RsDWjY+U/l+lpZSb6nRJFvqdsu8dllImcIBljOMSe0lefiYtpZQa2Dfnb8Aj7P5Ifo+lJNX+udoCPmAalabHusIZVBWuJbn+ILYF/KaplDKJM6zgFXNJbivoUIBfqulhA70kW10AT7CJkyTbQwPWSk+xijfMJrlrE/iEKczjGef4aJr1JFdtN80xdrp8FmM4rBVW3AvsD+3hDzJI69FWkiz+ebQNAmwaO/oPm5pqHDdS2lhV08DOlb4DI/5/HWsZb+UAAAAASUVORK5CYII=);
+}
+
+.course-action-trigger.is-open {
+  background: #e6f0ff;
 }
 
 .arrear-badge {
