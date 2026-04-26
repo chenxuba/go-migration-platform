@@ -197,22 +197,28 @@ const showApprovalSection = computed(() => {
 const orderItems = computed(() => Array.isArray(detail.value?.orderItems) ? detail.value.orderItems : [])
 const isClosedOrderDetail = computed(() => Number(detail.value?.orderStatus || 0) === 4)
 const isRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 2)
+const isRefundCourseOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 3)
 const isRefundRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 4)
 /** 退费类订单：流水区块展示为「退款记录」 */
 const isRefundOrderPaymentSection = computed(() =>
   [3, 4, 6, 7].includes(Number(detail.value?.orderType || 0)),
 )
 const paymentRecords = computed(() => Array.isArray(detail.value?.paymentRecords) ? detail.value.paymentRecords : [])
+const paymentRecordTotalAmount = computed(() => {
+  return paymentRecords.value.reduce((sum, item) => sum + Math.abs(Number(item?.payAmount || 0)), 0)
+})
 const actualPaymentAmount = computed(() => Math.abs(Number(
   detail.value?.paidAmount
   ?? detail.value?.totalAmount
   ?? detail.value?.amount
   ?? 0,
 )))
-/** 实收/实退现金为 0 时，不展示支付/退款记录整块，避免出现空流水区域。 */
+/** 退款订单固定展示退款记录；普通订单仅在有现金流水时展示支付记录。 */
 const showOrderPaymentRecordsBlock = computed(() => {
   if (!detail.value)
     return false
+  if (isRefundOrderPaymentSection.value)
+    return true
   return actualPaymentAmount.value > 0 && paymentRecords.value.length > 0
 })
 const showRechargeAccountSection = computed(
@@ -234,6 +240,22 @@ const orderRechargeDeductionSummary = computed(() => {
     residual,
     giving,
   }
+})
+const orderDetailSectionTitle = computed(() => isRefundOrderPaymentSection.value ? '退款明细' : '订单明细')
+const showStandardOrderDetailItems = computed(() => {
+  return !isRechargeOrderDetail.value && !isRefundRechargeOrderDetail.value && !isRefundCourseOrderDetail.value
+})
+const refundCourseRefundAmount = computed(() => Math.abs(Number(detail.value?.totalAmount ?? detail.value?.amount ?? 0)))
+const refundCourseHandlingFee = computed(() => Math.abs(Number(detail.value?.orderDiscountAmount || 0)))
+const refundCourseRealAmount = computed(() => {
+  if (paymentRecordTotalAmount.value > 0) {
+    return paymentRecordTotalAmount.value
+  }
+  const paid = Math.abs(Number(detail.value?.paidAmount || 0))
+  if (paid > 0) {
+    return paid
+  }
+  return Math.max(refundCourseRefundAmount.value - refundCourseHandlingFee.value, 0)
 })
 const refundOrderTotalAmount = computed(() => {
   if (!isRefundRechargeOrderDetail.value) {
@@ -666,6 +688,26 @@ function getGiftLabel(mode) {
   return '赠送课时'
 }
 
+function getRefundQuantityLabel(mode) {
+  if (mode === 1)
+    return '退还课时'
+  if (mode === 2)
+    return '退还天数'
+  if (mode === 3)
+    return '退还金额'
+  return '退还课时'
+}
+
+function getRefundFreeQuantityLabel(mode) {
+  if (mode === 1)
+    return '退赠课时'
+  if (mode === 2)
+    return '退赠天数'
+  if (mode === 3)
+    return '退赠金额'
+  return '退赠课时'
+}
+
 function getOrderDetailColumns(item) {
   const isTimeSlot = Number(item?.chargingMode || 0) === 2
   const columns = [
@@ -869,6 +911,50 @@ function formatCount(value, suffix = '') {
   const amount = Number(value || 0)
   const text = Number.isInteger(amount) ? String(amount) : amount.toFixed(2)
   return `${text}${suffix}`
+}
+
+function getRefundCourseQuantity(item) {
+  return Math.max(Number(item?.realQuantity || 0) - Number(item?.freeQuantity || 0), 0)
+}
+
+function getRefundCourseQuantityText(item) {
+  return formatQuantity(getRefundCourseQuantity(item), item?.chargingMode)
+}
+
+function getRefundCourseFreeQuantityText(item) {
+  return formatQuantity(item?.freeQuantity, item?.chargingMode)
+}
+
+function parsePaymentVoucher(voucher) {
+  if (!voucher)
+    return { text: '', images: [] }
+  if (typeof voucher === 'object') {
+    return {
+      text: String(voucher.text || '').trim(),
+      images: Array.isArray(voucher.images) ? voucher.images.filter(Boolean) : [],
+    }
+  }
+  const raw = String(voucher || '').trim()
+  if (!raw)
+    return { text: '', images: [] }
+  try {
+    const parsed = JSON.parse(raw)
+    return {
+      text: String(parsed?.text || '').trim(),
+      images: Array.isArray(parsed?.images) ? parsed.images.filter(Boolean) : [],
+    }
+  }
+  catch {
+    return { text: raw, images: [] }
+  }
+}
+
+function getPaymentVoucherText(record) {
+  return parsePaymentVoucher(record?.paymentVoucher).text || record?.remark || '-'
+}
+
+function getPaymentVoucherImages(record) {
+  return parsePaymentVoucher(record?.paymentVoucher).images
 }
 
 function getOrderDetailTableScrollX(item) {
@@ -1464,7 +1550,7 @@ function isHandledApprovalFlow(flow) {
 
           <div class="order-list mb-8">
             <div class="t text-5 font-500 mb-5 flex justify-between flex-center">
-              <span>{{ isRefundRechargeOrderDetail ? '退款明细' : '订单明细' }}</span>
+              <span>{{ orderDetailSectionTitle }}</span>
               <div v-if="isRechargeOrderDetail" class="recharge-total">
                 <span class="recharge-total-label">订单总金额：</span>
                 <span class="recharge-total-value ">{{ formatMoney(rechargeOrderTotalAmount) }}</span>
@@ -1504,6 +1590,72 @@ function isHandledApprovalFlow(flow) {
                   </div>
                   <div class="recharge-detail-value" :class="{ 'recharge-detail-value-highlight': item.highlight }">
                     {{ formatMoneyPlain(item.value) }}
+                  </div>
+                </div>
+              </div>
+            </template>
+            <template v-else-if="isRefundCourseOrderDetail">
+              <div class="refund-course-summary">
+                <div class="refund-course-summary-item">
+                  <span class="refund-course-summary-label">退款金额：</span>
+                  <span class="refund-course-summary-value">{{ formatMoney(refundCourseRefundAmount) }}</span>
+                </div>
+                <div class="refund-course-summary-item">
+                  <span class="refund-course-summary-label">手续费</span>
+                  <a-popover placement="top">
+                    <template #content>
+                      <div class="text-#666">
+                        手续费 = 退款金额 - 实退金额
+                      </div>
+                    </template>
+                    <QuestionCircleOutlined class="text-#06f cursor-pointer mx-1" />
+                  </a-popover>
+                  <span class="refund-course-summary-value">{{ formatMoney(refundCourseHandlingFee) }}</span>
+                </div>
+                <div class="refund-course-summary-item refund-course-summary-item-real">
+                  <span class="refund-course-summary-label">实退金额：</span>
+                  <span class="refund-course-real-amount">-¥{{ formatMoneyPlain(refundCourseRealAmount) }}</span>
+                </div>
+              </div>
+              <a-empty
+                v-if="!orderItems.length"
+                :image="simpleImage"
+                description="暂无退款明细"
+              />
+              <div v-for="item in orderItems" :key="item.orderCourseDetailId" class="list mt-4 mb-4 last:mb-0">
+                <a-row class="bg-#005ce60f px6 py4 border border-solid border-#eee border-b-none">
+                  <a-col :span="24" class="flex justify-between">
+                    <div class="flex flex-items-center">
+                      <div class="text-4 font-500 mr-3">
+                        {{ item.courseName || '-' }}
+                      </div>
+                      <a-space>
+                        <span v-if="item.lessonType" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">
+                          {{ getLessonTypeText(item.lessonType) }}
+                        </span>
+                        <span v-if="item.chargingMode" class="bg-#e6f0ff text-#06f text-3 rounded-10 px3 py1">
+                          {{ getChargingModeText(item.chargingMode) }}
+                        </span>
+                      </a-space>
+                    </div>
+                  </a-col>
+                </a-row>
+                <div class="refund-course-detail-grid">
+                  <div class="refund-course-detail-cell">
+                    <div class="refund-course-detail-label">
+                      {{ getRefundQuantityLabel(item.chargingMode) }}
+                    </div>
+                    <div class="refund-course-detail-value">
+                      {{ getRefundCourseQuantityText(item) }}
+                    </div>
+                  </div>
+                  <div class="refund-course-detail-cell refund-course-detail-cell-last">
+                    <div class="refund-course-detail-label">
+                      {{ getRefundFreeQuantityLabel(item.chargingMode) }}
+                    </div>
+                    <div class="refund-course-detail-value">
+                      {{ getRefundCourseFreeQuantityText(item) }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1553,12 +1705,12 @@ function isHandledApprovalFlow(flow) {
             </template>
 
             <a-empty
-              v-if="!isRechargeOrderDetail && !isRefundRechargeOrderDetail && !orderItems.length"
+              v-if="showStandardOrderDetailItems && !orderItems.length"
               :image="simpleImage"
               description="暂无订单明细"
             />
 
-            <template v-if="!isRechargeOrderDetail && !isRefundRechargeOrderDetail">
+            <template v-if="showStandardOrderDetailItems">
               <div v-for="item in orderItems" :key="item.orderCourseDetailId" class="list mt-4 mb-4 last:mb-0">
                 <a-row class="bg-#005ce60f px6 py4 border border-solid border-#eee border-b-none">
                   <a-col :span="24" class="flex justify-between">
@@ -1603,7 +1755,7 @@ function isHandledApprovalFlow(flow) {
               :description="isRefundOrderPaymentSection ? '暂无退款记录' : '暂无支付记录'"
             />
 
-            <div v-for="(item, index) in paymentRecords" :key="item.paymentId" class="items-list mb3">
+            <div v-for="(item, index) in paymentRecords" :key="item.paymentId || index" class="items-list mb3">
               <div class="t inline-flex items-center bg-#f0f5fe px-4 py-1 rounded-lt-2 rounded-rt-2 whitespace-nowrap">
                 {{ isRefundOrderPaymentSection ? '退款记录' : '支付记录' }}{{ index + 1 }}
                 <span v-if="item.createdTime" class="text-#666 ml-1">
@@ -1638,7 +1790,17 @@ function isHandledApprovalFlow(flow) {
                     {{ formatPaymentBillOperationDate(item) }}
                   </a-descriptions-item>
                   <a-descriptions-item label="账单备注" :span="3">
-                    {{ item.remark || '-' }}
+                    <div>{{ getPaymentVoucherText(item) }}</div>
+                    <div v-if="getPaymentVoucherImages(item).length" class="payment-voucher-images">
+                      <a-image
+                        v-for="(image, imageIndex) in getPaymentVoucherImages(item)"
+                        :key="`${item.paymentId || index}-${imageIndex}`"
+                        :src="image"
+                        :width="80"
+                        :height="80"
+                        class="payment-voucher-image"
+                      />
+                    </div>
                   </a-descriptions-item>
                 </a-descriptions>
                 <a-descriptions
@@ -2117,6 +2279,71 @@ span.dot {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
+.refund-course-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 22px;
+}
+
+.refund-course-summary-item {
+  display: flex;
+  align-items: baseline;
+  min-width: 0;
+  color: #222;
+  font-size: 14px;
+}
+
+.refund-course-summary-item-real {
+  justify-content: flex-end;
+}
+
+.refund-course-summary-label {
+  color: #222;
+  white-space: nowrap;
+}
+
+.refund-course-summary-value {
+  color: #888;
+  font-weight: 500;
+}
+
+.refund-course-real-amount {
+  color: #ff3333;
+  font-size: 24px;
+  line-height: 1;
+  font-weight: 700;
+  font-family: DINAlternate-Bold, DINAlternate, sans-serif;
+}
+
+.refund-course-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  border: 1px solid #eee;
+  background: #fbfbfb;
+}
+
+.refund-course-detail-cell {
+  padding: 12px 24px;
+  border-right: 1px solid #eee;
+}
+
+.refund-course-detail-cell-last {
+  border-right: 0;
+}
+
+.refund-course-detail-label {
+  color: #222;
+  font-weight: 500;
+  line-height: 22px;
+}
+
+.refund-course-detail-value {
+  margin-top: 8px;
+  color: #666;
+  line-height: 22px;
+}
+
 .recharge-detail-item {
   padding: 16px 28px;
   border-right: 1px solid #d9e5ff;
@@ -2145,5 +2372,17 @@ span.dot {
 .recharge-detail-value-highlight {
   color: #222;
   font-weight: 700;
+}
+
+.payment-voucher-images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.payment-voucher-image {
+  border-radius: 4px;
+  overflow: hidden;
 }
 </style>
