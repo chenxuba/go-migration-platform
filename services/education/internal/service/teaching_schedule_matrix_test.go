@@ -261,6 +261,19 @@ func TestBuildTeacherOrderForMatrix_DoesNotCreateColumnsFromScheduleOnlyTeachers
 	}
 }
 
+func TestPrioritizeTeacherOrder_DoesNotAppendMissingPreferredTeachers(t *testing.T) {
+	got := prioritizeTeacherOrder([]int64{100, 200}, []int64{300, 200})
+	want := []int64{200, 100}
+	if len(got) != len(want) {
+		t.Fatalf("expected %#v, got %#v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected %#v, got %#v", want, got)
+		}
+	}
+}
+
 func TestListTeachingSchedulesByTeacherMatrix_IncludesDisabledTeacherFromPeriodGroupAllowList(t *testing.T) {
 	userID := int64(511)
 	instID := int64(611)

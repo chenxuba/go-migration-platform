@@ -521,13 +521,22 @@ func containsTeacherID(ids []int64, target int64) bool {
 }
 
 func prioritizeTeacherOrder(base, preferred []int64) []int64 {
-	if len(preferred) == 0 {
+	if len(preferred) == 0 || len(base) == 0 {
 		return base
+	}
+	baseSet := make(map[int64]struct{}, len(base))
+	for _, id := range base {
+		if id > 0 {
+			baseSet[id] = struct{}{}
+		}
 	}
 	out := make([]int64, 0, len(base))
 	seen := make(map[int64]struct{}, len(base))
 	for _, id := range preferred {
 		if id <= 0 {
+			continue
+		}
+		if _, ok := baseSet[id]; !ok {
 			continue
 		}
 		if _, ok := seen[id]; ok {
