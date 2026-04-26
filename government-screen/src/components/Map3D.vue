@@ -451,7 +451,7 @@ function createRoadNetwork() {
 
 function createInstitutionFlows(targetRoot: THREE.Group) {
   institutions.forEach((point, index) => {
-    const start = new THREE.Vector3(point.x, point.y, 34)
+    const start = new THREE.Vector3(point.x, point.y, 25)
     const end = new THREE.Vector3(governmentAgency.x, governmentAgency.y, 46)
     const distance = start.distanceTo(end)
     const mid = new THREE.Vector3(
@@ -587,10 +587,11 @@ function createPointMarker(point: InstitutionPoint, index: number) {
     blending: THREE.AdditiveBlending,
   }))
   pointer.scale.set(18, 23, 1)
-  pointer.position.z = 26
+  pointer.center.set(0.5, 0.0625)
+  pointer.position.z = 0
   pointer.userData.pointer = true
   group.add(pointer)
-  group.userData.pinHoleZ = pointer.position.z + 3.5
+  group.userData.pinHoleZ = 27
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getIconTexture(point.risk),
@@ -840,7 +841,7 @@ function tick() {
     const isActive = point?.id === activePopupPoint.value?.id
     const pulse = point?.risk === 'danger' ? 1 + Math.sin(elapsed * 5 + offset) * 0.08 : 1 + Math.sin(elapsed * 2 + offset) * 0.035
     group.scale.setScalar(pulse * (isActive ? 1.16 : 1))
-    group.position.z = 25 + Math.sin(elapsed * 1.6 + offset) * 1.1
+    group.position.z = 25
     group.children.forEach((child) => {
       if (child.userData.halo) child.scale.setScalar((isActive ? 1.28 : 1) + Math.sin(elapsed * 2.4 + offset) * 0.08)
     })
