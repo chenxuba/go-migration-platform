@@ -602,66 +602,35 @@ function createGovernmentMarker() {
   const group = new THREE.Group()
   group.position.set(governmentAgency.x, governmentAgency.y, 32)
 
-  const baseShadow = new THREE.Mesh(
-    new THREE.CircleGeometry(58, 96),
+  const anchorShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(8, 48),
     new THREE.MeshBasicMaterial({
       color: 0x020b1a,
       transparent: true,
-      opacity: 0.44,
+      opacity: 0.38,
       depthWrite: false,
     }),
   )
-  baseShadow.position.z = -1.2
-  group.add(baseShadow)
+  anchorShadow.position.z = -0.6
+  group.add(anchorShadow)
 
-  const outerDisc = new THREE.Mesh(
-    new THREE.PlaneGeometry(112, 112),
+  const anchor = new THREE.Mesh(
+    new THREE.CircleGeometry(4.8, 48),
     new THREE.MeshBasicMaterial({
-      map: getGovernmentBaseTexture(),
+      color: 0x8cf6ff,
       transparent: true,
-      opacity: 0.72,
+      opacity: 0.74,
       depthWrite: false,
-      blending: THREE.NormalBlending,
+      blending: THREE.AdditiveBlending,
     }),
   )
-  outerDisc.position.z = 0.8
-  outerDisc.userData.govPart = 'outerDisc'
-  group.add(outerDisc)
-  governmentParts.push(outerDisc)
-
-  const outerRing = createSegmentedRing(35, 38.5, [
-    [0.06, 0.18],
-    [0.28, 0.11],
-    [0.47, 0.17],
-    [0.72, 0.13],
-    [0.9, 0.08],
-  ], 0x5deeff, 0.58)
-  outerRing.position.z = 3.4
-  outerRing.userData.govPart = 'outerRing'
-  group.add(outerRing)
-  governmentParts.push(outerRing)
-
-  const midRing = createSegmentedRing(25, 27.4, [
-    [0, 0.2],
-    [0.32, 0.18],
-    [0.64, 0.22],
-  ], 0x7ff6ff, 0.42)
-  midRing.position.z = 5.6
-  midRing.userData.govPart = 'midRing'
-  group.add(midRing)
-  governmentParts.push(midRing)
-
-  const innerRing = createSegmentedRing(13, 16, [
-    [0.04, 0.3],
-    [0.48, 0.27],
-  ], 0xe3ffff, 0.62)
-  innerRing.position.z = 27.8
-  innerRing.userData.govPart = 'innerRing'
-  group.add(innerRing)
-  governmentParts.push(innerRing)
+  anchor.position.z = 0.4
+  anchor.userData.govPart = 'anchor'
+  group.add(anchor)
+  governmentParts.push(anchor)
 
   const column = new THREE.Mesh(
-    new THREE.CylinderGeometry(10.5, 15.5, 27, 64, 1, true),
+    new THREE.CylinderGeometry(1.6, 2.2, 24, 32, 1, true),
     new THREE.MeshStandardMaterial({
       color: 0x0a91c9,
       emissive: 0x25dfff,
@@ -675,35 +644,19 @@ function createGovernmentMarker() {
     }),
   )
   column.rotation.x = Math.PI / 2
-  column.position.z = 17
+  column.position.z = 15
   column.userData.govPart = 'column'
   group.add(column)
   governmentParts.push(column)
 
-  const columnTop = new THREE.Mesh(
-    new THREE.RingGeometry(8.6, 13.8, 72),
-    new THREE.MeshBasicMaterial({
-      color: 0xbdfbff,
-      transparent: true,
-      opacity: 0.42,
-      side: THREE.DoubleSide,
-      depthWrite: false,
-      blending: THREE.AdditiveBlending,
-    }),
-  )
-  columnTop.position.z = 30.9
-  columnTop.userData.govPart = 'columnTop'
-  group.add(columnTop)
-  governmentParts.push(columnTop)
-
   const core = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getGovernmentCoreTexture(),
     transparent: true,
-    opacity: 0.66,
+    opacity: 0.52,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   }))
-  core.scale.set(46, 46, 1)
+  core.scale.set(15, 15, 1)
   core.position.z = 29
   core.userData.govPart = 'core'
   group.add(core)
@@ -712,12 +665,12 @@ function createGovernmentMarker() {
   const beam = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getGovernmentBeamTexture(),
     transparent: true,
-    opacity: 0.34,
+    opacity: 0.24,
     depthWrite: false,
     blending: THREE.AdditiveBlending,
   }))
-  beam.scale.set(36, 58, 1)
-  beam.position.z = 31
+  beam.scale.set(12, 36, 1)
+  beam.position.z = 23
   beam.userData.govPart = 'beam'
   group.add(beam)
   governmentParts.push(beam)
@@ -728,15 +681,15 @@ function createGovernmentMarker() {
     opacity: 0.9,
     depthWrite: false,
   }))
-  icon.scale.set(31, 31, 1)
-  icon.position.z = 53
+  icon.scale.set(30, 30, 1)
+  icon.position.z = 45
   icon.userData.govPart = 'icon'
   group.add(icon)
   governmentParts.push(icon)
 
-  const label = createTextSprite(governmentAgency.name, 26, 'rgba(232,250,255,.92)', 'rgba(66,226,255,.84)')
-  label.position.set(0, -34, 58)
-  label.scale.set(120, 30, 1)
+  const label = createGovernmentNameplate()
+  label.position.set(0, -21, 43)
+  label.scale.set(92, 24, 1)
   group.add(label)
 
   return group
@@ -1017,11 +970,19 @@ function animateGovernmentMarker(elapsed: number) {
   governmentParts.forEach((part) => {
     const type = part.userData.govPart as string | undefined
 
+    if (type === 'anchor') {
+      const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 2.4) * 0.5
+      material.opacity = 0.58 + pulse * 0.18
+      part.scale.setScalar(0.92 + pulse * 0.12)
+      return
+    }
+
     if (type === 'outerDisc') {
       const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
       const pulse = 0.5 + Math.sin(elapsed * 1.45) * 0.5
-      material.opacity = 0.62 + pulse * 0.1
-      part.scale.setScalar(1 + pulse * 0.018)
+      material.opacity = 0.38 + pulse * 0.06
+      part.scale.setScalar(1 + pulse * 0.012)
       return
     }
 
@@ -1041,8 +1002,16 @@ function animateGovernmentMarker(elapsed: number) {
     if (type === 'column') {
       const material = (part as THREE.Mesh).material as THREE.MeshStandardMaterial
       const pulse = 0.5 + Math.sin(elapsed * 1.2) * 0.5
-      material.opacity = 0.28 + pulse * 0.07
-      material.emissiveIntensity = 0.14 + pulse * 0.08
+      material.opacity = 0.24 + pulse * 0.06
+      material.emissiveIntensity = 0.12 + pulse * 0.06
+      return
+    }
+
+    if (type === 'columnEdges') {
+      const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.4 + 0.4) * 0.5
+      part.rotation.z = elapsed * 0.12
+      material.opacity = 0.08 + pulse * 0.08
       return
     }
 
@@ -1054,12 +1023,19 @@ function animateGovernmentMarker(elapsed: number) {
       return
     }
 
+    if (type === 'topDisc') {
+      const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.3 + 0.8) * 0.5
+      material.opacity = 0.68 + pulse * 0.08
+      return
+    }
+
     if (type === 'core') {
       const sprite = part as THREE.Sprite
       const material = sprite.material as THREE.SpriteMaterial
       const pulse = 0.5 + Math.sin(elapsed * 2.15) * 0.5
-      material.opacity = 0.54 + pulse * 0.2
-      sprite.scale.setScalar(40 + pulse * 8)
+      material.opacity = 0.34 + pulse * 0.13
+      sprite.scale.setScalar(17 + pulse * 4)
       return
     }
 
@@ -1067,13 +1043,13 @@ function animateGovernmentMarker(elapsed: number) {
       const sprite = part as THREE.Sprite
       const material = sprite.material as THREE.SpriteMaterial
       const pulse = 0.5 + Math.sin(elapsed * 1.65 + 0.7) * 0.5
-      material.opacity = 0.22 + pulse * 0.16
-      sprite.scale.set(32 + pulse * 5, 52 + pulse * 8, 1)
+      material.opacity = 0.13 + pulse * 0.09
+      sprite.scale.set(11 + pulse * 2, 32 + pulse * 4, 1)
       return
     }
 
     if (type === 'icon') {
-      part.position.z = 52.5 + Math.sin(elapsed * 1.7) * 1.2
+      part.position.z = 44.5 + Math.sin(elapsed * 1.7) * 0.7
     }
   })
 }
@@ -1647,6 +1623,53 @@ function createGlowSprite(color: string, size: number, opacity: number) {
   const texture = new THREE.CanvasTexture(canvas)
   disposableTextures.push(texture)
   return new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending }))
+}
+
+function createGovernmentNameplate() {
+  const canvas = document.createElement('canvas')
+  canvas.width = 320
+  canvas.height = 88
+  const ctx = canvas.getContext('2d')!
+
+  const background = ctx.createLinearGradient(24, 0, 296, 0)
+  background.addColorStop(0, 'rgba(9,46,91,.84)')
+  background.addColorStop(0.5, 'rgba(8,63,120,.94)')
+  background.addColorStop(1, 'rgba(9,46,91,.84)')
+  ctx.fillStyle = background
+  roundRect(ctx, 24, 18, 272, 52, 8)
+  ctx.fill()
+
+  ctx.strokeStyle = 'rgba(139,242,255,.92)'
+  ctx.lineWidth = 2.5
+  roundRect(ctx, 24, 18, 272, 52, 8)
+  ctx.stroke()
+
+  ctx.strokeStyle = 'rgba(255,255,255,.16)'
+  ctx.lineWidth = 1
+  ctx.beginPath()
+  ctx.moveTo(38, 27)
+  ctx.lineTo(282, 27)
+  ctx.stroke()
+
+  ctx.font = '800 31px "Microsoft YaHei", "PingFang SC", sans-serif'
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.shadowColor = 'rgba(55,226,255,.95)'
+  ctx.shadowBlur = 10
+  ctx.lineWidth = 3
+  ctx.strokeStyle = 'rgba(2,28,62,.92)'
+  ctx.strokeText('政府监管中心', 160, 45)
+  ctx.fillStyle = 'rgba(250,254,255,.98)'
+  ctx.fillText('政府监管中心', 160, 45)
+
+  const texture = new THREE.CanvasTexture(canvas)
+  texture.colorSpace = THREE.SRGBColorSpace
+  disposableTextures.push(texture)
+  return new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texture,
+    transparent: true,
+    depthWrite: false,
+  }))
 }
 
 function createTextSprite(text: string, fontSize: number, fill: string, glow: string) {
