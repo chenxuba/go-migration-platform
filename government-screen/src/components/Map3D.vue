@@ -258,6 +258,7 @@ const pointGroups = new Map<number, THREE.Group>()
 const pointHitMeshes: THREE.Object3D[] = []
 const dashedBorders: THREE.Line[] = []
 const institutionFlows: InstitutionFlow[] = []
+const governmentParts: THREE.Object3D[] = []
 const disposableTextures: THREE.Texture[] = []
 const defaultCameraPosition = new THREE.Vector3(0, -520, 600)
 const defaultCameraTarget = new THREE.Vector3(0, 8, 0)
@@ -601,50 +602,171 @@ function createGovernmentMarker() {
   const group = new THREE.Group()
   group.position.set(governmentAgency.x, governmentAgency.y, 32)
 
-  const base = new THREE.Mesh(
-    new THREE.RingGeometry(13, 29, 72),
+  const baseShadow = new THREE.Mesh(
+    new THREE.CircleGeometry(58, 96),
     new THREE.MeshBasicMaterial({
-      color: 0x52eaff,
+      color: 0x020b1a,
       transparent: true,
-      opacity: 0.26,
+      opacity: 0.44,
+      depthWrite: false,
+    }),
+  )
+  baseShadow.position.z = -1.2
+  group.add(baseShadow)
+
+  const outerDisc = new THREE.Mesh(
+    new THREE.PlaneGeometry(112, 112),
+    new THREE.MeshBasicMaterial({
+      map: getGovernmentBaseTexture(),
+      transparent: true,
+      opacity: 0.72,
+      depthWrite: false,
+      blending: THREE.NormalBlending,
+    }),
+  )
+  outerDisc.position.z = 0.8
+  outerDisc.userData.govPart = 'outerDisc'
+  group.add(outerDisc)
+  governmentParts.push(outerDisc)
+
+  const outerRing = createSegmentedRing(35, 38.5, [
+    [0.06, 0.18],
+    [0.28, 0.11],
+    [0.47, 0.17],
+    [0.72, 0.13],
+    [0.9, 0.08],
+  ], 0x5deeff, 0.58)
+  outerRing.position.z = 3.4
+  outerRing.userData.govPart = 'outerRing'
+  group.add(outerRing)
+  governmentParts.push(outerRing)
+
+  const midRing = createSegmentedRing(25, 27.4, [
+    [0, 0.2],
+    [0.32, 0.18],
+    [0.64, 0.22],
+  ], 0x7ff6ff, 0.42)
+  midRing.position.z = 5.6
+  midRing.userData.govPart = 'midRing'
+  group.add(midRing)
+  governmentParts.push(midRing)
+
+  const innerRing = createSegmentedRing(13, 16, [
+    [0.04, 0.3],
+    [0.48, 0.27],
+  ], 0xe3ffff, 0.62)
+  innerRing.position.z = 27.8
+  innerRing.userData.govPart = 'innerRing'
+  group.add(innerRing)
+  governmentParts.push(innerRing)
+
+  const column = new THREE.Mesh(
+    new THREE.CylinderGeometry(10.5, 15.5, 27, 64, 1, true),
+    new THREE.MeshStandardMaterial({
+      color: 0x0a91c9,
+      emissive: 0x25dfff,
+      emissiveIntensity: 0.18,
+      metalness: 0.36,
+      roughness: 0.34,
+      transparent: true,
+      opacity: 0.34,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  )
+  column.rotation.x = Math.PI / 2
+  column.position.z = 17
+  column.userData.govPart = 'column'
+  group.add(column)
+  governmentParts.push(column)
+
+  const columnTop = new THREE.Mesh(
+    new THREE.RingGeometry(8.6, 13.8, 72),
+    new THREE.MeshBasicMaterial({
+      color: 0xbdfbff,
+      transparent: true,
+      opacity: 0.42,
       side: THREE.DoubleSide,
       depthWrite: false,
       blending: THREE.AdditiveBlending,
     }),
   )
-  base.userData.govHalo = true
-  group.add(base)
+  columnTop.position.z = 30.9
+  columnTop.userData.govPart = 'columnTop'
+  group.add(columnTop)
+  governmentParts.push(columnTop)
 
-  const pillar = new THREE.Mesh(
-    new THREE.CylinderGeometry(7, 10, 28, 24),
-    new THREE.MeshStandardMaterial({
-      color: 0x38dfff,
-      emissive: 0x38dfff,
-      emissiveIntensity: 0.28,
-      transparent: true,
-      opacity: 0.88,
-      metalness: 0.18,
-      roughness: 0.42,
-    }),
-  )
-  pillar.rotation.x = Math.PI / 2
-  pillar.position.z = 16
-  group.add(pillar)
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: getGovernmentCoreTexture(),
+    transparent: true,
+    opacity: 0.66,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }))
+  core.scale.set(46, 46, 1)
+  core.position.z = 29
+  core.userData.govPart = 'core'
+  group.add(core)
+  governmentParts.push(core)
+
+  const beam = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: getGovernmentBeamTexture(),
+    transparent: true,
+    opacity: 0.34,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  }))
+  beam.scale.set(36, 58, 1)
+  beam.position.z = 31
+  beam.userData.govPart = 'beam'
+  group.add(beam)
+  governmentParts.push(beam)
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getGovernmentTexture(),
     transparent: true,
-    opacity: 0.94,
+    opacity: 0.9,
     depthWrite: false,
   }))
-  icon.scale.set(36, 36, 1)
-  icon.position.z = 52
+  icon.scale.set(31, 31, 1)
+  icon.position.z = 53
+  icon.userData.govPart = 'icon'
   group.add(icon)
+  governmentParts.push(icon)
 
   const label = createTextSprite(governmentAgency.name, 26, 'rgba(232,250,255,.92)', 'rgba(66,226,255,.84)')
   label.position.set(0, -34, 58)
   label.scale.set(120, 30, 1)
   group.add(label)
+
+  return group
+}
+
+function createSegmentedRing(
+  innerRadius: number,
+  outerRadius: number,
+  segments: Array<[number, number]>,
+  color: number,
+  opacity: number,
+) {
+  const group = new THREE.Group()
+  const material = new THREE.MeshBasicMaterial({
+    color,
+    transparent: true,
+    opacity,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  })
+
+  segments.forEach(([start, length], index) => {
+    const mesh = new THREE.Mesh(
+      new THREE.RingGeometry(innerRadius, outerRadius, 56, 1, start * Math.PI * 2, length * Math.PI * 2),
+      material.clone(),
+    )
+    mesh.userData.baseOpacity = Math.max(0.2, opacity - index * 0.045)
+    group.add(mesh)
+  })
 
   return group
 }
@@ -891,6 +1013,71 @@ function updateConnectorLine(pointScreen: { x: number; y: number }, cardAnchor: 
   }
 }
 
+function animateGovernmentMarker(elapsed: number) {
+  governmentParts.forEach((part) => {
+    const type = part.userData.govPart as string | undefined
+
+    if (type === 'outerDisc') {
+      const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.45) * 0.5
+      material.opacity = 0.62 + pulse * 0.1
+      part.scale.setScalar(1 + pulse * 0.018)
+      return
+    }
+
+    if (type === 'outerRing' || type === 'midRing' || type === 'innerRing') {
+      const direction = type === 'midRing' ? -1 : 1
+      const speed = type === 'innerRing' ? 0.48 : type === 'midRing' ? 0.32 : 0.22
+      part.rotation.z = direction * elapsed * speed
+      part.children.forEach((child, index) => {
+        const material = (child as THREE.Mesh).material as THREE.MeshBasicMaterial | undefined
+        if (!material) return
+        const baseOpacity = (child.userData.baseOpacity as number | undefined) || material.opacity
+        material.opacity = baseOpacity * (0.82 + Math.sin(elapsed * 1.8 + index * 1.7) * 0.12)
+      })
+      return
+    }
+
+    if (type === 'column') {
+      const material = (part as THREE.Mesh).material as THREE.MeshStandardMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.2) * 0.5
+      material.opacity = 0.28 + pulse * 0.07
+      material.emissiveIntensity = 0.14 + pulse * 0.08
+      return
+    }
+
+    if (type === 'columnTop') {
+      const material = (part as THREE.Mesh).material as THREE.MeshBasicMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.9) * 0.5
+      part.rotation.z = -elapsed * 0.42
+      material.opacity = 0.34 + pulse * 0.12
+      return
+    }
+
+    if (type === 'core') {
+      const sprite = part as THREE.Sprite
+      const material = sprite.material as THREE.SpriteMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 2.15) * 0.5
+      material.opacity = 0.54 + pulse * 0.2
+      sprite.scale.setScalar(40 + pulse * 8)
+      return
+    }
+
+    if (type === 'beam') {
+      const sprite = part as THREE.Sprite
+      const material = sprite.material as THREE.SpriteMaterial
+      const pulse = 0.5 + Math.sin(elapsed * 1.65 + 0.7) * 0.5
+      material.opacity = 0.22 + pulse * 0.16
+      sprite.scale.set(32 + pulse * 5, 52 + pulse * 8, 1)
+      return
+    }
+
+    if (type === 'icon') {
+      part.position.z = 52.5 + Math.sin(elapsed * 1.7) * 1.2
+    }
+  })
+}
+
 function tick() {
   const elapsed = clock.getElapsedTime()
   const now = performance.now()
@@ -913,6 +1100,8 @@ function tick() {
   dashedBorders.forEach((border, index) => {
     ;(border.material as THREE.LineDashedMaterial).dashOffset = -elapsed * (18 + index * 1.5)
   })
+
+  animateGovernmentMarker(elapsed)
 
   institutionFlows.forEach(({ line, glow, trail, comet, curve }, index) => {
     if (!line.visible) return
@@ -1182,6 +1371,9 @@ function createBorderLine(ring: Array<[number, number]>, z: number) {
 
 const iconTextures = new Map<RiskType, THREE.CanvasTexture>()
 const markerTextures = new Map<RiskType, THREE.CanvasTexture>()
+let governmentBaseTexture: THREE.CanvasTexture | undefined
+let governmentCoreTexture: THREE.CanvasTexture | undefined
+let governmentBeamTexture: THREE.CanvasTexture | undefined
 let governmentTexture: THREE.CanvasTexture | undefined
 let flowCometTexture: THREE.CanvasTexture | undefined
 
@@ -1254,6 +1446,126 @@ function getMarkerTexture(risk: RiskType) {
   return texture
 }
 
+function getGovernmentBaseTexture() {
+  if (governmentBaseTexture) return governmentBaseTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 256
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  const center = 128
+
+  const base = ctx.createRadialGradient(center, center, 8, center, center, 118)
+  base.addColorStop(0, 'rgba(123,246,255,.3)')
+  base.addColorStop(0.24, 'rgba(28,151,226,.18)')
+  base.addColorStop(0.6, 'rgba(5,54,106,.16)')
+  base.addColorStop(1, 'rgba(4,24,52,0)')
+  ctx.fillStyle = base
+  ctx.fillRect(0, 0, 256, 256)
+
+  ctx.save()
+  ctx.translate(center, center)
+  ctx.strokeStyle = 'rgba(122,239,255,.34)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(0, 0, 91, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.strokeStyle = 'rgba(190,254,255,.24)'
+  ctx.setLineDash([8, 10])
+  ctx.lineWidth = 1.4
+  ctx.beginPath()
+  ctx.arc(0, 0, 71, 0, Math.PI * 2)
+  ctx.stroke()
+  ctx.setLineDash([])
+
+  for (let index = 0; index < 48; index += 1) {
+    const angle = (index / 48) * Math.PI * 2
+    const major = index % 6 === 0
+    const r1 = major ? 96 : 100
+    const r2 = 106
+    ctx.rotate(angle - (index ? ((index - 1) / 48) * Math.PI * 2 : 0))
+    ctx.strokeStyle = major ? 'rgba(203,255,255,.42)' : 'rgba(103,220,255,.18)'
+    ctx.lineWidth = major ? 1.6 : 1
+    ctx.beginPath()
+    ctx.moveTo(r1, 0)
+    ctx.lineTo(r2, 0)
+    ctx.stroke()
+  }
+
+  const scan = ctx.createLinearGradient(-84, -84, 84, 84)
+  scan.addColorStop(0, 'rgba(255,255,255,0)')
+  scan.addColorStop(0.48, 'rgba(200,255,255,.1)')
+  scan.addColorStop(0.54, 'rgba(78,230,255,.2)')
+  scan.addColorStop(1, 'rgba(255,255,255,0)')
+  ctx.fillStyle = scan
+  ctx.rotate(-0.28)
+  ctx.fillRect(-86, -14, 172, 28)
+  ctx.restore()
+
+  governmentBaseTexture = new THREE.CanvasTexture(canvas)
+  governmentBaseTexture.colorSpace = THREE.SRGBColorSpace
+  disposableTextures.push(governmentBaseTexture)
+  return governmentBaseTexture
+}
+
+function getGovernmentCoreTexture() {
+  if (governmentCoreTexture) return governmentCoreTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 160
+  canvas.height = 160
+  const ctx = canvas.getContext('2d')!
+  const glow = ctx.createRadialGradient(80, 80, 0, 80, 80, 78)
+  glow.addColorStop(0, 'rgba(255,255,255,.9)')
+  glow.addColorStop(0.16, 'rgba(177,253,255,.76)')
+  glow.addColorStop(0.38, 'rgba(52,220,255,.28)')
+  glow.addColorStop(0.72, 'rgba(31,148,255,.08)')
+  glow.addColorStop(1, 'rgba(23,120,255,0)')
+  ctx.fillStyle = glow
+  ctx.fillRect(0, 0, 160, 160)
+
+  ctx.strokeStyle = 'rgba(225,255,255,.62)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(80, 80, 16, 0, Math.PI * 2)
+  ctx.stroke()
+
+  governmentCoreTexture = new THREE.CanvasTexture(canvas)
+  governmentCoreTexture.colorSpace = THREE.SRGBColorSpace
+  disposableTextures.push(governmentCoreTexture)
+  return governmentCoreTexture
+}
+
+function getGovernmentBeamTexture() {
+  if (governmentBeamTexture) return governmentBeamTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 256
+  const ctx = canvas.getContext('2d')!
+  const beam = ctx.createLinearGradient(0, 0, 0, 256)
+  beam.addColorStop(0, 'rgba(140,246,255,0)')
+  beam.addColorStop(0.2, 'rgba(113,238,255,.16)')
+  beam.addColorStop(0.52, 'rgba(222,255,255,.42)')
+  beam.addColorStop(0.78, 'rgba(72,223,255,.14)')
+  beam.addColorStop(1, 'rgba(56,192,255,0)')
+  ctx.fillStyle = beam
+  ctx.fillRect(46, 0, 36, 256)
+
+  const soft = ctx.createRadialGradient(64, 128, 0, 64, 128, 62)
+  soft.addColorStop(0, 'rgba(208,255,255,.24)')
+  soft.addColorStop(0.34, 'rgba(80,230,255,.11)')
+  soft.addColorStop(1, 'rgba(80,230,255,0)')
+  ctx.fillStyle = soft
+  ctx.fillRect(0, 0, 128, 256)
+
+  governmentBeamTexture = new THREE.CanvasTexture(canvas)
+  governmentBeamTexture.colorSpace = THREE.SRGBColorSpace
+  disposableTextures.push(governmentBeamTexture)
+  return governmentBeamTexture
+}
+
 function getGovernmentTexture() {
   if (governmentTexture) return governmentTexture
 
@@ -1261,30 +1573,42 @@ function getGovernmentTexture() {
   canvas.width = 160
   canvas.height = 160
   const ctx = canvas.getContext('2d')!
-  ctx.shadowColor = '#52eaff'
-  ctx.shadowBlur = 12
-  ctx.fillStyle = '#1bd8ff'
-  roundRect(ctx, 36, 34, 88, 88, 18)
+  const shell = ctx.createRadialGradient(80, 80, 12, 80, 80, 58)
+  shell.addColorStop(0, 'rgba(28,218,255,.92)')
+  shell.addColorStop(0.58, 'rgba(12,115,190,.58)')
+  shell.addColorStop(1, 'rgba(8,45,98,.2)')
+  ctx.fillStyle = shell
+  ctx.beginPath()
+  ctx.arc(80, 80, 49, 0, Math.PI * 2)
   ctx.fill()
-  ctx.shadowBlur = 0
-  ctx.strokeStyle = 'rgba(236,251,255,.78)'
-  ctx.lineWidth = 4
+
+  ctx.strokeStyle = 'rgba(231,255,255,.82)'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.arc(80, 80, 49, 0, Math.PI * 2)
+  ctx.stroke()
+
+  ctx.strokeStyle = 'rgba(101,234,255,.5)'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.arc(80, 80, 39, Math.PI * 0.08, Math.PI * 1.64)
   ctx.stroke()
 
   ctx.fillStyle = 'rgba(244,252,255,.95)'
   ctx.beginPath()
-  ctx.moveTo(80, 48)
-  ctx.lineTo(112, 70)
-  ctx.lineTo(48, 70)
+  ctx.moveTo(80, 50)
+  ctx.lineTo(108, 68)
+  ctx.lineTo(52, 68)
   ctx.closePath()
   ctx.fill()
-  ctx.fillRect(54, 76, 52, 8)
-  ctx.fillRect(58, 88, 8, 22)
-  ctx.fillRect(76, 88, 8, 22)
-  ctx.fillRect(94, 88, 8, 22)
-  ctx.fillRect(50, 114, 60, 8)
+  ctx.fillRect(56, 74, 48, 7)
+  ctx.fillRect(60, 89, 7, 20)
+  ctx.fillRect(76.5, 89, 7, 20)
+  ctx.fillRect(93, 89, 7, 20)
+  ctx.fillRect(52, 115, 56, 7)
 
   governmentTexture = new THREE.CanvasTexture(canvas)
+  governmentTexture.colorSpace = THREE.SRGBColorSpace
   disposableTextures.push(governmentTexture)
   return governmentTexture
 }
