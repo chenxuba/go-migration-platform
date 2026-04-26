@@ -228,6 +228,13 @@ function getDisplayedRemainTuition(item) {
   return Number(item?.tuition || 0)
 }
 
+function hasActionableBalance(item) {
+  const remainQuantity = getDisplayedRemainQuantity(item)
+  const remainFreeQuantity = getDisplayedRemainFreeQuantity(item)
+  const remainTuition = getDisplayedRemainTuition(item)
+  return roundMoneyAmount(remainQuantity + remainFreeQuantity) > 0 || roundMoneyAmount(remainTuition) > 0
+}
+
 /** 报读列表仅在真实结课状态下展示“已结课”，点名扣完剩余也不能自动视为结课。 */
 function isTuitionAccountCourseEnded(item) {
   return isTuitionAccountClosedByStatus(item)
@@ -491,7 +498,7 @@ watch(endTheClassDrawerOpen, (value) => {
             <template #overlay>
               <a-space direction="vertical" :size="1" @click="closeCourseActionMenu">
                 <template v-if="!isTuitionAccountCourseEnded(item)">
-                <div class="flex items-center gap-2" @click="onMenuTransferClass">
+                <div v-if="hasActionableBalance(item)" class="flex items-center gap-2" @click="onMenuTransferClass">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -519,7 +526,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666">转课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuRefundCourse(item)">
+                <div v-if="hasActionableBalance(item)" class="flex items-center gap-2" @click="onMenuRefundCourse(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -548,6 +555,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   <span class="font-size-14px text-#666  w-90px ">退课</span>
                 </div>
                 <div
+                  v-if="hasActionableBalance(item)"
                   class="flex items-center gap-2"
                   @click="isTuitionAccountSuspended(item) ? onMenuResumeCourse(item) : onMenuStopCourse(item)"
                 >
