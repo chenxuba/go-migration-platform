@@ -50,6 +50,10 @@ function initFormState() {
     effectiveDate: '2025-06-01',
     // 退课数量
     dropTheClassNumber: '',
+    // 是否自动结课
+    autoFinishCourse: true,
+    // 是否原价退课
+    originalPriceRefund: false,
     // 应退金额
     price: '200.99',
     // 退款方式
@@ -94,6 +98,15 @@ function initFormState() {
 }
 
 const formState = reactive(initFormState())
+const isFullRefund = computed(() => {
+  if (formState.dropTheClassNumber === '' || formState.dropTheClassNumber === null || formState.dropTheClassNumber === undefined) {
+    return false
+  }
+  return Number(formState.dropTheClassNumber) === Number(formState.surplusClass)
+})
+watch(isFullRefund, (value) => {
+  formState.autoFinishCourse = value
+})
 // 订单标签
 const orderLabelOptions = ref([
   { id: '1', name: '内荐' },
@@ -247,7 +260,7 @@ function handleModify() {
           <a-steps :current="current" :items="items" />
         </div>
         <a-form ref="formRef" :model="formState">
-          <div v-if="current === 0" class="mt-24px mx-24px p-24px bg-#fff rounded-16px flex flex-col   py-24px">
+          <div v-if="current === 0" class="refund-basic-card mt-24px mx-24px p-24px bg-#fff rounded-16px flex flex-col py-24px">
             <h1 class="text-20px">
               听觉训练课
             </h1>
@@ -275,6 +288,18 @@ function handleModify() {
                 <a-button type="link" class="text-#06f" @click="handleAllReturn">
                   全部退还
                 </a-button>
+              </div>
+            </a-form-item>
+            <a-form-item v-if="isFullRefund" label="是否自动结课" name="autoFinishCourse" class="switch-form-item">
+              <div class="refund-switch-inline">
+                <a-switch v-model:checked="formState.autoFinishCourse" />
+                <span class="refund-switch-inline__desc">开启后，全部退课成功后，本课程将自动结课</span>
+              </div>
+            </a-form-item>
+            <a-form-item label="是否原价退课" name="originalPriceRefund" class="switch-form-item !mb-0">
+              <div class="refund-switch-inline">
+                <a-switch v-model:checked="formState.originalPriceRefund" />
+                <span class="refund-switch-inline__desc">开启后，会根据课程报价单的原价计算学员应退金额，其余学费金额计入本次退课应收手续费</span>
               </div>
             </a-form-item>
           </div>
@@ -626,5 +651,54 @@ function handleModify() {
     background-color: #e6f0ff;
     border: 1px solid #99c2ff;
   }
+}
+
+.refund-basic-card {
+  :deep(.ant-form-item-row) {
+    flex-wrap: nowrap;
+  }
+
+  :deep(.ant-form-item-label) {
+    flex: 0 0 108px;
+    max-width: 108px;
+    padding-right: 8px;
+  }
+
+  :deep(.ant-form-item-control) {
+    flex: 1;
+    min-width: 0;
+  }
+}
+
+.switch-form-item {
+  margin-bottom: 12px;
+
+  :deep(.ant-form-item-row) {
+    align-items: center;
+  }
+
+  :deep(.ant-form-item-control-input) {
+    min-height: 32px;
+  }
+
+  :deep(.ant-form-item-control-input-content) {
+    display: flex;
+    align-items: center;
+  }
+}
+
+.refund-switch-inline {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.refund-switch-inline__desc {
+  display: inline-flex;
+  align-items: center;
+  color: #888;
+  font-size: 12px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 </style>
