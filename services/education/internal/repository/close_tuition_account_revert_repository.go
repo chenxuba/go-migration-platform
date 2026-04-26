@@ -79,6 +79,7 @@ type tuitionAccountSubAccountRow struct {
 	totalTuition         float64
 	orderID              int64
 	orderType            int
+	orderStatus          int
 	unitPrice            float64
 	paidTuition          float64
 	shouldTuition        float64
@@ -635,6 +636,7 @@ func (repo *Repository) loadSubAccountDateInfoRowsTx(ctx context.Context, tx *sq
 			IFNULL(ta.total_tuition, 0),
 			IFNULL(ta.order_id, 0),
 			IFNULL(so.order_type, 0),
+			IFNULL(so.order_status, 0),
 			CASE
 				WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN 0
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN round(IFNULL(ta.total_tuition, 0) / NULLIF(ta.total_quantity, 0), 2)
@@ -643,7 +645,7 @@ func (repo *Repository) loadSubAccountDateInfoRowsTx(ctx context.Context, tx *sq
 			IFNULL(ta.paid_tuition, 0),
 			IFNULL(ta.total_tuition, 0),
 			CASE
-				WHEN IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > IFNULL(pay.paid_amount, 0)
+				WHEN `+orderArrearActiveStatusSQL("so.order_status")+` AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > IFNULL(pay.paid_amount, 0)
 				THEN IFNULL(so.order_real_amount, 0) - IFNULL(pay.paid_amount, 0)
 				ELSE 0
 			END AS arrear_tuition,
@@ -700,6 +702,7 @@ func (repo *Repository) loadSubAccountDateInfoRowsTx(ctx context.Context, tx *sq
 			&item.totalTuition,
 			&item.orderID,
 			&item.orderType,
+			&item.orderStatus,
 			&item.unitPrice,
 			&item.paidTuition,
 			&item.shouldTuition,
@@ -732,6 +735,7 @@ func convertSubAccountDateInfoRows(rows []tuitionAccountSubAccountRow) []model.T
 			SourceType:             row.orderType,
 			AccountSourceType:      row.orderType,
 			OrderID:                strconv.FormatInt(row.orderID, 10),
+			OrderStatus:            row.orderStatus,
 			SourceID:               strconv.FormatInt(row.orderID, 10),
 			UnitPrice:              closeOrderRoundMoney(row.unitPrice),
 			PaidTuition:            closeOrderRoundMoney(row.paidTuition),

@@ -267,6 +267,8 @@ function getPeriodValue(item) {
 
 function getSourceLabel(item) {
   const baseLabel = ORDER_TYPE_LABEL_MAP[Number(item?.sourceType || 0)] || '报名/续费'
+  if (Number(item?.orderStatus || 0) === 5)
+    return baseLabel
   if (item?.isFree) {
     return baseLabel === '报名/续费' ? '赠送' : `${baseLabel}（赠送）`
   }

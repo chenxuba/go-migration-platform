@@ -34,6 +34,7 @@ type TuitionAccountSubAccountDateInfoItem struct {
 	SourceType             int        `json:"sourceType"`
 	AccountSourceType      int        `json:"accountSourceType"`
 	OrderID                string     `json:"orderId"`
+	OrderStatus            int        `json:"orderStatus"`
 	SourceID               string     `json:"sourceId"`
 	UnitPrice              float64    `json:"unitPrice"`
 	PaidTuition            float64    `json:"paidTuition"`

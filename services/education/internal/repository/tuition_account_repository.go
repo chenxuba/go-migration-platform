@@ -43,7 +43,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			SUM(CASE
 				WHEN IFNULL(ta.total_tuition, 0) <= 0 THEN 0
 				WHEN IFNULL(so.is_bad_debt, 0) = 1 THEN 0
-				WHEN IFNULL(so.order_status, 0) = %d THEN 0
+				WHEN %s THEN 0
 				WHEN IFNULL(so.order_real_amount, 0) <= 0 THEN 0
 				ELSE GREATEST(
 					(CASE
@@ -61,12 +61,12 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 					0
 				)
 			END) AS arrear_tuition
-	`, model.OrderStatusPendingPayment)
+	`, fmt.Sprintf("NOT (%s)", orderArrearActiveStatusSQL("so.order_status")))
 	badDebtTuitionExpr := fmt.Sprintf(`
 			SUM(CASE
 				WHEN IFNULL(ta.total_tuition, 0) <= 0 THEN 0
 				WHEN IFNULL(so.is_bad_debt, 0) <> 1 THEN 0
-				WHEN IFNULL(so.order_status, 0) = %d THEN 0
+				WHEN %s THEN 0
 				WHEN IFNULL(so.order_real_amount, 0) <= 0 THEN 0
 				ELSE GREATEST(
 					(CASE
@@ -84,7 +84,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 					0
 				)
 			END) AS bad_debt_tuition
-	`, model.OrderStatusPendingPayment)
+	`, fmt.Sprintf("NOT (%s)", orderArrearActiveStatusSQL("so.order_status")))
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT 

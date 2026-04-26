@@ -63,6 +63,7 @@ export interface TuitionAccountSubAccountDateInfoItem {
   sourceType?: number
   accountSourceType?: number
   orderId?: string
+  orderStatus?: number
   sourceId?: string
   unitPrice?: number
   paidTuition?: number
