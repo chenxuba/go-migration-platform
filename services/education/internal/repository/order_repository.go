@@ -1289,6 +1289,61 @@ func (repo *Repository) CloseOrder(ctx context.Context, instID, operatorID, orde
 	return tx.Commit()
 }
 
+func (repo *Repository) CheckObsoleteOrder(ctx context.Context, instID, orderID int64) (model.OrderObsoleteCheckResult, error) {
+	result := model.OrderObsoleteCheckResult{
+		OrderObsoleteResultType: model.OrderObsoleteResultAllowed,
+		RelatedOrderIDs:         []string{},
+	}
+
+	var orderStatus int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(order_status, 0)
+		FROM sale_order
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, orderID, instID).Scan(&orderStatus); err != nil {
+		return result, err
+	}
+	if orderStatus != model.OrderStatusApproving && orderStatus != model.OrderStatusCompleted {
+		result.OrderObsoleteResultType = model.OrderObsoleteResultInvalidState
+		return result, nil
+	}
+
+	var closedCourseCount int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM (
+			SELECT ta.id
+			FROM tuition_account ta
+			WHERE ta.inst_id = ?
+			  AND ta.order_id = ?
+			  AND ta.del_flag = 0
+			  AND IFNULL(ta.status, 0) = ?
+			UNION
+			SELECT ta.id
+			FROM refund_tuition_account_order ro
+			INNER JOIN refund_tuition_account_order_item roi
+				ON roi.refund_order_id = ro.id
+				AND roi.inst_id = ro.inst_id
+				AND roi.del_flag = 0
+			INNER JOIN tuition_account ta
+				ON ta.id = roi.tuition_account_id
+				AND ta.inst_id = ro.inst_id
+				AND ta.del_flag = 0
+			WHERE ro.inst_id = ?
+			  AND ro.sale_order_id = ?
+			  AND ro.del_flag = 0
+			  AND IFNULL(ta.status, 0) = ?
+		) closed_courses
+	`, instID, orderID, model.TuitionAccountStatusClosed, instID, orderID, model.TuitionAccountStatusClosed).Scan(&closedCourseCount); err != nil {
+		return result, err
+	}
+	if closedCourseCount > 0 {
+		result.OrderObsoleteResultType = model.OrderObsoleteResultClosedCourse
+	}
+	return result, nil
+}
+
 func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) ([]string, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT IFNULL(c.name, '')

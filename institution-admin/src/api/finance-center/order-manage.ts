@@ -1,6 +1,6 @@
 import axios from 'axios'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
-import { usePost } from '~/utils/request'
+import { useGet, usePost } from '~/utils/request'
 
 // 订单项信息
 export interface OrderItem {
@@ -311,6 +311,15 @@ export function cancelBadDebtApi(data: { orderId: string }) {
 
 export function closeOrderApi(data: { orderId: string }) {
   return usePost<void>('/api/v1/orders/close', data)
+}
+
+export interface CheckObsoleteOrderResult {
+  orderObsoleteResultType: number
+  relatedOrderIds: string[]
+}
+
+export function checkObsoleteOrderApi(data: { orderId: string }) {
+  return useGet<CheckObsoleteOrderResult>('/api/v1/orders/check-obsolete', data)
 }
 
 export async function exportOrderListApi(data: {

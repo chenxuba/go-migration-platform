@@ -190,6 +190,21 @@ func (svc *Service) CloseOrder(userID int64, orderIDRaw string) error {
 	return svc.repo.CloseOrder(context.Background(), instID, instUserID, orderID)
 }
 
+func (svc *Service) CheckObsoleteOrder(userID int64, orderIDRaw string) (model.OrderObsoleteCheckResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.OrderObsoleteCheckResult{}, errors.New("no institution context")
+		}
+		return model.OrderObsoleteCheckResult{}, err
+	}
+	orderID, err := strconv.ParseInt(strings.TrimSpace(orderIDRaw), 10, 64)
+	if err != nil || orderID <= 0 {
+		return model.OrderObsoleteCheckResult{}, errors.New("订单ID不能为空")
+	}
+	return svc.repo.CheckObsoleteOrder(context.Background(), instID, orderID)
+}
+
 func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTypeDTO) ([]model.CourseEnrollTypeVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

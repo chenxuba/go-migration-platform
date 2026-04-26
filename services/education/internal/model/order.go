@@ -291,6 +291,17 @@ type BadDebtDTO struct {
 	Remark  string `json:"remark"`
 }
 
+const (
+	OrderObsoleteResultAllowed      = 0
+	OrderObsoleteResultClosedCourse = 1
+	OrderObsoleteResultInvalidState = 2
+)
+
+type OrderObsoleteCheckResult struct {
+	OrderObsoleteResultType int      `json:"orderObsoleteResultType"`
+	RelatedOrderIDs         []string `json:"relatedOrderIds"`
+}
+
 type CourseEnrollTypeDTO struct {
 	StudentID int64                       `json:"studentId"`
 	Courses   []CourseEnrollTypeCheckItem `json:"courses"`

@@ -8,7 +8,7 @@ import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
 import { getStudentPhoneNumberApi } from '~/api/common/config'
 import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/api/finance-center/approval-manage'
-import { cancelBadDebtApi, closeOrderApi, getOrderDetailApi, setBadDebtApi } from '~/api/finance-center/order-manage'
+import { cancelBadDebtApi, checkObsoleteOrderApi, closeOrderApi, getOrderDetailApi, setBadDebtApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
 import { downloadOrderReceiptPdf, openOrderReceiptPage } from '~/utils/order-receipt'
@@ -50,6 +50,7 @@ const drawerWidth = computed(() => {
 
 const loading = ref(false)
 const operateLoading = ref(false)
+const obsoleteChecking = ref(false)
 const detail = ref(null)
 const approvalDetail = ref(null)
 const openApprovalFlowModal = ref(false)
@@ -391,6 +392,7 @@ const actionButtonText = computed(() => {
     return '关闭订单'
   return ''
 })
+const isVoidOrderAction = computed(() => detail.value?.orderStatus === 2 || detail.value?.orderStatus === 3)
 
 const showReceiptAction = computed(() =>
   ![1, 2, 5].includes(Number(detail.value?.orderStatus || 0))
@@ -1028,6 +1030,62 @@ function handleCloseOrder() {
   })
 }
 
+function showCannotVoidOrderModal(content) {
+  Modal.info({
+    title: '无法作废此订单',
+    icon: createVNode(ExclamationCircleFilled, { style: { color: '#faad14' } }),
+    content,
+    okText: '知道了',
+    centered: true,
+  })
+}
+
+function getObsoleteBlockedMessage(resultType) {
+  if (Number(resultType) === 1) {
+    return '此订单内包含已结课课程，请将该学员对应课程撤销结课后重新尝试'
+  }
+  if (Number(resultType) === 2) {
+    return '当前订单状态不支持作废'
+  }
+  return ''
+}
+
+async function handleVoidOrder() {
+  if (!detail.value?.orderId) {
+    messageService.warning('订单不存在')
+    return
+  }
+  obsoleteChecking.value = true
+  try {
+    const res = await checkObsoleteOrderApi({ orderId: detail.value.orderId })
+    if (res.code !== 200) {
+      messageService.error(res.message || '废除订单校验失败')
+      return
+    }
+    const resultType = res.result?.orderObsoleteResultType ?? res.data?.orderObsoleteResultType
+    const blockedMessage = getObsoleteBlockedMessage(resultType)
+    if (blockedMessage) {
+      showCannotVoidOrderModal(blockedMessage)
+      return
+    }
+    messageService.info('废除订单功能开发中')
+  }
+  catch (error) {
+    messageService.error(error?.message || '废除订单校验失败')
+  }
+  finally {
+    obsoleteChecking.value = false
+  }
+}
+
+function handleOrderStatusAction() {
+  if (detail.value?.orderStatus === 1) {
+    handleCloseOrder()
+    return
+  }
+  handleVoidOrder()
+}
+
 function handlePrintReceipt() {
   if (!detail.value?.orderId) {
     messageService.warning('订单不存在')
@@ -1347,7 +1405,7 @@ function isHandledApprovalFlow(flow) {
               </div>
             </div>
             <a-space class="ml-4 flex-shrink-0">
-              <a-button v-if="actionButtonText" @click="handleCloseOrder">
+              <a-button v-if="actionButtonText" :loading="isVoidOrderAction && obsoleteChecking" @click="handleOrderStatusAction">
                 {{ actionButtonText }}
               </a-button>
               <a-button v-if="showCancelBadDebtAction" @click="openCancelBadDebtModal = true">

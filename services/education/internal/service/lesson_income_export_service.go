@@ -288,6 +288,10 @@ func lessonIncomeMinutesToTime(minutes int) string {
 }
 
 func formatLessonIncomeConsumption(item model.LessonIncomeItem) string {
+	if item.SourceType == model.LessonIncomeSourceRefundFee || item.SourceType == model.LessonIncomeSourceRevokeRefundFee {
+		return "-"
+	}
+
 	quantity := item.Quantity
 	prefix := ""
 	if quantity < 0 {

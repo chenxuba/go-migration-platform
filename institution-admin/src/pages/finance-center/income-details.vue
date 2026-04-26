@@ -39,6 +39,8 @@ const DETAIL_TYPE_MAP = {
   13: '撤销退课手续费',
 }
 
+const REFUND_FEE_DETAIL_TYPES = new Set([9, 13])
+
 const detailTypeOptions = Object.entries(DETAIL_TYPE_MAP).map(([id, value]) => ({
   id: Number(id),
   value,
@@ -160,7 +162,14 @@ function isNegativeIncome(record) {
   return Number(record?.tuition || 0) < 0
 }
 
+function isRefundFeeIncome(record) {
+  return REFUND_FEE_DETAIL_TYPES.has(Number(record?.sourceType || 0))
+}
+
 function formatCourseConsumption(record) {
+  if (isRefundFeeIncome(record)) {
+    return '-'
+  }
   const quantity = Math.abs(Number(record?.quantity || 0))
   const unit = CHARGING_MODE_UNIT_MAP[record?.lessonChargingMode] || ''
   const prefix = isNegativeIncome(record) ? '-' : ''
