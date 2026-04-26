@@ -45,9 +45,9 @@
             {{ activePopupPoint.name }}
             <em>{{ riskLabel(activePopupPoint.risk) }}</em>
           </strong>
-          <p>所属区县 <b>{{ activePopupPoint.district }}</b></p>
-          <p>今日课程 <b>{{ activePopupPoint.courses }}</b> 节</p>
-          <p>到课率 <b>{{ activePopupPoint.attendance }}%</b></p>
+          <p class="metric-row"><span>所属区县</span><b>{{ activePopupPoint.district }}</b><i /></p>
+          <p class="metric-row"><span>今日课程</span><b>{{ activePopupPoint.courses }}</b><i>节</i></p>
+          <p class="metric-row"><span>到课率</span><b>{{ activePopupPoint.attendance }}%</b><i /></p>
           <p class="risk-text">风险：{{ activePopupPoint.riskText }}</p>
           <button type="button" @click="activeDistrict = activePopupPoint.district">下钻区县</button>
         </div>
@@ -1813,8 +1813,10 @@ onBeforeUnmount(() => {
 }
 
 .institution-card p {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: minmax(70px, 1fr) 58px 18px;
+  align-items: center;
+  column-gap: 4px;
   margin: 8px 0 0;
   color: #bfe1ff;
   font-size: 13px;
@@ -1822,6 +1824,13 @@ onBeforeUnmount(() => {
 
 .institution-card b {
   color: #5ce9ff;
+  text-align: right;
+}
+
+.institution-card i {
+  color: #cde8ff;
+  font-style: normal;
+  text-align: right;
 }
 
 .institution-card .risk-text {
