@@ -88,6 +88,7 @@ function createDefaultCalcResult() {
 
 const openModal = ref(false)
 const calcPreviewOpen = ref(false)
+const feeCalcOpen = ref(false)
 const current = ref(0)
 const formRef = ref(null)
 const previewVisible = ref(false)
@@ -187,6 +188,7 @@ const previewArrearAmount = computed(() => Number(calcResult.value?.arrearAmount
 const previewBadDebtAmount = computed(() => Number(calcResult.value?.badDebtAmountTotal || owedSummary.value?.badDebtAmountTotal || 0))
 const previewOriginalRefundAmount = computed(() => Number(calcResult.value?.totalOriginalRefundAmount || 0))
 const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount || 0))
+const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
 const previewHandlingFeeAmount = computed(() => Number(calcResult.value?.handlingFee || 0))
 const shouldShowCalcPreviewModal = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
 const showPreviewHandlingFee = computed(() => previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009)
@@ -216,6 +218,10 @@ const previewInfoRows = computed(() => {
     rows.push({ label: '坏账金额', value: previewBadDebtAmount.value })
   return rows
 })
+const feeCalcDetails = computed(() => (Array.isArray(calcResult.value?.details) ? calcResult.value.details : []))
+const feeCalcUnitPriceText = value => (Number(value || 0) > 0 ? `${formatMoney(value)}元/${quantityUnit.value}` : '-')
+const feeCalcMoneyText = value => (Number(value || 0) > 0 ? `¥ ${formatMoney(value)}` : '-')
+const feeCalcQuantityText = value => `${formatCount(value)}${quantityUnit.value}`
 
 watch(isFullRefund, (value) => {
   formState.autoFinishCourse = value
@@ -323,6 +329,7 @@ function resetDrawerState() {
   current.value = 0
   openModal.value = false
   calcPreviewOpen.value = false
+  feeCalcOpen.value = false
   previewVisible.value = false
   previewTitle.value = ''
   previewImage.value = ''
@@ -495,6 +502,9 @@ async function handleNext() {
 }
 function handleConfirm() {
   openModal.value = true
+}
+function handleOpenFeeCalcModal() {
+  feeCalcOpen.value = true
 }
 function handleCalcPreviewNext() {
   calcPreviewOpen.value = false
@@ -881,7 +891,7 @@ function handleModify() {
             <div v-if="showPreviewHandlingFee" class="refund-preview-card__fee">
               <span>手续费：</span>
               <span class="refund-preview-card__fee-value">¥ {{ formatMoney(previewHandlingFeeAmount) }}</span>
-              <a-button v-if="previewBadDebtAmount > 0.009" type="link" class="refund-preview-card__calc-link">
+              <a-button v-if="previewBadDebtAmount > 0.009" type="link" class="refund-preview-card__calc-link" @click="handleOpenFeeCalcModal">
                 查看计算过程
               </a-button>
             </div>
@@ -896,6 +906,90 @@ function handleModify() {
           下一步
         </a-button>
       </template>
+    </a-modal>
+    <a-modal
+      v-model:open="feeCalcOpen"
+      :centered='true'
+      class="modal-content-box fee-calc-modal"
+      :closable="false"
+      :width="1000"
+      :keyboard="false"
+      :mask-closable="false"
+      :footer="null"
+    >
+      <template #title>
+        <div class="text-5 flex justify-between flex-center">
+          <span class="refund-preview-modal-title">手续费计算</span>
+          <a-button type="text" class="close-btn" @click="feeCalcOpen = false">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
+        </div>
+      </template>
+      <div class="contenter scrollbar fee-calc-content">
+        <div class="fee-calc-formula">
+          <span class="fee-calc-formula__num">{{ formatMoney(previewHandlingFeeAmount) }}</span>
+          <span class="fee-calc-formula__label">（手续费）=</span>
+          <span class="fee-calc-formula__num">{{ formatMoney(previewRefundAmount) }}</span>
+          <span class="fee-calc-formula__label">（应退金额）</span>
+          <span class="fee-calc-formula__symbol">-</span>
+          <span class="fee-calc-formula__symbol">(</span>
+          <span class="fee-calc-formula__num">{{ formatMoney(previewOriginalRefundAmount) }}</span>
+          <span class="fee-calc-formula__label">（原价应退金额）</span>
+          <span class="fee-calc-formula__symbol">-</span>
+          <span class="fee-calc-formula__num">{{ formatMoney(previewArrearDeductionAmount) }}</span>
+          <span class="fee-calc-formula__label">（欠费抵扣金额）</span>
+          <span class="fee-calc-formula__symbol">)</span>
+        </div>
+        <div class="fee-calc-subtitle">
+          本次退课涉及以下订单的学费账户，订单欠费¥{{ formatMoney(previewArrearAmount) }}
+        </div>
+        <div class="fee-calc-table-wrap">
+          <table class="fee-calc-table">
+            <thead>
+              <tr>
+                <th>订单号</th>
+                <th>原价</th>
+                <th>优惠后金额</th>
+                <th>应收学费金额</th>
+                <th>退/转学员金额</th>
+                <th>已课消数量</th>
+                <th>原价应退金额</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in feeCalcDetails" :key="item.orderNumber || item.sourceId">
+                <td>{{ item.orderNumber || '-' }}</td>
+                <td>{{ feeCalcUnitPriceText(item.originalUnitPrice) }}</td>
+                <td>{{ feeCalcUnitPriceText(item.discountedUnitPrice) }}</td>
+                <td>{{ feeCalcMoneyText(item.shouldTuition) }}</td>
+                <td>{{ feeCalcMoneyText(item.transferredTuition) }}</td>
+                <td>{{ feeCalcQuantityText(item.consumedQuantity) }}</td>
+                <td>{{ feeCalcMoneyText(item.originalRefundAmount) }}</td>
+              </tr>
+              <tr class="fee-calc-table__total-row">
+                <td>总计</td>
+                <td />
+                <td />
+                <td />
+                <td />
+                <td />
+                <td>¥ {{ formatMoney(previewOriginalRefundAmount) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="fee-calc-rule">
+          <div class="fee-calc-rule__title">
+            手续费计算规则：
+          </div>
+          <div>1. 每个学费账户的原价应退金额 =（应收学费金额 - 退转学费金额 - 原价 × 课消课时数量）÷ 剩余课时数 × 退课课时数</div>
+          <div>2. 每个学费子账户的原价应退金额进行欠费抵扣以后，计算出本次退课的原价应退总金额</div>
+          <div>3. 如果“原价应退总金额”≤0，则手续费 = 应退金额；如果“原价应退总金额”＞0，则手续费 = 应退金额 - 原价应退金额</div>
+          <div>4. 优惠价和原价计算会出现小数点精度问题，可能会导致手续费存在误差，可在下一步收银台页面手动调整实退金额和手续费</div>
+        </div>
+      </div>
     </a-modal>
     <!-- 确定退课提示 -->
     <a-modal
@@ -1227,6 +1321,103 @@ function handleModify() {
   border-radius: 8px;
   font-size: 14px;
 }
+
+.fee-calc-content {
+  padding: 24px;
+  color: #333;
+}
+
+.fee-calc-formula {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: #2b2f36;
+  font-size: 16px;
+  line-height: 32px;
+}
+
+.fee-calc-formula__num {
+  color: #1f1f1f;
+  font-size: 22px;
+  font-weight: 700;
+}
+
+.fee-calc-formula__label {
+  color: #666;
+  font-size: 13px;
+}
+
+.fee-calc-formula__symbol {
+  color: #1f1f1f;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.fee-calc-subtitle {
+  margin-top: 14px;
+  color: #666;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.fee-calc-table-wrap {
+  margin-top: 14px;
+  overflow-x: auto;
+  border: 1px solid #f0f0f0;
+  border-radius: 2px;
+  background: #fff;
+}
+
+.fee-calc-table {
+  min-width: 1060px;
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 14px;
+}
+
+.fee-calc-table th {
+  height: 46px;
+  padding: 0 16px;
+  background: #fafafa;
+  color: #333;
+  font-weight: 600;
+  text-align: left;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.fee-calc-table td {
+  height: 42px;
+  padding: 0 16px;
+  color: #333;
+  white-space: nowrap;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.fee-calc-table__total-row td {
+  color: #666;
+  background: #fff;
+}
+
+.fee-calc-table__total-row td:last-child {
+  color: #333;
+  font-weight: 600;
+}
+
+.fee-calc-rule {
+  margin-top: 12px;
+  color: #666;
+  font-size: 13px;
+  line-height: 24px;
+}
+
+.fee-calc-rule__title {
+  margin-bottom: 4px;
+  color: #333;
+  font-size: 14px;
+  font-weight: 600;
+}
 </style>
 
 <style>
@@ -1248,5 +1439,20 @@ function handleModify() {
 .modal-content-box.refund-preview-modal .ant-modal-footer {
   padding: 14px 24px 20px;
   border-top: 1px solid #f0f0f0;
+}
+
+.modal-content-box.fee-calc-modal .ant-modal-content {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.modal-content-box.fee-calc-modal .ant-modal-header {
+  padding: 12px 16px !important;
+  margin-bottom: 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-content-box.fee-calc-modal .ant-modal-body {
+  padding: 0 !important;
 }
 </style>

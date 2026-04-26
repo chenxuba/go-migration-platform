@@ -468,7 +468,12 @@ func (repo *Repository) CalculateRefundTuitionAccountHandlingFee(ctx context.Con
 	result.TotalOriginalRefundAmount = closeOrderRoundMoney(result.TotalOriginalRefundAmount)
 	result.TotalArrearDeduction = closeOrderRoundMoney(result.TotalArrearDeduction)
 	result.RefundAmount = closeOrderRoundMoney(result.RefundAmount)
-	result.HandlingFee = 0
+	originalRefundAfterDeduction := closeOrderRoundMoney(result.TotalOriginalRefundAmount - result.TotalArrearDeduction)
+	if originalRefundAfterDeduction <= 0 {
+		result.HandlingFee = result.RefundAmount
+	} else {
+		result.HandlingFee = closeOrderRoundMoney(result.RefundAmount - originalRefundAfterDeduction)
+	}
 	result.PaidRefundQuantity = closeOrderRoundMoney(result.PaidRefundQuantity)
 	result.GiftRefundQuantity = closeOrderRoundMoney(result.GiftRefundQuantity)
 
