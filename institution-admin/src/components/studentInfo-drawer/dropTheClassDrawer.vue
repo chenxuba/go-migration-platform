@@ -210,7 +210,7 @@ const previewDescriptionText = computed(() => {
 })
 const previewInfoRows = computed(() => {
   const rows = [
-    { label: '退课金额', value: previewOriginalRefundAmount.value },
+    { label: '退课金额', value: previewRefundAmount.value },
   ]
   if (previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
     rows.push({ label: '订单欠费', value: previewArrearAmount.value })

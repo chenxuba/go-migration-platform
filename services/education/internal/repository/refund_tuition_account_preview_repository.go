@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"math"
 	"strconv"
 	"strings"
 
@@ -29,6 +30,13 @@ type refundTuitionAccountPreviewRow struct {
 	createTime          sql.NullTime
 }
 
+func refundTuitionAccountTruncateMoney(v float64) float64 {
+	if v >= 0 {
+		return math.Floor((v+0.000000001)*100) / 100
+	}
+	return math.Ceil((v-0.000000001)*100) / 100
+}
+
 func (row refundTuitionAccountPreviewRow) remainingPaidMetric() float64 {
 	if row.lessonChargingMode == 3 || row.lessonChargingMode == 4 {
 		return closeOrderRoundMoney(row.remainingTuition)
@@ -50,10 +58,14 @@ func (row refundTuitionAccountPreviewRow) remainingGiftMetric() float64 {
 }
 
 func (row refundTuitionAccountPreviewRow) originalUnitPrice() float64 {
+	return closeOrderRoundMoney(row.originalUnitPriceRaw())
+}
+
+func (row refundTuitionAccountPreviewRow) originalUnitPriceRaw() float64 {
 	if row.lessonChargingMode == 3 || row.lessonChargingMode == 4 || row.originalQtyBase <= 0 {
 		return 0
 	}
-	return closeOrderRoundMoney(row.originalShouldPrice / row.originalQtyBase)
+	return row.originalShouldPrice / row.originalQtyBase
 }
 
 func (row refundTuitionAccountPreviewRow) discountedUnitPrice() float64 {
@@ -68,6 +80,19 @@ func (row refundTuitionAccountPreviewRow) refundAmountByDeduction(deduction floa
 		return closeOrderRoundMoney(deduction)
 	}
 	return closeOrderRoundMoney(deduction * row.discountedUnitPrice())
+}
+
+func (row refundTuitionAccountPreviewRow) originalRefundAmountByDeduction(deduction float64) float64 {
+	if row.lessonChargingMode == 3 || row.lessonChargingMode == 4 {
+		return closeOrderRoundMoney(deduction)
+	}
+	remainMetric := row.remainingPaidMetric()
+	if remainMetric <= 0 {
+		return 0
+	}
+	originalRefundableAmount := row.shouldTuition - row.originalUnitPriceRaw()*row.usedQuantity
+	originalRefundUnit := refundTuitionAccountTruncateMoney(originalRefundableAmount / remainMetric)
+	return closeOrderRoundMoney(originalRefundUnit * deduction)
 }
 
 func (repo *Repository) loadRefundPreviewAccountIDsTx(ctx context.Context, tx *sql.Tx, instID, tuitionAccountID int64) ([]int64, error) {
@@ -199,18 +224,23 @@ func (repo *Repository) listRefundTuitionAccountPreviewRowsTx(ctx context.Contex
 				ELSE IFNULL(ta.total_tuition, 0)
 			END AS should_tuition,
 			CASE
-				WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0), 0)
+				WHEN sod.id IS NOT NULL THEN GREATEST(
+					CASE
+						WHEN IFNULL(icq.price, 0) > 0 THEN IFNULL(icq.price, 0) * GREATEST(IFNULL(sod.count, 0), 1)
+						ELSE 0
+					END,
+					IFNULL(sod.amount, 0)
+				)
 				ELSE IFNULL(ta.total_tuition, 0)
 			END AS original_should_price,
 			CASE
-				WHEN IFNULL(sod.real_quantity, 0) > 0 THEN IFNULL(sod.real_quantity, 0)
 				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+				WHEN IFNULL(sod.real_quantity, 0) > IFNULL(sod.free_quantity, 0) THEN IFNULL(sod.real_quantity, 0) - IFNULL(sod.free_quantity, 0)
 				ELSE 0
 			END AS paid_quantity_base,
 			CASE
-				WHEN IFNULL(sod.count, 0) > 0 THEN IFNULL(sod.count, 0)
-				WHEN IFNULL(ta.total_quantity, 0) + IFNULL(ta.free_quantity, 0) > 0
-				THEN IFNULL(ta.total_quantity, 0) + IFNULL(ta.free_quantity, 0)
+				WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+				WHEN IFNULL(sod.real_quantity, 0) > IFNULL(sod.free_quantity, 0) THEN IFNULL(sod.real_quantity, 0) - IFNULL(sod.free_quantity, 0)
 				ELSE 0
 			END AS original_qty_base,
 			CASE
@@ -411,13 +441,15 @@ func (repo *Repository) CalculateRefundTuitionAccountHandlingFee(ctx context.Con
 			continue
 		}
 
-		originalRefundAmount := row.refundAmountByDeduction(deduction)
+		originalRefundAmount := row.originalRefundAmountByDeduction(deduction)
 		arrearDeduction := row.arrearTuition
-		if arrearDeduction > originalRefundAmount {
+		if originalRefundAmount <= 0 {
+			arrearDeduction = 0
+		} else if arrearDeduction > originalRefundAmount {
 			arrearDeduction = originalRefundAmount
 		}
 		arrearDeduction = closeOrderRoundMoney(arrearDeduction)
-		refundAmount := closeOrderRoundMoney(originalRefundAmount - arrearDeduction)
+		refundAmount := closeOrderRoundMoney(row.refundAmountByDeduction(deduction) - arrearDeduction)
 
 		result.TotalOriginalRefundAmount += originalRefundAmount
 		result.TotalArrearDeduction += arrearDeduction
@@ -473,6 +505,9 @@ func (repo *Repository) CalculateRefundTuitionAccountHandlingFee(ctx context.Con
 		result.HandlingFee = result.RefundAmount
 	} else {
 		result.HandlingFee = closeOrderRoundMoney(result.RefundAmount - originalRefundAfterDeduction)
+		if result.HandlingFee < 0 {
+			result.HandlingFee = 0
+		}
 	}
 	result.PaidRefundQuantity = closeOrderRoundMoney(result.PaidRefundQuantity)
 	result.GiftRefundQuantity = closeOrderRoundMoney(result.GiftRefundQuantity)
