@@ -668,7 +668,8 @@ function createPointMarker(point: InstitutionPoint, index: number) {
   pointer.position.z = 0
   pointer.userData.pointer = true
   group.add(pointer)
-  group.userData.pinHoleZ = 27
+  group.userData.pinHoleRatio = 0.5 - 0.0625
+  group.userData.pinSprite = pointer
 
   const icon = new THREE.Sprite(new THREE.SpriteMaterial({
     map: getIconTexture(point.risk),
@@ -832,18 +833,43 @@ function updateTooltipPosition(pointId: number) {
 
   const world = new THREE.Vector3()
   group.getWorldPosition(world)
-  world.z += group.userData.pinHoleZ || 26
   const projected = world.project(camera)
   const canvasRect = renderer.domElement.getBoundingClientRect()
   const moduleRect = moduleRef.value.getBoundingClientRect()
   const left = canvasRect.left - moduleRect.left + (projected.x * 0.5 + 0.5) * canvasRect.width
   const top = canvasRect.top - moduleRect.top + (-projected.y * 0.5 + 0.5) * canvasRect.height
-  const pointScreen = { x: left - 2, y: top + 10 }
+  const pointScreen = getPinHoleScreenPoint(group, world, { left, top }, canvasRect)
   tooltipPosition.value = {
     left: Math.max(140, Math.min(left, moduleRect.width - cardWidth - cardOffsetX - 24)),
     top: Math.max(196, Math.min(top, moduleRect.height - 190)),
   }
   updateConnectorLine(pointScreen, tooltipPosition.value)
+}
+
+function getPinHoleScreenPoint(
+  group: THREE.Group,
+  tipWorld: THREE.Vector3,
+  tipScreen: { left: number; top: number },
+  canvasRect: DOMRect,
+) {
+  if (!camera) return { x: tipScreen.left, y: tipScreen.top }
+
+  const pinSprite = group.userData.pinSprite as THREE.Sprite | undefined
+  const holeRatio = (group.userData.pinHoleRatio as number | undefined) || 0.4375
+  if (!pinSprite) return { x: tipScreen.left, y: tipScreen.top }
+
+  const worldScale = new THREE.Vector3()
+  pinSprite.getWorldScale(worldScale)
+  const cameraDirection = new THREE.Vector3()
+  camera.getWorldDirection(cameraDirection)
+  const distance = Math.max(1, tipWorld.clone().sub(camera.position).dot(cameraDirection))
+  const visibleHeight = 2 * Math.tan(THREE.MathUtils.degToRad(camera.fov) / 2) * distance
+  const pinScreenHeight = (worldScale.y / visibleHeight) * canvasRect.height
+
+  return {
+    x: tipScreen.left,
+    y: tipScreen.top - pinScreenHeight * holeRatio,
+  }
 }
 
 function updateConnectorLine(pointScreen: { x: number; y: number }, cardAnchor: { left: number; top: number }) {
