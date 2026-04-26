@@ -33,10 +33,6 @@
 
       <div ref="containerRef" class="three-map" @pointermove="handlePointerMove" @pointerleave="clearHover" @click="handleClick" />
 
-      <div class="map-scan" aria-hidden="true">
-        <span />
-      </div>
-
       <Transition name="tooltip">
         <div
           v-if="activePopupPoint"
@@ -161,8 +157,9 @@ interface GovernmentAgency {
 
 interface InstitutionFlow {
   pointId: number
-  line: THREE.Mesh
-  sprite: THREE.Sprite
+  line: THREE.Line
+  glow: THREE.Mesh
+  comet: THREE.Sprite[]
   curve: THREE.CatmullRomCurve3
 }
 
@@ -456,19 +453,19 @@ function createInstitutionFlows(targetRoot: THREE.Group) {
   institutions.forEach((point, index) => {
     const start = new THREE.Vector3(point.x, point.y, 34)
     const end = new THREE.Vector3(governmentAgency.x, governmentAgency.y, 46)
+    const distance = start.distanceTo(end)
     const mid = new THREE.Vector3(
       point.x + (governmentAgency.x - point.x) * 0.52,
       point.y + (governmentAgency.y - point.y) * 0.52,
-      58 + Math.sin(index * 1.7) * 8,
+      48 + Math.min(58, distance * 0.16) + Math.sin(index * 1.7) * 6,
     )
     const curve = new THREE.CatmullRomCurve3([start, mid, end])
-    const line = new THREE.Mesh(
-      new THREE.TubeGeometry(curve, 72, 0.45, 6, false),
-      new THREE.MeshBasicMaterial({
+    const line = new THREE.Line(
+      new THREE.BufferGeometry().setFromPoints(curve.getPoints(128)),
+      new THREE.LineBasicMaterial({
         color: 0x49e6ff,
         transparent: true,
         opacity: 0.18,
-        depthWrite: false,
         blending: THREE.AdditiveBlending,
       }),
     )
@@ -476,15 +473,51 @@ function createInstitutionFlows(targetRoot: THREE.Group) {
     line.userData.baseOpacity = 0.18
     targetRoot.add(line)
 
-    const sprite = createGlowSprite('#67f2ff', 64, 0.42)
-    sprite.scale.set(13, 13, 1)
-    sprite.userData.pointId = point.id
-    sprite.userData.offset = index * 0.11
-    sprite.userData.speed = 0.16 + (index % 3) * 0.025
-    targetRoot.add(sprite)
+    const glow = new THREE.Mesh(
+      new THREE.TubeGeometry(curve, 96, 0.42, 6, false),
+      new THREE.MeshBasicMaterial({
+        color: 0x48e7ff,
+        transparent: true,
+        opacity: 0.055,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      }),
+    )
+    glow.userData.pointId = point.id
+    targetRoot.add(glow)
 
-    institutionFlows.push({ pointId: point.id, line, sprite, curve })
+    const comet = createFlowComet(point, index)
+    comet.forEach(sprite => targetRoot.add(sprite))
+
+    institutionFlows.push({ pointId: point.id, line, glow, comet, curve })
   })
+}
+
+function createFlowComet(point: InstitutionPoint, flowIndex: number) {
+  const sprites: THREE.Sprite[] = []
+  const texture = getFlowCometTexture()
+  const warmColor = point.risk === 'danger' || point.risk === 'warn' ? 0xff9b3d : 0xffd76b
+
+  for (let index = 0; index < 8; index += 1) {
+    const material = new THREE.SpriteMaterial({
+      map: texture,
+      color: index === 0 ? 0xffffff : warmColor,
+      transparent: true,
+      opacity: index === 0 ? 0.92 : Math.max(0.1, 0.52 - index * 0.055),
+      depthWrite: false,
+      blending: THREE.AdditiveBlending,
+    })
+    const sprite = new THREE.Sprite(material)
+    sprite.userData.pointId = point.id
+    sprite.userData.flowOffset = flowIndex * 0.073
+    sprite.userData.speed = 0.105 + (flowIndex % 5) * 0.008
+    sprite.userData.tailIndex = index
+    sprite.userData.baseSize = index === 0 ? 12 : Math.max(4.4, 10 - index * 0.78)
+    sprite.visible = false
+    sprites.push(sprite)
+  }
+
+  return sprites
 }
 
 function createGovernmentMarker() {
@@ -651,13 +684,16 @@ function refreshVisibleObjects() {
     material.opacity = activeDistrict.value && active ? 0.48 : 0.38
   })
 
-  institutionFlows.forEach(({ pointId, line, sprite }) => {
+  institutionFlows.forEach(({ pointId, line, glow, comet }) => {
     const point = institutionMap.get(pointId)
     const visible = !!point
       && (riskFilter.value === 'all' || point.risk === riskFilter.value)
       && (!activeDistrict.value || point.district === activeDistrict.value)
     line.visible = visible
-    sprite.visible = visible
+    glow.visible = visible
+    comet.forEach(sprite => {
+      sprite.visible = visible
+    })
   })
 }
 
@@ -773,13 +809,28 @@ function tick() {
     ;(border.material as THREE.LineDashedMaterial).dashOffset = -elapsed * (18 + index * 1.5)
   })
 
-  institutionFlows.forEach(({ line, sprite, curve }, index) => {
+  institutionFlows.forEach(({ line, glow, comet, curve }, index) => {
     if (!line.visible) return
-    const progress = (elapsed * sprite.userData.speed + sprite.userData.offset) % 1
-    sprite.position.copy(curve.getPointAt(progress))
-    sprite.scale.setScalar(10 + Math.sin(elapsed * 4.2 + index) * 2)
-    const material = line.material as THREE.MeshBasicMaterial
+    const material = line.material as THREE.LineBasicMaterial
     material.opacity = (line.userData.baseOpacity || 0.18) * (0.78 + Math.sin(elapsed * 2.1 + index) * 0.18)
+    const glowMaterial = glow.material as THREE.MeshBasicMaterial
+    glowMaterial.opacity = 0.045 + Math.sin(elapsed * 1.7 + index) * 0.012
+
+    comet.forEach((sprite) => {
+      const tailIndex = sprite.userData.tailIndex as number
+      const progress = (elapsed * sprite.userData.speed + sprite.userData.flowOffset) % 1
+      const tailProgress = progress - tailIndex * 0.012
+      if (tailProgress <= 0 || tailProgress >= 1) {
+        sprite.visible = false
+        return
+      }
+
+      sprite.visible = true
+      sprite.position.copy(curve.getPointAt(1 - tailProgress))
+      const baseSize = sprite.userData.baseSize as number
+      const fade = 1 - tailIndex / Math.max(1, comet.length - 1)
+      sprite.scale.setScalar(baseSize * (0.86 + Math.sin(elapsed * 5.4 + index) * 0.08) * (0.78 + fade * 0.28))
+    })
   })
 
   pointGroups.forEach((group) => {
@@ -1025,6 +1076,7 @@ function createBorderLine(ring: Array<[number, number]>, z: number) {
 const iconTextures = new Map<RiskType, THREE.CanvasTexture>()
 const markerTextures = new Map<RiskType, THREE.CanvasTexture>()
 let governmentTexture: THREE.CanvasTexture | undefined
+let flowCometTexture: THREE.CanvasTexture | undefined
 
 function getIconTexture(risk: RiskType) {
   const existing = iconTextures.get(risk)
@@ -1128,6 +1180,26 @@ function getGovernmentTexture() {
   governmentTexture = new THREE.CanvasTexture(canvas)
   disposableTextures.push(governmentTexture)
   return governmentTexture
+}
+
+function getFlowCometTexture() {
+  if (flowCometTexture) return flowCometTexture
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 128
+  canvas.height = 128
+  const ctx = canvas.getContext('2d')!
+  const gradient = ctx.createRadialGradient(64, 64, 0, 64, 64, 64)
+  gradient.addColorStop(0, 'rgba(255,255,255,1)')
+  gradient.addColorStop(0.18, 'rgba(255,230,142,.96)')
+  gradient.addColorStop(0.48, 'rgba(255,158,48,.42)')
+  gradient.addColorStop(1, 'rgba(255,120,24,0)')
+  ctx.fillStyle = gradient
+  ctx.fillRect(0, 0, 128, 128)
+
+  flowCometTexture = new THREE.CanvasTexture(canvas)
+  disposableTextures.push(flowCometTexture)
+  return flowCometTexture
 }
 
 function createGlowSprite(color: string, size: number, opacity: number) {
@@ -1489,29 +1561,6 @@ onBeforeUnmount(() => {
   display: block;
   width: 100%;
   height: 100%;
-}
-
-.map-scan {
-  position: absolute;
-  z-index: 5;
-  inset: 58px 12px 92px;
-  overflow: hidden;
-  pointer-events: none;
-}
-
-.map-scan span {
-  position: absolute;
-  top: 48%;
-  left: -18%;
-  width: 30%;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, rgba(84, 224, 255, 0.48), transparent);
-  filter: drop-shadow(0 0 6px #48e3ff);
-  animation: scanX 6.8s linear infinite;
-}
-
-@keyframes scanX {
-  to { transform: translateX(440%); }
 }
 
 .popup-connector {
