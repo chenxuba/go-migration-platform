@@ -187,11 +187,9 @@ const previewArrearAmount = computed(() => Number(calcResult.value?.arrearAmount
 const previewBadDebtAmount = computed(() => Number(calcResult.value?.badDebtAmountTotal || owedSummary.value?.badDebtAmountTotal || 0))
 const previewOriginalRefundAmount = computed(() => Number(calcResult.value?.totalOriginalRefundAmount || 0))
 const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount || 0))
-const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
 const previewHandlingFeeAmount = computed(() => Number(calcResult.value?.handlingFee || 0))
-const shouldShowCalcPreviewModal = computed(() => formState.originalPriceRefund || previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
-const previewUsesInlineSummary = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009)
-const showPreviewHandlingFee = computed(() => previewHandlingFeeAmount.value > 0.009)
+const shouldShowCalcPreviewModal = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
+const showPreviewHandlingFee = computed(() => previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009)
 const previewStatusText = computed(() => {
   if (previewArrearAmount.value > 0.009 && previewBadDebtAmount.value > 0.009)
     return '欠费/坏账'
@@ -202,24 +200,17 @@ const previewStatusText = computed(() => {
   return ''
 })
 const previewDescriptionText = computed(() => {
-  if (formState.originalPriceRefund && previewHandlingFeeAmount.value > 0.009)
-    return '原价退课已开启，本次将按课程报价单原价试算并计入手续费'
-  if (formState.originalPriceRefund)
-    return '原价退课已开启，请确认本次应退金额'
-  if (previewBadDebtAmount.value > 0.009)
-    return '此订单存在欠费或坏账记录，请确认本次应退金额'
-  if (previewArrearAmount.value <= 0.009)
-    return '请确认本次应退金额'
-  const remainingArrearAmount = Math.max(previewArrearAmount.value - previewArrearDeductionAmount.value, 0)
-  if (remainingArrearAmount <= 0.009)
+  if (previewArrearAmount.value > 0.009)
     return '退课成功后，此订单欠费金额将被完全抵扣，无需补费'
-  return `退课成功后，此订单欠费金额将抵扣 ¥ ${formatMoney(previewArrearDeductionAmount.value)}，仍需补费 ¥ ${formatMoney(remainingArrearAmount)}`
+  if (previewBadDebtAmount.value > 0.009)
+    return '应退金额包含订单坏账的金额。如果要剔除坏账金额可以先前往订单列表取消坏账，或在下一步修改应退金额'
+  return '请确认本次应退金额'
 })
 const previewInfoRows = computed(() => {
   const rows = [
     { label: '退课金额', value: previewOriginalRefundAmount.value },
   ]
-  if (previewArrearAmount.value > 0.009)
+  if (previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
     rows.push({ label: '订单欠费', value: previewArrearAmount.value })
   if (previewBadDebtAmount.value > 0.009)
     rows.push({ label: '坏账金额', value: previewBadDebtAmount.value })
@@ -480,21 +471,6 @@ async function calculateHandlingFeePreview() {
     return false
   }
 }
-async function handleOriginalPriceRefundChange(checked) {
-  if (!checked)
-    return
-  if (getRefundQuantityErrorMessage(formState.dropTheClassNumber))
-    return
-  nextLoading.value = true
-  try {
-    const success = await calculateHandlingFeePreview()
-    if (success && shouldShowCalcPreviewModal.value)
-      calcPreviewOpen.value = true
-  }
-  finally {
-    nextLoading.value = false
-  }
-}
 async function handleNext() {
   try {
     await formRef.value?.validate?.()
@@ -644,7 +620,7 @@ function handleModify() {
             </a-form-item>
             <a-form-item label="是否原价退课" name="originalPriceRefund" class="switch-form-item !mb-0">
               <div class="refund-switch-inline">
-                <a-switch v-model:checked="formState.originalPriceRefund" @change="handleOriginalPriceRefundChange" />
+                <a-switch v-model:checked="formState.originalPriceRefund" />
                 <span class="refund-switch-inline__desc">开启后，会根据课程报价单的原价计算学员应退金额，其余学费金额计入本次退课应收手续费</span>
               </div>
             </a-form-item>
@@ -854,7 +830,7 @@ function handleModify() {
     </a-drawer>
     <a-modal
       v-model:open="calcPreviewOpen"
-      style="top:12px"
+      :centered='true'
       class="modal-content-box refund-preview-modal"
       :closable="false"
       :width="800"
@@ -892,33 +868,25 @@ function handleModify() {
             </div>
           </div>
           <a-divider class="refund-preview-card__divider" />
-          <div
-            class="refund-preview-card__summary"
-            :class="previewUsesInlineSummary ? 'refund-preview-card__summary--inline' : 'refund-preview-card__summary--stacked'"
-          >
+          <div class="refund-preview-card__summary refund-preview-card__summary--inline">
             <div class="refund-preview-card__summary-main">
               <div class="refund-preview-card__amount-label">
                 <span>应退金额</span>
                 <QuestionCircleFilled class="text-#1677ff text-12px" />
               </div>
-              <div v-if="previewUsesInlineSummary" class="refund-preview-card__amount-inline">
+              <div class="refund-preview-card__amount-inline">
                 ¥ {{ formatMoney(previewRefundAmount) }}
               </div>
             </div>
             <div v-if="showPreviewHandlingFee" class="refund-preview-card__fee">
               <span>手续费：</span>
               <span class="refund-preview-card__fee-value">¥ {{ formatMoney(previewHandlingFeeAmount) }}</span>
+              <a-button v-if="previewBadDebtAmount > 0.009" type="link" class="refund-preview-card__calc-link">
+                查看计算过程
+              </a-button>
             </div>
-            <template v-if="!previewUsesInlineSummary">
-              <div class="refund-preview-card__amount">
-                ¥ {{ formatMoney(previewRefundAmount) }}
-              </div>
-              <div class="refund-preview-card__desc">
-                {{ previewDescriptionText }}
-              </div>
-            </template>
           </div>
-          <div v-if="previewUsesInlineSummary" class="refund-preview-card__desc refund-preview-card__desc--compact">
+          <div class="refund-preview-card__desc refund-preview-card__desc--compact">
             {{ previewDescriptionText }}
           </div>
         </div>
@@ -1203,12 +1171,6 @@ function handleModify() {
   flex-wrap: wrap;
 }
 
-.refund-preview-card__summary--stacked {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-}
-
 .refund-preview-card__summary-main {
   display: inline-flex;
   align-items: center;
@@ -1241,13 +1203,11 @@ function handleModify() {
   line-height: 28px;
 }
 
-.refund-preview-card__amount {
-  margin-top: 14px;
-  color: #262626;
-  font-family: "DIN alternate", sans-serif;
-  font-size: 48px;
-  font-weight: 700;
-  line-height: 58px;
+.refund-preview-card__calc-link {
+  height: 22px;
+  padding: 0 0 0 14px;
+  font-size: 14px;
+  line-height: 22px;
 }
 
 .refund-preview-card__desc {
