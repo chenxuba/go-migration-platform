@@ -26,13 +26,15 @@ func buildStudentRegistrationArrearQuery(instID int64, query model.StudentRegist
 		"so.del_flag = 0",
 		"IFNULL(so.is_bad_debt, 0) = 0",
 		"so.order_type = ?",
-		"so.order_status <> ?",
+		"so.order_status NOT IN (?, ?, ?)",
 		"IFNULL(so.order_real_amount, 0) > " + paidAmountExpr,
 	}
 	args := []any{
 		instID,
 		model.OrderTypeRegistrationRenewal,
 		model.OrderStatusPendingPayment,
+		model.OrderStatusClosed,
+		model.OrderStatusVoided,
 	}
 	if orderNumber := strings.TrimSpace(query.OrderNumber); orderNumber != "" {
 		filters = append(filters, "so.order_number LIKE ?")
@@ -160,7 +162,7 @@ func (repo *Repository) GetStudentRegistrationArrearPagedList(ctx context.Contex
 	result.List = make([]model.StudentRegistrationArrearItem, 0, size)
 	for rows.Next() {
 		var (
-			item       model.StudentRegistrationArrearItem
+			item        model.StudentRegistrationArrearItem
 			orderID     int64
 			studentID   sql.NullInt64
 			sex         sql.NullInt64

@@ -201,6 +201,7 @@ const showApprovalSection = computed(() => {
 })
 const orderItems = computed(() => Array.isArray(detail.value?.orderItems) ? detail.value.orderItems : [])
 const isClosedOrderDetail = computed(() => Number(detail.value?.orderStatus || 0) === 4)
+const isInactiveOrderDetail = computed(() => [4, 5].includes(Number(detail.value?.orderStatus || 0)))
 const isRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 2)
 const isRefundCourseOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 3)
 const isRefundRechargeOrderDetail = computed(() => Number(detail.value?.orderType || 0) === 4)
@@ -337,10 +338,10 @@ const orderTagText = computed(() => {
   return '-'
 })
 const showBadDebtBanner = computed(() => {
-  return !isClosedOrderDetail.value && !!detail.value?.isBadDebt
+  return !isInactiveOrderDetail.value && !!detail.value?.isBadDebt
 })
 const showArrearBanner = computed(() => {
-  return !!detail.value && !isClosedOrderDetail.value && detail.value.orderStatus !== 1 && !detail.value.isBadDebt && Number(detail.value.arrearAmount || 0) > 0
+  return !!detail.value && !isInactiveOrderDetail.value && detail.value.orderStatus !== 1 && !detail.value.isBadDebt && Number(detail.value.arrearAmount || 0) > 0
 })
 const showSetBadDebtAction = computed(() => {
   return !!detail.value
@@ -412,7 +413,7 @@ const showReceiptAction = computed(() =>
   && showOrderPaymentRecordsBlock.value
   && paymentRecords.value.length > 0,
 )
-const showRepaymentAction = computed(() => detail.value?.orderStatus !== 1 && detail.value?.arrearAmount > 0 && !detail.value?.isBadDebt)
+const showRepaymentAction = computed(() => !isInactiveOrderDetail.value && detail.value?.orderStatus !== 1 && detail.value?.arrearAmount > 0 && !detail.value?.isBadDebt)
 const showPayAction = computed(() => detail.value?.orderStatus === 1)
 
 watch(

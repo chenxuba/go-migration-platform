@@ -52,7 +52,7 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 			WHERE so.inst_id = ? AND so.del_flag = 0
 			  AND IFNULL(so.is_bad_debt, 0) = 0
 			  AND so.order_type = ?
-			  AND so.order_status <> ?
+			  AND so.order_status NOT IN (?, ?, ?)
 			  AND IFNULL(so.order_real_amount, 0) > (
 				SELECT IFNULL(SUM(pd.pay_amount), 0)
 				FROM sale_order_pay_detail pd
@@ -64,7 +64,7 @@ func (repo *Repository) GetStudentOverviewStatistics(ctx context.Context, instID
 			INNER JOIN inst_student s ON s.id = str.student_id AND s.del_flag = 0
 			WHERE str.inst_id = ? AND str.del_flag = 0 AND IFNULL(str.arrear_quantity, 0) > 0
 		) AS arrear_students
-	`, instID, model.OrderTypeRegistrationRenewal, model.OrderStatusPendingPayment, instID).Scan(&result.ArrearStudents); err != nil {
+	`, instID, model.OrderTypeRegistrationRenewal, model.OrderStatusPendingPayment, model.OrderStatusClosed, model.OrderStatusVoided, instID).Scan(&result.ArrearStudents); err != nil {
 		return model.StudentOverviewStatistics{}, err
 	}
 
