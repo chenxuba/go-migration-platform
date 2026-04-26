@@ -62,6 +62,29 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 				)
 			END) AS arrear_tuition
 	`, model.OrderStatusPendingPayment)
+	badDebtTuitionExpr := fmt.Sprintf(`
+			SUM(CASE
+				WHEN IFNULL(ta.total_tuition, 0) <= 0 THEN 0
+				WHEN IFNULL(so.is_bad_debt, 0) <> 1 THEN 0
+				WHEN IFNULL(so.order_status, 0) = %d THEN 0
+				WHEN IFNULL(so.order_real_amount, 0) <= 0 THEN 0
+				ELSE GREATEST(
+					(CASE
+						WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+						ELSE IFNULL(ta.total_tuition, 0)
+					END)
+					- (
+						IFNULL(pay.paid_amount, 0) * (
+							(CASE
+								WHEN sod.id IS NOT NULL THEN GREATEST(IFNULL(sod.amount, 0) - IFNULL(sod.share_discount, 0), 0)
+								ELSE IFNULL(ta.total_tuition, 0)
+							END) / IFNULL(so.order_real_amount, 0)
+						)
+					),
+					0
+				)
+			END) AS bad_debt_tuition
+	`, model.OrderStatusPendingPayment)
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT 
@@ -82,6 +105,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			END) AS total_free_quantity,
 			SUM(ta.total_tuition) AS total_tuition,
 				`+arrearTuitionExpr+`,
+				`+badDebtTuitionExpr+`,
 				(
 					SELECT IFNULL(SUM(IFNULL(str.arrear_quantity, 0)), 0)
 					FROM student_teaching_record str
@@ -166,6 +190,7 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			&item.TotalFreeQuantity,
 			&item.TotalTuition,
 			&item.ArrearTuition,
+			&item.BadDebtTuition,
 			&item.LessonConsumeArrearQuantity,
 			&item.RemainQuantity,
 			&item.Tuition,

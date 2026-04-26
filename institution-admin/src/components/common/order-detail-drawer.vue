@@ -8,7 +8,7 @@ import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
 import { getStudentPhoneNumberApi } from '~/api/common/config'
 import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/api/finance-center/approval-manage'
-import { closeOrderApi, getOrderDetailApi } from '~/api/finance-center/order-manage'
+import { cancelBadDebtApi, closeOrderApi, getOrderDetailApi, setBadDebtApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
 import { downloadOrderReceiptPdf, openOrderReceiptPage } from '~/utils/order-receipt'
@@ -55,6 +55,8 @@ const approvalDetail = ref(null)
 const openApprovalFlowModal = ref(false)
 const openRejectModal = ref(false)
 const openApproveModal = ref(false)
+const openBadDebtModal = ref(false)
+const openCancelBadDebtModal = ref(false)
 const openRechargePayDrawer = ref(false)
 const openRechargeAccountDetailDrawer = ref(false)
 const rechargeAccountDetailPayload = ref({})
@@ -70,6 +72,8 @@ const resolvedOrderId = computed(() => {
 })
 const rejectRemark = ref('')
 const approveRemark = ref('')
+const badDebtRemark = ref('')
+const badDebtOperateLoading = ref(false)
 const decryptedPhone = ref('')
 const isPhoneDecrypted = ref(false)
 const phoneLoading = ref(false)
@@ -311,6 +315,17 @@ const showBadDebtBanner = computed(() => {
 const showArrearBanner = computed(() => {
   return !!detail.value && !isClosedOrderDetail.value && detail.value.orderStatus !== 1 && !detail.value.isBadDebt && Number(detail.value.arrearAmount || 0) > 0
 })
+const showSetBadDebtAction = computed(() => {
+  return !!detail.value
+    && Number(detail.value.orderStatus || 0) === 3
+    && !detail.value.isBadDebt
+    && Number(detail.value.arrearAmount || 0) > 0
+})
+const showCancelBadDebtAction = computed(() => {
+  return !!detail.value
+    && Number(detail.value.orderStatus || 0) === 3
+    && !!detail.value.isBadDebt
+})
 
 const orderStatusText = computed(() => {
   return orderStatusMap[detail.value?.orderStatus] || '-'
@@ -372,6 +387,9 @@ watch(
       approvalDetail.value = null
       rechargeAccountInfo.value = null
       openRechargeAccountDetailDrawer.value = false
+      openBadDebtModal.value = false
+      openCancelBadDebtModal.value = false
+      badDebtRemark.value = ''
       return
     }
     if (!orderId) {
@@ -965,6 +983,54 @@ function handleRepayment() {
   openDrawer.value = false
 }
 
+function handleOpenBadDebtModal() {
+  badDebtRemark.value = ''
+  openBadDebtModal.value = true
+}
+
+async function handleSetBadDebtSubmit() {
+  if (!detail.value?.orderId)
+    return
+  try {
+    badDebtOperateLoading.value = true
+    await setBadDebtApi({
+      orderId: detail.value.orderId,
+      remark: badDebtRemark.value,
+    })
+    messageService.success('设为坏账成功')
+    openBadDebtModal.value = false
+    await fetchOrderDetail(detail.value.orderId)
+    emit('updated')
+  }
+  catch (error) {
+    console.error('设为坏账失败:', error)
+    messageService.error(error?.message || '设为坏账失败')
+  }
+  finally {
+    badDebtOperateLoading.value = false
+  }
+}
+
+async function handleCancelBadDebtSubmit() {
+  if (!detail.value?.orderId)
+    return
+  try {
+    badDebtOperateLoading.value = true
+    await cancelBadDebtApi({ orderId: detail.value.orderId })
+    messageService.success('取消坏账成功')
+    openCancelBadDebtModal.value = false
+    await fetchOrderDetail(detail.value.orderId)
+    emit('updated')
+  }
+  catch (error) {
+    console.error('取消坏账失败:', error)
+    messageService.error(error?.message || '取消坏账失败')
+  }
+  finally {
+    badDebtOperateLoading.value = false
+  }
+}
+
 async function handleRechargeSubmitted() {
   if (!detail.value?.orderId) {
     return
@@ -1197,6 +1263,12 @@ function isHandledApprovalFlow(flow) {
             <a-space class="ml-4 flex-shrink-0">
               <a-button v-if="actionButtonText" @click="handleCloseOrder">
                 {{ actionButtonText }}
+              </a-button>
+              <a-button v-if="showCancelBadDebtAction" @click="openCancelBadDebtModal = true">
+                取消坏账
+              </a-button>
+              <a-button v-if="showSetBadDebtAction" danger ghost @click="handleOpenBadDebtModal">
+                设为坏账
               </a-button>
               <a-dropdown v-if="showReceiptAction">
                 <template #overlay>
@@ -1704,6 +1776,49 @@ function isHandledApprovalFlow(flow) {
               确定
             </a-button>
           </a-space>
+        </div>
+      </a-modal>
+      <a-modal
+        v-model:open="openBadDebtModal"
+        title="设为坏账"
+        ok-text="确认"
+        cancel-text="取消"
+        :ok-button-props="{ danger: true, loading: badDebtOperateLoading }"
+        :cancel-button-props="{ disabled: badDebtOperateLoading }"
+        @ok="handleSetBadDebtSubmit"
+      >
+        <p>确认将此订单设为坏账吗？</p>
+        <p class="text-#ff4d4f mt-2">
+          设为坏账后，该订单的欠费将不再追缴。
+        </p>
+        <a-textarea
+          v-model:value="badDebtRemark"
+          placeholder="请输入坏账备注（选填）"
+          :rows="4"
+          class="mt-3"
+        />
+      </a-modal>
+      <a-modal
+        v-model:open="openCancelBadDebtModal"
+        title="取消坏账"
+        ok-text="确认取消"
+        cancel-text="再想想"
+        :ok-button-props="{ loading: badDebtOperateLoading }"
+        :cancel-button-props="{ disabled: badDebtOperateLoading }"
+        @ok="handleCancelBadDebtSubmit"
+      >
+        <div class="space-y-3">
+          <div>
+            <span class="text-#666">欠费金额：</span>
+            <span class="text-#ff4d4f">¥ {{ formatMoneyPlain(detail?.badDebtAmount || detail?.arrearAmount || 0) }}</span>
+          </div>
+          <div>
+            <span class="text-#666">坏账原因：</span>
+            <span>{{ detail?.badDebtRemark || '-' }}</span>
+          </div>
+          <div class="text-#333">
+            是否确认取消该订单坏账？
+          </div>
         </div>
       </a-modal>
       <recharge-order-pay-drawer

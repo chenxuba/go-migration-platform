@@ -7,6 +7,7 @@ export interface TuitionAccountReadingItem {
   totalFreeQuantity?: number
   totalTuition?: number
   arrearTuition?: number
+  badDebtTuition?: number
   lessonConsumeArrearQuantity?: number
   isAdjustable?: boolean
   remainQuantity?: number

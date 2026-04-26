@@ -143,8 +143,16 @@ function hasArrearTuition(item) {
   return roundMoneyAmount(item?.arrearTuition || 0) > 0
 }
 
+function hasBadDebtTuition(item) {
+  return roundMoneyAmount(item?.badDebtTuition || 0) > 0
+}
+
 function hasLessonConsumeArrear(item) {
   return roundMoneyAmount(item?.lessonConsumeArrearQuantity || 0) > 0
+}
+
+function shouldShowBadDebtBadge(item) {
+  return hasBadDebtTuition(item)
 }
 
 function shouldShowArrearBadge(item) {
@@ -157,6 +165,10 @@ function shouldShowLessonConsumeArrearBadge(item) {
 
 function getArrearTuitionTooltip(item) {
   return `欠费学费金额：¥ ${formatMoney(item?.arrearTuition || 0)}`
+}
+
+function getBadDebtTuitionTooltip(item) {
+  return `坏账金额：¥ ${formatMoney(item?.badDebtTuition || 0)}`
 }
 
 function getLessonConsumeArrearTooltip(item) {
@@ -687,7 +699,13 @@ watch(endTheClassDrawerOpen, (value) => {
             <div class="remaining-tuition px3 text-#888 flex justify-start flex-items-center mt-1">
               <span class="text-3">
                 剩余学费：¥ {{ formatMoney(getDisplayedRemainTuition(item)) }}（总计 ¥ {{ formatMoney(item.totalTuition) }}
-                <a-tooltip v-if="shouldShowArrearBadge(item)" placement="top">
+                <a-tooltip v-if="shouldShowBadDebtBadge(item)" placement="top">
+                  <template #title>
+                    {{ getBadDebtTuitionTooltip(item) }}
+                  </template>
+                  <span class="bad-debt-badge">坏</span>
+                </a-tooltip>
+                <a-tooltip v-else-if="shouldShowArrearBadge(item)" placement="top">
                   <template #title>
                     {{ getArrearTuitionTooltip(item) }}
                   </template>
@@ -857,6 +875,22 @@ watch(endTheClassDrawerOpen, (value) => {
   background: #fbe7e6;
   color: #ff4d4f;
   font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.bad-debt-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #ddd;
+  color: #333;
+  font-size: 12px;
+  font-weight: 600;
   line-height: 16px;
   cursor: pointer;
 }

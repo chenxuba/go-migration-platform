@@ -26,6 +26,7 @@ type TuitionAccountReadingItem struct {
 	TotalFreeQuantity           float64    `json:"totalFreeQuantity"`
 	TotalTuition                float64    `json:"totalTuition"`
 	ArrearTuition               float64    `json:"arrearTuition"`
+	BadDebtTuition              float64    `json:"badDebtTuition"`
 	IsAdjustable                bool       `json:"isAdjustable"`
 	RemainQuantity              float64    `json:"remainQuantity"`
 	Tuition                     float64    `json:"tuition"`

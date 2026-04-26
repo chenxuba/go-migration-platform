@@ -128,6 +128,10 @@ function shouldShowArrearBadge(record) {
   return !record?.isBadDebt && Number(record?.orderStatus || 0) !== 4 && Number(record?.arrearAmount || 0) > 0
 }
 
+function shouldShowBadDebtBadge(record) {
+  return !!record?.isBadDebt
+}
+
 function handleOrderDetail(orderId) {
   const id = String(orderId || '').trim()
   if (!id)
@@ -208,7 +212,11 @@ watch(
           <template v-if="column.key === 'orderNumber'">
             <span class="text-#06f flex-center justify-start cursor-pointer" @click="handleOrderDetail(record.orderId)">
               {{ record.orderNumber || '-' }}
-              <a-tooltip v-if="shouldShowArrearBadge(record)">
+              <a-tooltip v-if="shouldShowBadDebtBadge(record)">
+                <template #title>订单已设为坏账</template>
+                <span class="w-5 h-5 block text-#333 bg-#DDD font-600 text-3 ml-1 text-center line-height-5 rounded-1">坏</span>
+              </a-tooltip>
+              <a-tooltip v-else-if="shouldShowArrearBadge(record)">
                 <template #title>订单欠费未缴清</template>
                 <span class="w-5 h-5 block text-red bg-#FBE7E6 text-3 ml-1 text-center line-height-5 rounded-1">欠</span>
               </a-tooltip>
@@ -244,7 +252,11 @@ watch(
         </template>
       </a-table>
     </div>
-    <OrderDetailDrawer v-model:open="openOrderDetailDrawer" :order-id="currentOrderId" />
+    <OrderDetailDrawer
+      v-model:open="openOrderDetailDrawer"
+      :order-id="currentOrderId"
+      @updated="fetchOrderList"
+    />
   </div>
 </template>
 
