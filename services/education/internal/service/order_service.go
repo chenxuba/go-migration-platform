@@ -205,6 +205,31 @@ func (svc *Service) CheckObsoleteOrder(userID int64, orderIDRaw string) (model.O
 	return svc.repo.CheckObsoleteOrder(context.Background(), instID, orderID)
 }
 
+func (svc *Service) ObsoleteOrder(userID int64, dto model.ObsoleteOrderDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	orderID, err := strconv.ParseInt(strings.TrimSpace(dto.OrderID), 10, 64)
+	if err != nil || orderID <= 0 {
+		return errors.New("订单ID不能为空")
+	}
+	if strings.TrimSpace(dto.ObsoleteReason) == "" {
+		return errors.New("作废原因不能为空")
+	}
+	return svc.repo.ObsoleteOrder(context.Background(), instID, instUserID, orderID, dto.ObsoleteReason)
+}
+
 func (svc *Service) CalcCourseEnrollType(userID int64, dto model.CourseEnrollTypeDTO) ([]model.CourseEnrollTypeVO, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

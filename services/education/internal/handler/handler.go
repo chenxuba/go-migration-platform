@@ -304,6 +304,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/orders/detail", handler.orderDetail)
 	mux.HandleFunc("/api/v1/orders/receipt-pdf/download", handler.downloadOrderReceiptPDF)
 	mux.HandleFunc("/api/v1/orders/check-obsolete", handler.checkObsoleteOrder)
+	mux.HandleFunc("/api/v1/orders/obsolete", handler.obsoleteOrder)
 	mux.HandleFunc("/api/v1/orders/close", handler.closeOrder)
 	mux.HandleFunc("/api/v1/orders/import-template/lesson-hour", handler.buildLessonHourOrderImportTemplate)
 	mux.HandleFunc("/api/v1/orders/import-template/lesson-hour/file", handler.downloadLessonHourOrderImportTemplate)

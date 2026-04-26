@@ -322,6 +322,10 @@ export function checkObsoleteOrderApi(data: { orderId: string }) {
   return useGet<CheckObsoleteOrderResult>('/api/v1/orders/check-obsolete', data)
 }
 
+export function obsoleteOrderApi(data: { orderId: string, obsoleteReason: string }) {
+  return usePost<void>('/api/v1/orders/obsolete', data)
+}
+
 export async function exportOrderListApi(data: {
   queryModel?: OrderQueryParams['queryModel']
   sortModel?: OrderQueryParams['sortModel']

@@ -1295,17 +1295,23 @@ func (repo *Repository) CheckObsoleteOrder(ctx context.Context, instID, orderID 
 		RelatedOrderIDs:         []string{},
 	}
 
-	var orderStatus int
+	var (
+		orderStatus int
+		orderType   int
+	)
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT IFNULL(order_status, 0)
+		SELECT IFNULL(order_status, 0), IFNULL(order_type, 0)
 		FROM sale_order
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 		LIMIT 1
-	`, orderID, instID).Scan(&orderStatus); err != nil {
+	`, orderID, instID).Scan(&orderStatus, &orderType); err != nil {
 		return result, err
 	}
 	if orderStatus != model.OrderStatusApproving && orderStatus != model.OrderStatusCompleted {
 		result.OrderObsoleteResultType = model.OrderObsoleteResultInvalidState
+		return result, nil
+	}
+	if orderType == model.OrderTypeRefundCourse {
 		return result, nil
 	}
 
@@ -1342,6 +1348,28 @@ func (repo *Repository) CheckObsoleteOrder(ctx context.Context, instID, orderID 
 		result.OrderObsoleteResultType = model.OrderObsoleteResultClosedCourse
 	}
 	return result, nil
+}
+
+func (repo *Repository) ObsoleteOrder(ctx context.Context, instID, operatorID, orderID int64, reason string) error {
+	var orderType int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(order_type, 0)
+		FROM sale_order
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, orderID, instID).Scan(&orderType); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("订单不存在")
+		}
+		return err
+	}
+
+	switch orderType {
+	case model.OrderTypeRefundCourse:
+		return repo.ObsoleteRefundTuitionAccountOrder(ctx, instID, operatorID, orderID, reason)
+	default:
+		return errors.New("当前仅支持废除退课订单")
+	}
 }
 
 func (repo *Repository) getOrderCourseNames(ctx context.Context, orderID int64) ([]string, error) {

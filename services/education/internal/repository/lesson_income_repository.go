@@ -226,7 +226,8 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 			"LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0",
 			"LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0",
 			"LEFT JOIN inst_course_category cat ON cat.id = c.course_category AND cat.del_flag = 0",
-			fmt.Sprintf("LEFT JOIN sale_order refund_so ON refund_so.id = taf.source_id AND taf.source_type = %d AND refund_so.del_flag = 0", model.TuitionAccountFlowSourceRefund),
+			fmt.Sprintf("LEFT JOIN sale_order refund_so ON refund_so.id = taf.source_id AND taf.source_type IN (%d, %d) AND refund_so.del_flag = 0", model.TuitionAccountFlowSourceRefund, model.TuitionAccountFlowSourceRevokeRefundOrder),
+			"LEFT JOIN refund_tuition_account_order refund_ro ON refund_ro.sale_order_id = refund_so.id AND refund_ro.inst_id = taf.inst_id AND refund_ro.del_flag = 0",
 			`LEFT JOIN (
 				SELECT order_id, SUM(IFNULL(pay_amount, 0)) AS paid_amount
 				FROM sale_order_pay_detail
@@ -255,7 +256,17 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		classNameExpr:          "''",
 		conformIncomeExpr:      "taf." + schema.conformIncomeColumn,
 		lessonChargingModeExpr: "IFNULL(taf.lesson_charging_mode, 0)",
-		tuitionExpr:            fmt.Sprintf("CASE WHEN taf.source_type = %d THEN GREATEST(IFNULL(refund_so.order_real_amount, 0) - IFNULL(refund_pay.paid_amount, 0), 0) ELSE IFNULL(taf.tuition, 0) END", model.TuitionAccountFlowSourceRefund),
+		tuitionExpr: fmt.Sprintf(`CASE
+				WHEN taf.source_type = %d THEN CASE
+					WHEN refund_ro.id IS NOT NULL THEN IFNULL(refund_ro.handling_fee, 0)
+					ELSE GREATEST(IFNULL(refund_so.order_real_amount, 0) - IFNULL(refund_pay.paid_amount, 0), 0)
+				END
+				WHEN taf.source_type = %d THEN -CASE
+					WHEN refund_ro.id IS NOT NULL THEN IFNULL(refund_ro.handling_fee, 0)
+					ELSE GREATEST(IFNULL(refund_so.order_real_amount, 0) - IFNULL(refund_pay.paid_amount, 0), 0)
+				END
+				ELSE IFNULL(taf.tuition, 0)
+			END`, model.TuitionAccountFlowSourceRefund, model.TuitionAccountFlowSourceRevokeRefundOrder),
 	}
 
 	var classIDRawExpr string

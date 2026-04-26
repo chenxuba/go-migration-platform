@@ -7,6 +7,12 @@ const (
 	CloseTuitionAccountOrderStatusRevoked = 4
 )
 
+const (
+	RefundTuitionAccountOrderStatusPending  = 1
+	RefundTuitionAccountOrderStatusComplete = 2
+	RefundTuitionAccountOrderStatusVoided   = 4
+)
+
 type TuitionAccountSubAccountDateInfoQueryDTO struct {
 	TuitionAccountID string `json:"tuitionAccountId"`
 }

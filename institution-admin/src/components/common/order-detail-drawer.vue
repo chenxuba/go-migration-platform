@@ -8,7 +8,7 @@ import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
 import { getStudentPhoneNumberApi } from '~/api/common/config'
 import { approveApprovalApi, getApprovalDetailApi, refuseApprovalApi } from '~/api/finance-center/approval-manage'
-import { cancelBadDebtApi, checkObsoleteOrderApi, closeOrderApi, getOrderDetailApi, setBadDebtApi } from '~/api/finance-center/order-manage'
+import { cancelBadDebtApi, checkObsoleteOrderApi, closeOrderApi, getOrderDetailApi, obsoleteOrderApi, setBadDebtApi } from '~/api/finance-center/order-manage'
 import { getRechargeAccountByStudentApi } from '~/api/finance-center/recharge-account'
 import messageService from '~/utils/messageService'
 import { downloadOrderReceiptPdf, openOrderReceiptPage } from '~/utils/order-receipt'
@@ -77,6 +77,7 @@ const approveRemark = ref('')
 const badDebtRemark = ref('')
 const badDebtOperateLoading = ref(false)
 const voidOrderReason = ref('')
+const voidOrderSubmitting = ref(false)
 const decryptedPhone = ref('')
 const isPhoneDecrypted = ref(false)
 const phoneLoading = ref(false)
@@ -366,8 +367,17 @@ const orderStatusActionText = computed(() => {
   }
   const handledFlows = approvalFlowList.value.filter(flow => isHandledApprovalFlow(flow))
   const latestHandledFlow = handledFlows.length ? handledFlows[handledFlows.length - 1] : null
-  const operatorName = getApprovalFlowOperatorNames(latestHandledFlow) || currentApproverText.value || applicantNameText.value || '-'
-  const operateTime = formatDate(approvalInfo.value?.finishTime || approvalDetail.value?.finishTime || latestHandledFlow?.operateTime)
+  const operatorName = getApprovalFlowOperatorNames(latestHandledFlow)
+    || String(detail.value?.updateStaffName || '').trim()
+    || currentApproverText.value
+    || applicantNameText.value
+    || '-'
+  const operateTime = formatDate(
+    approvalInfo.value?.finishTime
+    || approvalDetail.value?.finishTime
+    || latestHandledFlow?.operateTime
+    || detail.value?.finishedTime,
+  )
   return `${operatorName}在 ${operateTime} 作废了订单`
 })
 
@@ -1057,14 +1067,6 @@ function handleCloseVoidOrderModal() {
   voidOrderReason.value = ''
 }
 
-function handleVoidOrderSubmit() {
-  if (!voidOrderReason.value.trim()) {
-    messageService.warning('请填写作废原因')
-    return
-  }
-  messageService.info('废除订单提交功能开发中')
-}
-
 async function handleVoidOrder() {
   if (!detail.value?.orderId) {
     messageService.warning('订单不存在')
@@ -1083,6 +1085,10 @@ async function handleVoidOrder() {
       showCannotVoidOrderModal(blockedMessage)
       return
     }
+    if (Number(detail.value?.orderType || 0) !== 3) {
+      messageService.info('废除订单功能开发中')
+      return
+    }
     voidOrderReason.value = ''
     openVoidOrderModal.value = true
   }
@@ -1091,6 +1097,39 @@ async function handleVoidOrder() {
   }
   finally {
     obsoleteChecking.value = false
+  }
+}
+
+async function handleVoidOrderSubmit() {
+  if (!detail.value?.orderId) {
+    messageService.warning('订单不存在')
+    return
+  }
+  const reason = voidOrderReason.value.trim()
+  if (!reason) {
+    messageService.warning('请填写作废原因')
+    return
+  }
+  try {
+    voidOrderSubmitting.value = true
+    const res = await obsoleteOrderApi({
+      orderId: detail.value.orderId,
+      obsoleteReason: reason,
+    })
+    if (res.code !== 200) {
+      messageService.error(res.message || '废除订单失败')
+      return
+    }
+    messageService.success('订单已作废')
+    handleCloseVoidOrderModal()
+    await fetchOrderDetail(detail.value.orderId)
+    emit('updated')
+  }
+  catch (error) {
+    messageService.error(error?.message || '废除订单失败')
+  }
+  finally {
+    voidOrderSubmitting.value = false
   }
 }
 
@@ -2120,7 +2159,7 @@ function isHandledApprovalFlow(flow) {
               <a-button @click="handleCloseVoidOrderModal">
                 再想想
               </a-button>
-              <a-button type="primary" danger @click="handleVoidOrderSubmit">
+              <a-button type="primary" danger :loading="voidOrderSubmitting" @click="handleVoidOrderSubmit">
                 作 废
               </a-button>
             </a-space>
