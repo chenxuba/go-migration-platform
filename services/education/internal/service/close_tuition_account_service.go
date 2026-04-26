@@ -21,6 +21,39 @@ func (svc *Service) GetTuitionAccountSubAccountDateInfo(userID int64, dto model.
 	return svc.repo.GetTuitionAccountSubAccountDateInfo(context.Background(), instID, dto)
 }
 
+func (svc *Service) GetRefundTuitionAccountOwedSummary(userID int64, dto model.RefundTuitionAccountOwedSummaryQueryDTO) (model.RefundTuitionAccountOwedSummaryResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RefundTuitionAccountOwedSummaryResult{}, errors.New("no institution context")
+		}
+		return model.RefundTuitionAccountOwedSummaryResult{}, err
+	}
+	return svc.repo.GetRefundTuitionAccountOwedSummary(context.Background(), instID, dto)
+}
+
+func (svc *Service) CalculateRefundTuitionAccountHandlingFee(userID int64, dto model.RefundTuitionAccountHandlingFeeQueryDTO) (model.RefundTuitionAccountHandlingFeeResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RefundTuitionAccountHandlingFeeResult{}, errors.New("no institution context")
+		}
+		return model.RefundTuitionAccountHandlingFeeResult{}, err
+	}
+	return svc.repo.CalculateRefundTuitionAccountHandlingFee(context.Background(), instID, dto)
+}
+
+func (svc *Service) EstimateRefundTuitionAccountValuableTuition(userID int64, dto model.RefundTuitionAccountValuableEstimateQueryDTO) (model.RefundTuitionAccountValuableEstimateResult, error) {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.RefundTuitionAccountValuableEstimateResult{}, errors.New("no institution context")
+		}
+		return model.RefundTuitionAccountValuableEstimateResult{}, err
+	}
+	return svc.repo.EstimateRefundTuitionAccountValuableTuition(context.Background(), instID, dto)
+}
+
 func (svc *Service) ListSubTuitionAccountPriorityConfigs(userID int64) (model.SubTuitionAccountPriorityConfigResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

@@ -57,6 +57,7 @@ const currentEndCourseRecord = ref(null)
 const currentStopCourseRecord = ref(null)
 const currentResumeCourseRecord = ref(null)
 const currentRemainingDetailsRecord = ref(null)
+const currentDropCourseRecord = ref(null)
 
 function handleOneToOne() {
   oneToOneModalOpen.value = true
@@ -261,6 +262,11 @@ function onMenuStopCourse(item) {
   stopTheClassDrawerOpen.value = true
 }
 
+function onMenuRefundCourse(item) {
+  currentDropCourseRecord.value = item || null
+  dropTheClassDrawerOpen.value = true
+}
+
 function onMenuResumeCourse(item) {
   currentResumeCourseRecord.value = item || null
   resumeTheClassDrawerOpen.value = true
@@ -458,7 +464,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666">转课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="dropTheClassDrawerOpen = true">
+                <div class="flex items-center gap-2" @click="onMenuRefundCourse(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -790,7 +796,7 @@ watch(endTheClassDrawerOpen, (value) => {
       </div>
     </a-spin>
     <transferClassDrawer v-model:open="transferClassDrawerOpen" />
-    <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" />
+    <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" :record="currentDropCourseRecord" />
     <stopTheClassModal
       v-model:open="stopTheClassDrawerOpen"
       :record="currentStopCourseRecord"

@@ -2,27 +2,238 @@
 import { CloseOutlined, PlusOutlined, QuestionCircleFilled } from '@ant-design/icons-vue'
 import { h } from 'vue'
 import dayjs from 'dayjs'
+import {
+  calculateRefundTuitionAccountHandlingFeeApi,
+  estimateRefundTuitionAccountValuableTuitionApi,
+  getTuitionAccountRefundOwedSummaryApi,
+} from '@/api/edu-center/tuition-account'
+import messageService from '@/utils/messageService'
 
 const props = defineProps({
   open: {
     type: Boolean,
     default: false,
   },
-
+  record: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 const emit = defineEmits(['update:open'])
-// 处理双向绑定
+
 const openDrawer = computed({
   get: () => props.open,
   set: value => emit('update:open', value),
 })
-// 获取当前日期（格式：YYYY-MM-DD）
+
 const getCurrentDate = () => dayjs().format('YYYY-MM-DD')
-// 确定退课提示
+
+function initFormState() {
+  return {
+    surplusClass: 0,
+    effectiveDate: '',
+    dropTheClassNumber: '',
+    autoFinishCourse: true,
+    originalPriceRefund: false,
+    price: '0.00',
+    payType: 1,
+    dropPayPrice: undefined,
+    dropPayAccount: '1',
+    date: getCurrentDate(),
+    orderLabel: [],
+    salesperson: undefined,
+    remarks1: '',
+    remarks2: '',
+    billRemarks: '',
+    fileList: [],
+  }
+}
+
+function createDefaultOwedSummary() {
+  return {
+    arrearAmountTotal: 0,
+    badDebtAmountTotal: 0,
+    orderId: '0',
+    orderType: 0,
+  }
+}
+
+function createDefaultEstimate() {
+  return {
+    tuitionAccountId: '',
+    quantity: 0,
+    freeQuantity: 0,
+    tuition: 0,
+    subAccounts: [],
+  }
+}
+
+function createDefaultCalcResult() {
+  return {
+    tuitionAccountId: '',
+    refundAmount: 0,
+    totalOriginalRefundAmount: 0,
+    totalArrearDeduction: 0,
+    handlingFee: 0,
+    lessonChargingMode: 0,
+    paidRefundQuantity: 0,
+    giftRefundQuantity: 0,
+    arrearAmountTotal: 0,
+    badDebtAmountTotal: 0,
+    orderId: '0',
+    orderType: 0,
+    details: [],
+  }
+}
+
 const openModal = ref(false)
-// defineEmits(['update:open']);
+const calcPreviewOpen = ref(false)
 const current = ref(0)
 const formRef = ref(null)
+const previewVisible = ref(false)
+const previewImage = ref('')
+const previewTitle = ref('')
+const readonly = ref(true)
+const nextLoading = ref(false)
+const estimateLoading = ref(false)
+const owedSummary = ref(createDefaultOwedSummary())
+const estimateResult = ref(createDefaultEstimate())
+const calcResult = ref(createDefaultCalcResult())
+
+const formState = reactive(initFormState())
+
+const tuitionAccountId = computed(() => String(props.record?.id || props.record?.tuitionAccountId || ''))
+const lessonChargingMode = computed(() => Number(props.record?.lessonChargingMode || 0))
+const isAmountMode = computed(() => [3, 4].includes(lessonChargingMode.value))
+const quantityUnit = computed(() => {
+  if (isAmountMode.value)
+    return '元'
+  return lessonChargingMode.value === 2 ? '天' : '课时'
+})
+const remainLabelText = computed(() => {
+  if (isAmountMode.value)
+    return '剩余金额'
+  return lessonChargingMode.value === 2 ? '剩余天数' : '剩余课时'
+})
+const validityLabelText = computed(() => (
+  lessonChargingMode.value === 2 ? '有效时段' : '有效期至'
+))
+const lessonTypeText = computed(() => {
+  const type = Number(props.record?.lessonType || 0)
+  if (type === 1)
+    return '班级授课'
+  if (type === 2)
+    return '1对1授课'
+  return ''
+})
+const chargingModeText = computed(() => {
+  if (lessonChargingMode.value === 1)
+    return '课时'
+  if (lessonChargingMode.value === 2)
+    return '时段'
+  if ([3, 4].includes(lessonChargingMode.value))
+    return '金额'
+  return ''
+})
+const courseName = computed(() => props.record?.lessonName || props.record?.productName || '-')
+const maxRefundQuantity = computed(() => {
+  const remainQuantity = Number(props.record?.remainQuantity || 0)
+  const remainFreeQuantity = Number(props.record?.remainFreeQuantity || 0)
+  if (isAmountMode.value)
+    return roundAmount(remainQuantity)
+  return roundAmount(remainQuantity + remainFreeQuantity)
+})
+const remainValueText = computed(() => {
+  const remainQuantity = Number(props.record?.remainQuantity || 0)
+  const remainFreeQuantity = Number(props.record?.remainFreeQuantity || 0)
+  if (isAmountMode.value)
+    return `¥ ${formatMoney(remainQuantity)}`
+  const total = roundAmount(remainQuantity + remainFreeQuantity)
+  if (remainFreeQuantity > 0) {
+    return `${formatCount(total)}${quantityUnit.value}（含赠 ${formatCount(remainFreeQuantity)}${quantityUnit.value}）`
+  }
+  return `${formatCount(total)}${quantityUnit.value}`
+})
+const validityValueText = computed(() => {
+  if (lessonChargingMode.value === 2) {
+    const start = formatDate(props.record?.validDate || props.record?.activedAt)
+    const end = formatDate(props.record?.endDate || props.record?.expireTime)
+    if (start === '-' || end === '-')
+      return '-'
+    return `${start} ~ ${end}`
+  }
+  if (!props.record?.enableExpireTime)
+    return '不限制'
+  return formatDate(props.record?.expireTime)
+})
+const isFullRefund = computed(() => {
+  if (formState.dropTheClassNumber === '' || formState.dropTheClassNumber === null || formState.dropTheClassNumber === undefined) {
+    return false
+  }
+  return almostEqual(Number(formState.dropTheClassNumber), maxRefundQuantity.value)
+})
+const estimateAmount = computed(() => Number(estimateResult.value?.tuition || 0))
+const estimatedPaidQuantity = computed(() => Number(estimateResult.value?.quantity || 0))
+const estimatedFreeQuantity = computed(() => Number(estimateResult.value?.freeQuantity || 0))
+const footerEstimateSummary = computed(() => {
+  return `退还 ${formatCount(estimatedPaidQuantity.value)}${quantityUnit.value}，退赠 ${formatCount(estimatedFreeQuantity.value)}${quantityUnit.value}（赠送不计入总计）`
+})
+const confirmSummaryText = computed(() => {
+  const paidQuantity = Number(calcResult.value?.paidRefundQuantity || 0)
+  const freeQuantity = Number(calcResult.value?.giftRefundQuantity || 0)
+  return `退还 ${formatCount(paidQuantity)}${quantityUnit.value}，退赠 ${formatCount(freeQuantity)}${quantityUnit.value}`
+})
+const previewArrearAmount = computed(() => Number(calcResult.value?.arrearAmountTotal || owedSummary.value?.arrearAmountTotal || 0))
+const previewBadDebtAmount = computed(() => Number(calcResult.value?.badDebtAmountTotal || owedSummary.value?.badDebtAmountTotal || 0))
+const previewOriginalRefundAmount = computed(() => Number(calcResult.value?.totalOriginalRefundAmount || 0))
+const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount || 0))
+const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
+const shouldShowCalcPreviewModal = computed(() => formState.originalPriceRefund || previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
+const previewStatusText = computed(() => {
+  if (previewArrearAmount.value > 0.009 && previewBadDebtAmount.value > 0.009)
+    return '欠费/坏账'
+  if (previewBadDebtAmount.value > 0.009)
+    return '坏账'
+  if (previewArrearAmount.value > 0.009)
+    return '欠费'
+  return ''
+})
+const previewDescriptionText = computed(() => {
+  if (previewBadDebtAmount.value > 0.009)
+    return '此订单存在欠费或坏账记录，请确认本次应退金额'
+  if (previewArrearAmount.value <= 0.009)
+    return '请确认本次应退金额'
+  const remainingArrearAmount = Math.max(previewArrearAmount.value - previewArrearDeductionAmount.value, 0)
+  if (remainingArrearAmount <= 0.009)
+    return '退课成功后，此订单欠费金额将被完全抵扣，无需补费'
+  return `退课成功后，此订单欠费金额将抵扣 ¥ ${formatMoney(previewArrearDeductionAmount.value)}，仍需补费 ¥ ${formatMoney(remainingArrearAmount)}`
+})
+const previewInfoRows = computed(() => {
+  const rows = [
+    { label: '退课金额', value: previewOriginalRefundAmount.value },
+  ]
+  if (previewArrearAmount.value > 0.009)
+    rows.push({ label: '订单欠费', value: previewArrearAmount.value })
+  if (previewBadDebtAmount.value > 0.009)
+    rows.push({ label: '坏账金额', value: previewBadDebtAmount.value })
+  return rows
+})
+
+watch(isFullRefund, (value) => {
+  formState.autoFinishCourse = value
+})
+
+watch(
+  () => props.open,
+  async (value) => {
+    resetDrawerState()
+    if (!value)
+      return
+    hydrateFormStateFromRecord()
+    await loadOwedSummary()
+  },
+)
+
 const items = computed(() => [
   {
     title: '填写退课单',
@@ -41,80 +252,13 @@ const items = computed(() => [
     }),
   },
 ])
-// 初始化表单状态的函数
-function initFormState() {
-  return {
-  // 剩余课时
-    surplusClass: 5,
-    // 有效期至
-    effectiveDate: '2025-06-01',
-    // 退课数量
-    dropTheClassNumber: '',
-    // 是否自动结课
-    autoFinishCourse: true,
-    // 是否原价退课
-    originalPriceRefund: false,
-    // 应退金额
-    price: '200.99',
-    // 退款方式
-    payType: 1,
-    // 实退金额
-    dropPayPrice: '200.99',
-    // 退款账户
-    dropPayAccount: '1',
-    // 经办日期
-    date: getCurrentDate(), // 使用dayjs更简洁,
-    // 订单标签
-    orderLabel: [],
-    // 订单销售员
-    salesperson: undefined,
-    // 对内备注
-    remarks1: '',
-    // 对外备注
-    remarks2: '',
-    // 账单备注
-    billRemarks: '',
-    fileList: [
-      {
-        uid: '-1',
-        name: 'image.png',
-        status: 'done',
-        url: 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png',
-      },
-      {
-        uid: '-2',
-        name: 'image.png',
-        status: 'done',
-        url: 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png',
-      },
-      {
-        uid: '-3',
-        name: 'image.png',
-        status: 'done',
-        url: 'https://zos.alipayobjects.com/rmsportal/jkjgkEfvpUPVyRjUImniVslZfWPnJuuZ.png',
-      },
-    ],
-  }
-}
 
-const formState = reactive(initFormState())
-const isFullRefund = computed(() => {
-  if (formState.dropTheClassNumber === '' || formState.dropTheClassNumber === null || formState.dropTheClassNumber === undefined) {
-    return false
-  }
-  return Number(formState.dropTheClassNumber) === Number(formState.surplusClass)
-})
-watch(isFullRefund, (value) => {
-  formState.autoFinishCourse = value
-})
-// 订单标签
 const orderLabelOptions = ref([
   { id: '1', name: '内荐' },
   { id: '2', name: '转介绍' },
   { id: '3', name: '双11订单' },
   { id: '4', name: '会员日订单' },
 ])
-// 订单销售员
 const salespersonOptions = ref([
   { id: '1', name: '陈瑞生', phone: '17601241636' },
   { id: '2', name: '刘明', phone: '18876552232' },
@@ -126,15 +270,11 @@ function orderLabelFilterOption(input, option) {
   const nameMatch = option.name.toLowerCase().includes(keyword)
   return nameMatch
 }
-// 禁止选择今天之后的日期
-function disabledDate(current) {
-  // 当天结束时间（23:59:59）之后的时间不可选
-  return current > dayjs().endOf('day')
+function disabledDate(currentDate) {
+  return currentDate > dayjs().endOf('day')
 }
-// 处理日期更新
 function handleDateChange(dateObj) {
   if (!dateObj) {
-    // 仅当值被清空时恢复当前日期
     formState.date = getCurrentDate()
   }
 }
@@ -146,14 +286,6 @@ function getBase64(file) {
     reader.onerror = error => reject(error)
   })
 }
-function handleCancelImg() {
-  previewVisible.value = false
-  previewTitle.value = ''
-}
-
-const previewVisible = ref(false)
-const previewImage = ref('')
-const previewTitle = ref('')
 async function handlePreview(file) {
   if (!file.url && !file.preview) {
     file.preview = await getBase64(file.originFileObj)
@@ -166,27 +298,233 @@ function handleCancelPreview() {
   previewVisible.value = false
   previewTitle.value = ''
 }
-// 全部退还
-function handleAllReturn() {
-  formState.dropTheClassNumber = formState.surplusClass
+function roundAmount(value) {
+  return Number(Number(value || 0).toFixed(2))
 }
-function handleNext() {
-  formRef.value.validate().then(() => {
+function almostEqual(a, b) {
+  return Math.abs(Number(a || 0) - Number(b || 0)) < 0.01
+}
+function formatMoney(value) {
+  return Number(value || 0).toFixed(2)
+}
+function formatCount(value) {
+  const num = Number(value || 0)
+  if (Number.isInteger(num))
+    return String(num)
+  return num.toFixed(2)
+}
+function formatDate(value) {
+  if (!value || `${value}`.startsWith('0001-01-01'))
+    return '-'
+  const parsed = dayjs(value)
+  if (!parsed.isValid())
+    return '-'
+  return parsed.format('YYYY-MM-DD')
+}
+function resetDrawerState() {
+  current.value = 0
+  openModal.value = false
+  calcPreviewOpen.value = false
+  previewVisible.value = false
+  previewTitle.value = ''
+  previewImage.value = ''
+  nextLoading.value = false
+  estimateLoading.value = false
+  readonly.value = true
+  owedSummary.value = createDefaultOwedSummary()
+  estimateResult.value = createDefaultEstimate()
+  calcResult.value = createDefaultCalcResult()
+  Object.assign(formState, initFormState())
+  formRef.value?.resetFields?.()
+}
+function hydrateFormStateFromRecord() {
+  formState.surplusClass = maxRefundQuantity.value
+  formState.effectiveDate = validityValueText.value
+}
+async function loadOwedSummary() {
+  if (!tuitionAccountId.value)
+    return
+  try {
+    const res = await getTuitionAccountRefundOwedSummaryApi({ tuitionAccountId: tuitionAccountId.value })
+    if (res.code !== 200) {
+      throw new Error(res.message || '加载退课信息失败')
+    }
+    owedSummary.value = {
+      ...createDefaultOwedSummary(),
+      ...(res.result || {}),
+    }
+  }
+  catch (error) {
+    owedSummary.value = createDefaultOwedSummary()
+    messageService.error(error?.message || '加载退课信息失败')
+  }
+}
+function handleRefundQuantityChange(value) {
+  if (value === null || value === undefined || value === '') {
+    formState.dropTheClassNumber = ''
+    estimateResult.value = createDefaultEstimate()
+    formState.price = '0.00'
+    return
+  }
+  let nextValue = Number(value)
+  if (Number.isNaN(nextValue)) {
+    formState.dropTheClassNumber = ''
+    estimateResult.value = createDefaultEstimate()
+    formState.price = '0.00'
+    return
+  }
+  if (nextValue < 0)
+    nextValue = 0
+  if (!isAmountMode.value)
+    nextValue = Math.floor(nextValue)
+  else
+    nextValue = roundAmount(nextValue)
+  if (nextValue > maxRefundQuantity.value)
+    nextValue = maxRefundQuantity.value
+  formState.dropTheClassNumber = nextValue === 0 ? '' : nextValue
+  estimateResult.value = createDefaultEstimate()
+  formState.price = '0.00'
+}
+function validateRefundQuantity(_rule, value) {
+  if (value === '' || value === null || value === undefined) {
+    return Promise.reject(new Error('请输入退课数量'))
+  }
+  const amount = Number(value)
+  if (Number.isNaN(amount) || amount <= 0) {
+    return Promise.reject(new Error('退课数量需大于 0'))
+  }
+  if (amount > maxRefundQuantity.value + 0.009) {
+    return Promise.reject(new Error('退课数量不能超过当前可退范围'))
+  }
+  return Promise.resolve()
+}
+async function estimateRefundPreview() {
+  const quantity = Number(formState.dropTheClassNumber || 0)
+  if (!tuitionAccountId.value || quantity <= 0) {
+    estimateResult.value = createDefaultEstimate()
+    return
+  }
+  estimateLoading.value = true
+  try {
+    const res = await estimateRefundTuitionAccountValuableTuitionApi({
+      tuitionAccountId: tuitionAccountId.value,
+      quantity,
+    })
+    if (res.code !== 200) {
+      throw new Error(res.message || '退课试算失败')
+    }
+    estimateResult.value = {
+      ...createDefaultEstimate(),
+      ...(res.result || {}),
+      subAccounts: Array.isArray(res.result?.subAccounts) ? res.result.subAccounts : [],
+    }
+    formState.price = formatMoney(estimateResult.value.tuition)
+  }
+  catch (error) {
+    estimateResult.value = createDefaultEstimate()
+    formState.price = '0.00'
+    messageService.error(error?.message || '退课试算失败')
+  }
+  finally {
+    estimateLoading.value = false
+  }
+}
+function handleEstimateBlur() {
+  formRef.value?.validateFields?.(['dropTheClassNumber'])
+    ?.then(() => estimateRefundPreview())
+    ?.catch(() => {})
+}
+function handleAllReturn() {
+  formState.dropTheClassNumber = maxRefundQuantity.value
+  handleRefundQuantityChange(maxRefundQuantity.value)
+  estimateRefundPreview()
+}
+async function calculateHandlingFeePreview() {
+  if (!tuitionAccountId.value) {
+    messageService.error('缺少学费账户ID')
+    return false
+  }
+  try {
+    const res = await calculateRefundTuitionAccountHandlingFeeApi({
+      tuitionAccountId: tuitionAccountId.value,
+      refundQuantity: Number(formState.dropTheClassNumber || 0),
+    })
+    if (res.code !== 200) {
+      throw new Error(res.message || '计算实退金额失败')
+    }
+    calcResult.value = {
+      ...createDefaultCalcResult(),
+      ...(res.result || {}),
+      details: Array.isArray(res.result?.details) ? res.result.details : [],
+    }
+    formState.price = formatMoney(calcResult.value.refundAmount)
+    formState.dropPayPrice = Number(calcResult.value.refundAmount || 0)
+    readonly.value = true
+    return true
+  }
+  catch (error) {
+    messageService.error(error?.message || '计算实退金额失败')
+    return false
+  }
+}
+async function handleOriginalPriceRefundChange(checked) {
+  if (!checked)
+    return
+  try {
+    await formRef.value?.validateFields?.(['dropTheClassNumber'])
+  }
+  catch {
+    return
+  }
+  nextLoading.value = true
+  try {
+    const success = await calculateHandlingFeePreview()
+    if (success && shouldShowCalcPreviewModal.value)
+      calcPreviewOpen.value = true
+  }
+  finally {
+    nextLoading.value = false
+  }
+}
+async function handleNext() {
+  try {
+    await formRef.value?.validate?.()
+  }
+  catch {
+    return
+  }
+  nextLoading.value = true
+  try {
+    const success = await calculateHandlingFeePreview()
+    if (!success)
+      return
+    if (shouldShowCalcPreviewModal.value) {
+      calcPreviewOpen.value = true
+      return
+    }
     current.value++
-  })
+  }
+  finally {
+    nextLoading.value = false
+  }
 }
 function handleConfirm() {
   openModal.value = true
+}
+function handleCalcPreviewNext() {
+  calcPreviewOpen.value = false
+  current.value++
+}
+function handleSubmitRefund() {
+  messageService.info('退课下单接口待接入')
+  openModal.value = false
 }
 function handleBack() {
   current.value--
 }
 function handleCancel() {
-  current.value = 0
+  resetDrawerState()
   openDrawer.value = false
-  // 重置整个formState为初始状态
-  Object.assign(formState, initFormState())
-  formRef.value.resetFields()
 }
 const checkOptions = reactive([
   {
@@ -226,7 +564,6 @@ const checkOptions = reactive([
   },
 
 ])
-const readonly = ref(true)
 function handleModify() {
   readonly.value = false
 }
@@ -262,28 +599,28 @@ function handleModify() {
         <a-form ref="formRef" :model="formState">
           <div v-if="current === 0" class="refund-basic-card mt-24px mx-24px p-24px bg-#fff rounded-16px flex flex-col py-24px">
             <h1 class="text-20px">
-              听觉训练课
+              {{ courseName }}
             </h1>
             <a-space class="flex-1 flex flex-items-center">
-              <span class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10 ">1v1授课</span>
-              <span class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10">课时</span>
+              <span v-if="lessonTypeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10 ">{{ lessonTypeText }}</span>
+              <span v-if="chargingModeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10">{{ chargingModeText }}</span>
             </a-space>
             <div class="flex flex-items-center my-24px">
-              <span>剩余课时：</span>
-              <span class="text-#888">5课时</span>
+              <span>{{ remainLabelText }}：</span>
+              <span class="text-#888">{{ remainValueText }}</span>
             </div>
             <div class="flex flex-items-center">
-              <span>有效期至：</span>
-              <span class="text-#888">2025-06-01</span>
+              <span>{{ validityLabelText }}：</span>
+              <span class="text-#888">{{ validityValueText }}</span>
             </div>
             <!-- 分割线 -->
             <a-divider />
             <!-- 退课数量 -->
-            <a-form-item label="退课数量" name="dropTheClassNumber" :rules="[{ required: true, message: '请输入退课数量' }]">
+            <a-form-item label="退课数量" name="dropTheClassNumber" required class="!mb-12px" :rules="[{ validator: validateRefundQuantity, trigger: ['blur', 'change'] }]">
               <div class="flex flex-items-center">
                 <a-input-number
-                  v-model:value="formState.dropTheClassNumber" placeholder="请输入退课数量" :min="0" :max="10000"
-                  :precision="2" class="w-160px"
+                  v-model:value="formState.dropTheClassNumber" placeholder="请输入退课数量" :min="0" :max="maxRefundQuantity"
+                  :precision="isAmountMode ? 2 : 0" class="w-160px" @change="handleRefundQuantityChange" @blur="handleEstimateBlur"
                 />
                 <a-button type="link" class="text-#06f" @click="handleAllReturn">
                   全部退还
@@ -298,7 +635,7 @@ function handleModify() {
             </a-form-item>
             <a-form-item label="是否原价退课" name="originalPriceRefund" class="switch-form-item !mb-0">
               <div class="refund-switch-inline">
-                <a-switch v-model:checked="formState.originalPriceRefund" />
+                <a-switch v-model:checked="formState.originalPriceRefund" @change="handleOriginalPriceRefundChange" />
                 <span class="refund-switch-inline__desc">开启后，会根据课程报价单的原价计算学员应退金额，其余学费金额计入本次退课应收手续费</span>
               </div>
             </a-form-item>
@@ -312,10 +649,7 @@ function handleModify() {
               <span class="text-#666 mb-2px">应退金额：</span>
               <span class="text-#000 text-48px custom-num-font-family">¥ {{ formState.price }} <span
                 class="text-#888 text-14px "
-              >退还
-                5.00
-                课时，退赠
-                0.00 课时</span> </span>
+              >{{ confirmSummaryText }}</span> </span>
             </div>
             <!-- 退款方式 -->
             <a-form-item name="payType">
@@ -480,11 +814,11 @@ function handleModify() {
       <template #footer>
         <div v-if="current === 0" class="px-24px py-16px flex  justify-end flex-items-center">
           <div class="l flex flex-col items-end">
-            <span class="text-16px text-#333 font-bold mb-8px">总计学费：¥ {{ formState.price }}</span>
-            <span class="text-14px text-#888">退还 5.00 课时，退赠 0 课时（赠送不计入总计）</span>
+            <span class="text-16px text-#333 font-bold mb-8px">总计学费：¥ {{ formatMoney(estimateAmount) }}</span>
+            <span class="text-14px text-#888">{{ footerEstimateSummary }}</span>
           </div>
           <div class="flex flex-items-center ml-24px">
-            <a-button type="primary" class="text-20px h-48px w-140px" @click="handleNext">
+            <a-button type="primary" class="text-20px h-48px w-140px" :loading="nextLoading" @click="handleNext">
               下一步
             </a-button>
           </div>
@@ -497,8 +831,8 @@ function handleModify() {
           </div>
           <div class="flex flex-items-center">
             <div class="l flex flex-col items-end">
-              <span class="text-16px text-#333 font-bold mb-8px">实退金额：¥ {{ formState.price }}</span>
-              <span class="text-14px text-#888">应退金额：¥ {{ formState.price }}</span>
+              <span class="text-16px text-#333 font-bold mb-8px">实退金额：¥ {{ formatMoney(formState.dropPayPrice || 0) }}</span>
+              <span class="text-14px text-#888">应退金额：¥ {{ formatMoney(calcResult.refundAmount || 0) }}</span>
             </div>
             <div class="flex flex-items-center ml-24px">
               <a-button type="primary" class="text-20px h-48px w-140px" @click="handleConfirm">
@@ -509,6 +843,54 @@ function handleModify() {
         </div>
       </template>
     </a-drawer>
+    <a-modal
+      v-model:open="calcPreviewOpen"
+      centered
+      :mask-closable="false"
+      :keyboard="false"
+      :footer="false"
+      :width="820"
+    >
+      <template #title>
+        确认应退金额
+      </template>
+      <div class="refund-preview-card">
+        <div class="refund-preview-card__header">
+          <div>
+            <div class="refund-preview-card__title">
+              {{ courseName }}
+            </div>
+            <a-space class="mt-12px">
+              <span v-if="lessonTypeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10 ">{{ lessonTypeText }}</span>
+              <span v-if="chargingModeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10">{{ chargingModeText }}</span>
+            </a-space>
+          </div>
+          <span v-if="previewStatusText" class="refund-preview-card__badge">{{ previewStatusText }}</span>
+        </div>
+        <div class="refund-preview-card__meta">
+          <div v-for="item in previewInfoRows" :key="item.label" class="refund-preview-card__meta-row">
+            <span>{{ item.label }}：</span>
+            <span>¥ {{ formatMoney(item.value) }}</span>
+          </div>
+        </div>
+        <a-divider class="my-24px" />
+        <div class="refund-preview-card__amount-label">
+          <span>应退金额</span>
+          <QuestionCircleFilled class="text-#1677ff text-12px" />
+        </div>
+        <div class="refund-preview-card__amount">
+          ¥ {{ formatMoney(previewRefundAmount) }}
+        </div>
+        <div class="refund-preview-card__desc">
+          {{ previewDescriptionText }}
+        </div>
+      </div>
+      <div class="flex justify-end mt-24px">
+        <a-button type="primary" class="w-92px" @click="handleCalcPreviewNext">
+          下一步
+        </a-button>
+      </div>
+    </a-modal>
     <!-- 确定退课提示 -->
     <a-modal
       v-model:open="openModal" centered :mask-closable="false" :keyboard="false" :footer="false" :width="416"
@@ -524,7 +906,7 @@ function handleModify() {
         <a-button @click="openModal = false">
           再想想
         </a-button>
-        <a-button danger ghost class="ml-12px" @click="handleConfirm">
+        <a-button danger ghost class="ml-12px" @click="handleSubmitRefund">
           确定退课
         </a-button>
       </div>
@@ -700,5 +1082,74 @@ function handleModify() {
   font-size: 12px;
   line-height: 20px;
   white-space: nowrap;
+}
+
+.refund-preview-card {
+  padding: 24px;
+  background: #fafafa;
+  border-radius: 16px;
+}
+
+.refund-preview-card__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+}
+
+.refund-preview-card__title {
+  color: #1f1f1f;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 40px;
+}
+
+.refund-preview-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 12px;
+  height: 28px;
+  background: #fff1f0;
+  border-radius: 999px;
+  color: #ff4d4f;
+  font-size: 14px;
+  line-height: 28px;
+}
+
+.refund-preview-card__meta {
+  margin-top: 24px;
+}
+
+.refund-preview-card__meta-row {
+  display: flex;
+  align-items: center;
+  color: #8c8c8c;
+  font-size: 16px;
+  line-height: 32px;
+}
+
+.refund-preview-card__amount-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #666;
+  font-size: 16px;
+  line-height: 24px;
+}
+
+.refund-preview-card__amount {
+  margin-top: 8px;
+  color: #262626;
+  font-family: "DIN alternate", sans-serif;
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 56px;
+}
+
+.refund-preview-card__desc {
+  margin-top: 12px;
+  color: #8c8c8c;
+  font-size: 14px;
+  line-height: 22px;
 }
 </style>

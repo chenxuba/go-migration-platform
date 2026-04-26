@@ -80,6 +80,59 @@ export interface TuitionAccountSubAccountDateInfoResult {
   list?: TuitionAccountSubAccountDateInfoItem[]
 }
 
+export interface RefundTuitionAccountOwedSummaryResult {
+  arrearAmountTotal?: number
+  badDebtAmountTotal?: number
+  orderId?: string
+  orderType?: number
+}
+
+export interface RefundTuitionAccountHandlingFeeDetail {
+  orderNumber?: string
+  originalUnitPrice?: number
+  discountedUnitPrice?: number
+  shouldTuition?: number
+  paidAmount?: number
+  transferredTuition?: number
+  consumedQuantity?: number
+  arrearTuition?: number
+  originalRefundAmount?: number
+  lessonChargingMode?: number
+  deductionQuantity?: number
+}
+
+export interface RefundTuitionAccountValuableEstimateSubAccount {
+  tuitionAccountId?: string
+  orderNumber?: string
+  quantity?: number
+  freeQuantity?: number
+  tuition?: number
+}
+
+export interface RefundTuitionAccountValuableEstimateResult {
+  tuitionAccountId?: string
+  quantity?: number
+  freeQuantity?: number
+  tuition?: number
+  subAccounts?: RefundTuitionAccountValuableEstimateSubAccount[]
+}
+
+export interface RefundTuitionAccountHandlingFeeResult {
+  tuitionAccountId?: string
+  refundAmount?: number
+  totalOriginalRefundAmount?: number
+  totalArrearDeduction?: number
+  handlingFee?: number
+  lessonChargingMode?: number
+  paidRefundQuantity?: number
+  giftRefundQuantity?: number
+  arrearAmountTotal?: number
+  badDebtAmountTotal?: number
+  orderId?: string
+  orderType?: number
+  details?: RefundTuitionAccountHandlingFeeDetail[]
+}
+
 export interface SubTuitionAccountPriorityConfigItem {
   priorityType?: number
   sortDirection?: number
@@ -181,6 +234,18 @@ export function getTuitionAccountReadingListApi(data: TuitionAccountReadingListQ
 
 export function getTuitionAccountSubAccountDateInfoApi(data: { tuitionAccountId: string }) {
   return usePost<TuitionAccountSubAccountDateInfoResult>('/api/v1/tuition-accounts/sub-account-date-info', data)
+}
+
+export function getTuitionAccountRefundOwedSummaryApi(data: { tuitionAccountId: string }) {
+  return usePost<RefundTuitionAccountOwedSummaryResult>('/api/v1/tuition-accounts/refund-owed-summary', data)
+}
+
+export function estimateRefundTuitionAccountValuableTuitionApi(data: { tuitionAccountId: string, quantity: number }) {
+  return usePost<RefundTuitionAccountValuableEstimateResult>('/api/v1/tuition-accounts/refund-estimate-valuable-tuition', data)
+}
+
+export function calculateRefundTuitionAccountHandlingFeeApi(data: { tuitionAccountId: string, refundQuantity: number }) {
+  return usePost<RefundTuitionAccountHandlingFeeResult>('/api/v1/tuition-accounts/refund-calc-handling-fee', data)
 }
 
 export function getSubTuitionAccountPriorityConfigListApi() {

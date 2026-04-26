@@ -46,6 +46,73 @@ type TuitionAccountSubAccountDateInfoResult struct {
 	List []TuitionAccountSubAccountDateInfoItem `json:"list"`
 }
 
+type RefundTuitionAccountOwedSummaryQueryDTO struct {
+	TuitionAccountID string `json:"tuitionAccountId"`
+}
+
+type RefundTuitionAccountOwedSummaryResult struct {
+	ArrearAmountTotal  float64 `json:"arrearAmountTotal"`
+	BadDebtAmountTotal float64 `json:"badDebtAmountTotal"`
+	OrderID            string  `json:"orderId"`
+	OrderType          int     `json:"orderType"`
+}
+
+type RefundTuitionAccountHandlingFeeQueryDTO struct {
+	TuitionAccountID string  `json:"tuitionAccountId"`
+	RefundQuantity   float64 `json:"refundQuantity"`
+}
+
+type RefundTuitionAccountValuableEstimateQueryDTO struct {
+	TuitionAccountID string  `json:"tuitionAccountId"`
+	Quantity         float64 `json:"quantity"`
+}
+
+type RefundTuitionAccountValuableEstimateSubAccount struct {
+	TuitionAccountID string  `json:"tuitionAccountId"`
+	OrderNumber      string  `json:"orderNumber"`
+	Quantity         float64 `json:"quantity"`
+	FreeQuantity     float64 `json:"freeQuantity"`
+	Tuition          float64 `json:"tuition"`
+}
+
+type RefundTuitionAccountValuableEstimateResult struct {
+	TuitionAccountID string                                           `json:"tuitionAccountId"`
+	Quantity         float64                                          `json:"quantity"`
+	FreeQuantity     float64                                          `json:"freeQuantity"`
+	Tuition          float64                                          `json:"tuition"`
+	SubAccounts      []RefundTuitionAccountValuableEstimateSubAccount `json:"subAccounts"`
+}
+
+type RefundTuitionAccountHandlingFeeDetail struct {
+	OrderNumber          string  `json:"orderNumber"`
+	OriginalUnitPrice    float64 `json:"originalUnitPrice"`
+	DiscountedUnitPrice  float64 `json:"discountedUnitPrice"`
+	ShouldTuition        float64 `json:"shouldTuition"`
+	PaidAmount           float64 `json:"paidAmount"`
+	TransferredTuition   float64 `json:"transferredTuition"`
+	ConsumedQuantity     float64 `json:"consumedQuantity"`
+	ArrearTuition        float64 `json:"arrearTuition"`
+	OriginalRefundAmount float64 `json:"originalRefundAmount"`
+	LessonChargingMode   int     `json:"lessonChargingMode"`
+	DeductionQuantity    float64 `json:"deductionQuantity"`
+}
+
+type RefundTuitionAccountHandlingFeeResult struct {
+	TuitionAccountID          string                                  `json:"tuitionAccountId"`
+	RefundAmount              float64                                 `json:"refundAmount"`
+	TotalOriginalRefundAmount float64                                 `json:"totalOriginalRefundAmount"`
+	TotalArrearDeduction      float64                                 `json:"totalArrearDeduction"`
+	HandlingFee               float64                                 `json:"handlingFee"`
+	LessonChargingMode        int                                     `json:"lessonChargingMode"`
+	PaidRefundQuantity        float64                                 `json:"paidRefundQuantity"`
+	GiftRefundQuantity        float64                                 `json:"giftRefundQuantity"`
+	ArrearAmountTotal         float64                                 `json:"arrearAmountTotal"`
+	BadDebtAmountTotal        float64                                 `json:"badDebtAmountTotal"`
+	OrderID                   string                                  `json:"orderId"`
+	OrderType                 int                                     `json:"orderType"`
+	Details                   []RefundTuitionAccountHandlingFeeDetail `json:"details"`
+}
+
 type SubTuitionAccountPriorityConfigItem struct {
 	PriorityType  int  `json:"priorityType"`
 	SortDirection int  `json:"sortDirection"`
