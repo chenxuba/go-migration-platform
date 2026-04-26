@@ -58,6 +58,7 @@ const openRejectModal = ref(false)
 const openApproveModal = ref(false)
 const openBadDebtModal = ref(false)
 const openCancelBadDebtModal = ref(false)
+const openVoidOrderModal = ref(false)
 const openRechargePayDrawer = ref(false)
 const openRechargeAccountDetailDrawer = ref(false)
 const rechargeAccountDetailPayload = ref({})
@@ -75,6 +76,7 @@ const rejectRemark = ref('')
 const approveRemark = ref('')
 const badDebtRemark = ref('')
 const badDebtOperateLoading = ref(false)
+const voidOrderReason = ref('')
 const decryptedPhone = ref('')
 const isPhoneDecrypted = ref(false)
 const phoneLoading = ref(false)
@@ -1050,6 +1052,19 @@ function getObsoleteBlockedMessage(resultType) {
   return ''
 }
 
+function handleCloseVoidOrderModal() {
+  openVoidOrderModal.value = false
+  voidOrderReason.value = ''
+}
+
+function handleVoidOrderSubmit() {
+  if (!voidOrderReason.value.trim()) {
+    messageService.warning('请填写作废原因')
+    return
+  }
+  messageService.info('废除订单提交功能开发中')
+}
+
 async function handleVoidOrder() {
   if (!detail.value?.orderId) {
     messageService.warning('订单不存在')
@@ -1068,7 +1083,8 @@ async function handleVoidOrder() {
       showCannotVoidOrderModal(blockedMessage)
       return
     }
-    messageService.info('废除订单功能开发中')
+    voidOrderReason.value = ''
+    openVoidOrderModal.value = true
   }
   catch (error) {
     messageService.error(error?.message || '废除订单校验失败')
@@ -2049,6 +2065,68 @@ function isHandledApprovalFlow(flow) {
           </div>
         </div>
       </a-modal>
+      <a-modal
+        v-model:open="openVoidOrderModal"
+        centered
+        class="void-order-modal"
+        :keyboard="false"
+        :closable="false"
+        :mask-closable="false"
+        :footer="null"
+        :width="780"
+      >
+        <template #title>
+          <div class="text-5 flex justify-between flex-center">
+            <span>作废此订单</span>
+            <a-button type="text" class="close-btn" @click="handleCloseVoidOrderModal">
+              <template #icon>
+                <CloseOutlined class="text-5 close-icon" />
+              </template>
+            </a-button>
+          </div>
+        </template>
+        <div class="void-order-modal-body">
+          <div class="void-order-tips">
+            <div class="tipsIcon">
+              小贴士
+            </div>
+            <div class="tipsText">
+              <p class="void-order-tips-title">
+                退课订单作废后：
+              </p>
+              <p>1.返还本订单的已退学费至原退课的学费账户中</p>
+              <p>2.财务到账确认、订单业绩、储值账户变动记录、积分记录、出入库记录、报表也将同步按规则进行反向处理。</p>
+              <div class="void-order-warning">
+                <ExclamationCircleFilled />
+                <span>谨慎操作，作废后不可恢复</span>
+              </div>
+            </div>
+          </div>
+          <div class="void-order-form-row">
+            <div class="void-order-form-label">
+              <span class="required-mark">*</span>作废原因：
+            </div>
+            <div class="void-order-form-control">
+              <a-textarea
+                v-model:value="voidOrderReason"
+                :maxlength="200"
+                :auto-size="{ minRows: 1, maxRows: 4 }"
+                placeholder="请详细填写作废原因"
+              />
+            </div>
+          </div>
+          <div class="void-order-modal-footer">
+            <a-space>
+              <a-button @click="handleCloseVoidOrderModal">
+                再想想
+              </a-button>
+              <a-button type="primary" danger @click="handleVoidOrderSubmit">
+                作 废
+              </a-button>
+            </a-space>
+          </div>
+        </div>
+      </a-modal>
       <recharge-order-pay-drawer
         v-model:open="openRechargePayDrawer"
         :sale-order-id="detail?.orderId"
@@ -2224,6 +2302,116 @@ span.dot {
 
 .approval-flow-card-line + .approval-flow-card-line {
   margin-top: 8px;
+}
+
+.void-order-modal-body {
+  padding: 24px;
+}
+
+.void-order-tips {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  background: #f5f9ff;
+  border-radius: 8px 8px 0 8px;
+  padding: 16px 0;
+
+  &::before {
+    content: '';
+    position: absolute;
+    right: -7px;
+    bottom: -2px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid #fff;
+    transform: rotate(-45deg);
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    bottom: 6px;
+    width: 0;
+    height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-top: 10px solid #b3d1ff;
+    transform: rotate(135deg);
+  }
+
+  .tipsIcon {
+    display: flex;
+    justify-content: center;
+    width: 68px;
+    padding-top: 6px;
+    font-weight: 600;
+    font-size: 12px;
+    color: #8aafe9;
+  }
+
+  .tipsText {
+    flex: 1 1;
+    border-left: 1px dashed rgba(179, 209, 255, 0.6);
+    padding: 0 16px;
+
+    p {
+      margin: 0;
+      font-weight: 400;
+      font-size: 12px;
+      line-height: 1.8;
+      color: #99999a;
+    }
+  }
+}
+
+.void-order-tips-title {
+  margin-bottom: 4px !important;
+}
+
+.void-order-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+  color: #ff8a00;
+  font-size: 12px;
+  line-height: 20px;
+  font-weight: 500;
+}
+
+.void-order-form-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 24px;
+}
+
+.void-order-form-label {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  color: #222;
+  white-space: nowrap;
+}
+
+.required-mark {
+  color: #ff4d4f;
+  margin-right: 2px;
+}
+
+.void-order-form-control {
+  flex: 1;
+}
+
+.void-order-modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 12px;
+  border-top: 1px solid #f0f0f0;
 }
 
 .recharge-total {
@@ -2480,5 +2668,16 @@ span.dot {
 .payment-voucher-image {
   border-radius: 4px;
   overflow: hidden;
+}
+</style>
+
+<style>
+.void-order-modal .ant-modal-header {
+  padding: 10px 16px !important;
+  margin-bottom: 0;
+}
+
+.void-order-modal .ant-modal-body {
+  padding: 0 !important;
 }
 </style>
