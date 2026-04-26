@@ -20,35 +20,48 @@ import (
 )
 
 type orderReceiptPDFView struct {
-	Template           string
-	OrgName            string
-	OrderNumber        string
-	StudentName        string
-	StudentPhone       string
-	OrderTypeText      string
-	OrderStatusText    string
-	OrderSourceText    string
-	DealDateText       string
-	CreatedTimeText    string
-	FinishedTimeText   string
-	StaffName          string
-	SalePersonName     string
-	PrintedBy          string
-	PrintedAtText      string
-	OrderTagText       string
-	Remark             string
-	ExternalRemark     string
-	AmountInWords      string
-	TotalAmountText    string
-	DiscountAmountText string
-	StorageAmountText  string
-	PaidAmountText     string
-	ArrearAmountText   string
-	PaymentSummaryText string
-	CampusPhone        string
-	CampusAddress      string
-	ItemRows           []orderReceiptPDFItemRow
-	PaymentRows        []orderReceiptPDFPaymentRow
+	Template            string
+	OrgName             string
+	OrderNumber         string
+	StudentName         string
+	StudentPhone        string
+	OrderTypeText       string
+	OrderStatusText     string
+	OrderSourceText     string
+	DealDateText        string
+	CreatedTimeText     string
+	FinishedTimeText    string
+	StaffName           string
+	SalePersonName      string
+	PrintedBy           string
+	PrintedAtText       string
+	OrderTagText        string
+	Remark              string
+	ExternalRemark      string
+	AmountInWords       string
+	TotalAmountText     string
+	DiscountAmountText  string
+	StorageAmountText   string
+	PaidAmountText      string
+	ArrearAmountText    string
+	PaymentSummaryText  string
+	QuantityLabel       string
+	GiftLabel           string
+	QuantityAction      string
+	GiftAction          string
+	SubtotalLabel       string
+	ItemDiscountLabel   string
+	OrderAmountLabel    string
+	OrderAdjustLabel    string
+	StorageAmountLabel  string
+	PaidAmountLabel     string
+	ArrearAmountLabel   string
+	PaymentSummaryLabel string
+	PaymentRecordsTitle string
+	CampusPhone         string
+	CampusAddress       string
+	ItemRows            []orderReceiptPDFItemRow
+	PaymentRows         []orderReceiptPDFPaymentRow
 }
 
 type orderReceiptPDFItemRow struct {
@@ -70,6 +83,22 @@ type orderReceiptPDFPaymentRow struct {
 	PaidAtText  string
 	AmountText  string
 	RemarkText  string
+}
+
+type orderReceiptPDFLabels struct {
+	QuantityLabel       string
+	GiftLabel           string
+	QuantityAction      string
+	GiftAction          string
+	SubtotalLabel       string
+	ItemDiscountLabel   string
+	OrderAmountLabel    string
+	OrderAdjustLabel    string
+	StorageAmountLabel  string
+	PaidAmountLabel     string
+	ArrearAmountLabel   string
+	PaymentSummaryLabel string
+	PaymentRecordsTitle string
 }
 
 var orderReceiptPDFTemplate = template.Must(template.New("order_receipt_pdf").Parse(`
@@ -158,7 +187,7 @@ var orderReceiptPDFTemplate = template.Must(template.New("order_receipt_pdf").Pa
             <td colspan="2"><strong>报价单：</strong>{{.QuoteLabel}}</td>
           </tr>
           <tr>
-            <th>购买数量</th><th>赠送数量</th><th>有效期</th><th>原价</th><th>优惠</th><th>应收小计</th>
+            <th>{{$.QuantityLabel}}</th><th>{{$.GiftLabel}}</th><th>有效期</th><th>原价</th><th>{{$.ItemDiscountLabel}}</th><th>{{$.SubtotalLabel}}</th>
           </tr>
           <tr>
             <td>{{.QuantityText}}</td><td>{{.GiftText}}</td><td>{{.PeriodText}}</td><td>{{.OriginalAmountText}}</td><td>{{.DiscountAmountText}}</td><td>{{.AmountText}}</td>
@@ -182,9 +211,9 @@ var orderReceiptPDFTemplate = template.Must(template.New("order_receipt_pdf").Pa
     <div class="section">
       <div class="section-title"><span class="bar"></span>结算信息</div>
       <table>
-        <tr><th>订单应收</th><th>整单优惠</th><th>储值抵扣</th><th>外部实收</th><th>待收欠费</th><th>金额大写</th></tr>
+        <tr><th>{{.OrderAmountLabel}}</th><th>{{.OrderAdjustLabel}}</th><th>{{.StorageAmountLabel}}</th><th>{{.PaidAmountLabel}}</th><th>{{.ArrearAmountLabel}}</th><th>金额大写</th></tr>
         <tr><td>{{.TotalAmountText}}</td><td>{{.DiscountAmountText}}</td><td>{{.StorageAmountText}}</td><td>{{.PaidAmountText}}</td><td>{{.ArrearAmountText}}</td><td>{{.AmountInWords}}</td></tr>
-        <tr><th colspan="2">支付摘要</th><td colspan="4">{{.PaymentSummaryText}}</td></tr>
+        <tr><th colspan="2">{{.PaymentSummaryLabel}}</th><td colspan="4">{{.PaymentSummaryText}}</td></tr>
       </table>
     </div>
 
@@ -225,22 +254,22 @@ var orderReceiptPDFTemplate = template.Must(template.New("order_receipt_pdf").Pa
     {{range .ItemRows}}
     <div class="item">
       <div class="item-top"><span>{{.Name}}</span><span>{{.AmountText}}</span></div>
-      <div class="sub">{{.QuoteLabel}}｜购买 {{.QuantityText}}｜赠送 {{.GiftText}}</div>
+      <div class="sub">{{.QuoteLabel}}｜{{$.QuantityAction}} {{.QuantityText}}｜{{$.GiftAction}} {{.GiftText}}</div>
       <div class="sub">{{.PeriodText}}</div>
     </div>
     {{end}}
     <div class="line"></div>
     <div class="section-title">结算信息</div>
     <div class="summary-grid">
-      <div>订单应收：{{.TotalAmountText}}</div>
-      <div>整单优惠：{{.DiscountAmountText}}</div>
-      <div>储值抵扣：{{.StorageAmountText}}</div>
-      <div>外部实收：{{.PaidAmountText}}</div>
-      <div>待收欠费：{{.ArrearAmountText}}</div>
+      <div>{{.OrderAmountLabel}}：{{.TotalAmountText}}</div>
+      <div>{{.OrderAdjustLabel}}：{{.DiscountAmountText}}</div>
+      <div>{{.StorageAmountLabel}}：{{.StorageAmountText}}</div>
+      <div>{{.PaidAmountLabel}}：{{.PaidAmountText}}</div>
+      <div>{{.ArrearAmountLabel}}：{{.ArrearAmountText}}</div>
       <div>金额大写：{{.AmountInWords}}</div>
     </div>
     <div class="line"></div>
-    <div class="section-title">支付摘要</div>
+    <div class="section-title">{{.PaymentSummaryLabel}}</div>
     <div class="empty">{{.PaymentSummaryText}}</div>
     <div class="line"></div>
     <div class="footer"><span>经办人：{{.StaffName}}</span><span>打印人：{{.PrintedBy}}</span><span>签字：____________</span></div>
@@ -263,18 +292,18 @@ var orderReceiptPDFTemplate = template.Must(template.New("order_receipt_pdf").Pa
     <div class="item">
       <div class="row"><span>{{.Name}}</span><span>{{.AmountText}}</span></div>
       <div class="sub">{{.QuoteLabel}}</div>
-      <div class="sub">购买 {{.QuantityText}} / 赠送 {{.GiftText}}</div>
+      <div class="sub">{{$.QuantityAction}} {{.QuantityText}} / {{$.GiftAction}} {{.GiftText}}</div>
     </div>
     {{end}}
     <div class="line"></div>
     <div class="section-title">金额汇总</div>
-    <div class="row"><span>订单应收</span><span>{{.TotalAmountText}}</span></div>
-    <div class="row"><span>整单优惠</span><span>{{.DiscountAmountText}}</span></div>
-    <div class="row"><span>储值抵扣</span><span>{{.StorageAmountText}}</span></div>
-    <div class="row"><span>外部实收</span><span>{{.PaidAmountText}}</span></div>
-    <div class="row"><span>待收欠费</span><span>{{.ArrearAmountText}}</span></div>
+    <div class="row"><span>{{.OrderAmountLabel}}</span><span>{{.TotalAmountText}}</span></div>
+    <div class="row"><span>{{.OrderAdjustLabel}}</span><span>{{.DiscountAmountText}}</span></div>
+    <div class="row"><span>{{.StorageAmountLabel}}</span><span>{{.StorageAmountText}}</span></div>
+    <div class="row"><span>{{.PaidAmountLabel}}</span><span>{{.PaidAmountText}}</span></div>
+    <div class="row"><span>{{.ArrearAmountLabel}}</span><span>{{.ArrearAmountText}}</span></div>
     <div class="line"></div>
-    <div class="section-title">支付摘要</div>
+    <div class="section-title">{{.PaymentSummaryLabel}}</div>
     <div class="sub">{{.PaymentSummaryText}}</div>
     <div class="sub">金额大写：{{.AmountInWords}}</div>
     <div class="footer">打印人：{{.PrintedBy}}</div>
@@ -331,34 +360,49 @@ func (svc *Service) GenerateOrderReceiptPDF(userID int64, orderIDRaw, templateRa
 }
 
 func buildOrderReceiptPDFView(orgName string, detail model.OrderDetailVO, templateMode string) orderReceiptPDFView {
+	isRefund := isOrderReceiptRefundOrder(detail.OrderType)
+	labels := buildOrderReceiptPDFLabels(isRefund)
 	view := orderReceiptPDFView{
-		Template:           templateMode,
-		OrgName:            orgName,
-		OrderNumber:        fallbackString(detail.OrderNumber, "-"),
-		StudentName:        fallbackString(detail.StudentName, "-"),
-		StudentPhone:       fallbackString(detail.StudentPhone, "-"),
-		OrderTypeText:      orderTypeText(detail.OrderType),
-		OrderStatusText:    orderStatusText(detail.OrderStatus),
-		OrderSourceText:    orderSourceText(detail.OrderSource),
-		DealDateText:       formatDateOnly(detail.DealDate),
-		CreatedTimeText:    formatDateTimeValueLocal(detail.CreatedTime),
-		FinishedTimeText:   formatDateTime(detail.FinishedTime),
-		StaffName:          fallbackString(detail.StaffName, "-"),
-		SalePersonName:     fallbackString(detail.SalePersonName, "-"),
-		PrintedBy:          fallbackString(detail.StaffName, "-"),
-		PrintedAtText:      time.Now().Format("2006-01-02 15:04:05"),
-		OrderTagText:       joinWithFallback(detail.OrderTagNames, "、", "-"),
-		Remark:             fallbackString(detail.Remark, "-"),
-		ExternalRemark:     fallbackString(detail.ExternalRemark, "-"),
-		AmountInWords:      formatChineseMoney(detail.TotalAmount),
-		TotalAmountText:    formatCurrency(detail.TotalAmount),
-		DiscountAmountText: formatSignedDeduction(detail.OrderDiscountAmount),
-		StorageAmountText:  formatSignedDeduction(detail.RechargeAccountAmount + detail.RechargeAccountResidualAmount + detail.RechargeAccountGivingAmount),
-		PaidAmountText:     formatCurrency(detail.PaidAmount),
-		ArrearAmountText:   formatCurrency(detail.ArrearAmount),
-		PaymentSummaryText: buildOrderReceiptPaymentSummary(detail.PaymentRecords),
-		CampusPhone:        "-",
-		CampusAddress:      "-",
+		Template:            templateMode,
+		OrgName:             orgName,
+		OrderNumber:         fallbackString(detail.OrderNumber, "-"),
+		StudentName:         fallbackString(detail.StudentName, "-"),
+		StudentPhone:        fallbackString(detail.StudentPhone, "-"),
+		OrderTypeText:       orderTypeText(detail.OrderType),
+		OrderStatusText:     orderStatusText(detail.OrderStatus),
+		OrderSourceText:     orderSourceText(detail.OrderSource),
+		DealDateText:        formatDateOnly(detail.DealDate),
+		CreatedTimeText:     formatDateTimeValueLocal(detail.CreatedTime),
+		FinishedTimeText:    formatDateTime(detail.FinishedTime),
+		StaffName:           fallbackString(detail.StaffName, "-"),
+		SalePersonName:      fallbackString(detail.SalePersonName, "-"),
+		PrintedBy:           fallbackString(detail.StaffName, "-"),
+		PrintedAtText:       time.Now().Format("2006-01-02 15:04:05"),
+		OrderTagText:        joinWithFallback(detail.OrderTagNames, "、", "-"),
+		Remark:              fallbackString(detail.Remark, "-"),
+		ExternalRemark:      fallbackString(detail.ExternalRemark, "-"),
+		AmountInWords:       formatChineseMoney(orderReceiptAmountInWordsAmount(detail, isRefund)),
+		TotalAmountText:     formatCurrency(detail.TotalAmount),
+		DiscountAmountText:  formatOrderReceiptAdjustment(detail.OrderDiscountAmount, isRefund),
+		StorageAmountText:   formatSignedDeduction(detail.RechargeAccountAmount + detail.RechargeAccountResidualAmount + detail.RechargeAccountGivingAmount),
+		PaidAmountText:      formatCurrency(detail.PaidAmount),
+		ArrearAmountText:    formatCurrency(detail.ArrearAmount),
+		PaymentSummaryText:  buildOrderReceiptPaymentSummary(detail.PaymentRecords, isRefund),
+		QuantityLabel:       labels.QuantityLabel,
+		GiftLabel:           labels.GiftLabel,
+		QuantityAction:      labels.QuantityAction,
+		GiftAction:          labels.GiftAction,
+		SubtotalLabel:       labels.SubtotalLabel,
+		ItemDiscountLabel:   labels.ItemDiscountLabel,
+		OrderAmountLabel:    labels.OrderAmountLabel,
+		OrderAdjustLabel:    labels.OrderAdjustLabel,
+		StorageAmountLabel:  labels.StorageAmountLabel,
+		PaidAmountLabel:     labels.PaidAmountLabel,
+		ArrearAmountLabel:   labels.ArrearAmountLabel,
+		PaymentSummaryLabel: labels.PaymentSummaryLabel,
+		PaymentRecordsTitle: labels.PaymentRecordsTitle,
+		CampusPhone:         "-",
+		CampusAddress:       "-",
 	}
 
 	view.ItemRows = buildOrderReceiptPDFItemRows(detail)
@@ -663,7 +707,68 @@ func chargingModeText(mode *int) string {
 	}
 }
 
-func buildOrderReceiptPaymentSummary(records []model.OrderPaymentRecordVO) string {
+func isOrderReceiptRefundOrder(orderType *int) bool {
+	switch derefInt(orderType) {
+	case model.OrderTypeRefundCourse, model.OrderTypeRechargeAccountRefund, model.OrderTypeRefundMaterialFee, model.OrderTypeRefundMiscFee:
+		return true
+	default:
+		return false
+	}
+}
+
+func buildOrderReceiptPDFLabels(isRefund bool) orderReceiptPDFLabels {
+	if isRefund {
+		return orderReceiptPDFLabels{
+			QuantityLabel:       "退还数量",
+			GiftLabel:           "退赠数量",
+			QuantityAction:      "退还",
+			GiftAction:          "退赠",
+			SubtotalLabel:       "应退小计",
+			ItemDiscountLabel:   "优惠",
+			OrderAmountLabel:    "订单应退",
+			OrderAdjustLabel:    "手续费",
+			StorageAmountLabel:  "储值抵扣",
+			PaidAmountLabel:     "外部实退",
+			ArrearAmountLabel:   "待退金额",
+			PaymentSummaryLabel: "退款摘要",
+			PaymentRecordsTitle: "退款记录",
+		}
+	}
+	return orderReceiptPDFLabels{
+		QuantityLabel:       "购买数量",
+		GiftLabel:           "赠送数量",
+		QuantityAction:      "购买",
+		GiftAction:          "赠送",
+		SubtotalLabel:       "应收小计",
+		ItemDiscountLabel:   "优惠",
+		OrderAmountLabel:    "订单应收",
+		OrderAdjustLabel:    "整单优惠",
+		StorageAmountLabel:  "储值抵扣",
+		PaidAmountLabel:     "外部实收",
+		ArrearAmountLabel:   "待收欠费",
+		PaymentSummaryLabel: "支付摘要",
+		PaymentRecordsTitle: "支付记录",
+	}
+}
+
+func formatOrderReceiptAdjustment(value float64, isRefund bool) string {
+	if value <= 0 {
+		return "¥0.00"
+	}
+	if isRefund {
+		return formatCurrency(value)
+	}
+	return formatSignedDeduction(value)
+}
+
+func orderReceiptAmountInWordsAmount(detail model.OrderDetailVO, isRefund bool) float64 {
+	if isRefund {
+		return detail.PaidAmount
+	}
+	return detail.TotalAmount
+}
+
+func buildOrderReceiptPaymentSummary(records []model.OrderPaymentRecordVO, isRefund bool) string {
 	items := make([]string, 0, len(records))
 	for _, item := range records {
 		if item.PayAmount <= 0 {
@@ -672,6 +777,9 @@ func buildOrderReceiptPaymentSummary(records []model.OrderPaymentRecordVO) strin
 		items = append(items, fmt.Sprintf("%s %s", payMethodText(item.PayMethod), formatCurrency(item.PayAmount)))
 	}
 	if len(items) == 0 {
+		if isRefund {
+			return "暂无退款明细"
+		}
 		return "暂无支付明细"
 	}
 	return strings.Join(items, "；")

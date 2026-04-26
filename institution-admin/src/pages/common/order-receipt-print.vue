@@ -248,7 +248,47 @@ const grandTotalAmount = computed(() => Number(detail.value?.totalAmount ?? deta
 const orderDiscountAmount = computed(() => Number(detail.value?.orderDiscountAmount || 0))
 const externalPaidAmount = computed(() => Number(detail.value?.paidAmount || 0))
 const arrearAmount = computed(() => Number(detail.value?.arrearAmount || 0))
-const amountInWords = computed(() => formatChineseMoney(grandTotalAmount.value))
+const amountInWordsAmount = computed(() => isRefundOrder.value ? externalPaidAmount.value : grandTotalAmount.value)
+const amountInWords = computed(() => formatChineseMoney(amountInWordsAmount.value))
+const receiptLabels = computed(() => {
+  if (isRefundOrder.value) {
+    return {
+      quantity: '退还数量',
+      gift: '退赠数量',
+      quantityAction: '退还',
+      giftAction: '退赠',
+      subtotal: '应退小计',
+      totalAmount: '订单应退',
+      itemDiscount: '优惠',
+      orderAdjustment: '手续费',
+      storage: '储值抵扣',
+      paid: '外部实退',
+      arrear: '待退金额',
+      paymentSummary: '退款摘要',
+      paymentRecords: '退款记录',
+    }
+  }
+  return {
+    quantity: '购买数量',
+    gift: '赠送数量',
+    quantityAction: '购买',
+    giftAction: '赠送',
+    subtotal: '应收小计',
+    totalAmount: '订单应收',
+    itemDiscount: '优惠',
+    orderAdjustment: '整单优惠',
+    storage: '储值抵扣',
+    paid: '外部实收',
+    arrear: '待收欠费',
+    paymentSummary: '支付摘要',
+    paymentRecords: '支付记录',
+  }
+})
+const orderAdjustmentAmountText = computed(() => {
+  if (isRefundOrder.value)
+    return orderDiscountAmount.value > 0 ? formatCurrency(orderDiscountAmount.value) : '¥0.00'
+  return orderDiscountAmount.value > 0 ? formatNegativeCurrency(orderDiscountAmount.value) : '¥0.00'
+})
 
 const rechargeDeductionItems = computed(() => {
   if (!detail.value)
@@ -273,8 +313,8 @@ const paymentRecords = computed(() =>
 const paymentSummaryText = computed(() => {
   if (!paymentRecords.value.length) {
     if (storageDeductionTotal.value > 0)
-      return '本单无外部支付，已通过储值账户抵扣完成结算'
-    return '暂无支付明细'
+      return isRefundOrder.value ? '本单无外部退款，已通过储值账户抵扣完成结算' : '本单无外部支付，已通过储值账户抵扣完成结算'
+    return isRefundOrder.value ? '暂无退款明细' : '暂无支付明细'
   }
   return paymentRecords.value
     .map((item: any) => `${payMethodMap[Number(item?.payMethod || 0)] || '其他'} ${formatCurrency(item?.payAmount)}`)
@@ -327,12 +367,12 @@ const operatorMetaList = computed<ReceiptKvItem[]>(() => [
 ])
 
 const settlementMetaList = computed<ReceiptKvItem[]>(() => [
-  { label: isRefundOrder.value ? '业务金额' : '订单应收', value: formatCurrency(grandTotalAmount.value) },
-  { label: '整单优惠', value: orderDiscountAmount.value > 0 ? formatNegativeCurrency(orderDiscountAmount.value) : '¥0.00' },
-  { label: '储值抵扣', value: storageDeductionTotal.value > 0 ? formatNegativeCurrency(storageDeductionTotal.value) : '¥0.00' },
-  { label: '外部实收', value: formatCurrency(externalPaidAmount.value) },
-  { label: '待收欠费', value: arrearAmount.value > 0 ? formatCurrency(arrearAmount.value) : '¥0.00' },
-  { label: '支付摘要', value: paymentSummaryText.value },
+  { label: receiptLabels.value.totalAmount, value: formatCurrency(grandTotalAmount.value) },
+  { label: receiptLabels.value.orderAdjustment, value: orderAdjustmentAmountText.value },
+  { label: receiptLabels.value.storage, value: storageDeductionTotal.value > 0 ? formatNegativeCurrency(storageDeductionTotal.value) : '¥0.00' },
+  { label: receiptLabels.value.paid, value: formatCurrency(externalPaidAmount.value) },
+  { label: receiptLabels.value.arrear, value: arrearAmount.value > 0 ? formatCurrency(arrearAmount.value) : '¥0.00' },
+  { label: receiptLabels.value.paymentSummary, value: paymentSummaryText.value },
 ])
 
 const noteMetaList = computed<ReceiptKvItem[]>(() => [
@@ -590,12 +630,12 @@ watch(
                 <td colspan="2"><strong>报价单：</strong>{{ item.quoteLabel }}</td>
               </tr>
               <tr>
-                <th>购买数量</th>
-                <th>赠送数量</th>
+                <th>{{ receiptLabels.quantity }}</th>
+                <th>{{ receiptLabels.gift }}</th>
                 <th>有效期</th>
                 <th>原价</th>
-                <th>优惠</th>
-                <th>应收小计</th>
+                <th>{{ receiptLabels.itemDiscount }}</th>
+                <th>{{ receiptLabels.subtotal }}</th>
               </tr>
               <tr>
                 <td>{{ item.quantityText }}</td>
@@ -655,16 +695,16 @@ watch(
           <table class="receipt-sheet-table">
             <tbody>
               <tr>
-                <th>订单应收</th>
-                <th>整单优惠</th>
-                <th>储值抵扣</th>
-                <th>外部实收</th>
-                <th>待收欠费</th>
+                <th>{{ receiptLabels.totalAmount }}</th>
+                <th>{{ receiptLabels.orderAdjustment }}</th>
+                <th>{{ receiptLabels.storage }}</th>
+                <th>{{ receiptLabels.paid }}</th>
+                <th>{{ receiptLabels.arrear }}</th>
                 <th>金额大写</th>
               </tr>
               <tr>
                 <td>{{ formatCurrency(grandTotalAmount) }}</td>
-                <td>{{ orderDiscountAmount > 0 ? formatNegativeCurrency(orderDiscountAmount) : '¥0.00' }}</td>
+                <td>{{ orderAdjustmentAmountText }}</td>
                 <td>{{ storageDeductionTotal > 0 ? formatNegativeCurrency(storageDeductionTotal) : '¥0.00' }}</td>
                 <td>{{ formatCurrency(externalPaidAmount) }}</td>
                 <td>{{ arrearAmount > 0 ? formatCurrency(arrearAmount) : '¥0.00' }}</td>
@@ -674,7 +714,7 @@ watch(
                 <th>充值余额抵扣</th>
                 <th>残联余额抵扣</th>
                 <th>赠送余额抵扣</th>
-                <th colspan="3">支付摘要</th>
+                <th colspan="3">{{ receiptLabels.paymentSummary }}</th>
               </tr>
               <tr v-if="rechargeDeductionItems.length">
                 <td>{{ formatNegativeCurrency(rechargeDeductionItems.find(item => item.label === '充值余额抵扣')?.value || 0) }}</td>
@@ -683,7 +723,7 @@ watch(
                 <td colspan="3">{{ paymentSummaryText }}</td>
               </tr>
               <tr v-else>
-                <th colspan="2">支付摘要</th>
+                <th colspan="2">{{ receiptLabels.paymentSummary }}</th>
                 <td colspan="4">{{ paymentSummaryText }}</td>
               </tr>
             </tbody>
@@ -756,7 +796,7 @@ watch(
             <span>{{ formatCurrency(item.amount) }}</span>
           </div>
           <div class="dot-item__sub">
-            {{ item.quoteLabel }}｜购买 {{ item.quantityText }}｜赠送 {{ item.giftText }}
+            {{ item.quoteLabel }}｜{{ receiptLabels.quantityAction }} {{ item.quantityText }}｜{{ receiptLabels.giftAction }} {{ item.giftText }}
           </div>
           <div class="dot-item__sub">
             {{ item.periodText }}
@@ -769,11 +809,11 @@ watch(
           优惠与结算
         </div>
         <div class="dot-summary-grid">
-          <div>订单应收：{{ formatCurrency(grandTotalAmount) }}</div>
-          <div>整单优惠：{{ orderDiscountAmount > 0 ? formatNegativeCurrency(orderDiscountAmount) : '¥0.00' }}</div>
-          <div>储值抵扣：{{ storageDeductionTotal > 0 ? formatNegativeCurrency(storageDeductionTotal) : '¥0.00' }}</div>
-          <div>外部实收：{{ formatCurrency(externalPaidAmount) }}</div>
-          <div>待收欠费：{{ arrearAmount > 0 ? formatCurrency(arrearAmount) : '¥0.00' }}</div>
+          <div>{{ receiptLabels.totalAmount }}：{{ formatCurrency(grandTotalAmount) }}</div>
+          <div>{{ receiptLabels.orderAdjustment }}：{{ orderAdjustmentAmountText }}</div>
+          <div>{{ receiptLabels.storage }}：{{ storageDeductionTotal > 0 ? formatNegativeCurrency(storageDeductionTotal) : '¥0.00' }}</div>
+          <div>{{ receiptLabels.paid }}：{{ formatCurrency(externalPaidAmount) }}</div>
+          <div>{{ receiptLabels.arrear }}：{{ arrearAmount > 0 ? formatCurrency(arrearAmount) : '¥0.00' }}</div>
           <div>金额大写：{{ amountInWords }}</div>
         </div>
 
@@ -789,7 +829,7 @@ watch(
         <div class="dot-divider" />
 
         <div class="dot-section-title">
-          支付记录
+          {{ receiptLabels.paymentRecords }}
         </div>
         <div v-if="paymentTableRows.length">
           <div v-for="item in paymentTableRows" :key="`${item.methodText}-${item.paidAtText}`" class="dot-row">
@@ -864,7 +904,7 @@ watch(
             {{ item.quoteLabel }}
           </div>
           <div class="mini-sub">
-            购买 {{ item.quantityText }} / 赠送 {{ item.giftText }}
+            {{ receiptLabels.quantityAction }} {{ item.quantityText }} / {{ receiptLabels.giftAction }} {{ item.giftText }}
           </div>
         </div>
 
@@ -883,26 +923,26 @@ watch(
           金额汇总
         </div>
         <div class="mini-row">
-          <span>订单应收</span>
+          <span>{{ receiptLabels.totalAmount }}</span>
           <span>{{ formatCurrency(grandTotalAmount) }}</span>
         </div>
         <div class="mini-row">
-          <span>整单优惠</span>
-          <span>{{ orderDiscountAmount > 0 ? formatNegativeCurrency(orderDiscountAmount) : '¥0.00' }}</span>
+          <span>{{ receiptLabels.orderAdjustment }}</span>
+          <span>{{ orderAdjustmentAmountText }}</span>
         </div>
         <div class="mini-row">
-          <span>外部实收</span>
+          <span>{{ receiptLabels.paid }}</span>
           <span>{{ formatCurrency(externalPaidAmount) }}</span>
         </div>
         <div class="mini-row">
-          <span>待收欠费</span>
+          <span>{{ receiptLabels.arrear }}</span>
           <span>{{ arrearAmount > 0 ? formatCurrency(arrearAmount) : '¥0.00' }}</span>
         </div>
 
         <div class="mini-divider" />
 
         <div class="mini-section-title">
-          支付摘要
+          {{ receiptLabels.paymentSummary }}
         </div>
         <div class="mini-sub">
           {{ paymentSummaryText }}
