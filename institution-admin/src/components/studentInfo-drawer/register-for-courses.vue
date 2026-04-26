@@ -691,7 +691,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   <template #title>
                     {{ getArrearTuitionTooltip(item) }}
                   </template>
-                  <span class="arrear-badge ml-1">欠</span>
+                  <span class="arrear-badge">欠</span>
                 </a-tooltip>
                 ）
               </span>
