@@ -188,7 +188,10 @@ const previewBadDebtAmount = computed(() => Number(calcResult.value?.badDebtAmou
 const previewOriginalRefundAmount = computed(() => Number(calcResult.value?.totalOriginalRefundAmount || 0))
 const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount || 0))
 const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
+const previewHandlingFeeAmount = computed(() => Number(calcResult.value?.handlingFee || 0))
 const shouldShowCalcPreviewModal = computed(() => formState.originalPriceRefund || previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
+const previewUsesInlineSummary = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009)
+const showPreviewHandlingFee = computed(() => previewHandlingFeeAmount.value > 0.009)
 const previewStatusText = computed(() => {
   if (previewArrearAmount.value > 0.009 && previewBadDebtAmount.value > 0.009)
     return '欠费/坏账'
@@ -199,6 +202,10 @@ const previewStatusText = computed(() => {
   return ''
 })
 const previewDescriptionText = computed(() => {
+  if (formState.originalPriceRefund && previewHandlingFeeAmount.value > 0.009)
+    return '原价退课已开启，本次将按课程报价单原价试算并计入手续费'
+  if (formState.originalPriceRefund)
+    return '原价退课已开启，请确认本次应退金额'
   if (previewBadDebtAmount.value > 0.009)
     return '此订单存在欠费或坏账记录，请确认本次应退金额'
   if (previewArrearAmount.value <= 0.009)
@@ -386,17 +393,23 @@ function handleRefundQuantityChange(value) {
   formState.price = '0.00'
 }
 function validateRefundQuantity(_rule, value) {
+  const errorMessage = getRefundQuantityErrorMessage(value)
+  if (errorMessage)
+    return Promise.reject(new Error(errorMessage))
+  return Promise.resolve()
+}
+function getRefundQuantityErrorMessage(value) {
   if (value === '' || value === null || value === undefined) {
-    return Promise.reject(new Error('请输入退课数量'))
+    return '请输入退课数量'
   }
   const amount = Number(value)
   if (Number.isNaN(amount) || amount <= 0) {
-    return Promise.reject(new Error('退课数量需大于 0'))
+    return '请输入退课数量'
   }
   if (amount > maxRefundQuantity.value + 0.009) {
-    return Promise.reject(new Error('退课数量不能超过当前可退范围'))
+    return '退课数量不能超过当前可退范围'
   }
-  return Promise.resolve()
+  return ''
 }
 async function estimateRefundPreview() {
   const quantity = Number(formState.dropTheClassNumber || 0)
@@ -430,9 +443,9 @@ async function estimateRefundPreview() {
   }
 }
 function handleEstimateBlur() {
-  formRef.value?.validateFields?.(['dropTheClassNumber'])
-    ?.then(() => estimateRefundPreview())
-    ?.catch(() => {})
+  if (getRefundQuantityErrorMessage(formState.dropTheClassNumber))
+    return
+  estimateRefundPreview()
 }
 function handleAllReturn() {
   formState.dropTheClassNumber = maxRefundQuantity.value
@@ -470,12 +483,8 @@ async function calculateHandlingFeePreview() {
 async function handleOriginalPriceRefundChange(checked) {
   if (!checked)
     return
-  try {
-    await formRef.value?.validateFields?.(['dropTheClassNumber'])
-  }
-  catch {
+  if (getRefundQuantityErrorMessage(formState.dropTheClassNumber))
     return
-  }
   nextLoading.value = true
   try {
     const success = await calculateHandlingFeePreview()
@@ -845,51 +854,80 @@ function handleModify() {
     </a-drawer>
     <a-modal
       v-model:open="calcPreviewOpen"
-      centered
-      :mask-closable="false"
+      style="top:12px"
+      class="modal-content-box refund-preview-modal"
+      :closable="false"
+      :width="800"
       :keyboard="false"
-      :footer="false"
-      :width="820"
+      :mask-closable="false"
     >
       <template #title>
-        确认应退金额
+        <div class="text-5 flex justify-between flex-center">
+          <span class="refund-preview-modal-title">确认应退金额</span>
+          <a-button type="text" class="close-btn" @click="calcPreviewOpen = false">
+            <template #icon>
+              <CloseOutlined class="text-5 close-icon" />
+            </template>
+          </a-button>
+        </div>
       </template>
-      <div class="refund-preview-card">
-        <div class="refund-preview-card__header">
-          <div>
-            <div class="refund-preview-card__title">
-              {{ courseName }}
+      <div class="contenter refund-preview-shell">
+        <div class="refund-preview-card">
+          <div class="refund-preview-card__header">
+            <div>
+              <div class="refund-preview-card__title">
+                {{ courseName }}
+              </div>
+              <a-space class="refund-preview-card__tags" :size="10">
+                <span v-if="lessonTypeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10 ">{{ lessonTypeText }}</span>
+                <span v-if="chargingModeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10">{{ chargingModeText }}</span>
+              </a-space>
             </div>
-            <a-space class="mt-12px">
-              <span v-if="lessonTypeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10 ">{{ lessonTypeText }}</span>
-              <span v-if="chargingModeText" class="bg-#e6f0ff text-#06f text-3 px3 py2px rounded-10">{{ chargingModeText }}</span>
-            </a-space>
+            <span v-if="previewStatusText" class="refund-preview-card__badge">{{ previewStatusText }}</span>
           </div>
-          <span v-if="previewStatusText" class="refund-preview-card__badge">{{ previewStatusText }}</span>
-        </div>
-        <div class="refund-preview-card__meta">
-          <div v-for="item in previewInfoRows" :key="item.label" class="refund-preview-card__meta-row">
-            <span>{{ item.label }}：</span>
-            <span>¥ {{ formatMoney(item.value) }}</span>
+          <div class="refund-preview-card__meta">
+            <div v-for="item in previewInfoRows" :key="item.label" class="refund-preview-card__meta-row">
+              <span>{{ item.label }}：</span>
+              <span>¥ {{ formatMoney(item.value) }}</span>
+            </div>
           </div>
-        </div>
-        <a-divider class="my-24px" />
-        <div class="refund-preview-card__amount-label">
-          <span>应退金额</span>
-          <QuestionCircleFilled class="text-#1677ff text-12px" />
-        </div>
-        <div class="refund-preview-card__amount">
-          ¥ {{ formatMoney(previewRefundAmount) }}
-        </div>
-        <div class="refund-preview-card__desc">
-          {{ previewDescriptionText }}
+          <a-divider class="refund-preview-card__divider" />
+          <div
+            class="refund-preview-card__summary"
+            :class="previewUsesInlineSummary ? 'refund-preview-card__summary--inline' : 'refund-preview-card__summary--stacked'"
+          >
+            <div class="refund-preview-card__summary-main">
+              <div class="refund-preview-card__amount-label">
+                <span>应退金额</span>
+                <QuestionCircleFilled class="text-#1677ff text-12px" />
+              </div>
+              <div v-if="previewUsesInlineSummary" class="refund-preview-card__amount-inline">
+                ¥ {{ formatMoney(previewRefundAmount) }}
+              </div>
+            </div>
+            <div v-if="showPreviewHandlingFee" class="refund-preview-card__fee">
+              <span>手续费：</span>
+              <span class="refund-preview-card__fee-value">¥ {{ formatMoney(previewHandlingFeeAmount) }}</span>
+            </div>
+            <template v-if="!previewUsesInlineSummary">
+              <div class="refund-preview-card__amount">
+                ¥ {{ formatMoney(previewRefundAmount) }}
+              </div>
+              <div class="refund-preview-card__desc">
+                {{ previewDescriptionText }}
+              </div>
+            </template>
+          </div>
+          <div v-if="previewUsesInlineSummary" class="refund-preview-card__desc refund-preview-card__desc--compact">
+            {{ previewDescriptionText }}
+          </div>
         </div>
       </div>
-      <div class="flex justify-end mt-24px">
-        <a-button type="primary" class="w-92px" @click="handleCalcPreviewNext">
+      <template #footer>
+        <a-button type="primary" class="refund-preview-footer__btn" @click="handleCalcPreviewNext">
           下一步
         </a-button>
-      </div>
+      </template>
     </a-modal>
     <!-- 确定退课提示 -->
     <a-modal
@@ -1084,10 +1122,22 @@ function handleModify() {
   white-space: nowrap;
 }
 
+.refund-preview-modal-title {
+  color: #1f1f1f;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.refund-preview-shell {
+  padding: 28px 24px 32px;
+}
+
 .refund-preview-card {
-  padding: 24px;
+  min-height: 278px;
+  padding: 24px 24px 20px;
   background: #fafafa;
-  border-radius: 16px;
+  border-radius: 14px;
 }
 
 .refund-preview-card__header {
@@ -1098,34 +1148,43 @@ function handleModify() {
 
 .refund-preview-card__title {
   color: #1f1f1f;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 40px;
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 30px;
+}
+
+.refund-preview-card__tags {
+  margin-top: 8px;
 }
 
 .refund-preview-card__badge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  min-width: 56px;
+  height: 20px;
   padding: 0 12px;
-  height: 28px;
   background: #fff1f0;
   border-radius: 999px;
   color: #ff4d4f;
-  font-size: 14px;
-  line-height: 28px;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .refund-preview-card__meta {
-  margin-top: 24px;
+  margin-top: 12px;
 }
 
 .refund-preview-card__meta-row {
   display: flex;
   align-items: center;
   color: #8c8c8c;
-  font-size: 16px;
-  line-height: 32px;
+  font-size: 14px;
+  line-height: 28px;
+}
+
+.refund-preview-card__divider {
+  margin: 22px 0 24px;
 }
 
 .refund-preview-card__amount-label {
@@ -1133,23 +1192,101 @@ function handleModify() {
   align-items: center;
   gap: 4px;
   color: #666;
-  font-size: 16px;
-  line-height: 24px;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.refund-preview-card__summary--inline {
+  display: flex;
+  align-items: center;
+  gap: 52px;
+  flex-wrap: wrap;
+}
+
+.refund-preview-card__summary--stacked {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.refund-preview-card__summary-main {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.refund-preview-card__amount-inline {
+  color: #262626;
+  font-family: "DIN alternate", sans-serif;
+  font-size: 21px;
+  font-weight: 700;
+  line-height: 28px;
+}
+
+.refund-preview-card__fee {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #666;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.refund-preview-card__fee-value {
+  color: #ff7a00;
+  font-family: "DIN alternate", sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 28px;
 }
 
 .refund-preview-card__amount {
-  margin-top: 8px;
+  margin-top: 14px;
   color: #262626;
   font-family: "DIN alternate", sans-serif;
-  font-size: 44px;
+  font-size: 48px;
   font-weight: 700;
-  line-height: 56px;
+  line-height: 58px;
 }
 
 .refund-preview-card__desc {
-  margin-top: 12px;
+  margin-top: 14px;
   color: #8c8c8c;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.refund-preview-card__desc--compact {
+  margin-top: 10px;
+}
+
+.refund-preview-footer__btn {
+  min-width: 84px;
+  height: 34px;
+  border-radius: 8px;
   font-size: 14px;
-  line-height: 22px;
+}
+</style>
+
+<style>
+.modal-content-box.refund-preview-modal .ant-modal-content {
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.modal-content-box.refund-preview-modal .ant-modal-header {
+  padding: 12px 16px !important;
+  margin-bottom: 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.modal-content-box.refund-preview-modal .ant-modal-body {
+  padding: 0 !important;
+}
+
+.modal-content-box.refund-preview-modal .ant-modal-footer {
+  padding: 14px 24px 20px;
+  border-top: 1px solid #f0f0f0;
 }
 </style>
