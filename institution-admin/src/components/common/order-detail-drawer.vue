@@ -2,7 +2,7 @@
 import { computed, createVNode, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import dayjs from 'dayjs'
-import { CloseOutlined, DownOutlined, ExclamationCircleFilled, EyeInvisibleOutlined, EyeOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DownOutlined, ExclamationCircleFilled, EyeInvisibleOutlined, EyeOutlined, FormOutlined, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { Empty, Modal } from 'ant-design-vue'
 import { useWindowSize } from '@vueuse/core'
 import { useUserStore } from '@/stores/user'
@@ -1763,34 +1763,42 @@ function isHandledApprovalFlow(flow) {
                 </span>
               </div>
               <div class="bg-#fbfbfb px6 py4">
-                <a-descriptions
-                  v-if="isRefundOrderPaymentSection"
-                  :column="3"
-                  :content-style="{ color: '#888' }"
-                >
-                  <a-descriptions-item label="退款方式">
-                    {{ getPayMethodText(item.payMethod) }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="实退金额（元）">
-                    {{ formatMoneyPlain(item.payAmount) }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="创建时间">
-                    {{ formatDate(item.createdTime) }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="退款账户">
-                    {{ item.accountName || '默认账户' }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="支付单号">
-                    -
-                  </a-descriptions-item>
-                  <a-descriptions-item label="对方账户">
-                    -
-                  </a-descriptions-item>
-                  <a-descriptions-item label="账单操作日期" :span="3">
-                    {{ formatPaymentBillOperationDate(item) }}
-                  </a-descriptions-item>
-                  <a-descriptions-item label="账单备注" :span="3">
-                    <div>{{ getPaymentVoucherText(item) }}</div>
+                <template v-if="isRefundOrderPaymentSection">
+                  <a-descriptions
+                    :column="3"
+                    :content-style="{ color: '#888' }"
+                  >
+                    <a-descriptions-item label="退款方式">
+                      {{ getPayMethodText(item.payMethod) }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="实退金额（元）">
+                      {{ formatMoneyPlain(item.payAmount) }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="创建时间">
+                      {{ formatDate(item.createdTime) }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="退款账户">
+                      {{ item.accountName || '默认账户' }}
+                    </a-descriptions-item>
+                    <a-descriptions-item label="支付单号">
+                      -
+                    </a-descriptions-item>
+                    <a-descriptions-item label="对方账户">
+                      -
+                    </a-descriptions-item>
+                    <a-descriptions-item label="账单操作日期" :span="3">
+                      {{ formatPaymentBillOperationDate(item) }}
+                    </a-descriptions-item>
+                  </a-descriptions>
+                  <div class="payment-voucher-detail">
+                    <div class="payment-voucher-text">
+                      <span class="payment-voucher-label">账单备注：</span>
+                      <span class="payment-voucher-value">{{ getPaymentVoucherText(item) }}</span>
+                      <FormOutlined
+                        v-if="getPaymentVoucherText(item) !== '-'"
+                        class="payment-voucher-icon"
+                      />
+                    </div>
                     <div v-if="getPaymentVoucherImages(item).length" class="payment-voucher-images">
                       <a-image
                         v-for="(image, imageIndex) in getPaymentVoucherImages(item)"
@@ -1801,8 +1809,8 @@ function isHandledApprovalFlow(flow) {
                         class="payment-voucher-image"
                       />
                     </div>
-                  </a-descriptions-item>
-                </a-descriptions>
+                  </div>
+                </template>
                 <a-descriptions
                   v-else
                   :column="3"
@@ -2379,6 +2387,36 @@ span.dot {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
+}
+
+.payment-voucher-detail {
+  color: #666;
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.payment-voucher-text {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.payment-voucher-label {
+  flex: none;
+  color: #222;
+  font-weight: 500;
+}
+
+.payment-voucher-value {
+  color: #888;
+  word-break: break-all;
+}
+
+.payment-voucher-icon {
+  flex: none;
+  margin-left: 8px;
+  color: #06f;
+  font-size: 14px;
 }
 
 .payment-voucher-image {

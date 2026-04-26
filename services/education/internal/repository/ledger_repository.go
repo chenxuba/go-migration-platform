@@ -221,7 +221,7 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		SELECT
 			UUID(), 0, pd.inst_id, ?, ?, ?, pd.id,
 			CASE
-				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
 				WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ?
 				ELSE ?
 			END,
@@ -303,6 +303,7 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		model.LedgerSourceSystem,
 		model.LedgerSystemTypeOrderPayment,
 		1,
+		model.OrderTypeRefundCourse,
 		model.OrderTypeRechargeAccountRefund,
 		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
@@ -336,6 +337,9 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 	if err != nil {
 		return err
 	}
+	if err := repo.normalizeSystemLedgerRefundDirections(ctx, instID); err != nil {
+		return err
+	}
 	return repo.normalizeSystemLedgerAccountNames(ctx, instID)
 }
 
@@ -354,7 +358,7 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		SELECT
 			UUID(), 0, pd.inst_id, ?, ?, ?, pd.id,
 			CASE
-				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
 				WHEN IFNULL(pd.pay_amount, 0) >= 0 THEN ?
 				ELSE ?
 			END,
@@ -454,6 +458,7 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		model.LedgerSourceSystem,
 		model.LedgerSystemTypeOrderPayment,
 		1,
+		model.OrderTypeRefundCourse,
 		model.OrderTypeRechargeAccountRefund,
 		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
@@ -485,6 +490,68 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 	)
 	// Avoid cross-connection cleanup inside the payment transaction.
 	// The normalization pass is maintenance work and can wait for non-transactional paths.
+	return err
+}
+
+func (repo *Repository) normalizeSystemLedgerRefundDirections(ctx context.Context, instID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_ledger l
+		JOIN sale_order so ON so.id = l.order_id AND so.inst_id = l.inst_id AND so.del_flag = 0
+		SET l.type = ?,
+			l.ledger_category_id = ?,
+			l.ledger_category_name = ?,
+			l.ledger_sub_category_id = CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				ELSE ?
+			END,
+			l.ledger_sub_category_name = CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
+				ELSE '储值账户退费'
+			END,
+			l.amount = ABS(IFNULL(l.amount, 0)),
+			l.update_time = NOW()
+		WHERE l.inst_id = ?
+		  AND l.del_flag = 0
+		  AND l.source_type = ?
+		  AND l.system_type = ?
+		  AND l.source_biz_type = ?
+		  AND IFNULL(so.order_type, 1) IN (?, ?)
+		  AND (
+			l.type <> ?
+			OR l.ledger_category_id <> ?
+			OR l.ledger_category_name <> ?
+			OR l.ledger_sub_category_id <> CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN ?
+				ELSE ?
+			END
+			OR l.ledger_sub_category_name <> CASE
+				WHEN IFNULL(so.order_type, 1) = ? THEN '退课'
+				ELSE '储值账户退费'
+			END
+			OR l.amount < 0
+		  )
+	`,
+		model.LedgerTypeExpenditure,
+		model.LedgerCategoryOrderExpense,
+		"订单支出",
+		model.OrderTypeRefundCourse,
+		model.LedgerSubCategoryRefundCourse,
+		model.LedgerSubCategoryRechargeAccountRefund,
+		model.OrderTypeRefundCourse,
+		instID,
+		model.LedgerSourceSystem,
+		model.LedgerSystemTypeOrderPayment,
+		1,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerTypeExpenditure,
+		model.LedgerCategoryOrderExpense,
+		"订单支出",
+		model.OrderTypeRefundCourse,
+		model.LedgerSubCategoryRefundCourse,
+		model.LedgerSubCategoryRechargeAccountRefund,
+		model.OrderTypeRefundCourse,
+	)
 	return err
 }
 
