@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1638,10 +1639,114 @@ func (repo *Repository) ListCloseTuitionAccountOrders(ctx context.Context, instI
 	if err := rows.Err(); err != nil {
 		return model.CloseTuitionAccountOrderRecordResult{}, err
 	}
+	refundAutoCloseRows, err := repo.listRefundAutoCloseTuitionAccountOrdersTx(ctx, tx, instID, accountIDs)
+	if err != nil {
+		return model.CloseTuitionAccountOrderRecordResult{}, err
+	}
+	out = append(out, refundAutoCloseRows...)
+	sort.SliceStable(out, func(i, j int) bool {
+		leftTime := closeOrderRecordSortTime(out[i])
+		rightTime := closeOrderRecordSortTime(out[j])
+		if !leftTime.Equal(rightTime) {
+			return leftTime.After(rightTime)
+		}
+		return strings.Compare(strings.TrimSpace(out[i].ID), strings.TrimSpace(out[j].ID)) > 0
+	})
 	if err := tx.Commit(); err != nil {
 		return model.CloseTuitionAccountOrderRecordResult{}, err
 	}
 	return model.CloseTuitionAccountOrderRecordResult{List: out}, nil
+}
+
+func (repo *Repository) listRefundAutoCloseTuitionAccountOrdersTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) ([]model.CloseTuitionAccountOrderRecordItem, error) {
+	if len(accountIDs) == 0 {
+		return []model.CloseTuitionAccountOrderRecordItem{}, nil
+	}
+	args := []any{instID, refundTuitionAccountOrderStatusCompleted, model.RefundTuitionAccountOrderStatusVoided}
+	for _, id := range accountIDs {
+		args = append(args, id)
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			ro.id,
+			CAST(MIN(roi.tuition_account_id) AS CHAR),
+			SUM(IFNULL(roi.quantity, 0)),
+			SUM(IFNULL(roi.free_quantity, 0)),
+			CASE
+				WHEN IFNULL(ro.status, 0) = ? THEN ?
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = ? THEN 1 ELSE 0 END) > 0 THEN ?
+				ELSE ?
+			END AS close_status,
+			CAST(IFNULL(ro.update_id, 0) AS CHAR),
+			IFNULL(u.nick_name, ''),
+			ro.update_time,
+			COALESCE(ro.completed_time, ro.update_time, ro.create_time)
+		FROM refund_tuition_account_order ro
+		INNER JOIN refund_tuition_account_order_item roi
+			ON roi.refund_order_id = ro.id
+			AND roi.inst_id = ro.inst_id
+			AND roi.del_flag = 0
+		INNER JOIN tuition_account ta
+			ON ta.id = roi.tuition_account_id
+			AND ta.inst_id = ro.inst_id
+			AND ta.del_flag = 0
+		LEFT JOIN inst_user u ON u.id = ro.update_id AND u.del_flag = 0
+		WHERE ro.inst_id = ?
+		  AND ro.del_flag = 0
+		  AND IFNULL(ro.auto_close_tuition, 0) = 1
+		  AND IFNULL(ro.status, 0) IN (?, ?)
+		  AND roi.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+		GROUP BY ro.id, ro.update_id, u.nick_name, ro.update_time, ro.completed_time, ro.create_time
+	`, append([]any{
+		model.RefundTuitionAccountOrderStatusVoided,
+		model.CloseTuitionAccountOrderStatusRevoked,
+		model.TuitionAccountStatusClosed,
+		model.CloseTuitionAccountOrderStatusClosed,
+		model.CloseTuitionAccountOrderStatusRevoked,
+	}, args...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.CloseTuitionAccountOrderRecordItem, 0, 4)
+	for rows.Next() {
+		var (
+			item    model.CloseTuitionAccountOrderRecordItem
+			rawID   int64
+			rowTime sql.NullTime
+		)
+		if err := rows.Scan(
+			&rawID,
+			&item.TuitionAccountID,
+			&item.Quantity,
+			&item.FreeQuantity,
+			&item.Status,
+			&item.UpdatedStaffID,
+			&item.UpdatedStaffName,
+			&item.UpdatedTime,
+			&rowTime,
+		); err != nil {
+			return nil, err
+		}
+		item.ID = buildRefundAutoCloseRevertID(rawID)
+		if rowTime.Valid {
+			t := rowTime.Time
+			item.CreatedTime = &t
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func closeOrderRecordSortTime(item model.CloseTuitionAccountOrderRecordItem) time.Time {
+	if item.CreatedTime != nil {
+		return *item.CreatedTime
+	}
+	if item.UpdatedTime != nil {
+		return *item.UpdatedTime
+	}
+	return time.Time{}
 }
 
 func int64SliceToAny(list []int64) []any {
