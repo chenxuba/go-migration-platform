@@ -723,7 +723,7 @@ function updateTooltipPosition(pointId: number) {
   const moduleRect = moduleRef.value.getBoundingClientRect()
   const left = canvasRect.left - moduleRect.left + (projected.x * 0.5 + 0.5) * canvasRect.width
   const top = canvasRect.top - moduleRect.top + (-projected.y * 0.5 + 0.5) * canvasRect.height
-  const pointScreen = { x: left, y: top }
+  const pointScreen = { x: left - 1, y: top - 2 }
   tooltipPosition.value = {
     left: Math.max(140, Math.min(left, moduleRect.width - cardWidth - cardOffsetX - 24)),
     top: Math.max(196, Math.min(top, moduleRect.height - 190)),
@@ -868,10 +868,23 @@ function createInstitutionPoints(): InstitutionPoint[] {
     { name: '同心训练中心', district: '临平区', risk: 'normal', courses: 31, attendance: 95, riskText: '服务达标', offset: [-10, 4] },
     { name: '康桥儿童中心', district: '西湖区', risk: 'normal', courses: 22, attendance: 92, riskText: '运行正常', offset: [42, 18] },
     { name: '新声康复中心', district: '萧山区', risk: 'danger', courses: 18, attendance: 71, riskText: '资金监管异常', offset: [48, 14] },
+    { name: '瑞康训练中心', district: '余杭区', risk: 'normal', courses: 26, attendance: 96, riskText: '运行正常', offset: [-78, 34] },
+    { name: '云帆康复中心', district: '余杭区', risk: 'focus', courses: 33, attendance: 87, riskText: '续费待跟进', offset: [-56, -32] },
+    { name: '明德儿童中心', district: '余杭区', risk: 'normal', courses: 21, attendance: 94, riskText: '数据稳定', offset: [70, -45] },
+    { name: '海辰融合教育', district: '西湖区', risk: 'normal', courses: 28, attendance: 91, riskText: '运行正常', offset: [-35, -45] },
+    { name: '启明康复中心', district: '西湖区', risk: 'focus', courses: 30, attendance: 86, riskText: '到课率下降', offset: [0, 60] },
+    { name: '嘉禾训练中心', district: '萧山区', risk: 'normal', courses: 25, attendance: 93, riskText: '服务达标', offset: [-48, -86] },
+    { name: '新桥康复中心', district: '萧山区', risk: 'warn', courses: 34, attendance: 81, riskText: '排课异常', offset: [28, -88] },
+    { name: '星湾儿童中心', district: '钱塘区', risk: 'normal', courses: 20, attendance: 95, riskText: '运行正常', offset: [-92, -34] },
+    { name: '东岸康复中心', district: '钱塘区', risk: 'danger', courses: 19, attendance: 73, riskText: '资金监管异常', offset: [56, -4] },
+    { name: '临康训练中心', district: '临平区', risk: 'normal', courses: 24, attendance: 92, riskText: '数据稳定', offset: [35, -45] },
   ]
 
+  const placedPoints: Array<[number, number]> = []
   return plans.map((plan, index) => {
     const district = districtModels.find(item => item.name === plan.district)!
+    const [x, y] = resolveInstitutionPosition(district, plan.offset, placedPoints)
+    placedPoints.push([x, y])
     return {
       id: index + 1,
       name: plan.name,
@@ -880,10 +893,99 @@ function createInstitutionPoints(): InstitutionPoint[] {
       courses: plan.courses,
       attendance: plan.attendance,
       riskText: plan.riskText,
-      x: district.center.x + plan.offset[0],
-      y: district.center.y + plan.offset[1],
+      x,
+      y,
     }
   })
+}
+
+function resolveInstitutionPosition(district: DistrictModel, offset: [number, number], placedPoints: Array<[number, number]>) {
+  const center: [number, number] = [district.center.x, district.center.y]
+  const preferred: [number, number] = [center[0] + offset[0], center[1] + offset[1]]
+  const candidates = createDistrictCandidates(district, 22)
+  if (!candidates.length) return center
+  const candidatePool = selectCandidatePool(candidates, placedPoints)
+
+  let bestPoint = candidatePool[0]
+  let bestScore = Number.NEGATIVE_INFINITY
+
+  for (const point of candidatePool) {
+    const minPlacedDistance = placedPoints.length
+      ? Math.min(...placedPoints.map(placed => pointDistance(point, placed)))
+      : 160
+    const nearestDistrictLabelDistance = Math.min(...districtModels.map(item => pointDistance(point, [item.center.x, item.center.y])))
+    const governmentDistance = pointDistance(point, [governmentAgency.x, governmentAgency.y])
+    const centerDistance = pointDistance(point, center)
+    const preferredDistance = pointDistance(point, preferred)
+    const overlapPenalty = minPlacedDistance < 72 ? (72 - minPlacedDistance) * 14 : 0
+    const labelPenalty = nearestDistrictLabelDistance < 50 ? (50 - nearestDistrictLabelDistance) * 6 : 0
+    const governmentPenalty = governmentDistance < 86 ? (86 - governmentDistance) * 10 : 0
+    const score = Math.min(minPlacedDistance, 170) * 4.1
+      + Math.min(centerDistance, 130) * 0.55
+      - preferredDistance * 0.32
+      - overlapPenalty
+      - labelPenalty
+      - governmentPenalty
+
+    if (score > bestScore) {
+      bestScore = score
+      bestPoint = point
+    }
+  }
+
+  return bestPoint
+}
+
+function selectCandidatePool(candidates: Array<[number, number]>, placedPoints: Array<[number, number]>) {
+  const attempts = [
+    { placed: 70, label: 56, government: 90 },
+    { placed: 62, label: 48, government: 78 },
+    { placed: 54, label: 42, government: 66 },
+    { placed: 44, label: 34, government: 56 },
+  ]
+
+  for (const attempt of attempts) {
+    const pool = candidates.filter((point) => {
+      const minPlacedDistance = placedPoints.length
+        ? Math.min(...placedPoints.map(placed => pointDistance(point, placed)))
+        : Number.POSITIVE_INFINITY
+      const nearestDistrictLabelDistance = Math.min(...districtModels.map(item => pointDistance(point, [item.center.x, item.center.y])))
+      const governmentDistance = pointDistance(point, [governmentAgency.x, governmentAgency.y])
+      return minPlacedDistance >= attempt.placed
+        && nearestDistrictLabelDistance >= attempt.label
+        && governmentDistance >= attempt.government
+    })
+    if (pool.length) return pool
+  }
+
+  return candidates
+}
+
+function createDistrictCandidates(district: DistrictModel, safeDistance: number) {
+  const ring = district.polygons[0][0]
+  const xs = ring.map(point => point[0])
+  const ys = ring.map(point => point[1])
+  const minX = Math.min(...xs)
+  const maxX = Math.max(...xs)
+  const minY = Math.min(...ys)
+  const maxY = Math.max(...ys)
+  const candidates: Array<[number, number]> = []
+
+  for (let x = minX + safeDistance; x <= maxX - safeDistance; x += 20) {
+    for (let y = minY + safeDistance; y <= maxY - safeDistance; y += 20) {
+      const point: [number, number] = [x, y]
+      if (isSafeDistrictPoint(district, point, safeDistance)) candidates.push(point)
+    }
+  }
+
+  return candidates.length ? candidates : [[district.center.x, district.center.y] as [number, number]]
+}
+
+function isSafeDistrictPoint(district: DistrictModel, point: [number, number], safeDistance = 24) {
+  return district.polygons.some((polygon) => (
+    pointInRing(point, polygon[0])
+    && distanceToRing(point, polygon[0]) >= safeDistance
+  ))
 }
 
 function createShapeFromRings(polygon: Array<[number, number][]>) {
@@ -1145,6 +1247,28 @@ function pointInRing(point: [number, number], ring: Array<[number, number]>) {
     if (intersect) inside = !inside
   }
   return inside
+}
+
+function distanceToRing(point: [number, number], ring: Array<[number, number]>) {
+  let minDistance = Number.POSITIVE_INFINITY
+  for (let index = 0; index < ring.length; index += 1) {
+    const start = ring[index]
+    const end = ring[(index + 1) % ring.length]
+    minDistance = Math.min(minDistance, distanceToSegment(point, start, end))
+  }
+  return minDistance
+}
+
+function distanceToSegment(point: [number, number], start: [number, number], end: [number, number]) {
+  const dx = end[0] - start[0]
+  const dy = end[1] - start[1]
+  if (dx === 0 && dy === 0) return Math.hypot(point[0] - start[0], point[1] - start[1])
+  const t = Math.max(0, Math.min(1, ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / (dx * dx + dy * dy)))
+  return Math.hypot(point[0] - (start[0] + dx * t), point[1] - (start[1] + dy * t))
+}
+
+function pointDistance(a: [number, number], b: [number, number]) {
+  return Math.hypot(a[0] - b[0], a[1] - b[1])
 }
 
 function roundRect(ctx: CanvasRenderingContext2D, x: number, y: number, width: number, height: number, radius: number) {
