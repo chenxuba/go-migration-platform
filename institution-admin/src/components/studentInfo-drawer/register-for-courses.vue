@@ -266,6 +266,12 @@ function onMenuRefundCourse(item) {
   dropTheClassDrawerOpen.value = true
 }
 
+async function handleRefundCourseSuccess() {
+  dropTheClassDrawerOpen.value = false
+  currentDropCourseRecord.value = null
+  await getTuitionAccountList()
+}
+
 function onMenuResumeCourse(item) {
   currentResumeCourseRecord.value = item || null
   resumeTheClassDrawerOpen.value = true
@@ -801,7 +807,7 @@ watch(endTheClassDrawerOpen, (value) => {
       </div>
     </a-spin>
     <transferClassDrawer v-model:open="transferClassDrawerOpen" />
-    <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" :record="currentDropCourseRecord" />
+    <dropTheClassDrawer v-model:open="dropTheClassDrawerOpen" :record="currentDropCourseRecord" @submitted="handleRefundCourseSuccess" />
     <stopTheClassModal
       v-model:open="stopTheClassDrawerOpen"
       :record="currentStopCourseRecord"

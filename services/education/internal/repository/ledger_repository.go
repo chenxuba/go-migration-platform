@@ -226,7 +226,14 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 				ELSE ?
 			END,
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
-			?, ?, 
+			CASE
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
+				ELSE ?
+			END,
+			CASE
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
+				ELSE ?
+			END,
 			CASE
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
@@ -260,8 +267,14 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 				ELSE IFNULL(stu.mobile, '')
 			END,
 			IFNULL(stu.mobile, ''),
-			IFNULL(pd.payment_voucher, ''),
-			JSON_ARRAY(),
+			CASE
+				WHEN JSON_VALID(IFNULL(pd.payment_voucher, '')) THEN IFNULL(JSON_UNQUOTE(JSON_EXTRACT(pd.payment_voucher, '$.text')), '')
+				ELSE IFNULL(pd.payment_voucher, '')
+			END,
+			CASE
+				WHEN JSON_VALID(IFNULL(pd.payment_voucher, '')) THEN COALESCE(JSON_EXTRACT(pd.payment_voucher, '$.images'), JSON_ARRAY())
+				ELSE JSON_ARRAY()
+			END,
 			?,
 			0,
 			'',
@@ -294,7 +307,13 @@ func (repo *Repository) ensureSystemLedgerRecords(ctx context.Context, instID in
 		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
 		model.LedgerTypeExpenditure,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerCategoryOrderExpense,
 		model.LedgerCategoryOrderIncome,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		"订单支出",
 		"订单收入",
 		model.OrderTypeRechargeAccount,
 		model.LedgerSubCategoryRechargeAccount,
@@ -340,7 +359,14 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 				ELSE ?
 			END,
 			CONCAT(DATE_FORMAT(pd.create_time, '%Y%m%d%H%i%s'), LPAD(MOD(pd.id, 1000000), 6, '0')),
-			?, ?, 
+			CASE
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
+				ELSE ?
+			END,
+			CASE
+				WHEN IFNULL(so.order_type, 1) IN (?, ?) THEN ?
+				ELSE ?
+			END,
 			CASE
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
 				WHEN IFNULL(so.order_type, 1) = ? THEN ?
@@ -374,8 +400,14 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 				ELSE IFNULL(stu.mobile, '')
 			END,
 			IFNULL(stu.mobile, ''),
-			IFNULL(pd.payment_voucher, ''),
-			JSON_ARRAY(),
+			CASE
+				WHEN JSON_VALID(IFNULL(pd.payment_voucher, '')) THEN IFNULL(JSON_UNQUOTE(JSON_EXTRACT(pd.payment_voucher, '$.text')), '')
+				ELSE IFNULL(pd.payment_voucher, '')
+			END,
+			CASE
+				WHEN JSON_VALID(IFNULL(pd.payment_voucher, '')) THEN COALESCE(JSON_EXTRACT(pd.payment_voucher, '$.images'), JSON_ARRAY())
+				ELSE JSON_ARRAY()
+			END,
 			?,
 			0,
 			'',
@@ -398,6 +430,8 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		ON DUPLICATE KEY UPDATE
 			amount = VALUES(amount),
 			type = VALUES(type),
+			ledger_category_id = VALUES(ledger_category_id),
+			ledger_category_name = VALUES(ledger_category_name),
 			ledger_sub_category_id = VALUES(ledger_sub_category_id),
 			ledger_sub_category_name = VALUES(ledger_sub_category_name),
 			deal_staff_id = VALUES(deal_staff_id),
@@ -424,7 +458,13 @@ func (repo *Repository) upsertOrderPaymentLedgerTx(ctx context.Context, tx *sql.
 		model.LedgerTypeExpenditure,
 		model.LedgerTypeIncome,
 		model.LedgerTypeExpenditure,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		model.LedgerCategoryOrderExpense,
 		model.LedgerCategoryOrderIncome,
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		"订单支出",
 		"订单收入",
 		model.OrderTypeRechargeAccount,
 		model.LedgerSubCategoryRechargeAccount,

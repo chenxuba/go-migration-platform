@@ -54,6 +54,33 @@ func (svc *Service) EstimateRefundTuitionAccountValuableTuition(userID int64, dt
 	return svc.repo.EstimateRefundTuitionAccountValuableTuition(context.Background(), instID, dto)
 }
 
+func (svc *Service) CreateRefundTuitionAccountOrder(userID int64, dto model.RefundTuitionAccountCreateOrderDTO) (model.RefundTuitionAccountCreateOrderResult, error) {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return model.RefundTuitionAccountCreateOrderResult{}, err
+	}
+	orderID, isNeedPay, err := svc.repo.CreateRefundTuitionAccountOrder(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return model.RefundTuitionAccountCreateOrderResult{}, err
+	}
+	return model.RefundTuitionAccountCreateOrderResult{
+		ID:        strconv.FormatInt(orderID, 10),
+		IsNeedPay: isNeedPay,
+	}, nil
+}
+
+func (svc *Service) PayRefundTuitionAccountOrder(userID int64, dto model.RefundTuitionAccountPayOrderDTO) (string, error) {
+	instID, operatorID, err := svc.resolveTeachingClassOperator(userID)
+	if err != nil {
+		return "", err
+	}
+	paymentID, err := svc.repo.PayRefundTuitionAccountOrderBySchoolPal(context.Background(), instID, operatorID, dto)
+	if err != nil {
+		return "", err
+	}
+	return strconv.FormatInt(paymentID, 10), nil
+}
+
 func (svc *Service) ListSubTuitionAccountPriorityConfigs(userID int64) (model.SubTuitionAccountPriorityConfigResult, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

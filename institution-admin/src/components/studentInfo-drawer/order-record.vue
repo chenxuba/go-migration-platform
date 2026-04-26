@@ -1,9 +1,10 @@
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import OrderDetailDrawer from '@/components/common/order-detail-drawer.vue'
 import { getOrderListApi } from '@/api/finance-center/order-manage'
 import { useStudentStore } from '@/stores/student'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 const studentStore = useStudentStore()
@@ -125,7 +126,7 @@ function orderAmountText(record) {
 }
 
 function shouldShowArrearBadge(record) {
-  return !record?.isBadDebt && Number(record?.orderStatus || 0) !== 4 && Number(record?.arrearAmount || 0) > 0
+  return !refundOrderTypes.has(Number(record?.orderType || 0)) && !record?.isBadDebt && Number(record?.orderStatus || 0) !== 4 && Number(record?.arrearAmount || 0) > 0
 }
 
 function shouldShowBadDebtBadge(record) {
@@ -189,6 +190,12 @@ watch(
   },
   { immediate: true },
 )
+
+emitter.on(EVENTS.REFRESH_STUDENT_ORDER_RECORD, fetchOrderList)
+
+onUnmounted(() => {
+  emitter.off(EVENTS.REFRESH_STUDENT_ORDER_RECORD, fetchOrderList)
+})
 </script>
 
 <template>

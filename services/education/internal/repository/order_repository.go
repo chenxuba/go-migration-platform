@@ -54,6 +54,27 @@ type WeChatOfficialCoursePurchaseNotificationDetail struct {
 	CourseNames  []string
 }
 
+func refundOrderTypeSQL() string {
+	return fmt.Sprintf("%d,%d,%d,%d",
+		model.OrderTypeRefundCourse,
+		model.OrderTypeRechargeAccountRefund,
+		model.OrderTypeRefundMaterialFee,
+		model.OrderTypeRefundMiscFee,
+	)
+}
+
+func isRefundOrderType(orderType *int) bool {
+	if orderType == nil {
+		return false
+	}
+	switch *orderType {
+	case model.OrderTypeRefundCourse, model.OrderTypeRechargeAccountRefund, model.OrderTypeRefundMaterialFee, model.OrderTypeRefundMiscFee:
+		return true
+	default:
+		return false
+	}
+}
+
 func (repo *Repository) PageOrders(ctx context.Context, instID int64, query model.OrderManageQueryDTO) (model.OrderManageResultVO, error) {
 	current := query.PageRequestModel.PageIndex
 	size := query.PageRequestModel.PageSize
@@ -70,6 +91,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	q := query.QueryModel
 	paidAmountExpr := "(SELECT IFNULL(SUM(pd.pay_amount), 0) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
 	payCountExpr := "(SELECT COUNT(*) FROM sale_order_pay_detail pd WHERE pd.del_flag = 0 AND pd.order_id = so.id)"
+	refundOrderTypes := refundOrderTypeSQL()
 	if strings.TrimSpace(q.Keyword) != "" {
 		kw := "%" + strings.TrimSpace(q.Keyword) + "%"
 		switch strings.TrimSpace(q.KeywordType) {
@@ -188,9 +210,9 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	}
 	if q.IsArrears != nil {
 		if *q.IsArrears {
-			filters = append(filters, "IFNULL(so.order_real_amount, 0) > "+paidAmountExpr)
+			filters = append(filters, "IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr)
 		} else {
-			filters = append(filters, "IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr)
+			filters = append(filters, "(IFNULL(so.order_type, 0) IN ("+refundOrderTypes+") OR IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+")")
 		}
 	}
 	if len(q.OrderArrearStatus) > 0 {
@@ -198,15 +220,15 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		for _, status := range q.OrderArrearStatus {
 			switch status {
 			case 1:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
 			case 2:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
 			case 3:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
 			case 4:
 				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
 			case 5:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
 			}
 		}
 		if len(statusClauses) > 0 {
@@ -239,14 +261,6 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 	}
 	whereClause := strings.Join(filters, " AND ")
 
-	// 退费类订单的 pay_detail 多为正数存储，列表「实收总计」需按流出计为负向，与前端「实收/实退」展示一致
-	refundOrderTypes := fmt.Sprintf("%d,%d,%d,%d",
-		model.OrderTypeRefundCourse,
-		model.OrderTypeRechargeAccountRefund,
-		model.OrderTypeRefundMaterialFee,
-		model.OrderTypeRefundMiscFee,
-	)
-
 	var total int
 	if err := repo.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM sale_order so LEFT JOIN inst_student s ON so.student_id = s.id WHERE `+whereClause, args...).Scan(&total); err != nil {
 		return model.OrderManageResultVO{}, err
@@ -264,6 +278,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 				ELSE `+paidAmountExpr+`
 			END), 0),
 			IFNULL(SUM(CASE
+				WHEN IFNULL(so.order_type, 0) IN (`+refundOrderTypes+`) THEN 0
 				WHEN IFNULL(so.is_bad_debt, 0) = 0
 				  AND so.order_status <> ?
 				  AND IFNULL(so.order_real_amount, 0) > `+paidAmountExpr+`
@@ -353,7 +368,7 @@ func (repo *Repository) PageOrders(ctx context.Context, instID int64, query mode
 		if item.IsBadDebt {
 			item.ArrearAmount = 0
 			item.IsAmountOwed = false
-		} else if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment && item.Amount > paidAmount {
+		} else if !isRefundOrderType(item.OrderType) && item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment && item.Amount > paidAmount {
 			item.ArrearAmount = item.Amount - paidAmount
 			item.IsAmountOwed = item.ArrearAmount > 0
 		}
@@ -867,7 +882,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 		if item.IsBadDebt {
 			item.ArrearAmount = 0
 			item.IsAmountOwed = false
-		} else if item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment {
+		} else if !isRefundOrderType(item.OrderType) && item.OrderStatus != nil && *item.OrderStatus != model.OrderStatusPendingPayment {
 			item.ArrearAmount = shouldAmount - item.ActualPaidAmount
 			if item.ArrearAmount < 0 {
 				item.ArrearAmount = 0
@@ -892,6 +907,7 @@ func (repo *Repository) PageOrderDetails(ctx context.Context, instID int64, quer
 
 func buildOrderDetailCommonFilters(q model.OrderDetailListFilters, args *[]any, paidAmountExpr, payCountExpr string) []string {
 	filters := []string{"so.del_flag = 0", "so.inst_id = ?"}
+	refundOrderTypes := refundOrderTypeSQL()
 
 	if strings.TrimSpace(q.OrderNumber) != "" {
 		filters = append(filters, "so.order_number LIKE ?")
@@ -976,15 +992,15 @@ func buildOrderDetailCommonFilters(q model.OrderDetailListFilters, args *[]any, 
 		for _, status := range q.OrderArrearStatus {
 			switch status {
 			case 1:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
 			case 2:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" <= 1)")
 			case 3:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) > "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
 			case 4:
 				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 1)")
 			case 5:
-				statusClauses = append(statusClauses, "(IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
+				statusClauses = append(statusClauses, "(IFNULL(so.order_type, 0) NOT IN ("+refundOrderTypes+") AND IFNULL(so.is_bad_debt, 0) = 0 AND IFNULL(so.order_real_amount, 0) <= "+paidAmountExpr+" AND "+payCountExpr+" > 1)")
 			}
 		}
 		if len(statusClauses) > 0 {
@@ -1087,7 +1103,7 @@ func (repo *Repository) GetOrderDetail(ctx context.Context, instID, orderID int6
 	if item.IsBadDebt {
 		item.ArrearAmount = 0
 		item.IsAmountOwed = false
-	} else if item.Amount > paidAmount {
+	} else if !isRefundOrderType(item.OrderType) && item.Amount > paidAmount {
 		item.ArrearAmount = item.Amount - paidAmount
 		item.IsAmountOwed = item.ArrearAmount > 0
 	}

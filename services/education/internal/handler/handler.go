@@ -110,6 +110,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/tuition-accounts/refund-owed-summary", handler.refundTuitionAccountOwedSummary)
 	mux.HandleFunc("/api/v1/tuition-accounts/refund-estimate-valuable-tuition", handler.estimateRefundTuitionAccountValuableTuition)
 	mux.HandleFunc("/api/v1/tuition-accounts/refund-calc-handling-fee", handler.calculateRefundTuitionAccountHandlingFee)
+	mux.HandleFunc("/api/v1/tuition-accounts/refund-orders/create", handler.createRefundTuitionAccountOrder)
+	mux.HandleFunc("/api/v1/tuition-accounts/refund-orders/pay", handler.payRefundTuitionAccountOrder)
 	mux.HandleFunc("/api/v1/tuition-accounts/sub-account-priority-configs/list", handler.subTuitionAccountPriorityConfigList)
 	mux.HandleFunc("/api/v1/tuition-accounts/revert-close-preview", handler.revertCloseTuitionAccountPreview)
 	mux.HandleFunc("/api/v1/tuition-accounts/revert-close", handler.revertCloseTuitionAccount)

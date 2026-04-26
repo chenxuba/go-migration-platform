@@ -61,7 +61,15 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 			INNER JOIN recharge_account_import_task t ON t.id = r.task_id
 			WHERE t.inst_id = ?`,
 		`DELETE FROM recharge_account_import_task WHERE inst_id = ?`,
+		`DELETE FROM template_message_record_item WHERE inst_id = ?`,
+		`DELETE FROM template_message_record WHERE inst_id = ?`,
+		`DELETE FROM pending_renewal_student_export_record WHERE inst_id = ?`,
+		`DELETE FROM intent_student_export_record WHERE inst_id = ?`,
+		`DELETE FROM class_record_export_record WHERE inst_id = ?`,
+		`DELETE FROM student_arrear_export_record WHERE inst_id = ?`,
 		`DELETE FROM enrolled_student_export_record WHERE inst_id = ?`,
+		`DELETE FROM wechat_official_bind_ticket WHERE inst_id = ?`,
+		`DELETE FROM wechat_official_student_binding WHERE inst_id = ?`,
 		`DELETE d FROM sale_order_course_detail d
 			INNER JOIN sale_order so ON so.id = d.order_id
 			WHERE so.inst_id = ?`,
@@ -242,7 +250,34 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		},
 		{
 			target: &summary.ExportRecords,
-			query:  `SELECT COUNT(*) FROM enrolled_student_export_record WHERE inst_id = ? AND del_flag = 0`,
+			query: `
+				SELECT
+					(SELECT COUNT(*) FROM enrolled_student_export_record WHERE inst_id = ? AND del_flag = 0)
+					+ (SELECT COUNT(*) FROM intent_student_export_record WHERE inst_id = ? AND del_flag = 0)
+					+ (SELECT COUNT(*) FROM pending_renewal_student_export_record WHERE inst_id = ? AND del_flag = 0)
+					+ (SELECT COUNT(*) FROM class_record_export_record WHERE inst_id = ? AND del_flag = 0)
+					+ (SELECT COUNT(*) FROM student_arrear_export_record WHERE inst_id = ? AND del_flag = 0)
+			`,
+			args: []any{instID, instID, instID, instID, instID},
+		},
+		{
+			target: &summary.TemplateMessageRecords,
+			query:  `SELECT COUNT(*) FROM template_message_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TemplateMessageRecordItems,
+			query:  `SELECT COUNT(*) FROM template_message_record_item WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.WeChatBindTickets,
+			query:  `SELECT COUNT(*) FROM wechat_official_bind_ticket WHERE inst_id = ?`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.WeChatStudentBindings,
+			query:  `SELECT COUNT(*) FROM wechat_official_student_binding WHERE inst_id = ?`,
 			args:   []any{instID},
 		},
 		{

@@ -134,6 +134,49 @@ export interface RefundTuitionAccountHandlingFeeResult {
   details?: RefundTuitionAccountHandlingFeeDetail[]
 }
 
+export interface RefundTuitionAccountCreateOrderParams {
+  tuitionAccountId: string
+  totalAmount: number
+  realAmount: number
+  chargeAgainstTuition: number
+  refundQuantity: number
+  refundFreeQuantity: number
+  isRechargeAccount: boolean
+  rechargeAccountId: string
+  dealDate: string
+  remark?: string
+  externalRemark?: string
+  salePersonId?: string
+  collectorStaffId?: string
+  phoneSellStaffId?: string
+  foregroundStaffId?: string
+  viceSellStaffStaffId?: string
+  orderTagIds?: string[]
+  autoCloseTuition: boolean
+  isOriginalRefund?: boolean
+}
+
+export interface RefundTuitionAccountCreateOrderResult {
+  id?: string
+  isNeedPay?: boolean
+}
+
+export interface RefundTuitionAccountPayOrderParams {
+  orderId: string
+  payAmount: number
+  isOriginalRefund: boolean
+  payAccounts: Array<{
+    payMethod: number
+    amount: number
+    accountId: string
+    paymentVoucher?: {
+      text?: string
+      images?: string[]
+    }
+    payTime: string
+  }>
+}
+
 export interface SubTuitionAccountPriorityConfigItem {
   priorityType?: number
   sortDirection?: number
@@ -247,6 +290,14 @@ export function estimateRefundTuitionAccountValuableTuitionApi(data: { tuitionAc
 
 export function calculateRefundTuitionAccountHandlingFeeApi(data: { tuitionAccountId: string, refundQuantity: number }) {
   return usePost<RefundTuitionAccountHandlingFeeResult>('/api/v1/tuition-accounts/refund-calc-handling-fee', data)
+}
+
+export function createRefundTuitionAccountOrderApi(data: RefundTuitionAccountCreateOrderParams) {
+  return usePost<RefundTuitionAccountCreateOrderResult>('/api/v1/tuition-accounts/refund-orders/create', data)
+}
+
+export function payRefundTuitionAccountOrderApi(data: RefundTuitionAccountPayOrderParams) {
+  return usePost<string>('/api/v1/tuition-accounts/refund-orders/pay', data)
 }
 
 export function getSubTuitionAccountPriorityConfigListApi() {

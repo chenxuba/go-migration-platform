@@ -51,6 +51,7 @@ type lessonIncomeQueryFragments struct {
 	classNameExpr          string
 	conformIncomeExpr      string
 	lessonChargingModeExpr string
+	tuitionExpr            string
 }
 
 func buildLessonIncomeFlowFromSQL(schema lessonIncomeSchema) string {
@@ -79,10 +80,10 @@ func buildLessonIncomeFlowFromSQL(schema lessonIncomeSchema) string {
 		GROUP BY
 			taf0.inst_id,
 			CASE
-				WHEN taf0.source_type IN (%d, %d) AND IFNULL(taf0.source_id, 0) > 0 THEN CONCAT('close_group:', CAST(taf0.source_type AS CHAR), ':', CAST(taf0.source_id AS CHAR))
+				WHEN taf0.source_type IN (%d, %d, %d) AND IFNULL(taf0.source_id, 0) > 0 THEN CONCAT('close_group:', CAST(taf0.source_type AS CHAR), ':', CAST(taf0.source_id AS CHAR))
 				ELSE CONCAT('row:', CAST(taf0.id AS CHAR))
 			END
-	) taf`, extraColumns, model.TuitionAccountFlowSourceManualCloseCourse, model.TuitionAccountFlowSourceRevokeGraduate)
+	) taf`, extraColumns, model.TuitionAccountFlowSourceManualCloseCourse, model.TuitionAccountFlowSourceRevokeGraduate, model.TuitionAccountFlowSourceRefund)
 }
 
 func (repo *Repository) tableExists(ctx context.Context, tableName string) (bool, error) {
@@ -225,6 +226,13 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 			"LEFT JOIN inst_student s ON s.id = taf.student_id AND s.del_flag = 0",
 			"LEFT JOIN inst_course c ON c.id = taf.product_id AND c.del_flag = 0",
 			"LEFT JOIN inst_course_category cat ON cat.id = c.course_category AND cat.del_flag = 0",
+			fmt.Sprintf("LEFT JOIN sale_order refund_so ON refund_so.id = taf.source_id AND taf.source_type = %d AND refund_so.del_flag = 0", model.TuitionAccountFlowSourceRefund),
+			`LEFT JOIN (
+				SELECT order_id, SUM(IFNULL(pay_amount, 0)) AS paid_amount
+				FROM sale_order_pay_detail
+				WHERE del_flag = 0
+				GROUP BY order_id
+			) refund_pay ON refund_pay.order_id = refund_so.id`,
 		},
 		whereParts: []string{
 			"taf.inst_id = ?",
@@ -247,6 +255,7 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		classNameExpr:          "''",
 		conformIncomeExpr:      "taf." + schema.conformIncomeColumn,
 		lessonChargingModeExpr: "IFNULL(taf.lesson_charging_mode, 0)",
+		tuitionExpr:            fmt.Sprintf("CASE WHEN taf.source_type = %d THEN GREATEST(IFNULL(refund_so.order_real_amount, 0) - IFNULL(refund_pay.paid_amount, 0), 0) ELSE IFNULL(taf.tuition, 0) END", model.TuitionAccountFlowSourceRefund),
 	}
 
 	var classIDRawExpr string
@@ -685,7 +694,7 @@ func (repo *Repository) GetLessonIncomePagedList(ctx context.Context, instID int
 			`+fragments.rollCallTimeExpr+`,
 			IFNULL(taf.quantity, 0),
 			`+fragments.lessonChargingModeExpr+`,
-			IFNULL(taf.tuition, 0),
+			`+fragments.tuitionExpr+`,
 			taf.created_time,
 			`+fragments.teacherIDExpr+`,
 			`+fragments.teacherNameExpr+`,
@@ -845,7 +854,7 @@ func (repo *Repository) GetLessonIncomeStatistics(ctx context.Context, instID in
 
 	var result model.LessonIncomeStatistics
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(*), IFNULL(SUM(taf.tuition), 0)
+		SELECT COUNT(*), IFNULL(SUM(`+fragments.tuitionExpr+`), 0)
 		`+fromSQL+`
 		WHERE `+whereSQL, fragments.args...).Scan(&result.TotalCount, &result.TotalTuition); err != nil {
 		return model.LessonIncomeStatistics{}, err

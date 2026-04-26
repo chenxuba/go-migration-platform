@@ -113,6 +113,53 @@ type RefundTuitionAccountHandlingFeeResult struct {
 	Details                   []RefundTuitionAccountHandlingFeeDetail `json:"details"`
 }
 
+type RefundTuitionAccountCreateOrderDTO struct {
+	TuitionAccountID      string   `json:"tuitionAccountId"`
+	TotalAmount           float64  `json:"totalAmount"`
+	RealAmount            float64  `json:"realAmount"`
+	ChargeAgainstTuition  float64  `json:"chargeAgainstTuition"`
+	RefundQuantity        float64  `json:"refundQuantity"`
+	RefundFreeQuantity    float64  `json:"refundFreeQuantity"`
+	IsRechargeAccount     bool     `json:"isRechargeAccount"`
+	RechargeAccountID     string   `json:"rechargeAccountId"`
+	DealDate              string   `json:"dealDate"`
+	Remark                string   `json:"remark"`
+	ExternalRemark        string   `json:"externalRemark"`
+	SalePersonID          string   `json:"salePersonId"`
+	CollectorStaffID      string   `json:"collectorStaffId"`
+	PhoneSellStaffID      string   `json:"phoneSellStaffId"`
+	ForegroundStaffID     string   `json:"foregroundStaffId"`
+	ViceSellStaffStaffID  string   `json:"viceSellStaffStaffId"`
+	OrderTagIDs           []string `json:"orderTagIds"`
+	AutoCloseTuition      bool     `json:"autoCloseTuition"`
+	IsOriginalPriceRefund bool     `json:"isOriginalRefund"`
+}
+
+type RefundTuitionAccountCreateOrderResult struct {
+	ID        string `json:"id"`
+	IsNeedPay bool   `json:"isNeedPay"`
+}
+
+type RefundTuitionAccountPaymentVoucher struct {
+	Text   string   `json:"text"`
+	Images []string `json:"images"`
+}
+
+type RefundTuitionAccountPayOrderDTO struct {
+	OrderID          string                              `json:"orderId"`
+	PayAmount        float64                             `json:"payAmount"`
+	IsOriginalRefund bool                                `json:"isOriginalRefund"`
+	PayAccounts      []RefundTuitionAccountPayAccountDTO `json:"payAccounts"`
+}
+
+type RefundTuitionAccountPayAccountDTO struct {
+	PayMethod      int                                `json:"payMethod"`
+	Amount         float64                            `json:"amount"`
+	AccountID      string                             `json:"accountId"`
+	PaymentVoucher RefundTuitionAccountPaymentVoucher `json:"paymentVoucher"`
+	PayTime        string                             `json:"payTime"`
+}
+
 type SubTuitionAccountPriorityConfigItem struct {
 	PriorityType  int  `json:"priorityType"`
 	SortDirection int  `json:"sortDirection"`

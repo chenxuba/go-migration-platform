@@ -1,15 +1,20 @@
 <script setup>
+import * as qiniu from 'qiniu-js'
 import { CloseOutlined, PlusOutlined, QuestionCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { h } from 'vue'
 import dayjs from 'dayjs'
 import {
   calculateRefundTuitionAccountHandlingFeeApi,
+  createRefundTuitionAccountOrderApi,
   estimateRefundTuitionAccountValuableTuitionApi,
   getTuitionAccountRefundOwedSummaryApi,
+  payRefundTuitionAccountOrderApi,
 } from '@/api/edu-center/tuition-account'
 import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
+import { getQiniuToken } from '@/api/qiniu'
 import StaffSelect from '@/components/common/staff-select.vue'
 import { useUserStore } from '@/stores/user'
+import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -22,7 +27,7 @@ const props = defineProps({
     default: () => ({}),
   },
 })
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'submitted'])
 
 const openDrawer = computed({
   get: () => props.open,
@@ -103,6 +108,9 @@ const readonly = ref(true)
 const nextLoading = ref(false)
 const estimateLoading = ref(false)
 const orderLabelLoading = ref(false)
+const submitLoading = ref(false)
+const pendingRefundOrderId = ref('')
+const pendingRefundNeedPay = ref(false)
 const owedSummary = ref(createDefaultOwedSummary())
 const estimateResult = ref(createDefaultEstimate())
 const calcResult = ref(createDefaultCalcResult())
@@ -205,7 +213,7 @@ const cashierDefaultActualRefundAmount = computed(() => {
   return roundAmount(Math.max(cashierRefundAmount.value - handlingFee, 0))
 })
 const cashierRefundTipText = computed(() => {
-  if (!formState.dropPayPrice)
+  if (isEmptyAmountValue(formState.dropPayPrice))
     return ''
   if (cashierRefundDiff.value > 0.009)
     return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，手续费 ¥${formatMoney(cashierRefundDiff.value)}`
@@ -393,6 +401,74 @@ function handleCancelPreview() {
   previewVisible.value = false
   previewTitle.value = ''
 }
+function validateBillImageUpload(file, checkLimit = true) {
+  const isImage = file.type === 'image/jpeg' || file.type === 'image/png'
+  if (!isImage) {
+    messageService.error('只能上传 JPG / JPEG / PNG 格式的图片')
+    return false
+  }
+  const isLt4M = file.size / 1024 / 1024 < 4
+  if (!isLt4M) {
+    messageService.error('图片大小不能超过 4 MB')
+    return false
+  }
+  if (checkLimit && formState.fileList.length >= 3) {
+    messageService.warning('最多上传 3 张图片')
+    return false
+  }
+  return true
+}
+function beforeBillImageUpload(file) {
+  return validateBillImageUpload(file, true)
+}
+function handleBillImageUpload(options) {
+  const { file, onSuccess, onError, onProgress } = options
+  const rawFile = file.originFileObj || file
+  if (!validateBillImageUpload(rawFile, false)) {
+    onError?.(new Error('文件校验未通过'))
+    return
+  }
+
+  ;(async () => {
+    try {
+      const tokenRes = await getQiniuToken()
+      const { token, uuid, buckethostname } = tokenRes.result || {}
+      if (!token || !uuid || !buckethostname)
+        throw new Error('上传凭证无效')
+
+      const ext = rawFile.name?.includes('.')
+        ? rawFile.name.substring(rawFile.name.lastIndexOf('.'))
+        : (rawFile.type === 'image/png' ? '.png' : '.jpg')
+      const key = `finance/refund-tuition/${uuid}${ext}`
+      const observable = qiniu.upload(rawFile, key, token, {
+        fname: rawFile.name,
+        mimeType: rawFile.type,
+      }, {
+        useCdnDomain: true,
+        region: qiniu.region.z0,
+      })
+
+      observable.subscribe({
+        next(res) {
+          onProgress?.({ percent: Math.floor(res.total.percent) })
+        },
+        error(error) {
+          console.error('上传退课账单备注图片失败:', error)
+          messageService.error(error?.message || '图片上传失败')
+          onError?.(error)
+        },
+        complete(res) {
+          onSuccess?.({ url: `${buckethostname}${res.key}` }, file)
+        },
+      })
+    }
+    catch (error) {
+      console.error('获取上传凭证失败:', error)
+      messageService.error(error?.message || '获取上传凭证失败')
+      onError?.(error)
+    }
+  })()
+}
 function roundAmount(value) {
   return Number(Number(value || 0).toFixed(2))
 }
@@ -414,6 +490,9 @@ function formatCount(value) {
     return String(num)
   return num.toFixed(2)
 }
+function isEmptyAmountValue(value) {
+  return value === '' || value === null || value === undefined
+}
 function formatDate(value) {
   if (!value || `${value}`.startsWith('0001-01-01'))
     return '-'
@@ -432,6 +511,9 @@ function resetDrawerState() {
   previewImage.value = ''
   nextLoading.value = false
   estimateLoading.value = false
+  submitLoading.value = false
+  pendingRefundOrderId.value = ''
+  pendingRefundNeedPay.value = false
   readonly.value = true
   owedSummary.value = createDefaultOwedSummary()
   estimateResult.value = createDefaultEstimate()
@@ -445,7 +527,7 @@ function hydrateFormStateFromRecord() {
 }
 async function loadOwedSummary() {
   if (!tuitionAccountId.value)
-    return
+    return false
   try {
     const res = await getTuitionAccountRefundOwedSummaryApi({ tuitionAccountId: tuitionAccountId.value })
     if (res.code !== 200) {
@@ -455,10 +537,12 @@ async function loadOwedSummary() {
       ...createDefaultOwedSummary(),
       ...(res.result || {}),
     }
+    return true
   }
   catch (error) {
     owedSummary.value = createDefaultOwedSummary()
     messageService.error(error?.message || '加载退课信息失败')
+    return false
   }
 }
 function handleRefundQuantityChange(value) {
@@ -612,9 +696,109 @@ function handleCalcPreviewNext() {
   syncCashierRefundAmount()
   current.value++
 }
-function handleSubmitRefund() {
-  messageService.info('退课下单接口待接入')
-  openModal.value = false
+function getVoucherImages() {
+  return (Array.isArray(formState.fileList) ? formState.fileList : [])
+    .filter(file => file?.status === 'done' || file?.url || file?.response?.url)
+    .map(file => file?.url || file?.response?.url || file?.response?.result?.url || file?.response?.result)
+    .filter(item => typeof item === 'string' && item.trim())
+    .slice(0, 3)
+}
+async function handleSubmitRefund() {
+  if (submitLoading.value)
+    return
+  const realAmount = Number(formState.dropPayPrice || 0)
+  if (isEmptyAmountValue(formState.dropPayPrice) || Number.isNaN(realAmount) || realAmount < 0) {
+    readonly.value = false
+    messageService.error('请输入实退金额')
+    return
+  }
+  if (!tuitionAccountId.value) {
+    messageService.error('缺少学费账户ID')
+    return
+  }
+  if (formState.fileList.some(file => file?.status === 'uploading')) {
+    messageService.warning('图片上传中，请稍后再提交')
+    return
+  }
+  if (formState.fileList.some(file => file?.status === 'error' || (!file?.url && !file?.response?.url))) {
+    messageService.warning('账单备注图片未上传成功，请删除后重新上传')
+    return
+  }
+  submitLoading.value = true
+  try {
+    let orderId = pendingRefundOrderId.value
+    let needPay = pendingRefundNeedPay.value
+    if (!orderId) {
+      const owedLoaded = await loadOwedSummary()
+      if (!owedLoaded)
+        return
+      const createRes = await createRefundTuitionAccountOrderApi({
+        tuitionAccountId: tuitionAccountId.value,
+        totalAmount: roundAmount(cashierRefundAmount.value),
+        realAmount: roundAmount(realAmount),
+        chargeAgainstTuition: roundAmount(previewArrearDeductionAmount.value),
+        refundQuantity: Number(formState.dropTheClassNumber || 0),
+        refundFreeQuantity: Number(calcResult.value?.giftRefundQuantity || 0),
+        isRechargeAccount: false,
+        rechargeAccountId: '0',
+        dealDate: formState.date || getCurrentDate(),
+        remark: formState.remarks1 || '',
+        externalRemark: formState.remarks2 || '',
+        salePersonId: formState.salesperson ? String(formState.salesperson) : '0',
+        collectorStaffId: '0',
+        phoneSellStaffId: '0',
+        foregroundStaffId: '0',
+        viceSellStaffStaffId: '0',
+        orderTagIds: Array.isArray(formState.orderLabel) ? formState.orderLabel.map(String) : [],
+        autoCloseTuition: !!formState.autoFinishCourse,
+        isOriginalRefund: !!formState.originalPriceRefund,
+      })
+      if (createRes.code !== 200) {
+        throw new Error(createRes.message || '创建退课订单失败')
+      }
+      orderId = String(createRes.result?.id || '').trim()
+      if (!orderId) {
+        throw new Error('创建退课订单失败')
+      }
+      needPay = !!createRes.result?.isNeedPay
+      pendingRefundOrderId.value = orderId
+      pendingRefundNeedPay.value = needPay
+    }
+    if (needPay) {
+      const payRes = await payRefundTuitionAccountOrderApi({
+        orderId,
+        payAmount: roundAmount(realAmount),
+        isOriginalRefund: !!formState.originalPriceRefund,
+        payAccounts: [
+          {
+            payMethod: Number(formState.payType || 1),
+            amount: roundAmount(realAmount),
+            accountId: String(formState.dropPayAccount || '1'),
+            paymentVoucher: {
+              text: formState.billRemarks || '',
+              images: getVoucherImages(),
+            },
+            payTime: formState.date || getCurrentDate(),
+          },
+        ],
+      })
+      if (payRes.code !== 200) {
+        throw new Error(payRes.message || '退课付款失败')
+      }
+    }
+    messageService.success('退课成功')
+    openModal.value = false
+    resetDrawerState()
+    openDrawer.value = false
+    emit('submitted', { orderId })
+    emitter.emit(EVENTS.REFRESH_STUDENT_ORDER_RECORD)
+  }
+  catch (error) {
+    messageService.error(error?.message || '退课失败')
+  }
+  finally {
+    submitLoading.value = false
+  }
 }
 function handleBack() {
   current.value--
@@ -777,12 +961,12 @@ function handleModify() {
                 <div class="text-#000 text-48px custom-num-font-family">
                   <div
                     class="payPrice h-20 border border-b-#eee border-solid border-x-none border-t-none w-100%"
-                    :class="{ 'animate-border': !formState.dropPayPrice }"
+                    :class="{ 'animate-border': isEmptyAmountValue(formState.dropPayPrice) }"
                   >
                     <a-input-number
                       v-model:value="formState.dropPayPrice" :precision="2"
                       :bordered="false" :controls="false" :readonly="readonly" class="h-100% w-100% text-12"
-                      :min="1" :max="100000" placeholder="输入实退金额" @blur="formState.dropPayPrice ? readonly = true : readonly = false"
+                      :min="0" :max="100000" placeholder="输入实退金额" @blur="!isEmptyAmountValue(formState.dropPayPrice) ? readonly = true : readonly = false"
                     >
                       <template #addonBefore>
                         <span class="text-12">¥</span>
@@ -793,7 +977,7 @@ function handleModify() {
                         </a-button>
                       </template>
                     </a-input-number>
-                    <span v-if="!formState.dropPayPrice" class="text-3.5 text-#f33 relative top--27px">请输入实退金额</span>
+                    <span v-if="isEmptyAmountValue(formState.dropPayPrice)" class="text-3.5 text-#f33 relative top--27px">请输入实退金额</span>
                     <span
                       v-else
                       class="text-3.5 text-#888 relative top--27px"
@@ -879,8 +1063,11 @@ function handleModify() {
                 <div class="mt--10px">
                   <a-upload
                     v-model:file-list="formState.fileList"
-                    action="https://www.mocky.io/v2/5cc8019d300000980a055e76" list-type="picture-card"
-                    accept=".jpg,.jpeg,.png" @preview="handlePreview"
+                    list-type="picture-card"
+                    :custom-request="handleBillImageUpload"
+                    :before-upload="beforeBillImageUpload"
+                    accept=".jpg,.jpeg,.png"
+                    @preview="handlePreview"
                   >
                     <div v-if="formState.fileList.length < 3">
                       <PlusOutlined class="text-20px" />
@@ -1071,7 +1258,7 @@ function handleModify() {
         <a-button @click="openModal = false">
           再想想
         </a-button>
-        <a-button danger ghost class="ml-12px" @click="handleSubmitRefund">
+        <a-button danger ghost class="ml-12px" :loading="submitLoading" @click="handleSubmitRefund">
           确定退课
         </a-button>
       </div>

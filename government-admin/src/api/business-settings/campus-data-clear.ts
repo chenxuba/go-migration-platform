@@ -35,6 +35,10 @@ export interface CampusDataClearResult {
     rechargeImportTasks: number
     rechargeImportTaskRecords: number
     exportRecords: number
+    templateMessageRecords: number
+    templateMessageRecordItems: number
+    weChatBindTickets: number
+    weChatStudentBindings: number
     courseSaleVolumesReset: number
     teachingClasses: number
     teachingClassStudents: number

@@ -29,6 +29,7 @@ const (
 
 const (
 	LedgerCategoryOrderIncome              = "order-income"
+	LedgerCategoryOrderExpense             = "expense-order"
 	LedgerSubCategoryRegistration          = "registration-renewal"
 	LedgerSubCategoryRechargeAccount       = "recharge-account"
 	LedgerSubCategoryRechargeAccountRefund = "recharge-account-refund"

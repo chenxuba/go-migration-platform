@@ -13,7 +13,13 @@ import (
 
 type refundTuitionAccountPreviewRow struct {
 	id                  int64
+	studentID           int64
+	courseID            int64
+	quoteID             int64
+	orderCourseDetailID int64
+	lessonType          sql.NullInt64
 	lessonChargingMode  int
+	unit                int
 	orderID             int64
 	orderNumber         string
 	totalQuantity       float64
@@ -93,6 +99,26 @@ func (row refundTuitionAccountPreviewRow) originalRefundAmountByDeduction(deduct
 	originalRefundableAmount := row.shouldTuition - row.originalUnitPriceRaw()*row.usedQuantity
 	originalRefundUnit := refundTuitionAccountTruncateMoney(originalRefundableAmount / remainMetric)
 	return closeOrderRoundMoney(originalRefundUnit * deduction)
+}
+
+func (row refundTuitionAccountPreviewRow) lessonTypeValue() any {
+	if row.lessonType.Valid {
+		return row.lessonType.Int64
+	}
+	return nil
+}
+
+func (row refundTuitionAccountPreviewRow) courseDetailUnit() int {
+	if row.unit > 0 {
+		return row.unit
+	}
+	if row.lessonChargingMode == 2 {
+		return 2
+	}
+	if row.lessonChargingMode == 3 || row.lessonChargingMode == 4 {
+		return 5
+	}
+	return 1
 }
 
 func (repo *Repository) loadRefundPreviewAccountIDsTx(ctx context.Context, tx *sql.Tx, instID, tuitionAccountID int64) ([]int64, error) {
@@ -211,7 +237,13 @@ func (repo *Repository) listRefundTuitionAccountPreviewRowsTx(ctx context.Contex
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
 			ta.id,
+			ta.student_id,
+			ta.course_id,
+			IFNULL(ta.quote_id, 0),
+			IFNULL(ta.order_course_detail_id, 0),
+			ic.teach_method,
 			IFNULL(icq.lesson_model, 0),
+			IFNULL(COALESCE(NULLIF(sod.unit, 0), NULLIF(icq.unit, 0)), 0),
 			IFNULL(ta.order_id, 0),
 			IFNULL(so.order_number, ''),
 			IFNULL(ta.total_quantity, 0),
@@ -318,7 +350,13 @@ func (repo *Repository) listRefundTuitionAccountPreviewRowsTx(ctx context.Contex
 		var item refundTuitionAccountPreviewRow
 		if err := rows.Scan(
 			&item.id,
+			&item.studentID,
+			&item.courseID,
+			&item.quoteID,
+			&item.orderCourseDetailID,
+			&item.lessonType,
 			&item.lessonChargingMode,
+			&item.unit,
 			&item.orderID,
 			&item.orderNumber,
 			&item.totalQuantity,
