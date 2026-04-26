@@ -922,10 +922,10 @@ function addTimeBasedPrice() {
   formRef.value?.validateFields(['productSku'])
 }
 
-// 添加按套餐报价单
+// 添加按金额报价单
 function addPackagePrice() {
-  // 实现添加按套餐报价单的逻辑
-  console.log('添加按套餐报价单')
+  // 实现添加按金额报价单的逻辑
+  console.log('添加按金额报价单')
   // 最多只能添加10条报价单
   if (formState.value.amountPrice.length >= 10) {
     messageService.error('最多只能添加10条报价单')
@@ -1203,7 +1203,7 @@ function buildCourseSubmitPayload() {
                     添加按时间段报价单
                   </a-button>
                   <a-button v-if="showPackagePriceButton" type="primary" ghost class="w-full sm:w-auto text-sm" @click="addPackagePrice">
-                    添加按套餐报价单
+                    添加按金额报价单
                   </a-button>
                 </div>
               </a-form-item>

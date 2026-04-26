@@ -191,7 +191,7 @@ const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount
 const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
 const previewHandlingFeeAmount = computed(() => Number(calcResult.value?.handlingFee || 0))
 const shouldShowCalcPreviewModal = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
-const showPreviewHandlingFee = computed(() => previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009)
+const showPreviewHandlingFee = computed(() => formState.originalPriceRefund && (previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009))
 const previewStatusText = computed(() => {
   if (previewArrearAmount.value > 0.009 && previewBadDebtAmount.value > 0.009)
     return '欠费/坏账'
@@ -222,6 +222,38 @@ const feeCalcDetails = computed(() => (Array.isArray(calcResult.value?.details) 
 const feeCalcUnitPriceText = value => (Number(value || 0) > 0 ? `${formatMoney(value)}元/${quantityUnit.value}` : '-')
 const feeCalcMoneyText = value => (Number(value || 0) > 0 ? `¥ ${formatMoney(value)}` : '-')
 const feeCalcQuantityText = value => `${formatCount(value)}${quantityUnit.value}`
+const feeCalcColumns = [
+  { title: '订单号', dataIndex: 'orderNumber', key: 'orderNumber', width: 220 },
+  { title: '原价', dataIndex: 'originalUnitPriceText', key: 'originalUnitPriceText', width: 160 },
+  { title: '优惠后金额', dataIndex: 'discountedUnitPriceText', key: 'discountedUnitPriceText', width: 180 },
+  { title: '应收学费金额', dataIndex: 'shouldTuitionText', key: 'shouldTuitionText', width: 150 },
+  { title: '退/转学员金额', dataIndex: 'transferredTuitionText', key: 'transferredTuitionText', width: 150 },
+  { title: '已课消数量', dataIndex: 'consumedQuantityText', key: 'consumedQuantityText', width: 130 },
+  { title: '原价应退金额', dataIndex: 'originalRefundAmountText', key: 'originalRefundAmountText', width: 150 },
+]
+const feeCalcTableData = computed(() => [
+  ...feeCalcDetails.value.map((item, index) => ({
+    key: item.orderNumber || index,
+    orderNumber: item.orderNumber || '-',
+    originalUnitPriceText: feeCalcUnitPriceText(item.originalUnitPrice),
+    discountedUnitPriceText: feeCalcUnitPriceText(item.discountedUnitPrice),
+    shouldTuitionText: feeCalcMoneyText(item.shouldTuition),
+    transferredTuitionText: feeCalcMoneyText(item.transferredTuition),
+    consumedQuantityText: feeCalcQuantityText(item.consumedQuantity),
+    originalRefundAmountText: feeCalcMoneyText(item.originalRefundAmount),
+  })),
+  {
+    key: 'total',
+    orderNumber: '总计',
+    originalUnitPriceText: '',
+    discountedUnitPriceText: '',
+    shouldTuitionText: '',
+    transferredTuitionText: '',
+    consumedQuantityText: '',
+    originalRefundAmountText: `¥ ${formatMoney(previewOriginalRefundAmount.value)}`,
+    isTotal: true,
+  },
+])
 
 watch(isFullRefund, (value) => {
   formState.autoFinishCourse = value
@@ -946,39 +978,14 @@ function handleModify() {
           本次退课涉及以下订单的学费账户，订单欠费¥{{ formatMoney(previewArrearAmount) }}
         </div>
         <div class="fee-calc-table-wrap">
-          <table class="fee-calc-table">
-            <thead>
-              <tr>
-                <th>订单号</th>
-                <th>原价</th>
-                <th>优惠后金额</th>
-                <th>应收学费金额</th>
-                <th>退/转学员金额</th>
-                <th>已课消数量</th>
-                <th>原价应退金额</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="item in feeCalcDetails" :key="item.orderNumber || item.sourceId">
-                <td>{{ item.orderNumber || '-' }}</td>
-                <td>{{ feeCalcUnitPriceText(item.originalUnitPrice) }}</td>
-                <td>{{ feeCalcUnitPriceText(item.discountedUnitPrice) }}</td>
-                <td>{{ feeCalcMoneyText(item.shouldTuition) }}</td>
-                <td>{{ feeCalcMoneyText(item.transferredTuition) }}</td>
-                <td>{{ feeCalcQuantityText(item.consumedQuantity) }}</td>
-                <td>{{ feeCalcMoneyText(item.originalRefundAmount) }}</td>
-              </tr>
-              <tr class="fee-calc-table__total-row">
-                <td>总计</td>
-                <td />
-                <td />
-                <td />
-                <td />
-                <td />
-                <td>¥ {{ formatMoney(previewOriginalRefundAmount) }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <a-table
+            class="fee-calc-table"
+            :columns="feeCalcColumns"
+            :data-source="feeCalcTableData"
+            :pagination="false"
+            :scroll="{ x: 1140 }"
+            size="middle"
+          />
         </div>
         <div class="fee-calc-rule">
           <div class="fee-calc-rule__title">
@@ -1363,46 +1370,43 @@ function handleModify() {
 
 .fee-calc-table-wrap {
   margin-top: 14px;
-  overflow-x: auto;
   border: 1px solid #f0f0f0;
   border-radius: 2px;
   background: #fff;
 }
 
 .fee-calc-table {
-  min-width: 1060px;
-  width: 100%;
-  border-collapse: collapse;
-  table-layout: fixed;
   font-size: 14px;
-}
 
-.fee-calc-table th {
-  height: 46px;
-  padding: 0 16px;
-  background: #fafafa;
-  color: #333;
-  font-weight: 600;
-  text-align: left;
-  border-bottom: 1px solid #f0f0f0;
-}
+  :deep(.ant-table) {
+    border-radius: 2px;
+  }
 
-.fee-calc-table td {
-  height: 42px;
-  padding: 0 16px;
-  color: #333;
-  white-space: nowrap;
-  border-bottom: 1px solid #f0f0f0;
-}
+  :deep(.ant-table-thead > tr > th) {
+    height: 46px;
+    padding: 0 16px;
+    background: #fafafa;
+    color: #333;
+    font-weight: 600;
+    white-space: nowrap;
+  }
 
-.fee-calc-table__total-row td {
-  color: #666;
-  background: #fff;
-}
+  :deep(.ant-table-tbody > tr > td) {
+    height: 42px;
+    padding: 0 16px;
+    color: #333;
+    white-space: nowrap;
+  }
 
-.fee-calc-table__total-row td:last-child {
-  color: #333;
-  font-weight: 600;
+  :deep(.ant-table-tbody > tr:last-child > td) {
+    color: #666;
+    background: #fff;
+  }
+
+  :deep(.ant-table-tbody > tr:last-child > td:last-child) {
+    color: #333;
+    font-weight: 600;
+  }
 }
 
 .fee-calc-rule {
