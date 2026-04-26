@@ -1,5 +1,5 @@
 <script setup>
-import { CloseOutlined, PlusOutlined, QuestionCircleFilled } from '@ant-design/icons-vue'
+import { CloseOutlined, PlusOutlined, QuestionCircleFilled, QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { h } from 'vue'
 import dayjs from 'dayjs'
 import {
@@ -190,6 +190,23 @@ const previewOriginalRefundAmount = computed(() => Number(calcResult.value?.tota
 const previewRefundAmount = computed(() => Number(calcResult.value?.refundAmount || 0))
 const previewArrearDeductionAmount = computed(() => Number(calcResult.value?.totalArrearDeduction || 0))
 const previewHandlingFeeAmount = computed(() => Number(calcResult.value?.handlingFee || 0))
+const cashierRefundAmount = computed(() => Number(calcResult.value?.refundAmount || formState.price || 0))
+const cashierActualRefundAmount = computed(() => Number(formState.dropPayPrice || 0))
+const cashierRefundDiff = computed(() => roundAmount(cashierRefundAmount.value - cashierActualRefundAmount.value))
+const cashierDefaultActualRefundAmount = computed(() => {
+  const handlingFee = formState.originalPriceRefund ? previewHandlingFeeAmount.value : 0
+  return roundAmount(Math.max(cashierRefundAmount.value - handlingFee, 0))
+})
+const cashierRefundTipText = computed(() => {
+  if (!formState.dropPayPrice)
+    return ''
+  if (cashierRefundDiff.value > 0.009)
+    return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，手续费 ¥${formatMoney(cashierRefundDiff.value)}`
+  if (cashierRefundDiff.value < -0.009)
+    return `应退金额：¥${formatMoney(cashierRefundAmount.value)}，亏损费 ¥${formatMoney(Math.abs(cashierRefundDiff.value))}`
+  return `应退金额：¥${formatTrimMoney(cashierRefundAmount.value)}`
+})
+const showCashierHandlingFeeTip = computed(() => cashierRefundDiff.value > 0.009)
 const shouldShowCalcPreviewModal = computed(() => previewArrearAmount.value > 0.009 || previewBadDebtAmount.value > 0.009)
 const showPreviewHandlingFee = computed(() => formState.originalPriceRefund && (previewBadDebtAmount.value > 0.009 || previewHandlingFeeAmount.value > 0.009))
 const previewStatusText = computed(() => {
@@ -342,6 +359,12 @@ function almostEqual(a, b) {
 }
 function formatMoney(value) {
   return Number(value || 0).toFixed(2)
+}
+function formatTrimMoney(value) {
+  const num = Number(value || 0)
+  if (Number.isInteger(num))
+    return String(num)
+  return num.toFixed(2)
 }
 function formatCount(value) {
   const num = Number(value || 0)
@@ -500,9 +523,7 @@ async function calculateHandlingFeePreview() {
       ...(res.result || {}),
       details: Array.isArray(res.result?.details) ? res.result.details : [],
     }
-    formState.price = formatMoney(calcResult.value.refundAmount)
-    formState.dropPayPrice = Number(calcResult.value.refundAmount || 0)
-    readonly.value = true
+    syncCashierRefundAmount()
     return true
   }
   catch (error) {
@@ -532,6 +553,12 @@ async function handleNext() {
     nextLoading.value = false
   }
 }
+function syncCashierRefundAmount() {
+  const refundAmount = roundAmount(Number(calcResult.value?.refundAmount || 0))
+  formState.price = formatMoney(refundAmount)
+  formState.dropPayPrice = cashierDefaultActualRefundAmount.value
+  readonly.value = true
+}
 function handleConfirm() {
   openModal.value = true
 }
@@ -540,6 +567,7 @@ function handleOpenFeeCalcModal() {
 }
 function handleCalcPreviewNext() {
   calcPreviewOpen.value = false
+  syncCashierRefundAmount()
   current.value++
 }
 function handleSubmitRefund() {
@@ -674,7 +702,7 @@ function handleModify() {
             <!-- 应退金额 -->
             <div class="flex flex-col">
               <span class="text-#666 mb-2px">应退金额：</span>
-              <span class="text-#000 text-48px custom-num-font-family">¥ {{ formState.price }} <span
+              <span class="text-#000 text-48px custom-num-font-family">¥ {{ formatMoney(cashierRefundAmount) }} <span
                 class="text-#888 text-14px "
               >{{ confirmSummaryText }}</span> </span>
             </div>
@@ -725,20 +753,17 @@ function handleModify() {
                     </a-input-number>
                     <span v-if="!formState.dropPayPrice" class="text-3.5 text-#f33 relative top--27px">请输入实退金额</span>
                     <span
-                      v-if="formState.dropPayPrice && formState.dropPayPrice < formState.price"
+                      v-else
                       class="text-3.5 text-#888 relative top--27px"
-                    >应退金额：¥ {{ formState.dropPayPrice }}，手续费 ¥
-                      {{ (formState.price
-                        - formState.dropPayPrice).toFixed(2) }}</span>
-                    <span
-                      v-if="formState.dropPayPrice && formState.dropPayPrice == formState.price"
-                      class="text-3.5 text-#888 relative top--27px"
-                    >应退金额：¥ {{ formState.dropPayPrice }}</span>
-                    <span
-                      v-if="formState.dropPayPrice && formState.dropPayPrice > formState.price"
-                      class="text-3.5 text-#888 relative top--27px"
-                    >应退金额：¥ {{ formState.dropPayPrice }}，亏损费 ¥
-                      {{ (formState.dropPayPrice - formState.price).toFixed(2) }}</span>
+                    >
+                      {{ cashierRefundTipText }}
+                      <a-popover v-if="showCashierHandlingFeeTip" title="手续费" placement="top">
+                        <template #content>
+                          <div>指机构在办理业务时额外向学员收取的费用</div>
+                        </template>
+                        <QuestionCircleOutlined class="ml-4px text-#1677ff cursor-pointer" />
+                      </a-popover>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -859,7 +884,7 @@ function handleModify() {
           <div class="flex flex-items-center">
             <div class="l flex flex-col items-end">
               <span class="text-16px text-#333 font-bold mb-8px">实退金额：¥ {{ formatMoney(formState.dropPayPrice || 0) }}</span>
-              <span class="text-14px text-#888">应退金额：¥ {{ formatMoney(calcResult.refundAmount || 0) }}</span>
+              <span class="text-14px text-#888">应退金额：¥ {{ formatMoney(cashierRefundAmount) }}</span>
             </div>
             <div class="flex flex-items-center ml-24px">
               <a-button type="primary" class="text-20px h-48px w-140px" @click="handleConfirm">
