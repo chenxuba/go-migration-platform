@@ -92,10 +92,15 @@ type tuitionAccountSubAccountRow struct {
 }
 
 const refundAutoCloseRevertIDPrefix = "refund:"
+const orderVoidAutoCloseRecordIDPrefix = "ordervoid:"
 const refundTuitionAccountOrderStatusCompleted = 2
 
 func buildRefundAutoCloseRevertID(refundOrderID int64) string {
 	return fmt.Sprintf("%s%d", refundAutoCloseRevertIDPrefix, refundOrderID)
+}
+
+func buildOrderVoidAutoCloseRecordID(orderID int64) string {
+	return fmt.Sprintf("%s%d", orderVoidAutoCloseRecordIDPrefix, orderID)
 }
 
 func parseRefundAutoCloseRevertID(raw string) (int64, bool, error) {
@@ -1644,6 +1649,11 @@ func (repo *Repository) ListCloseTuitionAccountOrders(ctx context.Context, instI
 		return model.CloseTuitionAccountOrderRecordResult{}, err
 	}
 	out = append(out, refundAutoCloseRows...)
+	orderVoidAutoCloseRows, err := repo.listOrderVoidAutoCloseTuitionAccountOrdersTx(ctx, tx, instID, accountIDs)
+	if err != nil {
+		return model.CloseTuitionAccountOrderRecordResult{}, err
+	}
+	out = append(out, orderVoidAutoCloseRows...)
 	sort.SliceStable(out, func(i, j int) bool {
 		leftTime := closeOrderRecordSortTime(out[i])
 		rightTime := closeOrderRecordSortTime(out[j])
@@ -1734,6 +1744,64 @@ func (repo *Repository) listRefundAutoCloseTuitionAccountOrdersTx(ctx context.Co
 			t := rowTime.Time
 			item.CreatedTime = &t
 		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (repo *Repository) listOrderVoidAutoCloseTuitionAccountOrdersTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) ([]model.CloseTuitionAccountOrderRecordItem, error) {
+	if len(accountIDs) == 0 {
+		return []model.CloseTuitionAccountOrderRecordItem{}, nil
+	}
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			taf.source_id,
+			CAST(MIN(taf.tuition_account_id) AS CHAR),
+			SUM(IFNULL(taf.quantity, 0)),
+			0,
+			?,
+			CAST(MAX(IFNULL(taf.create_id, 0)) AS CHAR),
+			IFNULL(MAX(u.nick_name), ''),
+			MAX(taf.update_time),
+			MAX(taf.created_time)
+		FROM tuition_account_flow taf
+		INNER JOIN tuition_account ta
+			ON ta.id = taf.tuition_account_id
+			AND ta.inst_id = taf.inst_id
+			AND ta.del_flag = 0
+		LEFT JOIN inst_user u ON u.id = taf.create_id AND u.del_flag = 0
+		WHERE taf.inst_id = ?
+		  AND taf.del_flag = 0
+		  AND taf.source_type = ?
+		  AND taf.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND IFNULL(ta.status, 0) = ?
+		GROUP BY taf.source_id
+	`, append([]any{model.CloseTuitionAccountOrderStatusClosed, instID, model.TuitionAccountFlowSourceOrderVoid}, append(int64SliceToAny(accountIDs), model.TuitionAccountStatusClosed)...)...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := make([]model.CloseTuitionAccountOrderRecordItem, 0, 2)
+	for rows.Next() {
+		var (
+			item  model.CloseTuitionAccountOrderRecordItem
+			rawID int64
+		)
+		if err := rows.Scan(
+			&rawID,
+			&item.TuitionAccountID,
+			&item.Quantity,
+			&item.FreeQuantity,
+			&item.Status,
+			&item.UpdatedStaffID,
+			&item.UpdatedStaffName,
+			&item.UpdatedTime,
+			&item.CreatedTime,
+		); err != nil {
+			return nil, err
+		}
+		item.ID = buildOrderVoidAutoCloseRecordID(rawID)
 		out = append(out, item)
 	}
 	return out, rows.Err()

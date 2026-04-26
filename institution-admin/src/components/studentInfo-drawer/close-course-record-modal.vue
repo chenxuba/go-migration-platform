@@ -50,6 +50,10 @@ const latestClosableOrderId = computed(() =>
   String(dataSource.value.find(item => Number(item?.status) !== 4)?.id || ''),
 )
 
+function isOrderVoidAutoCloseRecord(record) {
+  return String(record?.id || '').startsWith('ordervoid:')
+}
+
 watch(
   () => props.open,
   async (value) => {
@@ -108,6 +112,10 @@ function canRevoke(record) {
 function handleRevoke(record) {
   if (!canRevoke(record))
     return
+  if (isOrderVoidAutoCloseRecord(record)) {
+    messageService.info('订单作废产生的结课记录撤销待实现')
+    return
+  }
   revokeRecord.value = props.record || {}
   revokeModalOpen.value = true
 }
