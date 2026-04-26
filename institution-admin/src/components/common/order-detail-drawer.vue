@@ -1605,7 +1605,7 @@ function isHandledApprovalFlow(flow) {
                   <a-popover placement="top">
                     <template #content>
                       <div class="text-#666">
-                        手续费 = 退款金额 - 实退金额
+                        机构在办理业务时需要额外向学员收取的费用
                       </div>
                     </template>
                     <QuestionCircleOutlined class="text-#06f cursor-pointer mx-1" />
