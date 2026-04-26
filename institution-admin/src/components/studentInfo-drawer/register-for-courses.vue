@@ -58,6 +58,7 @@ const currentStopCourseRecord = ref(null)
 const currentResumeCourseRecord = ref(null)
 const currentRemainingDetailsRecord = ref(null)
 const currentDropCourseRecord = ref(null)
+const currentFeeChangeRecord = ref(null)
 const openCourseActionMenuKey = ref('')
 
 function getCourseActionMenuKey(item, index) {
@@ -316,8 +317,9 @@ function onEndedMenuCloseRecord(item) {
   closeCourseRecordModalOpen.value = true
 }
 
-function onMenuFeeChange() {
+function onMenuFeeChange(item) {
   closeCourseActionMenu()
+  currentFeeChangeRecord.value = item || null
   feeChangeDrawerOpen.value = true
 }
 
@@ -633,7 +635,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666 w-90px">续费</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuFeeChange">
+                <div class="flex items-center gap-2" @click="onMenuFeeChange(item)">
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
@@ -702,7 +704,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666 w-90px">撤销结课</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuFeeChange">
+                <div class="flex items-center gap-2" @click="onMenuFeeChange(item)">
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
@@ -882,7 +884,7 @@ watch(endTheClassDrawerOpen, (value) => {
       @success="handleCloseCourseRecordSuccess"
     />
     <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" />
-    <feeChangeModal v-model:open="feeChangeDrawerOpen" />
+    <feeChangeModal v-model:open="feeChangeDrawerOpen" :record="currentFeeChangeRecord" />
     <remainingDetailsModal v-model:open="remainingDetailsModalOpen" :record="currentRemainingDetailsRecord" />
     <oneToOneModal v-model:open="oneToOneModalOpen" />
   </div>
