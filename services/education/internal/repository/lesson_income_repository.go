@@ -597,6 +597,10 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		model.TuitionAccountFlowSourceOrderVoid,
 		fragments.lessonChargingModeExpr,
 	))
+	fragments.whereParts = append(fragments.whereParts, fmt.Sprintf(
+		"NOT (taf.source_type = %d AND ABS(IFNULL(taf.quantity, 0)) <= 0.0001 AND ABS(IFNULL(taf.tuition, 0)) <= 0.0001)",
+		model.TuitionAccountFlowSourceRevokeGraduate,
+	))
 	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
 		fragments.whereParts = append(fragments.whereParts, "CAST(taf.student_id AS CHAR) = ?")
 		fragments.args = append(fragments.args, strings.TrimSpace(query.QueryModel.StudentID))

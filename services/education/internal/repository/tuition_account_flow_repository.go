@@ -375,6 +375,7 @@ func (repo *Repository) GetTuitionAccountFlowRecordList(ctx context.Context, ins
 		"taf.inst_id = ?",
 		"taf.del_flag = 0",
 		"NOT (taf.source_type = 15 AND taf.source_id >= 20000101 AND taf.source_id > CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED))",
+		fmt.Sprintf("NOT (taf.source_type = %d AND ABS(IFNULL(taf.quantity, 0)) <= 0.0001 AND ABS(IFNULL(taf.tuition, 0)) <= 0.0001)", model.TuitionAccountFlowSourceRevokeGraduate),
 	}
 	args := []any{instID}
 
@@ -623,6 +624,7 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 		"taf.inst_id = ?",
 		"taf.del_flag = 0",
 		"NOT (taf.source_type = 15 AND taf.source_id >= 20000101 AND taf.source_id > CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED))",
+		fmt.Sprintf("NOT (taf.source_type = %d AND ABS(IFNULL(taf.quantity, 0)) <= 0.0001 AND ABS(IFNULL(taf.tuition, 0)) <= 0.0001)", model.TuitionAccountFlowSourceRevokeGraduate),
 	}
 	args := []any{instID}
 	expandedBucketAccountIDs := make([]int64, 0, 4)

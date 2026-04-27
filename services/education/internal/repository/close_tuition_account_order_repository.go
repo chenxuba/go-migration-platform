@@ -186,7 +186,7 @@ func (repo *Repository) loadCloseTuitionAccountBucketSnapshotsTx(ctx context.Con
 	if selected.teachMethod.Valid {
 		teachMethod = int(selected.teachMethod.Int64)
 	}
-	ids, err := repo.ListTuitionAccountIDsForStudentCourseBucket(ctx, tx, instID, selected.studentID, selected.courseID, teachMethod, selected.lessonModel)
+	ids, err := repo.listClosableTuitionAccountBucketIDsTx(ctx, tx, instID, selected, teachMethod)
 	if err != nil {
 		return nil, err
 	}
@@ -199,6 +199,64 @@ func (repo *Repository) loadCloseTuitionAccountBucketSnapshotsTx(ctx context.Con
 		out = append(out, snap)
 	}
 	return out, nil
+}
+
+func (repo *Repository) listClosableTuitionAccountBucketIDsTx(ctx context.Context, tx *sql.Tx, instID int64, selected closeTuitionAccountSnapshot, teachMethod int) ([]int64, error) {
+	lessonMode := selected.lessonModel
+	if lessonMode <= 0 {
+		lessonMode = selected.flowChargingMode()
+	}
+
+	args := []any{
+		instID,
+		selected.studentID,
+		selected.courseID,
+		model.TuitionAccountStatusClosed,
+		teachMethod,
+	}
+	lessonModeFilter := ""
+	if lessonMode > 0 {
+		lessonModeFilter = `
+			AND (
+				CASE
+					WHEN IFNULL(icq_ta.lesson_model, 0) > 0 THEN IFNULL(icq_ta.lesson_model, 0)
+					WHEN IFNULL(ta.enable_expire_time, 0) = 1 AND IFNULL(ta.total_quantity, 0) > 0.0001 THEN 2
+					WHEN IFNULL(ta.total_quantity, 0) > 0.0001 THEN 1
+					WHEN IFNULL(ta.total_tuition, 0) > 0.0001 THEN 3
+					ELSE 0
+				END
+			) = ?`
+		args = append(args, lessonMode)
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT ta.id
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		`+closeTuitionAccountICQJoin+`
+		WHERE ta.inst_id = ?
+		  AND ta.del_flag = 0
+		  AND ta.student_id = ?
+		  AND ta.course_id = ?
+		  AND IFNULL(ta.status, 0) <> ?
+		  AND IFNULL(ic.teach_method, 0) = ?
+		  `+lessonModeFilter+`
+		ORDER BY ta.create_time ASC, ta.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := make([]int64, 0, 4)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
 }
 
 func (repo *Repository) closeTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, operatorID int64, snap closeTuitionAccountSnapshot, sourceID int64, now time.Time) (int64, error) {
