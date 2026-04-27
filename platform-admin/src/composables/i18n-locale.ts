@@ -13,7 +13,6 @@ export const lsLocaleState = useStorage(LOCALE_KEY, preferredLanguages.value[0])
 export const useI18nLocale = createSharedComposable(() => {
   // 加载多语言的loading状态
   const loading = ref(false)
-  const localeStore = useAppStore()
   // 多语言的信息
   const locale = computed<string>(() => {
     if (!i18n)
@@ -37,7 +36,7 @@ export const useI18nLocale = createSharedComposable(() => {
     loading.value = true
     try {
       // 加载多语言
-      localeStore.toggleLocale(locale)
+      lsLocaleState.value = locale
       await loadLanguageAsync(locale)
       // 判断是否存在兼容模式
       if (i18n.mode === 'legacy')

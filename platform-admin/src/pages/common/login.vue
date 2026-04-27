@@ -5,7 +5,8 @@ import LoginRenderer from './login-renderer.vue'
 import { useAuthorization } from '@/composables/authorization'
 import { loginApi } from '~/api/common/login'
 import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/login-theme'
-import { preloadPlatformHomeEntry, schedulePlatformHomePreload } from '~/router/route-preload'
+import { preloadAuthGuard } from '~/router/router-guard'
+import { preloadPlatformHomeEntry } from '~/router/route-preload'
 import { reset401Status } from '~/utils/request'
 
 const LOGIN_THEME_CACHE_KEY = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
@@ -82,7 +83,7 @@ async function loadLoginTheme() {
 
 onMounted(() => {
   void loadLoginTheme()
-  schedulePlatformHomePreload()
+  void Promise.allSettled([preloadAuthGuard(), preloadPlatformHomeEntry()])
 })
 
 const rules: Record<string, Rule[]> = {
@@ -107,10 +108,12 @@ function resolveLoginErrorMessage(error: any) {
 async function onSubmit() {
   submitLoading.value = true
   try {
-    const { result } = await loginApi({
+    const loginRequest = loginApi({
       username: formState.username.trim(),
       password: formState.password,
     })
+    const homeEntryReady = Promise.allSettled([preloadAuthGuard(), preloadPlatformHomeEntry()])
+    const { result } = await loginRequest
 
     if (!result?.token) {
       await showLoginMessage('error', '登录失败，请检查账号或密码')
@@ -127,15 +130,17 @@ async function onSubmit() {
       window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', result.tenantId)
     }
     reset401Status()
-    void preloadPlatformHomeEntry()
+    await homeEntryReady
 
     void showLoginMessage('success', t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
       : '/'
-    const safeRedirect = ['/401', '/403', '/404', '/500', '/502'].includes(redirect) ? '/' : redirect
-    await router.replace(safeRedirect || '/')
+    const defaultHome = '/platform/control-overview'
+    const safeRedirect = ['/401', '/403', '/404', '/500', '/502'].includes(redirect) ? defaultHome : redirect
+    const nextPath = safeRedirect === '/' ? defaultHome : safeRedirect
+    await router.replace(nextPath || defaultHome)
   }
   catch (error: any) {
     console.error('platform login failed', error)

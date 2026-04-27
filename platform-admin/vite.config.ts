@@ -119,7 +119,10 @@ export default ({ mode }: ConfigEnv): UserConfig => {
       rollupOptions: {
         output: {
           manualChunks: {
-            vue: ['vue', 'vue-router', 'pinia', 'vue-i18n', '@vueuse/core'],
+            vue: ['vue'],
+            router: ['vue-router', 'pinia'],
+            i18n: ['vue-i18n'],
+            vueuse: ['@vueuse/core'],
             dayjs: ['dayjs'],
             // lodash: ['loadsh-es'],
           },

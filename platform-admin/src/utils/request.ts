@@ -4,7 +4,6 @@ import { AxiosLoading } from './loading'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { ContentTypeEnum, RequestEnum } from '~#/http-enum'
 import router from '~/router'
-import messageService from '~/utils/messageService'
 
 export interface ResponseBody<T = any> {
   code: number
@@ -87,6 +86,12 @@ export function reset401Status() {
 }
 
 const axiosLoading = new AxiosLoading()
+
+async function showRequestErrorMessage(content: string) {
+  const { default: messageService } = await import('~/utils/messageService')
+  messageService.error(content)
+}
+
 async function requestHandler(config: InternalAxiosRequestConfig & RequestConfigExtra): Promise<InternalAxiosRequestConfig> {
   // 如果已经有401错误，直接拒绝新的请求（除了登录接口）
   if (has401Error && !config.url?.includes('/login')) {
@@ -309,7 +314,7 @@ async function errorHandler(error: AxiosError): Promise<any> {
       })
     }
     else if (status === 400) {
-      messageService.error(data?.message || statusText || '请求失败')
+      await showRequestErrorMessage(data?.message || statusText || '请求失败')
     }
     else if (status === 404 || status === 422) {
       notification?.error({

@@ -6,24 +6,34 @@ import { createI18n } from 'vue-i18n'
 export let i18n: I18n
 
 const defaultLoadLang = 'zh-CN'
+const localeStorageKey = 'locale'
+
+function getInitialLocale() {
+  if (typeof window === 'undefined')
+    return defaultLoadLang
+
+  return window.localStorage.getItem(localeStorageKey)
+    || window.navigator.languages?.[0]
+    || window.navigator.language
+    || defaultLoadLang
+}
 
 async function createI18nOptions(): Promise<I18nOptions> {
-  const appStore = useAppStore()
-  const { locale } = storeToRefs(appStore)
+  const locale = getInitialLocale()
   // 扩展可从服务器端获取语言翻译文件
   let defaultLocal
   try {
-    defaultLocal = await import(`./lang/${locale.value}.ts`)
+    defaultLocal = await import(`./lang/${locale}.ts`)
   }
   catch (e) {
     defaultLocal = await import(`./lang/${defaultLoadLang}.ts`)
   }
   return {
     legacy: false,
-    locale: locale.value,
+    locale,
     fallbackLocale: 'zh-CN',
     messages: {
-      [locale.value]: defaultLocal.default,
+      [locale]: defaultLocal.default,
     },
     sync: true,
     silentTranslationWarn: true,
