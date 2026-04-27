@@ -2603,11 +2603,41 @@ func classTeacherNamesFromTeacherList(list []model.OneToOneTeacherVO, advisorFal
 	return advisorFallback
 }
 
+func activeOneToOneCanonicalWhereSQL() string {
+	active := strconv.Itoa(model.TeachingClassStatusActive)
+	return `
+		NOT EXISTS (
+			SELECT 1
+			FROM teaching_class tc_dup
+			INNER JOIN teaching_class_student tcs_dup
+				ON tcs_dup.teaching_class_id = tc_dup.id
+				AND tcs_dup.inst_id = tc_dup.inst_id
+				AND tcs_dup.del_flag = 0
+			WHERE tc.status = ` + active + `
+				AND tc_dup.inst_id = tc.inst_id
+				AND tc_dup.class_type = tc.class_type
+				AND tc_dup.del_flag = 0
+				AND tc_dup.status = ` + active + `
+				AND tc_dup.course_id = tc.course_id
+				AND tcs_dup.student_id = tcs.student_id
+				AND tc_dup.id <> tc.id
+				AND (
+					(IFNULL(tc_dup.scheduled_lesson_count, 0) > 0 AND IFNULL(tc.scheduled_lesson_count, 0) <= 0)
+					OR (
+						(CASE WHEN IFNULL(tc_dup.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END)
+							= (CASE WHEN IFNULL(tc.scheduled_lesson_count, 0) > 0 THEN 1 ELSE 0 END)
+						AND tc_dup.id < tc.id
+					)
+				)
+		)`
+}
+
 func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, excludeQuickFilters bool) (string, []any) {
 	whereParts := []string{
 		"tc.inst_id = ?",
 		"tc.class_type = ?",
 		"tc.del_flag = 0",
+		activeOneToOneCanonicalWhereSQL(),
 	}
 	args := []any{instID, model.TeachingClassTypeOneToOne}
 
