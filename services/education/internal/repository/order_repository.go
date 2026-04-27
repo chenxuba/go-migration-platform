@@ -3380,6 +3380,14 @@ func (repo *Repository) hasOtherTeachingCourseAutoConsumeOnDateTx(
 	if err := tx.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM tuition_account_flow taf
+		INNER JOIN tuition_account ta
+			ON ta.id = taf.tuition_account_id
+			AND ta.inst_id = taf.inst_id
+			AND ta.del_flag = 0
+		INNER JOIN sale_order so
+			ON so.id = ta.order_id
+			AND so.inst_id = ta.inst_id
+			AND so.del_flag = 0
 		LEFT JOIN teaching_class tc_legacy
 			ON taf.source_id < 0
 			AND ABS(taf.source_id) < 100000000
@@ -3393,12 +3401,14 @@ func (repo *Repository) hasOtherTeachingCourseAutoConsumeOnDateTx(
 		  AND taf.tuition_account_id <> ?
 		  AND taf.created_time >= ?
 		  AND taf.created_time < ?
+		  AND IFNULL(ta.status, 0) = ?
+		  AND so.order_status = ?
 		  AND CASE
 			WHEN taf.source_id < 0 AND ABS(taf.source_id) >= 100000000 THEN FLOOR(ABS(taf.source_id) / 100000000)
 			WHEN taf.source_id < 0 AND ABS(taf.source_id) < 100000000 THEN IFNULL(tc_legacy.course_id, 0)
 			ELSE IFNULL(taf.product_id, 0)
 		  END = ?
-	`, instID, studentID, model.TuitionAccountFlowSourceAutoConsume, currentTuitionAccountID, dayStart, dayEnd, teachingCourseID).Scan(&count); err != nil {
+	`, instID, studentID, model.TuitionAccountFlowSourceAutoConsume, currentTuitionAccountID, dayStart, dayEnd, model.TuitionAccountStatusActive, model.OrderStatusCompleted, teachingCourseID).Scan(&count); err != nil {
 		return false, err
 	}
 	return count > 0, nil

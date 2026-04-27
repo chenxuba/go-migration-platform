@@ -446,9 +446,6 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 	if deductQty < 0 || tuition < 0 {
 		return 0, errors.New("数量或学费不能为负")
 	}
-	if deductQty < 0.0001 && tuition < 0.0001 {
-		return 0, errors.New("无可结课的剩余课时或学费")
-	}
 
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {

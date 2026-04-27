@@ -127,7 +127,7 @@ function canCloseCourse(record: GroupClassStudentPagedItem) {
   const tuitionAccountId = resolveTuitionAccountId(record)
   if (!tuitionAccountId)
     return false
-  return getRemainQuantity(record) > 0 || Number(record.tuition || 0) > 0
+  return true
 }
 
 async function loadPreviewData() {
@@ -178,7 +178,7 @@ async function loadPreviewData() {
 
 async function handleSubmit() {
   if (!closableRows.value.length) {
-    messageService.warning('当前班级无可结课的剩余课时或学费')
+    messageService.warning('当前班级无可结课的课程账户')
     return
   }
   Modal.confirm({

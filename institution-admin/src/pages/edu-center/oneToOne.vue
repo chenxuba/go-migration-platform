@@ -768,10 +768,6 @@ async function handleFinishCourseModalConfirm(payload) {
   const quantity = Number(ta?.remainQuantity || 0)
   const freeQuantity = Number(ta?.remainFreeQuantity || 0)
   const tuition = Number(ta?.remainTuition ?? 0)
-  if (quantity + freeQuantity <= 0 && tuition <= 0) {
-    messageService.error('当前无可结课的剩余课时或学费')
-    return
-  }
   try {
     const res = await addCloseTuitionAccountOrderApi({
       tuitionAccountId: String(tuitionAccountId),
