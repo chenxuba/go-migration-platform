@@ -946,12 +946,6 @@ async function handlePhoneToggle() {
               </a-dropdown>
             </div>
           </a-descriptions-item>
-          <a-descriptions-item v-if="isSystemFieldVisible('微信号')" label="微信号">
-            {{ studentDetail.weChatNumber || '-' }}
-          </a-descriptions-item>
-          <a-descriptions-item v-if="isSystemFieldVisible('年级')" label="年级">
-            {{ studentDetail.grade || '-' }}
-          </a-descriptions-item>
           <a-descriptions-item>
             <span class="text-#06f cursor-pointer" @click="seeAllData">查看全部资料</span>
           </a-descriptions-item>
@@ -1043,6 +1037,9 @@ async function handlePhoneToggle() {
         </a-descriptions-item>
         <a-descriptions-item v-if="isSystemFieldVisible('微信号')" label="微信号">
           {{ studentDetail.weChatNumber || '-' }}
+        </a-descriptions-item>
+        <a-descriptions-item v-if="isSystemFieldVisible('年级')" label="年级">
+          {{ studentDetail.grade || '-' }}
         </a-descriptions-item>
         <a-descriptions-item v-if="isSystemFieldVisible('家庭住址')" label="家庭住址">
           <a-tooltip v-if="studentDetail.address" :title="studentDetail.address" placement="topLeft">
