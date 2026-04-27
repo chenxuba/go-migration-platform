@@ -2038,6 +2038,10 @@ func (repo *Repository) PageProcessContent(ctx context.Context, instID int64, qu
 
 	filters := []string{"c.inst_id = ?", "c.del_flag = 0"}
 	args := []any{instID}
+	if query.QueryModel.CourseID != nil {
+		filters = append(filters, "c.id = ?")
+		args = append(args, *query.QueryModel.CourseID)
+	}
 	if query.QueryModel.CourseCategory != nil {
 		filters = append(filters, "c.course_category = ?")
 		args = append(args, *query.QueryModel.CourseCategory)

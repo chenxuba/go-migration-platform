@@ -43,6 +43,7 @@ export interface ProcessContentPageParams {
   queryModel: {
     delFlag: boolean
     productType?: number // 商品类型：1-课程商品，2-学杂费，3-教材商品
+    courseId?: string | number // 课程ID
     name?: string // 搜索关键词
     saleStatus?: boolean // 销售状态
     courseCategory?: string // 课程分类

@@ -73,6 +73,7 @@ type CourseQueryDTO struct {
 }
 
 type CourseFilters struct {
+	CourseID             *int64 `json:"courseId"`
 	SearchKey            string `json:"searchKey"`
 	CourseName           string `json:"courseName"`
 	CourseCategory       *int64 `json:"courseCategory"`

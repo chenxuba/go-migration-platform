@@ -2,6 +2,7 @@
 import Icon, { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 import dayjs from 'dayjs'
+import { useRouter } from 'vue-router'
 import { useStudentStore } from '@/stores/student'
 import { getCloseTuitionAccountOrderListApi, getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
 import messageService from '~@/utils/messageService'
@@ -37,6 +38,7 @@ const props = defineProps({
 })
 
 const studentStore = useStudentStore()
+const router = useRouter()
 const transferClassDrawerOpen = ref(false)
 const dropTheClassDrawerOpen = ref(false)
 const stopTheClassDrawerOpen = ref(false)
@@ -87,6 +89,26 @@ function resetListState() {
   listLoaded.value = false
 }
 
+function getTuitionAccountStatusSortWeight(item) {
+  if (isTuitionAccountCourseEnded(item))
+    return 2
+  if (isTuitionAccountSuspended(item))
+    return 1
+  return 0
+}
+
+function sortTuitionAccountList(accounts) {
+  return accounts
+    .map((item, index) => ({ item, index }))
+    .sort((a, b) => {
+      const statusSort = getTuitionAccountStatusSortWeight(a.item) - getTuitionAccountStatusSortWeight(b.item)
+      if (statusSort !== 0)
+        return statusSort
+      return a.index - b.index
+    })
+    .map(({ item }) => item)
+}
+
 // 获取报读列表
 async function getTuitionAccountList() {
   const studentId = studentStore.studentId
@@ -115,7 +137,7 @@ async function getTuitionAccountList() {
         res.result.studentTutionAccounts
         ?? res.result.list
         ?? []
-      tuitionAccountList.value = Array.isArray(accounts) ? accounts : []
+      tuitionAccountList.value = Array.isArray(accounts) ? sortTuitionAccountList(accounts) : []
       listLoaded.value = true
     } else {
       tuitionAccountList.value = []
@@ -246,9 +268,50 @@ function onMenuTransferClass() {
   transferClassDrawerOpen.value = true
 }
 
-function onEndedMenuRenew() {
+function getRenewRouteDateValue(dateStr) {
+  if (!dateStr || dateStr === '0001-01-01T00:00:00')
+    return ''
+
+  const date = dayjs(dateStr)
+  return date.isValid() ? date.format('YYYY-MM-DD') : ''
+}
+
+function compactQuery(query) {
+  return Object.entries(query).reduce((result, [key, value]) => {
+    if (value !== undefined && value !== null && value !== '') {
+      result[key] = String(value)
+    }
+    return result
+  }, {})
+}
+
+function onEndedMenuRenew(item) {
   closeCourseActionMenu()
-  messageService.info('续费功能开发中')
+  const studentId = studentStore.studentId
+  const courseId = item?.lessonId || item?.courseId
+
+  if (!studentId) {
+    messageService.error('缺少学员ID，无法续费')
+    return
+  }
+  if (!courseId) {
+    messageService.error('缺少课程ID，无法续费')
+    return
+  }
+
+  router.push({
+    path: '/edu-center/registr-renewal',
+    query: compactQuery({
+      renew: 1,
+      id: studentId,
+      courseId,
+      courseName: item?.lessonName,
+      lessonChargingMode: item?.lessonChargingMode,
+      tuitionAccountId: item?.id || item?.tuitionAccountId,
+      validDate: getRenewRouteDateValue(item?.validDate || item?.activedAt),
+      endDate: getRenewRouteDateValue(item?.endDate || item?.expireTime),
+    }),
+  })
 }
 async function onEndedMenuRevokeGraduate(item) {
   closeCourseActionMenu()
@@ -524,7 +587,7 @@ watch(endTheClassDrawerOpen, (value) => {
             <template #overlay>
               <a-space direction="vertical" :size="1" @click="closeCourseActionMenu">
                 <template v-if="!isTuitionAccountCourseEnded(item)">
-                <div v-if="hasActionableBalance(item)" class="flex items-center gap-2" @click="onMenuTransferClass">
+                <div v-if="false" class="flex items-center gap-2" @click="onMenuTransferClass">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -641,7 +704,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   </div>
                   <span class="font-size-14px text-#666 w-90px">结课</span>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2" @click="onEndedMenuRenew(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>
@@ -694,7 +757,7 @@ watch(endTheClassDrawerOpen, (value) => {
                 </div>
                 </template>
                 <template v-else>
-                <div class="flex items-center gap-2" @click="onEndedMenuRenew">
+                <div class="flex items-center gap-2" @click="onEndedMenuRenew(item)">
                   <div>
                     <Icon :style="{ color: 'hotpink' }">
                       <template #component>

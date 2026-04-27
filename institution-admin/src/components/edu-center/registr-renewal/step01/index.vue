@@ -15,7 +15,7 @@ import { getRechargeAccountByStudentApi } from '@/api/finance-center/recharge-ac
 import { useUserStore } from '@/stores/user'
 import { addIntendedStudentApi, getRecommenderPageApi } from '~@/api/enroll-center/intention-student'
 import { getOrderTagListPagedApi } from '@/api/finance-center/order-tag'
-import { getCalcCourseEnrollTypeApi, getCheckQuoteInfoApi, postCreateOrderApi, postPayOrderApi } from '~@/api/edu-center/registr-renewal'
+import { getCalcCourseEnrollTypeApi, getCheckQuoteInfoApi, getProcessContentPageApi, postCreateOrderApi, postPayOrderApi } from '~@/api/edu-center/registr-renewal'
 import messageService from '~@/utils/messageService'
 
 // 获取路由信息
@@ -45,6 +45,7 @@ const emit = defineEmits([
 const openSelect = ref(false)
 const activeCourseOver = ref(false)
 const activeCourseModalRef = ref(null)
+const routeRenewApplied = ref(false)
 
 // 学生选择组件引用
 const studentSelectRef = ref(null)
@@ -67,6 +68,150 @@ const settingForm = reactive({
 
 // 初始化表单数据
 const formData = reactive([])
+
+function getRouteQueryValue(key) {
+  const value = route.query[key]
+  return Array.isArray(value) ? value[0] : value
+}
+
+function getRouteRenewCourseId() {
+  return getRouteQueryValue('courseId')
+}
+
+function getRouteRenewCourseIdNumber() {
+  const courseId = Number(getRouteRenewCourseId())
+  return Number.isFinite(courseId) && courseId > 0 ? courseId : undefined
+}
+
+function getRouteRenewCourseName() {
+  return getRouteQueryValue('courseName') || ''
+}
+
+function getRouteLessonChargingMode() {
+  return Number(getRouteQueryValue('lessonChargingMode') || 0)
+}
+
+function isRenewRoute() {
+  return String(getRouteQueryValue('renew') || '') === '1' && !!getRouteRenewCourseId()
+}
+
+function getRenewStartDate() {
+  const routeEndDate = getRouteQueryValue('endDate')
+  const endDate = dayjs(routeEndDate)
+  if (routeEndDate && endDate.isValid()) {
+    return endDate.add(1, 'day').format('YYYY-MM-DD')
+  }
+
+  return dayjs().format('YYYY-MM-DD')
+}
+
+function extractCourseList(res) {
+  if (Array.isArray(res?.result))
+    return res.result
+  if (Array.isArray(res?.result?.list))
+    return res.result.list
+  if (Array.isArray(res?.result?.items))
+    return res.result.items
+  return []
+}
+
+function findCourseById(courses, courseId) {
+  return courses.find(course => String(course?.id) === String(courseId))
+}
+
+async function fetchRenewCourseByRoute() {
+  const courseId = getRouteRenewCourseId()
+  const courseIdNumber = getRouteRenewCourseIdNumber()
+  const courseName = getRouteRenewCourseName()
+
+  const buildParams = queryModel => ({
+    pageRequestModel: {
+      needTotal: true,
+      pageSize: 50,
+      pageIndex: 1,
+      skipCount: 0,
+    },
+    queryModel: {
+      delFlag: false,
+      productType: 1,
+      saleStatus: true,
+      ...queryModel,
+    },
+    sortModel: {},
+  })
+
+  if (courseIdNumber) {
+    const exactRes = await getProcessContentPageApi(buildParams({ courseId: courseIdNumber }))
+    const exactCourse = findCourseById(extractCourseList(exactRes), courseId)
+    if (exactCourse)
+      return exactCourse
+  }
+
+  if (!courseName)
+    return null
+
+  const searchRes = await getProcessContentPageApi(buildParams({ searchKey: courseName }))
+  return findCourseById(extractCourseList(searchRes), courseId) || null
+}
+
+function getRenewQuoteOption(courseItem) {
+  const options = (courseItem.priceList || []).flatMap(priceGroup => priceGroup.options || [])
+  const lessonChargingMode = getRouteLessonChargingMode()
+  const sameModeOptions = lessonChargingMode
+    ? options.filter(option => Number(option.lessonModel) === lessonChargingMode)
+    : options
+
+  return sameModeOptions.find(option => !option.lessonAudition)
+    || sameModeOptions[0]
+    || options.find(option => !option.lessonAudition)
+    || options[0]
+}
+
+async function applyRenewCourseDefaults(courseItem, courseIndex) {
+  const quoteOption = getRenewQuoteOption(courseItem)
+  courseItem.handleType = 2
+
+  if (!quoteOption)
+    return
+
+  courseItem.productSkuId = quoteOption.value
+  courseItem.skuCount = 1
+  courseItem.freeQuantity = 0
+  await handlePriceListChange(quoteOption.value, courseIndex)
+  courseItem.handleType = 2
+
+  if (Number(quoteOption.lessonModel) === 2) {
+    courseItem.validDate = getRenewStartDate()
+    calculateEndDate(courseItem)
+  }
+}
+
+async function loadRenewCourseFromRoute() {
+  if (routeRenewApplied.value || !isRenewRoute())
+    return
+
+  routeRenewApplied.value = true
+  try {
+    const course = await fetchRenewCourseByRoute()
+    if (!course) {
+      messageService.error('未找到可续费课程，请手动选择课程')
+      return
+    }
+
+    handleCourseModalConfirm([{ ...course, productType: 1 }])
+    await nextTick()
+
+    const courseIndex = formData.findIndex(item => String(item?.id) === String(course.id))
+    if (courseIndex < 0)
+      return
+
+    await applyRenewCourseDefaults(formData[courseIndex], courseIndex)
+  }
+  catch (error) {
+    console.error('自动带入续费课程失败:', error)
+    messageService.error('自动带入续费课程失败，请手动选择课程')
+  }
+}
 
 
 
@@ -294,8 +439,9 @@ async function checkRouteAndLoadStudent() {
 // 组件挂载时检查路由参数
 onMounted(() => {
   // 延迟执行以确保 studentSelectRef 已经准备好
-  nextTick(() => {
-    checkRouteAndLoadStudent()
+  nextTick(async () => {
+    await checkRouteAndLoadStudent()
+    await loadRenewCourseFromRoute()
   })
   fetchOrderTagOptions()
 })

@@ -614,6 +614,7 @@ func parseCourseQueryDTO(raw map[string]any) model.CourseQueryDTO {
 		query.SortModel.OrderBySortNo = asInt(sortModel["orderBySortNumber"], 0)
 	}
 	if qm, ok := raw["queryModel"].(map[string]any); ok {
+		query.QueryModel.CourseID = asInt64Ptr(firstNonNil(qm["courseId"], qm["id"]))
 		query.QueryModel.SearchKey = asString(qm["searchKey"])
 		query.QueryModel.CourseName = asString(qm["courseName"])
 		query.QueryModel.CourseCategory = asInt64Ptr(qm["courseCategory"])
