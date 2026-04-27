@@ -109,19 +109,19 @@ const remainTuitionText = computed(() => `¥ ${formatMoney(props.record?.tuition
 const validityText = computed(() => {
   if (lessonChargingMode.value === 2) {
     const lines = subAccountList.value
-      .map((item) => {
-        const start = formatDate(item?.startDate || item?.activedAt)
-        const end = formatDate(item?.endDate)
-        if (start === '-' || end === '-')
-          return ''
-        return `${start} ~ ${end}`
-      })
+      .map(item => formatTimeSlotPeriodLine(item))
       .filter(Boolean)
     const uniqueLines = Array.from(new Set(lines))
     if (uniqueLines.length)
       return uniqueLines.join('，')
     const start = formatDate(props.record?.validDate || props.record?.activedAt)
-    const end = formatDate(props.record?.endDate || props.record?.expireTime)
+    let end = formatDate(props.record?.endDate || props.record?.expireTime)
+    const calculatedEnd = formatTimeSlotEndByDays(
+      props.record?.validDate || props.record?.activedAt,
+      Number(props.record?.totalQuantity || 0) + Number(props.record?.totalFreeQuantity || 0),
+    )
+    if (calculatedEnd !== '-')
+      end = calculatedEnd
     if (start === '-' || end === '-')
       return '-'
     return `${start} ~ ${end}`
@@ -160,6 +160,29 @@ function formatDate(value) {
   if (!parsed.isValid())
     return '-'
   return parsed.format('YYYY-MM-DD')
+}
+
+function formatTimeSlotEndByDays(startDate, days) {
+  const start = dayjs(startDate)
+  const totalDays = Math.round(Number(days || 0))
+  if (!start.isValid() || totalDays <= 0)
+    return '-'
+  return start.add(totalDays - 1, 'day').format('YYYY-MM-DD')
+}
+
+function formatTimeSlotPeriodLine(item) {
+  const startValue = item?.startDate || item?.activedAt
+  const start = formatDate(startValue)
+  let end = formatDate(item?.endDate)
+  const calculatedEnd = formatTimeSlotEndByDays(
+    startValue,
+    Number(item?.totalDays || 0) || Number(item?.remainDays || item?.quantity || 0),
+  )
+  if (calculatedEnd !== '-')
+    end = calculatedEnd
+  if (start === '-' || end === '-')
+    return ''
+  return `${start} ~ ${end}`
 }
 
 function formatMoney(value) {

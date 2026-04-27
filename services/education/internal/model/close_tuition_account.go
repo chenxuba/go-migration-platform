@@ -197,6 +197,7 @@ type RevertCloseTuitionAccountPreview struct {
 	LessonChargingMode         int                                  `json:"lessonChargingMode"`
 	CloseTuitionAccountOrderID string                               `json:"closeTuitionAccountOrderId"`
 	CloseTime                  *time.Time                           `json:"closeTime,omitempty"`
+	MinRevertStartDate         *time.Time                           `json:"minRevertStartDate,omitempty"`
 	Quantity                   float64                              `json:"quantity"`
 	FreeQuantity               float64                              `json:"freeQuantity"`
 	Tuition                    float64                              `json:"tuition"`

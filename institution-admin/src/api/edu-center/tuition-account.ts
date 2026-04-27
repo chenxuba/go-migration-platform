@@ -203,6 +203,7 @@ export interface RevertCloseTuitionAccountPreview {
   lessonChargingMode?: number
   closeTuitionAccountOrderId?: string
   closeTime?: string
+  minRevertStartDate?: string
   quantity?: number
   freeQuantity?: number
   tuition?: number

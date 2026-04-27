@@ -157,6 +157,14 @@ function formatDate(dateStr) {
   return dayjs(dateStr).format('YYYY-MM-DD')
 }
 
+function formatTimeSlotEndByDays(startDate, days) {
+  const start = dayjs(startDate)
+  const totalDays = Math.round(Number(days || 0))
+  if (!start.isValid() || totalDays <= 0)
+    return '-'
+  return start.add(totalDays - 1, 'day').format('YYYY-MM-DD')
+}
+
 // 格式化金额
 function formatMoney(amount) {
   if (amount === null || amount === undefined) return '0.00'
@@ -439,7 +447,15 @@ function formatValidityText(item) {
 // 格式化有效时段文本
 function formatValidPeriodText(item) {
   const validDate = formatDate(item.validDate || item.activedAt)
-  const endDate = formatDate(item.endDate || item.expireTime)
+  let endDate = formatDate(item.endDate || item.expireTime)
+  if (Number(item?.lessonChargingMode || 0) === 2) {
+    const calculatedEndDate = formatTimeSlotEndByDays(
+      item.validDate || item.activedAt,
+      Number(item?.totalQuantity || 0) + Number(item?.totalFreeQuantity || 0),
+    )
+    if (calculatedEndDate !== '-')
+      endDate = calculatedEndDate
+  }
   
   if (validDate === '-' || endDate === '-') {
     return '有效时段：-'
@@ -644,7 +660,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   <span class="font-size-14px text-#666  w-90px ">退课</span>
                 </div>
                 <div
-                  v-if="hasActionableBalance(item)"
+                  v-if="isTuitionAccountSuspended(item) || hasActionableBalance(item)"
                   class="flex items-center gap-2"
                   @click="isTuitionAccountSuspended(item) ? onMenuResumeCourse(item) : onMenuStopCourse(item)"
                 >

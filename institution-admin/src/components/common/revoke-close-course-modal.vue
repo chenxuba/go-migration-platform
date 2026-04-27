@@ -78,10 +78,19 @@ function formatCount(value) {
   return num.toFixed(2)
 }
 
-function disabledPastDate(current) {
+const minRevertStartDate = computed(() => {
+  const parsed = dayjs(previewData.value?.minRevertStartDate)
+  return parsed.isValid() ? parsed.startOf('day') : null
+})
+
+function disabledRevertDate(current) {
   if (!current)
     return false
-  return current.endOf('day').isBefore(dayjs().startOf('day'))
+  if (current.endOf('day').isBefore(dayjs().startOf('day')))
+    return true
+  if (lessonChargingMode.value === 2 && minRevertStartDate.value)
+    return current.startOf('day').isBefore(minRevertStartDate.value)
+  return false
 }
 
 function getLessonTypeText(type) {
@@ -250,6 +259,22 @@ const recomputedValidPeriodLines = computed(() => {
   return lines
 })
 
+function formatTimeSlotPeriodLine(period) {
+  const rawStart = dayjs(period?.startDate)
+  const days = Math.round(Number(period?.quantity || 0))
+  if (rawStart.isValid() && days > 0) {
+    const start = rawStart.format('YYYY-MM-DD')
+    const end = rawStart.add(days - 1, 'day').format('YYYY-MM-DD')
+    return `${start} ~ ${end}`
+  }
+
+  const start = formatDate(period?.startDate)
+  const end = formatDate(period?.endDate)
+  if (start === '-' && end === '-')
+    return ''
+  return `${start} ~ ${end}`
+}
+
 const validPeriodLines = computed(() => {
   if (lessonChargingMode.value === 1)
     return ['无']
@@ -259,6 +284,8 @@ const validPeriodLines = computed(() => {
 
   const lines = previewPeriods.value
     .map((period) => {
+      if (lessonChargingMode.value === 2)
+        return formatTimeSlotPeriodLine(period)
       const start = formatDate(period?.startDate)
       const end = formatDate(period?.endDate)
       if (start === '-' && end === '-')
@@ -330,6 +357,11 @@ async function handleSubmit() {
     let expireDate
     if (!isOrderVoidCloseRecord.value && lessonChargingMode.value === 2) {
       startDate = formState.startDate
+      if (minRevertStartDate.value && dayjs(startDate).startOf('day').isBefore(minRevertStartDate.value)) {
+        const consumedDate = minRevertStartDate.value.subtract(1, 'day').format('YYYY-MM-DD')
+        messageService.error(`该课程已存在${consumedDate}的课消记录，不能选择更早日期`)
+        return
+      }
     }
     else if (!isOrderVoidCloseRecord.value) {
       expireDate = formState.startDate
@@ -454,7 +486,7 @@ async function handleSubmit() {
                 value-format="YYYY-MM-DD"
                 placeholder="请选择日期"
                 class="!w-240px"
-                :disabled-date="disabledPastDate"
+                :disabled-date="disabledRevertDate"
               />
             </a-form-item>
           </a-form>

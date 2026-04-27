@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -354,6 +355,19 @@ func (svc *Service) CreateOrder(userID int64, dto model.CreateOrderDTO) (int64, 
 	if len(dto.OrderDetail.QuoteDetailList) == 0 {
 		return 0, errors.New("请选择办理内容!")
 	}
+	quoteIDs := make([]int64, 0, len(dto.OrderDetail.QuoteDetailList))
+	for _, item := range dto.OrderDetail.QuoteDetailList {
+		if item.QuoteID > 0 {
+			quoteIDs = append(quoteIDs, item.QuoteID)
+		}
+	}
+	quotationMap, err := svc.repo.GetCourseQuotationsByIDs(context.Background(), quoteIDs)
+	if err != nil {
+		return 0, err
+	}
+	if err := validateCreateOrderTimeSlotPeriods(dto.OrderDetail.QuoteDetailList, quotationMap); err != nil {
+		return 0, err
+	}
 	instUserID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -362,6 +376,32 @@ func (svc *Service) CreateOrder(userID int64, dto model.CreateOrderDTO) (int64, 
 		return 0, err
 	}
 	return svc.repo.CreateOrder(context.Background(), instID, instUserID, dto)
+}
+
+func validateCreateOrderTimeSlotPeriods(details []model.QuoteDetailDTO, quotationMap map[int64]model.CourseQuotation) error {
+	for _, detail := range details {
+		quotation, ok := quotationMap[detail.QuoteID]
+		if !ok || quotation.LessonModel == nil || *quotation.LessonModel != 2 {
+			continue
+		}
+		if detail.ValidDate == nil || detail.EndDate == nil {
+			continue
+		}
+		start := startOfDayForOrderValidation(*detail.ValidDate)
+		end := startOfDayForOrderValidation(*detail.EndDate)
+		if end.Before(start) {
+			return errors.New("时段课结束时间不能早于开始时间")
+		}
+		periodDays := int(end.Sub(start).Hours()/24) + 1
+		if detail.RealQuantity > 0 && math.Abs(float64(periodDays)-detail.RealQuantity) > 0.0001 {
+			return errors.New("时段课有效时段与总天数不一致，请重新选择结束时间")
+		}
+	}
+	return nil
+}
+
+func startOfDayForOrderValidation(value time.Time) time.Time {
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, value.Location())
 }
 
 func (svc *Service) PayOrder(userID int64, dto model.PayOrderDTO) error {

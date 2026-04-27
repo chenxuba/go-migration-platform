@@ -164,7 +164,23 @@ func (repo *Repository) GetTuitionAccountReadingList(ctx context.Context, instID
 			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
 			MAX(ta.expire_time) AS expire_time,
 			MIN(ta.valid_date) AS valid_date,
-			MAX(ta.end_date) AS end_date,
+			CASE
+				WHEN IFNULL(icq.lesson_model, 0) = 2 AND MIN(ta.valid_date) IS NOT NULL THEN DATE_ADD(
+					MIN(ta.valid_date),
+					INTERVAL GREATEST(CAST(ROUND(
+						SUM(CASE
+							WHEN IFNULL(ta.total_quantity, 0) > 0 THEN IFNULL(ta.total_quantity, 0)
+							ELSE 0
+						END)
+						+
+						SUM(CASE
+							WHEN IFNULL(ta.total_quantity, 0) = 0 AND IFNULL(ta.free_quantity, 0) > 0 THEN IFNULL(ta.free_quantity, 0)
+							ELSE 0
+						END)
+					) AS SIGNED) - 1, 0) DAY
+				)
+				ELSE MAX(ta.end_date)
+			END AS end_date,
 			MAX(ta.create_time) AS actived_at,
 			IFNULL(MAX(ta.assigned_class), 0) AS assigned_class,
 			`+effectiveTuitionAccountStatusSQL+` AS status,

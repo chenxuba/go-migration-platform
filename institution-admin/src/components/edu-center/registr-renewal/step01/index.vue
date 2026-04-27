@@ -287,6 +287,7 @@ function handleCourseModalConfirm(selectedCourses) {
     item.validDate = '' // 有效期
     item.endDate = '' // 结束时间（时段模式使用）
     item.endDateWeek = '' // 结束时间对应的周几
+    item.endDateManuallyChanged = false
     item.totalDays = 0 // 总天数（含赠）
     item.error = false // 报价单错误状态
 
@@ -1189,6 +1190,8 @@ async function submitOrder() {
         quoteDetailList: formData.map(course => {
           // 获取选中的sku信息
           const selectedSku = course.productSku?.find(sku => sku.id === course.productSkuId)
+          if (selectedSku?.lessonModel === 2 && !course.endDateManuallyChanged)
+            syncAutoTimePeriodEndDate(course, selectedSku)
           const courseTotal = calculateCourseTotal(course)
           const distributedDiscount = getCourseDistributedDiscount(formData.indexOf(course))
           const realQuantity = calculateCourseRealQuantity(course, selectedSku)
@@ -1586,11 +1589,6 @@ function calculateCourseRealQuantity(courseItem, selectedSku) {
   const freeQuantity = courseItem.freeQuantity || 0
 
   if (selectedSku.lessonModel === 2) {
-    const totalDays = Number(courseItem.totalDays || 0)
-    if (totalDays > 0) {
-      return totalDays
-    }
-
     if (courseItem.validDate && courseItem.endDate) {
       const startDate = dayjs(courseItem.validDate)
       const endDate = dayjs(courseItem.endDate)
@@ -1598,9 +1596,62 @@ function calculateCourseRealQuantity(courseItem, selectedSku) {
         return Math.max(0, endDate.diff(startDate, 'day') + 1)
       }
     }
+
+    const totalDays = Number(courseItem.totalDays || 0)
+    if (totalDays > 0) {
+      return totalDays
+    }
   }
 
   return purchaseQuantity + freeQuantity
+}
+
+function getCalculatedTimePeriodEndDate(courseItem, selectedOption) {
+  if (!selectedOption || selectedOption.lessonModel !== 2)
+    return null
+
+  const startDate = dayjs(courseItem.validDate)
+  if (!startDate.isValid())
+    return null
+
+  const { unit, quantity } = selectedOption
+  const purchaseQuantity = Number(quantity || 0) * Number(courseItem.skuCount || 0)
+  const freeQuantity = Number(courseItem.freeQuantity || 0)
+
+  const addInclusiveDays = (days) => {
+    const normalizedDays = Math.max(Math.ceil(Number(days || 0)), 1)
+    return startDate.add(normalizedDays - 1, 'day')
+  }
+
+  switch (unit) {
+    case 1: {
+      const totalCourseHours = purchaseQuantity + freeQuantity
+      return addInclusiveDays(Math.ceil(totalCourseHours / 2))
+    }
+    case 2:
+      return addInclusiveDays(purchaseQuantity + freeQuantity)
+    case 3:
+      return startDate.add(purchaseQuantity, 'month').subtract(1, 'day').add(freeQuantity, 'day')
+    case 4:
+      return startDate.add(purchaseQuantity, 'year').subtract(1, 'day').add(freeQuantity, 'day')
+    case 5:
+      return addInclusiveDays(purchaseQuantity + freeQuantity)
+    default:
+      return addInclusiveDays(purchaseQuantity + freeQuantity)
+  }
+}
+
+function syncAutoTimePeriodEndDate(courseItem, selectedOption) {
+  const endDate = getCalculatedTimePeriodEndDate(courseItem, selectedOption)
+  if (!endDate)
+    return false
+
+  courseItem.endDate = endDate.format('YYYY-MM-DD')
+  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
+  const weekDay = weekDays[endDate.day()]
+  courseItem.endDateWeek = `周${weekDay}`
+  calculateTotalDays(courseItem)
+  return true
 }
 
 // 计算结束时间
@@ -1633,61 +1684,11 @@ function calculateEndDate(courseItem) {
     courseItem.endDateWeek = ''
     return
   }
-
-  const startDate = dayjs(courseItem.validDate)
-  if (!startDate.isValid()) {
+  courseItem.endDateManuallyChanged = false
+  if (!syncAutoTimePeriodEndDate(courseItem, selectedOption)) {
     courseItem.endDate = ''
     courseItem.endDateWeek = ''
-    return
   }
-
-  const { unit, quantity } = selectedOption
-  // 购买数量
-  const purchaseQuantity = quantity * courseItem.skuCount
-  const freeQuantity = courseItem.freeQuantity || 0
-
-  let endDate
-  switch (unit) {
-    case 1: // 课时 - 假设每课时1.5小时，按天计算（可根据实际业务调整）
-      // 假设每天可安排2-3节课时，这里按平均每天2课时计算
-      const totalCourseHours = purchaseQuantity + freeQuantity
-      const totalDays = Math.ceil(totalCourseHours / 2)
-      endDate = startDate.add(totalDays, 'day')
-      break
-    case 2: // 天
-      // 总天数 = 购买天数 + 赠送天数
-      // 结束日期 = 开始日期 + (总天数 - 1) 天
-      // 例如：1天是19-19，2天是19-20，3天是19-21
-      const totalDaysUnit2 = purchaseQuantity + freeQuantity
-      endDate = startDate.add(totalDaysUnit2 - 1, 'day')
-      break
-    case 3: // 月
-      // 购买数量按月计算，赠送数量按天计算
-      endDate = startDate.add(purchaseQuantity, 'month').subtract(1, 'day').add(freeQuantity, 'day')
-      break
-    case 4: // 年
-      // 购买数量按年计算，赠送数量按天计算
-      endDate = startDate.add(purchaseQuantity, 'year').subtract(1, 'day').add(freeQuantity, 'day')
-      break
-    case 5: // 其他 - 按天计算
-      const totalDaysUnit5 = purchaseQuantity + freeQuantity
-      endDate = startDate.add(totalDaysUnit5, 'day')
-      break
-    default:
-      const totalDaysDefault = purchaseQuantity + freeQuantity
-      endDate = startDate.add(totalDaysDefault, 'day')
-  }
-
-  // 格式化结束时间为 YYYY-MM-DD 格式，周几单独存储
-  courseItem.endDate = endDate.format('YYYY-MM-DD')
-
-  // 计算周几并单独存储
-  const weekDays = ['日', '一', '二', '三', '四', '五', '六']
-  const weekDay = weekDays[endDate.day()]
-  courseItem.endDateWeek = `周${weekDay}`
-
-  // 同时计算总天数
-  calculateTotalDays(courseItem)
 }
 
 // 根据lessonModel获取precision值，并自动调整freeQuantity的精度
@@ -1882,6 +1883,7 @@ function handleUpdateDateSubmit(formState) {
     // 更新结束时间为用户选择的新时间
     if (formState.beforeTotalDays) {
       courseItem.endDate = formState.beforeTotalDays
+      courseItem.endDateManuallyChanged = true
 
       // 重新计算并设置周几
       const endDate = dayjs(formState.beforeTotalDays)

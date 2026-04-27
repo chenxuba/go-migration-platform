@@ -693,6 +693,111 @@ func (repo *Repository) resolveCloseOrderTargetsTx(ctx context.Context, tx *sql.
 	return repo.listZeroAmountCloseTargetsByOrderTx(ctx, tx, instID, orderRow, accountIDs)
 }
 
+func (repo *Repository) minRevertStartDateByAutoConsumeTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) (time.Time, bool, error) {
+	if len(accountIDs) == 0 {
+		return time.Time{}, false, nil
+	}
+	args := []any{instID}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	args = append(args, model.TuitionAccountFlowSourceAutoConsume)
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			IFNULL(taf.source_id, 0),
+			taf.created_time,
+			IFNULL(taf.quantity, 0),
+			sod.valid_date
+		FROM tuition_account_flow taf
+		LEFT JOIN sale_order_course_detail sod
+			ON taf.source_id > 0
+			AND taf.source_id < 20000101
+			AND sod.id = taf.source_id
+			AND sod.del_flag = 0
+		WHERE taf.inst_id = ?
+		  AND taf.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND taf.source_type = ?
+		  AND taf.del_flag = 0
+	`, args...)
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	defer rows.Close()
+
+	var latest time.Time
+	hasLatest := false
+	for rows.Next() {
+		var (
+			sourceID        int64
+			createdTime     sql.NullTime
+			quantity        float64
+			detailValidDate sql.NullTime
+		)
+		if err := rows.Scan(&sourceID, &createdTime, &quantity, &detailValidDate); err != nil {
+			return time.Time{}, false, err
+		}
+		consumedDate, ok := autoConsumeLatestDate(sourceID, createdTime, quantity, detailValidDate)
+		if !ok {
+			continue
+		}
+		consumedDate = startOfDayTime(consumedDate)
+		if !hasLatest || consumedDate.After(latest) {
+			latest = consumedDate
+			hasLatest = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return time.Time{}, false, err
+	}
+	if !hasLatest {
+		return time.Time{}, false, nil
+	}
+	return latest.AddDate(0, 0, 1), true, nil
+}
+
+func autoConsumeLatestDate(sourceID int64, createdTime sql.NullTime, quantity float64, detailValidDate sql.NullTime) (time.Time, bool) {
+	if sourceDate, ok := parseAutoConsumeSourceDate(sourceID); ok {
+		return sourceDate, true
+	}
+	if sourceID < 0 {
+		absSourceID := -sourceID
+		if sourceDate, ok := parseAutoConsumeSourceDate(absSourceID % 100000000); ok {
+			return sourceDate, true
+		}
+	}
+	if sourceID > 0 && sourceID < 20000101 && detailValidDate.Valid && math.Abs(quantity) > 0.00001 {
+		days := int(math.Ceil(math.Abs(quantity) - 0.00001))
+		if days < 1 {
+			days = 1
+		}
+		return startOfDayTime(detailValidDate.Time).AddDate(0, 0, days-1), true
+	}
+	if createdTime.Valid {
+		return createdTime.Time, true
+	}
+	return time.Time{}, false
+}
+
+func parseAutoConsumeSourceDate(sourceID int64) (time.Time, bool) {
+	if sourceID < 20000101 || sourceID > 20991231 {
+		return time.Time{}, false
+	}
+	sourceDate, err := time.ParseInLocation("20060102", strconv.FormatInt(sourceID, 10), time.Local)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return startOfDayTime(sourceDate), true
+}
+
+func validateRevertStartDateNotConsumed(startDate time.Time, minStartDate time.Time, hasMinStartDate bool) error {
+	if !hasMinStartDate {
+		return nil
+	}
+	if startOfDayTime(startDate).Before(startOfDayTime(minStartDate)) {
+		return fmt.Errorf("该课程已存在%s的课消记录，撤销结课有效开始时间不能早于%s", minStartDate.AddDate(0, 0, -1).Format("2006-01-02"), minStartDate.Format("2006-01-02"))
+	}
+	return nil
+}
+
 func mergeRestoredTimeSlotOrderDetailRange(detailOrder []int64, detailRanges map[int64]*restoredTimeSlotOrderDetailRange, orderID, detailID int64, validDate, endDate time.Time) []int64 {
 	if detailID <= 0 || orderID <= 0 {
 		return detailOrder
@@ -922,6 +1027,13 @@ func convertSubAccountDateInfoRows(rows []tuitionAccountSubAccountRow) []model.T
 			item.StartTime = &t
 			item.StartDate = &t
 		}
+		if row.lessonChargingMode == 2 && row.validDate.Valid && row.totalQuantity > 0 {
+			endDate := startOfDayTime(row.validDate.Time).AddDate(0, 0, int(math.Round(row.totalQuantity))-1)
+			item.EndDate = &endDate
+			item.ExpireDate = &endDate
+			out = append(out, item)
+			continue
+		}
 		if row.endDate.Valid {
 			t := row.endDate.Time
 			item.EndDate = &t
@@ -936,7 +1048,10 @@ func buildPreviewSubPeriods(rows []tuitionAccountSubAccountRow) []model.RevertCl
 	out := make([]model.RevertCloseTuitionAccountSubPeriod, 0, len(rows))
 	seen := make(map[string]struct{}, len(rows))
 	for _, row := range rows {
-		period := model.RevertCloseTuitionAccountSubPeriod{}
+		period := model.RevertCloseTuitionAccountSubPeriod{
+			Quantity: closeOrderRoundMoney(row.remainQuantity),
+			IsFree:   closeOrderAlmostEqual(row.totalTuition, 0),
+		}
 		if row.validDate.Valid {
 			t := row.validDate.Time
 			period.StartDate = &t
@@ -945,10 +1060,11 @@ func buildPreviewSubPeriods(rows []tuitionAccountSubAccountRow) []model.RevertCl
 			t := row.endDate.Time
 			period.EndDate = &t
 		}
+		normalizePreviewTimeSlotPeriod(&period, row.lessonChargingMode)
 		if period.StartDate == nil && period.EndDate == nil {
 			continue
 		}
-		key := fmt.Sprintf("%s|%s", nullableDateKey(period.StartDate), nullableDateKey(period.EndDate))
+		key := fmt.Sprintf("%s|%s|%.2f", nullableDateKey(period.StartDate), nullableDateKey(period.EndDate), period.Quantity)
 		if _, exists := seen[key]; exists {
 			continue
 		}
@@ -973,12 +1089,25 @@ func buildPreviewSubPeriodsFromCloseFlows(rows []closeTuitionAccountFlowRow) []m
 			t := row.endDate.Time
 			period.EndDate = &t
 		}
+		normalizePreviewTimeSlotPeriod(&period, row.lessonChargingMode)
 		if period.StartDate == nil && period.EndDate == nil {
 			continue
 		}
 		out = append(out, period)
 	}
 	return out
+}
+
+func normalizePreviewTimeSlotPeriod(period *model.RevertCloseTuitionAccountSubPeriod, lessonChargingMode int) {
+	if period == nil || lessonChargingMode != 2 || period.StartDate == nil {
+		return
+	}
+	days := int(math.Round(period.Quantity))
+	if days <= 0 {
+		return
+	}
+	endDate := startOfDayTime(*period.StartDate).AddDate(0, 0, days-1)
+	period.EndDate = &endDate
 }
 
 func nullableDateKey(value *time.Time) string {
@@ -1273,6 +1402,10 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 	if err != nil {
 		return model.RevertCloseTuitionAccountPreview{}, err
 	}
+	minStartDate, hasMinStartDate, err := repo.minRevertStartDateByAutoConsumeTx(ctx, tx, instID, accountIDs)
+	if err != nil {
+		return model.RevertCloseTuitionAccountPreview{}, err
+	}
 	if err := tx.Commit(); err != nil {
 		return model.RevertCloseTuitionAccountPreview{}, err
 	}
@@ -1313,6 +1446,10 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 	if orderRow.expireDate.Valid {
 		t := orderRow.expireDate.Time
 		preview.ExpireDate = &t
+	}
+	if preview.LessonChargingMode == 2 && hasMinStartDate {
+		t := minStartDate
+		preview.MinRevertStartDate = &t
 	}
 	return preview, nil
 }
@@ -1465,6 +1602,9 @@ func (repo *Repository) revertRefundAutoClosedTuitionAccount(ctx context.Context
 		SET status = ?,
 		    status_change_time = ?,
 		    class_ending_time = NULL,
+		    suspended_time = NULL,
+		    plan_suspend_time = NULL,
+		    plan_resume_time = NULL,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE inst_id = ?
@@ -1560,6 +1700,9 @@ func (repo *Repository) revertOrderVoidAutoClosedTuitionAccount(ctx context.Cont
 		SET status = ?,
 		    status_change_time = ?,
 		    class_ending_time = NULL,
+		    suspended_time = NULL,
+		    plan_suspend_time = NULL,
+		    plan_resume_time = NULL,
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE inst_id = ?
@@ -1732,6 +1875,15 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 			}
 		}
 	}
+	if orderRow.lessonChargingMode == 2 {
+		minStartDate, hasMinStartDate, err := repo.minRevertStartDateByAutoConsumeTx(ctx, tx, instID, accountIDs)
+		if err != nil {
+			return 0, err
+		}
+		if err := validateRevertStartDateNotConsumed(startDate, minStartDate, hasMinStartDate); err != nil {
+			return 0, err
+		}
+	}
 	now := time.Now()
 	cursorDate := startDate
 	firstRevokeFlowID := int64(0)
@@ -1786,6 +1938,9 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 			    status = ?,
 			    status_change_time = ?,
 			    class_ending_time = NULL,
+			    suspended_time = NULL,
+			    plan_suspend_time = NULL,
+			    plan_resume_time = NULL,
 			    enable_expire_time = CASE
 			    	WHEN ? IS NOT NULL THEN 1
 			    	ELSE enable_expire_time
