@@ -26,8 +26,17 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 		`DELETE FROM inst_student_face_attendance_record WHERE inst_id = ?`,
 		`DELETE FROM inst_student_face_attendance_session WHERE inst_id = ?`,
 		`DELETE FROM inst_student_face_profile WHERE inst_id = ?`,
+		`DELETE FROM homework_task WHERE inst_id = ?`,
+		`DELETE FROM notice_record WHERE inst_id = ?`,
+		`DELETE FROM student_rehab_record WHERE inst_id = ?`,
+		`DELETE FROM student_teaching_record_change_log WHERE inst_id = ?`,
 		`DELETE FROM student_teaching_record WHERE inst_id = ?`,
+		`DELETE FROM teaching_schedule_student WHERE inst_id = ?`,
+		`DELETE FROM teaching_schedule_batch_meta WHERE inst_id = ?`,
 		`DELETE FROM teaching_schedule WHERE inst_id = ?`,
+		`DELETE FROM teaching_record WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_entry_exit_record WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_operation_log WHERE inst_id = ?`,
 		`DELETE FROM teaching_class_teacher WHERE inst_id = ?`,
 		`DELETE FROM teaching_class_student WHERE inst_id = ?`,
 		`DELETE FROM teaching_class WHERE inst_id = ?`,
@@ -43,9 +52,17 @@ func (repo *Repository) ClearCampusBusinessData(ctx context.Context, instID, ope
 			INNER JOIN approval_record r ON r.id = h.approval_id
 			WHERE r.inst_id = ?`,
 		`DELETE FROM approval_record WHERE inst_id = ?`,
+		`DELETE FROM close_tuition_account_order WHERE inst_id = ?`,
+		`DELETE FROM suspend_resume_tuition_account_order WHERE inst_id = ?`,
+		`DELETE FROM refund_tuition_account_order_item WHERE inst_id = ?`,
+		`DELETE FROM refund_tuition_account_order WHERE inst_id = ?`,
 		`DELETE FROM tuition_account_flow WHERE inst_id = ?`,
 		`DELETE FROM tuition_account WHERE inst_id = ?`,
 		`DELETE FROM inst_ledger WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_bill_flow WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_bill WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_order_tag WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_order WHERE inst_id = ?`,
 		`DELETE FROM recharge_account_flow WHERE inst_id = ?`,
 		`DELETE FROM recharge_account_student WHERE inst_id = ?`,
 		`DELETE FROM recharge_account WHERE inst_id = ?`,
@@ -159,8 +176,28 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 			args:   []any{instID},
 		},
 		{
+			target: &summary.StudentTeachingChangeLogs,
+			query:  `SELECT COUNT(*) FROM student_teaching_record_change_log WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.StudentRehabRecords,
+			query:  `SELECT COUNT(*) FROM student_rehab_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
 			target: &summary.FollowRecords,
 			query:  `SELECT COUNT(*) FROM follow_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.HomeworkTasks,
+			query:  `SELECT COUNT(*) FROM homework_task WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.NoticeRecords,
+			query:  `SELECT COUNT(*) FROM notice_record WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 		{
@@ -219,6 +256,26 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 			args:   []any{instID},
 		},
 		{
+			target: &summary.CloseTuitionAccountOrders,
+			query:  `SELECT COUNT(*) FROM close_tuition_account_order WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RefundTuitionOrders,
+			query:  `SELECT COUNT(*) FROM refund_tuition_account_order WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RefundTuitionOrderItems,
+			query:  `SELECT COUNT(*) FROM refund_tuition_account_order_item WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.SuspendResumeTuitionOrders,
+			query:  `SELECT COUNT(*) FROM suspend_resume_tuition_account_order WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
 			target: &summary.RechargeAccounts,
 			query:  `SELECT COUNT(*) FROM recharge_account WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
@@ -231,6 +288,26 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.RechargeAccountFlows,
 			query:  `SELECT COUNT(*) FROM recharge_account_flow WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountOrders,
+			query:  `SELECT COUNT(*) FROM recharge_account_order WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountOrderTags,
+			query:  `SELECT COUNT(*) FROM recharge_account_order_tag WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountBills,
+			query:  `SELECT COUNT(*) FROM recharge_account_bill WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.RechargeAccountBillFlows,
+			query:  `SELECT COUNT(*) FROM recharge_account_bill_flow WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 		{
@@ -393,6 +470,31 @@ func (repo *Repository) countCampusBusinessDataTx(ctx context.Context, tx *sql.T
 		{
 			target: &summary.TeachingSchedules,
 			query:  `SELECT COUNT(*) FROM teaching_schedule WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingScheduleStudents,
+			query:  `SELECT COUNT(*) FROM teaching_schedule_student WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingScheduleBatchMetas,
+			query:  `SELECT COUNT(*) FROM teaching_schedule_batch_meta WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingRecords,
+			query:  `SELECT COUNT(*) FROM teaching_record WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingClassOperationLogs,
+			query:  `SELECT COUNT(*) FROM teaching_class_operation_log WHERE inst_id = ? AND del_flag = 0`,
+			args:   []any{instID},
+		},
+		{
+			target: &summary.TeachingClassEntryExits,
+			query:  `SELECT COUNT(*) FROM teaching_class_entry_exit_record WHERE inst_id = ? AND del_flag = 0`,
 			args:   []any{instID},
 		},
 	}

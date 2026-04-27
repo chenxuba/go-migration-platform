@@ -9,7 +9,12 @@ export interface CampusDataClearResult {
     students: number
     studentFieldValues: number
     studentChangeRecords: number
+    studentTeachingRecords: number
+    studentTeachingChangeLogs: number
+    studentRehabRecords: number
     followRecords: number
+    homeworkTasks: number
+    noticeRecords: number
     orders: number
     orderCourseDetails: number
     orderPaymentDetails: number
@@ -18,9 +23,17 @@ export interface CampusDataClearResult {
     approvalHistories: number
     tuitionAccounts: number
     tuitionAccountFlows: number
+    closeTuitionAccountOrders: number
+    refundTuitionOrders: number
+    refundTuitionOrderItems: number
+    suspendResumeTuitionOrders: number
     rechargeAccounts: number
     rechargeAccountStudents: number
     rechargeAccountFlows: number
+    rechargeAccountOrders: number
+    rechargeAccountOrderTags: number
+    rechargeAccountBills: number
+    rechargeAccountBillFlows: number
     courses: number
     courseDetails: number
     courseQuotations: number
@@ -44,6 +57,11 @@ export interface CampusDataClearResult {
     teachingClassStudents: number
     teachingClassTeachers: number
     teachingSchedules: number
+    teachingScheduleStudents: number
+    teachingScheduleBatchMetas: number
+    teachingRecords: number
+    teachingClassOperationLogs: number
+    teachingClassEntryExits: number
   }
   preserved: string[]
   intentStudentIndexCleared: boolean

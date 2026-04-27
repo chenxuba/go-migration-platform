@@ -24,11 +24,12 @@ const recommendedScope = {
     '跟进记录',
     '订单、订单课程明细与支付记录',
     '审批记录与审批历史',
-    '学费账户、充值账户及相关流水、业务台账',
+    '学费账户、结课/停复课/退费记录、充值账户及相关订单账单、业务台账',
+    '作业、通知、康复记录、课消变更记录',
     '意向学员/订单/充值账户导入记录、各类业务导出记录',
     '微信提醒消息记录、公众号学员绑定关系与绑定票据',
     '套餐、套餐内商品、套餐属性结果',
-    '班级、1 对 1 与课表数据（含班员、教师关联、排课记录）',
+    '班级、1 对 1 与课表数据（含班员、教师关联、排课记录、进出班与操作日志）',
   ],
   excludes: [
     '员工、角色、部门等组织信息',
@@ -67,7 +68,27 @@ function buildSuccessMessage(result) {
     + (cleared.templateMessageRecordItems || 0)
   const wechatBindingTotal = (cleared.weChatBindTickets || 0)
     + (cleared.weChatStudentBindings || 0)
-  const summary = `已硬删除学员 ${cleared.students || 0} 条、订单 ${cleared.orders || 0} 条、课表 ${cleared.teachingSchedules || 0} 条、审批 ${cleared.approvalRecords || 0} 条、1对1/班级 ${cleared.teachingClasses || 0} 条、微信消息及明细 ${templateMessageTotal} 条、公众号绑定 ${wechatBindingTotal} 条、导入导出记录 ${importExportTotal} 条`
+  const tuitionBusinessTotal = (cleared.closeTuitionAccountOrders || 0)
+    + (cleared.refundTuitionOrders || 0)
+    + (cleared.refundTuitionOrderItems || 0)
+    + (cleared.suspendResumeTuitionOrders || 0)
+  const rechargeOrderTotal = (cleared.rechargeAccountOrders || 0)
+    + (cleared.rechargeAccountOrderTags || 0)
+    + (cleared.rechargeAccountBills || 0)
+    + (cleared.rechargeAccountBillFlows || 0)
+  const teachingExtraTotal = (cleared.studentTeachingChangeLogs || 0)
+    + (cleared.studentRehabRecords || 0)
+    + (cleared.teachingScheduleStudents || 0)
+    + (cleared.teachingScheduleBatchMetas || 0)
+    + (cleared.teachingRecords || 0)
+    + (cleared.teachingClassOperationLogs || 0)
+    + (cleared.teachingClassEntryExits || 0)
+  const campusRecordTotal = tuitionBusinessTotal
+    + rechargeOrderTotal
+    + teachingExtraTotal
+    + (cleared.homeworkTasks || 0)
+    + (cleared.noticeRecords || 0)
+  const summary = `已硬删除学员 ${cleared.students || 0} 条、订单 ${cleared.orders || 0} 条、课表 ${cleared.teachingSchedules || 0} 条、审批 ${cleared.approvalRecords || 0} 条、1对1/班级 ${cleared.teachingClasses || 0} 条、业务记录 ${campusRecordTotal} 条、微信消息及明细 ${templateMessageTotal} 条、公众号绑定 ${wechatBindingTotal} 条、导入导出记录 ${importExportTotal} 条`
   return result?.intentStudentIndexMessage ? `${summary}，${result.intentStudentIndexMessage}` : summary
 }
 

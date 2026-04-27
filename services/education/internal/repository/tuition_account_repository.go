@@ -11,8 +11,26 @@ import (
 
 const effectiveTuitionAccountStatusSQL = `
 			CASE
-				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 1 THEN 1 ELSE 0 END) > 0 THEN 1
-				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 2 THEN 1 ELSE 0 END) > 0 THEN 2
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 1 AND (
+					ABS(IFNULL(ta.total_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.free_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.total_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.remaining_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.remaining_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.used_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.used_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.confirmed_tuition, 0)) > 0.02
+				) THEN 1 ELSE 0 END) > 0 THEN 1
+				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 2 AND (
+					ABS(IFNULL(ta.total_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.free_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.total_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.remaining_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.remaining_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.used_quantity, 0)) > 0.02
+					OR ABS(IFNULL(ta.used_tuition, 0)) > 0.02
+					OR ABS(IFNULL(ta.confirmed_tuition, 0)) > 0.02
+				) THEN 1 ELSE 0 END) > 0 THEN 2
 				WHEN SUM(CASE WHEN IFNULL(ta.status, 0) = 3 THEN 1 ELSE 0 END) > 0 THEN 3
 				ELSE IFNULL(MAX(ta.status), 0)
 			END`

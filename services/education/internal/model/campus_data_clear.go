@@ -15,7 +15,11 @@ type CampusDataClearSummary struct {
 	FaceAttendanceRecords      int `json:"faceAttendanceRecords"`
 	FaceRollCallTasks          int `json:"faceRollCallTasks"`
 	StudentTeachingRecords     int `json:"studentTeachingRecords"`
+	StudentTeachingChangeLogs  int `json:"studentTeachingChangeLogs"`
+	StudentRehabRecords        int `json:"studentRehabRecords"`
 	FollowRecords              int `json:"followRecords"`
+	HomeworkTasks              int `json:"homeworkTasks"`
+	NoticeRecords              int `json:"noticeRecords"`
 	Orders                     int `json:"orders"`
 	OrderCourseDetails         int `json:"orderCourseDetails"`
 	OrderPaymentDetails        int `json:"orderPaymentDetails"`
@@ -24,9 +28,17 @@ type CampusDataClearSummary struct {
 	ApprovalHistories          int `json:"approvalHistories"`
 	TuitionAccounts            int `json:"tuitionAccounts"`
 	TuitionAccountFlows        int `json:"tuitionAccountFlows"`
+	CloseTuitionAccountOrders  int `json:"closeTuitionAccountOrders"`
+	RefundTuitionOrders        int `json:"refundTuitionOrders"`
+	RefundTuitionOrderItems    int `json:"refundTuitionOrderItems"`
+	SuspendResumeTuitionOrders int `json:"suspendResumeTuitionOrders"`
 	RechargeAccounts           int `json:"rechargeAccounts"`
 	RechargeAccountStudents    int `json:"rechargeAccountStudents"`
 	RechargeAccountFlows       int `json:"rechargeAccountFlows"`
+	RechargeAccountOrders      int `json:"rechargeAccountOrders"`
+	RechargeAccountOrderTags   int `json:"rechargeAccountOrderTags"`
+	RechargeAccountBills       int `json:"rechargeAccountBills"`
+	RechargeAccountBillFlows   int `json:"rechargeAccountBillFlows"`
 	Courses                    int `json:"courses"`
 	CourseDetails              int `json:"courseDetails"`
 	CourseQuotations           int `json:"courseQuotations"`
@@ -50,6 +62,11 @@ type CampusDataClearSummary struct {
 	TeachingClassStudents      int `json:"teachingClassStudents"`
 	TeachingClassTeachers      int `json:"teachingClassTeachers"`
 	TeachingSchedules          int `json:"teachingSchedules"`
+	TeachingScheduleStudents   int `json:"teachingScheduleStudents"`
+	TeachingScheduleBatchMetas int `json:"teachingScheduleBatchMetas"`
+	TeachingRecords            int `json:"teachingRecords"`
+	TeachingClassOperationLogs int `json:"teachingClassOperationLogs"`
+	TeachingClassEntryExits    int `json:"teachingClassEntryExits"`
 }
 
 type CampusDataClearResult struct {

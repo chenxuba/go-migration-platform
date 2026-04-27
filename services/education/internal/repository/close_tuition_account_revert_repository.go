@@ -161,7 +161,10 @@ func ensureCloseTuitionAccountOrderTables(ctx context.Context, db *sql.DB) error
 	if err != nil {
 		return err
 	}
-	return backfillCloseTuitionAccountOrders(ctx, db)
+	if err := backfillCloseTuitionAccountOrders(ctx, db); err != nil {
+		return err
+	}
+	return cleanupDuplicateZeroCloseTuitionAccountOrders(ctx, db)
 }
 
 func backfillCloseTuitionAccountOrders(ctx context.Context, db *sql.DB) error {
@@ -235,6 +238,49 @@ func backfillCloseTuitionAccountOrders(ctx context.Context, db *sql.DB) error {
 		return err
 	}
 	return nil
+}
+
+func cleanupDuplicateZeroCloseTuitionAccountOrders(ctx context.Context, db *sql.DB) error {
+	_, err := db.ExecContext(ctx, `
+		UPDATE close_tuition_account_order co
+		INNER JOIN (
+			SELECT old.id
+			FROM close_tuition_account_order old
+			INNER JOIN close_tuition_account_order newer
+			  ON newer.inst_id = old.inst_id
+			 AND newer.student_id = old.student_id
+			 AND newer.course_id = old.course_id
+			 AND newer.lesson_charging_mode = old.lesson_charging_mode
+			 AND newer.tuition_account_id = old.tuition_account_id
+			 AND newer.del_flag = 0
+			 AND IFNULL(newer.quantity, 0) = 0
+			 AND IFNULL(newer.free_quantity, 0) = 0
+			 AND IFNULL(newer.tuition, 0) = 0
+			 AND DATE_FORMAT(newer.close_time, '%Y-%m-%d %H:%i') = DATE_FORMAT(old.close_time, '%Y-%m-%d %H:%i')
+			 AND newer.id > old.id
+			LEFT JOIN tuition_account_flow old_flow
+			  ON old_flow.inst_id = old.inst_id
+			 AND old_flow.source_type = ?
+			 AND old_flow.source_id = old.flow_source_id
+			 AND old_flow.del_flag = 0
+			LEFT JOIN tuition_account_flow newer_flow
+			  ON newer_flow.inst_id = newer.inst_id
+			 AND newer_flow.source_type = ?
+			 AND newer_flow.source_id = newer.flow_source_id
+			 AND newer_flow.del_flag = 0
+			WHERE old.del_flag = 0
+			  AND IFNULL(old.quantity, 0) = 0
+			  AND IFNULL(old.free_quantity, 0) = 0
+			  AND IFNULL(old.tuition, 0) = 0
+			  AND old_flow.id IS NULL
+			  AND newer_flow.id IS NULL
+			GROUP BY old.id
+		) dup ON dup.id = co.id
+		SET co.del_flag = 1,
+		    co.update_time = NOW()
+		WHERE co.del_flag = 0
+	`, model.TuitionAccountFlowSourceManualCloseCourse, model.TuitionAccountFlowSourceManualCloseCourse)
+	return err
 }
 
 func (repo *Repository) createCloseTuitionAccountOrderTx(
@@ -324,10 +370,6 @@ func (repo *Repository) loadLatestClosableCloseOrderTx(ctx context.Context, tx *
 	if len(accountIDs) == 0 {
 		return closeTuitionAccountOrderRow{}, sql.ErrNoRows
 	}
-	args := []any{instID, model.TuitionAccountFlowSourceManualCloseCourse}
-	for _, id := range accountIDs {
-		args = append(args, id)
-	}
 	query := `
 		SELECT
 			co.id,
@@ -357,14 +399,6 @@ func (repo *Repository) loadLatestClosableCloseOrderTx(ctx context.Context, tx *
 			IFNULL(ic.name, ''),
 			IFNULL(ic.teach_method, 0)
 		FROM close_tuition_account_order co
-		INNER JOIN (
-			SELECT DISTINCT source_id
-			FROM tuition_account_flow
-			WHERE inst_id = ?
-			  AND source_type = ?
-			  AND del_flag = 0
-			  AND tuition_account_id IN (` + buildPlaceholders(len(accountIDs)) + `)
-		) src ON src.source_id = co.flow_source_id
 		LEFT JOIN tuition_account ta ON ta.id = co.tuition_account_id AND ta.inst_id = co.inst_id AND ta.del_flag = 0
 		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
 		LEFT JOIN inst_course ic ON ic.id = co.course_id AND ic.del_flag = 0
@@ -377,10 +411,25 @@ func (repo *Repository) loadLatestClosableCloseOrderTx(ctx context.Context, tx *
 		WHERE co.inst_id = ?
 		  AND co.del_flag = 0
 		  AND co.status = ?
+		  AND (
+			co.tuition_account_id IN (` + buildPlaceholders(len(accountIDs)) + `)
+			OR EXISTS (
+				SELECT 1
+				FROM tuition_account_flow taf_scope
+				WHERE taf_scope.inst_id = co.inst_id
+				  AND taf_scope.source_type = ?
+				  AND taf_scope.del_flag = 0
+				  AND taf_scope.source_id = co.flow_source_id
+				  AND taf_scope.tuition_account_id IN (` + buildPlaceholders(len(accountIDs)) + `)
+			)
+		  )
 		ORDER BY co.close_time DESC, co.id DESC
 		LIMIT 1
 	`
-	args = append(args, instID, model.CloseTuitionAccountOrderStatusClosed)
+	args := []any{instID, model.CloseTuitionAccountOrderStatusClosed}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	args = append(args, model.TuitionAccountFlowSourceManualCloseCourse)
+	args = append(args, int64SliceToAny(accountIDs)...)
 
 	var row closeTuitionAccountOrderRow
 	err := tx.QueryRowContext(ctx, query, args...).Scan(
@@ -405,6 +454,12 @@ func (repo *Repository) loadLatestClosableCloseOrderTx(ctx context.Context, tx *
 		&row.lessonType,
 	)
 	return row, err
+}
+
+func isZeroAmountCloseOrder(row closeTuitionAccountOrderRow) bool {
+	return closeOrderAlmostEqual(row.quantity, 0) &&
+		closeOrderAlmostEqual(row.freeQuantity, 0) &&
+		closeOrderAlmostEqual(row.tuition, 0)
 }
 
 func (repo *Repository) loadLatestRefundAutoCloseOrderTx(ctx context.Context, tx *sql.Tx, instID int64, accountIDs []int64) (closeTuitionAccountOrderRow, error) {
@@ -544,6 +599,98 @@ func (repo *Repository) listCloseFlowsByOrderTx(ctx context.Context, tx *sql.Tx,
 		list = append(list, item)
 	}
 	return list, rows.Err()
+}
+
+func (repo *Repository) listZeroAmountCloseTargetsByOrderTx(ctx context.Context, tx *sql.Tx, instID int64, orderRow closeTuitionAccountOrderRow, accountIDs []int64) ([]closeTuitionAccountFlowRow, error) {
+	if len(accountIDs) == 0 || !orderRow.closeTime.Valid {
+		return []closeTuitionAccountFlowRow{}, nil
+	}
+	args := []any{instID}
+	args = append(args, int64SliceToAny(accountIDs)...)
+	args = append(args, model.TuitionAccountStatusClosed, orderRow.closeTime.Time, orderRow.closeTime.Time)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			0,
+			ta.id,
+			ta.student_id,
+			ta.course_id,
+			IFNULL(ta.order_id, 0),
+			IFNULL(ta.order_course_detail_id, 0),
+			ic.teach_method,
+			IFNULL(icq_ta.lesson_model, 0),
+			IFNULL(so.order_number, ''),
+			0,
+			0,
+			IFNULL(ta.used_quantity, 0),
+			IFNULL(ta.remaining_quantity, 0),
+			IFNULL(ta.used_tuition, 0),
+			IFNULL(ta.remaining_tuition, 0),
+			IFNULL(ta.confirmed_tuition, 0),
+			IFNULL(ta.enable_expire_time, 0),
+			ta.valid_date,
+			ta.end_date,
+			ta.create_time
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		`+closeTuitionAccountICQJoin+`
+		LEFT JOIN sale_order so ON so.id = ta.order_id AND so.del_flag = 0
+		WHERE ta.inst_id = ?
+		  AND ta.del_flag = 0
+		  AND ta.id IN (`+buildPlaceholders(len(accountIDs))+`)
+		  AND IFNULL(ta.status, 0) = ?
+		  AND (
+			TIMESTAMPDIFF(SECOND, ta.status_change_time, ?) = 0
+			OR TIMESTAMPDIFF(SECOND, ta.class_ending_time, ?) = 0
+		  )
+		ORDER BY ta.create_time ASC, ta.id ASC
+		FOR UPDATE
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	list := make([]closeTuitionAccountFlowRow, 0, len(accountIDs))
+	for rows.Next() {
+		var item closeTuitionAccountFlowRow
+		if err := rows.Scan(
+			&item.flowID,
+			&item.tuitionAccountID,
+			&item.studentID,
+			&item.courseID,
+			&item.orderID,
+			&item.orderCourseDetailID,
+			&item.lessonType,
+			&item.lessonChargingMode,
+			&item.orderNumber,
+			&item.quantity,
+			&item.tuition,
+			&item.usedQuantity,
+			&item.remainQuantity,
+			&item.usedTuition,
+			&item.remainTuition,
+			&item.confirmedTuition,
+			&item.enableExpireTime,
+			&item.validDate,
+			&item.endDate,
+			&item.createTime,
+		); err != nil {
+			return nil, err
+		}
+		list = append(list, item)
+	}
+	return list, rows.Err()
+}
+
+func (repo *Repository) resolveCloseOrderTargetsTx(ctx context.Context, tx *sql.Tx, instID int64, orderRow closeTuitionAccountOrderRow, accountIDs []int64) ([]closeTuitionAccountFlowRow, error) {
+	flows, err := repo.listCloseFlowsByOrderTx(ctx, tx, instID, orderRow.flowSourceID)
+	if err != nil {
+		return nil, err
+	}
+	if len(flows) > 0 || !isZeroAmountCloseOrder(orderRow) {
+		return flows, nil
+	}
+	return repo.listZeroAmountCloseTargetsByOrderTx(ctx, tx, instID, orderRow, accountIDs)
 }
 
 func mergeRestoredTimeSlotOrderDetailRange(detailOrder []int64, detailRanges map[int64]*restoredTimeSlotOrderDetailRange, orderID, detailID int64, validDate, endDate time.Time) []int64 {
@@ -1117,7 +1264,7 @@ func (repo *Repository) GetRevertCloseTuitionAccountPreview(ctx context.Context,
 	}
 	closeFlows := []closeTuitionAccountFlowRow{}
 	if !isRefundAutoClose {
-		closeFlows, err = repo.listCloseFlowsByOrderTx(ctx, tx, instID, orderRow.flowSourceID)
+		closeFlows, err = repo.resolveCloseOrderTargetsTx(ctx, tx, instID, orderRow, accountIDs)
 		if err != nil {
 			return model.RevertCloseTuitionAccountPreview{}, err
 		}
@@ -1543,7 +1690,7 @@ func (repo *Repository) RevertCloseTuitionAccount(ctx context.Context, instID, o
 	for _, id := range accountIDs {
 		accountIDSet[id] = struct{}{}
 	}
-	flows, err := repo.listCloseFlowsByOrderTx(ctx, tx, instID, orderRow.flowSourceID)
+	flows, err := repo.resolveCloseOrderTargetsTx(ctx, tx, instID, orderRow, accountIDs)
 	if err != nil {
 		return 0, err
 	}
@@ -1789,10 +1936,6 @@ func (repo *Repository) ListCloseTuitionAccountOrders(ctx context.Context, instI
 		return model.CloseTuitionAccountOrderRecordResult{List: []model.CloseTuitionAccountOrderRecordItem{}}, nil
 	}
 
-	args := []any{instID}
-	for _, id := range accountIDs {
-		args = append(args, id)
-	}
 	rows, err := tx.QueryContext(ctx, `
 		SELECT
 			co.id,
@@ -1805,19 +1948,23 @@ func (repo *Repository) ListCloseTuitionAccountOrders(ctx context.Context, instI
 			co.update_time,
 			co.close_time
 		FROM close_tuition_account_order co
-		INNER JOIN (
-			SELECT DISTINCT source_id
-			FROM tuition_account_flow
-			WHERE inst_id = ?
-			  AND source_type = ?
-			  AND del_flag = 0
-			  AND tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
-		) src ON src.source_id = co.flow_source_id
 		LEFT JOIN inst_user u ON u.id = co.update_id AND u.del_flag = 0
 		WHERE co.inst_id = ?
 		  AND co.del_flag = 0
+		  AND (
+			co.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+			OR EXISTS (
+				SELECT 1
+				FROM tuition_account_flow taf_scope
+				WHERE taf_scope.inst_id = co.inst_id
+				  AND taf_scope.source_type = ?
+				  AND taf_scope.del_flag = 0
+				  AND taf_scope.source_id = co.flow_source_id
+				  AND taf_scope.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+			)
+		  )
 		ORDER BY co.close_time DESC, co.id DESC
-	`, append(append([]any{instID, model.TuitionAccountFlowSourceManualCloseCourse}, int64SliceToAny(accountIDs)...), instID)...)
+	`, append(append(append([]any{instID}, int64SliceToAny(accountIDs)...), model.TuitionAccountFlowSourceManualCloseCourse), int64SliceToAny(accountIDs)...)...)
 	if err != nil {
 		return model.CloseTuitionAccountOrderRecordResult{}, err
 	}
@@ -1862,6 +2009,7 @@ func (repo *Repository) ListCloseTuitionAccountOrders(ctx context.Context, instI
 		}
 		return strings.Compare(strings.TrimSpace(out[i].ID), strings.TrimSpace(out[j].ID)) > 0
 	})
+	normalizeCloseOrderRecordStatuses(out)
 	if err := tx.Commit(); err != nil {
 		return model.CloseTuitionAccountOrderRecordResult{}, err
 	}
@@ -2023,6 +2171,19 @@ func closeOrderRecordSortTime(item model.CloseTuitionAccountOrderRecordItem) tim
 		return *item.UpdatedTime
 	}
 	return time.Time{}
+}
+
+func normalizeCloseOrderRecordStatuses(list []model.CloseTuitionAccountOrderRecordItem) {
+	latestSeen := false
+	for idx := range list {
+		if !latestSeen {
+			latestSeen = true
+			continue
+		}
+		if list[idx].Status != model.CloseTuitionAccountOrderStatusRevoked {
+			list[idx].Status = model.CloseTuitionAccountOrderStatusRevoked
+		}
+	}
 }
 
 func int64SliceToAny(list []int64) []any {

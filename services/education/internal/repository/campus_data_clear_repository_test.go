@@ -221,3 +221,38 @@ func TestClearCampusBusinessDataClearsWeChatAndExportRecords(t *testing.T) {
 		}
 	}
 }
+
+func TestClearCampusBusinessDataClearsAdditionalBusinessRecords(t *testing.T) {
+	db, state, cleanup := newCampusClearScriptDB(t, nil)
+	defer cleanup()
+
+	repo := &Repository{db: db}
+	if _, err := repo.ClearCampusBusinessData(context.Background(), 10048, 9527); err != nil {
+		t.Fatalf("ClearCampusBusinessData returned error: %v", err)
+	}
+
+	requiredDeletes := []string{
+		`DELETE FROM close_tuition_account_order WHERE inst_id = ?`,
+		`DELETE FROM suspend_resume_tuition_account_order WHERE inst_id = ?`,
+		`DELETE FROM refund_tuition_account_order_item WHERE inst_id = ?`,
+		`DELETE FROM refund_tuition_account_order WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_bill_flow WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_bill WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_order_tag WHERE inst_id = ?`,
+		`DELETE FROM recharge_account_order WHERE inst_id = ?`,
+		`DELETE FROM homework_task WHERE inst_id = ?`,
+		`DELETE FROM notice_record WHERE inst_id = ?`,
+		`DELETE FROM student_rehab_record WHERE inst_id = ?`,
+		`DELETE FROM student_teaching_record_change_log WHERE inst_id = ?`,
+		`DELETE FROM teaching_schedule_student WHERE inst_id = ?`,
+		`DELETE FROM teaching_schedule_batch_meta WHERE inst_id = ?`,
+		`DELETE FROM teaching_record WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_entry_exit_record WHERE inst_id = ?`,
+		`DELETE FROM teaching_class_operation_log WHERE inst_id = ?`,
+	}
+	for _, query := range requiredDeletes {
+		if !containsNormalizedCampusClearSQL(state.execLog, query) {
+			t.Fatalf("expected delete query to be executed: %s", normalizeCampusClearSQL(query))
+		}
+	}
+}

@@ -37,6 +37,7 @@ LEFT JOIN inst_course_quotation icq_ta ON icq_ta.id = COALESCE(
 
 type closeTuitionAccountSnapshot struct {
 	id               int64
+	status           int
 	studentID        int64
 	courseID         int64
 	totalQty         float64
@@ -115,11 +116,24 @@ func sumCloseTuitionAccountSnapshots(snaps []closeTuitionAccountSnapshot) (float
 	return closeOrderRoundMoney(remQty), closeOrderRoundMoney(remTuition)
 }
 
+func allCloseTuitionAccountSnapshotsClosed(snaps []closeTuitionAccountSnapshot) bool {
+	if len(snaps) == 0 {
+		return false
+	}
+	for _, snap := range snaps {
+		if snap.status != model.TuitionAccountStatusClosed {
+			return false
+		}
+	}
+	return true
+}
+
 func (repo *Repository) loadCloseTuitionAccountSnapshotTx(ctx context.Context, tx *sql.Tx, instID, tuitionAccountID int64) (closeTuitionAccountSnapshot, error) {
 	var snap closeTuitionAccountSnapshot
 	err := tx.QueryRowContext(ctx, `
 		SELECT
 			ta.id,
+			IFNULL(ta.status, 0),
 			ta.student_id,
 			ta.course_id,
 			IFNULL(ta.total_quantity, 0),
@@ -142,6 +156,7 @@ func (repo *Repository) loadCloseTuitionAccountSnapshotTx(ctx context.Context, t
 		FOR UPDATE
 	`, tuitionAccountID, instID).Scan(
 		&snap.id,
+		&snap.status,
 		&snap.studentID,
 		&snap.courseID,
 		&snap.totalQty,
@@ -460,8 +475,32 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 
 	targetSnapshots := []closeTuitionAccountSnapshot{selectedSnap}
 	orderSnap := selectedSnap
-	if !closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition) {
-		bucketSnapshots, bucketErr := repo.loadCloseTuitionAccountBucketSnapshotsTx(ctx, tx, instID, selectedSnap)
+	bucketSnapshotsLoaded := false
+	bucketSnapshots := make([]closeTuitionAccountSnapshot, 0, 4)
+	loadBucketSnapshots := func() ([]closeTuitionAccountSnapshot, error) {
+		if bucketSnapshotsLoaded {
+			return bucketSnapshots, nil
+		}
+		snaps, bucketErr := repo.loadCloseTuitionAccountBucketSnapshotsTx(ctx, tx, instID, selectedSnap)
+		if bucketErr != nil {
+			return nil, bucketErr
+		}
+		bucketSnapshots = snaps
+		bucketSnapshotsLoaded = true
+		return bucketSnapshots, nil
+	}
+	if deductQty < 0.0001 && tuition < 0.0001 {
+		snaps, bucketErr := loadBucketSnapshots()
+		if bucketErr != nil {
+			return 0, bucketErr
+		}
+		bucketRemQty, bucketRemTuition := sumCloseTuitionAccountSnapshots(snaps)
+		if len(snaps) > 0 && closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition) {
+			targetSnapshots = snaps
+			orderSnap = snaps[0]
+		}
+	} else if !closeOrderMatchesSubmitted(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition) {
+		bucketSnapshots, bucketErr := loadBucketSnapshots()
 		if bucketErr != nil {
 			return 0, bucketErr
 		}
@@ -474,6 +513,21 @@ func (repo *Repository) AddCloseTuitionAccountOrder(ctx context.Context, instID,
 				return 0, closeOrderMismatchError(deductQty, tuition, selectedSnap.lessonModel, bucketRemQty, bucketRemTuition)
 			}
 			return 0, closeOrderMismatchError(deductQty, tuition, selectedSnap.lessonModel, selectedSnap.remQty, selectedSnap.remTuition)
+		}
+	}
+	if deductQty < 0.0001 && tuition < 0.0001 && allCloseTuitionAccountSnapshotsClosed(targetSnapshots) {
+		teachMethod := 0
+		if selectedSnap.teachMethod.Valid {
+			teachMethod = int(selectedSnap.teachMethod.Int64)
+		}
+		accountIDs, idErr := repo.ListTuitionAccountIDsForStudentCourseBucketAllStatuses(ctx, tx, instID, selectedSnap.studentID, selectedSnap.courseID, teachMethod, selectedSnap.lessonModel)
+		if idErr != nil {
+			return 0, idErr
+		}
+		if existing, existingErr := repo.loadLatestClosableCloseOrderTx(ctx, tx, instID, accountIDs); existingErr == nil {
+			return existing.id, tx.Commit()
+		} else if !errors.Is(existingErr, sql.ErrNoRows) {
+			return 0, existingErr
 		}
 	}
 
