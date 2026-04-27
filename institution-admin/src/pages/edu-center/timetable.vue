@@ -1,12 +1,21 @@
 <script setup>
 import { DeleteOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
-import { computed, ref, watch } from 'vue'
-import TeacherMatrixApiTimetable from '@/components/edu-center/timetable/teacher-matrix-api-timetable.vue'
+import { computed, defineAsyncComponent, onMounted, onUnmounted, ref, watch } from 'vue'
 import { clearWeekTeachingSchedulesApi } from '@/api/edu-center/teaching-schedule'
 import { AccessEnum, AccessGroup } from '@/constants/access'
 import emitter, { EVENTS } from '@/utils/eventBus'
 import messageService from '@/utils/messageService'
+
+const loadSmartTimetableTab = () => import('@/components/edu-center/timetable/smart-timetable.vue')
+const loadTimeTimetableTab = () => import('@/components/edu-center/timetable/time-timetable.vue')
+const loadTeacherMatrixApiTimetableTab = () => import('@/components/edu-center/timetable/teacher-matrix-api-timetable.vue')
+const loadConflictScheduleTab = () => import('@/components/edu-center/timetable/conflict-schedule.vue')
+
+const SmartTimetableTabPane = defineAsyncComponent(loadSmartTimetableTab)
+const TimeTimetableTabPane = defineAsyncComponent(loadTimeTimetableTab)
+const TeacherMatrixApiTimetableTabPane = defineAsyncComponent(loadTeacherMatrixApiTimetableTab)
+const ConflictScheduleTabPane = defineAsyncComponent(loadConflictScheduleTab)
 
 const activeKey = ref('1')
 const clearingWeek = ref(false)
@@ -33,6 +42,48 @@ watch(canViewConflictSchedule, (visible) => {
   if (!visible && activeKey.value === '3')
     activeKey.value = '1'
 }, { immediate: true })
+
+let tabPrefetchTimer = null
+let tabPrefetchIdleHandle = null
+
+function prefetchSecondaryTabs() {
+  void loadTimeTimetableTab()
+  void loadTeacherMatrixApiTimetableTab()
+  if (canViewConflictSchedule.value)
+    void loadConflictScheduleTab()
+}
+
+function clearTabPrefetchTask() {
+  if (typeof window === 'undefined')
+    return
+  if (tabPrefetchTimer) {
+    window.clearTimeout(tabPrefetchTimer)
+    tabPrefetchTimer = null
+  }
+  if (tabPrefetchIdleHandle && typeof window.cancelIdleCallback === 'function') {
+    window.cancelIdleCallback(tabPrefetchIdleHandle)
+    tabPrefetchIdleHandle = null
+  }
+}
+
+function scheduleTabPrefetch() {
+  clearTabPrefetchTask()
+  if (typeof window === 'undefined') {
+    prefetchSecondaryTabs()
+    return
+  }
+  tabPrefetchTimer = window.setTimeout(() => {
+    tabPrefetchTimer = null
+    if (typeof window.requestIdleCallback === 'function') {
+      tabPrefetchIdleHandle = window.requestIdleCallback(() => {
+        tabPrefetchIdleHandle = null
+        prefetchSecondaryTabs()
+      }, { timeout: 1500 })
+      return
+    }
+    prefetchSecondaryTabs()
+  }, 240)
+}
 
 function updateWeekRange(tabKey, value) {
   weekRanges.value = {
@@ -78,28 +129,67 @@ function handleClearCurrentWeek() {
     },
   })
 }
+
+onMounted(() => {
+  scheduleTabPrefetch()
+})
+
+onUnmounted(() => {
+  clearTabPrefetchTask()
+})
 </script>
 
 <template>
   <div class="home">
     <div class="tabs">
       <a-tabs
-        v-model:active-key="activeKey" :animated="{ inkBar: true, tabPane: false }" :tab-bar-style="{
+        v-model:active-key="activeKey"
+        :animated="{ inkBar: true, tabPane: false }"
+        :destroy-inactive-tab-pane="false"
+        :tab-bar-style="{
           'border-bottom-left-radius': '0px',
           'border-bottom-right-radius': '0px',
         }"
       >
-        <a-tab-pane key="1" tab="智慧课表" force-render>
-          <smart-timetable @week-range-change="value => updateWeekRange('1', value)" />
+        <a-tab-pane key="1" tab="智慧课表">
+          <Suspense>
+            <SmartTimetableTabPane @week-range-change="value => updateWeekRange('1', value)" />
+            <template #fallback>
+              <div class="timetable-tab-loading">
+                <a-spin size="large" />
+              </div>
+            </template>
+          </Suspense>
         </a-tab-pane>
-        <a-tab-pane key="2" tab="时间课表" force-render>
-          <time-timetable @week-range-change="value => updateWeekRange('2', value)" />
+        <a-tab-pane key="2" tab="时间课表">
+          <Suspense>
+            <TimeTimetableTabPane @week-range-change="value => updateWeekRange('2', value)" />
+            <template #fallback>
+              <div class="timetable-tab-loading">
+                <a-spin size="large" />
+              </div>
+            </template>
+          </Suspense>
         </a-tab-pane>
-        <a-tab-pane key="4" tab="教师矩阵" force-render>
-          <TeacherMatrixApiTimetable @week-range-change="value => updateWeekRange('4', value)" />
+        <a-tab-pane key="4" tab="教师矩阵">
+          <Suspense>
+            <TeacherMatrixApiTimetableTabPane @week-range-change="value => updateWeekRange('4', value)" />
+            <template #fallback>
+              <div class="timetable-tab-loading">
+                <a-spin size="large" />
+              </div>
+            </template>
+          </Suspense>
         </a-tab-pane>
         <a-tab-pane v-if="canViewConflictSchedule" key="3" tab="冲突日程">
-          <conflict-schedule />
+          <Suspense>
+            <ConflictScheduleTabPane />
+            <template #fallback>
+              <div class="timetable-tab-loading">
+                <a-spin size="large" />
+              </div>
+            </template>
+          </Suspense>
         </a-tab-pane>
       </a-tabs>
       <a-button
@@ -134,6 +224,12 @@ function handleClearCurrentWeek() {
       margin: 0;
     }
 
+    :deep(.ant-tabs-content-holder) {
+      background: #fff;
+      border-bottom-left-radius: 16px;
+      border-bottom-right-radius: 16px;
+    }
+
     :deep(.ant-tabs-nav-wrap) {
       padding-left: 36px;
     }
@@ -156,6 +252,15 @@ function handleClearCurrentWeek() {
       }
     }
   }
+}
+
+.timetable-tab-loading {
+  min-height: 420px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background:
+    linear-gradient(180deg, rgba(248, 250, 252, 0.9) 0%, rgba(255, 255, 255, 1) 100%);
 }
 
 .timetable-clear-week-btn {
