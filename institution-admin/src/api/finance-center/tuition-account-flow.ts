@@ -66,6 +66,7 @@ export interface TuitionAccountFlowRecordListQueryParams {
     sourceTypes?: number[]
     startTime?: string
     endTime?: string
+    expandCourseBucket?: boolean
   }
   pageRequestModel: {
     needTotal?: boolean

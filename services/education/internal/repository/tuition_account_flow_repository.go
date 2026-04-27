@@ -41,6 +41,51 @@ func resolvedLessonChargingModeExpr(storedModeCol, quotationModelCol string) str
 	END`
 }
 
+func (repo *Repository) resolveCourseBucketTuitionAccountIDs(ctx context.Context, instID int64, tuitionAccountID string) ([]int64, error) {
+	taID, err := strconv.ParseInt(strings.TrimSpace(tuitionAccountID), 10, 64)
+	if err != nil || taID <= 0 {
+		return nil, nil
+	}
+
+	var (
+		studentID       int64
+		courseID        int64
+		teachMethod     int
+		lessonModelCode int
+	)
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			ta.student_id,
+			ta.course_id,
+			IFNULL(ic.teach_method, 0),
+			IFNULL(icq.lesson_model, -99999)
+		FROM tuition_account ta
+		INNER JOIN inst_course ic ON ic.id = ta.course_id AND ic.del_flag = 0
+		LEFT JOIN sale_order_course_detail sod ON sod.id = ta.order_course_detail_id AND sod.del_flag = 0
+		LEFT JOIN inst_course_quotation icq ON icq.id = COALESCE(
+			NULLIF(ta.quote_id, 0),
+			NULLIF(sod.quote_id, 0),
+			(SELECT qx.id FROM inst_course_quotation qx
+			 WHERE qx.course_id = ta.course_id AND qx.del_flag = 0
+			   AND ABS(IFNULL(qx.quantity, 0) - IFNULL(ta.total_quantity, 0)) < 0.000001
+			   AND ABS(IFNULL(qx.price, 0) - IFNULL(ta.total_tuition, 0)) < 0.000001
+			 ORDER BY qx.id DESC LIMIT 1),
+			(SELECT qmin.id FROM inst_course_quotation qmin
+			 WHERE qmin.course_id = ta.course_id AND qmin.del_flag = 0
+			 ORDER BY qmin.id ASC LIMIT 1)
+		) AND icq.del_flag = 0
+		WHERE ta.id = ? AND ta.inst_id = ? AND ta.del_flag = 0
+		LIMIT 1
+	`, taID, instID).Scan(&studentID, &courseID, &teachMethod, &lessonModelCode); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, err
+	}
+
+	return repo.ListTuitionAccountIDsForStudentCourseBucketAllStatuses(ctx, nil, instID, studentID, courseID, teachMethod, lessonModelCode)
+}
+
 func (repo *Repository) buildTuitionAccountFlowTeachingCourseFragments(
 	ctx context.Context,
 	flowAlias string,
@@ -580,12 +625,27 @@ func (repo *Repository) GetSubTuitionAccountFlowRecordList(ctx context.Context, 
 		"NOT (taf.source_type = 15 AND taf.source_id >= 20000101 AND taf.source_id > CAST(DATE_FORMAT(NOW(), '%Y%m%d') AS UNSIGNED))",
 	}
 	args := []any{instID}
+	expandedBucketAccountIDs := make([]int64, 0, 4)
+	if query.QueryModel.ExpandCourseBucket && strings.TrimSpace(query.QueryModel.TuitionAccountID) != "" {
+		ids, err := repo.resolveCourseBucketTuitionAccountIDs(ctx, instID, query.QueryModel.TuitionAccountID)
+		if err != nil {
+			return model.SubTuitionAccountFlowRecordListResult{}, err
+		}
+		expandedBucketAccountIDs = ids
+	}
 
 	if strings.TrimSpace(query.QueryModel.ProductID) != "" {
 		whereParts = append(whereParts, "CAST(taf.product_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.ProductID))
 	}
-	if strings.TrimSpace(query.QueryModel.TuitionAccountID) != "" {
+	if len(expandedBucketAccountIDs) > 0 {
+		holders := make([]string, 0, len(expandedBucketAccountIDs))
+		for _, id := range expandedBucketAccountIDs {
+			holders = append(holders, "?")
+			args = append(args, id)
+		}
+		whereParts = append(whereParts, "taf.tuition_account_id IN ("+strings.Join(holders, ",")+")")
+	} else if strings.TrimSpace(query.QueryModel.TuitionAccountID) != "" {
 		whereParts = append(whereParts, "CAST(taf.tuition_account_id AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(query.QueryModel.TuitionAccountID))
 	}

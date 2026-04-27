@@ -106,6 +106,20 @@ const remainTuitionText = computed(() => `¥ ${formatMoney(getSummaryRemainTuiti
 const totalTuitionText = computed(() => `¥ ${formatMoney(props.record?.totalTuition || 0)}`)
 const totalQuantityText = computed(() => `${formatCount(getSummaryTotalQuantity())}${quantityUnit.value}`)
 const remainQuantityText = computed(() => `${formatCount(getSummaryRemainQuantity())}${quantityUnit.value}`)
+const totalQuantityLabel = computed(() => {
+  if (lessonChargingMode.value === 2)
+    return '总天数'
+  if (lessonChargingMode.value === 3)
+    return '总金额'
+  return '总课时'
+})
+const remainQuantityLabel = computed(() => {
+  if (lessonChargingMode.value === 2)
+    return '剩余天数'
+  if (lessonChargingMode.value === 3)
+    return '剩余金额'
+  return '剩余课时'
+})
 
 const columns = [
   {
@@ -226,6 +240,7 @@ async function fetchData() {
     const res = await getSubTuitionAccountFlowRecordListApi({
       queryModel: {
         tuitionAccountId: tuitionAccountId.value,
+        expandCourseBucket: true,
       },
       pageRequestModel: {
         needTotal: true,
@@ -304,10 +319,10 @@ onUnmounted(() => {
           <a-descriptions-item label="总学费">
             {{ totalTuitionText }}
           </a-descriptions-item>
-          <a-descriptions-item label="总课时">
+          <a-descriptions-item :label="totalQuantityLabel">
             {{ totalQuantityText }}
           </a-descriptions-item>
-          <a-descriptions-item label="剩余课时">
+          <a-descriptions-item :label="remainQuantityLabel">
             {{ remainQuantityText }}
           </a-descriptions-item>
         </a-descriptions>
