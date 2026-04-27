@@ -24,9 +24,25 @@ function inlineLoadingScript(): PluginOption {
   }
 }
 
+function normalizeCdnBase(value?: string) {
+  const trimmed = value?.trim()
+  if (!trimmed)
+    return ''
+  return trimmed.endsWith('/') ? trimmed : `${trimmed}/`
+}
+
+function withCdnVersion(url: string, version?: string) {
+  const trimmed = version?.trim()
+  if (!trimmed)
+    return url
+  return `${url}?v=${encodeURIComponent(trimmed)}`
+}
+
 // https://vitejs.dev/config/
 export default ({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd())
+  const cdnBase = normalizeCdnBase(env.VITE_CDN_BASE)
+  const cdnVersion = env.VITE_CDN_VERSION
   const proxyObj = {}
   if (mode === 'development'|| mode === 'mylocal' || mode === 'chenlocal') {
     // 获取所有环境变量
@@ -53,6 +69,12 @@ export default ({ mode }: ConfigEnv): UserConfig => {
   }
   return {
     base: './',
+    experimental: {
+      renderBuiltUrl(filename) {
+        if (cdnBase && filename.startsWith('assets/'))
+          return withCdnVersion(`${cdnBase}${filename}`, cdnVersion)
+      },
+    },
     plugins: [
       ...createVitePlugins(env),
       inlineLoadingScript(),
