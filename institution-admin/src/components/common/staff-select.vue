@@ -176,6 +176,10 @@ const props = defineProps({
     type: Function,
     default: triggerNode => triggerNode?.parentNode || document.body,
   },
+  queryModel: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 
 // Emits
@@ -192,6 +196,7 @@ const finished = ref(false)
 const initialLoading = ref(false) // 初始加载状态
 const scrollLoading = ref(false) // 滚动加载状态
 const hasLoadedList = ref(false) // 是否已经加载过员工列表
+const hasCustomQueryModel = computed(() => Object.keys(props.queryModel || {}).length > 0)
 
 // 当前选中员工的显示信息
 const selectedStaffDisplay = ref(null)
@@ -215,6 +220,15 @@ function normalizeStaffItems(res) {
 
 function effectiveStatus() {
   return props.includeDisabled ? undefined : props.status
+}
+
+function buildInstUserQueryModel(searchKey = '') {
+  const status = effectiveStatus()
+  return {
+    ...props.queryModel,
+    status,
+    searchKey,
+  }
 }
 
 function normalizeInstUserDetail(detail) {
@@ -299,10 +313,7 @@ async function getStaffList(params = { searchKey: undefined }) {
           pageIndex: pagination.value.current,
           skipCount: 0,
         },
-        queryModel: {
-          status,
-          searchKey,
-        },
+        queryModel: buildInstUserQueryModel(searchKey),
       })
       return {
         res: response,
@@ -313,7 +324,7 @@ async function getStaffList(params = { searchKey: undefined }) {
 
     let resultItems = []
     let total = 0
-    if (!searchKey && pagination.value.current === 1) {
+    if (!hasCustomQueryModel.value && !searchKey && pagination.value.current === 1) {
       const cached = await getCachedInitialStaffList(
         props.fetchType,
         status,
@@ -333,7 +344,7 @@ async function getStaffList(params = { searchKey: undefined }) {
       res = loaded.res
       resultItems = loaded.items
       total = loaded.total
-      if (!searchKey && pagination.value.current === 1) {
+      if (!hasCustomQueryModel.value && !searchKey && pagination.value.current === 1) {
         mergeCachedStaff(props.fetchType, status, resultItems, total)
       }
     }
@@ -482,9 +493,11 @@ async function getStaffById(staffId) {
     return null
   const status = effectiveStatus()
 
-  const cachedStaff = findCachedStaff(props.fetchType, status, staffId)
-  if (cachedStaff) {
-    return cachedStaff
+  if (!hasCustomQueryModel.value) {
+    const cachedStaff = findCachedStaff(props.fetchType, status, staffId)
+    if (cachedStaff) {
+      return cachedStaff
+    }
   }
 
   if (props.fetchType !== 'approval') {
@@ -501,50 +514,51 @@ async function getStaffById(staffId) {
     }
   }
 
-  try {
-    const cached = await getCachedInitialStaffList(
-      props.fetchType,
-      status,
-      async () => {
-        if (props.fetchType === 'approval') {
-          const response = await getStaffSummariesApi({
-            queryModel: {},
+  if (!hasCustomQueryModel.value) {
+    try {
+      const cached = await getCachedInitialStaffList(
+        props.fetchType,
+        status,
+        async () => {
+          if (props.fetchType === 'approval') {
+            const response = await getStaffSummariesApi({
+              queryModel: {},
+              pageRequestModel: {
+                needTotal: true,
+                pageSize: 100,
+                pageIndex: 1,
+                skipCount: 0,
+              },
+            })
+            return {
+              items: normalizeStaffItems(response),
+              total: response.result?.total || 0,
+            }
+          }
+
+          const response = await getUserListApi({
             pageRequestModel: {
               needTotal: true,
-              pageSize: 100,
+              pageSize: 20,
               pageIndex: 1,
               skipCount: 0,
             },
+            queryModel: buildInstUserQueryModel(),
           })
           return {
             items: normalizeStaffItems(response),
-            total: response.result?.total || 0,
+            total: response.total || 0,
           }
-        }
-
-        const response = await getUserListApi({
-          pageRequestModel: {
-            needTotal: true,
-            pageSize: 20,
-            pageIndex: 1,
-            skipCount: 0,
-          },
-          queryModel: {
-            status,
-          },
-        })
-        return {
-          items: normalizeStaffItems(response),
-          total: response.total || 0,
-        }
-      },
-    )
-    const sharedMatched = cached.items.find(item => `${item.id}` === `${staffId}`)
-    if (sharedMatched) {
-      return sharedMatched
+        },
+      )
+      const sharedMatched = cached.items.find(item => `${item.id}` === `${staffId}`)
+      if (sharedMatched) {
+        return sharedMatched
+      }
     }
-  } catch (error) {
-    console.error('从共享缓存获取员工失败:', error)
+    catch (error) {
+      console.error('从共享缓存获取员工失败:', error)
+    }
   }
   
   try {
@@ -568,9 +582,7 @@ async function getStaffById(staffId) {
           pageIndex: 1,
           skipCount: 0,
         },
-        queryModel: {
-          status,
-        },
+        queryModel: buildInstUserQueryModel(),
       })
     }
 

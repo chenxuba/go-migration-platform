@@ -1143,6 +1143,7 @@ async function handlePhoneToggle() {
       staff-placeholder="请选择督导"
       payload-field="supervisorId"
       student-value-field="supervisorId"
+      :staff-query-model="{ isSupervisor: true }"
       :selected-students="[studentDetail]"
       @submit="handleAssignSupervisorSubmit"
     />

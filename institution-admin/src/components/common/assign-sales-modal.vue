@@ -35,6 +35,10 @@ const props = defineProps({
     type: String,
     default: 'salePerson',
   },
+  staffQueryModel: {
+    type: Object,
+    default: () => ({}),
+  },
 })
 
 const emit = defineEmits(['update:open', 'submit'])
@@ -162,7 +166,13 @@ defineExpose({
       <div v-if="type !== 3" class="contenter scrollbar" :class="type == 1 ? 'mt0' : ''">
         <a-form ref="formRef" :model="formState" :label-col="{ span: 3 }" :wrapper-col="{ span: 21 }">
           <a-form-item :label="staffLabel" name="staffId" :rules="[{ required: true, message: staffPlaceholder }]">
-            <StaffSelect v-model="formState.staffId" :placeholder="staffPlaceholder" width="300px" :status="0" />
+            <StaffSelect
+              v-model="formState.staffId"
+              :placeholder="staffPlaceholder"
+              width="300px"
+              :status="0"
+              :query-model="staffQueryModel"
+            />
           </a-form-item>
         </a-form>
       </div>
