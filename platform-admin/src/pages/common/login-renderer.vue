@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { LockOutlined, SafetyCertificateOutlined, UserOutlined } from '@ant-design/icons-vue'
 import { computed, defineAsyncComponent } from 'vue'
-import SelectLang from '@/components/select-lang/index.vue'
 import type { TenantLoginBrandConfig } from '~/api/common/login-theme'
+
+const SelectLang = defineAsyncComponent(() => import('@/components/select-lang/index.vue'))
 
 const props = withDefaults(defineProps<{
   brand: Required<TenantLoginBrandConfig>

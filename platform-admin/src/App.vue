@@ -1,41 +1,15 @@
 <script setup lang="ts">
-import { onMounted } from 'vue'
-import { useLayoutMenuProvide } from '~/components/page-container/context'
-import { getLoginThemeApi } from '~/api/common/login-theme'
+import { computed, defineAsyncComponent } from 'vue'
 
-const appStore = useAppStore()
-const { theme } = storeToRefs(appStore)
-const { antd } = useI18nLocale()
 const route = useRoute()
-const layoutMenu = useLayoutMenu()
-useLayoutMenuProvide(layoutMenu, appStore)
-
-async function applyTenantTheme() {
-  if (route.path === '/login')
-    return
-
-  try {
-    const res = await getLoginThemeApi('platform-admin')
-    const primaryColor = res.result?.loginBrand?.primaryColor || res.data?.loginBrand?.primaryColor
-    if (primaryColor)
-      appStore.toggleColorPrimary(primaryColor)
-  }
-  catch (error) {
-    console.warn('apply tenant theme failed', error)
-  }
-}
-
-onMounted(applyTenantTheme)
+const AdminAppShell = defineAsyncComponent(() => import('~/components/app/admin-app-shell.vue'))
+const shelllessRoutes = new Set(['/login', '/login-template-preview'])
+const isShelllessRoute = computed(() => shelllessRoutes.has(route.path))
 </script>
 
 <template>
-  <a-config-provider :theme="theme" :locale="antd">
-    <a-app class="h-full font-chinese antialiased">
-      <TokenProvider>
-        <RouterView />
-      </TokenProvider>
-    </a-app>
-  </a-config-provider>
+  <RouterView v-if="isShelllessRoute" />
+  <AdminAppShell v-else />
 </template>
 
 <style>

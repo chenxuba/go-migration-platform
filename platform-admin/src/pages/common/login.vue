@@ -3,10 +3,8 @@ import type { Rule } from 'ant-design-vue/es/form'
 import { onMounted, reactive, ref } from 'vue'
 import LoginRenderer from './login-renderer.vue'
 import { useAuthorization } from '@/composables/authorization'
-import messageService from '@/utils/messageService'
 import { loginApi } from '~/api/common/login'
 import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/login-theme'
-import { useAppStore } from '~/stores/app'
 import { reset401Status } from '~/utils/request'
 
 const LOGIN_THEME_CACHE_KEY = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
@@ -15,7 +13,6 @@ const { t } = useI18nLocale()
 const router = useRouter()
 const route = useRoute()
 const token = useAuthorization()
-const appStore = useAppStore()
 const submitLoading = ref(false)
 const loginThemeReady = ref(true)
 
@@ -41,8 +38,6 @@ const loginBrand = reactive<Required<TenantLoginBrandConfig>>({ ...defaultBrand 
 
 function mergeLoginBrand(next?: TenantLoginBrandConfig) {
   Object.assign(loginBrand, defaultBrand, next || {})
-  if (loginBrand.primaryColor)
-    appStore.toggleColorPrimary(loginBrand.primaryColor)
 }
 
 function readCachedLoginBrand() {
@@ -90,6 +85,11 @@ const rules: Record<string, Rule[]> = {
   password: [{ required: true, message: '请输入密码', trigger: 'change' }],
 }
 
+async function showLoginMessage(type: 'success' | 'error', content: string, options: Record<string, any> = {}) {
+  const { default: messageService } = await import('@/utils/messageService')
+  messageService[type](content, options)
+}
+
 function resolveLoginErrorMessage(error: any) {
   const backendMessage = String(error?.response?.data?.message || error?.message || '').trim()
   if (!backendMessage)
@@ -108,7 +108,7 @@ async function onSubmit() {
     })
 
     if (!result?.token) {
-      messageService.error('登录失败，请检查账号或密码')
+      await showLoginMessage('error', '登录失败，请检查账号或密码')
       return
     }
 
@@ -120,17 +120,17 @@ async function onSubmit() {
     }
     reset401Status()
 
-    messageService.success(t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
+    void showLoginMessage('success', t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
       : '/'
     const safeRedirect = ['/401', '/403', '/404', '/500', '/502'].includes(redirect) ? '/' : redirect
-    router.replace(safeRedirect || '/')
+    await router.replace(safeRedirect || '/')
   }
   catch (error: any) {
     console.error('platform login failed', error)
-    messageService.error(resolveLoginErrorMessage(error))
+    await showLoginMessage('error', resolveLoginErrorMessage(error))
   }
   finally {
     submitLoading.value = false

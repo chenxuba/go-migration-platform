@@ -1,8 +1,5 @@
 import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse, InternalAxiosRequestConfig } from 'axios'
 import axios from 'axios'
-import { ExclamationCircleOutlined } from '@ant-design/icons-vue'
-import { createVNode } from 'vue'
-import { Modal } from 'ant-design-vue'
 import { AxiosLoading } from './loading'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { ContentTypeEnum, RequestEnum } from '~#/http-enum'
@@ -219,7 +216,54 @@ function normalizeResponse(payload: any): ResponseBody<any> {
   return payload
 }
 
-function errorHandler(error: AxiosError): Promise<any> {
+async function showLoginExpiredModal(token: ReturnType<typeof useAuthorization>) {
+  const [{ createVNode }, { Modal }, { ExclamationCircleOutlined }] = await Promise.all([
+    import('vue'),
+    import('ant-design-vue'),
+    import('@ant-design/icons-vue'),
+  ])
+
+  Modal.confirm({
+    title: '重新登录',
+    centered: true,
+    icon: createVNode(ExclamationCircleOutlined),
+    content: '您的账号已经在别处登录，请注意保护密码。如有问题，请联系机构管理员。',
+    onOk() {
+      return new Promise<void>((resolve) => {
+        token.value = null
+        router
+          .push({
+            path: '/login',
+            query: {
+              redirect: router.currentRoute.value.fullPath,
+            },
+          })
+          .then(() => {
+            // 跳转完成后重置401状态
+            has401Error = false
+            resolve()
+          })
+          .catch((error) => {
+            console.error('Navigation failed:', error)
+            has401Error = false // 即使失败也要重置状态
+            resolve() // Still resolve to close the modal
+          })
+      })
+    },
+    onCancel() {
+      // 当用户关闭弹窗时，重置标志位
+      isShowingLoginModal = false
+      has401Error = false
+    },
+    afterClose() {
+      // Modal完全关闭后，重置标志位
+      isShowingLoginModal = false
+      has401Error = false
+    },
+  })
+}
+
+async function errorHandler(error: AxiosError): Promise<any> {
   const token = useAuthorization()
   const notification = useNotification()
   const silentError = Boolean((error.config as any)?.silentError)
@@ -245,44 +289,7 @@ function errorHandler(error: AxiosError): Promise<any> {
       }
       
       isShowingLoginModal = true
-      Modal.confirm({
-        title: '重新登录',
-        centered: true,
-        icon: createVNode(ExclamationCircleOutlined),
-        content: '您的账号已经在别处登录，请注意保护密码。如有问题，请联系机构管理员。',
-        onOk() {
-          return new Promise<void>((resolve) => {
-            token.value = null
-            router
-              .push({
-                path: '/login',
-                query: {
-                  redirect: router.currentRoute.value.fullPath,
-                },
-              })
-              .then(() => {
-                // 跳转完成后重置401状态
-                has401Error = false
-                resolve()
-              })
-              .catch((error) => {
-                console.error('Navigation failed:', error)
-                has401Error = false // 即使失败也要重置状态
-                resolve() // Still resolve to close the modal
-              })
-          })
-        },
-        onCancel() {
-          // 当用户关闭弹窗时，重置标志位
-          isShowingLoginModal = false
-          has401Error = false
-        },
-        afterClose() {
-          // Modal完全关闭后，重置标志位
-          isShowingLoginModal = false
-          has401Error = false
-        },
-      })
+      await showLoginExpiredModal(token)
     }
     else if (silentError) {
       return Promise.reject(error)
@@ -371,44 +378,7 @@ function instancePromise<R = any, T = any>(options: AxiosOptions<T> & RequestCon
         }
         
         isShowingLoginModal = true
-        Modal.confirm({
-          title: '重新登录',
-          centered: true,
-          icon: createVNode(ExclamationCircleOutlined),
-          content: '您的账号已经在别处登录，请注意保护密码。如有问题，请联系机构管理员。',
-          onOk() {
-            return new Promise<void>((resolve) => {
-              token.value = null
-              router
-                .push({
-                  path: '/login',
-                  query: {
-                    redirect: router.currentRoute.value.fullPath,
-                  },
-                })
-                .then(() => {
-                  // 跳转完成后重置401状态
-                  has401Error = false
-                  resolve()
-                })
-                .catch((error) => {
-                  console.error('Navigation failed:', error)
-                  has401Error = false // 即使失败也要重置状态
-                  resolve() // Still resolve to close the modal
-                })
-            })
-          },
-          onCancel() {
-            // 当用户关闭弹窗时，重置标志位
-            isShowingLoginModal = false
-            has401Error = false
-          },
-          afterClose() {
-            // Modal完全关闭后，重置标志位
-            isShowingLoginModal = false
-            has401Error = false
-          },
-        })
+        void showLoginExpiredModal(token)
         return resolve(res as any)
       }
       if (res.code !== 200) {
@@ -430,44 +400,7 @@ function instancePromise<R = any, T = any>(options: AxiosOptions<T> & RequestCon
           }
           
           isShowingLoginModal = true
-          Modal.confirm({
-            title: '重新登录',
-            centered: true,
-            icon: createVNode(ExclamationCircleOutlined),
-            content: '您的账号已经在别处登录，请注意保护密码。如有问题，请联系机构管理员。',
-            onOk() {
-              return new Promise<void>((resolve) => {
-                token.value = null
-                router
-                  .push({
-                    path: '/login',
-                    query: {
-                      redirect: router.currentRoute.value.fullPath,
-                    },
-                  })
-                  .then(() => {
-                    // 跳转完成后重置401状态
-                    has401Error = false
-                    resolve()
-                  })
-                  .catch((error) => {
-                    console.error('Navigation failed:', error)
-                    has401Error = false // 即使失败也要重置状态
-                    resolve() // Still resolve to close the modal
-                  })
-              })
-            },
-            onCancel() {
-              // 当用户关闭弹窗时，重置标志位
-              isShowingLoginModal = false
-              has401Error = false
-            },
-            afterClose() {
-              // Modal完全关闭后，重置标志位
-              isShowingLoginModal = false
-              has401Error = false
-            },
-          })
+          void showLoginExpiredModal(token)
           return resolve(res as any)
         }
         

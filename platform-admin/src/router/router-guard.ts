@@ -2,6 +2,7 @@ import { AxiosError } from 'axios'
 import router from '~/router'
 import { useMetaTitle } from '~/composables/meta-title'
 import { setRouteEmitter } from '~@/utils/route-listener'
+import { preloadRouteByPath, scheduleAccessibleRoutePreload } from './route-preload'
 
 const allowList = ['/login', '/login-template-preview', '/error', '/401', '/404', '/403', '/502']
 const errorPageList = ['/401', '/404', '/403', '/502']
@@ -20,6 +21,10 @@ function findFirstMenuPath(items: any[] = []): string {
 
 function resolveAccessibleHome(userStore: ReturnType<typeof useUserStore>) {
   return findFirstMenuPath(userStore.menuData as any[]) || '/'
+}
+
+function shouldRedirectToHome(path: string) {
+  return path === loginPath || path === '/' || errorPageList.includes(path)
 }
 
 router.beforeEach(async (to, from, next) => {
@@ -52,7 +57,9 @@ router.beforeEach(async (to, from, next) => {
         const currentRoute = await userStore.generateDynamicRoutes()
         router.addRoute(currentRoute)
         const accessibleHome = resolveAccessibleHome(userStore)
-        if (to.path === loginPath || errorPageList.includes(to.path)) {
+        const nextPath = shouldRedirectToHome(to.path) ? accessibleHome : to.path
+        preloadRouteByPath(currentRoute, nextPath)
+        if (shouldRedirectToHome(to.path)) {
           next({ path: accessibleHome, replace: true })
           return
         }
@@ -81,7 +88,7 @@ router.beforeEach(async (to, from, next) => {
     else {
       const accessibleHome = resolveAccessibleHome(userStore)
       // 如果当前是登录页面或错误页就跳转到有权限首页
-      if (to.path === loginPath || errorPageList.includes(to.path)) {
+      if (shouldRedirectToHome(to.path)) {
         next({
           path: accessibleHome,
           replace: true,
@@ -106,4 +113,9 @@ router.afterEach((to) => {
   useMetaTitle(to)
   useLoadingCheck()
   useScrollToTop()
+
+  const token = useAuthorization()
+  const userStore = useUserStore()
+  if (token.value && userStore.routerData)
+    scheduleAccessibleRoutePreload(userStore.routerData, to.path)
 })
