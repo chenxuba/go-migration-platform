@@ -26,10 +26,6 @@ export interface RegisterReadInfo {
   planResumeTime?: string
   changeStatusTime?: string
   canTransferTuitionAccount?: boolean
-  advisorStaffId?: string
-  advisorStaffName?: string
-  studentManagerId?: string
-  studentManagerName?: string
   classTeacherList?: Array<{
     id?: string
     name?: string

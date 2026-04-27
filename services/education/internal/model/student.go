@@ -202,10 +202,6 @@ type EnrolledStudent struct {
 	CreateTime             *time.Time       `json:"createTime,omitempty"`
 	ChannelID              *int64           `json:"channelId,omitempty"`
 	ChannelName            string           `json:"channelName,omitempty"`
-	AdvisorID              *int64           `json:"advisorId,omitempty"`
-	AdvisorName            string           `json:"advisorName,omitempty"`
-	StudentManagerID       *int64           `json:"studentManagerId,omitempty"`
-	StudentManagerName     string           `json:"studentManagerName,omitempty"`
 	FollowUpTime           *time.Time       `json:"followUpTime,omitempty"`
 	BirthDay               *time.Time       `json:"birthDay,omitempty"`
 	WeChatNumber           string           `json:"weChatNumber,omitempty"`

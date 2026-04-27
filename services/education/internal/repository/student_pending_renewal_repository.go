@@ -197,14 +197,10 @@ func buildPendingRenewalQueryFragments(instID int64, query model.PendingRenewalS
 		INNER JOIN inst_student s ON ta.student_id = s.id
 		INNER JOIN inst_course ic ON ta.course_id = ic.id
 		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
-		LEFT JOIN inst_user u1 ON s.advisor_id = u1.id
-		LEFT JOIN inst_user u2 ON s.student_manager_id = u2.id
 		WHERE ` + strings.Join(whereParts, " AND ")
 	groupBySQL := `
 		GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model,
-		         s.stu_name, s.avatar_url, s.stu_sex, s.mobile,
-		         s.advisor_id, u1.nick_name, s.student_manager_id, u2.nick_name,
-		         ic.name`
+		         s.stu_name, s.avatar_url, s.stu_sex, s.mobile, ic.name`
 	havingSQL := ""
 	if len(havingParts) > 0 {
 		havingSQL = " HAVING " + strings.Join(havingParts, " AND ")
@@ -309,10 +305,6 @@ func (repo *Repository) GetPendingRenewalStudentsPagedList(ctx context.Context, 
 			IFNULL(s.mobile, '') AS phone,
 			SUM(CASE WHEN IFNULL(icq.lesson_model, 0) IN (3, 4) THEN IFNULL(ta.remaining_tuition, 0) ELSE 0 END) AS tuition,
 			`+effectiveTuitionAccountStatusSQL+` AS status,
-			s.advisor_id AS advisor_staff_id,
-			IFNULL(u1.nick_name, '') AS advisor_staff_name,
-			s.student_manager_id AS student_manager_id,
-			IFNULL(u2.nick_name, '') AS student_manager_name,
 			(SELECT IFNULL(GROUP_CONCAT(DISTINCT CONCAT(CAST(u.id AS CHAR), '::', IFNULL(u.nick_name, '')) ORDER BY u.id SEPARATOR '||'), '')
 				FROM tuition_account ta_rel
 				LEFT JOIN inst_course_quotation icq_rel ON ta_rel.quote_id = icq_rel.id
@@ -355,8 +347,6 @@ func (repo *Repository) GetPendingRenewalStudentsPagedList(ctx context.Context, 
 			sex              sql.NullInt64
 			lessonMode       sql.NullInt64
 			status           sql.NullInt64
-			advisorID        sql.NullInt64
-			studentManagerID sql.NullInt64
 			expireTime       sql.NullTime
 			latestStartTime  sql.NullTime
 			rawPhone         string
@@ -380,10 +370,6 @@ func (repo *Repository) GetPendingRenewalStudentsPagedList(ctx context.Context, 
 			&rawPhone,
 			&item.Tuition,
 			&status,
-			&advisorID,
-			&item.AdvisorStaffName,
-			&studentManagerID,
-			&item.StudentManagerName,
 			&classTeacherRaw,
 		); err != nil {
 			return model.PendingRenewalStudentPagedResult{}, err
@@ -399,14 +385,6 @@ func (repo *Repository) GetPendingRenewalStudentsPagedList(ctx context.Context, 
 		if status.Valid {
 			value := int(status.Int64)
 			item.Status = &value
-		}
-		if advisorID.Valid {
-			value := advisorID.Int64
-			item.AdvisorStaffID = &value
-		}
-		if studentManagerID.Valid {
-			value := studentManagerID.Int64
-			item.StudentManagerID = &value
 		}
 		if expireTime.Valid {
 			t := expireTime.Time

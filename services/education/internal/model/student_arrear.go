@@ -65,10 +65,6 @@ type StudentLessonArrearItem struct {
 	LessonChargingMode int     `json:"lessonChargingMode"`
 	BeInArrearsTotal   float64 `json:"beInArrearsTotal"`
 	RecordCount        int     `json:"recordCount"`
-	AdvisorStaffID     string  `json:"advisorStaffId"`
-	AdvisorStaffName   string  `json:"advisorStaffName"`
-	StudentManagerID   string  `json:"studentManagerId"`
-	StudentManagerName string  `json:"studentManagerName"`
 }
 
 type StudentLessonArrearPagedResult struct {

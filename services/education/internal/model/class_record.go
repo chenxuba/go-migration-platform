@@ -107,10 +107,6 @@ type StudentTeachingRecordItem struct {
 	HasCompensated            bool     `json:"hasCompensated"`
 	SubjectID                 string   `json:"subjectId"`
 	SubjectName               string   `json:"subjectName"`
-	AdvisorStaffID            string   `json:"advisorStaffId"`
-	AdvisorStaffName          string   `json:"advisorStaffName"`
-	StudentManagerID          string   `json:"studentManagerId"`
-	StudentManagerName        string   `json:"studentManagerName"`
 	TeachingContent           string   `json:"teachingContent"`
 	TeachingContentImages     []string `json:"teachingContentImages"`
 	ClassRoomName             string   `json:"classRoomName"`

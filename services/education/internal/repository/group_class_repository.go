@@ -602,11 +602,7 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			IFNULL(s.study_school, ''),
 			IFNULL(s.address, ''),
 			IFNULL(s.interest, ''),
-			IFNULL(ch.channel_name, ''),
-			CAST(IFNULL(s.advisor_id, 0) AS CHAR),
-			IFNULL(advisor.nick_name, ''),
-			CAST(IFNULL(s.student_manager_id, 0) AS CHAR),
-			IFNULL(manager.nick_name, '')
+			IFNULL(ch.channel_name, '')
 		FROM (
 			SELECT
 				tcs.student_id,
@@ -753,8 +749,6 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			AND ta_agg.teach_method = IFNULL(ic.teach_method, 0)
 			AND ta_agg.lesson_model_key = IFNULL(icq.lesson_model, 0)
 		LEFT JOIN inst_channel ch ON ch.id = s.channel_id AND ch.del_flag = 0
-		LEFT JOIN inst_user advisor ON advisor.id = s.advisor_id AND advisor.del_flag = 0
-		LEFT JOIN inst_user manager ON manager.id = s.student_manager_id AND manager.del_flag = 0
 		LEFT JOIN (
 			SELECT
 				ras.student_id,
@@ -838,10 +832,6 @@ func (repo *Repository) PageGroupClassStudents(ctx context.Context, instID int64
 			&item.Address,
 			&item.Interest,
 			&item.ChannelName,
-			&item.AdvisorID,
-			&item.AdvisorName,
-			&item.StudentManagerID,
-			&item.StudentManagerName,
 		); err != nil {
 			return out, err
 		}

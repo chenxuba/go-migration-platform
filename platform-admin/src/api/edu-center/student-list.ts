@@ -134,10 +134,6 @@ export interface StudentLessonArrearItem {
   lessonChargingMode: number
   beInArrearsTotal: number
   recordCount: number
-  advisorStaffId?: string
-  advisorStaffName?: string
-  studentManagerId?: string
-  studentManagerName?: string
 }
 
 export interface StudentLessonArrearPagedResult {

@@ -410,10 +410,6 @@ export interface GroupClassStudentPagedItem {
   expireTime?: string
   suspendedTime?: string
   classEndingTime?: string
-  advisorId?: string
-  advisorName?: string
-  studentManagerId?: string
-  studentManagerName?: string
   customInfo?: unknown[]
   balance?: number
   point?: string

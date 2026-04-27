@@ -264,11 +264,7 @@ func (repo *Repository) GetStudentLessonArrearPagedList(ctx context.Context, ins
 			CAST(str.tuition_account_id AS CHAR),
 			MAX(IFNULL(str.sku_mode, 0)),
 			IFNULL(SUM(IFNULL(str.arrear_quantity, 0)), 0),
-			COUNT(*),
-			CAST(MAX(IFNULL(str.advisor_staff_id, 0)) AS CHAR),
-			MAX(IFNULL(str.advisor_staff_name, '')),
-			CAST(MAX(IFNULL(str.student_manager_id, 0)) AS CHAR),
-			MAX(IFNULL(str.student_manager_name, ''))
+			COUNT(*)
 		FROM student_teaching_record str
 		INNER JOIN inst_student s ON s.id = str.student_id AND s.del_flag = 0
 		WHERE `+fragments.whereSQL+`
@@ -299,10 +295,6 @@ func (repo *Repository) GetStudentLessonArrearPagedList(ctx context.Context, ins
 			&item.LessonChargingMode,
 			&item.BeInArrearsTotal,
 			&item.RecordCount,
-			&item.AdvisorStaffID,
-			&item.AdvisorStaffName,
-			&item.StudentManagerID,
-			&item.StudentManagerName,
 		); err != nil {
 			return model.StudentLessonArrearPagedResult{}, err
 		}

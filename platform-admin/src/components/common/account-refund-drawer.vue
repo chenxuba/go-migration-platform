@@ -190,10 +190,6 @@ async function loadAccountAndStudent() {
       rechargeBalancePure: rechargePure,
       giftBalance: giv,
       residualBalance: res,
-      collectorStaffId: detail?.collectorStaffId || '0',
-      phoneSellStaffId: detail?.phoneSellStaffId || '0',
-      foregroundStaffId: detail?.foregroundStaffId || '0',
-      viceSellStaffStaffId: detail?.viceSellStaffStaffId || '0',
     }
     formState.salesperson = selectedStudent.value.salesPersonId && selectedStudent.value.salesPersonId !== '0'
       ? selectedStudent.value.salesPersonId
@@ -254,10 +250,10 @@ async function createRefundOrderAndLoadDetail() {
     residualAmount: Number(formState.cldRefundAmount || 0),
     dealDate: formState.createTime,
     salePersonId: String(formState.salesperson || selectedStudent.value.salesPersonId || '0'),
-    collectorStaffId: String(selectedStudent.value.collectorStaffId || '0'),
-    phoneSellStaffId: String(selectedStudent.value.phoneSellStaffId || '0'),
-    foregroundStaffId: String(selectedStudent.value.foregroundStaffId || '0'),
-    viceSellStaffStaffId: String(selectedStudent.value.viceSellStaffStaffId || '0'),
+    collectorStaffId: '0',
+    phoneSellStaffId: '0',
+    foregroundStaffId: '0',
+    viceSellStaffStaffId: '0',
     remark: formState.inRemarks || '',
     orderTagIds: tagIds,
     externalRemark: formState.outRemarks || '',

@@ -26,15 +26,12 @@ const details = reactive({
   'orderSalePersonName': '何红武',
   'students': [
     {
-      'advisorId': '0',
-      'advisorName': '',
       'salespersonId': '580458472080941056',
       'salespersonName': '何红武',
       'collectorName': '',
       'phoneSellName': '',
       'viceSellName': '',
       'foregroundName': '',
-      'studentManagerName': '',
       'performanceId': '0',
       'id': '609417555739700224',
       'name': '何黑五',

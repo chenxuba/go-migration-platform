@@ -835,10 +835,6 @@ type GroupClassStudentPagedItemVO struct {
 	ExpireTime                     *time.Time                      `json:"expireTime,omitempty"`
 	SuspendedTime                  *time.Time                      `json:"suspendedTime,omitempty"`
 	ClassEndingTime                *time.Time                      `json:"classEndingTime,omitempty"`
-	AdvisorID                      string                          `json:"advisorId"`
-	AdvisorName                    string                          `json:"advisorName"`
-	StudentManagerID               string                          `json:"studentManagerId"`
-	StudentManagerName             string                          `json:"studentManagerName"`
 	CustomInfo                     []any                           `json:"customInfo"`
 	Balance                        float64                         `json:"balance"`
 	Point                          string                          `json:"point"`

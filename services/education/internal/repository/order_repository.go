@@ -2566,11 +2566,9 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		INNER JOIN inst_student s ON ta.student_id = s.id AND s.del_flag = 0
 		INNER JOIN inst_course ic ON ta.course_id = ic.id AND ic.del_flag = 0
 		LEFT JOIN inst_course_quotation icq ON ta.quote_id = icq.id
-		LEFT JOIN inst_user u1 ON s.advisor_id = u1.id
-		LEFT JOIN inst_user u2 ON s.student_manager_id = u2.id
 		WHERE ` + strings.Join(whereParts, " AND ")
 	groupBy := `
-		GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model, s.advisor_id, u1.nick_name, s.student_manager_id, u2.nick_name, s.stu_name, s.avatar_url, s.stu_sex, s.mobile, ic.name`
+		GROUP BY s.id, ic.id, ic.teach_method, icq.lesson_model, s.stu_name, s.avatar_url, s.stu_sex, s.mobile, ic.name`
 	havingSQL := ""
 	if len(havingParts) > 0 {
 		havingSQL = " HAVING " + strings.Join(havingParts, " AND ")
@@ -2617,10 +2615,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			MAX(ta.plan_resume_time) AS plan_resume_time,
 			MAX(ta.status_change_time) AS change_status_time,
 			IFNULL(MAX(ta.can_transfer), 0) AS can_transfer_tuition_account,
-			s.advisor_id AS advisor_staff_id,
-			IFNULL(u1.nick_name, '') AS advisor_staff_name,
-			s.student_manager_id AS student_manager_id,
-			IFNULL(u2.nick_name, '') AS student_manager_name,
 			MAX(ta.create_time) AS create_time,
 			MAX(ta.suspended_time) AS suspended_time,
 			MAX(ta.class_ending_time) AS class_ending_time,
@@ -2655,8 +2649,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			hasAssignedClassCourse bool
 			enableExpireTime       bool
 			canTransfer            bool
-			advisorStaffID         sql.NullInt64
-			studentManagerID       sql.NullInt64
 			hasGradeUpgrade        bool
 			expireTime             sql.NullTime
 			planSuspendTime        sql.NullTime
@@ -2697,10 +2689,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			&planResumeTime,
 			&changeStatusTime,
 			&canTransfer,
-			&advisorStaffID,
-			&item.AdvisorStaffName,
-			&studentManagerID,
-			&item.StudentManagerName,
 			&createTime,
 			&suspendedTime,
 			&classEndingTime,
@@ -2736,14 +2724,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		if tuitionAccountStatus.Valid {
 			value := int(tuitionAccountStatus.Int64)
 			item.TuitionAccountStatus = &value
-		}
-		if advisorStaffID.Valid {
-			value := advisorStaffID.Int64
-			item.AdvisorStaffID = &value
-		}
-		if studentManagerID.Valid {
-			value := studentManagerID.Int64
-			item.StudentManagerID = &value
 		}
 		item.AssignedClass = assignedClass
 		item.HasAssignedClassCourse = hasAssignedClassCourse

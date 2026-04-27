@@ -59,10 +59,6 @@ export interface StudentTeachingRecordItem {
   hasCompensated?: boolean
   subjectId?: string
   subjectName?: string
-  advisorStaffId?: string
-  advisorStaffName?: string
-  studentManagerId?: string
-  studentManagerName?: string
   teachingContent?: string
   teachingContentImages?: string[]
   classRoomName?: string

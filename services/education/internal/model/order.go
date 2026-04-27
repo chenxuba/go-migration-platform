@@ -467,10 +467,6 @@ type RegistrationListItem struct {
 	PlanResumeTime            *time.Time                `json:"planResumeTime,omitempty"`
 	ChangeStatusTime          *time.Time                `json:"changeStatusTime,omitempty"`
 	CanTransferTuitionAccount bool                      `json:"canTransferTuitionAccount"`
-	AdvisorStaffID            *int64                    `json:"advisorStaffId,omitempty"`
-	AdvisorStaffName          string                    `json:"advisorStaffName"`
-	StudentManagerID          *int64                    `json:"studentManagerId,omitempty"`
-	StudentManagerName        string                    `json:"studentManagerName"`
 	ClassTeacherList          []RegistrationListTeacher `json:"classTeacherList,omitempty"`
 	CreateTime                *time.Time                `json:"createTime,omitempty"`
 	SuspendedTime             *time.Time                `json:"suspendedTime,omitempty"`

@@ -40,10 +40,6 @@ type PendingRenewalStudentItem struct {
 	Tuition            float64                   `json:"tuition"`
 	ClassTeacherList   []RegistrationListTeacher `json:"classTeacherList,omitempty"`
 	Status             *int                      `json:"status,omitempty"`
-	AdvisorStaffID     *int64                    `json:"advisorStaffId,omitempty"`
-	AdvisorStaffName   string                    `json:"advisorStaffName"`
-	StudentManagerID   *int64                    `json:"studentManagerId,omitempty"`
-	StudentManagerName string                    `json:"studentManagerName"`
 }
 
 type PendingRenewalStudentPagedResult struct {

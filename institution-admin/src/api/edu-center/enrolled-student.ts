@@ -14,10 +14,6 @@ export interface EnrolledStudentInfo {
   createTime?: string
   channelId?: string
   channelName?: string
-  advisorId?: string
-  advisorName?: string
-  studentManagerId?: string
-  studentManagerName?: string
   followUpTime?: string
   birthDay?: string
   weChatNumber?: string
@@ -41,14 +37,6 @@ export interface EnrolledStudentInfo {
   createId?: string
   createName?: string
   followUpStatus?: number
-  collectorStaffId?: string
-  collectorStaffName?: string
-  foregroundStaffId?: string
-  foregroundStaffName?: string
-  phoneSellStaffId?: string
-  phoneSellStaffName?: string
-  viceSellStaffStaffId?: string
-  viceSellStaffStaffName?: string
   firstEnrolledTime?: string
 }
 
