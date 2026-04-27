@@ -441,6 +441,118 @@ func (repo *Repository) AddSuspendResumeTuitionAccountOrder(ctx context.Context,
 	}, nil
 }
 
+func (repo *Repository) ListSuspendResumeTuitionAccountOrders(ctx context.Context, instID int64, dto model.SuspendResumeTuitionAccountOrderListQueryDTO) (model.SuspendResumeTuitionAccountOrderListResult, error) {
+	taID, err := strconv.ParseInt(strings.TrimSpace(dto.TuitionAccountID), 10, 64)
+	if err != nil || taID <= 0 {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, errors.New("tuitionAccountId 无效")
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	defer tx.Rollback()
+
+	selected, err := repo.loadCloseTuitionAccountSnapshotTx(ctx, tx, instID, taID)
+	if err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	bucket, err := repo.loadOneToOneTuitionBucketTx(ctx, tx, instID, taID)
+	if err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	accountIDs, err := repo.ListTuitionAccountIDsForStudentCourseBucketAllStatuses(ctx, tx, instID, selected.studentID, selected.courseID, bucket.teachMethod, bucket.lessonModelCode)
+	if err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	if len(accountIDs) == 0 {
+		accountIDs = []int64{taID}
+	}
+
+	rows, err := tx.QueryContext(ctx, `
+		SELECT
+			o.id,
+			o.tuition_account_id,
+			o.type,
+			o.expire_time,
+			o.expire_type,
+			IFNULL(o.remark, ''),
+			o.suspend_date,
+			o.resume_date,
+			o.create_id,
+			IFNULL(u.nick_name, ''),
+			o.create_time
+		FROM suspend_resume_tuition_account_order o
+		LEFT JOIN inst_user u ON u.id = o.create_id AND u.inst_id = o.inst_id AND u.del_flag = 0
+		WHERE o.inst_id = ?
+		  AND o.del_flag = 0
+		  AND o.tuition_account_id IN (`+buildPlaceholders(len(accountIDs))+`)
+		ORDER BY o.create_time DESC, o.id DESC
+	`, append([]any{instID}, int64SliceToAny(accountIDs)...)...)
+	if err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	defer rows.Close()
+
+	list := make([]model.SuspendResumeTuitionAccountOrderListItem, 0, 8)
+	for rows.Next() {
+		var (
+			id               int64
+			tuitionAccountID int64
+			item             model.SuspendResumeTuitionAccountOrderListItem
+			expireTime       sql.NullTime
+			suspendDate      sql.NullTime
+			resumeDate       sql.NullTime
+			createdStaffID   int64
+			createdTime      sql.NullTime
+		)
+		if err := rows.Scan(
+			&id,
+			&tuitionAccountID,
+			&item.Type,
+			&expireTime,
+			&item.ExpireType,
+			&item.Remark,
+			&suspendDate,
+			&resumeDate,
+			&createdStaffID,
+			&item.CreatedStaffName,
+			&createdTime,
+		); err != nil {
+			return model.SuspendResumeTuitionAccountOrderListResult{}, err
+		}
+
+		item.ID = strconv.FormatInt(id, 10)
+		item.TuitionAccountID = strconv.FormatInt(tuitionAccountID, 10)
+		item.CreatedStaffID = strconv.FormatInt(createdStaffID, 10)
+		if expireTime.Valid {
+			t := expireTime.Time
+			item.ExpireTime = &t
+		}
+		if suspendDate.Valid {
+			t := suspendDate.Time
+			item.SuspendDate = &t
+		}
+		if resumeDate.Valid {
+			t := resumeDate.Time
+			item.ResumeDate = &t
+		}
+		if createdTime.Valid {
+			t := createdTime.Time
+			item.CreatedTime = &t
+		}
+		list = append(list, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+
+	return model.SuspendResumeTuitionAccountOrderListResult{List: list}, nil
+}
+
 // syncOneToOneClassStudentStatusForTuitionAccountsTx 学费账户停课/复课生效时，同步对应 1 对 1 班员的「开课状态」，与 tuition_account.status 一致。
 func syncOneToOneClassStudentStatusForTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, studentID, courseID int64, accountIDs []int64, targetStatus int) error {
 	if len(accountIDs) == 0 {

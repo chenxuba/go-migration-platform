@@ -3,7 +3,7 @@ import Icon, { QuestionCircleOutlined } from '@ant-design/icons-vue'
 import { computed, ref, watch } from 'vue'
 import dayjs from 'dayjs'
 import { useStudentStore } from '@/stores/student'
-import { getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
+import { getCloseTuitionAccountOrderListApi, getTuitionAccountReadingListApi } from '@/api/edu-center/tuition-account'
 import messageService from '~@/utils/messageService'
 import revokeCloseCourseModal from '@/components/common/revoke-close-course-modal.vue'
 // 转课抽屉
@@ -59,6 +59,7 @@ const currentResumeCourseRecord = ref(null)
 const currentRemainingDetailsRecord = ref(null)
 const currentDropCourseRecord = ref(null)
 const currentFeeChangeRecord = ref(null)
+const currentSuspensionResumeRecord = ref(null)
 const openCourseActionMenuKey = ref('')
 
 function getCourseActionMenuKey(item, index) {
@@ -249,9 +250,33 @@ function onEndedMenuRenew() {
   closeCourseActionMenu()
   messageService.info('续费功能开发中')
 }
-function onEndedMenuRevokeGraduate(item) {
+async function onEndedMenuRevokeGraduate(item) {
   closeCourseActionMenu()
-  currentRevokeCourseRecord.value = item || null
+  const tuitionAccountId = String(item?.id || item?.tuitionAccountId || '')
+  if (!tuitionAccountId) {
+    messageService.error('缺少学费账户ID')
+    return
+  }
+  try {
+    const res = await getCloseTuitionAccountOrderListApi({ tuitionAccountId })
+    if (res.code !== 200) {
+      throw new Error(res.message || '加载结课记录失败')
+    }
+    const recordList = Array.isArray(res.result?.list) ? res.result.list : []
+    const latestClosableRecord = recordList.find(record => Number(record?.status) !== 4)
+    if (!latestClosableRecord?.id) {
+      messageService.error('暂无可撤销的结课记录')
+      return
+    }
+    currentRevokeCourseRecord.value = {
+      ...(item || {}),
+      closeTuitionAccountOrderId: String(latestClosableRecord.id || ''),
+    }
+  }
+  catch (error) {
+    messageService.error(error?.message || '加载结课记录失败')
+    return
+  }
   revokeCloseCourseModalOpen.value = true
 }
 
@@ -330,8 +355,9 @@ function onMenuFeeChange(item) {
   feeChangeDrawerOpen.value = true
 }
 
-function onMenuSuspensionResumeRecord() {
+function onMenuSuspensionResumeRecord(item) {
   closeCourseActionMenu()
+  currentSuspensionResumeRecord.value = item || null
   suspensionResumeDrawerOpen.value = true
 }
 
@@ -647,7 +673,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord">
+                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord(item)">
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
@@ -716,7 +742,7 @@ watch(endTheClassDrawerOpen, (value) => {
                   <span class="image-wrapper" />
                   <span class="font-size-14px text-#666 w-90px">学费变动记录</span>
                 </div>
-                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord">
+                <div class="flex items-center gap-2" @click="onMenuSuspensionResumeRecord(item)">
                   <span class="image-wrapper suspendResumen" />
                   <span class="font-size-14px text-#666 w-90px">停/复课记录</span>
                 </div>
@@ -891,7 +917,7 @@ watch(endTheClassDrawerOpen, (value) => {
       :record="currentCloseRecordCourse"
       @success="handleCloseCourseRecordSuccess"
     />
-    <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" />
+    <suspensionResumeModal v-model:open="suspensionResumeDrawerOpen" :record="currentSuspensionResumeRecord" />
     <feeChangeModal v-model:open="feeChangeDrawerOpen" :record="currentFeeChangeRecord" />
     <remainingDetailsModal v-model:open="remainingDetailsModalOpen" :record="currentRemainingDetailsRecord" />
     <oneToOneModal v-model:open="oneToOneModalOpen" />

@@ -25,3 +25,15 @@ func (svc *Service) AddSuspendResumeTuitionAccountOrder(userID int64, dto model.
 	}
 	return svc.repo.AddSuspendResumeTuitionAccountOrder(context.Background(), instID, operatorID, dto)
 }
+
+func (svc *Service) ListSuspendResumeTuitionAccountOrders(userID int64, dto model.SuspendResumeTuitionAccountOrderListQueryDTO) (model.SuspendResumeTuitionAccountOrderListResult, error) {
+	svc.SyncScheduledSuspendResumeTuitionAccountsOnce()
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.SuspendResumeTuitionAccountOrderListResult{}, errors.New("no institution context")
+		}
+		return model.SuspendResumeTuitionAccountOrderListResult{}, err
+	}
+	return svc.repo.ListSuspendResumeTuitionAccountOrders(context.Background(), instID, dto)
+}

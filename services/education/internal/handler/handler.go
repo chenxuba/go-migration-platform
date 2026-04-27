@@ -106,6 +106,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/qiniu/video-upload-token", handler.qiniuVideoUploadToken)
 	mux.HandleFunc("/api/v1/tuition-accounts/reading-list", handler.tuitionAccountReadingList)
 	mux.HandleFunc("/api/v1/tuition-accounts/suspend-resume-orders/create", handler.addSuspendResumeTuitionAccountOrder)
+	mux.HandleFunc("/api/v1/tuition-accounts/suspend-resume-orders/list", handler.listSuspendResumeTuitionAccountOrders)
 	mux.HandleFunc("/api/v1/tuition-accounts/sub-account-date-info", handler.tuitionAccountSubAccountDateInfo)
 	mux.HandleFunc("/api/v1/tuition-accounts/refund-owed-summary", handler.refundTuitionAccountOwedSummary)
 	mux.HandleFunc("/api/v1/tuition-accounts/refund-estimate-valuable-tuition", handler.estimateRefundTuitionAccountValuableTuition)

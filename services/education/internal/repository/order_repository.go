@@ -15,18 +15,23 @@ import (
 )
 
 type orderCourseDetail struct {
-	ID           int64
-	CourseID     int64
-	QuoteID      sql.NullInt64
-	HandleType   sql.NullInt64
-	Count        sql.NullInt64
-	Unit         sql.NullInt64
-	FreeQuantity float64
-	Amount       float64
-	RealQuantity float64
-	HasValidDate bool
-	ValidDate    sql.NullTime
-	EndDate      sql.NullTime
+	ID            int64
+	CourseID      int64
+	QuoteID       sql.NullInt64
+	HandleType    sql.NullInt64
+	Count         sql.NullInt64
+	Unit          sql.NullInt64
+	FreeQuantity  float64
+	Amount        float64
+	ShareDiscount float64
+	RealQuantity  float64
+	HasValidDate  bool
+	ValidDate     sql.NullTime
+	EndDate       sql.NullTime
+}
+
+func (d orderCourseDetail) netTuitionAmount() float64 {
+	return math.Max(roundMoney(d.Amount-d.ShareDiscount), 0)
 }
 
 type approvalRegistrationRule struct {
@@ -3216,7 +3221,7 @@ func (repo *Repository) insertApprovalRecordTx(ctx context.Context, tx *sql.Tx, 
 func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, orderSource int) error {
 	rows, err := tx.QueryContext(ctx, `
 		SELECT id, course_id, quote_id, handle_type, count, unit,
-		       IFNULL(free_quantity, 0), IFNULL(amount, 0), IFNULL(real_quantity, 0),
+		       IFNULL(free_quantity, 0), IFNULL(amount, 0), IFNULL(share_discount, 0), IFNULL(real_quantity, 0),
 		       IFNULL(has_valid_date, 0), valid_date, end_date
 		FROM sale_order_course_detail
 		WHERE order_id = ? AND del_flag = 0
@@ -3238,6 +3243,7 @@ func (repo *Repository) completeOrderRegistrationTx(ctx context.Context, tx *sql
 			&detail.Unit,
 			&detail.FreeQuantity,
 			&detail.Amount,
+			&detail.ShareDiscount,
 			&detail.RealQuantity,
 			&detail.HasValidDate,
 			&detail.ValidDate,
@@ -4005,6 +4011,7 @@ func collectOrderDetailCourseIDs(details []orderCourseDetail) []int64 {
 }
 
 func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx, instID, operatorID, orderID, studentID int64, detail orderCourseDetail, quotation model.CourseQuotation, now time.Time) (int64, error) {
+	netTuitionAmount := detail.netTuitionAmount()
 	purchasedQty := detail.RealQuantity - detail.FreeQuantity
 	if purchasedQty < 0 {
 		purchasedQty = 0
@@ -4041,7 +4048,7 @@ func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx,
 	}
 	primaryTuitionAccountID := int64(0)
 
-	if purchasedQty > 0 || detail.Amount > 0 {
+	if purchasedQty > 0 || netTuitionAmount > 0 {
 		result, err := tx.ExecContext(ctx, `
 			INSERT INTO tuition_account (
 				uuid, version, inst_id, student_id, order_id, order_course_detail_id, course_id, quote_id,
@@ -4061,7 +4068,7 @@ func (repo *Repository) createTuitionAccountsTx(ctx context.Context, tx *sql.Tx,
 		`,
 			instID, studentID, orderID, detail.ID, detail.CourseID, quoteID,
 			purchasedQty, purchasedQty,
-			detail.Amount, detail.Amount, detail.Amount,
+			netTuitionAmount, netTuitionAmount, netTuitionAmount,
 			handleType, detail.HasValidDate, expireTimePtr, validDatePtr, endDatePtr,
 			now, operatorID, now, operatorID, now,
 		)

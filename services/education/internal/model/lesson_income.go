@@ -104,6 +104,7 @@ var lessonIncomeSourceTypeToInternal = map[int][]int{
 	LessonIncomeSourceRefundFee:          {TuitionAccountFlowSourceRefund},
 	LessonIncomeSourceRevokeGraduate:     {TuitionAccountFlowSourceRevokeGraduate},
 	LessonIncomeSourceExpireRollback:     {TuitionAccountFlowSourceExpireRollback},
+	LessonIncomeSourceVoidReturn:         {TuitionAccountFlowSourceOrderVoid},
 	LessonIncomeSourceRevokeRefundFee:    {TuitionAccountFlowSourceRevokeRefundOrder},
 }
 
@@ -119,6 +120,7 @@ var lessonIncomeInternalToSourceType = map[int]int{
 	TuitionAccountFlowSourceRefund:                   LessonIncomeSourceRefundFee,
 	TuitionAccountFlowSourceRevokeGraduate:           LessonIncomeSourceRevokeGraduate,
 	TuitionAccountFlowSourceExpireRollback:           LessonIncomeSourceExpireRollback,
+	TuitionAccountFlowSourceOrderVoid:                LessonIncomeSourceVoidReturn,
 	TuitionAccountFlowSourceRevokeRefundOrder:        LessonIncomeSourceRevokeRefundFee,
 	TuitionAccountFlowSourceManualCloseCourse:        LessonIncomeSourceManualGraduate,
 }

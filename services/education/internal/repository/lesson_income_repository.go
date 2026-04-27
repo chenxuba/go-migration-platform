@@ -265,8 +265,9 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 					WHEN refund_ro.id IS NOT NULL THEN IFNULL(refund_ro.handling_fee, 0)
 					ELSE GREATEST(IFNULL(refund_so.order_real_amount, 0) - IFNULL(refund_pay.paid_amount, 0), 0)
 				END
+				WHEN taf.source_type = %d THEN -ABS(IFNULL(taf.tuition, 0))
 				ELSE IFNULL(taf.tuition, 0)
-			END`, model.TuitionAccountFlowSourceRefund, model.TuitionAccountFlowSourceRevokeRefundOrder),
+			END`, model.TuitionAccountFlowSourceRefund, model.TuitionAccountFlowSourceRevokeRefundOrder, model.TuitionAccountFlowSourceOrderVoid),
 	}
 
 	var classIDRawExpr string
@@ -591,6 +592,11 @@ func (repo *Repository) buildLessonIncomeQuery(ctx context.Context, instID int64
 		}
 		fragments.whereParts = append(fragments.whereParts, "taf.source_type IN ("+strings.Join(holders, ",")+")")
 	}
+	fragments.whereParts = append(fragments.whereParts, fmt.Sprintf(
+		"(taf.source_type <> %d OR %s = 2)",
+		model.TuitionAccountFlowSourceOrderVoid,
+		fragments.lessonChargingModeExpr,
+	))
 	if strings.TrimSpace(query.QueryModel.StudentID) != "" {
 		fragments.whereParts = append(fragments.whereParts, "CAST(taf.student_id AS CHAR) = ?")
 		fragments.args = append(fragments.args, strings.TrimSpace(query.QueryModel.StudentID))

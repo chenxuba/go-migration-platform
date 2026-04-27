@@ -243,6 +243,24 @@ export interface SuspendResumeTuitionAccountOrderResult {
   lessonId?: string
 }
 
+export interface SuspendResumeTuitionAccountOrderListItem {
+  id?: string
+  tuitionAccountId?: string
+  type?: number
+  expireTime?: string
+  expireType?: number
+  remark?: string
+  suspendDate?: string
+  resumeDate?: string
+  createdStaffId?: string
+  createdStaffName?: string
+  createdTime?: string
+}
+
+export interface SuspendResumeTuitionAccountOrderListResult {
+  list?: SuspendResumeTuitionAccountOrderListItem[]
+}
+
 export interface CloseTuitionAccountOrderParams {
   tuitionAccountId: string
   quantity: number
@@ -315,6 +333,10 @@ export function revertCloseTuitionAccountApi(data: RevertCloseTuitionAccountPara
 
 export function addSuspendResumeTuitionAccountOrderApi(data: SuspendResumeTuitionAccountOrderParams) {
   return usePost<SuspendResumeTuitionAccountOrderResult>('/api/v1/tuition-accounts/suspend-resume-orders/create', data)
+}
+
+export function getSuspendResumeTuitionAccountOrderListApi(data: { tuitionAccountId: string }) {
+  return usePost<SuspendResumeTuitionAccountOrderListResult>('/api/v1/tuition-accounts/suspend-resume-orders/list', data)
 }
 
 export function addCloseTuitionAccountOrderApi(data: CloseTuitionAccountOrderParams) {
