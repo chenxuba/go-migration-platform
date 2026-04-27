@@ -6,10 +6,14 @@ import { getLoginThemeApi } from '~/api/common/login-theme'
 const appStore = useAppStore()
 const { theme } = storeToRefs(appStore)
 const { antd } = useI18nLocale()
+const route = useRoute()
 const layoutMenu = useLayoutMenu()
 useLayoutMenuProvide(layoutMenu, appStore)
 
 async function applyTenantTheme() {
+  if (route.path === '/login')
+    return
+
   try {
     const res = await getLoginThemeApi('platform-admin')
     const primaryColor = res.result?.loginBrand?.primaryColor || res.data?.loginBrand?.primaryColor

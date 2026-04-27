@@ -9,13 +9,15 @@ import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/logi
 import { useAppStore } from '~/stores/app'
 import { reset401Status } from '~/utils/request'
 
+const LOGIN_THEME_CACHE_KEY = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
+
 const { t } = useI18nLocale()
 const router = useRouter()
 const route = useRoute()
 const token = useAuthorization()
 const appStore = useAppStore()
 const submitLoading = ref(false)
-const loginThemeReady = ref(false)
+const loginThemeReady = ref(true)
 
 const formState = reactive({
   username: '',
@@ -43,17 +45,41 @@ function mergeLoginBrand(next?: TenantLoginBrandConfig) {
     appStore.toggleColorPrimary(loginBrand.primaryColor)
 }
 
+function readCachedLoginBrand() {
+  try {
+    const raw = window.localStorage.getItem(LOGIN_THEME_CACHE_KEY)
+    if (!raw)
+      return undefined
+    return JSON.parse(raw) as TenantLoginBrandConfig
+  }
+  catch {
+    return undefined
+  }
+}
+
+function writeCachedLoginBrand(next?: TenantLoginBrandConfig) {
+  if (!next)
+    return
+  try {
+    window.localStorage.setItem(LOGIN_THEME_CACHE_KEY, JSON.stringify(next))
+  }
+  catch {
+    // Ignore storage quota and privacy-mode errors; the login page can use defaults.
+  }
+}
+
 async function loadLoginTheme() {
+  mergeLoginBrand(readCachedLoginBrand())
+
   try {
     const res = await getLoginThemeApi('platform-admin')
-    mergeLoginBrand(res.result?.loginBrand || res.data?.loginBrand)
+    const brand = res.result?.loginBrand || res.data?.loginBrand
+    writeCachedLoginBrand(brand)
+    mergeLoginBrand(brand)
   }
   catch (error) {
     console.warn('load login theme failed', error)
     mergeLoginBrand()
-  }
-  finally {
-    loginThemeReady.value = true
   }
 }
 
