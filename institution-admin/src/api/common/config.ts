@@ -26,7 +26,6 @@ export interface InstConfig {
   defaultTeacherClassTime: string
   discountsMode: string
   enableAdjustTuitionAccountOrder: string
-  enableAdvisor: boolean
   enableArrearagedSendMessage: string
   enableAuditionSmsRemind: string
   enableAutoDeductStock: string
@@ -42,7 +41,6 @@ export interface InstConfig {
   enableChargeByHours: boolean
   enableChargeByPriceStudentAbsentRecord: string
   enableClassCommentParentFeedback: string
-  enableCollectorStaff: boolean
   enableCompensationSendMessage: string
   enableComposeLesson: boolean | string
   enableCustomSku: string
@@ -50,7 +48,6 @@ export interface InstConfig {
   enableFaceAttendanceCheckOutNotice: string
   enableFaceAttendanceRelateTeaching: string
   enableFilterHoliday: string
-  enableForeground: boolean
   enableGoodsManagement: string
   enableGradeUpgrade: string
   enableHourLeaveNormalRecord?: boolean | string
@@ -72,7 +69,6 @@ export interface InstConfig {
   enableOrgSendChildBindNoticeToAdmin: string
   enableOrgSendFaceAttendNoticeToAdmin: string
   enablePeerInfoAndServiceManagement: string
-  enablePhoneSellStaff: boolean
   enablePointChangeRemindMessage: string
   enablePublicPool: boolean
   enableRechargeAccountChangeMessage: string
@@ -89,7 +85,6 @@ export interface InstConfig {
   enableShowRechargeAccountBalance: string
   enableShowSchoolOnOrderReceipt: string
   enableSpaceBookingNotice: string
-  enableStudentManager: boolean
   enableSupervisor: boolean
   enableStudentParentTranscriptChart: string
   enableSubject: string
@@ -99,7 +94,6 @@ export interface InstConfig {
   enableTimetableTimeConfig: string
   enableTranOrderFinishedSendMessage: string
   enableTruantDeductMoney: string
-  enableViceSellStaff: boolean
   enabledArrearsRollcall: string
   enabledBookLessonExcess: string
   enabledClassConsumptionReminder: string

@@ -31,12 +31,6 @@ type StudentSnapshot struct {
 	PhoneRelationship  *int
 	SalePerson         *int64
 	ChannelID          *int64
-	CollectorStaffID   *int64
-	PhoneSellStaffID   *int64
-	ForegroundStaffID  *int64
-	ViceSellStaffID    *int64
-	StudentManagerID   *int64
-	AdvisorID          *int64
 	SupervisorID       *int64
 	RecommendStudentID *int64
 	WeChatNumber       string
@@ -245,7 +239,13 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := EnsureInstConfigUnifiedTimePeriodColumns(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := DropDeprecatedInstConfigRelationStaffColumns(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := EnsureInstStudentSupervisorColumns(ctx, repo.db); err != nil {
+		return err
+	}
+	if err := DropDeprecatedInstStudentRelationStaffColumns(ctx, repo.db); err != nil {
 		return err
 	}
 	if err := EnsureInstPeriodTables(ctx, repo.db); err != nil {

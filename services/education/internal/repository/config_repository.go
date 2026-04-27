@@ -9,12 +9,6 @@ import (
 
 var instConfigBooleanFields = map[string]struct{}{
 	"enablePublicPool":                    {},
-	"enableCollectorStaff":                {},
-	"enablePhoneSellStaff":                {},
-	"enableForeground":                    {},
-	"enableViceSellStaff":                 {},
-	"enableAdvisor":                       {},
-	"enableStudentManager":                {},
 	"enableSupervisor":                    {},
 	"limitSameWeChat":                     {},
 	"limitImportSameWeChat":               {},
@@ -139,6 +133,36 @@ func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) e
 		WHERE charge_by_price_default_price IS NULL
 	`)
 	return err
+}
+
+func DropDeprecatedInstConfigRelationStaffColumns(ctx context.Context, db *sql.DB) error {
+	columns := []string{
+		"enable_collector_staff",
+		"enable_phone_sell_staff",
+		"enable_foreground",
+		"enable_vice_sell_staff",
+		"enable_advisor",
+		"enable_student_manager",
+	}
+	for _, column := range columns {
+		var exists int
+		if err := db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'inst_config'
+			  AND COLUMN_NAME = ?
+		`, column).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE inst_config DROP COLUMN %s", column)); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func ensureInstConfigStringFieldTypes(ctx context.Context, db *sql.DB) error {
@@ -313,12 +337,6 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			enable_price_leave_normal_record,
 			enable_price_truancy_normal_record,
 			enable_price_makeup,
-			enable_collector_staff,
-			enable_phone_sell_staff,
-			enable_foreground,
-			enable_vice_sell_staff,
-			enable_advisor,
-			enable_student_manager,
 			enable_supervisor,
 			limit_same_weChat,
 			limit_import_same_weChat,
@@ -354,7 +372,7 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1
@@ -402,12 +420,6 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"enablePriceMakeup":                   "enable_price_makeup",
 		"groupClassRollCallSheetTemplate":     "group_class_roll_call_sheet_template",
 		"unfollowedTime":                      "unfollowed_time",
-		"enableCollectorStaff":                "enable_collector_staff",
-		"enablePhoneSellStaff":                "enable_phone_sell_staff",
-		"enableForeground":                    "enable_foreground",
-		"enableViceSellStaff":                 "enable_vice_sell_staff",
-		"enableAdvisor":                       "enable_advisor",
-		"enableStudentManager":                "enable_student_manager",
 		"enableSupervisor":                    "enable_supervisor",
 		"limitSameWeChat":                     "limit_same_weChat",
 		"limitImportSameWeChat":               "limit_import_same_weChat",

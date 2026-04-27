@@ -29,12 +29,6 @@ func parseStudentSaveDTO(raw map[string]any) model.StudentSaveDTO {
 		WeChatNumber:       asString(raw["weChatNumber"]),
 		RecommendStudentID: asInt64Ptr(raw["recommendStudentId"]),
 		SalespersonID:      asInt64Ptr(raw["salespersonId"]),
-		CollectorStaffID:   asInt64Ptr(raw["collectorStaffId"]),
-		PhoneSellStaffID:   asInt64Ptr(raw["phoneSellStaffId"]),
-		ForegroundStaffID:  asInt64Ptr(raw["foregroundStaffId"]),
-		ViceSellStaffID:    asInt64Ptr(raw["viceSellStaffId"]),
-		StudentManagerID:   asInt64Ptr(raw["studentManagerId"]),
-		AdvisorID:          asInt64Ptr(raw["advisorId"]),
 		Remark:             asString(raw["remark"]),
 	}
 	if dto.ChannelID == nil {

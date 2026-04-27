@@ -16,11 +16,40 @@ func EnsureInstStudentSupervisorColumns(ctx context.Context, db *sql.DB) error {
 	})
 }
 
+func DropDeprecatedInstStudentRelationStaffColumns(ctx context.Context, db *sql.DB) error {
+	columns := []string{
+		"collector_staff_id",
+		"phone_sell_staff_id",
+		"foreground_staff_id",
+		"vice_sell_staff_id",
+		"student_manager_id",
+		"advisor_id",
+	}
+	for _, column := range columns {
+		var exists int
+		if err := db.QueryRowContext(ctx, `
+			SELECT COUNT(*)
+			FROM information_schema.COLUMNS
+			WHERE TABLE_SCHEMA = DATABASE()
+			  AND TABLE_NAME = 'inst_student'
+			  AND COLUMN_NAME = ?
+		`, column).Scan(&exists); err != nil {
+			return err
+		}
+		if exists == 0 {
+			continue
+		}
+		if _, err := db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE inst_student DROP COLUMN %s", column)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentID int64) (StudentSnapshot, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, inst_id, IFNULL(stu_name, ''), IFNULL(mobile, ''), IFNULL(student_status, 0), phone_relationship, sale_person, channel_id,
-		       collector_staff_id, phone_sell_staff_id, foreground_staff_id, vice_sell_staff_Id,
-		       student_manager_id, advisor_id, supervisor_id, recommend_student_id, IFNULL(wechat_number, ''), IFNULL(grade, ''),
+		       supervisor_id, recommend_student_id, IFNULL(wechat_number, ''), IFNULL(grade, ''),
 		       IFNULL(study_school, ''), IFNULL(interest, ''), IFNULL(address, ''), IFNULL(remark, ''),
 		       follow_up_status, intent_level
 		FROM inst_student
@@ -37,12 +66,6 @@ func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentI
 		&item.PhoneRelationship,
 		&item.SalePerson,
 		&item.ChannelID,
-		&item.CollectorStaffID,
-		&item.PhoneSellStaffID,
-		&item.ForegroundStaffID,
-		&item.ViceSellStaffID,
-		&item.StudentManagerID,
-		&item.AdvisorID,
 		&item.SupervisorID,
 		&item.RecommendStudentID,
 		&item.WeChatNumber,
@@ -435,14 +458,6 @@ func (repo *Repository) PageBirthdayStudents(ctx context.Context, instID int64, 
 
 	filters := []string{"s.inst_id = ?", "s.del_flag = 0"}
 	args := []any{instID}
-	if query.QueryModel.StudentManagerID != nil {
-		filters = append(filters, "s.student_manager_id = ?")
-		args = append(args, *query.QueryModel.StudentManagerID)
-	}
-	if query.QueryModel.AdvisorID != nil {
-		filters = append(filters, "s.advisor_id = ?")
-		args = append(args, *query.QueryModel.AdvisorID)
-	}
 	if query.QueryModel.BirthMonth != nil {
 		filters = append(filters, "MONTH(s.birthday) = ?")
 		args = append(args, *query.QueryModel.BirthMonth)
@@ -459,10 +474,8 @@ func (repo *Repository) PageBirthdayStudents(ctx context.Context, instID int64, 
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT s.id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship,
-		       IFNULL(s.student_status, 0), s.birthday, s.student_manager_id, IFNULL(u1.nick_name, ''), s.advisor_id, IFNULL(u2.nick_name, '')
+		       IFNULL(s.student_status, 0), s.birthday
 		FROM inst_student s
-		LEFT JOIN inst_user u1 ON u1.id = s.student_manager_id
-		LEFT JOIN inst_user u2 ON u2.id = s.advisor_id
 		WHERE `+whereClause+`
 		ORDER BY s.birthday ASC, s.id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
@@ -475,7 +488,7 @@ func (repo *Repository) PageBirthdayStudents(ctx context.Context, instID int64, 
 	for rows.Next() {
 		var item model.BirthdayStudentQueryVO
 		var birthday sql.NullTime
-		if err := rows.Scan(&item.ID, &item.StuName, &item.AvatarURL, &item.StuSex, &item.Mobile, &item.PhoneRelationship, &item.StudentStatus, &birthday, &item.StudentManagerID, &item.StudentManagerName, &item.AdvisorID, &item.AdvisorName); err != nil {
+		if err := rows.Scan(&item.ID, &item.StuName, &item.AvatarURL, &item.StuSex, &item.Mobile, &item.PhoneRelationship, &item.StudentStatus, &birthday); err != nil {
 			return model.PageResult[model.BirthdayStudentQueryVO]{}, err
 		}
 		if birthday.Valid {
@@ -522,11 +535,9 @@ func (repo *Repository) CreateIntentStudent(ctx context.Context, instID, operato
 		INSERT INTO inst_student
 		(inst_id, stu_name, stu_sex, birthday, mobile, phone_relationship, avatar_url, channel_id, sale_person,
 		 sale_assigned_time, follow_up_status, intent_level, student_status, wechat_number, grade, study_school,
-		 interest, address, recommend_student_id, collector_staff_id, phone_sell_staff_id, foreground_staff_id,
-		 vice_sell_staff_id, student_manager_id, advisor_id, remark, del_flag, create_id, create_time, update_id, update_time)
+		 interest, address, recommend_student_id, remark, del_flag, create_id, create_time, update_id, update_time)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,
 		        CASE WHEN ? IS NULL THEN NULL ELSE NOW() END, ?, ?, 0, ?, ?, ?,
-		        ?, ?, ?, ?, ?, ?,
 		        ?, ?, ?, ?, 0, ?, NOW(), ?, NOW())
 	`,
 		instID,
@@ -547,12 +558,6 @@ func (repo *Repository) CreateIntentStudent(ctx context.Context, instID, operato
 		strings.TrimSpace(dto.Interest),
 		strings.TrimSpace(dto.Address),
 		dto.RecommendStudentID,
-		dto.CollectorStaffID,
-		dto.PhoneSellStaffID,
-		dto.ForegroundStaffID,
-		dto.ViceSellStaffID,
-		dto.StudentManagerID,
-		dto.AdvisorID,
 		strings.TrimSpace(dto.Remark),
 		operatorID,
 		operatorID,
@@ -590,8 +595,7 @@ func (repo *Repository) UpdateIntentStudent(ctx context.Context, instID int64, d
 		UPDATE inst_student
 		SET stu_name = ?, stu_sex = ?, birthday = ?, mobile = ?, phone_relationship = ?, avatar_url = ?, channel_id = ?,
 		    sale_person = ?, wechat_number = ?, grade = ?, study_school = ?, interest = ?, address = ?,
-		    recommend_student_id = ?, collector_staff_id = ?, phone_sell_staff_id = ?, foreground_staff_id = ?,
-		    vice_sell_staff_id = ?, student_manager_id = ?, advisor_id = ?, remark = ?, update_id = ?, update_time = NOW()
+		    recommend_student_id = ?, remark = ?, update_id = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
 		strings.TrimSpace(dto.StuName),
@@ -608,12 +612,6 @@ func (repo *Repository) UpdateIntentStudent(ctx context.Context, instID int64, d
 		strings.TrimSpace(dto.Interest),
 		strings.TrimSpace(dto.Address),
 		dto.RecommendStudentID,
-		dto.CollectorStaffID,
-		dto.PhoneSellStaffID,
-		dto.ForegroundStaffID,
-		dto.ViceSellStaffID,
-		dto.StudentManagerID,
-		dto.AdvisorID,
 		strings.TrimSpace(dto.Remark),
 		dto.OperatorID,
 		*dto.StudentID,

@@ -154,10 +154,6 @@ type CurrentStudent struct {
 	Address            string     `json:"address,omitempty"`
 	CreateID           *int64     `json:"createId,omitempty"`
 	CreateName         string     `json:"createName,omitempty"`
-	StudentManagerID   *int64     `json:"studentManagerId,omitempty"`
-	StudentManagerName string     `json:"studentManagerName,omitempty"`
-	AdvisorID          *int64     `json:"advisorId,omitempty"`
-	AdvisorName        string     `json:"advisorName,omitempty"`
 	FollowUpStatus     *int       `json:"followUpStatus,omitempty"`
 }
 
@@ -229,14 +225,6 @@ type EnrolledStudent struct {
 	CreateID               *int64           `json:"createId,omitempty"`
 	CreateName             string           `json:"createName,omitempty"`
 	FollowUpStatus         *int             `json:"followUpStatus,omitempty"`
-	CollectorStaffID       *int64           `json:"collectorStaffId,omitempty"`
-	CollectorStaffName     string           `json:"collectorStaffName,omitempty"`
-	ForegroundStaffID      *int64           `json:"foregroundStaffId,omitempty"`
-	ForegroundStaffName    string           `json:"foregroundStaffName,omitempty"`
-	PhoneSellStaffID       *int64           `json:"phoneSellStaffId,omitempty"`
-	PhoneSellStaffName     string           `json:"phoneSellStaffName,omitempty"`
-	ViceSellStaffStaffID   *int64           `json:"viceSellStaffStaffId,omitempty"`
-	ViceSellStaffStaffName string           `json:"viceSellStaffStaffName,omitempty"`
 	FirstEnrolledTime      *time.Time       `json:"firstEnrolledTime,omitempty"`
 }
 
@@ -279,12 +267,6 @@ type StudentSaveDTO struct {
 	WeChatNumber       string       `json:"weChatNumber"`
 	RecommendStudentID *int64       `json:"recommendStudentId"`
 	SalespersonID      *int64       `json:"salespersonId"`
-	CollectorStaffID   *int64       `json:"collectorStaffId"`
-	PhoneSellStaffID   *int64       `json:"phoneSellStaffId"`
-	ForegroundStaffID  *int64       `json:"foregroundStaffId"`
-	ViceSellStaffID    *int64       `json:"viceSellStaffId"`
-	StudentManagerID   *int64       `json:"studentManagerId"`
-	AdvisorID          *int64       `json:"advisorId"`
 	CustomInfo         []CustomInfo `json:"customInfo,omitempty"`
 	Remark             string       `json:"remark"`
 }
