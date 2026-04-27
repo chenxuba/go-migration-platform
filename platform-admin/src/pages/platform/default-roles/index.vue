@@ -163,18 +163,19 @@
                 与权限管理口径一致：功能权限 + 数据权限
               </div>
             </div>
-            <a-button type="link" class="permission-panel__link" @click="toggleAllExpand">
+            <a-button type="link" class="permission-panel__link" :disabled="treeLoading || !filteredBoxList.length" @click="toggleAllExpand">
               {{ isAllExpanded ? '一键收起' : '一键展开' }}
               <component :is="isAllExpanded ? UpOutlined : DownOutlined" />
             </a-button>
           </div>
 
           <div class="permission-panel__toolbar">
-            <a-button v-if="canManageDefaultRoles" type="link" :disabled="!hasSelectedPermissions" @click="clearAllSelected">
+            <a-button v-if="canManageDefaultRoles" type="link" :disabled="treeLoading || !hasSelectedPermissions" @click="clearAllSelected">
               清空已选
             </a-button>
             <a-input
               v-model:value="searchValue"
+              :disabled="treeLoading"
               allow-clear
               placeholder="搜索权限点名称或权限描述"
             >
@@ -185,7 +186,7 @@
           </div>
 
           <div class="permission-panel__body">
-            <a-spin :spinning="treeLoading">
+            <a-spin :spinning="treeLoading" tip="正在加载权限...">
               <div v-if="filteredBoxList.length" class="permission-box">
                 <template v-for="(item, index) in filteredBoxList" :key="item.id">
                   <div class="permission-row permission-row--group" :class="{ 'permission-row--last': index === filteredBoxList.length - 1 }">
@@ -276,7 +277,7 @@
           <a-button @click="closeModal">
             取消
           </a-button>
-          <a-button v-if="canManageDefaultRoles" type="primary" :loading="submitting" @click="handleSubmit">
+          <a-button v-if="canManageDefaultRoles" type="primary" :loading="submitting" :disabled="treeLoading" @click="handleSubmit">
             保存
           </a-button>
         </div>
@@ -353,6 +354,8 @@ const searchKeyword = ref('')
 
 const treeLoading = ref(false)
 const permissionTypeMap = ref<Map<number, number>>(new Map())
+const permissionTreeLoadedPortal = ref<PortalEnum | null>(null)
+let permissionTreeRequest: Promise<boolean> | null = null
 
 const modalOpen = ref(false)
 const modalMode = ref<ModalMode>('create')
@@ -614,35 +617,78 @@ async function loadRoleList() {
   }
 }
 
-async function loadPermissionTree() {
-  treeLoading.value = true
-  try {
-    const res = await getPermissionTreeApi({ ownType: currentPortal.value })
-    if (res.code !== 200) {
-      messageService.error(res.message || '加载权限树失败')
-      updateData([])
+function invalidatePermissionTree() {
+  permissionTreeLoadedPortal.value = null
+  permissionTreeRequest = null
+  permissionTypeMap.value = new Map()
+  updateData([])
+}
+
+async function loadPermissionTree(options: { force?: boolean, showLoading?: boolean } = {}) {
+  const portal = currentPortal.value
+  if (!options.force && permissionTreeLoadedPortal.value === portal && boxList.value.length > 0)
+    return true
+
+  if (permissionTreeRequest)
+    return permissionTreeRequest
+
+  const shouldOwnLoading = options.showLoading !== false && !treeLoading.value
+  if (shouldOwnLoading)
+    treeLoading.value = true
+
+  permissionTreeRequest = (async () => {
+    if (permissionTreeLoadedPortal.value !== portal) {
       permissionTypeMap.value = new Map()
-      return
+      updateData([])
     }
 
-    const typeMap = new Map<number, number>()
-    const groups = mapPermissionTreeToGroups(Array.isArray(res.result) ? res.result : [], typeMap)
-    permissionTypeMap.value = typeMap
-    updateData(groups)
-  }
-  catch (error: any) {
-    messageService.error(error?.message || '加载权限树失败')
-    updateData([])
-    permissionTypeMap.value = new Map()
+    try {
+      const res = await getPermissionTreeApi({ ownType: portal })
+      if (res.code !== 200) {
+        messageService.error(res.message || '加载权限树失败')
+        updateData([])
+        permissionTypeMap.value = new Map()
+        permissionTreeLoadedPortal.value = null
+        return false
+      }
+
+      const typeMap = new Map<number, number>()
+      const groups = mapPermissionTreeToGroups(Array.isArray(res.result) ? res.result : [], typeMap)
+      permissionTypeMap.value = typeMap
+      updateData(groups)
+      permissionTreeLoadedPortal.value = portal
+      return true
+    }
+    catch (error: any) {
+      messageService.error(error?.message || '加载权限树失败')
+      updateData([])
+      permissionTypeMap.value = new Map()
+      permissionTreeLoadedPortal.value = null
+      return false
+    }
+    finally {
+      permissionTreeRequest = null
+      if (shouldOwnLoading)
+        treeLoading.value = false
+    }
+  })()
+
+  return permissionTreeRequest
+}
+
+async function loadPortalData() {
+  await loadRoleList()
+}
+
+async function hydrateCreateModal() {
+  treeLoading.value = true
+  try {
+    await loadPermissionTree({ showLoading: false })
+    clearAllSelected()
   }
   finally {
     treeLoading.value = false
   }
-}
-
-async function loadPortalData() {
-  await loadPermissionTree()
-  await loadRoleList()
 }
 
 async function handlePortalChange(value: number) {
@@ -650,6 +696,7 @@ async function handlePortalChange(value: number) {
   keywordInput.value = ''
   searchKeyword.value = ''
   searchValue.value = ''
+  invalidatePermissionTree()
   await loadPortalData()
 }
 
@@ -678,17 +725,24 @@ function openCreateModal() {
   modalMode.value = 'create'
   resetForm()
   modalOpen.value = true
+  hydrateCreateModal()
 }
 
 async function openEditModal(record: DefaultRoleRecord) {
   modalMode.value = 'edit'
   resetForm()
+  formData.roleId = record.roleId
+  formData.roleName = String(record.roleName || '').trim()
+  modalOpen.value = true
   treeLoading.value = true
   try {
-    const [detailRes, menuRes] = await Promise.all([
+    const [treeReady, detailRes, menuRes] = await Promise.all([
+      loadPermissionTree({ showLoading: false }),
       getDefaultRoleDetailApi({ roleId: record.roleId }),
       getRoleMenuIDsApi({ roleId: record.roleId, ownType: currentPortal.value }),
     ])
+    if (!treeReady)
+      return
     if (detailRes.code !== 200) {
       messageService.error(detailRes.message || '加载角色详情失败')
       return
@@ -706,7 +760,6 @@ async function openEditModal(record: DefaultRoleRecord) {
     const checkedMenuIDs = normalizeMenuIDs(Array.isArray(menuRes.result) ? menuRes.result : [])
       .filter(menuID => allowedSet.has(menuID))
     setDefaultCheckedByIds(checkedMenuIDs)
-    modalOpen.value = true
   }
   catch (error: any) {
     messageService.error(error?.message || '加载角色详情失败')
