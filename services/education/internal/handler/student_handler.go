@@ -976,6 +976,10 @@ func (handler *Handler) birthdayStudentsPage(w http.ResponseWriter, r *http.Requ
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
+	for idx := range result.Items {
+		result.Items[idx].AvatarURL = normalizeStudentAvatar(result.Items[idx].AvatarURL, result.Items[idx].StuSex)
+		result.Items[idx].Mobile = maskPhone(result.Items[idx].Mobile)
+	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 

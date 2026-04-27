@@ -38,6 +38,14 @@ const props = defineProps({
     type: String,
     default: '创建时间',
   },
+  birthdayLabel: {
+    type: String,
+    default: '生日',
+  },
+  birthdayFutureMode: {
+    type: Boolean,
+    default: false,
+  },
   studentStatus: {
     type: Number,
     default: null,
@@ -557,6 +565,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:lastEditedTimeFilter', 'update:channelPositionRoleFilter', 'update:channelUserType',
   'update:channelIsTeacherFilter',
   'update:channelIsSupervisorFilter',
+  'update:birthMonthFilter',
   'update:channelAccountStatus', 'update:performanceAllocationStatusFilter',
   'update:enableStatusFilter',
   'update:orderTypeFilter', 'update:orderTagFilter', 'update:enrollTypeFilter', 'update:productTypeFilter', 'update:approveNumberFilter', 'update:approvalStatusFilter', 'update:leaveTypeFilter', 'update:finishTimeFilter', 'update:departmentFilter', 'staff-search', 'update:createUserFilter',
@@ -916,6 +925,7 @@ const lastClassTimeVals = ref([])
 const createTimeVals = ref([])
 const finishTimeVals = ref([])
 const birthdayVals = ref([]) // 新增生日值
+const birthMonthVals = ref(null)
 const approveNumberVals = ref('')
 const orderNumberVals = ref('')
 const wxChatVals = ref('') // 新增微信号值
@@ -1468,6 +1478,10 @@ const studentStatusOptions = ref([
   { id: 2, value: '历史学员' },
 ])
 const selectStudentStatusVals = ref(1) // 默认选中在读学员
+const birthMonthOptions = ref(Array.from({ length: 12 }, (_, index) => ({
+  id: index + 1,
+  value: `${index + 1}月`,
+})))
 // 账号状态
 const accountStatusOptions = ref([
   { id: '0', value: '在职中' },
@@ -1990,6 +2004,12 @@ function handleBirthdayChange(e) {
   nextTick(() => {
     // console.log("生日:", e);
     emit('update:birthdayFilter', e)
+  })
+}
+
+function handleBirthMonthChange(e) {
+  nextTick(() => {
+    emit('update:birthMonthFilter', e)
   })
 }
 
@@ -3081,7 +3101,7 @@ const selectedConditions = computed(() => {
     },
     {
       type: 'birthday',
-      label: '生日',
+      label: props.birthdayLabel,
       show: props.displayArray.includes('birthday'),
       values:
         birthdayVals.value.length === 2
@@ -3092,6 +3112,14 @@ const selectedConditions = computed(() => {
             },
           ]
           : [],
+    },
+    {
+      type: 'birthMonth',
+      label: '生日月份',
+      show: props.displayArray.includes('birthMonth'),
+      values: birthMonthOptions.value.filter(
+        opt => opt.id === birthMonthVals.value,
+      ),
     },
     {
       type: 'approveNumber',
@@ -3751,6 +3779,7 @@ watch(classTeacherVals, () => (lastUpdated.classTeacher = Date.now()))
 watch(lastClassTimeVals, () => (lastUpdated.lastClassTime = Date.now()))
 watch(createTimeVals, () => (lastUpdated.createTime = Date.now()))
 watch(birthdayVals, () => (lastUpdated.birthday = Date.now())) // 添加生日的watch
+watch(birthMonthVals, () => (lastUpdated.birthMonth = Date.now()))
 watch(assignTimeVals, () => (lastUpdated.assignTime = Date.now()))
 watch(followTimeVals, () => (lastUpdated.followTime = Date.now()))
 watch(lastFollowTimeVals, () => (lastUpdated.lastFollowTime = Date.now()))
@@ -3991,6 +4020,7 @@ const clearAll = debounce(() => {
     leaveTypeVals,
     orderSourceVals,
   ].forEach(ref => (ref.value = []))
+  birthMonthVals.value = null
 
   // 使用nextTick确保所有状态更新完成后再一次性发出所有更新事件
   nextTick(() => {
@@ -4041,6 +4071,7 @@ const clearAll = debounce(() => {
     emit('update:lastEditedTimeFilter', [], true)
     emit('update:finishTimeFilter', [], true)
     emit('update:birthdayFilter', undefined, true)
+    emit('update:birthMonthFilter', undefined, true)
     emit('update:lastFollowTimeFilter', undefined, true)
     emit('update:channelAccountStatus', undefined, true)
     emit('update:channelUserType', undefined, true)
@@ -4708,6 +4739,10 @@ function removeCondition(type, id) {
       // birthdayVals.value = [];
       emit('update:birthdayFilter', [], false, id, type)
       break
+    case 'birthMonth':
+      birthMonthVals.value = null
+      emit('update:birthMonthFilter', undefined, false, id, type)
+      break
     case 'trialPurchaseStatus':
       trialPurchaseStatusVals.value = []
       break
@@ -4859,6 +4894,9 @@ function clearQuickFilter(id, type) {
       break
     case 'birthday':
       birthdayVals.value = []
+      break
+    case 'birthMonth':
+      birthMonthVals.value = null
       break
     case 'lastFollowTime':
       lastFollowTimeVals.value = []
@@ -6579,8 +6617,19 @@ defineExpose({
                 :label="lastEditedTimeLabel" type="dateTime" @date-picker-change="handlelastEditedTimeChange" />
 
               <!-- 生日 -->
-              <checkbox-filter v-if="filterType === 'birthday'" v-model:checked-values="birthdayVals" label="生日"
-                type="dateTime" @date-picker-change="handleBirthdayChange" />
+              <checkbox-filter
+                v-if="filterType === 'birthday'"
+                v-model:checked-values="birthdayVals"
+                :label="birthdayLabel"
+                :type="birthdayFutureMode ? 'dateTimeQuick' : 'dateTime'"
+                :quick-preset-mode="birthdayFutureMode ? 'futureDays' : 'default'"
+                @date-picker-change="handleBirthdayChange"
+              />
+
+              <!-- 生日月份 -->
+              <checkbox-filter v-if="filterType === 'birthMonth'" :ref="(el) => handleRef(el, 'birthMonth')"
+                v-model:checked-values="birthMonthVals" category="noSearchRadio" placeholder="选择生日月份"
+                :options="birthMonthOptions" label="生日月份" type="radio" @radio-change="handleBirthMonthChange" />
 
               <checkbox-filter v-if="filterType === 'approveNumber'" :ref="(el) => handleRef(el, 'approveNumber')"
                 v-model:checked-values="approveNumberVals" placeholder="请输入审批编号" label="审批编号" type="inputType"

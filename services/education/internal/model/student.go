@@ -135,26 +135,26 @@ type CurrentStudentFilters struct {
 }
 
 type CurrentStudent struct {
-	ID                 int64      `json:"id"`
-	StuName            string     `json:"stuName"`
-	Mobile             string     `json:"mobile"`
-	StudentStatus      int        `json:"studentStatus"`
-	SalePerson         *int64     `json:"salePerson,omitempty"`
-	SalePersonName     string     `json:"salePersonName,omitempty"`
-	ChannelID          *int64     `json:"channelId,omitempty"`
-	ChannelName        string     `json:"channelName,omitempty"`
-	CreateTime         time.Time  `json:"createTime"`
-	FirstReadTime      *time.Time `json:"firstReadTime,omitempty"`
-	FollowUpTime       *time.Time `json:"followUpTime,omitempty"`
-	BirthDay           *time.Time `json:"birthDay,omitempty"`
-	Grade              string     `json:"grade,omitempty"`
-	WeChatNumber       string     `json:"weChatNumber,omitempty"`
-	StudySchool        string     `json:"studySchool,omitempty"`
-	Interest           string     `json:"interest,omitempty"`
-	Address            string     `json:"address,omitempty"`
-	CreateID           *int64     `json:"createId,omitempty"`
-	CreateName         string     `json:"createName,omitempty"`
-	FollowUpStatus     *int       `json:"followUpStatus,omitempty"`
+	ID             int64      `json:"id"`
+	StuName        string     `json:"stuName"`
+	Mobile         string     `json:"mobile"`
+	StudentStatus  int        `json:"studentStatus"`
+	SalePerson     *int64     `json:"salePerson,omitempty"`
+	SalePersonName string     `json:"salePersonName,omitempty"`
+	ChannelID      *int64     `json:"channelId,omitempty"`
+	ChannelName    string     `json:"channelName,omitempty"`
+	CreateTime     time.Time  `json:"createTime"`
+	FirstReadTime  *time.Time `json:"firstReadTime,omitempty"`
+	FollowUpTime   *time.Time `json:"followUpTime,omitempty"`
+	BirthDay       *time.Time `json:"birthDay,omitempty"`
+	Grade          string     `json:"grade,omitempty"`
+	WeChatNumber   string     `json:"weChatNumber,omitempty"`
+	StudySchool    string     `json:"studySchool,omitempty"`
+	Interest       string     `json:"interest,omitempty"`
+	Address        string     `json:"address,omitempty"`
+	CreateID       *int64     `json:"createId,omitempty"`
+	CreateName     string     `json:"createName,omitempty"`
+	FollowUpStatus *int       `json:"followUpStatus,omitempty"`
 }
 
 type EnrolledStudentQueryDTO struct {
@@ -190,38 +190,39 @@ type EnrolledStudentFilter struct {
 }
 
 type EnrolledStudent struct {
-	ID                     int64            `json:"id"`
-	StuName                string           `json:"stuName"`
-	AvatarURL              string           `json:"avatarUrl,omitempty"`
-	StuSex                 *int             `json:"stuSex,omitempty"`
-	Mobile                 string           `json:"mobile"`
-	PhoneRelationship      *int             `json:"phoneRelationship,omitempty"`
-	IsCollect              bool             `json:"isCollect"`
-	IsBindChild            bool             `json:"isBindChild"`
-	StudentStatus          int              `json:"studentStatus"`
-	CreateTime             *time.Time       `json:"createTime,omitempty"`
-	ChannelID              *int64           `json:"channelId,omitempty"`
-	ChannelName            string           `json:"channelName,omitempty"`
-	FollowUpTime           *time.Time       `json:"followUpTime,omitempty"`
-	BirthDay               *time.Time       `json:"birthDay,omitempty"`
-	WeChatNumber           string           `json:"weChatNumber,omitempty"`
-	SecondPhoneNumber      string           `json:"secondPhoneNumber,omitempty"`
-	StudySchool            string           `json:"studySchool,omitempty"`
-	Grade                  string           `json:"grade,omitempty"`
-	Interest               string           `json:"interest,omitempty"`
-	Address                string           `json:"address,omitempty"`
-	RecommendStudentID     *int64           `json:"recommendStudentId,omitempty"`
-	RecommendStudentName   string           `json:"recommendStudentName,omitempty"`
-	Remark                 string           `json:"remark,omitempty"`
-	SalesAssignedTime      *time.Time       `json:"salesAssignedTime,omitempty"`
-	SalePerson             *int64           `json:"salePerson,omitempty"`
-	SalePersonName         string           `json:"salePersonName,omitempty"`
-	CustomInfo             []map[string]any `json:"customInfo,omitempty"`
-	IsCrossSchoolStudent   bool             `json:"isCrossSchoolStudent"`
-	CreateID               *int64           `json:"createId,omitempty"`
-	CreateName             string           `json:"createName,omitempty"`
-	FollowUpStatus         *int             `json:"followUpStatus,omitempty"`
-	FirstEnrolledTime      *time.Time       `json:"firstEnrolledTime,omitempty"`
+	ID                   int64            `json:"id"`
+	StuName              string           `json:"stuName"`
+	AvatarURL            string           `json:"avatarUrl,omitempty"`
+	StuSex               *int             `json:"stuSex,omitempty"`
+	Mobile               string           `json:"mobile"`
+	PhoneRelationship    *int             `json:"phoneRelationship,omitempty"`
+	IsCollect            bool             `json:"isCollect"`
+	IsBindChild          bool             `json:"isBindChild"`
+	StudentStatus        int              `json:"studentStatus"`
+	CreateTime           *time.Time       `json:"createTime,omitempty"`
+	ChannelID            *int64           `json:"channelId,omitempty"`
+	ChannelName          string           `json:"channelName,omitempty"`
+	FollowUpTime         *time.Time       `json:"followUpTime,omitempty"`
+	BirthDay             *time.Time       `json:"birthDay,omitempty"`
+	WeChatNumber         string           `json:"weChatNumber,omitempty"`
+	SecondPhoneNumber    string           `json:"secondPhoneNumber,omitempty"`
+	StudySchool          string           `json:"studySchool,omitempty"`
+	Grade                string           `json:"grade,omitempty"`
+	Interest             string           `json:"interest,omitempty"`
+	Address              string           `json:"address,omitempty"`
+	RecommendStudentID   *int64           `json:"recommendStudentId,omitempty"`
+	RecommendStudentName string           `json:"recommendStudentName,omitempty"`
+	Remark               string           `json:"remark,omitempty"`
+	SalesAssignedTime    *time.Time       `json:"salesAssignedTime,omitempty"`
+	SalePerson           *int64           `json:"salePerson,omitempty"`
+	SalePersonName       string           `json:"salePersonName,omitempty"`
+	SupervisorName       string           `json:"supervisorName,omitempty"`
+	CustomInfo           []map[string]any `json:"customInfo,omitempty"`
+	IsCrossSchoolStudent bool             `json:"isCrossSchoolStudent"`
+	CreateID             *int64           `json:"createId,omitempty"`
+	CreateName           string           `json:"createName,omitempty"`
+	FollowUpStatus       *int             `json:"followUpStatus,omitempty"`
+	FirstEnrolledTime    *time.Time       `json:"firstEnrolledTime,omitempty"`
 }
 
 type StudentStatusUpdateDTO struct {
@@ -306,7 +307,11 @@ type BirthdayStudentQueryDTO struct {
 type BirthdayFilters struct {
 	StudentManagerID *int64 `json:"studentManagerId"`
 	AdvisorID        *int64 `json:"advisorId"`
+	Sexes            []int  `json:"sexes"`
+	StudentStatuses  []int  `json:"studentStatuses"`
 	BirthMonth       *int   `json:"birthMonth"`
+	BirthDayBegin    string `json:"birthDayBegin"`
+	BirthDayEnd      string `json:"birthDayEnd"`
 	AgeMin           *int   `json:"ageMin"`
 	AgeMax           *int   `json:"ageMax"`
 }

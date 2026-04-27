@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -456,11 +457,58 @@ func (repo *Repository) PageBirthdayStudents(ctx context.Context, instID int64, 
 	}
 	offset := (current - 1) * size
 
+	nextBirthdayExpr := `
+		STR_TO_DATE(
+			CONCAT(
+				YEAR(CURDATE()) + (DATE_FORMAT(s.birthday, '%m-%d') < DATE_FORMAT(CURDATE(), '%m-%d')),
+				'-',
+				DATE_FORMAT(s.birthday, '%m-%d')
+			),
+			'%Y-%m-%d'
+		)
+	`
+
 	filters := []string{"s.inst_id = ?", "s.del_flag = 0"}
 	args := []any{instID}
+	if len(query.QueryModel.Sexes) > 0 {
+		placeholders := make([]string, 0, len(query.QueryModel.Sexes))
+		for _, sex := range query.QueryModel.Sexes {
+			placeholders = append(placeholders, "?")
+			args = append(args, sex)
+		}
+		filters = append(filters, "s.stu_sex IN ("+strings.Join(placeholders, ",")+")")
+	}
+	if len(query.QueryModel.StudentStatuses) > 0 {
+		placeholders := make([]string, 0, len(query.QueryModel.StudentStatuses))
+		for _, status := range query.QueryModel.StudentStatuses {
+			placeholders = append(placeholders, "?")
+			args = append(args, status)
+		}
+		filters = append(filters, "IFNULL(s.student_status, 0) IN ("+strings.Join(placeholders, ",")+")")
+	}
 	if query.QueryModel.BirthMonth != nil {
 		filters = append(filters, "MONTH(s.birthday) = ?")
 		args = append(args, *query.QueryModel.BirthMonth)
+	}
+	if from := parseDateStart(query.QueryModel.BirthDayBegin); from != nil {
+		filters = append(filters, nextBirthdayExpr+" >= ?")
+		args = append(args, *from)
+	}
+	if to := parseDateEnd(query.QueryModel.BirthDayEnd); to != nil {
+		filters = append(filters, nextBirthdayExpr+" <= ?")
+		args = append(args, *to)
+	}
+	if query.QueryModel.BirthMonth == nil && strings.TrimSpace(query.QueryModel.BirthDayBegin) == "" && strings.TrimSpace(query.QueryModel.BirthDayEnd) == "" {
+		filters = append(filters, nextBirthdayExpr+" BETWEEN CURDATE() AND ?")
+		args = append(args, time.Now().AddDate(0, 0, 30))
+	}
+	if query.QueryModel.AgeMin != nil {
+		filters = append(filters, "s.birthday IS NOT NULL AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) >= ?")
+		args = append(args, *query.QueryModel.AgeMin)
+	}
+	if query.QueryModel.AgeMax != nil {
+		filters = append(filters, "s.birthday IS NOT NULL AND TIMESTAMPDIFF(YEAR, s.birthday, CURDATE()) <= ?")
+		args = append(args, *query.QueryModel.AgeMax)
 	}
 	whereClause := strings.Join(filters, " AND ")
 
@@ -477,7 +525,7 @@ func (repo *Repository) PageBirthdayStudents(ctx context.Context, instID int64, 
 		       IFNULL(s.student_status, 0), s.birthday
 		FROM inst_student s
 		WHERE `+whereClause+`
-		ORDER BY s.birthday ASC, s.id DESC
+		ORDER BY `+nextBirthdayExpr+` ASC, s.id DESC
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.BirthdayStudentQueryVO]{}, err

@@ -28,6 +28,7 @@ export interface EnrolledStudentInfo {
   salesAssignedTime?: string
   salePerson?: string
   salePersonName?: string
+  supervisorName?: string
   customInfo?: Array<{
     fieldId: number
     fieldName: string

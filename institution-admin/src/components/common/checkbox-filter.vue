@@ -55,6 +55,10 @@ const props = defineProps({
     type: Boolean,
     default: false,
   },
+  quickPresetMode: {
+    type: String,
+    default: 'default',
+  },
 })
 
 const emit = defineEmits(['update:checkedValues', 'change', 'radioChange', 'datePickerChange', 'inputChange', 'dropdownVisibleChange', 'onDropdownVisibleChange', 'onSearch', 'loadMore'])
@@ -96,6 +100,21 @@ function disabledDateBefore(current) {
     ? new Date(specifiedDate.value.setHours(0, 0, 0, 0))
     : null
   return (specDate && currentDate < specDate)
+}
+
+// 禁用条件：仅允许选择今天及未来日期；结束日期仍不能早于开始日期
+function disabledDateFuture(current) {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+
+  const currentDate = new Date(current)
+  currentDate.setHours(0, 0, 0, 0)
+
+  const minDate = specifiedDate.value
+    ? new Date(specifiedDate.value.setHours(0, 0, 0, 0))
+    : today
+
+  return currentDate < minDate
 }
 
 // 含未来时间
@@ -164,6 +183,45 @@ const rangePresetsNot = ref([
     value: [dayjs('2020-01-01'), dayjs()],
   },
 ])
+const futureBirthdayPresets = ref([
+  {
+    label: '7天以内',
+    value: [dayjs().startOf('day'), dayjs().add(7, 'day').endOf('day')],
+  },
+  {
+    label: '15天以内',
+    value: [dayjs().startOf('day'), dayjs().add(15, 'day').endOf('day')],
+  },
+  {
+    label: '30天以内',
+    value: [dayjs().startOf('day'), dayjs().add(30, 'day').endOf('day')],
+  },
+])
+
+const quickPresetTags = computed(() => {
+  if (props.quickPresetMode === 'futureDays') {
+    return [
+      { label: '7天以内', color: 'pink' },
+      { label: '15天以内', color: 'red' },
+      { label: '30天以内', color: 'orange' },
+    ]
+  }
+
+  return [
+    { label: '本周', color: 'pink' },
+    { label: '上周', color: 'red' },
+    { label: '本月', color: 'orange' },
+    { label: '上月', color: 'green' },
+    { label: '截止昨日', color: 'cyan' },
+  ]
+})
+
+const resolvedQuickPresets = computed(() => {
+  if (props.quickPresetMode === 'futureDays')
+    return futureBirthdayPresets.value
+
+  return props.disableFutureDate ? rangePresetsNot.value : rangePresets.value
+})
 function calendarChangeFun(e) {
   specifiedDate.value = new Date(e[0])
 }
@@ -634,25 +692,13 @@ function handleScroll(e) {
       </div>
       <DownOutlined v-else :style="{ fontSize: '10px' }" />
       <a-range-picker :key="pickerKey" v-model:value="selectDates" value-format="YYYY-MM-DD"
-        :disabled-date="disableFutureDate ? disabledDate : disabledDateBefore" popup-class-name="picker-wrapper dateTimeQuick" :open="visible"
-        :presets="disableFutureDate ? rangePresetsNot : rangePresets" @calendar-change="calendarChangeFun" @change="handleRangePicker"
+        :disabled-date="quickPresetMode === 'futureDays' ? disabledDateFuture : (disableFutureDate ? disabledDate : disabledDateBefore)" popup-class-name="picker-wrapper dateTimeQuick" :open="visible"
+        :presets="resolvedQuickPresets" @calendar-change="calendarChangeFun" @change="handleRangePicker"
         @panel-change="handlePanelChange">
         <template #renderExtraFooter>
           <div v-if="!isYearOrMonthPanel" class="pl-3.5">
-            <a-tag color="pink">
-              本周
-            </a-tag>
-            <a-tag color="red">
-              上周
-            </a-tag>
-            <a-tag color="orange">
-              本月
-            </a-tag>
-            <a-tag color="green">
-              上月
-            </a-tag>
-            <a-tag color="cyan">
-              截至昨日
+            <a-tag v-for="preset in quickPresetTags" :key="preset.label" :color="preset.color">
+              {{ preset.label }}
             </a-tag>
             <a-tag color="#e6f4ff" class="cursor-pointer ml-8 reset-btn" @click="resetPicker">
               重置

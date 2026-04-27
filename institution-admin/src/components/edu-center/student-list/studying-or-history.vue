@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { debounce } from 'lodash-es'
 import { DownOutlined, ExclamationCircleOutlined, InfoCircleOutlined } from '@ant-design/icons-vue'
 import { Empty } from 'ant-design-vue'
@@ -10,11 +10,12 @@ import {
   getEnrolledStudentExportRecordsApi,
   getEnrolledStudentListApi,
 } from '~@/api/edu-center/enrolled-student'
+import { getInstConfigModuleApi } from '@/api/common/config'
 import { useStudentFields } from '@/composables/useStudentFields'
 import { useTableColumns } from '@/composables/useTableColumns'
 import { useRouter } from 'vue-router'
 import { calculateAge } from '@/utils/date'
-import { ParentRelationshipLabel } from '@/enums'
+import { ParentRelationshipLabel, StudentStatus, StudentStatusLabel } from '@/enums'
 import messageService from '~@/utils/messageService'
 import emitter, { EVENTS } from '~@/utils/eventBus'
 import { useStudentListRefresh } from '@/composables/useStudentListRefresh'
@@ -48,6 +49,7 @@ const exportConditionItems = ref([])
 const exportSubmitting = ref(false)
 const exportRecordsLoading = ref(false)
 const exportRecords = ref([])
+const supervisorEnabled = ref(false)
 
 const exportPreviewColumns = [
   { title: '学员姓名', dataIndex: 'stuName', key: 'stuName' },
@@ -182,7 +184,7 @@ const allColumns = ref([
     width: 120,
   },
   {
-    title: '销售',
+    title: '销售员',
     key: 'salePersonName',
     dataIndex: 'salePersonName',
     width: 100,
@@ -196,6 +198,15 @@ const allColumns = ref([
     required: true,
   },
 ])
+
+const supervisorColumn = {
+  title: '督导',
+  key: 'supervisorName',
+  dataIndex: 'supervisorName',
+  width: 100,
+  isDynamic: true,
+  columnLabel: '督导',
+}
 
 // 系统默认可显示字段列表
 const systemDefaultIsDisplayCodeList = ref([
@@ -287,16 +298,41 @@ watch(callCustomIsDisplayList, (newList) => {
 function updateDynamicColumns() {
   // 获取所有非动态的基础列
   const baseColumns = allColumns.value.filter(col => !col.isDynamic)
+  const salePersonColumnIndex = baseColumns.findIndex(col => col.key === 'salePersonName')
 
   // 合并所有需要显示的动态列
   const visibleSystemColumns = systemDefaultIsDisplayCodeList.value.filter(item => item.show)
-  const allDynamicColumns = [...visibleSystemColumns, ...customIsDisplayCodeList.value]
+  const trailingDynamicColumns = [...visibleSystemColumns, ...customIsDisplayCodeList.value]
+
+  const columnsWithSupervisor = (() => {
+    if (!supervisorEnabled.value || salePersonColumnIndex === -1)
+      return baseColumns
+
+    return [
+      ...baseColumns.slice(0, salePersonColumnIndex),
+      supervisorColumn,
+      ...baseColumns.slice(salePersonColumnIndex),
+    ]
+  })()
 
   // 重新组装列顺序：基础列 -> 动态列
   allColumns.value = [
-    ...baseColumns,
-    ...allDynamicColumns,
+    ...columnsWithSupervisor,
+    ...trailingDynamicColumns,
   ]
+
+  void nextTick(() => {
+    if (!supervisorEnabled.value) {
+      if (selectedValues.value.includes(supervisorColumn.key)) {
+        selectedValues.value = selectedValues.value.filter(key => key !== supervisorColumn.key)
+      }
+      return
+    }
+
+    if (!selectedValues.value.includes(supervisorColumn.key)) {
+      selectedValues.value = [...selectedValues.value, supervisorColumn.key]
+    }
+  })
 }
 
 const rowSelection = {
@@ -610,6 +646,27 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
     defaultSelectedKeys: ['mobile', 'isBindChild', 'isCollect', 'studentStatus', 'createName', 'createTime', 'firstEnrolledTime', 'channelName', 'birthDay', 'salePersonName', 'followUpTime'],
   })
 
+function isConfigEnabled(value) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return false
+}
+
+async function loadSupervisorConfig() {
+  try {
+    const res = await getInstConfigModuleApi('enrollment')
+    supervisorEnabled.value = isConfigEnabled(res.result?.enableSupervisor)
+    updateDynamicColumns()
+  }
+  catch (error) {
+    console.error('获取督导配置失败:', error)
+  }
+}
+
 function handleImportExportAction({ key }) {
   switch (key) {
     case '1':
@@ -797,9 +854,18 @@ function formatBirthday(value) {
   return date.isValid() ? date.format('YYYY-MM-DD') : value
 }
 
+function getStudentStatusClass(status) {
+  if (status === StudentStatus.Intention)
+    return 'is-intention'
+  if (status === StudentStatus.History)
+    return 'is-history'
+  return 'is-reading'
+}
+
 onMounted(() => {
   getEnrolledStudentList()
   getAllStuFields({ filter: 3 })
+  loadSupervisorConfig()
   getCustomField().then((res) => {
     callCustomIsDisplayList.value = res
     customIsDisplayCodeList.value = res.map(item => ({
@@ -996,9 +1062,9 @@ defineExpose({
                 </a-tooltip>
               </template>
               <template v-if="column.key === 'studentStatus'">
-                <div class="flex flex-items-center studentStatus">
-                  <span :class="record.studentStatus === 1?'dot':'lishidot'" />
-                  <span>{{ record.studentStatus === 1 ? '在读学员' : '历史学员' }}</span>
+                <div class="status-cell" :class="getStudentStatusClass(record.studentStatus)">
+                  <span class="dot" />
+                  <span>{{ StudentStatusLabel[record.studentStatus] || '-' }}</span>
                 </div>
               </template>
               <template v-if="column.key === 'createName'">
@@ -1030,6 +1096,9 @@ defineExpose({
               </template>
               <template v-if="column.key === 'salePersonName'">
                 <clamped-text :text="record.salePersonName || '-'" />
+              </template>
+              <template v-if="column.key === 'supervisorName'">
+                <clamped-text :text="record.supervisorName || '-'" />
               </template>
               <template v-if="column.key === 'followUpTime'">
                 <clamped-text :text="formatTime(record.followUpTime)" />
@@ -1204,27 +1273,25 @@ defineExpose({
   }
 }
 
-.studentStatus {
+.status-cell {
+  display: inline-flex;
+  align-items: center;
+  color: #222;
 
-  span.dot {
-    border-radius: 50%;
-    display: inline-block;
-    height: 6px;
-    position: relative;
-    vertical-align: middle;
+  .dot {
     width: 6px;
-    margin-right: 4px;
-    background: var(--pro-ant-color-primary);
+    height: 6px;
+    margin-right: 6px;
+    border-radius: 999px;
+    background: #52c41a;
   }
-  span.lishidot{
-    border-radius: 50%;
-    display: inline-block;
-    height: 6px;
-    position: relative;
-    vertical-align: middle;
-    width: 6px;
-    margin-right: 4px;
-    background: #888;
+
+  &.is-intention .dot {
+    background: #faad14;
+  }
+
+  &.is-history .dot {
+    background: #d9d9d9;
   }
 }
 

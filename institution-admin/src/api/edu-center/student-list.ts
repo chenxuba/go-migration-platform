@@ -252,6 +252,43 @@ export async function downloadStudentLessonArrearExportRecordApi(recordId: numbe
   })
 }
 
+export interface BirthdayStudentItem {
+  id?: string
+  stuName?: string
+  avatarUrl?: string
+  stuSex?: number
+  mobile?: string
+  phoneRelationship?: number
+  studentStatus?: number
+  birthDay?: string
+  studentManagerId?: string
+  studentManagerName?: string
+  advisorId?: string
+  advisorName?: string
+}
+
+export interface BirthdayStudentQueryParams {
+  pageRequestModel: {
+    pageSize: number
+    pageIndex: number
+    needTotal?: boolean
+    skipCount?: number
+  }
+  queryModel?: {
+    sexes?: number[]
+    studentStatuses?: number[]
+    birthMonth?: number
+    birthDayBegin?: string
+    birthDayEnd?: string
+    ageMin?: number
+    ageMax?: number
+  }
+}
+
+export function getBirthdayStudentPagedListApi(data: BirthdayStudentQueryParams) {
+  return usePost<BirthdayStudentItem[]>('/api/v1/birthday-students/page', data)
+}
+
 export interface PendingAttentionStudentQueryParams {
   pageRequestModel: {
     pageSize: number

@@ -1575,13 +1575,14 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 		       s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.student_status, s.create_time, s.channel_id, IFNULL(c.channel_name, ''),
 		       s.last_follow_up_time, s.birthday, IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''),
 		       IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''), s.recommend_student_id,
-		       IFNULL(s1.stu_name, ''), IFNULL(s.remark, ''), s.sale_assigned_time, s.sale_person, IFNULL(u3.nick_name, ''),
+		       IFNULL(s1.stu_name, ''), IFNULL(s.remark, ''), s.sale_assigned_time, s.sale_person, IFNULL(u3.nick_name, ''), IFNULL(u9.nick_name, ''),
 		       s.create_id, IFNULL(u8.nick_name, ''), s.follow_up_status,
 		       (SELECT MIN(so.create_time) FROM sale_order so WHERE so.student_id = s.id AND so.del_flag = 0)
 		FROM inst_student s
 		LEFT JOIN inst_channel c ON c.id = s.channel_id
 		LEFT JOIN inst_student s1 ON s1.id = s.recommend_student_id
 		LEFT JOIN inst_user u3 ON u3.id = s.sale_person
+		LEFT JOIN inst_user u9 ON u9.id = s.supervisor_id
 		LEFT JOIN inst_user u8 ON u8.id = s.create_id
 		WHERE `+whereClause+`
 		ORDER BY s.create_time DESC
@@ -1601,6 +1602,7 @@ func (repo *Repository) PageEnrolledStudents(ctx context.Context, instID int64, 
 			&followUpTime, &birthDay, &item.WeChatNumber, &item.StudySchool,
 			&item.Grade, &item.Interest, &item.Address, &item.RecommendStudentID,
 			&item.RecommendStudentName, &item.Remark, &salesAssignedTime, &item.SalePerson, &item.SalePersonName,
+			&item.SupervisorName,
 			&item.CreateID, &item.CreateName, &item.FollowUpStatus, &firstEnrolledTime,
 		); err != nil {
 			return model.PageResult[model.EnrolledStudent]{}, err
