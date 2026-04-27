@@ -124,22 +124,18 @@ func (repo *Repository) GetStudentDetailView(ctx context.Context, instID, studen
 			NULL,
 			IFNULL(s.create_id, 0),
 			IFNULL(creator.nick_name, ''),
-			IFNULL(s.collector_staff_id, 0),
-			IFNULL(collector.nick_name, ''),
-			IFNULL(s.phone_sell_staff_id, 0),
-			IFNULL(phone_sell.nick_name, ''),
-			IFNULL(s.foreground_staff_id, 0),
-			IFNULL(foreground.nick_name, ''),
-			IFNULL(s.vice_sell_staff_id, 0),
-			IFNULL(vice.nick_name, ''),
+			0,
+			'',
+			0,
+			'',
+			0,
+			'',
+			0,
+			'',
 			IFNULL(s.student_status, 0)
 		FROM inst_student s
 		LEFT JOIN inst_user sale ON sale.id = s.sale_person
 		LEFT JOIN inst_user creator ON creator.id = s.create_id
-		LEFT JOIN inst_user collector ON collector.id = s.collector_staff_id
-		LEFT JOIN inst_user phone_sell ON phone_sell.id = s.phone_sell_staff_id
-		LEFT JOIN inst_user foreground ON foreground.id = s.foreground_staff_id
-		LEFT JOIN inst_user vice ON vice.id = s.vice_sell_staff_id
 		WHERE s.inst_id = ? AND s.id = ? AND s.del_flag = 0
 		LIMIT 1
 	`, instID, studentID)

@@ -566,9 +566,11 @@ onMounted(() => {
     <div class="homework-panel bg-white rounded-4 mt-3 px-5 py-4">
       <div class="homework-panel__header">
         <div class="homework-panel__summary">
-          <div class="homework-panel__title">
-            共 {{ pagination.total }} 个课后任务
-          </div>
+          <custom-title
+            :title="`当前共计 ${pagination.total} 个课后任务`"
+            font-size="14px"
+            class="homework-panel__title"
+          />
         </div>
 
         <a-button type="primary" @click="openCreateModal">
@@ -698,23 +700,8 @@ onMounted(() => {
   }
 
   .homework-panel__title {
-    position: relative;
-    padding-left: 10px;
     color: #262626;
-    font-size: 16px;
-    font-weight: 600;
     line-height: 24px;
-
-    &::before {
-      position: absolute;
-      top: 6px;
-      left: 0;
-      width: 4px;
-      height: 12px;
-      border-radius: 999px;
-      background: var(--pro-ant-color-primary);
-      content: '';
-    }
   }
 
   .homework-name-cell__title {

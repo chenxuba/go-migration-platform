@@ -532,9 +532,11 @@ onBeforeUnmount(() => {
 
     <div class="noticePage__tableCard">
       <div class="noticePage__tableHeader">
-        <div class="noticePage__tableTitle">
-          当前共计 {{ pagination.total }} 条通知公告
-        </div>
+        <custom-title
+          :title="`当前共计 ${pagination.total} 条通知公告`"
+          font-size="14px"
+          class="noticePage__tableTitle"
+        />
         <a-button type="primary" @click="handleOpenCreateNotice()">
           创建通知
         </a-button>
@@ -805,22 +807,8 @@ onBeforeUnmount(() => {
 }
 
 .noticePage__tableTitle {
-  position: relative;
-  padding-left: 12px;
-  font-size: 14px;
-  line-height: 22px;
   color: #1f2329;
-
-  &::before {
-    position: absolute;
-    top: 5px;
-    left: 0;
-    width: 4px;
-    height: 12px;
-    border-radius: 2px;
-    background: #2468f2;
-    content: "";
-  }
+  line-height: 24px;
 }
 
 .noticePage__emptyWrap {
