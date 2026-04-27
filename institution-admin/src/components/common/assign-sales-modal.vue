@@ -19,6 +19,22 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  staffLabel: {
+    type: String,
+    default: '销售员',
+  },
+  staffPlaceholder: {
+    type: String,
+    default: '请选择销售员',
+  },
+  payloadField: {
+    type: String,
+    default: 'salespersonId',
+  },
+  studentValueField: {
+    type: String,
+    default: 'salePerson',
+  },
 })
 
 const emit = defineEmits(['update:open', 'submit'])
@@ -34,24 +50,24 @@ const openModal = computed({
 
 const formState = reactive({
   studentIds: [],
-  salespersonId: undefined,
+  staffId: undefined,
 })
+
+function normalizeStaffId(value) {
+  if (!value || value === '0' || value === 0)
+    return undefined
+  return Number(value)
+}
 
 // 监听学员数据变化，更新studentIds和销售员ID
 watch(() => props.selectedStudents, (newStudents) => {
   formState.studentIds = newStudents.map(student => student.id)
-  // 如果只有一个学员，回显当前销售员
+  // 如果只有一个学员，回显当前人员
   if (newStudents.length === 1) {
     const student = newStudents[0]
-    // 确保 salePerson 存在且有效（不为空、不为0、不为null、不为undefined）
-    if (student.salePerson && student.salePerson !== '0' && student.salePerson !== 0) {
-      // salePerson 是字符串，转换为数字
-      formState.salespersonId = Number(student.salePerson)
-    } else {
-      formState.salespersonId = undefined
-    }
+    formState.staffId = normalizeStaffId(student?.[props.studentValueField])
   } else {
-    formState.salespersonId = undefined
+    formState.staffId = undefined
   }
 }, { immediate: true })
 
@@ -73,7 +89,7 @@ async function handleSubmit() {
     // 准备提交数据
     const submitData = {
       studentIds: formState.studentIds,
-      salespersonId: formState.salespersonId,
+      [props.payloadField]: formState.staffId,
     }
     
     // 触发提交事件
@@ -97,21 +113,16 @@ function closeFun() {
 watch(openModal, (newVal) => {
   if (!newVal) {
     // 关闭时重置
-    formState.salespersonId = undefined
+    formState.staffId = undefined
     if (formRef.value) {
       formRef.value.resetFields()
     }
     loading.value = false
   } else {
-    // 打开时回显当前销售员（如果只有一个学员）
+    // 打开时回显当前人员（如果只有一个学员）
     if (props.selectedStudents.length === 1) {
       const student = props.selectedStudents[0]
-      // 确保 salePerson 存在且有效
-      if (student.salePerson && student.salePerson !== '0' && student.salePerson !== 0) {
-        formState.salespersonId = Number(student.salePerson)
-      } else {
-        formState.salespersonId = undefined
-      }
+      formState.staffId = normalizeStaffId(student?.[props.studentValueField])
     }
   }
 })
@@ -150,9 +161,8 @@ defineExpose({
       </div>
       <div v-if="type !== 3" class="contenter scrollbar" :class="type == 1 ? 'mt0' : ''">
         <a-form ref="formRef" :model="formState" :label-col="{ span: 3 }" :wrapper-col="{ span: 21 }">
-          <!-- 销售员 必选 -->
-          <a-form-item label="销售员" name="salespersonId" :rules="[{ required: true, message: '请选择销售员' }]">
-            <StaffSelect v-model="formState.salespersonId" placeholder="请选择销售员" width="300px" :status="0" />
+          <a-form-item :label="staffLabel" name="staffId" :rules="[{ required: true, message: staffPlaceholder }]">
+            <StaffSelect v-model="formState.staffId" :placeholder="staffPlaceholder" width="300px" :status="0" />
           </a-form-item>
         </a-form>
       </div>

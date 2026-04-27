@@ -15,6 +15,7 @@ var instConfigBooleanFields = map[string]struct{}{
 	"enableViceSellStaff":                 {},
 	"enableAdvisor":                       {},
 	"enableStudentManager":                {},
+	"enableSupervisor":                    {},
 	"limitSameWeChat":                     {},
 	"limitImportSameWeChat":               {},
 	"enableClassroomTeaching":             {},
@@ -96,6 +97,7 @@ func EnsureInstConfigUnifiedTimePeriodColumns(ctx context.Context, db *sql.DB) e
 		"enable_price_leave_normal_record":           "enable_price_leave_normal_record TINYINT(1) NOT NULL DEFAULT 0",
 		"enable_price_truancy_normal_record":         "enable_price_truancy_normal_record TINYINT(1) NOT NULL DEFAULT 0",
 		"enable_price_makeup":                        "enable_price_makeup TINYINT(1) NOT NULL DEFAULT 0",
+		"enable_supervisor":                          "enable_supervisor TINYINT(1) NOT NULL DEFAULT 0",
 		"auto_send_birthday_message":                 "auto_send_birthday_message TINYINT(1) NOT NULL DEFAULT 0",
 		"enable_recharge_account_change_message":     "enable_recharge_account_change_message TINYINT(1) NOT NULL DEFAULT 0",
 		"enabled_class_reminder":                     "enabled_class_reminder TINYINT(1) NOT NULL DEFAULT 0",
@@ -317,6 +319,7 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			enable_vice_sell_staff,
 			enable_advisor,
 			enable_student_manager,
+			enable_supervisor,
 			limit_same_weChat,
 			limit_import_same_weChat,
 			enable_public_pool,
@@ -351,7 +354,7 @@ func (repo *Repository) CreateDefaultInstConfig(ctx context.Context, instID int6
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1
@@ -405,6 +408,7 @@ func (repo *Repository) UpdateInstConfig(ctx context.Context, instID int64, payl
 		"enableViceSellStaff":                 "enable_vice_sell_staff",
 		"enableAdvisor":                       "enable_advisor",
 		"enableStudentManager":                "enable_student_manager",
+		"enableSupervisor":                    "enable_supervisor",
 		"limitSameWeChat":                     "limit_same_weChat",
 		"limitImportSameWeChat":               "limit_import_same_weChat",
 		"autoSendBirthdayMessage":             "auto_send_birthday_message",

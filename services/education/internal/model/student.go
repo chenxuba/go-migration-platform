@@ -70,6 +70,9 @@ type IntentStudent struct {
 	PhoneRelationship             *int           `json:"phoneRelationship,omitempty"`
 	SalePerson                    *int64         `json:"salePerson,omitempty"`
 	SalePersonName                string         `json:"salePersonName"`
+	SupervisorID                  *int64         `json:"supervisorId,omitempty"`
+	SupervisorName                string         `json:"supervisorName,omitempty"`
+	SupervisorAssignedTime        *time.Time     `json:"supervisorAssignedTime,omitempty"`
 	IntentLevel                   *int           `json:"intentLevel,omitempty"`
 	IntendedCourse                []int64        `json:"intendedCourse,omitempty"`
 	Lessons                       []CourseIDName `json:"lessons"`
@@ -245,6 +248,7 @@ type StudentStatusUpdateDTO struct {
 
 type BatchCommonDTO struct {
 	SalespersonID    *int64  `json:"salespersonId"`
+	SupervisorID     *int64  `json:"supervisorId"`
 	StudentIDs       []int64 `json:"studentIds"`
 	UserIDs          []int64 `json:"userIds"`
 	DeptIDs          []int64 `json:"deptIds"`

@@ -54,7 +54,7 @@ var instConfigModuleFields = map[string][]string{
 	},
 	"enrollment": {
 		"addIntentionStudentRule", "addImportStudentRule", "limitSameWeChat", "limitImportSameWeChat",
-		"enablePublicPool", "unfollowedTime",
+		"enablePublicPool", "enableSupervisor", "unfollowedTime",
 	},
 	"more": {
 		"enablePeerInfoAndServiceManagement",

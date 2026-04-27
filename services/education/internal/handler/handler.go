@@ -399,6 +399,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/follow-records/statistics", handler.followUpRecordStatistics)
 	mux.HandleFunc("/api/v1/intent-students/status", handler.updateStudentStatus)
 	mux.HandleFunc("/api/v1/intent-students/assign-sales", handler.batchAssignSalesperson)
+	mux.HandleFunc("/api/v1/intent-students/assign-supervisor", handler.batchAssignSupervisor)
 	mux.HandleFunc("/api/v1/intent-students/public-pool", handler.batchTransferToPublicPool)
 	mux.HandleFunc("/api/v1/intent-students/delete", handler.batchDeleteIntentStudents)
 	mux.HandleFunc("/api/v1/intent-students/create", handler.addIntentStudent)

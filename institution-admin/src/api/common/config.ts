@@ -90,6 +90,7 @@ export interface InstConfig {
   enableShowSchoolOnOrderReceipt: string
   enableSpaceBookingNotice: string
   enableStudentManager: boolean
+  enableSupervisor: boolean
   enableStudentParentTranscriptChart: string
   enableSubject: string
   enableSubjectOnlineSaleFilter: string

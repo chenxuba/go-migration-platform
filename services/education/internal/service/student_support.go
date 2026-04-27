@@ -119,6 +119,7 @@ func (svc *Service) buildStudentSnapshotChangeText(ctx context.Context, before, 
 	appendChange("副销售员", svc.repo.GetStaffNameByID(ctx, before.ViceSellStaffID), svc.repo.GetStaffNameByID(ctx, after.ViceSellStaffID))
 	appendChange("学管师", svc.repo.GetStaffNameByID(ctx, before.StudentManagerID), svc.repo.GetStaffNameByID(ctx, after.StudentManagerID))
 	appendChange("顾问", svc.repo.GetStaffNameByID(ctx, before.AdvisorID), svc.repo.GetStaffNameByID(ctx, after.AdvisorID))
+	appendChange("督导", svc.repo.GetStaffNameByID(ctx, before.SupervisorID), svc.repo.GetStaffNameByID(ctx, after.SupervisorID))
 	appendChange("推荐人", svc.repo.GetStudentNameByID(ctx, before.RecommendStudentID), svc.repo.GetStudentNameByID(ctx, after.RecommendStudentID))
 	appendChange("手机关联人关系", studentPhoneRelationshipLabel(before.PhoneRelationship), studentPhoneRelationshipLabel(after.PhoneRelationship))
 	appendChange("意向度", studentIntentLevelLabel(before.IntentLevel), studentIntentLevelLabel(after.IntentLevel))

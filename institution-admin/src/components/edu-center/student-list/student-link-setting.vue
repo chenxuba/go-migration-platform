@@ -1,7 +1,54 @@
 <script setup>
+import { onMounted, reactive } from 'vue'
+import { getInstConfigModuleApi, setInstConfigModuleApi } from '@/api/common/config'
+import messageService from '~@/utils/messageService'
+
 const state = reactive({
   supervisorEnabled: false,
+  supervisorLoading: false,
 })
+
+function isConfigEnabled(value) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return false
+}
+
+async function loadConfig() {
+  try {
+    const res = await getInstConfigModuleApi('enrollment')
+    state.supervisorEnabled = isConfigEnabled(res.result?.enableSupervisor)
+  }
+  catch (error) {
+    console.error('获取学员关联人员配置失败:', error)
+  }
+}
+
+async function handleSupervisorChange(checked) {
+  const previous = !checked
+  state.supervisorLoading = true
+  try {
+    await setInstConfigModuleApi('enrollment', {
+      enableSupervisor: checked,
+    })
+    state.supervisorEnabled = checked
+    messageService.success(checked ? '督导已开启' : '督导已关闭')
+  }
+  catch (error) {
+    console.error('保存督导配置失败:', error)
+    state.supervisorEnabled = previous
+    messageService.error('保存督导配置失败')
+  }
+  finally {
+    state.supervisorLoading = false
+  }
+}
+
+onMounted(loadConfig)
 </script>
 
 <template>
@@ -38,7 +85,12 @@ const state = reactive({
                 督导
               </td>
               <td>
-                <a-switch v-model:checked="state.supervisorEnabled" /> <span class="ml-2">负责监督学员服务流程，跟进学习效果与家校沟通质量</span>
+                <a-switch
+                  v-model:checked="state.supervisorEnabled"
+                  :loading="state.supervisorLoading"
+                  @change="handleSupervisorChange"
+                />
+                <span class="ml-2">负责监督学员服务流程，跟进学习效果与家校沟通质量</span>
               </td>
             </tr>
           </tbody>

@@ -78,6 +78,51 @@ func (svc *Service) BatchAssignSalesperson(userID int64, dto model.BatchCommonDT
 	return nil
 }
 
+func (svc *Service) BatchAssignSupervisor(userID int64, dto model.BatchCommonDTO) error {
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution context")
+		}
+		return err
+	}
+	if dto.SupervisorID == nil || len(dto.StudentIDs) == 0 {
+		return errors.New("supervisorId and studentIds are required")
+	}
+	enabled, err := svc.repo.IsSupervisorEnabled(context.Background(), instID)
+	if err != nil {
+		return err
+	}
+	if !enabled {
+		return errors.New("督导人员未启用")
+	}
+	beforeSnapshots := make(map[int64]repository.StudentSnapshot)
+	for _, id := range dto.StudentIDs {
+		if snapshot, err := svc.repo.GetStudentSnapshot(context.Background(), instID, id); err == nil {
+			beforeSnapshots[id] = snapshot
+		}
+	}
+	if err := svc.repo.BatchAssignSupervisor(context.Background(), instID, *dto.SupervisorID, dto.StudentIDs); err != nil {
+		return err
+	}
+	instUserID, _ := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	for _, id := range dto.StudentIDs {
+		if before, ok := beforeSnapshots[id]; ok {
+			if after, err := svc.repo.GetStudentSnapshot(context.Background(), instID, id); err == nil {
+				_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, id, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))
+			}
+		}
+	}
+	if svc.mqClient != nil {
+		_ = svc.publishMQ("student_intent", "assigned_supervisor", map[string]any{
+			"instId":       instID,
+			"studentIds":   dto.StudentIDs,
+			"supervisorId": *dto.SupervisorID,
+		})
+	}
+	return nil
+}
+
 func (svc *Service) BatchTransferToPublicPool(userID int64, dto model.BatchCommonDTO) error {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {

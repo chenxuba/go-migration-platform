@@ -19,6 +19,7 @@ export interface ChannelInfo {
 
 export interface StudentInfo {
   id?: number
+  studentIds?: number[]
   uuid?: string
   version?: number
   studentStatus?: number
@@ -38,6 +39,9 @@ export interface StudentInfo {
   channelId: number
   weChatNumber: string
   salespersonId: number
+  supervisorId?: number
+  supervisorName?: string
+  supervisorAssignedTime?: string
   remark: string
   followUpStatus: number
   customInfo: Array<{
@@ -327,6 +331,10 @@ export function updateFollowRecordApi(data: FollowUpInfo) {
 // 批量分配销售
 export function batchAssignSalespersonApi(data: StudentInfo) {
   return usePost<StudentInfo>('/api/v1/intent-students/assign-sales', data)
+}
+// 批量分配督导
+export function batchAssignSupervisorApi(data: StudentInfo) {
+  return usePost<StudentInfo>('/api/v1/intent-students/assign-supervisor', data)
 }
 // 批量转入公有池
 export function batchTransferToPublicPoolApi(data: StudentInfo) {

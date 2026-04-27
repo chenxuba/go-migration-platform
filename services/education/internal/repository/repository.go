@@ -37,6 +37,7 @@ type StudentSnapshot struct {
 	ViceSellStaffID    *int64
 	StudentManagerID   *int64
 	AdvisorID          *int64
+	SupervisorID       *int64
 	RecommendStudentID *int64
 	WeChatNumber       string
 	Grade              string
@@ -242,6 +243,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 		return err
 	}
 	if err := EnsureInstConfigUnifiedTimePeriodColumns(ctx, repo.db); err != nil {
+		return err
+	}
+	if err := EnsureInstStudentSupervisorColumns(ctx, repo.db); err != nil {
 		return err
 	}
 	if err := EnsureInstPeriodTables(ctx, repo.db); err != nil {

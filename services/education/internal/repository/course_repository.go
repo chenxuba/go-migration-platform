@@ -1214,7 +1214,7 @@ func (repo *Repository) PageIntentStudents(ctx context.Context, instID int64, qu
 func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, studentID int64) (model.IntentStudent, error) {
 	bindChildExpr := studentOfficialSubscribedExistsSQL("s")
 	row := repo.db.QueryRowContext(ctx, `
-		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.sale_person, IFNULL(iu.nick_name, ''), s.intent_level,
+		SELECT s.id, s.inst_id, IFNULL(s.stu_name, ''), IFNULL(s.avatar_url, ''), s.stu_sex, IFNULL(s.mobile, ''), s.phone_relationship, IFNULL(s.is_collect, 0), `+bindChildExpr+`, s.sale_person, IFNULL(iu.nick_name, ''), s.supervisor_id, IFNULL(supervisor.nick_name, ''), s.supervisor_assigned_time, s.intent_level,
 		       IFNULL(s.intended_course, ''), s.channel_id, IFNULL(c.channel_name, ''), IFNULL(cc.category_name, ''), s.create_time, s.birthday,
 		       IFNULL(s.wechat_number, ''), IFNULL(s.study_school, ''), IFNULL(s.grade, ''), IFNULL(s.interest, ''), IFNULL(s.address, ''),
 		       s.follow_up_status, s.student_status, s.last_follow_up_time, s.next_follow_up_time, IFNULL(s.remark, ''),
@@ -1223,6 +1223,7 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 		       CASE WHEN s.student_status = ? THEN s.update_time ELSE NULL END
 		FROM inst_student s
 		LEFT JOIN inst_user iu ON s.sale_person = iu.id
+		LEFT JOIN inst_user supervisor ON s.supervisor_id = supervisor.id
 		LEFT JOIN inst_channel c ON s.channel_id = c.id
 		LEFT JOIN inst_channel_category cc ON cc.id = c.category_id
 		LEFT JOIN inst_user creator ON creator.id = s.create_id
@@ -1236,6 +1237,7 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 	var lastFollowUp sql.NullTime
 	var nextFollowUp sql.NullTime
 	var salesAssignedTime sql.NullTime
+	var supervisorAssignedTime sql.NullTime
 	var firstEnrolledTime sql.NullTime
 	var turnedHistoryTime sql.NullTime
 	if err := row.Scan(
@@ -1250,6 +1252,9 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 		&item.IsBindChild,
 		&item.SalePerson,
 		&item.SalePersonName,
+		&item.SupervisorID,
+		&item.SupervisorName,
+		&supervisorAssignedTime,
 		&item.IntentLevel,
 		&intendedCourseRaw,
 		&item.ChannelID,
@@ -1291,6 +1296,10 @@ func (repo *Repository) GetIntentStudentDetail(ctx context.Context, instID, stud
 	if salesAssignedTime.Valid {
 		t := salesAssignedTime.Time
 		item.SalesAssignedTime = &t
+	}
+	if supervisorAssignedTime.Valid {
+		t := supervisorAssignedTime.Time
+		item.SupervisorAssignedTime = &t
 	}
 	if firstEnrolledTime.Valid {
 		t := firstEnrolledTime.Time

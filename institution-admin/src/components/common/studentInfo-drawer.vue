@@ -15,8 +15,8 @@ import FollowUpRecord from '@/components/studentInfo-drawer/follow-up-record.vue
 import StudentRehabRecord from '@/components/studentInfo-drawer/student-rehab-record.vue'
 import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { useStudentFields } from '@/composables/useStudentFields'
-import { batchAssignSalespersonApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
-import { getStudentPhoneNumberApi } from '@/api/common/config'
+import { batchAssignSalespersonApi, batchAssignSupervisorApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
+import { getInstConfigModuleApi, getStudentPhoneNumberApi } from '@/api/common/config'
 import { useStudentStore } from '@/stores/student'
 import { useUserStore } from '@/stores/user'
 import messageService from '~@/utils/messageService'
@@ -90,6 +90,7 @@ const { systemDefaultIsDisplayList, getAllStuFields } = useStudentFields()
 const studentId = computed(() => studentStore.studentId)
 const studentDetail = ref({})
 const oneToOneClassTeacherNames = ref([])
+const supervisorEnabled = ref(false)
 const router = useRouter()
 const hasFaceCollected = computed(() => !!studentDetail.value?.isCollect)
 const canEditIntentionFollowStatus = computed(() => hasAccess(AccessEnum.enroll_intention_follow_status))
@@ -189,6 +190,27 @@ function refreshPrimaryCourseList() {
   })
 }
 
+function isConfigEnabled(value) {
+  if (typeof value === 'boolean')
+    return value
+  if (typeof value === 'number')
+    return value !== 0
+  if (typeof value === 'string')
+    return value === '1' || value.toLowerCase() === 'true'
+  return false
+}
+
+async function loadRelationConfig() {
+  try {
+    const res = await getInstConfigModuleApi('enrollment')
+    supervisorEnabled.value = isConfigEnabled(res.result?.enableSupervisor)
+  }
+  catch (error) {
+    console.error('获取学员关联人员配置失败:', error)
+    supervisorEnabled.value = false
+  }
+}
+
 watch(() => props.open, (newVal) => {
   if (!newVal) {
     studentStore.clearStudentId()
@@ -205,12 +227,14 @@ watch(() => props.open, (newVal) => {
     isPhoneDecrypted.value = false
     decryptedPhone.value = ''
     phoneLoading.value = false
+    assignSupervisorVisible.value = false
   }
 })
 
 // 监听openDrawer的变化
 watch(() => openDrawer.value, (newVal) => {
   if (newVal) {
+    loadRelationConfig()
     getIntentStudentDetail()
     getOneToOneClassTeachers()
     getAllStuFields({ filter: 3 })
@@ -276,6 +300,8 @@ const registerForCoursesRef = ref(null)
 const openEditStudentModal = ref(false)
 const assignSalesVisible = ref(false)
 const assignSalesRef = ref(null)
+const assignSupervisorVisible = ref(false)
+const assignSupervisorRef = ref(null)
 async function handleUpdateStudent(data) {
   try {
     // 创建一个新对象用于API调用，避免修改原始数据
@@ -351,6 +377,10 @@ function handleAssignSales() {
   assignSalesVisible.value = true
 }
 
+function handleAssignSupervisor() {
+  assignSupervisorVisible.value = true
+}
+
 // 处理分配销售提交
 async function handleAssignSalesSubmit(data) {
   try {
@@ -372,6 +402,24 @@ async function handleAssignSalesSubmit(data) {
   finally {
     // 关闭modal中的loading
     assignSalesRef.value?.closeLoading()
+  }
+}
+
+async function handleAssignSupervisorSubmit(data) {
+  try {
+    const res = await batchAssignSupervisorApi(data)
+    if (res.code === 200) {
+      messageService.success('分配督导成功')
+      getIntentStudentDetail()
+      assignSupervisorVisible.value = false
+    }
+  }
+  catch (error) {
+    console.log(error)
+    messageService.error('分配督导失败')
+  }
+  finally {
+    assignSupervisorRef.value?.closeLoading()
   }
 }
 
@@ -774,6 +822,7 @@ async function handlePhoneToggle() {
               </a-button>
               <a-button>未排课点名</a-button>
               <a-button @click="handleAssignSales">分配销售</a-button>
+              <a-button v-if="supervisorEnabled" @click="handleAssignSupervisor">分配督导</a-button>
               <a-tooltip v-if="isMyStudent" title="放弃该学员">
                 <a-button @click="handleDropStudent" :loading="btnLoading">
                   放弃
@@ -824,6 +873,9 @@ async function handlePhoneToggle() {
         <a-descriptions :column="responsiveColumns" size="small" :content-style="{ color: '#888' }">
           <a-descriptions-item label="销售员">
             {{ studentDetail.salePersonName || '-' }}
+          </a-descriptions-item>
+          <a-descriptions-item v-if="supervisorEnabled" label="督导">
+            {{ studentDetail.supervisorName || '-' }}
           </a-descriptions-item>
           <a-descriptions-item label="班主任">
             <a-tooltip v-if="classTeacherNames.length" :title="classTeacherTooltipTitle" placement="topLeft">
@@ -958,6 +1010,9 @@ async function handlePhoneToggle() {
         <a-descriptions-item label="销售员">
           {{ studentDetail.salePersonName || '-' }}
         </a-descriptions-item>
+        <a-descriptions-item v-if="supervisorEnabled" label="督导">
+          {{ studentDetail.supervisorName || '-' }}
+        </a-descriptions-item>
         <a-descriptions-item label="班主任">
           <a-tooltip v-if="classTeacherNames.length" :title="classTeacherTooltipTitle" placement="topLeft">
             <span class="cursor-pointer">{{ classTeacherSummary }}</span>
@@ -1021,6 +1076,10 @@ async function handlePhoneToggle() {
           {{ studentDetail.salesAssignedTime ? dayjs(studentDetail.salesAssignedTime).format('YYYY-MM-DD HH:mm') : '-'
           }}
         </a-descriptions-item>
+        <a-descriptions-item v-if="supervisorEnabled" label="分配督导时间">
+          {{ studentDetail.supervisorAssignedTime ? dayjs(studentDetail.supervisorAssignedTime).format('YYYY-MM-DD HH:mm') : '-'
+          }}
+        </a-descriptions-item>
         <a-descriptions-item label="体验课购买状态">
           未购买
         </a-descriptions-item>
@@ -1074,6 +1133,19 @@ async function handlePhoneToggle() {
     <!-- 分配销售弹窗 -->
     <AssignSalesModal ref="assignSalesRef" v-model:open="assignSalesVisible" title="分配销售" :type="2"
       :selected-students="[studentDetail]" @submit="handleAssignSalesSubmit" />
+
+    <AssignSalesModal
+      ref="assignSupervisorRef"
+      v-model:open="assignSupervisorVisible"
+      title="分配督导"
+      :type="2"
+      staff-label="督导"
+      staff-placeholder="请选择督导"
+      payload-field="supervisorId"
+      student-value-field="supervisorId"
+      :selected-students="[studentDetail]"
+      @submit="handleAssignSupervisorSubmit"
+    />
 
     <!-- 确认放弃学员弹窗 -->
     <a-modal

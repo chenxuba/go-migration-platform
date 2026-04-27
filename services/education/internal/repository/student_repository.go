@@ -9,11 +9,18 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
+func EnsureInstStudentSupervisorColumns(ctx context.Context, db *sql.DB) error {
+	return ensureColumnsOnTable(ctx, db, "inst_student", map[string]string{
+		"supervisor_id":            "supervisor_id BIGINT NULL DEFAULT NULL COMMENT '督导人员ID'",
+		"supervisor_assigned_time": "supervisor_assigned_time DATETIME NULL DEFAULT NULL COMMENT '分配督导时间'",
+	})
+}
+
 func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentID int64) (StudentSnapshot, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT id, inst_id, IFNULL(stu_name, ''), IFNULL(mobile, ''), IFNULL(student_status, 0), phone_relationship, sale_person, channel_id,
 		       collector_staff_id, phone_sell_staff_id, foreground_staff_id, vice_sell_staff_Id,
-		       student_manager_id, advisor_id, recommend_student_id, IFNULL(wechat_number, ''), IFNULL(grade, ''),
+		       student_manager_id, advisor_id, supervisor_id, recommend_student_id, IFNULL(wechat_number, ''), IFNULL(grade, ''),
 		       IFNULL(study_school, ''), IFNULL(interest, ''), IFNULL(address, ''), IFNULL(remark, ''),
 		       follow_up_status, intent_level
 		FROM inst_student
@@ -36,6 +43,7 @@ func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentI
 		&item.ViceSellStaffID,
 		&item.StudentManagerID,
 		&item.AdvisorID,
+		&item.SupervisorID,
 		&item.RecommendStudentID,
 		&item.WeChatNumber,
 		&item.Grade,
@@ -116,6 +124,44 @@ func (repo *Repository) BatchAssignSalesperson(ctx context.Context, instID int64
 
 	_, err := repo.db.ExecContext(ctx, query, args...)
 	return err
+}
+
+func (repo *Repository) BatchAssignSupervisor(ctx context.Context, instID int64, supervisorID int64, studentIDs []int64) error {
+	if len(studentIDs) == 0 {
+		return nil
+	}
+	placeholders := make([]string, 0, len(studentIDs))
+	args := make([]any, 0, len(studentIDs)+2)
+	args = append(args, supervisorID)
+	for _, id := range studentIDs {
+		placeholders = append(placeholders, "?")
+		args = append(args, id)
+	}
+	args = append(args, instID)
+
+	query := `
+		UPDATE inst_student
+		SET supervisor_id = ?, supervisor_assigned_time = NOW()
+		WHERE id IN (` + strings.Join(placeholders, ",") + `)
+		  AND inst_id = ?
+		  AND del_flag = 0`
+
+	_, err := repo.db.ExecContext(ctx, query, args...)
+	return err
+}
+
+func (repo *Repository) IsSupervisorEnabled(ctx context.Context, instID int64) (bool, error) {
+	var enabled bool
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(enable_supervisor, 0)
+		FROM inst_config
+		WHERE inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID).Scan(&enabled)
+	if err == sql.ErrNoRows {
+		return false, nil
+	}
+	return enabled, err
 }
 
 func (repo *Repository) BatchTransferToPublicPool(ctx context.Context, instID int64, studentIDs []int64) error {
