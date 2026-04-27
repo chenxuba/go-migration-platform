@@ -186,71 +186,73 @@
           </div>
 
           <div class="permission-panel__body">
-            <a-spin :spinning="treeLoading" tip="正在加载权限...">
-              <div v-if="filteredBoxList.length" class="permission-box">
-                <template v-for="(item, index) in filteredBoxList" :key="item.id">
-                  <div class="permission-row permission-row--group" :class="{ 'permission-row--last': index === filteredBoxList.length - 1 }">
-                    <div class="permission-row__main">
-                      <a-checkbox
-                        v-model:checked="item.checked"
-                        :disabled="!canManageDefaultRoles"
-                        :indeterminate="item.indeterminate"
-                        @change="() => handleParentChange(item)"
-                      />
-                      <span class="permission-row__title permission-row__title--group" v-html="highlightText(item.menuName, searchValue)" />
-                    </div>
-                    <span class="permission-row__toggle" @click="isParentExpanded(item.id) ? collapseAllChildren(item.id) : expandAllChildren(item.id)">
-                      {{ isParentExpanded(item.id) ? '收起全部' : '展开全部' }}
-                    </span>
+            <div v-if="treeLoading" class="permission-loading-state">
+              <a-spin size="large" tip="正在加载权限..." />
+            </div>
+
+            <div v-else-if="filteredBoxList.length" class="permission-box">
+              <template v-for="(item, index) in filteredBoxList" :key="item.id">
+                <div class="permission-row permission-row--group" :class="{ 'permission-row--last': index === filteredBoxList.length - 1 }">
+                  <div class="permission-row__main">
+                    <a-checkbox
+                      v-model:checked="item.checked"
+                      :disabled="!canManageDefaultRoles"
+                      :indeterminate="item.indeterminate"
+                      @change="() => handleParentChange(item)"
+                    />
+                    <span class="permission-row__title permission-row__title--group" v-html="highlightText(item.menuName, searchValue)" />
                   </div>
+                  <span class="permission-row__toggle" @click="isParentExpanded(item.id) ? collapseAllChildren(item.id) : expandAllChildren(item.id)">
+                    {{ isParentExpanded(item.id) ? '收起全部' : '展开全部' }}
+                  </span>
+                </div>
 
-                  <template v-if="isParentExpanded(item.id)">
-                    <div v-for="child in getFilteredChildren(item)" :key="child.id">
-                      <div class="permission-row permission-row--child">
-                        <div class="permission-row__main">
-                          <a-checkbox
-                            v-model:checked="child.checked"
-                            :disabled="!canManageDefaultRoles"
-                            :indeterminate="child.indeterminate"
-                            @change="() => handleChildChange(child, item)"
-                          />
-                          <span class="permission-row__title permission-row__title--child" v-html="highlightText(child.menuName, searchValue)" />
-                        </div>
-                        <span class="permission-row__toggle" @click="toggleChildExpand(child.id)">
-                          {{ isChildExpanded(child.id) ? '收起' : '展开' }}
-                        </span>
+                <template v-if="isParentExpanded(item.id)">
+                  <div v-for="child in getFilteredChildren(item)" :key="child.id">
+                    <div class="permission-row permission-row--child">
+                      <div class="permission-row__main">
+                        <a-checkbox
+                          v-model:checked="child.checked"
+                          :disabled="!canManageDefaultRoles"
+                          :indeterminate="child.indeterminate"
+                          @change="() => handleChildChange(child, item)"
+                        />
+                        <span class="permission-row__title permission-row__title--child" v-html="highlightText(child.menuName, searchValue)" />
                       </div>
+                      <span class="permission-row__toggle" @click="toggleChildExpand(child.id)">
+                        {{ isChildExpanded(child.id) ? '收起' : '展开' }}
+                      </span>
+                    </div>
 
-                      <template v-if="isChildExpanded(child.id)">
-                        <div
-                          v-for="authority in getFilteredchildren(child, item)"
-                          :key="authority.id"
-                          class="permission-row permission-row--authority"
-                        >
-                          <div class="permission-row__main permission-row__main--authority">
-                            <a-checkbox
-                              v-model:checked="authority.checked"
-                              :disabled="!canManageDefaultRoles"
-                              @change="() => handleAuthorityChange(authority, child, item)"
+                    <template v-if="isChildExpanded(child.id)">
+                      <div
+                        v-for="authority in getFilteredchildren(child, item)"
+                        :key="authority.id"
+                        class="permission-row permission-row--authority"
+                      >
+                        <div class="permission-row__main permission-row__main--authority">
+                          <a-checkbox
+                            v-model:checked="authority.checked"
+                            :disabled="!canManageDefaultRoles"
+                            @change="() => handleAuthorityChange(authority, child, item)"
+                          />
+                          <div class="permission-authority">
+                            <span class="permission-authority__title" v-html="highlightText(authority.name, searchValue)" />
+                            <span
+                              v-if="authority.remark"
+                              class="permission-authority__desc"
+                              v-html="highlightText(authority.remark, searchValue)"
                             />
-                            <div class="permission-authority">
-                              <span class="permission-authority__title" v-html="highlightText(authority.name, searchValue)" />
-                              <span
-                                v-if="authority.remark"
-                                class="permission-authority__desc"
-                                v-html="highlightText(authority.remark, searchValue)"
-                              />
-                            </div>
                           </div>
                         </div>
-                      </template>
-                    </div>
-                  </template>
+                      </div>
+                    </template>
+                  </div>
                 </template>
-              </div>
+              </template>
+            </div>
 
-              <a-empty v-else :image="simpleImage" description="暂无权限数据" />
-            </a-spin>
+            <a-empty v-else :image="simpleImage" description="暂无权限数据" />
           </div>
         </section>
       </div>
@@ -1093,6 +1095,20 @@ onMounted(async () => {
 
 .permission-box {
   padding-top: 8px;
+}
+
+.permission-loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  color: #64748b;
+}
+
+.permission-loading-state :deep(.ant-spin-text) {
+  margin-top: 10px;
+  color: #64748b;
+  font-size: 13px;
 }
 
 .permission-row {
