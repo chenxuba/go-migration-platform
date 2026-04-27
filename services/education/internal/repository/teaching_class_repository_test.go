@@ -18,7 +18,22 @@ func TestBuildOneToOneWhereHidesDuplicateActiveStudentCourseClasses(t *testing.T
 	if !strings.Contains(got, "tc_dup.id < tc.id") {
 		t.Fatalf("expected duplicate check to keep canonical active class, got %s", got)
 	}
-	if len(args) != 2 || args[0] != int64(7) || args[1] != model.TeachingClassTypeOneToOne {
+	if !strings.Contains(got, "tc.status IN (?)") {
+		t.Fatalf("expected one-to-one where SQL to default to active classes, got %s", got)
+	}
+	if len(args) != 3 || args[0] != int64(7) || args[1] != model.TeachingClassTypeOneToOne || args[2] != model.TeachingClassStatusActive {
+		t.Fatalf("unexpected args: %#v", args)
+	}
+}
+
+func TestBuildOneToOneWhereKeepsExplicitStatusFilter(t *testing.T) {
+	got, args := buildOneToOneWhere(7, model.OneToOneListQueryModel{
+		Status: []int{model.TeachingClassStatusClosed},
+	}, false)
+	if !strings.Contains(got, "tc.status IN (?)") {
+		t.Fatalf("expected explicit status filter in SQL, got %s", got)
+	}
+	if len(args) != 3 || args[2] != model.TeachingClassStatusClosed {
 		t.Fatalf("unexpected args: %#v", args)
 	}
 }

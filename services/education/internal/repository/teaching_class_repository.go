@@ -2632,6 +2632,13 @@ func activeOneToOneCanonicalWhereSQL() string {
 		)`
 }
 
+func normalizeOneToOneStatusFilter(status []int) []int {
+	if len(status) > 0 {
+		return status
+	}
+	return []int{model.TeachingClassStatusActive}
+}
+
 func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, excludeQuickFilters bool) (string, []any) {
 	whereParts := []string{
 		"tc.inst_id = ?",
@@ -2709,9 +2716,10 @@ func buildOneToOneWhere(instID int64, query model.OneToOneListQueryModel, exclud
 			whereParts = append(whereParts, "IFNULL(tc.scheduled_lesson_count, 0) <= 0")
 		}
 	}
-	if len(query.Status) > 0 {
-		placeholders := make([]string, 0, len(query.Status))
-		for _, item := range query.Status {
+	statusFilter := normalizeOneToOneStatusFilter(query.Status)
+	if len(statusFilter) > 0 {
+		placeholders := make([]string, 0, len(statusFilter))
+		for _, item := range statusFilter {
 			placeholders = append(placeholders, "?")
 			args = append(args, item)
 		}
