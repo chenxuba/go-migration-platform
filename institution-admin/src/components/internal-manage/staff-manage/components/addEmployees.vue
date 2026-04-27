@@ -39,16 +39,21 @@ const form = ref(null)
 
 // 部门选项（这里可以从props或API获取）
 
-const formState = reactive({
-  nickName: '', // 员工姓名
-  mobile: '', // 员工手机号
-  deptIds: [], // 所属部门 - 初始为空，将在modal打开时设置
-  disabled: 0, // 是否禁用,
-  userType: '1', // 1: 正式员工 2: 兼职员工
-  isTeacher: false, // 是否是教师
-  avatar: '', // 头像
-  roleIds: [], // 角色
-})
+function createInitialFormState() {
+  return {
+    nickName: '', // 员工姓名
+    mobile: '', // 员工手机号
+    deptIds: [], // 所属部门 - 初始为空，将在modal打开时设置
+    disabled: 0, // 是否禁用,
+    userType: '1', // 1: 正式员工 2: 兼职员工
+    isTeacher: false, // 是否是教师
+    isSupervisor: false, // 是否是督导
+    avatar: '', // 头像
+    roleIds: [], // 角色
+  }
+}
+
+const formState = reactive(createInitialFormState())
 
 function roleDetailsFunc(roleInfo) {
   currentRoleId.value = roleInfo.id
@@ -132,6 +137,7 @@ const handleOk = useThrottleFn(async () => {
       if (res.code === 200) {
         // 重置表单
         form.value.resetFields()
+        Object.assign(formState, createInitialFormState())
         message.success('新增员工成功')
         emit('success')
         // 重置角色选择状态
@@ -190,6 +196,7 @@ async function handleRoleEditSuccess(data) {
 function cancel() {
   open.value = false
   form.value.resetFields()
+  Object.assign(formState, createInitialFormState())
   // 重置角色选择状态
   selectRoleList.value = []
   formState.roleIds = []
@@ -209,6 +216,7 @@ watch(() => open.value, (newVal) => {
   }
   // 当modal关闭时，重置角色选择状态
   if (!newVal) {
+    Object.assign(formState, createInitialFormState())
     selectRoleList.value = []
     formState.roleIds = []
     resetMobileAccountTip()
@@ -280,20 +288,6 @@ onMounted(async () => {
                 :show-checked-strategy="TreeSelect.SHOW_ALL"
               />
             </a-form-item>
-            <!-- 任职角色 -->
-            <a-form-item
-              style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ required: true, message: '请设置任职角色' }]"
-            >
-              <template #label>
-                <div class="flex items-center">
-                  <div>任职角色：</div>
-                  <a-button type="primary" @click="addEmployeesOpen = true">
-                    编辑
-                  </a-button>
-                </div>
-              </template>
-            </a-form-item>
           </div>
           <div class="form-right w-50% mt-18px mr-20px">
             <!-- 账号状态 -->
@@ -332,23 +326,52 @@ onMounted(async () => {
                 </a-radio>
               </a-radio-group>
             </a-form-item>
-            <!-- 是否是教师 -->
-            <a-form-item style="margin: 0;" class="position" name="isTeacher" :required="true">
-              <template #label>
-                <div class="flex items-center">
-                  <div>是否是教师：</div>
-                  <a-radio-group v-model:value="formState.isTeacher" class="custom-radio">
-                    <a-radio :value="true">
-                      是
-                    </a-radio>
-                    <a-radio :value="false">
-                      否
-                    </a-radio>
-                  </a-radio-group>
-                </div>
-              </template>
-            </a-form-item>
           </div>
+        </div>
+        <div class="employee-bottom-row">
+          <a-form-item
+            style="margin: 0;" class="position employee-bottom-role" name="roleIds"
+            :rules="[{ required: true, message: '请设置任职角色' }]"
+          >
+            <template #label>
+              <div class="employee-role-label">
+                <div>任职角色：</div>
+                <a-button type="primary" @click="addEmployeesOpen = true">
+                  编辑
+                </a-button>
+              </div>
+            </template>
+          </a-form-item>
+          <a-form-item style="margin: 0;" class="position employee-flag-item" name="isTeacher" :required="true">
+            <template #label>
+              <div class="employee-flag-label">
+                <div>是否是教师：</div>
+                <a-radio-group v-model:value="formState.isTeacher" class="custom-radio">
+                  <a-radio :value="true">
+                    是
+                  </a-radio>
+                  <a-radio :value="false">
+                    否
+                  </a-radio>
+                </a-radio-group>
+              </div>
+            </template>
+          </a-form-item>
+          <a-form-item style="margin: 0;" class="position employee-flag-item" name="isSupervisor" :required="true">
+            <template #label>
+              <div class="employee-flag-label">
+                <div>是否是督导：</div>
+                <a-radio-group v-model:value="formState.isSupervisor" class="custom-radio">
+                  <a-radio :value="true">
+                    是
+                  </a-radio>
+                  <a-radio :value="false">
+                    否
+                  </a-radio>
+                </a-radio-group>
+              </div>
+            </template>
+          </a-form-item>
         </div>
       </a-form>
       <template v-if="selectRoleList.length !== 0">
@@ -457,6 +480,60 @@ onMounted(async () => {
   margin-bottom: 0;
 }
 
+.employee-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 32px;
+  margin-top: 8px;
+}
+
+.employee-bottom-role {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.employee-flag-item {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.employee-flag-label {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+.employee-role-label {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+:deep(.employee-bottom-row .ant-form-item-row) {
+  display: flex;
+  align-items: center;
+}
+
+:deep(.employee-bottom-row .ant-form-item-label) {
+  padding: 0;
+  text-align: left;
+}
+
+:deep(.employee-bottom-row .ant-form-item-label > label) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 32px;
+  line-height: 32px;
+}
+
+:deep(.employee-bottom-row .ant-radio-group) {
+  display: flex;
+  align-items: center;
+}
+
 :deep(.position .ant-form-item-control) {
   min-height: 1px;
   height: 1px;
@@ -513,6 +590,11 @@ onMounted(async () => {
   .form-right {
     margin-top: 0 !important;
     margin-right: 0 !important;
+  }
+
+  .employee-bottom-row {
+    flex-direction: column;
+    gap: 12px;
   }
 }
 </style>
