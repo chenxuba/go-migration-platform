@@ -2434,14 +2434,6 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		}
 		whereParts = append(whereParts, "icq.lesson_model IN ("+strings.Join(placeholders, ",")+")")
 	}
-	if len(q.StatusList) > 0 {
-		placeholders := make([]string, 0, len(q.StatusList))
-		for _, item := range q.StatusList {
-			placeholders = append(placeholders, "?")
-			args = append(args, item)
-		}
-		whereParts = append(whereParts, "ta.status IN ("+strings.Join(placeholders, ",")+")")
-	}
 	if strings.TrimSpace(q.SalespersonID) != "" {
 		whereParts = append(whereParts, "CAST(s.sale_person AS CHAR) = ?")
 		args = append(args, strings.TrimSpace(q.SalespersonID))
@@ -2465,6 +2457,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 
 	havingParts := make([]string, 0, 8)
 	havingArgs := make([]any, 0, 8)
+	effectiveStatusExpr := effectiveTuitionAccountStatusSQL
 	remainExpr := `SUM(CASE WHEN icq.lesson_model = 3 THEN ta.remaining_tuition WHEN ta.total_quantity > 0 THEN ta.remaining_quantity ELSE 0 END)`
 	assignedClassExistsExpr := `CASE WHEN EXISTS (
 		SELECT 1
@@ -2478,7 +2471,12 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 		  AND tcs.del_flag = 0
 		  AND IFNULL(tcs.class_student_status, 1) IN (1, 2)
 	) THEN 1 ELSE 0 END`
-	assignedClassExpr := `MAX(GREATEST(IFNULL(ta.assigned_class, 0), ` + assignedClassExistsExpr + `))`
+	assignedClassValueExpr := `GREATEST(IFNULL(ta.assigned_class, 0), ` + assignedClassExistsExpr + `)`
+	assignedClassExpr := `CASE
+		WHEN SUM(CASE WHEN IFNULL(ta.status, 0) IN (1, 2) THEN 1 ELSE 0 END) > 0
+			THEN MAX(CASE WHEN IFNULL(ta.status, 0) IN (1, 2) THEN ` + assignedClassValueExpr + ` ELSE 0 END)
+		ELSE MAX(` + assignedClassValueExpr + `)
+	END`
 	hasAssignedClassCourseExpr := `EXISTS (
 		SELECT 1
 		FROM tuition_account ta2
@@ -2503,6 +2501,14 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			) THEN 1 ELSE 0 END
 		  ) = 1
 	)`
+	if len(q.StatusList) > 0 {
+		placeholders := make([]string, 0, len(q.StatusList))
+		for _, item := range q.StatusList {
+			placeholders = append(placeholders, "?")
+			havingArgs = append(havingArgs, item)
+		}
+		havingParts = append(havingParts, effectiveStatusExpr+" IN ("+strings.Join(placeholders, ",")+")")
+	}
 	if q.AssignedClass != nil {
 		havingParts = append(havingParts, assignedClassExpr+" = ?")
 		havingArgs = append(havingArgs, boolValue(q.AssignedClass))
@@ -2602,7 +2608,7 @@ func (repo *Repository) PageRegistrationList(ctx context.Context, instID int64, 
 			SUM(CASE WHEN icq.lesson_model = 3 THEN ta.free_quantity WHEN ta.total_quantity = 0 AND ta.free_quantity > 0 THEN ta.remaining_quantity ELSE 0 END) AS free_quantity,
 			SUM(ta.remaining_tuition) AS tuition,
 			SUM(ta.confirmed_tuition) AS confirmed_tuition,
-			MAX(ta.status) AS tuition_account_status,
+			`+effectiveStatusExpr+` AS tuition_account_status,
 			`+assignedClassExpr+` AS assigned_class,
 			`+hasAssignedClassCourseExpr+` AS has_assigned_class_course,
 			IFNULL(MAX(ta.enable_expire_time), 0) AS enable_expire_time,
