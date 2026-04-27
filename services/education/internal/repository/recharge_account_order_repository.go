@@ -124,14 +124,6 @@ func (repo *Repository) GetStudentDetailView(ctx context.Context, instID, studen
 			NULL,
 			IFNULL(s.create_id, 0),
 			IFNULL(creator.nick_name, ''),
-			0,
-			'',
-			0,
-			'',
-			0,
-			'',
-			0,
-			'',
 			IFNULL(s.student_status, 0)
 		FROM inst_student s
 		LEFT JOIN inst_user sale ON sale.id = s.sale_person
@@ -145,10 +137,6 @@ func (repo *Repository) GetStudentDetailView(ctx context.Context, instID, studen
 		id                int64
 		salespersonID     int64
 		createdStaffID    int64
-		collectorStaffID  int64
-		phoneSellStaffID  int64
-		foregroundStaffID int64
-		viceSellStaffID   int64
 		createdTime       sql.NullTime
 		firstEnrolledTime sql.NullTime
 		turnedHistoryTime sql.NullTime
@@ -167,14 +155,6 @@ func (repo *Repository) GetStudentDetailView(ctx context.Context, instID, studen
 		&turnedHistoryTime,
 		&createdStaffID,
 		&item.CreatedStaffName,
-		&collectorStaffID,
-		&item.CollectorStaffName,
-		&phoneSellStaffID,
-		&item.PhoneSellStaffName,
-		&foregroundStaffID,
-		&item.ForegroundStaffName,
-		&viceSellStaffID,
-		&item.ViceSellStaffStaffName,
 		&item.Status,
 	); err != nil {
 		return model.StudentDetailView{}, err
@@ -182,10 +162,6 @@ func (repo *Repository) GetStudentDetailView(ctx context.Context, instID, studen
 	item.ID = strconv.FormatInt(id, 10)
 	item.SalespersonID = strconv.FormatInt(salespersonID, 10)
 	item.CreatedStaffID = strconv.FormatInt(createdStaffID, 10)
-	item.CollectorStaffID = strconv.FormatInt(collectorStaffID, 10)
-	item.PhoneSellStaffID = strconv.FormatInt(phoneSellStaffID, 10)
-	item.ForegroundStaffID = strconv.FormatInt(foregroundStaffID, 10)
-	item.ViceSellStaffStaffID = strconv.FormatInt(viceSellStaffID, 10)
 	if createdTime.Valid {
 		t := createdTime.Time
 		item.CreatedTime = &t

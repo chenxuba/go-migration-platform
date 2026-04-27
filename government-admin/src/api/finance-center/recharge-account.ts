@@ -121,14 +121,6 @@ export interface StudentDetailView {
   turnedHistoryTime?: string
   createdStaffId?: string
   createdStaffName?: string
-  collectorStaffId?: string
-  collectorStaffName?: string
-  phoneSellStaffId?: string
-  phoneSellStaffName?: string
-  foregroundStaffId?: string
-  foregroundStaffName?: string
-  viceSellStaffStaffId?: string
-  viceSellStaffStaffName?: string
   status?: number
 }
 

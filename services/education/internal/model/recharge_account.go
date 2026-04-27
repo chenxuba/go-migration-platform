@@ -134,14 +134,6 @@ type StudentDetailView struct {
 	TurnedHistoryTime      *time.Time `json:"turnedHistoryTime,omitempty"`
 	CreatedStaffID         string     `json:"createdStaffId"`
 	CreatedStaffName       string     `json:"createdStaffName"`
-	CollectorStaffID       string     `json:"collectorStaffId"`
-	CollectorStaffName     string     `json:"collectorStaffName"`
-	PhoneSellStaffID       string     `json:"phoneSellStaffId"`
-	PhoneSellStaffName     string     `json:"phoneSellStaffName"`
-	ForegroundStaffID      string     `json:"foregroundStaffId"`
-	ForegroundStaffName    string     `json:"foregroundStaffName"`
-	ViceSellStaffStaffID   string     `json:"viceSellStaffStaffId"`
-	ViceSellStaffStaffName string     `json:"viceSellStaffStaffName"`
 	Status                 int        `json:"status"`
 }
 
