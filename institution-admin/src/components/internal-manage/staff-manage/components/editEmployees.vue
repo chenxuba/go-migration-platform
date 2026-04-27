@@ -53,6 +53,7 @@ const formState = reactive({
   disabled: false, // false: 在职中, true: 已离职
   userType: 1, // 1: 正式员工, 2: 兼职员工
   isTeacher: false, // 是否是教师
+  isSupervisor: false, // 是否是督导
   avatar: '',
 })
 
@@ -421,16 +422,6 @@ watch(
                 :show-checked-strategy="TreeSelect.SHOW_ALL" />
             </a-form-item>
 
-            <!-- 任职角色 -->
-            <a-form-item style="margin: 0;" class="position" name="roleIds"
-              :rules="[{ validator: validateRoleIds }]">
-              <template #label>
-                <div class="flex items-center">
-                  <div>任职角色：</div>
-                  <a-button type="primary" :disabled="detailInfo.isAdmin" @click="addEmployeesOpen = true">编辑</a-button>
-                </div>
-              </template>
-            </a-form-item>
           </div>
 
           <!-- 右侧表单 -->
@@ -483,19 +474,40 @@ watch(
               </a-radio-group>
             </a-form-item>
 
-            <!-- 是否是教师 -->
-            <a-form-item style="margin: 0;" class="position" name="isTeacher" :required="true">
-              <template #label>
-                <div class="flex items-center">
-                  <div>是否是教师：</div>
-                  <a-radio-group v-model:value="formState.isTeacher" :disabled="detail.isAdmin" class="custom-radio">
-                    <a-radio :value="true">是</a-radio>
-                    <a-radio :value="false">否</a-radio>
-                  </a-radio-group>
-                </div>
-              </template>
-            </a-form-item>
           </div>
+        </div>
+        <div class="employee-bottom-row">
+          <a-form-item style="margin: 0;" class="position employee-bottom-role" name="roleIds"
+            :rules="[{ validator: validateRoleIds }]">
+            <template #label>
+              <div class="employee-role-label">
+                <div>任职角色：</div>
+                <a-button type="primary" :disabled="detailInfo.isAdmin" @click="addEmployeesOpen = true">编辑</a-button>
+              </div>
+            </template>
+          </a-form-item>
+          <a-form-item style="margin: 0;" class="position employee-flag-item" name="isTeacher" :required="true">
+            <template #label>
+              <div class="employee-flag-label">
+                <div>是否是教师：</div>
+                <a-radio-group v-model:value="formState.isTeacher" :disabled="detail.isAdmin" class="custom-radio">
+                  <a-radio :value="true">是</a-radio>
+                  <a-radio :value="false">否</a-radio>
+                </a-radio-group>
+              </div>
+            </template>
+          </a-form-item>
+          <a-form-item style="margin: 0;" class="position employee-flag-item" name="isSupervisor" :required="true">
+            <template #label>
+              <div class="employee-flag-label">
+                <div>是否是督导：</div>
+                <a-radio-group v-model:value="formState.isSupervisor" :disabled="detail.isAdmin" class="custom-radio">
+                  <a-radio :value="true">是</a-radio>
+                  <a-radio :value="false">否</a-radio>
+                </a-radio-group>
+              </div>
+            </template>
+          </a-form-item>
         </div>
       </a-form>
 
@@ -627,6 +639,60 @@ watch(
   }
 }
 
+.employee-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 80px;
+  margin-top: 8px;
+}
+
+.employee-bottom-role {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.employee-flag-item {
+  flex: 0 0 auto;
+  width: auto;
+}
+
+.employee-role-label {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+}
+
+.employee-flag-label {
+  display: flex;
+  align-items: center;
+  min-height: 32px;
+  white-space: nowrap;
+}
+
+:deep(.employee-bottom-row .ant-form-item-row) {
+  display: flex;
+  align-items: center;
+}
+
+:deep(.employee-bottom-row .ant-form-item-label) {
+  padding: 0;
+  text-align: left;
+}
+
+:deep(.employee-bottom-row .ant-form-item-label > label) {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 32px;
+  line-height: 32px;
+}
+
+:deep(.employee-bottom-row .ant-radio-group) {
+  display: flex;
+  align-items: center;
+}
+
 /* z-index 控制 */
 :global(.z-index-1000) {
   z-index: 1000 !important;
@@ -665,6 +731,11 @@ watch(
 
   .form-right {
     margin-top: 0 !important;
+  }
+
+  .employee-bottom-row {
+    flex-direction: column;
+    gap: 12px;
   }
 }
 </style>
