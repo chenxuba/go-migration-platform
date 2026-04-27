@@ -163,19 +163,19 @@
                 与权限管理口径一致：功能权限 + 数据权限
               </div>
             </div>
-            <a-button type="link" class="permission-panel__link" :disabled="treeLoading || !filteredBoxList.length" @click="toggleAllExpand">
+            <a-button type="link" class="permission-panel__link" :disabled="permissionPanelLoading || !filteredBoxList.length" @click="toggleAllExpand">
               {{ isAllExpanded ? '一键收起' : '一键展开' }}
               <component :is="isAllExpanded ? UpOutlined : DownOutlined" />
             </a-button>
           </div>
 
           <div class="permission-panel__toolbar">
-            <a-button v-if="canManageDefaultRoles" type="link" :disabled="treeLoading || !hasSelectedPermissions" @click="clearAllSelected">
+            <a-button v-if="canManageDefaultRoles" type="link" :disabled="permissionPanelLoading || !hasSelectedPermissions" @click="clearAllSelected">
               清空已选
             </a-button>
             <a-input
               v-model:value="searchValue"
-              :disabled="treeLoading"
+              :disabled="permissionPanelLoading"
               allow-clear
               placeholder="搜索权限点名称或权限描述"
             >
@@ -186,7 +186,7 @@
           </div>
 
           <div class="permission-panel__body">
-            <div v-if="treeLoading" class="permission-loading-state">
+            <div v-if="permissionPanelLoading" class="permission-loading-state">
               <a-spin size="large" tip="正在加载权限..." />
             </div>
 
@@ -252,7 +252,7 @@
               </template>
             </div>
 
-            <a-empty v-else :image="simpleImage" description="暂无权限数据" />
+            <a-empty v-else :image="simpleImage" :description="permissionEmptyDescription" />
           </div>
         </section>
       </div>
@@ -279,7 +279,7 @@
           <a-button @click="closeModal">
             取消
           </a-button>
-          <a-button v-if="canManageDefaultRoles" type="primary" :loading="submitting" :disabled="treeLoading" @click="handleSubmit">
+          <a-button v-if="canManageDefaultRoles" type="primary" :loading="submitting" :disabled="permissionPanelLoading" @click="handleSubmit">
             保存
           </a-button>
         </div>
@@ -297,7 +297,7 @@ import {
   UpOutlined,
 } from '@ant-design/icons-vue'
 import { Empty } from 'ant-design-vue'
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, reactive, ref } from 'vue'
 import {
   createDefaultRoleApi,
   deleteDefaultRoleApi,
@@ -355,6 +355,7 @@ const keywordInput = ref('')
 const searchKeyword = ref('')
 
 const treeLoading = ref(false)
+const modalPermissionLoading = ref(false)
 const permissionTypeMap = ref<Map<number, number>>(new Map())
 const permissionTreeLoadedPortal = ref<PortalEnum | null>(null)
 let permissionTreeRequest: Promise<boolean> | null = null
@@ -451,6 +452,18 @@ const selectedPermissionStats = computed(() => {
 
 const hasSelectedPermissions = computed(() => {
   return selectedPermissionStats.value.functional + selectedPermissionStats.value.data > 0
+})
+
+const permissionPanelLoading = computed(() => {
+  return modalOpen.value && (treeLoading.value || modalPermissionLoading.value)
+})
+
+const permissionEmptyDescription = computed(() => {
+  if (searchValue.value.trim())
+    return '没有匹配的权限点'
+  if (permissionTreeLoadedPortal.value !== currentPortal.value)
+    return '权限数据加载失败'
+  return '暂无权限数据'
 })
 
 const toRoleRecord = (record: Record<string, any>) => record as DefaultRoleRecord
@@ -628,7 +641,7 @@ function invalidatePermissionTree() {
 
 async function loadPermissionTree(options: { force?: boolean, showLoading?: boolean } = {}) {
   const portal = currentPortal.value
-  if (!options.force && permissionTreeLoadedPortal.value === portal && boxList.value.length > 0)
+  if (!options.force && permissionTreeLoadedPortal.value === portal)
     return true
 
   if (permissionTreeRequest)
@@ -682,14 +695,17 @@ async function loadPortalData() {
   await loadRoleList()
 }
 
-async function hydrateCreateModal() {
-  treeLoading.value = true
+function isPermissionTreeReady() {
+  return permissionTreeLoadedPortal.value === currentPortal.value
+}
+
+async function runWithPermissionLoading(task: () => Promise<void>) {
+  modalPermissionLoading.value = true
   try {
-    await loadPermissionTree({ showLoading: false })
-    clearAllSelected()
+    await task()
   }
   finally {
-    treeLoading.value = false
+    modalPermissionLoading.value = false
   }
 }
 
@@ -723,11 +739,21 @@ function closeModal() {
   modalOpen.value = false
 }
 
-function openCreateModal() {
+async function openCreateModal() {
   modalMode.value = 'create'
   resetForm()
+  const shouldLoadPermissionTree = !isPermissionTreeReady()
+  modalPermissionLoading.value = shouldLoadPermissionTree
   modalOpen.value = true
-  hydrateCreateModal()
+  if (!shouldLoadPermissionTree)
+    return
+
+  await nextTick()
+  await runWithPermissionLoading(async () => {
+    const treeReady = await loadPermissionTree({ showLoading: false })
+    if (treeReady)
+      clearAllSelected()
+  })
 }
 
 async function openEditModal(record: DefaultRoleRecord) {
@@ -735,39 +761,39 @@ async function openEditModal(record: DefaultRoleRecord) {
   resetForm()
   formData.roleId = record.roleId
   formData.roleName = String(record.roleName || '').trim()
+  modalPermissionLoading.value = true
   modalOpen.value = true
-  treeLoading.value = true
+  await nextTick()
   try {
-    const [treeReady, detailRes, menuRes] = await Promise.all([
-      loadPermissionTree({ showLoading: false }),
-      getDefaultRoleDetailApi({ roleId: record.roleId }),
-      getRoleMenuIDsApi({ roleId: record.roleId, ownType: currentPortal.value }),
-    ])
-    if (!treeReady)
-      return
-    if (detailRes.code !== 200) {
-      messageService.error(detailRes.message || '加载角色详情失败')
-      return
-    }
-    if (menuRes.code !== 200) {
-      messageService.error(menuRes.message || '加载角色权限失败')
-      return
-    }
+    await runWithPermissionLoading(async () => {
+      const [treeReady, detailRes, menuRes] = await Promise.all([
+        loadPermissionTree({ showLoading: false }),
+        getDefaultRoleDetailApi({ roleId: record.roleId }),
+        getRoleMenuIDsApi({ roleId: record.roleId, ownType: currentPortal.value }),
+      ])
+      if (!treeReady)
+        return
+      if (detailRes.code !== 200) {
+        messageService.error(detailRes.message || '加载角色详情失败')
+        return
+      }
+      if (menuRes.code !== 200) {
+        messageService.error(menuRes.message || '加载角色权限失败')
+        return
+      }
 
-    formData.roleId = record.roleId
-    formData.roleName = String(detailRes.result?.roleName || record.roleName || '').trim()
-    formData.description = String(detailRes.result?.description || '').trim()
+      formData.roleId = record.roleId
+      formData.roleName = String(detailRes.result?.roleName || record.roleName || '').trim()
+      formData.description = String(detailRes.result?.description || '').trim()
 
-    const allowedSet = new Set(collectVisibleAuthorityIDs())
-    const checkedMenuIDs = normalizeMenuIDs(Array.isArray(menuRes.result) ? menuRes.result : [])
-      .filter(menuID => allowedSet.has(menuID))
-    setDefaultCheckedByIds(checkedMenuIDs)
+      const allowedSet = new Set(collectVisibleAuthorityIDs())
+      const checkedMenuIDs = normalizeMenuIDs(Array.isArray(menuRes.result) ? menuRes.result : [])
+        .filter(menuID => allowedSet.has(menuID))
+      setDefaultCheckedByIds(checkedMenuIDs)
+    })
   }
   catch (error: any) {
     messageService.error(error?.message || '加载角色详情失败')
-  }
-  finally {
-    treeLoading.value = false
   }
 }
 

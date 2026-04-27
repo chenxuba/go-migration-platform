@@ -101,7 +101,9 @@ export default ({ mode }: ConfigEnv): UserConfig => {
         output: {
           manualChunks: {
             vue: ['vue', 'vue-router', 'pinia', 'vue-i18n', '@vueuse/core'],
-            antd: ['ant-design-vue', '@ant-design/icons-vue', 'dayjs'],
+            antd: ['ant-design-vue'],
+            'antd-icons': ['@ant-design/icons-vue'],
+            dayjs: ['dayjs'],
             // lodash: ['loadsh-es'],
           },
         },
