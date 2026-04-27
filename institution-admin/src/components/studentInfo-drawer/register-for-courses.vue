@@ -456,7 +456,7 @@ function formatRemainQuantityText(item) {
     if (mode === 3) {
       return `${label}：${prefix}${formatCount(remainTotal)}（含赠${prefix}${formatCount(remainFreeQty)}）|（总计${prefix}${formatCount(totalQty)}）`
     } else {
-      return `${label}：${formatCount(remainTotal)}（含赠 ${formatCount(remainFreeQty)} ${unit}）|（总计 ${formatCount(total)} ${unit}）`
+      return `${label}：${formatCount(remainTotal)} ${unit}（含赠 ${formatCount(remainFreeQty)} ${unit}）|（总计 ${formatCount(total)} ${unit}）`
     }
   } else {
     // 没有赠送：剩余课时：29（总计 31 课时）
@@ -464,7 +464,7 @@ function formatRemainQuantityText(item) {
     if (mode === 3) {
       return `${label}：${prefix}${formatCount(remainQty)}（总${prefix}${formatCount(total)}）`
     } else {
-      return `${label}：${formatCount(remainQty)}（总计 ${formatCount(total)} ${unit}）`
+      return `${label}：${formatCount(remainQty)} ${unit}（总计 ${formatCount(total)} ${unit}）`
     }
   }
 }
