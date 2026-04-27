@@ -1020,6 +1020,7 @@ func parseInstUserQuery(raw map[string]any) model.InstUserQueryDTO {
 		query.QueryModel.ID = asInt64Ptr(qm["id"])
 		query.QueryModel.UserType = asIntPtr(qm["userType"])
 		query.QueryModel.IsTeacher = asBoolPtr(qm["isTeacher"])
+		query.QueryModel.IsSupervisor = asBoolPtr(qm["isSupervisor"])
 		query.QueryModel.RoleIDs = asInt64Slice(qm["roleIds"])
 		query.QueryModel.Status = asBoolPtr(qm["status"])
 		query.QueryModel.DeptID = asInt64Ptr(qm["deptId"])

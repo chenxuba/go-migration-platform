@@ -556,6 +556,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:isMicroSchoolSaleFilter', 'update:isMicroSchoolDisplayFilter',
   'update:lastEditedTimeFilter', 'update:channelPositionRoleFilter', 'update:channelUserType',
   'update:channelIsTeacherFilter',
+  'update:channelIsSupervisorFilter',
   'update:channelAccountStatus', 'update:performanceAllocationStatusFilter',
   'update:enableStatusFilter',
   'update:orderTypeFilter', 'update:orderTagFilter', 'update:enrollTypeFilter', 'update:productTypeFilter', 'update:approveNumberFilter', 'update:approvalStatusFilter', 'update:leaveTypeFilter', 'update:finishTimeFilter', 'update:departmentFilter', 'staff-search', 'update:createUserFilter',
@@ -1485,6 +1486,12 @@ const isTeacherOptions = ref([
   { id: false, value: '否' },
 ])
 const selectIsTeacherVals = ref(null)
+// 是否督导
+const isSupervisorOptions = ref([
+  { id: true, value: '是' },
+  { id: false, value: '否' },
+])
+const selectIsSupervisorVals = ref(null)
 
 // 业绩分配状态选项
 const performanceAllocationStatusOptions = ref([
@@ -2430,6 +2437,13 @@ function handleIsTeacherChange(e) {
   nextTick(() => {
     emit('update:channelIsTeacherFilter', e)
     console.log('是否教师:', e)
+  })
+}
+
+function handleIsSupervisorChange(e) {
+  nextTick(() => {
+    emit('update:channelIsSupervisorFilter', e)
+    console.log('是否督导:', e)
   })
 }
 
@@ -3421,6 +3435,14 @@ const selectedConditions = computed(() => {
       ),
     },
     {
+      type: 'isSupervisor',
+      label: '是否是督导',
+      show: props.displayArray.includes('isSupervisor'),
+      values: isSupervisorOptions.value.filter(
+        opt => opt.id === selectIsSupervisorVals.value,
+      ),
+    },
+    {
       type: 'currentStatus',
       label: props.oneToOneMode ? '开课状态' : '当前状态',
       show: props.displayArray.includes('currentStatus'),
@@ -3853,6 +3875,7 @@ watch(selectStudentStatusVals, () => (lastUpdated.studentStatus = Date.now()))
 watch(selectAccountStatusVals, () => (lastUpdated.accountStatus = Date.now()))
 watch(selectUserTypeVals, () => (lastUpdated.userType = Date.now()))
 watch(selectIsTeacherVals, () => (lastUpdated.isTeacher = Date.now()))
+watch(selectIsSupervisorVals, () => (lastUpdated.isSupervisor = Date.now()))
 watch(selectCurrentStatusVals, () => (lastUpdated.currentStatus = Date.now()))
 watch(selectOrNotFenClassVals, () => (lastUpdated.orNotFenClass = Date.now()))
 watch(selectBillingModeVals, () => (lastUpdated.billingMode = Date.now()))
@@ -3952,6 +3975,8 @@ const clearAll = debounce(() => {
     selectBillingModeVals,
     selectAccountStatusVals,
     selectUserTypeVals,
+    selectIsTeacherVals,
+    selectIsSupervisorVals,
     recommendedVals,
     selectChannelCategoryVals,
     positionRoleVals,
@@ -4020,6 +4045,7 @@ const clearAll = debounce(() => {
     emit('update:channelAccountStatus', undefined, true)
     emit('update:channelUserType', undefined, true)
     emit('update:channelIsTeacherFilter', undefined, true)
+    emit('update:channelIsSupervisorFilter', undefined, true)
     emit('update:performanceAllocationStatusFilter', undefined, true)
     emit('update:enableStatusFilter', undefined, true)
     emit('update:orderTypeFilter', [], true)
@@ -4641,6 +4667,10 @@ function removeCondition(type, id) {
       selectIsTeacherVals.value = null
       emit('update:channelIsTeacherFilter', undefined, false, id, type)
       break
+    case 'isSupervisor':
+      selectIsSupervisorVals.value = null
+      emit('update:channelIsSupervisorFilter', undefined, false, id, type)
+      break
     case 'currentStatus':
       // 清空当前状态多选
       selectCurrentStatusVals.value = []
@@ -5143,6 +5173,9 @@ function clearQuickFilter(id, type) {
       break
     case 'isTeacher':
       selectIsTeacherVals.value = null
+      break
+    case 'isSupervisor':
+      selectIsSupervisorVals.value = null
       break
     case 'positionRole':
       positionRoleVals.value = []
@@ -6658,6 +6691,10 @@ defineExpose({
               <checkbox-filter v-if="filterType === 'isTeacher'" :ref="(el) => handleRef(el, 'isTeacher')"
                 v-model:checked-values="selectIsTeacherVals" category="noSearchRadio" placeholder="选择是否是教师"
                 :options="isTeacherOptions" label="是否是教师" type="radio" @radio-change="handleIsTeacherChange" />
+              <!-- 是否是督导 -->
+              <checkbox-filter v-if="filterType === 'isSupervisor'" :ref="(el) => handleRef(el, 'isSupervisor')"
+                v-model:checked-values="selectIsSupervisorVals" category="noSearchRadio" placeholder="选择是否是督导"
+                :options="isSupervisorOptions" label="是否是督导" type="radio" @radio-change="handleIsSupervisorChange" />
 
               <!-- 业绩分配状态 -->
               <checkbox-filter v-if="filterType === 'performanceAllocationStatus'"

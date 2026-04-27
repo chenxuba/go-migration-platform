@@ -52,6 +52,7 @@ func New(db *sql.DB) *Repository {
 	repo := &Repository{db: db}
 	_ = repo.ensureCurrentInstitutionColumn(context.Background())
 	_ = repo.ensureInstUserTeacherColumn(context.Background())
+	_ = repo.ensureInstUserSupervisorColumn(context.Background())
 	return repo
 }
 
@@ -99,6 +100,41 @@ func (repo *Repository) ensureInstUserTeacherColumn(ctx context.Context) error {
 		ALTER TABLE inst_user
 		ADD COLUMN is_teacher TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否教师'
 		AFTER user_type
+	`)
+	return err
+}
+
+func (repo *Repository) ensureInstUserSupervisorColumn(ctx context.Context) error {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'inst_user'
+		  AND COLUMN_NAME = 'is_supervisor'
+	`).Scan(&count); err != nil {
+		return err
+	}
+	if count == 0 {
+		if _, err := repo.db.ExecContext(ctx, `
+			ALTER TABLE inst_user
+			ADD COLUMN is_supervisor TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否督导'
+			AFTER is_teacher
+		`); err != nil {
+			return err
+		}
+		return nil
+	}
+	if _, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_user
+		SET is_supervisor = 0
+		WHERE is_supervisor IS NULL
+	`); err != nil {
+		return err
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		ALTER TABLE inst_user
+		MODIFY COLUMN is_supervisor TINYINT(1) NOT NULL DEFAULT 0 COMMENT '是否督导'
 	`)
 	return err
 }

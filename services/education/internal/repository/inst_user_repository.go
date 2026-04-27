@@ -179,6 +179,10 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 		filters = append(filters, "IFNULL(iu.is_teacher, 0) = ?")
 		args = append(args, boolValue(query.IsTeacher))
 	}
+	if query.IsSupervisor != nil {
+		filters = append(filters, "IFNULL(iu.is_supervisor, 0) = ?")
+		args = append(args, boolValue(query.IsSupervisor))
+	}
 	if query.CreateTimeBegin != nil {
 		filters = append(filters, "iu.create_time >= ?")
 		args = append(args, *query.CreateTimeBegin)
@@ -223,7 +227,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 			       IFNULL(GROUP_CONCAT(DISTINCT sd.depart_name ORDER BY sd.id SEPARATOR ','), ''),
 			       IFNULL(GROUP_CONCAT(DISTINCT sr.id ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
 			       IFNULL(GROUP_CONCAT(DISTINCT sr.role_name ORDER BY IFNULL(sr.is_admin, 0) DESC, sr.id SEPARATOR ','), ''),
-			       IFNULL(iu.disabled, 0), iu.user_type, IFNULL(iu.is_teacher, 0), iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
+			       IFNULL(iu.disabled, 0), iu.user_type, IFNULL(iu.is_teacher, 0), IFNULL(iu.is_supervisor, 0), iu.create_time, IFNULL(iu.is_admin, 0), IFNULL(iu.activated_status, 0)
 			FROM inst_user iu
 			LEFT JOIN org_institution oi ON oi.id = iu.inst_id
 			LEFT JOIN inst_user_dept iud ON iud.inst_user_id = iu.id AND iud.del_flag = 0
@@ -231,7 +235,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 			LEFT JOIN sso_user_role sur ON sur.user_id = iu.user_id
 			LEFT JOIN sso_role sr ON sr.id = sur.role_id AND sr.del_flag = 0 AND (sr.org_id = iu.inst_id OR sr.org_id = 0)
 			WHERE `+whereClause+`
-			GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.is_teacher, iu.create_time, iu.is_admin, iu.activated_status
+			GROUP BY iu.id, iu.uuid, iu.version, iu.inst_id, oi.organ_name, iu.avatar, iu.nick_name, iu.mobile, iu.disabled, iu.user_type, iu.is_teacher, iu.is_supervisor, iu.create_time, iu.is_admin, iu.activated_status
 			ORDER BY iu.create_time DESC
 		LIMIT ? OFFSET ?`, listArgs...)
 	if err != nil {
@@ -248,7 +252,7 @@ func (repo *Repository) PageInstUsers(ctx context.Context, instID int64, query m
 		if err := rows.Scan(
 			&item.ID, &item.UUID, &item.Version, &item.InstID, &item.InstName, &item.Avatar,
 			&item.NickName, &item.Mobile, &item.DepartNames, &roleIDsRaw, &roleNamesRaw,
-			&item.Disabled, &item.UserType, &item.IsTeacher, &createTime, &item.IsAdmin, &item.ActivatedStatus,
+			&item.Disabled, &item.UserType, &item.IsTeacher, &item.IsSupervisor, &createTime, &item.IsAdmin, &item.ActivatedStatus,
 		); err != nil {
 			return model.PageResult[model.InstUserQueryVO]{}, err
 		}
@@ -277,7 +281,7 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT iu.id, IFNULL(iu.uuid, ''), IFNULL(iu.version, 0), IFNULL(iu.nick_name, ''), IFNULL(iu.avatar, ''), IFNULL(iu.mobile, ''),
 		       IFNULL(iu.disabled, 0), iu.create_time, IFNULL(oi.organ_name, ''), iu.inst_id, iu.user_type, IFNULL(iu.is_admin, 0),
-		       IFNULL(iu.is_teacher, 0)
+		       IFNULL(iu.is_teacher, 0), IFNULL(iu.is_supervisor, 0)
 		FROM inst_user iu
 		LEFT JOIN org_institution oi ON oi.id = iu.inst_id
 		WHERE iu.id = ? AND iu.inst_id = ? AND iu.del_flag = 0
@@ -289,7 +293,7 @@ func (repo *Repository) GetInstUserDetail(ctx context.Context, instUserID, instI
 	if err := row.Scan(
 		&detail.ID, &detail.UUID, &detail.Version, &detail.NickName, &detail.Avatar, &detail.Mobile,
 		&detail.Disabled, &createTime, &detail.InstName, &detail.InstID, &detail.UserType, &detail.IsAdmin,
-		&detail.IsTeacher,
+		&detail.IsTeacher, &detail.IsSupervisor,
 	); err != nil {
 		return model.InstUserDetailVO{}, err
 	}
@@ -529,9 +533,9 @@ func (repo *Repository) SaveInstUser(ctx context.Context, instID int64, dto mode
 	}
 
 	instResult, err := tx.ExecContext(ctx, `
-		INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, is_teacher, activated_status, del_flag, create_time)
-		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
-	`, ssoUserID, instID, strings.TrimSpace(dto.NickName), username, strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.Mobile), boolValue(dto.Admin), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher))
+		INSERT INTO inst_user (uuid, version, user_id, inst_id, nick_name, username, avatar, mobile, is_admin, disabled, user_type, is_teacher, is_supervisor, activated_status, del_flag, create_time)
+		VALUES (UUID(), 0, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, NOW())
+	`, ssoUserID, instID, strings.TrimSpace(dto.NickName), username, strings.TrimSpace(dto.Avatar), strings.TrimSpace(dto.Mobile), boolValue(dto.Admin), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher), boolValue(dto.IsSupervisor))
 	if err != nil {
 		return 0, err
 	}
@@ -573,9 +577,9 @@ func (repo *Repository) UpdateInstUser(ctx context.Context, instID int64, dto mo
 
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE inst_user
-		SET nick_name = ?, avatar = ?, disabled = ?, user_type = ?, is_teacher = ?, update_time = NOW()
+		SET nick_name = ?, avatar = ?, disabled = ?, user_type = ?, is_teacher = ?, is_supervisor = ?, update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
-	`, strings.TrimSpace(dto.NickName), strings.TrimSpace(dto.Avatar), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher), dto.ID, instID); err != nil {
+	`, strings.TrimSpace(dto.NickName), strings.TrimSpace(dto.Avatar), boolValue(dto.Disabled), dto.UserType, boolValue(dto.IsTeacher), boolValue(dto.IsSupervisor), dto.ID, instID); err != nil {
 		return err
 	}
 	if _, err := tx.ExecContext(ctx, `

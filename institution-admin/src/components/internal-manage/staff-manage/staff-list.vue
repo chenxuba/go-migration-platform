@@ -62,6 +62,7 @@ const displayArray = ref([
   'accountStatus',
   'userType',
   'isTeacher',
+  'isSupervisor',
   'positionRole',
 ]);
 
@@ -145,6 +146,13 @@ const allColumns = ref([
     title: '是否教师',
     dataIndex: 'isTeacher',
     key: 'isTeacher',
+    width: 100,
+    required: true,
+  },
+  {
+    title: '是否督导',
+    dataIndex: 'isSupervisor',
+    key: 'isSupervisor',
     width: 100,
     required: true,
   },
@@ -256,6 +264,7 @@ const filterFieldMapping = {
   channelAccountStatus: "status",
   channelUserType: "userType",
   channelIsTeacherFilter: "isTeacher",
+  channelIsSupervisorFilter: "isSupervisor",
   channelPositionRoleFilter: "roleIds",
   stuPhoneSearchFilter: "id",
 };
@@ -783,6 +792,14 @@ onMounted(async () => {
                   :class="record.isTeacher ? 'teacher-tag--yes' : 'teacher-tag--no'"
                 >
                   {{ record.isTeacher ? '是' : '否' }}
+                </span>
+              </template>
+              <template v-if="column.key === 'isSupervisor'">
+                <span
+                  class="teacher-tag"
+                  :class="record.isSupervisor ? 'teacher-tag--yes' : 'teacher-tag--no'"
+                >
+                  {{ record.isSupervisor ? '是' : '否' }}
                 </span>
               </template>
               <template v-if="column.key === 'createTime'">

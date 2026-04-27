@@ -11,6 +11,7 @@ type InstUserQueryModel struct {
 	ID              *int64     `json:"id"`
 	UserType        *int       `json:"userType"`
 	IsTeacher       *bool      `json:"isTeacher"`
+	IsSupervisor    *bool      `json:"isSupervisor"`
 	RoleIDs         []int64    `json:"roleIds"`
 	Status          *bool      `json:"status"`
 	DeptID          *int64     `json:"deptId"`
@@ -35,38 +36,41 @@ type InstUserQueryVO struct {
 	Disabled        bool       `json:"disabled"`
 	UserType        *int       `json:"userType,omitempty"`
 	IsTeacher       bool       `json:"isTeacher"`
+	IsSupervisor    bool       `json:"isSupervisor"`
 	CreateTime      *time.Time `json:"createTime,omitempty"`
 	IsAdmin         bool       `json:"isAdmin"`
 	ActivatedStatus bool       `json:"activatedStatus"`
 }
 
 type InstUserSaveDTO struct {
-	UserID    *int64  `json:"userId"`
-	InstID    *int64  `json:"instId"`
-	NickName  string  `json:"nickName"`
-	Avatar    string  `json:"avatar"`
-	Mobile    string  `json:"mobile"`
-	DeptIDs   []int64 `json:"deptIds"`
-	Admin     *bool   `json:"admin"`
-	Sort      *int    `json:"sort"`
-	Disabled  *bool   `json:"disabled"`
-	Username  string  `json:"username"`
-	RoleIDs   []int64 `json:"roleIds"`
-	Password  string  `json:"password"`
-	UserType  *int    `json:"userType"`
-	IsTeacher *bool   `json:"isTeacher"`
+	UserID       *int64  `json:"userId"`
+	InstID       *int64  `json:"instId"`
+	NickName     string  `json:"nickName"`
+	Avatar       string  `json:"avatar"`
+	Mobile       string  `json:"mobile"`
+	DeptIDs      []int64 `json:"deptIds"`
+	Admin        *bool   `json:"admin"`
+	Sort         *int    `json:"sort"`
+	Disabled     *bool   `json:"disabled"`
+	Username     string  `json:"username"`
+	RoleIDs      []int64 `json:"roleIds"`
+	Password     string  `json:"password"`
+	UserType     *int    `json:"userType"`
+	IsTeacher    *bool   `json:"isTeacher"`
+	IsSupervisor *bool   `json:"isSupervisor"`
 }
 
 type InstUserModifyDTO struct {
-	ID        int64   `json:"id"`
-	NickName  string  `json:"nickName"`
-	Avatar    string  `json:"avatar"`
-	Mobile    string  `json:"mobile"`
-	DeptIDs   []int64 `json:"deptIds"`
-	Disabled  *bool   `json:"disabled"`
-	RoleIDs   []int64 `json:"roleIds"`
-	UserType  *int    `json:"userType"`
-	IsTeacher *bool   `json:"isTeacher"`
+	ID           int64   `json:"id"`
+	NickName     string  `json:"nickName"`
+	Avatar       string  `json:"avatar"`
+	Mobile       string  `json:"mobile"`
+	DeptIDs      []int64 `json:"deptIds"`
+	Disabled     *bool   `json:"disabled"`
+	RoleIDs      []int64 `json:"roleIds"`
+	UserType     *int    `json:"userType"`
+	IsTeacher    *bool   `json:"isTeacher"`
+	IsSupervisor *bool   `json:"isSupervisor"`
 }
 
 type ChangePhoneVO struct {
@@ -86,23 +90,24 @@ type InstUserRoleDetail struct {
 }
 
 type InstUserDetailVO struct {
-	ID         int64                `json:"id"`
-	UUID       string               `json:"uuid,omitempty"`
-	Version    int64                `json:"version,omitempty"`
-	NickName   string               `json:"nickName"`
-	Avatar     string               `json:"avatar,omitempty"`
-	Mobile     string               `json:"mobile"`
-	Disabled   bool                 `json:"disabled"`
-	CreateTime *time.Time           `json:"createTime,omitempty"`
-	InstName   string               `json:"instName,omitempty"`
-	InstID     int64                `json:"instId"`
-	UserType   *int                 `json:"userType,omitempty"`
-	DeptNames  []string             `json:"deptNames,omitempty"`
-	DeptIDs    []int64              `json:"deptIds,omitempty"`
-	Roles      []InstUserRoleDetail `json:"roles,omitempty"`
-	RoleIDs    []int64              `json:"roleIds,omitempty"`
-	IsAdmin    bool                 `json:"isAdmin"`
-	IsTeacher  bool                 `json:"isTeacher"`
+	ID           int64                `json:"id"`
+	UUID         string               `json:"uuid,omitempty"`
+	Version      int64                `json:"version,omitempty"`
+	NickName     string               `json:"nickName"`
+	Avatar       string               `json:"avatar,omitempty"`
+	Mobile       string               `json:"mobile"`
+	Disabled     bool                 `json:"disabled"`
+	CreateTime   *time.Time           `json:"createTime,omitempty"`
+	InstName     string               `json:"instName,omitempty"`
+	InstID       int64                `json:"instId"`
+	UserType     *int                 `json:"userType,omitempty"`
+	DeptNames    []string             `json:"deptNames,omitempty"`
+	DeptIDs      []int64              `json:"deptIds,omitempty"`
+	Roles        []InstUserRoleDetail `json:"roles,omitempty"`
+	RoleIDs      []int64              `json:"roleIds,omitempty"`
+	IsAdmin      bool                 `json:"isAdmin"`
+	IsTeacher    bool                 `json:"isTeacher"`
+	IsSupervisor bool                 `json:"isSupervisor"`
 }
 
 type LoginAccountAvailability struct {
