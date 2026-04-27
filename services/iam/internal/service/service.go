@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net"
 	"sort"
 	"strings"
 	"time"
@@ -1707,7 +1708,7 @@ func (svc *Service) tenantInstitutionMismatchError(tenantID string) error {
 
 func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutionID int64) (string, error) {
 	domain := strings.TrimSpace(ctx.Host)
-	if domain != "" {
+	if domain != "" && !isLocalOrIPHost(domain) {
 		wildcardTenantID, wildcardInstitutionID, isWildcardDomain, err := svc.repo.ResolveInstitutionLoginDomain(context.Background(), domain)
 		if err != nil {
 			return "", err
@@ -1746,6 +1747,11 @@ func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutio
 		return tenantID, nil
 	}
 	return svc.repo.ResolveTenantIDByInstitution(context.Background(), institutionID)
+}
+
+func isLocalOrIPHost(host string) bool {
+	host = strings.Trim(strings.ToLower(strings.TrimSpace(host)), "[]")
+	return host == "localhost" || net.ParseIP(host) != nil
 }
 
 func (svc *Service) loadLoginContext(ctx tenant.Context, user model.User, loginType string, selectedOrgID int64) (any, []string, []string, *int64, *string, error) {

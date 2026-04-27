@@ -61,31 +61,7 @@ IFNULL((
 		CAST(IFNULL(ic_cnt.teach_method, 0) AS CHAR), '#',
 		CAST(IFNULL(icq_cnt.lesson_model, -99999) AS CHAR)
 	))
-	FROM (
-		SELECT ta_key.id AS account_id
-		FROM tuition_account ta_key
-		WHERE ta_key.inst_id = tc.inst_id
-			AND ta_key.del_flag = 0
-			AND ta_key.student_id = tcs.student_id
-			AND ta_key.course_id = tc.course_id
-		UNION ALL
-		SELECT COALESCE(
-			NULLIF(tcs_cnt.primary_tuition_account_id, 0),
-			(SELECT MIN(ta0.id)
-			 FROM tuition_account ta0
-			 WHERE ta0.order_course_detail_id = tcs_cnt.order_course_detail_id
-			   AND ta0.inst_id = tcs_cnt.inst_id
-			   AND ta0.del_flag = 0)
-		) AS account_id
-		FROM teaching_class_student tcs_cnt
-		WHERE tcs_cnt.inst_id = tc.inst_id
-			AND tcs_cnt.del_flag = 0
-			AND tcs_cnt.teaching_class_id = tc.id
-	) account_candidates
-	INNER JOIN tuition_account ta_cnt
-		ON ta_cnt.id = account_candidates.account_id
-		AND ta_cnt.inst_id = tc.inst_id
-		AND ta_cnt.del_flag = 0
+	FROM tuition_account ta_cnt
 	INNER JOIN inst_course ic_cnt
 		ON ic_cnt.id = ta_cnt.course_id
 		AND ic_cnt.del_flag = 0
@@ -104,7 +80,25 @@ IFNULL((
 		 WHERE qmin.course_id = ta_cnt.course_id AND qmin.del_flag = 0
 		 ORDER BY qmin.id ASC LIMIT 1)
 	) AND icq_cnt.del_flag = 0
-	WHERE account_candidates.account_id IS NOT NULL AND account_candidates.account_id > 0
+	WHERE ta_cnt.inst_id = tc.inst_id
+		AND ta_cnt.del_flag = 0
+		AND (
+			(ta_cnt.student_id = tcs.student_id AND ta_cnt.course_id = tc.course_id)
+			OR ta_cnt.id IN (
+				SELECT COALESCE(
+					NULLIF(tcs_cnt.primary_tuition_account_id, 0),
+					(SELECT MIN(ta0.id)
+					 FROM tuition_account ta0
+					 WHERE ta0.order_course_detail_id = tcs_cnt.order_course_detail_id
+					   AND ta0.inst_id = tcs_cnt.inst_id
+					   AND ta0.del_flag = 0)
+				)
+				FROM teaching_class_student tcs_cnt
+				WHERE tcs_cnt.inst_id = tc.inst_id
+					AND tcs_cnt.del_flag = 0
+					AND tcs_cnt.teaching_class_id = tc.id
+			)
+		)
 ), 0)`
 
 // oneToOneListableJoinSQL 与 PageOneToOneList 主查询一致：仅统计/展示仍有有效班员、且学员与上课课程均未删除的 1 对 1（避免清空校区后残留 teaching_class 导致条数虚高、同名误判）。
