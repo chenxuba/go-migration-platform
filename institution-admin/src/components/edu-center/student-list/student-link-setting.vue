@@ -1,11 +1,6 @@
 <script setup>
 const state = reactive({
-  checked1: false,
-  checked2: false,
-  checked3: false,
-  checked4: false,
-  checked5: false,
-  checked6: false,
+  supervisorEnabled: false,
 })
 </script>
 
@@ -27,38 +22,6 @@ const state = reactive({
                 负责向家长介绍课程和服务，跟进报名意向，促成学员成功入学
               </td>
             </tr>
-            <tr>
-              <td class="td1">
-                采单员
-              </td>
-              <td>
-                <a-switch v-model:checked="state.checked1" /> <span class="ml-2">走访社区、学校等地，与家长沟通，收集学员信息</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="td1">
-                电话销售
-              </td>
-              <td>
-                <a-switch v-model:checked="state.checked2" /> <span class="ml-2">通过电话与家长沟通，介绍课程优势，解答疑问</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="td1">
-                前台
-              </td>
-              <td>
-                <a-switch v-model:checked="state.checked3" /> <span class="ml-2">负责接待家长与学员，处理日常咨询、课务安排</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="td1">
-                副销售员
-              </td>
-              <td>
-                <a-switch v-model:checked="state.checked4" /> <span class="ml-2">协助销售员跟进学员报名，处理家长咨询及意向登记</span>
-              </td>
-            </tr>
           </tbody>
         </table>
       </div>
@@ -72,18 +35,10 @@ const state = reactive({
           <tbody>
             <tr>
               <td class="td1">
-                学管师
+                督导
               </td>
               <td>
-                <a-switch v-model:checked="state.checked5" /> <span class="ml-2">负责深入了解学生，及时解决学生学习中的疑难问题与学习态度等方面的问题</span>
-              </td>
-            </tr>
-            <tr>
-              <td class="td1">
-                顾问
-              </td>
-              <td>
-                <a-switch v-model:checked="state.checked6" /> <span class="ml-2">专业的咨询服务人员，主要为学生，家长和教育机构提供个性化的咨询服务和建议</span>
+                <a-switch v-model:checked="state.supervisorEnabled" /> <span class="ml-2">负责监督学员服务流程，跟进学习效果与家校沟通质量</span>
               </td>
             </tr>
           </tbody>
