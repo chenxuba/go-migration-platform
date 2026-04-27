@@ -5,6 +5,7 @@ import LoginRenderer from './login-renderer.vue'
 import { useAuthorization } from '@/composables/authorization'
 import { loginApi } from '~/api/common/login'
 import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/login-theme'
+import { preloadPlatformHomeEntry, schedulePlatformHomePreload } from '~/router/route-preload'
 import { reset401Status } from '~/utils/request'
 
 const LOGIN_THEME_CACHE_KEY = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
@@ -13,6 +14,7 @@ const { t } = useI18nLocale()
 const router = useRouter()
 const route = useRoute()
 const token = useAuthorization()
+const userStore = useUserStore()
 const submitLoading = ref(false)
 const loginThemeReady = ref(true)
 
@@ -78,7 +80,10 @@ async function loadLoginTheme() {
   }
 }
 
-onMounted(loadLoginTheme)
+onMounted(() => {
+  void loadLoginTheme()
+  schedulePlatformHomePreload()
+})
 
 const rules: Record<string, Rule[]> = {
   username: [{ required: true, message: '请输入账号', trigger: 'change' }],
@@ -113,12 +118,16 @@ async function onSubmit() {
     }
 
     token.value = result.token
+    if (result.user)
+      userStore.setUserInfo({ ...result.user, loginType: result.loginType })
+
     if (result.tenantId) {
       const hostname = window.location.hostname.toLowerCase()
       window.localStorage.setItem(`PLATFORM_ADMIN_TENANT_ID:${hostname}`, result.tenantId)
       window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', result.tenantId)
     }
     reset401Status()
+    void preloadPlatformHomeEntry()
 
     void showLoginMessage('success', t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 

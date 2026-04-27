@@ -1,3 +1,5 @@
+import type { UserInfo } from './user'
+
 export interface LoginParams {
   username: string
   password: string
@@ -14,7 +16,10 @@ export interface LoginMobileParams {
 
 export interface LoginResultModel {
   token: string
+  loginType?: string
+  user?: UserInfo
   tenantId?: string
+  orgId?: number
 }
 
 export function loginApi(params: LoginParams | LoginMobileParams) {

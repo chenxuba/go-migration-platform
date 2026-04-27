@@ -4,6 +4,7 @@ type ComponentLoader = () => Promise<unknown>
 
 const loadedComponents = new Set<string>()
 let preloadingAllRoutes = false
+let platformHomePreloadPromise: Promise<unknown> | undefined
 
 function canPreload() {
   if (typeof window === 'undefined')
@@ -28,6 +29,28 @@ function runWhenIdle(task: () => void) {
   }
 
   window.setTimeout(task, 1200)
+}
+
+export function preloadPlatformHomeEntry() {
+  if (platformHomePreloadPromise || !canPreload())
+    return platformHomePreloadPromise
+
+  platformHomePreloadPromise = Promise.allSettled([
+    import('~/components/app/admin-app-shell.vue'),
+    import('~/layouts/index.vue'),
+    import('~/pages/platform/control-overview/index.vue'),
+  ])
+
+  return platformHomePreloadPromise
+}
+
+export function schedulePlatformHomePreload() {
+  if (platformHomePreloadPromise || !canPreload())
+    return
+
+  runWhenIdle(() => {
+    void preloadPlatformHomeEntry()
+  })
 }
 
 function isComponentLoader(component: RouteRecordRaw['component']): component is ComponentLoader {

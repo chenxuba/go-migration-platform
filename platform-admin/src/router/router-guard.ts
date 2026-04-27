@@ -10,11 +10,11 @@ const loginPath = '/login'
 
 function findFirstMenuPath(items: any[] = []): string {
   for (const item of items) {
-    if (item?.path && !item.hideInMenu)
-      return item.path
     const childPath = findFirstMenuPath(item?.children || [])
     if (childPath)
       return childPath
+    if (item?.path && !item.hideInMenu)
+      return item.path
   }
   return ''
 }
@@ -47,12 +47,14 @@ router.beforeEach(async (to, from, next) => {
     }
   }
   else {
-    if (!userStore.userInfo && !to.path.startsWith('/redirect')) {
+    if ((!userStore.userInfo || !userStore.routerData) && !to.path.startsWith('/redirect')) {
       try {
-        // 获取用户信息
-        await userStore.getUserInfo()
+        // 登录接口已经返回 user 时直接复用，刷新页面才补请求 /sso/info。
+        if (!userStore.userInfo)
+          await userStore.getUserInfo()
         // 获取机构配置
-        await userStore.getInstConfig()
+        if (!userStore.instConfig)
+          await userStore.getInstConfig()
         // 获取路由菜单的信息
         const currentRoute = await userStore.generateDynamicRoutes()
         router.addRoute(currentRoute)

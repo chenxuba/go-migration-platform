@@ -30,10 +30,14 @@ export const useUserStore = defineStore('user', () => {
     if (!result)
       return result
 
+    const isAdmin = typeof result.isAdmin === 'boolean'
+      ? (result.isAdmin ? 1 : 0)
+      : result.isAdmin ?? (result.admin ? 1 : 0)
+
     return {
       ...result,
       avatar: result.avatar ?? result.logo ?? '',
-      isAdmin: result.isAdmin ?? (result.admin ? 1 : 0),
+      isAdmin,
       deptIds: result.deptIds ?? [],
       orgName: result.orgName ?? '',
       instId: result.instId ?? '',
@@ -67,6 +71,13 @@ export const useUserStore = defineStore('user', () => {
     userInfo.value = normalized
     return normalized
   }
+
+  const setUserInfo = (next?: UserInfo | any) => {
+    const normalized = normalizeUserInfo(next)
+    userInfo.value = normalized
+    return normalized
+  }
+
   // 获取机构配置
   const getInstConfig = async () => {
     if (!userInfo.value?.instId) {
@@ -101,6 +112,7 @@ export const useUserStore = defineStore('user', () => {
     userInfo,
     instConfig,
     roles,
+    setUserInfo,
     getUserInfo,
     getInstConfig,
     logout,
