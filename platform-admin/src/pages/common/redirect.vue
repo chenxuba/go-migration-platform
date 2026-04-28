@@ -1,15 +1,20 @@
 <script setup lang="ts">
 const route = useRoute()
 const router = useRouter()
-const params = route.params
-const path = params?.path ? decodeURIComponent(params.path as string) : ''
-if (path)
-  router.replace(path)
-else router.replace('/')
+
+function resolveRedirectPath() {
+  const value = route.params.path
+  const raw = Array.isArray(value) ? value.join('/') : String(value || '')
+  if (!raw)
+    return '/'
+
+  const decoded = decodeURIComponent(raw)
+  return decoded.startsWith('/') ? decoded : `/${decoded}`
+}
+
+router.replace(resolveRedirectPath())
 </script>
 
 <template>
-  <div>
-    <h1>Redirecting...</h1>
-  </div>
+  <div />
 </template>

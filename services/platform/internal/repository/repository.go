@@ -1655,13 +1655,11 @@ func (repo *Repository) GetTenantBootstrapSummary(ctx context.Context, tenantID 
 	if err := institutionRows.Err(); err != nil {
 		return model.TenantBootstrapSummary{}, err
 	}
-	if err := repo.db.QueryRowContext(ctx, `
-		SELECT COUNT(1)
-		FROM tenant_menu
-		WHERE tenant_id = ? AND del_flag = 0
-	`, tenantID).Scan(&summary.MenuCount); err != nil {
+	menuCount, err := repo.countTenantVisibleMenuCount(ctx, tenantID)
+	if err != nil {
 		return model.TenantBootstrapSummary{}, err
 	}
+	summary.MenuCount = menuCount
 	moduleRows, err := repo.db.QueryContext(ctx, `
 		SELECT tm.module_id, IFNULL(sm.name, '')
 		FROM tenant_module tm
@@ -1855,6 +1853,11 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		item.InstitutionIDs = splitCommaInt64List(institutionIDs)
 		item.ModuleIDs = splitCommaInt64List(moduleIDs)
 		item.ModuleNames = splitCommaList(moduleNames)
+		menuCount, err := repo.countTenantVisibleMenuCount(ctx, item.TenantID)
+		if err != nil {
+			return nil, err
+		}
+		item.MenuCount = menuCount
 		item.AdminUsernames = splitCommaList(admins)
 		item.Domains = splitCommaList(domains)
 		item.AdminDomains = splitCommaList(adminDomains)
@@ -1862,6 +1865,23 @@ func (repo *Repository) ListTenants(ctx context.Context, keyword string) ([]mode
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (repo *Repository) countTenantVisibleMenuCount(ctx context.Context, tenantID string) (int, error) {
+	tenantID = strings.TrimSpace(tenantID)
+	if tenantID == "" {
+		return 0, nil
+	}
+
+	rawMenus, err := repo.listInstitutionMenus(ctx, tenantID)
+	if err != nil {
+		return 0, err
+	}
+	selected := make(map[int64]struct{}, len(rawMenus))
+	for _, item := range rawMenus {
+		selected[item.ID] = struct{}{}
+	}
+	return countVisibleInstitutionModuleLeaves(rawMenus, selected), nil
 }
 
 func parseLoginBrandConfig(raw string) model.TenantLoginBrandConfig {

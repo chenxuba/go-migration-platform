@@ -40,7 +40,7 @@ function handleSwitch({ key }: any, current: string) {
   else if (key === 'closeOther')
     multiTabStore.closeOther(current)
   else if (key === 'refresh')
-    multiTabStore.refresh(activeKey.value)
+    multiTabStore.refresh(current)
 }
 
 const isCurrentDisabled = computed(() => {
@@ -126,7 +126,7 @@ onUnmounted(() => {
                 <!-- 关闭其他 -->
                 {{ $t("app.multiTab.closeOther") }}
               </a-menu-item>
-              <a-menu-item key="refresh" :disabled="!isCurrentDisabled">
+              <a-menu-item key="refresh" :disabled="activeKey !== item.fullPath">
                 <!-- 刷新当前 -->
                 {{ $t("app.multiTab.refresh") }}
               </a-menu-item>

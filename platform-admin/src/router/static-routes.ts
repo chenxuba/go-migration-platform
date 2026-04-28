@@ -138,6 +138,16 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/redirect/:path(.*)',
+    name: 'Redirect',
+    component: () => import('~/pages/common/redirect.vue'),
+    meta: {
+      title: '刷新中',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/401',
     name: 'Error401',
     component: () => import('~/pages/exception/401.vue'),
