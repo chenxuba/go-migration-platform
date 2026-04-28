@@ -20,6 +20,14 @@ export function createVitePlugins(env: Record<string, string>) {
         'vue-i18n',
         '@vueuse/core',
         'pinia',
+        {
+          '~/utils/request': [
+            'useDelete',
+            'useGet',
+            'usePost',
+            'usePut',
+          ],
+        },
       ],
       dts: 'types/auto-imports.d.ts',
       dirs: ['src/stores', 'src/composables'],
