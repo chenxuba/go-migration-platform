@@ -14,7 +14,8 @@ export function buildOrderReceiptUrl(orderId: string | number, options: {
     params.set('autoDownload', '1')
   if (options.template)
     params.set('template', options.template)
-  return `${window.location.origin}${window.location.pathname}#/print/order-receipt?${params.toString()}`
+  const base = import.meta.env.BASE_URL && import.meta.env.BASE_URL !== './' ? import.meta.env.BASE_URL : '/'
+  return `${window.location.origin}${base}print/order-receipt?${params.toString()}`
 }
 
 export function openOrderReceiptPage(orderId: string | number, options: {

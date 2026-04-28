@@ -150,7 +150,7 @@ async function onSubmit() {
       ? decodeURIComponent(route.query.redirect)
       : '/'
     const defaultHome = '/platform/control-overview'
-    const safeRedirect = ['/401', '/403', '/404', '/500', '/502'].includes(redirect) ? defaultHome : redirect
+    const safeRedirect = ['/platform/401', '/platform/403', '/platform/404', '/platform/500', '/platform/502'].includes(redirect) ? defaultHome : redirect
     const nextPath = safeRedirect === '/' ? defaultHome : safeRedirect
     await router.replace(nextPath || defaultHome)
   }

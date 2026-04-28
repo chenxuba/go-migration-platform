@@ -6,7 +6,7 @@ function resolveRedirectPath() {
   const value = route.params.path
   const raw = Array.isArray(value) ? value.join('/') : String(value || '')
   if (!raw)
-    return '/'
+    return '/platform/control-overview'
 
   const decoded = decodeURIComponent(raw)
   return decoded.startsWith('/') ? decoded : `/${decoded}`

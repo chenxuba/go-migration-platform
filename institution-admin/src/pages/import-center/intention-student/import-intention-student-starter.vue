@@ -16,7 +16,7 @@ const lastUploadSignature = ref('')
 const lastUploadAt = ref(0)
 const handleChange = () => {}
 function replaceToWorkbench() {
-  window.location.replace(`${window.location.origin}${window.location.pathname}#/enroll-center/intention-student`)
+  router.replace('/enroll-center/intention-student')
 }
 function handleDrop(e) {
   console.log(e);

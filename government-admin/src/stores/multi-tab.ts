@@ -1,7 +1,7 @@
 import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import router from '~@/router'
 
-const allowList = ['/login', '/404', '/403']
+const allowList = ['/government/login', '/government/404', '/government/403']
 
 export interface MultiTabItem {
   path: string
@@ -26,7 +26,7 @@ export const useMultiTab = defineStore('multi-tab', () => {
     if (!route)
       return
     // 判断是不是重定向的地址，如果是，那么就不进行处理
-    if (route.path.startsWith('/redirect') || route.path.startsWith('/common'))
+    if (route.path.startsWith('/government/redirect') || route.path.startsWith('/common'))
       return
     if (route.path === '/')
       return
@@ -97,7 +97,7 @@ export const useMultiTab = defineStore('multi-tab', () => {
       cacheList.value = cacheList.value.filter(name => name !== item.name)
       item.loading = true
       refreshItem.value = item
-      router.replace(`/redirect/${encodeURIComponent(item.fullPath)}`)
+      router.replace(`/government/redirect/${encodeURIComponent(item.fullPath)}`)
     }
   }
 

@@ -9,7 +9,7 @@ const userStore = useUserStore()
 const schoolName = computed(() => userStore.userInfo?.orgName || '总机构')
 
 function replaceToWorkbench() {
-  window.location.replace(`${window.location.origin}${window.location.pathname}#/finance-center/order-list`)
+  router.replace('/finance-center/order-list')
 }
 
 function handleBack() {

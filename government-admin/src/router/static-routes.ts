@@ -50,14 +50,14 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/login',
+    path: '/government/login',
     component: () => import('~/pages/common/login.vue'),
     meta: {
       title: '登录',
     },
   },
   {
-    path: '/401',
+    path: '/government/401',
     name: 'Error401',
     component: () => import('~/pages/exception/401.vue'),
     meta: {
@@ -65,7 +65,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/403',
+    path: '/government/403',
     name: 'Error403',
     component: () => import('~/pages/exception/403.vue'),
     meta: {
@@ -73,7 +73,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/404',
+    path: '/government/404',
     name: 'Error404',
     component: () => import('~/pages/exception/404.vue'),
     meta: {
@@ -81,7 +81,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/500',
+    path: '/government/500',
     name: 'Error500',
     component: () => import('~/pages/exception/500.vue'),
     meta: {
@@ -89,7 +89,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/502',
+    path: '/government/502',
     name: 'Error502',
     component: () => import('~/pages/exception/502.vue'),
     meta: {
@@ -97,8 +97,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/government/redirect/:path(.*)',
+    name: 'Redirect',
+    component: () => import('~/pages/common/redirect.vue'),
+    meta: {
+      title: '刷新中',
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/:pathMatch(.*)*',
-    redirect: '/404',
+    redirect: '/government/404',
   },
 ]
 

@@ -196,7 +196,7 @@ function errorHandler(error: AxiosError): Promise<any> {
             token.value = null
             router
               .push({
-                path: '/login',
+                path: '/government/login',
                 query: {
                   redirect: router.currentRoute.value.fullPath,
                 },
@@ -260,7 +260,7 @@ function errorHandler(error: AxiosError): Promise<any> {
       })
       // 跳转到502页面
       router.replace({
-        path: '/502',
+        path: '/government/502',
       })
     }
     else {
@@ -322,7 +322,7 @@ function instancePromise<R = any, T = any>(options: AxiosOptions<T> & RequestCon
               token.value = null
               router
                 .push({
-                  path: '/login',
+                  path: '/government/login',
                   query: {
                     redirect: router.currentRoute.value.fullPath,
                   },
@@ -381,7 +381,7 @@ function instancePromise<R = any, T = any>(options: AxiosOptions<T> & RequestCon
                 token.value = null
                 router
                   .push({
-                    path: '/login',
+                    path: '/government/login',
                     query: {
                       redirect: router.currentRoute.value.fullPath,
                     },

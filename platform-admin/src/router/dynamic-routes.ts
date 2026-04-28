@@ -72,8 +72,8 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
-    path: '/internal-manage',
-    redirect: '/internal-manage/staff-manage',
+    path: '/platform/internal-manage',
+    redirect: '/platform/internal-manage/staff-manage',
     name: 'InternalManage',
     meta: {
       title: '内部管理',
@@ -84,7 +84,7 @@ const routes: RouteRecordRaw[] = [
     component: basicRouteMap.RouteView,
     children: [
       {
-        path: '/internal-manage/staff-manage',
+        path: '/platform/internal-manage/staff-manage',
         name: 'StaffManage',
         component: () => import('~/pages/internal-manage/staff-manage.vue'),
         meta: {
@@ -94,7 +94,7 @@ const routes: RouteRecordRaw[] = [
         },
       },
       {
-        path: '/internal-manage/role-manage',
+        path: '/platform/internal-manage/role-manage',
         name: 'RoleManage',
         component: () => import('~/pages/internal-manage/role-manage.vue'),
         meta: {

@@ -5,6 +5,10 @@ const Layout = () => import('~/layouts/index.vue')
 
 export default [
   {
+    path: '/',
+    redirect: '/dashboard',
+  },
+  {
     path: '/login',
     component: () => import('~/pages/common/login.vue'),
     meta: {

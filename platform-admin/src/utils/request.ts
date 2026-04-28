@@ -238,7 +238,7 @@ async function showLoginExpiredModal(token: ReturnType<typeof useAuthorization>)
         token.value = null
         router
           .push({
-            path: '/login',
+            path: '/platform/login',
             query: {
               redirect: router.currentRoute.value.fullPath,
             },
@@ -331,7 +331,7 @@ async function errorHandler(error: AxiosError): Promise<any> {
       })
       // 跳转到502页面
       router.replace({
-        path: '/502',
+        path: '/platform/502',
       })
     }
     else {

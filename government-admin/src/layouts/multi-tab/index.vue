@@ -69,7 +69,7 @@ const otherDisabled = computed(() => {
   )
 })
 listenerRouteChange((route: RouteLocationNormalized) => {
-  if (route.fullPath.startsWith('/redirect'))
+  if (route.fullPath.startsWith('/government/redirect'))
     return
   const item = list.value.find(item => item.fullPath === route.fullPath)
 

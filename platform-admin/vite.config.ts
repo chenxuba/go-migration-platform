@@ -17,7 +17,7 @@ function inlineLoadingScript(): PluginOption {
       const loadingScript = readFileSync(resolve(process.cwd(), 'public/loading.js'), 'utf-8')
         .replaceAll('</script>', '<\\/script>')
       return html.replace(
-        /<script\s+src=["'](?:\/|\.\/)loading\.js["']\s*><\/script>/,
+        /<script\s+src=["'](?:%BASE_URL%|\.\/|\/(?:[^"']*\/)?)loading\.js["']\s*><\/script>/,
         `<script>${loadingScript}</script>`,
       )
     },
@@ -41,6 +41,7 @@ function withCdnVersion(url: string, version?: string) {
 // https://vitejs.dev/config/
 export default ({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd())
+  const publicBase = env.VITE_APP_PUBLIC_PATH || (mode === 'production' ? '/platform/' : './')
   const cdnBase = normalizeCdnBase(env.VITE_CDN_BASE)
   const cdnVersion = env.VITE_CDN_VERSION
   const proxyObj = {}
@@ -68,7 +69,7 @@ export default ({ mode }: ConfigEnv): UserConfig => {
     })
   }
   return {
-    base: './',
+    base: publicBase,
     experimental: {
       renderBuiltUrl(filename) {
         if (cdnBase && filename.startsWith('assets/'))
@@ -76,7 +77,7 @@ export default ({ mode }: ConfigEnv): UserConfig => {
       },
     },
     plugins: [
-      ...createVitePlugins(env),
+      ...createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
       inlineLoadingScript(),
     ],
     resolve: {

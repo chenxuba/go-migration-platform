@@ -11,6 +11,7 @@ const baseSrc = fileURLToPath(new URL('./src', import.meta.url))
 // https://vitejs.dev/config/
 export default ({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd())
+  const publicBase = env.VITE_APP_PUBLIC_PATH || (mode === 'production' ? '/government/' : './')
   const proxyObj = {}
   if (mode === 'development'|| mode === 'mylocal' || mode === 'chenlocal') {
     // 获取所有环境变量
@@ -36,8 +37,8 @@ export default ({ mode }: ConfigEnv): UserConfig => {
     })
   }
   return {
-    base: './',
-    plugins: createVitePlugins(env),
+    base: publicBase,
+    plugins: createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
     resolve: {
       alias: [
         {

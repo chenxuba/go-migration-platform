@@ -5,7 +5,7 @@ const params = route.params
 const path = params?.path ? decodeURIComponent(params.path as string) : ''
 if (path)
   router.replace(path)
-else router.replace('/')
+else router.replace('/government/overview')
 </script>
 
 <template>

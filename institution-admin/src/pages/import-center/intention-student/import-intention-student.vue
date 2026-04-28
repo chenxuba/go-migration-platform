@@ -10,7 +10,7 @@ const userStore = useUserStore()
 const schoolName = computed(() => userStore.userInfo?.orgName || '总机构')
 
 function replaceToWorkbench() {
-  window.location.replace(`${window.location.origin}${window.location.pathname}#/enroll-center/intention-student`)
+  router.replace('/enroll-center/intention-student')
 }
 
 function handleBack() {

@@ -8,17 +8,17 @@ interface RealLoginTemplatePreviewOptions {
   layout?: string
 }
 
-function resolveInstitutionAdminPreviewBase() {
+function resolveInstitutionAdminPreviewUrl() {
   const { protocol, hostname, port } = window.location
   if (hostname === 'localhost' || hostname.endsWith('.localhost')) {
     const previewPort = port === '6688' ? '6678' : port
-    return `${protocol}//${hostname}${previewPort ? `:${previewPort}` : ''}/`
+    return `${protocol}//${hostname}${previewPort ? `:${previewPort}` : ''}/login-template-preview`
   }
-  return `${window.location.origin}${window.location.pathname}`
+  return `${window.location.origin}/institution/login-template-preview`
 }
 
-function resolvePlatformAdminPreviewBase() {
-  return `${window.location.origin}${window.location.pathname}`
+function resolvePlatformAdminPreviewUrl() {
+  return `${window.location.origin}/platform/login-template-preview`
 }
 
 export function buildRealLoginTemplatePreviewUrl(options: RealLoginTemplatePreviewOptions) {
@@ -31,8 +31,8 @@ export function buildRealLoginTemplatePreviewUrl(options: RealLoginTemplatePrevi
     desc: options.desc || '',
     templatePreview: '1',
   })
-  const basePath = options.scope === 'institution' ? resolveInstitutionAdminPreviewBase() : resolvePlatformAdminPreviewBase()
-  return `${basePath}#/login-template-preview?${params.toString()}`
+  const previewUrl = options.scope === 'institution' ? resolveInstitutionAdminPreviewUrl() : resolvePlatformAdminPreviewUrl()
+  return `${previewUrl}?${params.toString()}`
 }
 
 export function openRealLoginTemplatePreview(options: RealLoginTemplatePreviewOptions) {

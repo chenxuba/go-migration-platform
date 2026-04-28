@@ -2,7 +2,7 @@
 const router = useRouter()
 function back() {
   router.replace({
-    path: '/',
+    path: '/platform/control-overview',
   })
 }
 </script>

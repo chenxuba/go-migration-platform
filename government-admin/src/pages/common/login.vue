@@ -77,8 +77,8 @@ async function onSubmit() {
 
     const redirect = typeof route.query.redirect === 'string'
       ? decodeURIComponent(route.query.redirect)
-      : '/'
-    router.replace(redirect || '/')
+      : '/government/overview'
+    router.replace(redirect || '/government/overview')
   }
   catch (error: any) {
     console.error('government login failed', error)

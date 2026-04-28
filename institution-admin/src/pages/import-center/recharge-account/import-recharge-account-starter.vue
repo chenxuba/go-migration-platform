@@ -20,7 +20,7 @@ const downloadLoading = ref(false)
 const uploadLoading = ref(false)
 
 function replaceToWorkbench() {
-  window.location.replace(`${window.location.origin}${window.location.pathname}#/finance-center/recharge-account`)
+  router.replace('/finance-center/recharge-account')
 }
 
 function goBack() {

@@ -30,7 +30,7 @@ const templateLinks = [
 ]
 
 function replaceToWorkbench() {
-  window.location.replace(`${window.location.origin}${window.location.pathname}#/finance-center/order-list`)
+  router.replace('/finance-center/order-list')
 }
 
 function handleDrop(e) {

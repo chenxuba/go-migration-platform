@@ -3,7 +3,7 @@ const router = useRouter()
 function back() {
   // 回首页
   router.replace({
-    path: '/dashboard',
+    path: '/government/overview',
   })
 }
 function refresh() {

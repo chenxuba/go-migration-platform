@@ -66,7 +66,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/internal-manage/staff-manage',
+    path: '/platform/internal-manage/staff-manage',
     name: 'StaffManage',
     component: () => import('~/pages/internal-manage/staff-manage.vue'),
     meta: {
@@ -77,7 +77,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/internal-manage/role-manage',
+    path: '/platform/internal-manage/role-manage',
     name: 'RoleManage',
     component: () => import('~/pages/internal-manage/role-manage.vue'),
     meta: {
@@ -121,14 +121,14 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/login',
+    path: '/platform/login',
     component: () => import('~/pages/common/login.vue'),
     meta: {
       title: '登录',
     },
   },
   {
-    path: '/login-template-preview',
+    path: '/platform/login-template-preview',
     name: 'LoginTemplatePreview',
     component: () => import('~/pages/platform/login-template-preview/index.vue'),
     meta: {
@@ -138,7 +138,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/redirect/:path(.*)',
+    path: '/platform/redirect/:path(.*)',
     name: 'Redirect',
     component: () => import('~/pages/common/redirect.vue'),
     meta: {
@@ -148,7 +148,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/401',
+    path: '/platform/401',
     name: 'Error401',
     component: () => import('~/pages/exception/401.vue'),
     meta: {
@@ -156,7 +156,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/403',
+    path: '/platform/403',
     name: 'Error403',
     component: () => import('~/pages/exception/403.vue'),
     meta: {
@@ -164,7 +164,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/404',
+    path: '/platform/404',
     name: 'Error404',
     component: () => import('~/pages/exception/404.vue'),
     meta: {
@@ -172,7 +172,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/500',
+    path: '/platform/500',
     name: 'Error500',
     component: () => import('~/pages/exception/500.vue'),
     meta: {
@@ -180,7 +180,7 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
-    path: '/502',
+    path: '/platform/502',
     name: 'Error502',
     component: () => import('~/pages/exception/502.vue'),
     meta: {
@@ -189,7 +189,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/:pathMatch(.*)*',
-    redirect: '/404',
+    redirect: '/platform/404',
   },
 ]
 

@@ -18,7 +18,7 @@ async function handleClick({ key }: any) {
       hide()
       message.success('退出登录成功', 3)
       router.push({
-        path: '/login',
+        path: '/platform/login',
       }).then(() => {
         multiTabStore.clear()
         layoutMenuStore.clear()

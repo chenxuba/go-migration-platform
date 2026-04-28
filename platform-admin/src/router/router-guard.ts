@@ -5,8 +5,8 @@ import { useLoadingCheck, useScrollToTop } from '~/composables/loading'
 import { useMetaTitle } from '~/composables/meta-title'
 import { setRouteEmitter } from '~@/utils/route-listener'
 
-const allowList = ['/login', '/login-template-preview', '/error', '/401', '/404', '/403', '/502']
-const loginPath = '/login'
+const allowList = ['/platform/login', '/platform/login-template-preview', '/platform/error', '/platform/401', '/platform/404', '/platform/403', '/platform/502']
+const loginPath = '/platform/login'
 
 let authGuardPromise: Promise<typeof import('./auth-guard')> | undefined
 
@@ -30,7 +30,7 @@ router.beforeEach(async (to, from, next) => {
 
   const token = useAuthorization()
   if (!token.value) {
-    if (!allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if (!allowList.includes(to.path) && !to.path.startsWith('/platform/redirect')) {
       next({
         path: loginPath,
         query: {

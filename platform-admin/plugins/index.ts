@@ -32,7 +32,7 @@ export function createVitePlugins(env: Record<string, string>) {
     // https://github.com/kirklin/unplugin-config
     GenerateConfig({
       appName: env.VITE_GLOB_APP_TITLE,
-      baseDir: './',
+      baseDir: env.VITE_APP_PUBLIC_PATH || './',
       configFile: {
         generate: true,
         fileName: GLOB_CONFIG_FILE_NAME,

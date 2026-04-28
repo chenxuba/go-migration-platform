@@ -2,7 +2,7 @@
 const router = useRouter()
 function login() {
   router.replace({
-    path: '/login',
+    path: '/government/login',
   })
 }
 </script>

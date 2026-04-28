@@ -4,8 +4,8 @@ import { useMetaTitle } from '~/composables/meta-title'
 import { hasGovernmentPortalAccess } from '~/utils/government-auth'
 import { setRouteEmitter } from '~@/utils/route-listener'
 
-const allowList = ['/login', '/error', '/401', '/404', '/403','/502']
-const loginPath = '/login'
+const allowList = ['/government/login', '/government/error', '/government/401', '/government/404', '/government/403', '/government/502']
+const loginPath = '/government/login'
 
 router.beforeEach(async (to, from, next) => {
   // 正常路由处理流程
@@ -16,7 +16,7 @@ router.beforeEach(async (to, from, next) => {
 
   if (!token.value) {
     //  如果token不存在就跳转到登录页面
-    if (!allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if (!allowList.includes(to.path) && !to.path.startsWith('/government/redirect')) {
       next({
         path: loginPath,
         query: {
@@ -27,14 +27,14 @@ router.beforeEach(async (to, from, next) => {
     }
   }
   else {
-    if ((!userStore.userInfo || !userStore.routerData) && !allowList.includes(to.path) && !to.path.startsWith('/redirect')) {
+    if ((!userStore.userInfo || !userStore.routerData) && !allowList.includes(to.path) && !to.path.startsWith('/government/redirect')) {
       try {
         // 获取用户信息
         const userInfo = userStore.userInfo || await userStore.getUserInfo()
         if (!hasGovernmentPortalAccess(userInfo)) {
           await userStore.logout()
           next({
-            path: '/403',
+            path: '/government/403',
             replace: true,
           })
           return
@@ -46,7 +46,7 @@ router.beforeEach(async (to, from, next) => {
         router.addRoute(currentRoute)
         if (to.meta?.access && !hasAccess(to.meta.access)) {
           next({
-            path: '/403',
+            path: '/government/403',
             replace: true,
           })
           return
@@ -61,7 +61,7 @@ router.beforeEach(async (to, from, next) => {
         if (e instanceof AxiosError && e?.response?.status === 401) {
           // 跳转到error页面
           next({
-            path: '/401',
+            path: '/government/401',
           })
         }
       }
@@ -79,7 +79,7 @@ router.beforeEach(async (to, from, next) => {
 
   if (token.value && to.meta?.access && !hasAccess(to.meta.access)) {
     next({
-      path: '/403',
+      path: '/government/403',
       replace: true,
     })
     return

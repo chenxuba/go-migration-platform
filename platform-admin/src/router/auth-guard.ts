@@ -6,8 +6,8 @@ import { useAuthorization } from '~/composables/authorization'
 import { useUserStore } from '~/stores/user'
 import { preloadRouteByPath, scheduleAccessibleRoutePreload } from './route-preload'
 
-const errorPageList = ['/401', '/404', '/403', '/502']
-const loginPath = '/login'
+const errorPageList = ['/platform/401', '/platform/404', '/platform/403', '/platform/502']
+const loginPath = '/platform/login'
 
 function findFirstMenuPath(items: any[] = []): string {
   for (const item of items) {
@@ -36,7 +36,7 @@ export async function handleAuthGuard(
   const userStore = useUserStore()
   const { hasAccess } = useAccess()
 
-  if ((!userStore.userInfo || !userStore.routerData) && !to.path.startsWith('/redirect')) {
+  if ((!userStore.userInfo || !userStore.routerData) && !to.path.startsWith('/platform/redirect')) {
     try {
       // 登录接口已经返回 user 时直接复用，刷新页面才补请求 /sso/info。
       if (!userStore.userInfo)
@@ -56,7 +56,7 @@ export async function handleAuthGuard(
       }
       if (to.meta?.access && !hasAccess(to.meta.access)) {
         next({
-          path: to.path === '/platform/control-overview' ? accessibleHome : '/403',
+          path: to.path === '/platform/control-overview' ? accessibleHome : '/platform/403',
           replace: true,
         })
         return
@@ -70,7 +70,7 @@ export async function handleAuthGuard(
     catch (e) {
       if (e instanceof AxiosError && e?.response?.status === 401) {
         next({
-          path: '/401',
+          path: '/platform/401',
         })
         return
       }
@@ -90,7 +90,7 @@ export async function handleAuthGuard(
 
   if (to.meta?.access && !hasAccess(to.meta.access)) {
     next({
-      path: to.path === '/platform/control-overview' ? accessibleHome : '/403',
+      path: to.path === '/platform/control-overview' ? accessibleHome : '/platform/403',
       replace: true,
     })
     return
