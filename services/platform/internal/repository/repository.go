@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -728,6 +729,16 @@ func (repo *Repository) seedTenantAControlPlane(ctx context.Context) error {
 	`); err != nil {
 		return err
 	}
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("APP_ENV")), "prod") {
+		_, err := repo.db.ExecContext(ctx, `
+			UPDATE tenant_domain
+			SET del_flag = 1, is_primary = 0, update_time = NOW()
+			WHERE del_flag = 0
+			  AND (LOWER(domain) = 'localhost' OR LOWER(domain) LIKE '%.localhost')
+		`)
+		return err
+	}
+
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO tenant_domain (tenant_id, domain, entry_type, is_primary, create_time, update_time, del_flag)
 		VALUES ('tenant-a', 'tenant-a.localhost', 'institution-admin', 1, NOW(), NOW(), 0)
