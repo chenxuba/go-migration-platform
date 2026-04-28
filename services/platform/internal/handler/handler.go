@@ -141,6 +141,10 @@ func (handler *Handler) publicLoginTheme(w http.ResponseWriter, r *http.Request)
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate, max-age=0")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("Expires", "0")
+	w.Header().Set("Vary", "Host, X-Tenant-Domain")
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 

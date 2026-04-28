@@ -747,13 +747,13 @@ watch(
   top: 34px;
   left: 80px;
   z-index: 1;
-  max-width: 360px;
+  width: max-content;
   margin: 0;
-  overflow: hidden;
+  overflow: visible;
   color: rgba(0, 0, 0, 0.45);
   font-size: 12px;
   line-height: 18px;
-  text-overflow: ellipsis;
+  text-overflow: clip;
   white-space: nowrap;
 
   strong {

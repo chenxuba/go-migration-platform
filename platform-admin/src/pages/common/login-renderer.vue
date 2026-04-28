@@ -173,6 +173,23 @@ const dynamicLoginProps = computed(() => ({ brand: props.brand, formState: props
   background-size: cover;
 }
 
+.platform-login :deep(.ant-btn-primary) {
+  background: var(--tenant-primary) !important;
+  border-color: var(--tenant-primary) !important;
+  box-shadow: 0 12px 24px color-mix(in srgb, var(--tenant-primary) 24%, transparent);
+}
+
+.platform-login :deep(.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):hover),
+.platform-login :deep(.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):focus-visible) {
+  background: color-mix(in srgb, var(--tenant-primary) 86%, white) !important;
+  border-color: color-mix(in srgb, var(--tenant-primary) 86%, white) !important;
+}
+
+.platform-login :deep(.ant-btn-primary:not(:disabled):not(.ant-btn-disabled):active) {
+  background: color-mix(in srgb, var(--tenant-primary) 90%, black) !important;
+  border-color: color-mix(in srgb, var(--tenant-primary) 90%, black) !important;
+}
+
 .login-theme-loading {
   min-height: 100vh;
   background: #f8fbff;

@@ -25,7 +25,11 @@ export interface TenantPublicLoginTheme {
 }
 
 export function getLoginThemeApi(entryType = 'platform-admin') {
-  return useGet<TenantPublicLoginTheme, { entryType: string }>('/platform-api/api/v1/public/login-theme', { entryType }, {
+  return useGet<TenantPublicLoginTheme, { entryType: string, _t: string }>('/platform-api/api/v1/public/login-theme', { entryType, _t: String(Date.now()) }, {
+    headers: {
+      'Cache-Control': 'no-cache',
+      Pragma: 'no-cache',
+    },
     token: false,
     silentError: true,
   }) as Promise<ResponseBody<TenantPublicLoginTheme>>

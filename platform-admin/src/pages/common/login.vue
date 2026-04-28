@@ -9,7 +9,8 @@ import { preloadAuthGuard } from '~/router/router-guard'
 import { preloadPlatformHomeEntry } from '~/router/route-preload'
 import { reset401Status } from '~/utils/request'
 
-const LOGIN_THEME_CACHE_KEY = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
+const LOGIN_THEME_CACHE_PREFIX = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
+const LEGACY_LOGIN_THEME_CACHE_KEY = LOGIN_THEME_CACHE_PREFIX
 
 const { t } = useI18nLocale()
 const router = useRouter()
@@ -17,7 +18,7 @@ const route = useRoute()
 const token = useAuthorization()
 const userStore = useUserStore()
 const submitLoading = ref(false)
-const loginThemeReady = ref(true)
+const loginThemeReady = ref(false)
 
 const formState = reactive({
   username: '',
@@ -43,9 +44,16 @@ function mergeLoginBrand(next?: TenantLoginBrandConfig) {
   Object.assign(loginBrand, defaultBrand, next || {})
 }
 
+function getLoginThemeCacheKey() {
+  if (typeof window === 'undefined')
+    return LOGIN_THEME_CACHE_PREFIX
+  const hostname = window.location.hostname.toLowerCase() || 'unknown'
+  return `${LOGIN_THEME_CACHE_PREFIX}:${hostname}`
+}
+
 function readCachedLoginBrand() {
   try {
-    const raw = window.localStorage.getItem(LOGIN_THEME_CACHE_KEY)
+    const raw = window.localStorage.getItem(getLoginThemeCacheKey())
     if (!raw)
       return undefined
     return JSON.parse(raw) as TenantLoginBrandConfig
@@ -59,7 +67,8 @@ function writeCachedLoginBrand(next?: TenantLoginBrandConfig) {
   if (!next)
     return
   try {
-    window.localStorage.setItem(LOGIN_THEME_CACHE_KEY, JSON.stringify(next))
+    window.localStorage.setItem(getLoginThemeCacheKey(), JSON.stringify(next))
+    window.localStorage.removeItem(LEGACY_LOGIN_THEME_CACHE_KEY)
   }
   catch {
     // Ignore storage quota and privacy-mode errors; the login page can use defaults.
@@ -67,7 +76,7 @@ function writeCachedLoginBrand(next?: TenantLoginBrandConfig) {
 }
 
 async function loadLoginTheme() {
-  mergeLoginBrand(readCachedLoginBrand())
+  const cachedBrand = readCachedLoginBrand()
 
   try {
     const res = await getLoginThemeApi('platform-admin')
@@ -77,7 +86,10 @@ async function loadLoginTheme() {
   }
   catch (error) {
     console.warn('load login theme failed', error)
-    mergeLoginBrand()
+    mergeLoginBrand(cachedBrand)
+  }
+  finally {
+    loginThemeReady.value = true
   }
 }
 

@@ -50,6 +50,26 @@ cd /Users/chenrui/Desktop/go-migration-platform
 ./scripts/restart.sh
 ```
 
+## 线上一键部署
+
+线上更新部署使用：
+
+```bash
+cd /Users/chenrui/Desktop/go-migration-platform
+DEPLOY_SSH_PASSWORD='你的SSH密码' ./scripts/deploy-prod.sh
+```
+
+脚本会在本地构建 3 个 Go 服务和前端静态文件，打包上传到线上服务器，切换 `/opt/go-migration-platform/current`，然后重启 `go-migration-iam`、`go-migration-platform`、`go-migration-education` 并 reload nginx。数据库连接、密钥等线上配置继续读取 `/etc/go-migration-platform/app.env`，脚本不会重写线上数据库配置，也不会导入数据库。
+
+常用参数：
+
+```bash
+./scripts/deploy-prod.sh --frontends platform
+./scripts/deploy-prod.sh --skip-frontend-build
+./scripts/deploy-prod.sh --tests
+./scripts/deploy-prod.sh --build-only
+```
+
 如果你只想启动 Go 服务，不检查也不代起中间件：
 
 ```bash
