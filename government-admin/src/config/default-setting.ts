@@ -3,7 +3,7 @@ import type { LayoutSetting } from '~@/stores/app'
 export default {
   title: '康复机构监管平台',
   theme: 'light',
-  logo: '/logo.svg',
+  logo: './logo.svg',
   collapsed: false,
   drawerVisible: false,
   colorPrimary: '#1677FF',

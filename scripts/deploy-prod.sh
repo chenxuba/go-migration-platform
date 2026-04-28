@@ -19,14 +19,15 @@ Options:
   -h, --help             Show this help
 
 Environment:
-  DEPLOY_SSH_PASSWORD    Optional SSH password. If unset, ssh/scp will prompt or use your SSH key.
+  DEPLOY_SSH_PASSWORD    SSH password. Default is the embedded production server password.
   DEPLOY_GOOS            Backend build target OS, default: linux
   DEPLOY_GOARCH          Backend build target arch, default: amd64
   DEPLOY_KEEP_RELEASES   Number of remote releases to keep, default: 5
   DEPLOY_INSTALL_DEPS    auto|1|0. Install frontend deps when node_modules is missing by default.
 
 Examples:
-  DEPLOY_SSH_PASSWORD='your-password' ./scripts/deploy-prod.sh
+  ./scripts/deploy-prod.sh
+  DEPLOY_SSH_PASSWORD='your-other-password' ./scripts/deploy-prod.sh
   ./scripts/deploy-prod.sh --frontends platform
   ./scripts/deploy-prod.sh --skip-frontend-build
   ./scripts/deploy-prod.sh --build-only
@@ -48,7 +49,7 @@ DEPLOY_GOARCH="${DEPLOY_GOARCH:-amd64}"
 DEPLOY_KEEP_RELEASES="${DEPLOY_KEEP_RELEASES:-5}"
 DEPLOY_INSTALL_DEPS="${DEPLOY_INSTALL_DEPS:-auto}"
 DEPLOY_SCP_LEGACY="${DEPLOY_SCP_LEGACY:-1}"
-DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-}"
+DEPLOY_SSH_PASSWORD="${DEPLOY_SSH_PASSWORD:-i4SiMqAx4EQA}"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -455,7 +456,7 @@ fi
 
 USE_SSHPASS=0
 USE_EXPECT=0
-if [[ -n "$DEPLOY_SSH_PASSWORD" ]]; then
+if [[ "$DEPLOY_BUILD_ONLY" != "1" && -n "$DEPLOY_SSH_PASSWORD" ]]; then
   if command -v sshpass >/dev/null 2>&1; then
     USE_SSHPASS=1
   elif command -v expect >/dev/null 2>&1; then

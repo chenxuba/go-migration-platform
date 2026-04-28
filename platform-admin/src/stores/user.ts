@@ -36,7 +36,8 @@ export const useUserStore = defineStore('user', () => {
 
     return {
       ...result,
-      avatar: result.avatar ?? result.logo ?? '',
+      avatar: result.avatar ?? '',
+      logo: result.logo ?? '',
       isAdmin,
       deptIds: result.deptIds ?? [],
       orgName: result.orgName ?? '',

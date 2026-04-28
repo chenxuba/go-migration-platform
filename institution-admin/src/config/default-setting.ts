@@ -3,7 +3,7 @@ import type { LayoutSetting } from '~@/stores/app'
 export default {
   title: '上海以诺儿童培智服务中心',
   theme: 'light',
-  logo: '/logo.svg',
+  logo: './logo.svg',
   collapsed: false,
   drawerVisible: false,
   colorPrimary: '#1677FF',

@@ -33,7 +33,8 @@ export const useUserStore = defineStore('user', () => {
     return {
       ...result,
       loginType: result.loginType ?? '',
-      avatar: result.avatar ?? result.logo ?? '',
+      avatar: result.avatar ?? '',
+      logo: result.logo ?? '',
       isAdmin: result.isAdmin ?? (result.admin ? 1 : 0),
       mobile: result.mobile ?? '',
       deptId: result.deptId ?? '',

@@ -4,6 +4,7 @@ import type { CSSProperties } from 'vue'
 import InstitutionVersionChip from '../institution-version-chip.vue'
 import { useLayoutState } from '../../basic-layout/context'
 import Menu from '../menu/index.vue'
+import { useBrandLogo } from '~@/composables/brand-logo'
 
 const {
   collapsed,
@@ -22,6 +23,7 @@ const {
   isMobile,
   header,
 } = useLayoutState()
+const { logoSrc, hideLogo, handleLogoError } = useBrandLogo(logo)
 
 const prefixCls = shallowRef('ant-pro-sider')
 
@@ -74,7 +76,7 @@ const logoCls = computed(() => {
   >
     <div v-if="showLogo" class="ant-pro-sider-logo" :class="logoCls">
       <a class="font500">
-        <img :src="logo" alt="logo">
+        <img v-if="!hideLogo" :src="logoSrc" alt="logo" @error="handleLogoError">
         <div v-if="!collapsed || isMobile" class="ant-pro-sider-brand-meta">
           <h1>{{ title }}</h1>
           <InstitutionVersionChip />

@@ -5,6 +5,7 @@ export interface UserInfo {
   mobile?: string
   nickName: string
   avatar: string
+  logo?: string
   isAdmin: number
   roles?: (string | number)[]
   menuCodeList?: (string | number)[]

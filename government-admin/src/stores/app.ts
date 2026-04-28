@@ -45,6 +45,10 @@ export const useAppStore = defineStore('app', () => {
     if (newTitle)
       layoutSetting.title = newTitle
   })
+  const brandLogo = computed(() => userStore.userInfo?.logo)
+  watch(brandLogo, (newLogo) => {
+    layoutSetting.logo = newLogo || defaultSetting.logo || './logo.svg'
+  }, { immediate: true })
 
   const themeConfig = reactive<ThemeConfig>({
     algorithm: [antdTheme.defaultAlgorithm],
