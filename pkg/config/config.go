@@ -17,10 +17,9 @@ type ServiceConfig struct {
 	DBPassword                            string
 	TokenSecret                           string
 	TokenCookieName                       string
-	ESURI                                 string
-	ESUsername                            string
-	ESPassword                            string
-	RocketMQNameSrv                       string
+	MeiliHost                             string
+	MeiliAPIKey                           string
+	NATSURL                               string
 	QiniuAccessKey                        string
 	QiniuSecretKey                        string
 	QiniuBucket                           string
@@ -60,10 +59,9 @@ func Load(name, defaultPort string) ServiceConfig {
 		DBPassword:                            envOrDefault("DB_PASSWORD", "14551ccxx"),
 		TokenSecret:                           envOrDefault("TOKEN_SECRET", "go-migration-platform-secret"),
 		TokenCookieName:                       envOrDefault("TOKEN_COOKIE_NAME", "ybcToken"),
-		ESURI:                                 envOrDefault("ES_URI", "https://127.0.0.1:9200"),
-		ESUsername:                            envOrDefault("ES_USERNAME", "elastic"),
-		ESPassword:                            envOrDefault("ES_PASSWORD", "uYYUKBrWnWR3JMRlNV_t"),
-		RocketMQNameSrv:                       envOrDefault("ROCKETMQ_NAMESRV", "127.0.0.1:9876"),
+		MeiliHost:                             envOrDefault("MEILI_HOST", "http://127.0.0.1:7700"),
+		MeiliAPIKey:                           envOrDefault("MEILI_API_KEY", envOrDefault("MEILI_MASTER_KEY", "go-migration-platform")),
+		NATSURL:                               envOrDefault("NATS_URL", "nats://127.0.0.1:4222"),
 		QiniuAccessKey:                        envOrDefault("QINIU_ACCESS_KEY", "OrL5f2-qfhJ1zmiMoPuePKFuHhxowE4VkdJn28vx"),
 		QiniuSecretKey:                        envOrDefault("QINIU_SECRET_KEY", "A__fv3mNu2v9-cT0M1Z6PuekZDZOMLszwdc3ax6K"),
 		QiniuBucket:                           envOrDefault("QINIU_BUCKET", "irts-admin"),

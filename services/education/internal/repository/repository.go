@@ -141,7 +141,7 @@ func (repo *Repository) ensureInstUserSupervisorColumn(ctx context.Context) erro
 
 func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	_, err := repo.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS mq_event_log (
+		CREATE TABLE IF NOT EXISTS message_event_log (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			topic VARCHAR(255) NOT NULL,
 			tag VARCHAR(255) NULL,

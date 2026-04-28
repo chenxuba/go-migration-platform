@@ -12,7 +12,7 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
-const mqPublishTimeout = 800 * time.Millisecond
+const messagePublishTimeout = 800 * time.Millisecond
 
 func (svc *Service) StudentSyncStatus(instID *int64) (model.StudentSyncStatus, error) {
 	totalStudents, err := svc.repo.CountStudents(context.Background(), instID)
@@ -24,38 +24,38 @@ func (svc *Service) StudentSyncStatus(instID *int64) (model.StudentSyncStatus, e
 		return model.StudentSyncStatus{}, err
 	}
 
-	esHealth := map[string]any{"ok": false, "message": "not configured"}
-	if svc.esClient != nil {
-		if health, err := svc.esClient.Health(); err == nil {
+	searchHealth := map[string]any{"ok": false, "message": "not configured"}
+	if svc.searchClient != nil {
+		if health, err := svc.searchClient.Health(); err == nil {
 			health["ok"] = true
-			exists, _ := svc.esClient.IndexExists("intent_student_index")
+			exists, _ := svc.searchClient.IndexExists("intent_student_index")
 			health["intentStudentIndexExists"] = exists
-			esHealth = health
+			searchHealth = health
 		} else {
-			esHealth = map[string]any{"ok": false, "message": err.Error()}
+			searchHealth = map[string]any{"ok": false, "message": err.Error()}
 		}
 	}
 
-	mqHealth := map[string]any{"ok": false, "message": "not configured"}
-	if svc.mqClient != nil {
-		mqHealth = svc.mqClient.Health()
+	messagingHealth := map[string]any{"ok": false, "message": "not configured"}
+	if svc.messageClient != nil {
+		messagingHealth = svc.messageClient.Health()
 	}
 
 	return model.StudentSyncStatus{
 		IndexName:      "intent_student_index",
-		ES:             esHealth,
-		RocketMQ:       mqHealth,
+		Search:         searchHealth,
+		Messaging:      messagingHealth,
 		TotalStudents:  totalStudents,
 		IntentStudents: intentStudents,
 	}, nil
 }
 
-func (svc *Service) RecordMQEvent(topic, tag string, raw []byte) error {
-	return svc.repo.CreateMQEventLog(context.Background(), topic, tag, string(raw))
+func (svc *Service) RecordMessageEvent(topic, tag string, raw []byte) error {
+	return svc.repo.CreateMessageEventLog(context.Background(), topic, tag, string(raw))
 }
 
-func (svc *Service) PageMQEventLogs(current, size int) (model.PageResult[model.MQEventLog], error) {
-	return svc.repo.ListMQEventLogs(context.Background(), current, size)
+func (svc *Service) PageMessageEventLogs(current, size int) (model.PageResult[model.MessageEventLog], error) {
+	return svc.repo.ListMessageEventLogs(context.Background(), current, size)
 }
 
 func (svc *Service) publishMQ(topic, tag string, payload any) error {
@@ -63,24 +63,24 @@ func (svc *Service) publishMQ(topic, tag string, payload any) error {
 	if err != nil {
 		return err
 	}
-	if err := svc.RecordMQEvent(topic, tag, raw); err != nil {
-		logx.Error("mq event log insert failed", logx.Entry{
+	if err := svc.RecordMessageEvent(topic, tag, raw); err != nil {
+		logx.Error("message event log insert failed", logx.Entry{
 			"topic": topic,
 			"tag":   tag,
 			"error": err.Error(),
 		})
 	}
-	if svc.mqClient == nil {
+	if svc.messageClient == nil {
 		return nil
 	}
-	publishCtx, cancel := context.WithTimeout(context.Background(), mqPublishTimeout)
+	publishCtx, cancel := context.WithTimeout(context.Background(), messagePublishTimeout)
 	defer cancel()
-	if err := svc.mqClient.Publish(publishCtx, messaging.RocketMQEvent{
+	if err := svc.messageClient.Publish(publishCtx, messaging.Event{
 		Topic: topic,
 		Tag:   tag,
 		Body:  payload,
 	}); err != nil {
-		logx.Error("rocketmq publish failed", logx.Entry{
+		logx.Error("message publish failed", logx.Entry{
 			"topic": topic,
 			"tag":   tag,
 			"error": err.Error(),
@@ -90,15 +90,15 @@ func (svc *Service) publishMQ(topic, tag string, payload any) error {
 	return nil
 }
 
-func (svc *Service) SyncIntentStudentsToES(instID *int64, batchSize int) (int, error) {
-	if svc.esClient == nil {
-		return 0, errors.New("es client not configured")
+func (svc *Service) SyncIntentStudentsToSearch(instID *int64, batchSize int) (int, error) {
+	if svc.searchClient == nil {
+		return 0, errors.New("search client not configured")
 	}
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
 
-	if err := svc.esClient.EnsureIntentStudentIndex("intent_student_index"); err != nil {
+	if err := svc.searchClient.EnsureIntentStudentIndex("intent_student_index"); err != nil {
 		return 0, err
 	}
 
@@ -113,7 +113,7 @@ func (svc *Service) SyncIntentStudentsToES(instID *int64, batchSize int) (int, e
 		if len(docs) == 0 {
 			break
 		}
-		if err := svc.esClient.BulkIndex("intent_student_index", docs); err != nil {
+		if err := svc.searchClient.BulkIndex("intent_student_index", docs); err != nil {
 			return total, err
 		}
 		total += len(docs)
@@ -126,17 +126,17 @@ func (svc *Service) SyncIntentStudentsToES(instID *int64, batchSize int) (int, e
 }
 
 func (svc *Service) ClearIntentStudentIndex() error {
-	if svc.esClient == nil {
-		return errors.New("es client not configured")
+	if svc.searchClient == nil {
+		return errors.New("search client not configured")
 	}
-	return svc.esClient.DeleteIndex("intent_student_index")
+	return svc.searchClient.DeleteIndex("intent_student_index")
 }
 
 func (svc *Service) RebuildIntentStudentIndex(instID *int64, batchSize int) (int, error) {
 	_ = svc.ClearIntentStudentIndex()
-	return svc.SyncIntentStudentsToES(instID, batchSize)
+	return svc.SyncIntentStudentsToSearch(instID, batchSize)
 }
 
 func (svc *Service) DebugInfraSummary() string {
-	return fmt.Sprintf("es=%v mq=%v", svc.esClient != nil, svc.mqClient != nil)
+	return fmt.Sprintf("search=%v messaging=%v", svc.searchClient != nil, svc.messageClient != nil)
 }

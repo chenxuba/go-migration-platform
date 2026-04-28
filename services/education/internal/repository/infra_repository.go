@@ -6,15 +6,15 @@ import (
 	"go-migration-platform/services/education/internal/model"
 )
 
-func (repo *Repository) CreateMQEventLog(ctx context.Context, topic, tag, payload string) error {
+func (repo *Repository) CreateMessageEventLog(ctx context.Context, topic, tag, payload string) error {
 	_, err := repo.db.ExecContext(ctx, `
-		INSERT INTO mq_event_log (topic, tag, payload, created_at)
+		INSERT INTO message_event_log (topic, tag, payload, created_at)
 		VALUES (?, ?, ?, NOW())
 	`, topic, tag, payload)
 	return err
 }
 
-func (repo *Repository) ListMQEventLogs(ctx context.Context, current, size int) (model.PageResult[model.MQEventLog], error) {
+func (repo *Repository) ListMessageEventLogs(ctx context.Context, current, size int) (model.PageResult[model.MessageEventLog], error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -24,28 +24,28 @@ func (repo *Repository) ListMQEventLogs(ctx context.Context, current, size int) 
 	offset := (current - 1) * size
 
 	var total int
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM mq_event_log").Scan(&total); err != nil {
-		return model.PageResult[model.MQEventLog]{}, err
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM message_event_log").Scan(&total); err != nil {
+		return model.PageResult[model.MessageEventLog]{}, err
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id, topic, IFNULL(tag, ''), payload, created_at
-		FROM mq_event_log
+		FROM message_event_log
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?
 	`, size, offset)
 	if err != nil {
-		return model.PageResult[model.MQEventLog]{}, err
+		return model.PageResult[model.MessageEventLog]{}, err
 	}
 	defer rows.Close()
 
-	items := make([]model.MQEventLog, 0, size)
+	items := make([]model.MessageEventLog, 0, size)
 	for rows.Next() {
-		var item model.MQEventLog
+		var item model.MessageEventLog
 		if err := rows.Scan(&item.ID, &item.Topic, &item.Tag, &item.Payload, &item.CreatedAt); err != nil {
-			return model.PageResult[model.MQEventLog]{}, err
+			return model.PageResult[model.MessageEventLog]{}, err
 		}
 		items = append(items, item)
 	}
-	return model.PageResult[model.MQEventLog]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
+	return model.PageResult[model.MessageEventLog]{Items: items, Total: total, Current: current, Size: size}, rows.Err()
 }

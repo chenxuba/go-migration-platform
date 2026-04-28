@@ -1,5 +1,5 @@
 #!/bin/zsh
-# 重启：ensure-dev-infra（按需起 MQ/ES/Canal，参考 Java start_all_services）→ preflight → dev-down → dev-up → 等 8081–8083。
+# 重启：ensure-dev-infra（按需起 NATS/Meilisearch）→ preflight → dev-down → dev-up → 等 8081–8083。
 # 依赖未起时直接退出，不拉 Go（SKIP_PREFLIGHT=1 跳过预检；SKIP_ENSURE_INFRA=1 跳过自动起中间件）。
 #
 # 用法: ./scripts/restart.sh
@@ -11,13 +11,13 @@ SCRIPT_DIR="${0:A:h}"
 cd "${SCRIPT_DIR:A}/.."
 cd "${PWD:A}"
 
-echo "==> 1/5 按需拉起本地中间件（RocketMQ / ES / Canal，见 scripts/ensure-dev-infra.sh）…"
+echo "==> 1/5 按需拉起本地中间件（NATS JetStream / Meilisearch，见 scripts/ensure-dev-infra.sh）…"
 zsh "${SCRIPT_DIR}/ensure-dev-infra.sh" || {
-  echo "中间件未就绪，已中止。可检查 ROCKETMQ_HOME、CANAL_HOME，或 SKIP_ENSURE_INFRA=1 后自行启动。" >&2
+  echo "中间件未就绪，已中止。可检查 NATS_URL、MEILI_HOST，或 SKIP_ENSURE_INFRA=1 后自行启动。" >&2
   exit 1
 }
 
-echo "==> 2/5 依赖预检（RocketMQ + ES + Canal）…"
+echo "==> 2/5 依赖预检（NATS JetStream + Meilisearch）…"
 zsh "${SCRIPT_DIR}/preflight-dev-deps.sh" || {
   echo "依赖未就绪，已中止（不启动 Go）。可 SKIP_PREFLIGHT=1 跳过检查。" >&2
   exit 1

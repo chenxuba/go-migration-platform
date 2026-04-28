@@ -48,7 +48,7 @@ func (svc *Service) CreateFollowUp(userID int64, dto model.CreateFollowUpDTO) er
 	if after, err := svc.repo.GetStudentSnapshot(context.Background(), instID, dto.StudentID); err == nil {
 		_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, dto.StudentID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_followup", "created", map[string]any{
 			"instId":       instID,
 			"studentId":    dto.StudentID,
@@ -98,7 +98,7 @@ func (svc *Service) UpdateFollowUpRecord(userID int64, dto model.UpdateFollowUpD
 			_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, studentID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))
 		}
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_followup", "updated", map[string]any{
 			"instId":         instID,
 			"followRecordId": dto.ID,
@@ -148,7 +148,7 @@ func (svc *Service) UpdateVisitStatus(userID int64, dto model.VisitStatusUpdateD
 			_ = svc.repo.InsertStudentChangeRecord(context.Background(), instID, studentID, instUserID, svc.buildStudentSnapshotChangeText(context.Background(), before, after))
 		}
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_followup", "visit_status", map[string]any{
 			"instId":         instID,
 			"followRecordId": dto.ID,

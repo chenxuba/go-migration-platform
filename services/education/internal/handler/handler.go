@@ -263,10 +263,10 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/class-records/student/delete", handler.deleteStudentTeachingRecord)
 	mux.HandleFunc("/api/v1/class-records/delete", handler.deleteTeachingRecord)
 	mux.HandleFunc("/api/v1/infrastructure/status", handler.infrastructureStatus)
-	mux.HandleFunc("/api/v1/mq/event-logs", handler.mqEventLogs)
-	mux.HandleFunc("/api/v1/es-sync/intent-student/sync", handler.syncIntentStudents)
-	mux.HandleFunc("/api/v1/es-sync/intent-student/rebuild", handler.rebuildIntentStudents)
-	mux.HandleFunc("/api/v1/es-sync/intent-student/clear", handler.clearIntentStudents)
+	mux.HandleFunc("/api/v1/messaging/event-logs", handler.messageEventLogs)
+	mux.HandleFunc("/api/v1/search-sync/intent-student/sync", handler.syncIntentStudents)
+	mux.HandleFunc("/api/v1/search-sync/intent-student/rebuild", handler.rebuildIntentStudents)
+	mux.HandleFunc("/api/v1/search-sync/intent-student/clear", handler.clearIntentStudents)
 	mux.HandleFunc("/api/v1/campus-data/clear", handler.clearCampusData)
 	mux.HandleFunc("/api/v1/intent-students/page", handler.intentStudentsPage)
 	mux.HandleFunc("/api/v1/intent-students/export", handler.exportIntentStudents)
@@ -915,12 +915,12 @@ func (handler *Handler) infrastructureStatus(w http.ResponseWriter, r *http.Requ
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
-func (handler *Handler) mqEventLogs(w http.ResponseWriter, r *http.Request) {
+func (handler *Handler) messageEventLogs(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if _, ok := handler.requireAuth(w, r, ctx); !ok {
 		return
 	}
-	result, err := handler.service.PageMQEventLogs(parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 20))
+	result, err := handler.service.PageMessageEventLogs(parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 20))
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return
@@ -935,7 +935,7 @@ func (handler *Handler) syncIntentStudents(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	instID, batchSize := syncParams(r)
-	count, err := handler.service.SyncIntentStudentsToES(instID, batchSize)
+	count, err := handler.service.SyncIntentStudentsToSearch(instID, batchSize)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, err.Error(), ctx.RequestID)
 		return

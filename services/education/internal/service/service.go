@@ -19,21 +19,21 @@ type Service struct {
 	store             *customization.Store
 	repo              *repository.Repository
 	tokenManager      *authx.TokenManager
-	esClient          *search.ElasticClient
-	mqClient          *messaging.RocketMQClient
+	searchClient      *search.Client
+	messageClient     *messaging.Client
 	qiniuClient       *qiniux.Client
 	wechatOfficial    *weChatOfficialClient
 	wechatMiniProgram *weChatMiniProgramClient
 }
 
-func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, esClient *search.ElasticClient, mqClient *messaging.RocketMQClient, qiniuClient *qiniux.Client) *Service {
+func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, searchClient *search.Client, messageClient *messaging.Client, qiniuClient *qiniux.Client) *Service {
 	return &Service{
-		store:        store,
-		repo:         repo,
-		tokenManager: tokenManager,
-		esClient:     esClient,
-		mqClient:     mqClient,
-		qiniuClient:  qiniuClient,
+		store:         store,
+		repo:          repo,
+		tokenManager:  tokenManager,
+		searchClient:  searchClient,
+		messageClient: messageClient,
+		qiniuClient:   qiniuClient,
 	}
 }
 

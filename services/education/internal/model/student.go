@@ -11,8 +11,8 @@ const (
 
 type StudentSyncStatus struct {
 	IndexName      string         `json:"indexName"`
-	ES             map[string]any `json:"es"`
-	RocketMQ       map[string]any `json:"rocketmq"`
+	Search         map[string]any `json:"search"`
+	Messaging      map[string]any `json:"messaging"`
 	TotalStudents  int            `json:"totalStudents"`
 	IntentStudents int            `json:"intentStudents"`
 }

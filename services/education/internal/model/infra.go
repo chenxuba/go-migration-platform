@@ -2,7 +2,7 @@ package model
 
 import "time"
 
-type MQEventLog struct {
+type MessageEventLog struct {
 	ID        int64     `json:"id"`
 	Topic     string    `json:"topic"`
 	Tag       string    `json:"tag,omitempty"`

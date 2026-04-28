@@ -28,7 +28,7 @@ func (svc *Service) UpdateStudentStatus(userID int64, dto model.StudentStatusUpd
 		return err
 	}
 	go func(instID, studentID int64, dto model.StudentStatusUpdateDTO) {
-		if svc.mqClient != nil {
+		if svc.messageClient != nil {
 			_ = svc.publishMQ("student_intent", "status_changed", map[string]any{
 				"instId":         instID,
 				"studentId":      studentID,
@@ -68,7 +68,7 @@ func (svc *Service) BatchAssignSalesperson(userID int64, dto model.BatchCommonDT
 			}
 		}
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_intent", "assigned_sales", map[string]any{
 			"instId":        instID,
 			"studentIds":    dto.StudentIDs,
@@ -113,7 +113,7 @@ func (svc *Service) BatchAssignSupervisor(userID int64, dto model.BatchCommonDTO
 			}
 		}
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_intent", "assigned_supervisor", map[string]any{
 			"instId":       instID,
 			"studentIds":   dto.StudentIDs,
@@ -151,7 +151,7 @@ func (svc *Service) BatchTransferToPublicPool(userID int64, dto model.BatchCommo
 			}
 		}
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_intent", "transfer_public_pool", map[string]any{
 			"instId":     instID,
 			"studentIds": dto.StudentIDs,
@@ -174,7 +174,7 @@ func (svc *Service) BatchDeleteIntentStudents(userID int64, dto model.BatchCommo
 	if err := svc.repo.BatchDeleteIntentStudents(context.Background(), instID, dto.StudentIDs); err != nil {
 		return err
 	}
-	if svc.mqClient != nil {
+	if svc.messageClient != nil {
 		_ = svc.publishMQ("student_intent", "deleted", map[string]any{
 			"instId":     instID,
 			"studentIds": dto.StudentIDs,

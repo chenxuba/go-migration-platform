@@ -41,7 +41,7 @@ services/
 
 推荐先用一键重启脚本，它会按顺序执行：
 
-- `scripts/ensure-dev-infra.sh`：按需拉起 Elasticsearch、RocketMQ、Canal
+- `scripts/ensure-dev-infra.sh`：按需拉起 NATS JetStream、Meilisearch
 - `scripts/preflight-dev-deps.sh`：检查中间件是否就绪
 - `scripts/dev-down.sh` / `scripts/dev-up.sh`：重启 3 个 Go 服务
 
@@ -87,46 +87,36 @@ export SKIP_ENSURE_INFRA=1
 
 默认依赖：
 
-- Elasticsearch：`https://127.0.0.1:9200`
-- RocketMQ NameServer：`127.0.0.1:9876`
-- RocketMQ Broker：`127.0.0.1:10911`
-- Canal：本地 `canal.deployer` 进程
+- NATS JetStream：`nats://127.0.0.1:4222`
+- Meilisearch：`http://127.0.0.1:7700`
 
-### Elasticsearch 启动方式
+### 中间件启动方式
 
-可以任选下面两种方式，脚本都支持。
-
-#### 方式一：Homebrew 安装
+可以直接交给 `scripts/restart.sh` 拉起。首次本机未安装时，先安装一次：
 
 ```bash
-brew tap elastic/tap
-brew install elastic/tap/elasticsearch-full
-brew services start elastic/tap/elasticsearch-full
+brew install nats-server
+brew install meilisearch
 ```
 
-#### 方式二：手工安装目录
-
-如果本机已经有类似 `/usr/local/elasticsearch-8.5.3` 这样的目录，`scripts/ensure-dev-infra.sh` 会自动探测并尝试执行：
+也可以手动启动：
 
 ```bash
-/path/to/elasticsearch/bin/elasticsearch -d
+nats-server -js -p 4222 -sd .runlogs/nats-data
+MEILI_MASTER_KEY=go-migration-platform meilisearch \
+  --http-addr 127.0.0.1:7700 \
+  --master-key go-migration-platform \
+  --db-path .runlogs/meili-data
 ```
 
-也可以显式指定：
-
-```bash
-export ES_HOME=/usr/local/elasticsearch-8.5.3
-./scripts/restart.sh
-```
+如果希望脚本发现本机缺少命令时自动通过 Homebrew 安装，可设置 `ENSURE_INFRA_AUTO_INSTALL=1`。
 
 ### 常用环境变量
 
-- `ES_HOME`：手工安装版 Elasticsearch 根目录
-- `ES_URI`：默认 `https://127.0.0.1:9200`
-- `ES_USERNAME`：默认 `elastic`
-- `ES_PASSWORD`：默认见 `pkg/config/config.go`
-- `ROCKETMQ_HOME`：默认 `~/rocketmq`
-- `CANAL_HOME`：默认 `/usr/local/canal.deployer-1.1.8`；若不存在会尝试探测 `~/canal.deployer-*` 等路径。未安装时脚本会报错并提示设置环境变量；不需要 Canal 时可 `SKIP_ENSURE_INFRA=1` 或 `PREFLIGHT_SKIP_CANAL=1`。
+- `NATS_URL`：默认 `nats://127.0.0.1:4222`
+- `MEILI_HOST`：默认 `http://127.0.0.1:7700`
+- `MEILI_API_KEY`：默认 `go-migration-platform`
+- `MEILI_MASTER_KEY`：未设置 `MEILI_API_KEY` 时作为 Meilisearch 密钥
 - `ENSURE_INFRA_TIMEOUT`：中间件等待超时，默认 `120`
 - `SKIP_ENSURE_INFRA=1`：跳过自动拉起中间件
 - `SKIP_PREFLIGHT=1`：跳过依赖预检
@@ -190,8 +180,9 @@ go run ./services/education/cmd/api
 - 在读学员分页：`POST /instStudent/getCurrentStudentPage`
 - 财务订单列表：`POST /saleOrder/getOrderList`
 - 财务订单详情：`POST /saleOrder/getOrderDetail`
-- ES 基础状态：`GET /esSync/status`
-- 意向学生 ES 同步入口：`POST /esSync/syncIntentStudent`
+- 搜索基础状态：`GET /api/v1/infrastructure/status`
+- 消息事件日志：`GET /api/v1/messaging/event-logs`
+- 意向学生搜索索引同步入口：`POST /api/v1/search-sync/intent-student/sync`
 
 ## SaaS 试用方式
 

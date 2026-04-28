@@ -56,12 +56,12 @@ func (svc *Service) ClearCampusData(userID int64, req model.CampusDataClearReque
 		},
 	}
 
-	if svc.esClient == nil {
-		result.IntentStudentIndexMessage = "未配置 ES，已跳过意向学员索引清理"
+	if svc.searchClient == nil {
+		result.IntentStudentIndexMessage = "未配置搜索服务，已跳过意向学员索引清理"
 		return result, nil
 	}
 
-	cleared, err := svc.esClient.DeleteIntentStudentsByInstID("intent_student_index", instID)
+	cleared, err := svc.searchClient.DeleteIntentStudentsByInstID("intent_student_index", instID)
 	if err != nil {
 		result.IntentStudentIndexMessage = "业务数据已清空，但意向学员索引清理失败，请手动重建索引"
 		return result, nil

@@ -47,7 +47,7 @@ func main() {
 		panic(err)
 	}
 	tokenManager := authx.NewTokenManager(cfg.TokenSecret)
-	esClient := search.NewElasticClient(cfg.ESURI, cfg.ESUsername, cfg.ESPassword)
+	searchClient := search.NewClient(cfg.MeiliHost, cfg.MeiliAPIKey)
 	qiniuClient := qiniux.New(qiniux.Config{
 		AccessKey:      cfg.QiniuAccessKey,
 		SecretKey:      cfg.QiniuSecretKey,
@@ -59,12 +59,12 @@ func main() {
 		VideoMaxSize:   qiniux.ParseInt64(cfg.QiniuVideoMaxSize, 104857600),
 		VideoMimeTypes: cfg.QiniuVideoMimeTypes,
 	})
-	mqClient, err := messaging.NewRocketMQClient(cfg.RocketMQNameSrv, "go_migration_platform_education", cfg.AppEnv)
+	messageClient, err := messaging.NewClient(cfg.NATSURL, "go_migration_platform_education", cfg.AppEnv)
 	if err != nil {
-		logx.Error("rocketmq producer init failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
-		mqClient = nil
+		logx.Error("message publisher init failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
+		messageClient = nil
 	}
-	svc := service.New(store, repo, tokenManager, esClient, mqClient, qiniuClient)
+	svc := service.New(store, repo, tokenManager, searchClient, messageClient, qiniuClient)
 	svc.ConfigureWeChatOfficial(service.WeChatOfficialConfig{
 		AppID:                   cfg.WeChatOfficialAppID,
 		Secret:                  cfg.WeChatOfficialSecret,
@@ -83,20 +83,20 @@ func main() {
 	svc.StartBackgroundJobs(context.Background())
 	h := handler.New(svc)
 
-	if consumerClient, err := messaging.NewRocketMQConsumer(cfg.RocketMQNameSrv, "go_migration_platform_education_consumer", cfg.AppEnv); err != nil {
-		logx.Error("rocketmq consumer init failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
+	if consumerClient, err := messaging.NewConsumer(cfg.NATSURL, "go_migration_platform_education_consumer", cfg.AppEnv); err != nil {
+		logx.Error("message consumer init failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
 	} else {
 		defer consumerClient.Close()
 		subscribe := func(topic string) {
 			if err := consumerClient.Subscribe(topic, "", func(topic string, tag string, body []byte) error {
-				return svc.RecordMQEvent("consume:"+topic, tag, body)
+				return svc.RecordMessageEvent("consume:"+topic, tag, body)
 			}); err != nil {
-				logx.Error("rocketmq subscribe failed", logx.Entry{"topic": topic, "error": err.Error()})
+				logx.Error("message subscribe failed", logx.Entry{"topic": topic, "error": err.Error()})
 			}
 		}
 		subscribe("student_intent")
 		if err := consumerClient.Start(); err != nil {
-			logx.Error("rocketmq consumer start failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
+			logx.Error("message consumer start failed", logx.Entry{"service": cfg.Name, "error": err.Error()})
 		}
 	}
 

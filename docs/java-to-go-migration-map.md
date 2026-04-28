@@ -71,8 +71,8 @@
 
 暂缓内容：
 
-- ES 同步
-- RocketMQ 消费
+- 搜索索引同步（Meilisearch）
+- 消息消费（NATS JetStream）
 - XXL-Job 复杂任务
 - Word/Excel/PDF 模板生成
 
