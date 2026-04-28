@@ -1,13 +1,32 @@
 /// <reference types="vitest" />
 import { fileURLToPath } from 'node:url'
 import * as process from 'node:process'
+import { readFileSync } from 'node:fs'
 import { loadEnv } from 'vite'
-import type { ConfigEnv, UserConfig } from 'vite'
+import type { ConfigEnv, PluginOption, UserConfig } from 'vite'
 import { createVitePlugins } from './plugins'
 import { OUTPUT_DIR } from './plugins/constants'
 import { resolve } from 'node:path'
 
 const baseSrc = fileURLToPath(new URL('./src', import.meta.url))
+
+function inlineLoadingScript(): PluginOption {
+  return {
+    name: 'inline-loading-script',
+    enforce: 'pre',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        const loadingScript = readFileSync(resolve(process.cwd(), 'public/loading.js'), 'utf-8')
+          .replaceAll('</script>', '<\\/script>')
+        return html.replace(
+          /<script\b(?=[^>]*\bsrc=["'](?:%BASE_URL%|\.\/|\/(?:[^"']*\/)?)loading\.js["'])[^>]*><\/script>/,
+          `<script>${loadingScript}</script>`,
+        )
+      },
+    },
+  }
+}
 // https://vitejs.dev/config/
 export default ({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd())
@@ -38,7 +57,10 @@ export default ({ mode }: ConfigEnv): UserConfig => {
   }
   return {
     base: publicBase,
-    plugins: createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
+    plugins: [
+      inlineLoadingScript(),
+      ...createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
+    ],
     resolve: {
       alias: [
         {

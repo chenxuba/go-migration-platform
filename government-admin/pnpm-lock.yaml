@@ -9,7 +9,6 @@ specifiers:
   '@commitlint/config-conventional': ^18.6.3
   '@ctrl/tinycolor': ^4.1.0
   '@mistjs/cli': 0.0.1-beta.9
-  '@mistjs/vite-plugin-preload': ^0.0.1
   '@types/fs-extra': ^11.0.4
   '@types/lodash': ^4.17.13
   '@types/lodash-es': ^4.17.12
@@ -94,7 +93,6 @@ devDependencies:
   '@commitlint/cli': 18.6.1_qptyzelc4bz2ctryntsopnm3ya
   '@commitlint/config-conventional': 18.6.3
   '@mistjs/cli': 0.0.1-beta.9_vite@6.3.5
-  '@mistjs/vite-plugin-preload': 0.0.1_vite@6.3.5
   '@types/fs-extra': 11.0.4
   '@types/lodash': 4.17.16
   '@types/lodash-es': 4.17.12
@@ -2546,23 +2544,6 @@ packages:
       vite: 6.3.5_tobczjqv4ib7bqcpdxwqbyxjma
     transitivePeerDependencies:
       - supports-color
-    dev: true
-
-  /@mistjs/vite-plugin-preload/0.0.1_vite@6.3.5:
-    resolution: {integrity: sha512-ou/IYGIWL4EbQ8n/6vrbRLzDx/shCzw2M5Ll3YXcBtHiasYKPMr7cGO24fYi+o6K9ILZUfFtglKaZF18qUan8w==}
-    peerDependencies:
-      vite: '>=4.0.0'
-    dependencies:
-      '@rollup/pluginutils': 5.1.4
-      jsdom: 22.1.0
-      prettier: 2.8.8
-      vite: 6.3.5_tobczjqv4ib7bqcpdxwqbyxjma
-    transitivePeerDependencies:
-      - bufferutil
-      - canvas
-      - rollup
-      - supports-color
-      - utf-8-validate
     dev: true
 
   /@modelcontextprotocol/sdk/1.11.2:

@@ -13,13 +13,17 @@ const baseSrc = fileURLToPath(new URL('./src', import.meta.url))
 function inlineLoadingScript(): PluginOption {
   return {
     name: 'inline-loading-script',
-    transformIndexHtml(html) {
-      const loadingScript = readFileSync(resolve(process.cwd(), 'public/loading.js'), 'utf-8')
-        .replaceAll('</script>', '<\\/script>')
-      return html.replace(
-        /<script\s+src=["'](?:%BASE_URL%|\.\/|\/(?:[^"']*\/)?)loading\.js["']\s*><\/script>/,
-        `<script>${loadingScript}</script>`,
-      )
+    enforce: 'pre',
+    transformIndexHtml: {
+      order: 'pre',
+      handler(html) {
+        const loadingScript = readFileSync(resolve(process.cwd(), 'public/loading.js'), 'utf-8')
+          .replaceAll('</script>', '<\\/script>')
+        return html.replace(
+          /<script\b(?=[^>]*\bsrc=["'](?:%BASE_URL%|\.\/|\/(?:[^"']*\/)?)loading\.js["'])[^>]*><\/script>/,
+          `<script>${loadingScript}</script>`,
+        )
+      },
     },
   }
 }
