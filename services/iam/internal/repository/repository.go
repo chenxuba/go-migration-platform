@@ -288,26 +288,40 @@ func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domai
 	}
 
 	var tenantID string
-	var baseDomain string
-	err := repo.db.QueryRowContext(ctx, `
+	var loginSlug string
+
+	rows, err := repo.db.QueryContext(ctx, `
 		SELECT td.tenant_id, td.domain
 		FROM tenant_domain td
 		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
 		WHERE td.entry_type = 'institution-admin'
 		  AND td.del_flag = 0
-		  AND ? LIKE CONCAT('%.', td.domain)
 		ORDER BY CHAR_LENGTH(td.domain) DESC, td.is_primary DESC, td.id ASC
-		LIMIT 1
-	`, domain).Scan(&tenantID, &baseDomain)
-	if err == sql.ErrNoRows {
-		return "", 0, false, nil
-	}
+	`)
 	if err != nil {
 		return "", 0, false, err
 	}
+	defer rows.Close()
 
-	prefix := strings.TrimSuffix(domain, "."+baseDomain)
-	if prefix == "" || strings.Contains(prefix, ".") {
+	for rows.Next() {
+		var candidateTenantID string
+		var candidateBaseDomain string
+		if err := rows.Scan(&candidateTenantID, &candidateBaseDomain); err != nil {
+			return "", 0, false, err
+		}
+		if matchedSlug, ok := resolveInstitutionLoginSlug(domain, candidateBaseDomain); ok {
+			tenantID = candidateTenantID
+			loginSlug = matchedSlug
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return "", 0, false, err
+	}
+	if tenantID == "" {
+		return "", 0, false, nil
+	}
+	if loginSlug == "" || strings.Contains(loginSlug, ".") {
 		return tenantID, 0, true, nil
 	}
 
@@ -319,11 +333,49 @@ func (repo *Repository) ResolveInstitutionLoginDomain(ctx context.Context, domai
 		JOIN tenant_institution ti ON ti.institution_id = oi.id AND ti.tenant_id = ? AND ti.del_flag = 0
 		WHERE oip.del_flag = 0 AND oip.login_slug = ?
 		LIMIT 1
-	`, tenantID, prefix).Scan(&institutionID)
+	`, tenantID, loginSlug).Scan(&institutionID)
 	if err == sql.ErrNoRows {
 		return tenantID, 0, true, nil
 	}
 	return strings.TrimSpace(tenantID), institutionID, true, err
+}
+
+func resolveInstitutionLoginSlug(domain, baseDomain string) (string, bool) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	baseDomain = strings.ToLower(strings.TrimSpace(baseDomain))
+	if domain == "" || baseDomain == "" || domain == baseDomain {
+		return "", false
+	}
+	return resolveFlatInstitutionLoginSlug(domain, baseDomain)
+}
+
+func resolveFlatInstitutionLoginSlug(domain, baseDomain string) (string, bool) {
+	domainLabel, domainRoot, ok := splitDomainLabel(domain)
+	if !ok {
+		return "", false
+	}
+	baseLabel, baseRoot, ok := splitDomainLabel(baseDomain)
+	if !ok || domainRoot != baseRoot {
+		return "", false
+	}
+
+	suffix := "-" + baseLabel
+	if !strings.HasSuffix(domainLabel, suffix) {
+		return "", false
+	}
+	slug := strings.TrimSuffix(domainLabel, suffix)
+	if slug == "" || strings.Contains(slug, ".") {
+		return "", false
+	}
+	return slug, true
+}
+
+func splitDomainLabel(domain string) (string, string, bool) {
+	parts := strings.SplitN(strings.ToLower(strings.TrimSpace(domain)), ".", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func (repo *Repository) ResolveTenantIDByDomainAndEntryType(ctx context.Context, domain, entryType string) (string, error) {

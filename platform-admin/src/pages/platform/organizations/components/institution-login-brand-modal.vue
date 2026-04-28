@@ -58,11 +58,13 @@ const colorOptions = [
 
 const institutionName = computed(() => institutionDetail.value?.organName || '机构')
 const logoUrl = computed(() => institutionDetail.value?.logo || '')
-const loginDomainSuffix = computed(() => institutionDomain.value ? `.${institutionDomain.value}` : '.租户机构端域名')
+const loginDomainSuffix = computed(() => buildLoginDomainSuffix(institutionDomain.value) || '.租户机构端域名')
 const fullLoginDomain = computed(() => {
   const slug = normalizeSlug(formState.loginSlug)
-  return slug && institutionDomain.value ? `${slug}.${institutionDomain.value}` : ''
+  const suffix = buildLoginDomainSuffix(institutionDomain.value)
+  return slug && suffix ? `${slug}${suffix}` : ''
 })
+const fullLoginUrl = computed(() => fullLoginDomain.value ? buildLoginEntryUrl(fullLoginDomain.value, 'institution') : '')
 
 const previewBrand = computed<TenantLoginBrandConfig>(() => ({
   template: formState.template || 'education-split',
@@ -106,6 +108,46 @@ function normalizeSlug(value: string) {
     .replace(/_+/g, '-')
     .replace(/-+/g, '-')
     .replace(/^-|-$/g, '')
+}
+
+function normalizeDomain(value: string) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/:\d+$/, '')
+    .replace(/^\.+|\.+$/g, '')
+}
+
+function buildLoginDomainSuffix(domain: string) {
+  const normalized = normalizeDomain(domain)
+  if (!normalized)
+    return ''
+
+  const parts = normalized.split('.').filter(Boolean)
+  if (parts.length >= 3) {
+    const [tenantLabel, ...rootParts] = parts
+    return `-${tenantLabel}.${rootParts.join('.')}`
+  }
+
+  return `.${normalized}`
+}
+
+function isLocalDomain(domain: string) {
+  return /(^|\.)localhost$|^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)
+}
+
+function buildLoginEntryUrl(domain: string, entryType: 'platform' | 'institution') {
+  const normalized = normalizeDomain(domain)
+  if (!normalized)
+    return ''
+
+  const path = entryType === 'institution' ? '/institution/' : '/platform/'
+  const protocol = isLocalDomain(normalized) && typeof window !== 'undefined'
+    ? window.location.protocol
+    : 'https:'
+  return `${protocol}//${normalized}${path}`
 }
 
 function resetForm() {
@@ -305,13 +347,13 @@ function clearBackgroundUrl() {
 }
 
 async function copyFullLoginDomain() {
-  if (!fullLoginDomain.value) {
+  if (!fullLoginUrl.value) {
     messageService.warning('请先填写一级子域名')
     return
   }
   try {
-    await navigator.clipboard.writeText(fullLoginDomain.value)
-    messageService.success('访问域名已复制')
+    await navigator.clipboard.writeText(fullLoginUrl.value)
+    messageService.success('访问地址已复制')
   }
   catch (error) {
     console.warn('copy login domain failed', error)
@@ -412,7 +454,7 @@ watch(
         <a-alert
           type="info"
           show-icon
-          message="独立域名选填；不填写时继续使用租户机构端登录地址。填写独立域名后，标题、主色和文案需要完整配置；页面模板可选择跟随租户默认。"
+          message="独立域名选填；系统会生成一级子域名，避免多级通配符证书不支持。填写后，标题、主色和文案需要完整配置；页面模板可选择跟随租户默认。"
         />
 
         <div class="login-brand-logo-row">
@@ -455,15 +497,15 @@ watch(
           <a-col :xs="24" :md="12">
             <a-form-item label="独立域名" class="login-domain-form-item">
               <div class="login-domain-input-row">
-                <a-input v-model:value="formState.loginSlug" placeholder="例如kaina" @blur="formState.loginSlug = normalizeSlug(formState.loginSlug)" />
-                <span class="login-domain-suffix">{{ loginDomainSuffix }}</span>
+                <a-input v-model:value="formState.loginSlug" placeholder="例如 kena" @blur="formState.loginSlug = normalizeSlug(formState.loginSlug)" />
+                <span class="login-domain-suffix" :title="loginDomainSuffix">{{ loginDomainSuffix }}</span>
               </div>
             </a-form-item>
             <div class="login-domain-preview">
               <span>访问地址：</span>
-              <template v-if="fullLoginDomain">
-                <strong>{{ fullLoginDomain }}</strong>
-                <button type="button" class="login-domain-copy" title="复制访问域名" @click="copyFullLoginDomain">
+              <template v-if="fullLoginUrl">
+                <strong>{{ fullLoginUrl }}</strong>
+                <button type="button" class="login-domain-copy" title="复制访问地址" @click="copyFullLoginDomain">
                   <CopyOutlined />
                 </button>
               </template>

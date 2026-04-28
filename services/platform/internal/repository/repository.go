@@ -729,10 +729,14 @@ func (repo *Repository) seedTenantAControlPlane(ctx context.Context) error {
 		return err
 	}
 	_, err := repo.db.ExecContext(ctx, `
-		INSERT INTO tenant_domain (tenant_id, domain, entry_type, is_primary)
-		SELECT 'tenant-a', 'tenant-a.localhost', 'institution-admin', 1
-		FROM DUAL
-		WHERE NOT EXISTS (SELECT 1 FROM tenant_domain WHERE domain = 'tenant-a.localhost' AND del_flag = 0)
+		INSERT INTO tenant_domain (tenant_id, domain, entry_type, is_primary, create_time, update_time, del_flag)
+		VALUES ('tenant-a', 'tenant-a.localhost', 'institution-admin', 1, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			tenant_id = VALUES(tenant_id),
+			entry_type = VALUES(entry_type),
+			is_primary = VALUES(is_primary),
+			update_time = NOW(),
+			del_flag = 0
 	`)
 	return err
 }
@@ -1423,27 +1427,46 @@ func (repo *Repository) GetTenantLoginTheme(ctx context.Context, domain, entryTy
 func (repo *Repository) getInstitutionWildcardLoginTheme(ctx context.Context, domain, entryType string) (model.TenantPublicLoginTheme, bool, error) {
 	var tenantID string
 	var tenantName string
-	var baseDomain string
 	var brandConfigRaw string
-	err := repo.db.QueryRowContext(ctx, `
+	loginSlug := ""
+
+	rows, err := repo.db.QueryContext(ctx, `
 		SELECT tp.tenant_id, tp.tenant_name, td.domain, IFNULL(CAST(tp.brand_config AS CHAR), '')
 		FROM tenant_domain td
 		JOIN tenant_profile tp ON tp.tenant_id = td.tenant_id AND tp.del_flag = 0 AND tp.status = 'active'
 		WHERE td.entry_type = ?
 		  AND td.del_flag = 0
-		  AND ? LIKE CONCAT('%.', td.domain)
 		ORDER BY CHAR_LENGTH(td.domain) DESC, td.is_primary DESC, td.id ASC
-		LIMIT 1
-	`, entryType, domain).Scan(&tenantID, &tenantName, &baseDomain, &brandConfigRaw)
-	if err == sql.ErrNoRows {
-		return model.TenantPublicLoginTheme{}, false, nil
-	}
+	`, entryType)
 	if err != nil {
 		return model.TenantPublicLoginTheme{}, false, err
 	}
+	defer rows.Close()
 
-	prefix := strings.TrimSuffix(domain, "."+baseDomain)
-	if prefix == "" || strings.Contains(prefix, ".") {
+	for rows.Next() {
+		var candidateTenantID string
+		var candidateTenantName string
+		var candidateBaseDomain string
+		var candidateBrandConfigRaw string
+		if err := rows.Scan(&candidateTenantID, &candidateTenantName, &candidateBaseDomain, &candidateBrandConfigRaw); err != nil {
+			return model.TenantPublicLoginTheme{}, false, err
+		}
+		if matchedSlug, ok := resolveInstitutionLoginSlug(domain, candidateBaseDomain); ok {
+			tenantID = candidateTenantID
+			tenantName = candidateTenantName
+			brandConfigRaw = candidateBrandConfigRaw
+			loginSlug = matchedSlug
+			break
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return model.TenantPublicLoginTheme{}, false, err
+	}
+	if tenantID == "" {
+		return model.TenantPublicLoginTheme{}, false, nil
+	}
+
+	if loginSlug == "" || strings.Contains(loginSlug, ".") {
 		return model.TenantPublicLoginTheme{}, false, nil
 	}
 
@@ -1465,7 +1488,7 @@ func (repo *Repository) getInstitutionWildcardLoginTheme(ctx context.Context, do
 		JOIN tenant_institution ti ON ti.institution_id = oi.id AND ti.tenant_id = ? AND ti.del_flag = 0
 		WHERE oip.del_flag = 0 AND oip.login_slug = ?
 		LIMIT 1
-	`, tenantID, prefix).Scan(&result.InstitutionID, &result.InstitutionName, &institutionBrandRaw)
+	`, tenantID, loginSlug).Scan(&result.InstitutionID, &result.InstitutionName, &institutionBrandRaw)
 	if err == sql.ErrNoRows {
 		return result, true, nil
 	}
@@ -1478,6 +1501,44 @@ func (repo *Repository) getInstitutionWildcardLoginTheme(ctx context.Context, do
 	}
 	result.MatchedBy = "institution-wildcard"
 	return result, true, nil
+}
+
+func resolveInstitutionLoginSlug(domain, baseDomain string) (string, bool) {
+	domain = strings.ToLower(strings.TrimSpace(domain))
+	baseDomain = strings.ToLower(strings.TrimSpace(baseDomain))
+	if domain == "" || baseDomain == "" || domain == baseDomain {
+		return "", false
+	}
+	return resolveFlatInstitutionLoginSlug(domain, baseDomain)
+}
+
+func resolveFlatInstitutionLoginSlug(domain, baseDomain string) (string, bool) {
+	domainLabel, domainRoot, ok := splitDomainLabel(domain)
+	if !ok {
+		return "", false
+	}
+	baseLabel, baseRoot, ok := splitDomainLabel(baseDomain)
+	if !ok || domainRoot != baseRoot {
+		return "", false
+	}
+
+	suffix := "-" + baseLabel
+	if !strings.HasSuffix(domainLabel, suffix) {
+		return "", false
+	}
+	slug := strings.TrimSuffix(domainLabel, suffix)
+	if slug == "" || strings.Contains(slug, ".") {
+		return "", false
+	}
+	return slug, true
+}
+
+func splitDomainLabel(domain string) (string, string, bool) {
+	parts := strings.SplitN(strings.ToLower(strings.TrimSpace(domain)), ".", 2)
+	if len(parts) != 2 || strings.TrimSpace(parts[0]) == "" || strings.TrimSpace(parts[1]) == "" {
+		return "", "", false
+	}
+	return parts[0], parts[1], true
 }
 
 func buildInstitutionAllianceBadge(tenantName, institutionName string) string {

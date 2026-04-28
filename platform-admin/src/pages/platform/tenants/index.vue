@@ -815,18 +815,30 @@ function getPrimaryInstitutionDomain(record: TenantRecord) {
 }
 
 function buildLoginUrl(domain: string, entryType: 'platform' | 'institution') {
-  const normalized = String(domain || '').trim()
+  const normalized = normalizeLoginDomain(domain)
   if (!normalized)
     return ''
-  if (/^https?:\/\//i.test(normalized))
-    return normalized
 
-  const protocol = typeof window !== 'undefined' ? window.location.protocol : 'https:'
+  const path = entryType === 'institution' ? '/institution/' : '/platform/'
+  const protocol = isLocalDomain(normalized) && typeof window !== 'undefined' ? window.location.protocol : 'https:'
   const hasPort = /:\d+$/.test(normalized)
   const devPort = import.meta.env.DEV && !hasPort
     ? (entryType === 'institution' ? ':6678' : (window.location.port ? `:${window.location.port}` : ''))
     : ''
-  return `${protocol}//${normalized}${devPort}/`
+  return `${protocol}//${normalized}${devPort}${path}`
+}
+
+function normalizeLoginDomain(value: string) {
+  return String(value || '')
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/.*$/, '')
+    .replace(/^\.+|\.+$/g, '')
+}
+
+function isLocalDomain(domain: string) {
+  return /(^|\.)localhost$|^\d{1,3}(?:\.\d{1,3}){3}$/.test(domain)
 }
 
 async function generateLoginAddressQrs() {
