@@ -4,13 +4,15 @@ import { onMounted, reactive, ref } from 'vue'
 import LoginRenderer from './login-renderer.vue'
 import { useAuthorization } from '@/composables/authorization'
 import { loginApi } from '~/api/common/login'
-import { getLoginThemeApi, type TenantLoginBrandConfig } from '~/api/common/login-theme'
+import {
+  getLoginThemeApi,
+  readCachedLoginBrand,
+  type TenantLoginBrandConfig,
+  writeCachedLoginBrand,
+} from '~/api/common/login-theme'
 import { preloadAuthGuard } from '~/router/router-guard'
 import { preloadPlatformHomeEntry } from '~/router/route-preload'
 import { reset401Status } from '~/utils/request'
-
-const LOGIN_THEME_CACHE_PREFIX = 'PLATFORM_ADMIN_LOGIN_THEME:platform-admin'
-const LEGACY_LOGIN_THEME_CACHE_KEY = LOGIN_THEME_CACHE_PREFIX
 
 const { t } = useI18nLocale()
 const router = useRouter()
@@ -44,44 +46,13 @@ function mergeLoginBrand(next?: TenantLoginBrandConfig) {
   Object.assign(loginBrand, defaultBrand, next || {})
 }
 
-function getLoginThemeCacheKey() {
-  if (typeof window === 'undefined')
-    return LOGIN_THEME_CACHE_PREFIX
-  const hostname = window.location.hostname.toLowerCase() || 'unknown'
-  return `${LOGIN_THEME_CACHE_PREFIX}:${hostname}`
-}
-
-function readCachedLoginBrand() {
-  try {
-    const raw = window.localStorage.getItem(getLoginThemeCacheKey())
-    if (!raw)
-      return undefined
-    return JSON.parse(raw) as TenantLoginBrandConfig
-  }
-  catch {
-    return undefined
-  }
-}
-
-function writeCachedLoginBrand(next?: TenantLoginBrandConfig) {
-  if (!next)
-    return
-  try {
-    window.localStorage.setItem(getLoginThemeCacheKey(), JSON.stringify(next))
-    window.localStorage.removeItem(LEGACY_LOGIN_THEME_CACHE_KEY)
-  }
-  catch {
-    // Ignore storage quota and privacy-mode errors; the login page can use defaults.
-  }
-}
-
 async function loadLoginTheme() {
-  const cachedBrand = readCachedLoginBrand()
+  const cachedBrand = readCachedLoginBrand('platform-admin')
 
   try {
     const res = await getLoginThemeApi('platform-admin')
     const brand = res.result?.loginBrand || res.data?.loginBrand
-    writeCachedLoginBrand(brand)
+    writeCachedLoginBrand(brand, 'platform-admin')
     mergeLoginBrand(brand)
   }
   catch (error) {
@@ -142,7 +113,13 @@ async function onSubmit() {
       window.localStorage.setItem('PLATFORM_ADMIN_TENANT_ID', result.tenantId)
     }
     reset401Status()
-    await homeEntryReady
+
+    if (!userStore.routerData) {
+      const currentRoute = await userStore.generateDynamicRoutes()
+      router.addRoute(currentRoute)
+    }
+
+    void homeEntryReady
 
     void showLoginMessage('success', t('pages.login.notification.success.title', '登录成功'), { duration: 1500 })
 

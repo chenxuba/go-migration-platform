@@ -3574,6 +3574,10 @@ func (repo *Repository) ListMenusByInst(ctx context.Context, instID int64, ownTy
 }
 
 func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]struct{}) ([]model.Menu, error) {
+	return repo.listMenusByIDSetWithOwnType(ctx, menuIDs, nil)
+}
+
+func (repo *Repository) listMenusByIDSetWithOwnType(ctx context.Context, menuIDs map[int64]struct{}, ownType *int) ([]model.Menu, error) {
 	if len(menuIDs) == 0 {
 		return []model.Menu{}, nil
 	}
@@ -3591,12 +3595,19 @@ func (repo *Repository) listMenusByIDSet(ctx context.Context, menuIDs map[int64]
 		return []model.Menu{}, nil
 	}
 
-	rows, err := repo.db.QueryContext(ctx, `
+	query := `
 		SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, '')
 		FROM sso_menu
-		WHERE del_flag = 0 AND id IN (`+strings.Join(placeholders, ",")+`)
+		WHERE del_flag = 0 AND id IN (` + strings.Join(placeholders, ",") + `)`
+	if ownType != nil {
+		query += ` AND own_type = ?`
+		args = append(args, *ownType)
+	}
+	query += `
 		ORDER BY IFNULL(sort, 0) ASC, IFNULL(weight, 0) DESC, id ASC
-	`, args...)
+	`
+
+	rows, err := repo.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -4546,6 +4557,32 @@ func (repo *Repository) GetDefaultRoleDetail(ctx context.Context, roleID int64, 
 	for _, menu := range menuMap {
 		rawMenus = append(rawMenus, menu)
 	}
+	sort.SliceStable(rawMenus, func(i, j int) bool {
+		leftSort := 0
+		if rawMenus[i].Sort != nil {
+			leftSort = *rawMenus[i].Sort
+		}
+		rightSort := 0
+		if rawMenus[j].Sort != nil {
+			rightSort = *rawMenus[j].Sort
+		}
+		if leftSort != rightSort {
+			return leftSort < rightSort
+		}
+
+		leftWeight := 0
+		if rawMenus[i].Weight != nil {
+			leftWeight = *rawMenus[i].Weight
+		}
+		rightWeight := 0
+		if rawMenus[j].Weight != nil {
+			rightWeight = *rawMenus[j].Weight
+		}
+		if leftWeight != rightWeight {
+			return leftWeight > rightWeight
+		}
+		return rawMenus[i].ID < rawMenus[j].ID
+	})
 	detail.MenuIDs = buildSelectedMenuTree(rawMenus, selected, 0)
 	return detail, nil
 }
@@ -4600,38 +4637,31 @@ func (repo *Repository) GetStaffByRoleID(ctx context.Context, roleID int64, orgI
 }
 
 func (repo *Repository) collectMenusWithParents(ctx context.Context, selected map[int64]struct{}, ownType *int) (map[int64]model.Menu, error) {
-	menuMap := make(map[int64]model.Menu)
-	pending := make([]int64, 0, len(selected))
+	menuMap := make(map[int64]model.Menu, len(selected))
+	pending := make(map[int64]struct{}, len(selected))
 	for id := range selected {
-		pending = append(pending, id)
+		if id > 0 {
+			pending[id] = struct{}{}
+		}
 	}
 	for len(pending) > 0 {
-		id := pending[0]
-		pending = pending[1:]
-		if _, exists := menuMap[id]; exists {
-			continue
-		}
-		query := `
-			SELECT id, IFNULL(menu_name, ''), IFNULL(icon, ''), IFNULL(menu_code, ''), menu_type, own_type, IFNULL(pid, 0), sort, IFNULL(weight, 0), IFNULL(group_code, ''), IFNULL(remark, ''), IFNULL(introduce, ''), IFNULL(access_denied_image, '')
-			FROM sso_menu
-			WHERE id = ? AND del_flag = 0`
-		args := []any{id}
-		if ownType != nil {
-			query += " AND own_type = ?"
-			args = append(args, *ownType)
-		}
-		row := repo.db.QueryRowContext(ctx, query, args...)
-		var item model.Menu
-		if err := row.Scan(&item.ID, &item.MenuName, &item.Icon, &item.MenuCode, &item.MenuType, &item.OwnType, &item.PID, &item.Sort, &item.Weight, &item.GroupCode, &item.Remark, &item.Introduce, &item.AccessDeniedImage); err != nil {
-			if err == sql.ErrNoRows {
-				continue
-			}
+		current := pending
+		pending = make(map[int64]struct{})
+
+		menus, err := repo.listMenusByIDSetWithOwnType(ctx, current, ownType)
+		if err != nil {
 			return nil, err
 		}
-		normalizeMenuModel(&item)
-		menuMap[item.ID] = item
-		if item.PID > 0 {
-			pending = append(pending, item.PID)
+		for _, item := range menus {
+			if _, exists := menuMap[item.ID]; exists {
+				continue
+			}
+			menuMap[item.ID] = item
+			if item.PID > 0 {
+				if _, exists := menuMap[item.PID]; !exists {
+					pending[item.PID] = struct{}{}
+				}
+			}
 		}
 	}
 	return menuMap, nil

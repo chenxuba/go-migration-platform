@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted } from 'vue'
 import { useLayoutMenuProvide } from '~/components/page-container/context'
-import { getLoginThemeApi } from '~/api/common/login-theme'
+import { getLoginThemeApi, readCachedLoginBrand, writeCachedLoginBrand } from '~/api/common/login-theme'
 
 const appStore = useAppStore()
 const { theme } = storeToRefs(appStore)
@@ -10,9 +10,17 @@ const layoutMenu = useLayoutMenu()
 useLayoutMenuProvide(layoutMenu, appStore)
 
 async function applyTenantTheme() {
+  const cachedBrand = readCachedLoginBrand('platform-admin')
+  if (cachedBrand?.primaryColor) {
+    appStore.toggleColorPrimary(cachedBrand.primaryColor)
+    return
+  }
+
   try {
     const res = await getLoginThemeApi('platform-admin')
-    const primaryColor = res.result?.loginBrand?.primaryColor || res.data?.loginBrand?.primaryColor
+    const brand = res.result?.loginBrand || res.data?.loginBrand
+    writeCachedLoginBrand(brand, 'platform-admin')
+    const primaryColor = brand?.primaryColor
     if (primaryColor)
       appStore.toggleColorPrimary(primaryColor)
   }
