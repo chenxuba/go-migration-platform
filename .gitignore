@@ -1,3 +1,4 @@
 .runlogs/
 .tmpdecode/
 .deploy/
+scripts/provision-prod.env

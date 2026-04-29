@@ -70,6 +70,33 @@ DEPLOY_SSH_PASSWORD='你的SSH密码' ./scripts/deploy-prod.sh
 ./scripts/deploy-prod.sh --build-only
 ```
 
+## 新机一键初始化 + 一键上线
+
+如果你是新换一台服务器，不想再手工装 `nginx / mysql / nats / meilisearch`，可以直接用：
+
+```bash
+cd /Users/chenrui/Desktop/go-migration-platform
+cp scripts/provision-prod.env.example scripts/provision-prod.env
+./scripts/provision-prod-server.sh
+```
+
+这个脚本会完成：
+
+- 安装 `nginx`
+- 安装 `MySQL`
+- 安装 `NATS JetStream`
+- 安装 `Meilisearch`
+- 生成 `/etc/go-migration-platform/app.env`
+- 写入当前线上同款 nginx 反向代理配置
+- 可选导入本地 `sql` / `sql.gz` 数据库备份
+- 然后自动调用 `./scripts/deploy-prod.sh` 完成前后端发布
+
+如果你只想初始化机器、不想立刻发版：
+
+```bash
+./scripts/provision-prod-server.sh --skip-deploy
+```
+
 如果你只想启动 Go 服务，不检查也不代起中间件：
 
 ```bash

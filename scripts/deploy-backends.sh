@@ -312,8 +312,8 @@ install_unit_if_missing() {
   cat > "$unit_path" <<UNIT
 [Unit]
 Description=$desc
-After=network.target mariadb.service
-Wants=mariadb.service
+After=network.target mysql.service nats-server.service meilisearch.service
+Wants=nats-server.service meilisearch.service
 
 [Service]
 Type=simple
