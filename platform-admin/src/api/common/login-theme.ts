@@ -23,6 +23,7 @@ export interface TenantPublicLoginTheme {
 }
 
 const LOGIN_THEME_CACHE_PREFIX = 'PLATFORM_ADMIN_LOGIN_THEME'
+const inflightLoginThemeRequests = new Map<string, Promise<ResponseBody<TenantPublicLoginTheme>>>()
 
 export function getLoginThemeCacheKey(entryType = 'platform-admin') {
   if (typeof window === 'undefined')
@@ -65,7 +66,12 @@ export function writeCachedLoginBrand(next?: TenantLoginBrandConfig, entryType =
 }
 
 export function getLoginThemeApi(entryType = 'platform-admin') {
-  return useGet<TenantPublicLoginTheme, { entryType: string, _t: string }>('/api/v1/public/login-theme', { entryType, _t: String(Date.now()) }, {
+  const requestKey = getLoginThemeCacheKey(entryType)
+  const inflight = inflightLoginThemeRequests.get(requestKey)
+  if (inflight)
+    return inflight
+
+  const request = useGet<TenantPublicLoginTheme, { entryType: string, _t: string }>('/api/v1/public/login-theme', { entryType, _t: String(Date.now()) }, {
     headers: {
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
@@ -73,4 +79,11 @@ export function getLoginThemeApi(entryType = 'platform-admin') {
     token: false,
     silentError: true,
   }) as Promise<ResponseBody<TenantPublicLoginTheme>>
+
+  const wrapped = request.finally(() => {
+    inflightLoginThemeRequests.delete(requestKey)
+  })
+
+  inflightLoginThemeRequests.set(requestKey, wrapped)
+  return wrapped
 }
