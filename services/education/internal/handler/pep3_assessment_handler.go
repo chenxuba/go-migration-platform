@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -49,6 +50,25 @@ type pep3AssessmentRecordCreateRequest struct {
 	AllowMissingItems bool                   `json:"allowMissingItems,omitempty"`
 }
 
+type pep3AssessmentDraftSaveRequest struct {
+	ID                int64                  `json:"id,omitempty"`
+	StudentID         int64                  `json:"studentId,omitempty"`
+	StudentName       string                 `json:"studentName,omitempty"`
+	ExaminerName      string                 `json:"examinerName,omitempty"`
+	Remark            string                 `json:"remark,omitempty"`
+	BirthDate         string                 `json:"birthDate,omitempty"`
+	AssessmentDate    string                 `json:"assessmentDate,omitempty"`
+	ItemScores        map[int]int            `json:"itemScores,omitempty"`
+	ItemScoreList     []pep3ItemScoreRequest `json:"itemScoreList,omitempty"`
+	RawScores         map[string]int         `json:"rawScores,omitempty"`
+	RawScoreList      []pep3RawScoreRequest  `json:"rawScoreList,omitempty"`
+	AllowMissingItems bool                   `json:"allowMissingItems,omitempty"`
+}
+
+type pep3AssessmentDraftDeleteRequest struct {
+	ID int64 `json:"id"`
+}
+
 func (handler *Handler) scorePEP3(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if r.Method != http.MethodPost {
@@ -67,6 +87,152 @@ func (handler *Handler) scorePEP3(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := handler.service.ScorePEP3(input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentFormTemplate(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetPEP3AssessmentFormTemplate()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) savePEP3AssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req pep3AssessmentDraftSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	input, err := req.toDraftSaveInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.SavePEP3AssessmentDraft(claims.UserID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentDraftDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetPEP3AssessmentDraft(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentDraftsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var query model.AssessmentDraftPageQueryDTO
+	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.PagePEP3AssessmentDrafts(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) deletePEP3AssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req pep3AssessmentDraftDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.DeletePEP3AssessmentDraft(claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) submitPEP3AssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req pep3AssessmentDraftDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.SubmitPEP3AssessmentDraft(claims.UserID, req.ID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -215,6 +381,68 @@ func (req pep3AssessmentRecordCreateRequest) toScoreRequest() pep3ScoreRequest {
 	}
 }
 
+func (req pep3AssessmentDraftSaveRequest) toDraftSaveInput() (service.PEP3AssessmentDraftSaveInput, error) {
+	birthDate, err := parseOptionalPEP3Date(req.BirthDate, "birthDate")
+	if err != nil {
+		return service.PEP3AssessmentDraftSaveInput{}, err
+	}
+	assessmentDate, err := parseOptionalPEP3Date(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		return service.PEP3AssessmentDraftSaveInput{}, err
+	}
+	itemScores, err := normalizePEP3ItemScores(req.ItemScores, req.ItemScoreList)
+	if err != nil {
+		return service.PEP3AssessmentDraftSaveInput{}, err
+	}
+	rawScores, err := normalizePEP3RawScores(req.RawScores, req.RawScoreList)
+	if err != nil {
+		return service.PEP3AssessmentDraftSaveInput{}, err
+	}
+	return service.PEP3AssessmentDraftSaveInput{
+		ID:                req.ID,
+		StudentID:         req.StudentID,
+		StudentName:       strings.TrimSpace(req.StudentName),
+		ExaminerName:      strings.TrimSpace(req.ExaminerName),
+		Remark:            strings.TrimSpace(req.Remark),
+		BirthDate:         birthDate,
+		AssessmentDate:    assessmentDate,
+		ItemScores:        itemScores,
+		RawScores:         rawScores,
+		AllowMissingItems: req.AllowMissingItems,
+		InputSnapshot:     req.normalizedSnapshot(itemScores, rawScores),
+	}, nil
+}
+
+func (req pep3AssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]int, rawScores map[string]int) any {
+	return struct {
+		ID                int64                  `json:"id,omitempty"`
+		StudentID         int64                  `json:"studentId,omitempty"`
+		StudentName       string                 `json:"studentName,omitempty"`
+		ExaminerName      string                 `json:"examinerName,omitempty"`
+		Remark            string                 `json:"remark,omitempty"`
+		BirthDate         string                 `json:"birthDate,omitempty"`
+		AssessmentDate    string                 `json:"assessmentDate,omitempty"`
+		ItemScores        map[int]int            `json:"itemScores,omitempty"`
+		ItemScoreList     []pep3ItemScoreRequest `json:"itemScoreList,omitempty"`
+		RawScores         map[string]int         `json:"rawScores,omitempty"`
+		RawScoreList      []pep3RawScoreRequest  `json:"rawScoreList,omitempty"`
+		AllowMissingItems bool                   `json:"allowMissingItems,omitempty"`
+	}{
+		ID:                req.ID,
+		StudentID:         req.StudentID,
+		StudentName:       strings.TrimSpace(req.StudentName),
+		ExaminerName:      strings.TrimSpace(req.ExaminerName),
+		Remark:            strings.TrimSpace(req.Remark),
+		BirthDate:         strings.TrimSpace(req.BirthDate),
+		AssessmentDate:    strings.TrimSpace(req.AssessmentDate),
+		ItemScores:        itemScores,
+		ItemScoreList:     itemScoreListFromMap(itemScores),
+		RawScores:         rawScores,
+		RawScoreList:      rawScoreListFromMap(rawScores),
+		AllowMissingItems: req.AllowMissingItems,
+	}
+}
+
 func (req pep3ScoreRequest) toAssessmentInput() (pep3score.AssessmentInput, error) {
 	birthDate, err := parsePEP3Date(req.BirthDate, "birthDate")
 	if err != nil {
@@ -225,34 +453,17 @@ func (req pep3ScoreRequest) toAssessmentInput() (pep3score.AssessmentInput, erro
 		return pep3score.AssessmentInput{}, err
 	}
 
-	itemScores := make(map[int]int, len(req.ItemScores)+len(req.ItemScoreList))
-	for itemNo, score := range req.ItemScores {
-		itemScores[itemNo] = score
-	}
-	for _, item := range req.ItemScoreList {
-		if item.ItemNo <= 0 {
-			return pep3score.AssessmentInput{}, fmt.Errorf("itemScoreList contains invalid itemNo %d", item.ItemNo)
-		}
-		itemScores[item.ItemNo] = item.Score
+	itemScores, err := normalizePEP3ItemScores(req.ItemScores, req.ItemScoreList)
+	if err != nil {
+		return pep3score.AssessmentInput{}, err
 	}
 	if len(itemScores) == 0 {
 		itemScores = nil
 	}
 
-	rawScores := make(map[string]int, len(req.RawScores)+len(req.RawScoreList))
-	for scaleCode, rawScore := range req.RawScores {
-		normalized := normalizePEP3ScaleCode(scaleCode)
-		if normalized == "" {
-			return pep3score.AssessmentInput{}, fmt.Errorf("rawScores contains empty scale code")
-		}
-		rawScores[normalized] = rawScore
-	}
-	for _, item := range req.RawScoreList {
-		normalized := normalizePEP3ScaleCode(item.ScaleCode)
-		if normalized == "" {
-			return pep3score.AssessmentInput{}, fmt.Errorf("rawScoreList contains empty scaleCode")
-		}
-		rawScores[normalized] = item.RawScore
+	rawScores, err := normalizePEP3RawScores(req.RawScores, req.RawScoreList)
+	if err != nil {
+		return pep3score.AssessmentInput{}, err
 	}
 	if len(rawScores) == 0 {
 		rawScores = nil
@@ -282,6 +493,85 @@ func parsePEP3Date(raw, field string) (time.Time, error) {
 		}
 	}
 	return time.Time{}, fmt.Errorf("%s format should be YYYY-MM-DD", field)
+}
+
+func parseOptionalPEP3Date(raw, field string) (*time.Time, error) {
+	if strings.TrimSpace(raw) == "" {
+		return nil, nil
+	}
+	parsed, err := parsePEP3Date(raw, field)
+	if err != nil {
+		return nil, err
+	}
+	return &parsed, nil
+}
+
+func normalizePEP3ItemScores(itemScores map[int]int, itemScoreList []pep3ItemScoreRequest) (map[int]int, error) {
+	normalized := make(map[int]int, len(itemScores)+len(itemScoreList))
+	for itemNo, score := range itemScores {
+		if itemNo <= 0 {
+			return nil, fmt.Errorf("itemScores contains invalid itemNo %d", itemNo)
+		}
+		normalized[itemNo] = score
+	}
+	for _, item := range itemScoreList {
+		if item.ItemNo <= 0 {
+			return nil, fmt.Errorf("itemScoreList contains invalid itemNo %d", item.ItemNo)
+		}
+		normalized[item.ItemNo] = item.Score
+	}
+	return normalized, nil
+}
+
+func normalizePEP3RawScores(rawScores map[string]int, rawScoreList []pep3RawScoreRequest) (map[string]int, error) {
+	normalizedScores := make(map[string]int, len(rawScores)+len(rawScoreList))
+	for scaleCode, rawScore := range rawScores {
+		normalized := normalizePEP3ScaleCode(scaleCode)
+		if normalized == "" {
+			return nil, fmt.Errorf("rawScores contains empty scale code")
+		}
+		normalizedScores[normalized] = rawScore
+	}
+	for _, item := range rawScoreList {
+		normalized := normalizePEP3ScaleCode(item.ScaleCode)
+		if normalized == "" {
+			return nil, fmt.Errorf("rawScoreList contains empty scaleCode")
+		}
+		normalizedScores[normalized] = item.RawScore
+	}
+	return normalizedScores, nil
+}
+
+func itemScoreListFromMap(itemScores map[int]int) []pep3ItemScoreRequest {
+	if len(itemScores) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemScores))
+	for itemNo := range itemScores {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]pep3ItemScoreRequest, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		out = append(out, pep3ItemScoreRequest{ItemNo: itemNo, Score: itemScores[itemNo]})
+	}
+	return out
+}
+
+func rawScoreListFromMap(rawScores map[string]int) []pep3RawScoreRequest {
+	if len(rawScores) == 0 {
+		return nil
+	}
+	scaleCodes := make([]string, 0, len(rawScores))
+	for scaleCode := range rawScores {
+		scaleCodes = append(scaleCodes, scaleCode)
+	}
+	sort.Strings(scaleCodes)
+	out := make([]pep3RawScoreRequest, 0, len(scaleCodes))
+	for _, scaleCode := range scaleCodes {
+		out = append(out, pep3RawScoreRequest{ScaleCode: scaleCode, RawScore: rawScores[scaleCode]})
+	}
+	return out
 }
 
 func normalizePEP3ScaleCode(raw string) string {

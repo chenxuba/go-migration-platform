@@ -16,10 +16,11 @@ import (
 const pep3RecordBookletPDF = "测试员记录册彩(1).pdf"
 
 type pep3SavedInputSnapshot struct {
-	ItemScores    map[int]int          `json:"itemScores"`
-	ItemScoreList []pep3SavedItemScore `json:"itemScoreList"`
-	RawScores     map[string]int       `json:"rawScores"`
-	RawScoreList  []pep3SavedRawScore  `json:"rawScoreList"`
+	ItemScores        map[int]int          `json:"itemScores"`
+	ItemScoreList     []pep3SavedItemScore `json:"itemScoreList"`
+	RawScores         map[string]int       `json:"rawScores"`
+	RawScoreList      []pep3SavedRawScore  `json:"rawScoreList"`
+	AllowMissingItems bool                 `json:"allowMissingItems"`
 }
 
 type pep3SavedItemScore struct {
@@ -63,6 +64,7 @@ func (svc *Service) GetPEP3AssessmentBooklet(userID, recordID int64) (model.PEP3
 	if err != nil {
 		return model.PEP3BookletVO{}, err
 	}
+	detail = svc.rescorePEP3AssessmentRecordDetail(detail)
 	return buildPEP3Booklet(detail)
 }
 
@@ -188,15 +190,8 @@ func buildPEP3BookletCoverSections(record model.AssessmentRecordDetailVO, score 
 		SourcePDFPageNo: 1,
 		BookletPageNo:   1,
 		Table: &model.PEP3TemplateTable{
-			Columns: []model.PEP3TemplateColumn{
-				{Key: "compositeName", Label: "合成项目", Width: 140},
-				{Key: "memberScaleCodes", Label: "副测验", Width: 160},
-				{Key: "standardScoreSum", Label: "标准分总和", Width: 110, Align: "center"},
-				{Key: "percentileRank", Label: "百分比级数", Width: 110, Align: "center"},
-				{Key: "developmentAge", Label: "发展年龄", Width: 120, Align: "center"},
-				{Key: "level", Label: "适应程度", Width: 110, Align: "center"},
-			},
-			Rows: pep3CompositeTemplateRows(buildPEP3CompositeRows(score.Result.Composites)),
+			Columns: pep3CompositeTemplateColumns(110, 54, 110, 110, 120, 120, "发展/适应程度"),
+			Rows:    pep3CompositeTemplateRows(buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)),
 		},
 	}
 	return []model.PEP3TemplateSection{basicInfo, scoreSummary, compositeSummary}

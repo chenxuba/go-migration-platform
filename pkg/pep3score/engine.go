@@ -165,9 +165,14 @@ func (e *Engine) scoreComposite(scales map[string]ScaleResult, code, name string
 	for _, scaleCode := range members {
 		scale, ok := scales[scaleCode]
 		if !ok {
+			composite.MemberScaleScores = append(composite.MemberScaleScores, ScaleScore{ScaleCode: scaleCode})
 			composite.Warnings = append(composite.Warnings, fmt.Sprintf("缺少 %s 原始分", scaleCode))
 			continue
 		}
+		composite.MemberScaleScores = append(composite.MemberScaleScores, ScaleScore{
+			ScaleCode:   scaleCode,
+			ScaledScore: scale.ScaledScore,
+		})
 		if scale.ScaledScore == nil || scale.ScaledScore.Number == nil {
 			composite.Warnings = append(composite.Warnings, fmt.Sprintf("%s 缺少可用于合成的标准分", scaleCode))
 			continue

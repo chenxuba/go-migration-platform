@@ -8,7 +8,9 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"go-migration-platform/pkg/authx"
 	"go-migration-platform/pkg/tenant"
 	"go-migration-platform/services/education/internal/service"
 )
@@ -68,6 +70,26 @@ func TestPEP3AssessmentRecordCreateRequestToScoreRequest(t *testing.T) {
 	}
 }
 
+func TestPEP3AssessmentDraftSaveRequestAllowsPartialScores(t *testing.T) {
+	req := pep3AssessmentDraftSaveRequest{
+		StudentName:       "李东尼",
+		ItemScoreList:     []pep3ItemScoreRequest{{ItemNo: 1, Score: 2}},
+		RawScores:         map[string]int{" pb ": 7},
+		AllowMissingItems: true,
+	}
+
+	input, err := req.toDraftSaveInput()
+	if err != nil {
+		t.Fatalf("toDraftSaveInput returned error: %v", err)
+	}
+	if input.BirthDate != nil || input.AssessmentDate != nil {
+		t.Fatalf("draft dates should be optional: %+v", input)
+	}
+	if input.ItemScores[1] != 2 || input.RawScores["PB"] != 7 || !input.AllowMissingItems {
+		t.Fatalf("unexpected normalized draft input: %+v", input)
+	}
+}
+
 func TestScorePEP3EndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	itemPath := filepath.Join(root, "docs", "pep3-item-bank-simplified-draft.json")
@@ -119,5 +141,60 @@ func TestScorePEP3EndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 	if envelope.Data.Result.Age.Years != 3 || envelope.Data.Result.Age.Months != 3 || envelope.Data.Result.Age.Days != 11 || envelope.Data.Result.Age.TotalMonthsForNorm != 39 {
 		t.Fatalf("unexpected age: %+v", envelope.Data.Result.Age)
+	}
+}
+
+func TestPEP3FormTemplateEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	itemPath := filepath.Join(root, "docs", "pep3-item-bank-simplified-draft.json")
+	if _, err := os.Stat(itemPath); err != nil {
+		t.Skipf("generated PEP-3 draft data not present: %s", itemPath)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/assessments/pep3/form-template", nil)
+	rec := httptest.NewRecorder()
+
+	tokenManager := authx.NewTokenManager("test-secret")
+	token, err := tokenManager.Generate(authx.Claims{UserID: 1, Username: "tester", LoginType: "staff", TenantID: "default", OrgID: 1}, time.Hour)
+	if err != nil {
+		t.Fatalf("generate token: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	h := New(service.New(nil, nil, tokenManager, nil, nil, nil))
+	tenant.Middleware(http.HandlerFunc(h.pep3AssessmentFormTemplate)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			TemplateCode string `json:"templateCode"`
+			ItemCount    int    `json:"itemCount"`
+			ItemGroups   []struct {
+				StartItemNo int `json:"startItemNo"`
+				EndItemNo   int `json:"endItemNo"`
+				Items       []struct {
+					ItemNo       int `json:"itemNo"`
+					ScoreOptions []struct {
+						Value       int    `json:"value"`
+						Description string `json:"description"`
+					} `json:"scoreOptions"`
+				} `json:"items"`
+			} `json:"itemGroups"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !envelope.Success {
+		t.Fatalf("expected success response: %+v", envelope)
+	}
+	if envelope.Data.TemplateCode != "PEP3_ASSESSMENT_FORM" || envelope.Data.ItemCount != 172 {
+		t.Fatalf("unexpected form template: %+v", envelope.Data)
+	}
+	if len(envelope.Data.ItemGroups) == 0 || len(envelope.Data.ItemGroups[0].Items) == 0 || envelope.Data.ItemGroups[0].Items[0].ScoreOptions[0].Value != 2 {
+		t.Fatalf("expected item groups with score options: %+v", envelope.Data.ItemGroups)
 	}
 }

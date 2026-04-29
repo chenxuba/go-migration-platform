@@ -50,6 +50,10 @@ func TestScoreUsesRawScoresAndCompositeLookup(t *testing.T) {
 	if communication.StandardScoreSum == nil || *communication.StandardScoreSum != 32 {
 		t.Fatalf("unexpected communication standard score sum: %+v", communication.StandardScoreSum)
 	}
+	if len(communication.MemberScaleScores) != 3 || communication.MemberScaleScores[0].ScaleCode != "CVP" {
+		t.Fatalf("expected communication member standard scores, got: %+v", communication.MemberScaleScores)
+	}
+	assertNormValue(t, communication.MemberScaleScores[0].ScaledScore, "9", 9)
 	assertNormValue(t, communication.PercentileRank, "50", 50)
 	if communication.DevelopmentAgeMonths == nil || *communication.DevelopmentAgeMonths != float64(20) {
 		t.Fatalf("unexpected communication development age: %+v", communication.DevelopmentAgeMonths)
@@ -223,6 +227,40 @@ func TestGeneratedDraftsWithManualCorrectionsScoreSample(t *testing.T) {
 	assertComposite(t, result.Composites[CompositeCommunication], 27, "31", 31)
 	assertComposite(t, result.Composites[CompositeMotor], 34, "54", 54)
 	assertComposite(t, result.Composites[CompositeMaladaptiveBehavior], 23, "8", 8)
+
+	currentReportSample, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		RawScores: map[string]int{
+			"CVP": 52, "EL": 38, "RL": 25, "FM": 34, "GM": 24, "VMI": 12,
+			"AE": 17, "SR": 18, "CMB": 24, "CVB": 16,
+			"PB": 7, "PSC": 7, "AB": 10,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score current report sample: %v", err)
+	}
+	assertNormValue(t, currentReportSample.Scales["CVP"].PercentileRank, "88", 88)
+	assertNormValue(t, currentReportSample.Scales["CVP"].ScaledScore, "13", 13)
+	assertNormValue(t, currentReportSample.Scales["EL"].PercentileRank, "92", 92)
+	assertNormValue(t, currentReportSample.Scales["EL"].ScaledScore, "16", 16)
+	assertNormValue(t, currentReportSample.Scales["RL"].PercentileRank, "58", 58)
+	assertNormValue(t, currentReportSample.Scales["RL"].ScaledScore, "12", 12)
+	assertNormValue(t, currentReportSample.Scales["GM"].PercentileRank, "54", 54)
+	assertNormValue(t, currentReportSample.Scales["GM"].ScaledScore, "11", 11)
+	assertNormValue(t, currentReportSample.Scales["VMI"].PercentileRank, "50", 50)
+	assertNormValue(t, currentReportSample.Scales["VMI"].ScaledScore, "10", 10)
+	assertNormValue(t, currentReportSample.Scales["AE"].PercentileRank, "65", 65)
+	assertNormValue(t, currentReportSample.Scales["AE"].ScaledScore, "12", 12)
+	assertNormValue(t, currentReportSample.Scales["SR"].PercentileRank, "81", 81)
+	assertNormValue(t, currentReportSample.Scales["SR"].ScaledScore, "14", 14)
+	assertNormValue(t, currentReportSample.Scales["CMB"].PercentileRank, "62", 62)
+	assertNormValue(t, currentReportSample.Scales["CMB"].ScaledScore, "11", 11)
+	assertNormValue(t, currentReportSample.Scales["CVB"].PercentileRank, "69", 69)
+	assertNormValue(t, currentReportSample.Scales["CVB"].ScaledScore, "13", 13)
+	if currentReportSample.Scales["CVP"].Level != "轻微" || currentReportSample.Scales["EL"].Level != "恰当" {
+		t.Fatalf("unexpected current report sample levels: CVP=%s EL=%s", currentReportSample.Scales["CVP"].Level, currentReportSample.Scales["EL"].Level)
+	}
 }
 
 func assertNormValue(t *testing.T, value *NormValue, wantText string, wantNumber int) {

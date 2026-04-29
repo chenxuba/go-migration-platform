@@ -102,14 +102,20 @@ type ScaleResult struct {
 }
 
 type CompositeResult struct {
-	CompositeCode        string     `json:"composite_code"`
-	CompositeName        string     `json:"composite_name"`
-	MemberScaleCodes     []string   `json:"member_scale_codes"`
-	StandardScoreSum     *int       `json:"standard_score_sum,omitempty"`
-	PercentileRank       *NormValue `json:"percentile_rank,omitempty"`
-	Level                string     `json:"level,omitempty"`
-	DevelopmentAgeMonths *float64   `json:"development_age_months,omitempty"`
-	Warnings             []string   `json:"warnings,omitempty"`
+	CompositeCode        string       `json:"composite_code"`
+	CompositeName        string       `json:"composite_name"`
+	MemberScaleCodes     []string     `json:"member_scale_codes"`
+	MemberScaleScores    []ScaleScore `json:"member_scale_scores,omitempty"`
+	StandardScoreSum     *int         `json:"standard_score_sum,omitempty"`
+	PercentileRank       *NormValue   `json:"percentile_rank,omitempty"`
+	Level                string       `json:"level,omitempty"`
+	DevelopmentAgeMonths *float64     `json:"development_age_months,omitempty"`
+	Warnings             []string     `json:"warnings,omitempty"`
+}
+
+type ScaleScore struct {
+	ScaleCode   string     `json:"scale_code"`
+	ScaledScore *NormValue `json:"scaled_score,omitempty"`
 }
 
 type AssessmentResult struct {

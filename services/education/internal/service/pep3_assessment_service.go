@@ -181,13 +181,9 @@ func buildPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
 	}
 
 	normPaths := []string{normPath}
-	sources := []string{pep3ItemBankFile, pep3DomainMapFile, pep3NormFile}
-	dataStatus := pep3DraftDataStatus
+	sources, dataStatus := pep3DataSources(dataDir)
 	if fileExists(correctionPath) {
 		normPaths = append(normPaths, correctionPath)
-		sources = append(sources, pep3CorrectionFile)
-	} else {
-		dataStatus = "题库为简体整理稿；常模为OCR草稿，未加载人工校对修正，投产前需完成全表核验"
 	}
 	norms, err := pep3score.LoadMergedNormRecordsFiles(normPaths...)
 	if err != nil {

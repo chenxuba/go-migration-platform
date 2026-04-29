@@ -38,6 +38,15 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 					ScaledScore:    &pep3score.NormValue{Text: "9", Number: &scaledScore},
 					Level:          "中度",
 				},
+				"AE": {
+					ScaleCode:      "AE",
+					ScaleName:      "情感表达",
+					RawScore:       17,
+					MaxRawScore:    intPtrForPEP3ReportTest(22),
+					PercentileRank: &pep3score.NormValue{Text: "65", Number: intPtrForPEP3ReportTest(65)},
+					ScaledScore:    &pep3score.NormValue{Text: "12", Number: intPtrForPEP3ReportTest(12)},
+					Level:          "中度",
+				},
 			},
 			Composites: map[string]pep3score.CompositeResult{
 				pep3score.CompositeCommunication: {
@@ -79,29 +88,119 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPEP3Report returned error: %v", err)
 	}
-	if report.BasicInfo.AgeText != "3岁3个月11天" {
-		t.Fatalf("unexpected age text: %s", report.BasicInfo.AgeText)
-	}
-	if len(report.DevelopmentRows) != 1 || report.DevelopmentRows[0].ScaleCode != "CVP" || report.DevelopmentRows[0].ScaledScoreText != "9" {
-		t.Fatalf("unexpected development rows: %+v", report.DevelopmentRows)
-	}
 	if report.TemplateCode != "PEP3_EXPLANATORY_REPORT" || report.Title == "" {
 		t.Fatalf("unexpected template metadata: %+v", report)
 	}
 	if len(report.Sections) == 0 || report.Sections[0].SectionCode != "basic_info" {
 		t.Fatalf("expected frontend-fillable report sections: %+v", report.Sections)
 	}
-	if report.Sections[1].Table == nil || len(report.Sections[1].Table.Rows) != 1 {
+	basicFields := report.Sections[0].Fields
+	if len(basicFields) < 7 || basicFields[6].Key != "ageText" || basicFields[6].Value != "3岁3个月11天" {
+		t.Fatalf("unexpected basic info fields: %+v", basicFields)
+	}
+	developmentSection := findPEP3ReportTestSection(report.Sections, "development_scores")
+	if developmentSection == nil || developmentSection.Table == nil || len(developmentSection.Table.Rows) != 1 {
 		t.Fatalf("expected score table rows in report sections: %+v", report.Sections[1])
 	}
-	if len(report.CompositeRows) != 1 || report.CompositeRows[0].StandardScoreSumText != "32" || report.CompositeRows[0].DevelopmentAgeText != "20个月" {
-		t.Fatalf("unexpected composite rows: %+v", report.CompositeRows)
+	if developmentSection.Table.Rows[0]["scaleCode"] != "CVP" || developmentSection.Table.Rows[0]["scaledScore"] != "9" {
+		t.Fatalf("unexpected development score row: %+v", developmentSection.Table.Rows[0])
 	}
-	if len(report.Warnings) == 0 {
-		t.Fatal("expected data status warning")
+	behaviorSection := findPEP3ReportTestSection(report.Sections, "behavior_scores")
+	if behaviorSection == nil || behaviorSection.Table == nil || len(behaviorSection.Table.Rows) != 1 {
+		t.Fatalf("expected behavior section row: %+v", behaviorSection)
+	}
+	if behaviorSection.Table.Rows[0]["scaleCode"] != "AE" || behaviorSection.Table.Rows[0]["developmentAge"] != "--" {
+		t.Fatalf("behavior subtests should keep the development age column with --: %+v", behaviorSection.Table.Rows[0])
+	}
+	compositeSection := findPEP3ReportTestSection(report.Sections, "composite_scores")
+	if compositeSection == nil || compositeSection.Table == nil || len(compositeSection.Table.Rows) != 1 {
+		t.Fatalf("expected composite section row: %+v", compositeSection)
+	}
+	if len(compositeSection.Table.Columns) < 12 || compositeSection.Table.Columns[1].Key != "CVP" || compositeSection.Table.Columns[1].Group == "" {
+		t.Fatalf("expected composite table to expose member standard score columns: %+v", compositeSection.Table.Columns)
+	}
+	compositeRow := compositeSection.Table.Rows[0]
+	if compositeRow["CVP"] != "9" || compositeRow["EL"] != "待校对" || compositeRow["FM"] != "--" {
+		t.Fatalf("unexpected composite member scores: %+v", compositeRow)
+	}
+	if compositeRow["standardScoreSum"] != "32" || compositeRow["developmentAge"] != "20个月" {
+		t.Fatalf("unexpected composite row: %+v", compositeRow)
+	}
+	warningSection := findPEP3ReportTestSection(report.Sections, "warnings")
+	if warningSection == nil || len(warningSection.TextItems) == 0 {
+		t.Fatal("expected data status warning section")
+	}
+	reportRaw, err := json.Marshal(report)
+	if err != nil {
+		t.Fatalf("marshal report: %v", err)
+	}
+	var reportObject map[string]json.RawMessage
+	if err := json.Unmarshal(reportRaw, &reportObject); err != nil {
+		t.Fatalf("unmarshal report object: %v", err)
+	}
+	for _, legacyField := range []string{`"basicInfo"`, `"developmentRows"`, `"behaviorRows"`, `"caregiverReportRows"`, `"compositeRows"`, `"summary"`, `"warnings"`} {
+		if _, ok := reportObject[legacyField[1:len(legacyField)-1]]; ok {
+			t.Fatalf("report should not expose legacy top-level field %s: %s", legacyField, string(reportRaw))
+		}
+	}
+}
+
+func TestRescorePEP3AssessmentRecordDetailUsesCurrentNormCorrections(t *testing.T) {
+	birthDate := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
+	assessmentDate := time.Date(2023, 1, 1, 0, 0, 0, 0, time.Local)
+	inputRaw := json.RawMessage(`{
+		"birthDate": "2020-01-01",
+		"assessmentDate": "2023-01-01",
+		"allowMissingItems": true,
+		"rawScoreList": [
+			{"scaleCode":"CVP","rawScore":52},
+			{"scaleCode":"EL","rawScore":38},
+			{"scaleCode":"RL","rawScore":25},
+			{"scaleCode":"FM","rawScore":34},
+			{"scaleCode":"GM","rawScore":24},
+			{"scaleCode":"VMI","rawScore":12},
+			{"scaleCode":"AE","rawScore":17},
+			{"scaleCode":"SR","rawScore":18},
+			{"scaleCode":"CMB","rawScore":24},
+			{"scaleCode":"CVB","rawScore":16},
+			{"scaleCode":"PB","rawScore":7},
+			{"scaleCode":"PSC","rawScore":7},
+			{"scaleCode":"AB","rawScore":10}
+		]
+	}`)
+
+	refreshed := (&Service{}).rescorePEP3AssessmentRecordDetail(model.AssessmentRecordDetailVO{
+		AssessmentRecordSummaryVO: model.AssessmentRecordSummaryVO{
+			BirthDate:      &birthDate,
+			AssessmentDate: &assessmentDate,
+		},
+		InputJSON:  inputRaw,
+		ResultJSON: json.RawMessage(`{"scaleCode":"PEP3","scaleVersion":"old","result":{"scales":{}}}`),
+	})
+	score, err := decodeSavedPEP3Score(refreshed.ResultJSON)
+	if err != nil {
+		t.Fatalf("decode refreshed score: %v", err)
+	}
+	if score.Result.Scales["CVP"].PercentileRank == nil || score.Result.Scales["CVP"].PercentileRank.Text != "88" {
+		t.Fatalf("expected refreshed CVP percentile from manual corrections, got: %+v", score.Result.Scales["CVP"])
+	}
+	if score.Result.Scales["EL"].PercentileRank == nil || score.Result.Scales["EL"].PercentileRank.Text != "92" {
+		t.Fatalf("expected refreshed EL percentile from manual corrections, got: %+v", score.Result.Scales["EL"])
+	}
+	if score.Result.Scales["GM"].ScaledScore == nil || score.Result.Scales["GM"].ScaledScore.Text != "11" {
+		t.Fatalf("expected refreshed GM scaled score from manual corrections, got: %+v", score.Result.Scales["GM"])
 	}
 }
 
 func intPtrForPEP3ReportTest(value int) *int {
 	return &value
+}
+
+func findPEP3ReportTestSection(sections []model.PEP3TemplateSection, code string) *model.PEP3TemplateSection {
+	for i := range sections {
+		if sections[i].SectionCode == code {
+			return &sections[i]
+		}
+	}
+	return nil
 }

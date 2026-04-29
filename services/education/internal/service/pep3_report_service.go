@@ -17,7 +17,38 @@ func (svc *Service) GetPEP3AssessmentReport(userID, recordID int64) (model.PEP3R
 	if err != nil {
 		return model.PEP3ReportVO{}, err
 	}
+	detail = svc.rescorePEP3AssessmentRecordDetail(detail)
 	return buildPEP3Report(detail)
+}
+
+func (svc *Service) rescorePEP3AssessmentRecordDetail(record model.AssessmentRecordDetailVO) model.AssessmentRecordDetailVO {
+	if record.BirthDate == nil || record.BirthDate.IsZero() || record.AssessmentDate == nil || record.AssessmentDate.IsZero() {
+		return record
+	}
+	itemScores, rawScores, err := decodeSavedPEP3InputScores(record.InputJSON)
+	if err != nil || (len(itemScores) == 0 && len(rawScores) == 0) {
+		return record
+	}
+	var snapshot pep3SavedInputSnapshot
+	_ = json.Unmarshal(record.InputJSON, &snapshot)
+	score, err := svc.ScorePEP3(pep3score.AssessmentInput{
+		BirthDate:         *record.BirthDate,
+		AssessmentDate:    *record.AssessmentDate,
+		ItemScores:        itemScores,
+		RawScores:         rawScores,
+		AllowMissingItems: snapshot.AllowMissingItems,
+	})
+	if err != nil {
+		return record
+	}
+	raw, err := json.Marshal(score)
+	if err != nil {
+		return record
+	}
+	record.ResultJSON = raw
+	record.ScaleVersion = score.ScaleVersion
+	record.DataStatus = score.DataStatus
+	return record
 }
 
 func buildPEP3Report(record model.AssessmentRecordDetailVO) (model.PEP3ReportVO, error) {
@@ -25,6 +56,12 @@ func buildPEP3Report(record model.AssessmentRecordDetailVO) (model.PEP3ReportVO,
 	if err != nil {
 		return model.PEP3ReportVO{}, err
 	}
+	developmentRows := buildPEP3ScaleRows(score.Result.Scales, "发展量表", []string{"CVP", "EL", "RL", "FM", "GM", "VMI"})
+	behaviorRows := buildPEP3ScaleRows(score.Result.Scales, "适应不良行为", []string{"AE", "SR", "CMB", "CVB"})
+	caregiverReportRows := buildPEP3ScaleRows(score.Result.Scales, "照顾者报告", []string{"PB", "PSC", "AB"})
+	compositeRows := buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)
+	warnings := collectPEP3ReportWarnings(score)
+	summary := buildPEP3ReportSummary(compositeRows, warnings)
 
 	report := model.PEP3ReportVO{
 		Record:          record.AssessmentRecordSummaryVO,
@@ -35,25 +72,8 @@ func buildPEP3Report(record model.AssessmentRecordDetailVO) (model.PEP3ReportVO,
 		ScaleVersion:    nonEmptyString(score.ScaleVersion, record.ScaleVersion),
 		DataStatus:      nonEmptyString(score.DataStatus, record.DataStatus),
 		Sources:         append([]string(nil), score.Sources...),
-		BasicInfo: model.PEP3ReportBasicInfo{
-			StudentID:      record.StudentID,
-			StudentName:    record.StudentName,
-			ExaminerID:     record.ExaminerID,
-			ExaminerName:   record.ExaminerName,
-			BirthDate:      formatReportDate(record.BirthDate),
-			AssessmentDate: formatReportDate(record.AssessmentDate),
-			AgeText:        fmt.Sprintf("%d岁%d个月%d天", record.AgeYears, record.AgeMonths, record.AgeDays),
-			NormAgeMonths:  record.NormAgeMonths,
-			Remark:         record.Remark,
-		},
-		DevelopmentRows:     buildPEP3ScaleRows(score.Result.Scales, "发展量表", []string{"CVP", "EL", "RL", "FM", "GM", "VMI"}),
-		BehaviorRows:        buildPEP3ScaleRows(score.Result.Scales, "适应不良行为", []string{"AE", "SR", "CMB", "CVB"}),
-		CaregiverReportRows: buildPEP3ScaleRows(score.Result.Scales, "照顾者报告", []string{"PB", "PSC", "AB"}),
-		CompositeRows:       buildPEP3CompositeRows(score.Result.Composites),
-		Warnings:            collectPEP3ReportWarnings(score),
+		Sections:        buildPEP3ReportSections(record, developmentRows, behaviorRows, caregiverReportRows, compositeRows, summary, warnings),
 	}
-	report.Summary = buildPEP3ReportSummary(report)
-	report.Sections = buildPEP3ReportSections(report)
 	return report, nil
 }
 
@@ -89,13 +109,17 @@ func buildPEP3ScaleRows(scales map[string]pep3score.ScaleResult, category string
 		if !ok {
 			continue
 		}
+		developmentAgeText := formatNormText(scale.DevelopmentAge)
+		if developmentAgeText == "" && !pep3ScaleHasDevelopmentAge(code) {
+			developmentAgeText = "--"
+		}
 		rows = append(rows, model.PEP3ReportScaleRow{
 			ScaleCode:          scale.ScaleCode,
 			ScaleName:          scale.ScaleName,
 			Category:           category,
 			RawScore:           scale.RawScore,
 			MaxRawScore:        copyIntPtr(scale.MaxRawScore),
-			DevelopmentAgeText: formatNormText(scale.DevelopmentAge),
+			DevelopmentAgeText: developmentAgeText,
 			PercentileRankText: formatNormText(scale.PercentileRank),
 			ScaledScoreText:    formatNormText(scale.ScaledScore),
 			Level:              scale.Level,
@@ -105,7 +129,7 @@ func buildPEP3ScaleRows(scales map[string]pep3score.ScaleResult, category string
 	return rows
 }
 
-func buildPEP3CompositeRows(composites map[string]pep3score.CompositeResult) []model.PEP3ReportCompositeRow {
+func buildPEP3CompositeRows(composites map[string]pep3score.CompositeResult, scales map[string]pep3score.ScaleResult) []model.PEP3ReportCompositeRow {
 	order := []string{
 		pep3score.CompositeCommunication,
 		pep3score.CompositeMotor,
@@ -117,13 +141,18 @@ func buildPEP3CompositeRows(composites map[string]pep3score.CompositeResult) []m
 		if !ok {
 			continue
 		}
+		developmentAgeText := formatFloatMonths(composite.DevelopmentAgeMonths)
+		if developmentAgeText == "" && !pep3CompositeHasDevelopmentAge(code) {
+			developmentAgeText = "--"
+		}
 		rows = append(rows, model.PEP3ReportCompositeRow{
 			CompositeCode:        composite.CompositeCode,
 			CompositeName:        composite.CompositeName,
 			MemberScaleCodes:     append([]string(nil), composite.MemberScaleCodes...),
+			MemberScaleScores:    pep3CompositeMemberScoreTexts(composite.MemberScaleCodes, scales),
 			StandardScoreSumText: formatIntPtr(composite.StandardScoreSum),
 			PercentileRankText:   formatNormText(composite.PercentileRank),
-			DevelopmentAgeText:   formatFloatMonths(composite.DevelopmentAgeMonths),
+			DevelopmentAgeText:   developmentAgeText,
 			Level:                composite.Level,
 			Warnings:             append([]string(nil), composite.Warnings...),
 		})
@@ -150,9 +179,9 @@ func collectPEP3ReportWarnings(score PEP3ScoreResponse) []string {
 	return uniqueNonEmptyStrings(warnings)
 }
 
-func buildPEP3ReportSummary(report model.PEP3ReportVO) []string {
+func buildPEP3ReportSummary(compositeRows []model.PEP3ReportCompositeRow, warnings []string) []string {
 	summary := make([]string, 0, 4)
-	for _, row := range report.CompositeRows {
+	for _, row := range compositeRows {
 		if row.PercentileRankText == "" && row.Level == "" {
 			continue
 		}
@@ -165,62 +194,63 @@ func buildPEP3ReportSummary(report model.PEP3ReportVO) []string {
 		}
 		summary = append(summary, text)
 	}
-	if len(report.Warnings) > 0 {
+	if len(warnings) > 0 {
 		summary = append(summary, "本报告包含数据或换算提示，正式出具前需复核。")
 	}
 	return summary
 }
 
-func buildPEP3ReportSections(report model.PEP3ReportVO) []model.PEP3TemplateSection {
+func buildPEP3ReportSections(
+	record model.AssessmentRecordDetailVO,
+	developmentRows []model.PEP3ReportScaleRow,
+	behaviorRows []model.PEP3ReportScaleRow,
+	caregiverReportRows []model.PEP3ReportScaleRow,
+	compositeRows []model.PEP3ReportCompositeRow,
+	summary []string,
+	warnings []string,
+) []model.PEP3TemplateSection {
 	sections := []model.PEP3TemplateSection{
 		{
 			SectionCode: "basic_info",
 			Title:       "基本资料",
 			Type:        "field_grid",
 			Fields: []model.PEP3TemplateField{
-				templateField("studentId", "学员ID", formatInt64(report.BasicInfo.StudentID), report.BasicInfo.StudentID),
-				templateField("studentName", "儿童姓名", report.BasicInfo.StudentName, report.BasicInfo.StudentName),
-				templateField("examinerId", "测试员ID", formatInt64(report.BasicInfo.ExaminerID), report.BasicInfo.ExaminerID),
-				templateField("examinerName", "测试员姓名", report.BasicInfo.ExaminerName, report.BasicInfo.ExaminerName),
-				templateField("birthDate", "出生日期", report.BasicInfo.BirthDate, report.BasicInfo.BirthDate),
-				templateField("assessmentDate", "评估日期", report.BasicInfo.AssessmentDate, report.BasicInfo.AssessmentDate),
-				templateField("ageText", "实足年龄", report.BasicInfo.AgeText, report.BasicInfo.AgeText),
-				templateField("normAgeMonths", "常模月龄", strconv.Itoa(report.BasicInfo.NormAgeMonths), report.BasicInfo.NormAgeMonths),
-				templateField("remark", "备注", report.BasicInfo.Remark, report.BasicInfo.Remark),
+				templateField("studentId", "学员ID", formatInt64(record.StudentID), record.StudentID),
+				templateField("studentName", "儿童姓名", record.StudentName, record.StudentName),
+				templateField("examinerId", "测试员ID", formatInt64(record.ExaminerID), record.ExaminerID),
+				templateField("examinerName", "测试员姓名", record.ExaminerName, record.ExaminerName),
+				templateField("birthDate", "出生日期", formatReportDate(record.BirthDate), formatReportDate(record.BirthDate)),
+				templateField("assessmentDate", "评估日期", formatReportDate(record.AssessmentDate), formatReportDate(record.AssessmentDate)),
+				templateField("ageText", "实足年龄", fmt.Sprintf("%d岁%d个月%d天", record.AgeYears, record.AgeMonths, record.AgeDays), map[string]int{"years": record.AgeYears, "months": record.AgeMonths, "days": record.AgeDays}),
+				templateField("normAgeMonths", "常模月龄", strconv.Itoa(record.NormAgeMonths), record.NormAgeMonths),
+				templateField("remark", "备注", record.Remark, record.Remark),
 			},
 		},
-		buildPEP3ReportScaleSection("development_scores", "发展量表", report.DevelopmentRows),
-		buildPEP3ReportScaleSection("behavior_scores", "适应不良行为", report.BehaviorRows),
-		buildPEP3ReportScaleSection("caregiver_scores", "照顾者报告", report.CaregiverReportRows),
+		buildPEP3ReportScaleSection("development_scores", "发展量表", developmentRows),
+		buildPEP3ReportScaleSection("behavior_scores", "适应不良行为", behaviorRows),
+		buildPEP3ReportScaleSection("caregiver_scores", "照顾者报告", caregiverReportRows),
 		{
 			SectionCode: "composite_scores",
 			Title:       "合成分数",
 			Type:        "composite_table",
 			Table: &model.PEP3TemplateTable{
-				Columns: []model.PEP3TemplateColumn{
-					{Key: "compositeName", Label: "合成项目", Width: 160},
-					{Key: "memberScaleCodes", Label: "包含副测验", Width: 180},
-					{Key: "standardScoreSum", Label: "标准分总和", Width: 120, Align: "center"},
-					{Key: "percentileRank", Label: "百分比级数", Width: 120, Align: "center"},
-					{Key: "developmentAge", Label: "发展年龄", Width: 120, Align: "center"},
-					{Key: "level", Label: "适应程度", Width: 120, Align: "center"},
-				},
-				Rows: pep3CompositeTemplateRows(report.CompositeRows),
+				Columns: pep3CompositeTemplateColumns(160, 70, 120, 120, 120, 120, "适应程度"),
+				Rows:    pep3CompositeTemplateRows(compositeRows),
 			},
 		},
 		{
 			SectionCode: "summary",
 			Title:       "解释摘要",
 			Type:        "summary",
-			TextItems:   append([]string(nil), report.Summary...),
+			TextItems:   append([]string(nil), summary...),
 		},
 	}
-	if len(report.Warnings) > 0 {
+	if len(warnings) > 0 {
 		sections = append(sections, model.PEP3TemplateSection{
 			SectionCode: "warnings",
 			Title:       "复核提示",
 			Type:        "warnings",
-			TextItems:   append([]string(nil), report.Warnings...),
+			TextItems:   append([]string(nil), warnings...),
 		})
 	}
 	return sections
@@ -245,6 +275,75 @@ func buildPEP3ReportScaleSection(sectionCode, title string, rows []model.PEP3Rep
 			Rows: pep3ScaleTemplateRows(rows),
 		},
 	}
+}
+
+func pep3ScaleHasDevelopmentAge(scaleCode string) bool {
+	switch scaleCode {
+	case "CVP", "EL", "RL", "FM", "GM", "VMI", "PSC":
+		return true
+	default:
+		return false
+	}
+}
+
+func pep3CompositeHasDevelopmentAge(compositeCode string) bool {
+	switch compositeCode {
+	case pep3score.CompositeCommunication, pep3score.CompositeMotor:
+		return true
+	default:
+		return false
+	}
+}
+
+func pep3CompositeScaleCodes() []string {
+	return []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "AE", "SR", "CMB", "CVB"}
+}
+
+func pep3CompositeTemplateColumns(nameWidth, scoreWidth, sumWidth, percentileWidth, levelWidth, devAgeWidth int, levelLabel string) []model.PEP3TemplateColumn {
+	columns := []model.PEP3TemplateColumn{
+		{Key: "compositeName", Label: "合成项目", Width: nameWidth},
+	}
+	for _, code := range pep3CompositeScaleCodes() {
+		columns = append(columns, model.PEP3TemplateColumn{
+			Key:   code,
+			Label: code,
+			Width: scoreWidth,
+			Align: "center",
+			Group: "标准分 / Standard Scores (SSs)",
+		})
+	}
+	columns = append(columns,
+		model.PEP3TemplateColumn{Key: "standardScoreSum", Label: "标准分总和", Width: sumWidth, Align: "center"},
+		model.PEP3TemplateColumn{Key: "percentileRank", Label: "百分比级数", Width: percentileWidth, Align: "center"},
+		model.PEP3TemplateColumn{Key: "level", Label: levelLabel, Width: levelWidth, Align: "center"},
+		model.PEP3TemplateColumn{Key: "developmentAge", Label: "发展年龄", Width: devAgeWidth, Align: "center"},
+	)
+	return columns
+}
+
+func pep3CompositeMemberScoreTexts(memberScaleCodes []string, scales map[string]pep3score.ScaleResult) map[string]string {
+	members := make(map[string]bool, len(memberScaleCodes))
+	for _, code := range memberScaleCodes {
+		members[code] = true
+	}
+	out := make(map[string]string, len(pep3CompositeScaleCodes()))
+	for _, code := range pep3CompositeScaleCodes() {
+		if !members[code] {
+			out[code] = "--"
+			continue
+		}
+		scale, ok := scales[code]
+		if !ok {
+			out[code] = "待校对"
+			continue
+		}
+		text := formatNormText(scale.ScaledScore)
+		if text == "" {
+			text = "待校对"
+		}
+		out[code] = text
+	}
+	return out
 }
 
 func pep3ScaleTemplateRows(rows []model.PEP3ReportScaleRow) []map[string]any {
@@ -274,16 +373,21 @@ func pep3ScaleTemplateRows(rows []model.PEP3ReportScaleRow) []map[string]any {
 func pep3CompositeTemplateRows(rows []model.PEP3ReportCompositeRow) []map[string]any {
 	out := make([]map[string]any, 0, len(rows))
 	for _, row := range rows {
-		out = append(out, map[string]any{
-			"compositeCode":    row.CompositeCode,
-			"compositeName":    row.CompositeName,
-			"memberScaleCodes": append([]string(nil), row.MemberScaleCodes...),
-			"standardScoreSum": row.StandardScoreSumText,
-			"percentileRank":   row.PercentileRankText,
-			"developmentAge":   row.DevelopmentAgeText,
-			"level":            row.Level,
-			"warnings":         append([]string(nil), row.Warnings...),
-		})
+		item := map[string]any{
+			"compositeCode":     row.CompositeCode,
+			"compositeName":     row.CompositeName,
+			"memberScaleCodes":  append([]string(nil), row.MemberScaleCodes...),
+			"memberScaleScores": copyStringMap(row.MemberScaleScores),
+			"standardScoreSum":  row.StandardScoreSumText,
+			"percentileRank":    row.PercentileRankText,
+			"developmentAge":    row.DevelopmentAgeText,
+			"level":             row.Level,
+			"warnings":          append([]string(nil), row.Warnings...),
+		}
+		for _, code := range pep3CompositeScaleCodes() {
+			item[code] = row.MemberScaleScores[code]
+		}
+		out = append(out, item)
 	}
 	return out
 }
@@ -346,6 +450,17 @@ func copyIntPtr(value *int) *int {
 	}
 	copied := *value
 	return &copied
+}
+
+func copyStringMap(value map[string]string) map[string]string {
+	if len(value) == 0 {
+		return nil
+	}
+	copied := make(map[string]string, len(value))
+	for key, item := range value {
+		copied[key] = item
+	}
+	return copied
 }
 
 func nonEmptyString(values ...string) string {

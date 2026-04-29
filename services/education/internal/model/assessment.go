@@ -18,6 +18,20 @@ type AssessmentRecordQueryModel struct {
 	AssessmentDateEnd   string `json:"assessmentDateEnd,omitempty"`
 }
 
+type AssessmentDraftPageQueryDTO struct {
+	PageRequestModel PageRequestModel          `json:"pageRequestModel"`
+	QueryModel       AssessmentDraftQueryModel `json:"queryModel"`
+}
+
+type AssessmentDraftQueryModel struct {
+	AssessmentCode      string `json:"assessmentCode,omitempty"`
+	StudentID           *int64 `json:"studentId,omitempty"`
+	SearchKey           string `json:"searchKey,omitempty"`
+	Status              string `json:"status,omitempty"`
+	AssessmentDateBegin string `json:"assessmentDateBegin,omitempty"`
+	AssessmentDateEnd   string `json:"assessmentDateEnd,omitempty"`
+}
+
 type AssessmentRecordSummaryVO struct {
 	ID             int64      `json:"id"`
 	InstID         int64      `json:"instId"`
@@ -46,35 +60,169 @@ type AssessmentRecordDetailVO struct {
 	ResultJSON json.RawMessage `json:"result,omitempty"`
 }
 
-type PEP3ReportVO struct {
-	Record              AssessmentRecordSummaryVO `json:"record"`
-	TemplateCode        string                    `json:"templateCode"`
-	TemplateVersion     string                    `json:"templateVersion"`
-	Title               string                    `json:"title"`
-	ScaleCode           string                    `json:"scaleCode"`
-	ScaleVersion        string                    `json:"scaleVersion"`
-	DataStatus          string                    `json:"dataStatus,omitempty"`
-	Sources             []string                  `json:"sources,omitempty"`
-	Sections            []PEP3TemplateSection     `json:"sections"`
-	BasicInfo           PEP3ReportBasicInfo       `json:"basicInfo"`
-	DevelopmentRows     []PEP3ReportScaleRow      `json:"developmentRows"`
-	BehaviorRows        []PEP3ReportScaleRow      `json:"behaviorRows"`
-	CaregiverReportRows []PEP3ReportScaleRow      `json:"caregiverReportRows"`
-	CompositeRows       []PEP3ReportCompositeRow  `json:"compositeRows"`
-	Summary             []string                  `json:"summary"`
-	Warnings            []string                  `json:"warnings,omitempty"`
+type AssessmentDraftSummaryVO struct {
+	ID                int64                       `json:"id"`
+	InstID            int64                       `json:"instId"`
+	StudentID         int64                       `json:"studentId,omitempty"`
+	StudentName       string                      `json:"studentName,omitempty"`
+	AssessmentCode    string                      `json:"assessmentCode"`
+	AssessmentName    string                      `json:"assessmentName"`
+	ScaleVersion      string                      `json:"scaleVersion"`
+	BirthDate         *time.Time                  `json:"birthDate,omitempty"`
+	AssessmentDate    *time.Time                  `json:"assessmentDate,omitempty"`
+	ExaminerID        int64                       `json:"examinerId,omitempty"`
+	ExaminerName      string                      `json:"examinerName,omitempty"`
+	Status            string                      `json:"status"`
+	SubmittedRecordID int64                       `json:"submittedRecordId,omitempty"`
+	AnsweredItemCount int                         `json:"answeredItemCount"`
+	RawScoreCount     int                         `json:"rawScoreCount"`
+	CompletionPercent float64                     `json:"completionPercent"`
+	Progress          PEP3AssessmentDraftProgress `json:"progress"`
+	Remark            string                      `json:"remark,omitempty"`
+	CreatedTime       *time.Time                  `json:"createdTime,omitempty"`
+	UpdatedTime       *time.Time                  `json:"updatedTime,omitempty"`
 }
 
-type PEP3ReportBasicInfo struct {
-	StudentID      int64  `json:"studentId,omitempty"`
-	StudentName    string `json:"studentName,omitempty"`
-	ExaminerID     int64  `json:"examinerId,omitempty"`
-	ExaminerName   string `json:"examinerName,omitempty"`
-	BirthDate      string `json:"birthDate,omitempty"`
-	AssessmentDate string `json:"assessmentDate,omitempty"`
-	AgeText        string `json:"ageText"`
-	NormAgeMonths  int    `json:"normAgeMonths"`
-	Remark         string `json:"remark,omitempty"`
+type AssessmentDraftDetailVO struct {
+	AssessmentDraftSummaryVO
+	InputJSON json.RawMessage `json:"input,omitempty"`
+}
+
+type PEP3AssessmentDraftSubmitVO struct {
+	DraftID     int64                    `json:"draftId"`
+	RecordID    int64                    `json:"recordId"`
+	DraftStatus string                   `json:"draftStatus"`
+	Record      AssessmentRecordDetailVO `json:"record"`
+}
+
+type PEP3AssessmentDraftProgress struct {
+	ItemCount              int                  `json:"itemCount"`
+	AnsweredItemCount      int                  `json:"answeredItemCount"`
+	MissingItemCount       int                  `json:"missingItemCount"`
+	RawScoreCount          int                  `json:"rawScoreCount"`
+	CaregiverRawScoreCount int                  `json:"caregiverRawScoreCount"`
+	TotalInputCount        int                  `json:"totalInputCount"`
+	CompletedInputCount    int                  `json:"completedInputCount"`
+	CompletionPercent      float64              `json:"completionPercent"`
+	Complete               bool                 `json:"complete"`
+	CanScore               bool                 `json:"canScore"`
+	MissingRequiredFields  []string             `json:"missingRequiredFields,omitempty"`
+	MissingItemNos         []int                `json:"missingItemNos,omitempty"`
+	DomainProgress         []PEP3DomainProgress `json:"domainProgress,omitempty"`
+}
+
+type PEP3DomainProgress struct {
+	ScaleCode         string `json:"scaleCode"`
+	ScaleName         string `json:"scaleName"`
+	Category          string `json:"category"`
+	ItemCount         int    `json:"itemCount"`
+	AnsweredItemCount int    `json:"answeredItemCount"`
+	RawScore          *int   `json:"rawScore,omitempty"`
+	MaxRawScore       *int   `json:"maxRawScore,omitempty"`
+	Complete          bool   `json:"complete"`
+}
+
+type PEP3AssessmentFormTemplateVO struct {
+	TemplateCode    string                    `json:"templateCode"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Title           string                    `json:"title"`
+	ScaleCode       string                    `json:"scaleCode"`
+	ScaleVersion    string                    `json:"scaleVersion"`
+	DataStatus      string                    `json:"dataStatus,omitempty"`
+	Sources         []string                  `json:"sources,omitempty"`
+	ItemCount       int                       `json:"itemCount"`
+	ScoreOptions    []PEP3ScoreOption         `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField `json:"basicFields"`
+	Domains         []PEP3AssessmentDomain    `json:"domains"`
+	RawScoreFields  []PEP3RawScoreField       `json:"rawScoreFields"`
+	ItemGroups      []PEP3AssessmentItemGroup `json:"itemGroups"`
+	SubmitContract  PEP3SubmitContract        `json:"submitContract"`
+}
+
+type PEP3AssessmentFormField struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	FieldType   string `json:"fieldType"`
+	Required    bool   `json:"required"`
+	Placeholder string `json:"placeholder,omitempty"`
+}
+
+type PEP3AssessmentDomain struct {
+	ScaleCode            string `json:"scaleCode"`
+	ScaleName            string `json:"scaleName"`
+	Category             string `json:"category"`
+	ItemCount            *int   `json:"itemCount,omitempty"`
+	MaxRawScore          *int   `json:"maxRawScore,omitempty"`
+	ItemNumbers          []int  `json:"itemNumbers,omitempty"`
+	IsDevelopmentSubtest bool   `json:"isDevelopmentSubtest,omitempty"`
+	IsBehaviorSubtest    bool   `json:"isBehaviorSubtest,omitempty"`
+	IsCaregiverReport    bool   `json:"isCaregiverReport,omitempty"`
+	CompositeCode        string `json:"compositeCode,omitempty"`
+}
+
+type PEP3RawScoreField struct {
+	ScaleCode   string `json:"scaleCode"`
+	ScaleName   string `json:"scaleName"`
+	Category    string `json:"category"`
+	MinScore    int    `json:"minScore"`
+	MaxScore    *int   `json:"maxScore,omitempty"`
+	InputMode   string `json:"inputMode"`
+	Required    bool   `json:"required"`
+	Description string `json:"description,omitempty"`
+}
+
+type PEP3AssessmentItemGroup struct {
+	GroupCode       string               `json:"groupCode"`
+	Title           string               `json:"title"`
+	BookletPageNo   int                  `json:"bookletPageNo"`
+	SourcePDFPageNo int                  `json:"sourcePdfPageNo,omitempty"`
+	Layout          string               `json:"layout,omitempty"`
+	StartItemNo     int                  `json:"startItemNo"`
+	EndItemNo       int                  `json:"endItemNo"`
+	Items           []PEP3AssessmentItem `json:"items"`
+}
+
+type PEP3AssessmentItem struct {
+	ItemNo       int               `json:"itemNo"`
+	ItemTitle    string            `json:"itemTitle"`
+	TestItem     string            `json:"testItem"`
+	Materials    string            `json:"materials,omitempty"`
+	Method       string            `json:"method,omitempty"`
+	DomainCode   string            `json:"domainCode"`
+	DomainName   string            `json:"domainName"`
+	Standard     string            `json:"standard"`
+	ScoreOptions []PEP3ScoreOption `json:"scoreOptions"`
+	SourcePDF    string            `json:"sourcePdf,omitempty"`
+	SourcePages  []int             `json:"sourcePages,omitempty"`
+	OCRStatus    string            `json:"ocrStatus,omitempty"`
+}
+
+type PEP3ScoreOption struct {
+	Value       int    `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+type PEP3SubmitContract struct {
+	ScoreEndpoint        string   `json:"scoreEndpoint"`
+	CreateRecordEndpoint string   `json:"createRecordEndpoint"`
+	DateFormat           string   `json:"dateFormat"`
+	ItemScoreListKey     string   `json:"itemScoreListKey"`
+	RawScoreListKey      string   `json:"rawScoreListKey"`
+	RequiredBaseFields   []string `json:"requiredBaseFields"`
+	AllowedItemScores    []int    `json:"allowedItemScores"`
+}
+
+type PEP3ReportVO struct {
+	Record          AssessmentRecordSummaryVO `json:"record"`
+	TemplateCode    string                    `json:"templateCode"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Title           string                    `json:"title"`
+	ScaleCode       string                    `json:"scaleCode"`
+	ScaleVersion    string                    `json:"scaleVersion"`
+	DataStatus      string                    `json:"dataStatus,omitempty"`
+	Sources         []string                  `json:"sources,omitempty"`
+	Sections        []PEP3TemplateSection     `json:"sections"`
 }
 
 type PEP3ReportScaleRow struct {
@@ -91,14 +239,15 @@ type PEP3ReportScaleRow struct {
 }
 
 type PEP3ReportCompositeRow struct {
-	CompositeCode        string   `json:"compositeCode"`
-	CompositeName        string   `json:"compositeName"`
-	MemberScaleCodes     []string `json:"memberScaleCodes"`
-	StandardScoreSumText string   `json:"standardScoreSumText,omitempty"`
-	PercentileRankText   string   `json:"percentileRankText,omitempty"`
-	DevelopmentAgeText   string   `json:"developmentAgeText,omitempty"`
-	Level                string   `json:"level,omitempty"`
-	Warnings             []string `json:"warnings,omitempty"`
+	CompositeCode        string            `json:"compositeCode"`
+	CompositeName        string            `json:"compositeName"`
+	MemberScaleCodes     []string          `json:"memberScaleCodes"`
+	MemberScaleScores    map[string]string `json:"memberScaleScores,omitempty"`
+	StandardScoreSumText string            `json:"standardScoreSumText,omitempty"`
+	PercentileRankText   string            `json:"percentileRankText,omitempty"`
+	DevelopmentAgeText   string            `json:"developmentAgeText,omitempty"`
+	Level                string            `json:"level,omitempty"`
+	Warnings             []string          `json:"warnings,omitempty"`
 }
 
 type PEP3TemplateField struct {
@@ -115,6 +264,7 @@ type PEP3TemplateColumn struct {
 	Label string `json:"label"`
 	Width int    `json:"width,omitempty"`
 	Align string `json:"align,omitempty"`
+	Group string `json:"group,omitempty"`
 }
 
 type PEP3TemplateTable struct {
