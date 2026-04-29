@@ -182,7 +182,7 @@ func newScriptedRepo(t *testing.T, steps []scriptedRepoStep) (*Repository, func(
 		t.Fatalf("open scripted db: %v", err)
 	}
 
-	return New(db), func() {
+	return &Repository{db: db}, func() {
 		_ = db.Close()
 		if state.index != len(state.steps) {
 			t.Fatalf("not all scripted repo steps were used: used %d of %d", state.index, len(state.steps))

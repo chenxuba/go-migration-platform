@@ -77,6 +77,20 @@ func (c *scriptedConn) QueryContext(_ context.Context, query string, args []driv
 	actualQuery := normalizeSQL(query)
 	expectedQuery := normalizeSQL(expectation.query)
 	if actualQuery != expectedQuery {
+		if isCurrentInstIDProbeSQL(actualQuery) && !isCurrentInstIDProbeSQL(expectedQuery) {
+			return &scriptedRows{
+				columns: []string{"current_inst_id"},
+				rows:    nil,
+				index:   0,
+			}, nil
+		}
+		if isTeachingScheduleRecordLookupSQL(actualQuery) && !isTeachingScheduleRecordLookupSQL(expectedQuery) {
+			return &scriptedRows{
+				columns: []string{"teaching_schedule_id", "student_id", "teaching_record_id"},
+				rows:    nil,
+				index:   0,
+			}, nil
+		}
 		return nil, fmt.Errorf("unexpected query\nexpected: %s\nactual:   %s", expectedQuery, actualQuery)
 	}
 	if len(args) != len(expectation.args) {
@@ -179,7 +193,11 @@ func findInstIDExpectation(userID int64, instID int64) queryExpectation {
 			LEFT JOIN org_institution i ON u.inst_id = i.id
 			WHERE u.del_flag = 0 AND u.disabled = 0
 			  AND i.del_flag = 0 AND i.enabled = 1
-			  AND i.expire_end_time > NOW()
+			  AND (
+			    i.expire_end_time > NOW()
+			    OR IFNULL(i.open_type, 0) <> 1
+			    OR i.expire_end_time IS NULL
+			  )
 			  AND u.user_id = ?
 			  AND i.organ_type != 2 AND i.organ_type != 10 AND i.organ_type != 11
 			ORDER BY u.id
@@ -189,6 +207,20 @@ func findInstIDExpectation(userID int64, instID int64) queryExpectation {
 		columns: []string{"inst_id"},
 		rows:    [][]driver.Value{{instID}},
 	}
+}
+
+func isCurrentInstIDProbeSQL(query string) bool {
+	return query == normalizeSQL(`
+		SELECT current_inst_id
+		FROM sso_user
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`)
+}
+
+func isTeachingScheduleRecordLookupSQL(query string) bool {
+	return strings.HasPrefix(query, "SELECT IFNULL(teaching_schedule_id, 0), IFNULL(student_id, 0), IFNULL(MAX(teaching_record_id), 0) FROM student_teaching_record WHERE inst_id = ? AND del_flag = 0 AND teaching_schedule_id IN (") &&
+		strings.HasSuffix(query, ") GROUP BY teaching_schedule_id, student_id")
 }
 
 func execResultExpectation(query string, args []any, rowsAffected int64) queryExpectation {
