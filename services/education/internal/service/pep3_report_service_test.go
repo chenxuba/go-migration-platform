@@ -102,7 +102,7 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 	if developmentSection == nil || developmentSection.Table == nil || len(developmentSection.Table.Rows) != 1 {
 		t.Fatalf("expected score table rows in report sections: %+v", report.Sections[1])
 	}
-	if developmentSection.Table.Rows[0]["scaleCode"] != "CVP" || developmentSection.Table.Rows[0]["scaledScore"] != "9" {
+	if developmentSection.Table.Rows[0]["scaleCode"] != "CVP" || developmentSection.Table.Rows[0]["scaledScore"] != "9" || developmentSection.Table.Rows[0]["developmentAge"] != "18个月" {
 		t.Fatalf("unexpected development score row: %+v", developmentSection.Table.Rows[0])
 	}
 	behaviorSection := findPEP3ReportTestSection(report.Sections, "behavior_scores")

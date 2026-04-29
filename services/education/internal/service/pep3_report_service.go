@@ -109,7 +109,7 @@ func buildPEP3ScaleRows(scales map[string]pep3score.ScaleResult, category string
 		if !ok {
 			continue
 		}
-		developmentAgeText := formatNormText(scale.DevelopmentAge)
+		developmentAgeText := formatDevelopmentAgeText(scale.DevelopmentAge)
 		if developmentAgeText == "" && !pep3ScaleHasDevelopmentAge(code) {
 			developmentAgeText = "--"
 		}
@@ -424,6 +424,14 @@ func formatNormText(value *pep3score.NormValue) string {
 		return ""
 	}
 	return strings.TrimSpace(value.Text)
+}
+
+func formatDevelopmentAgeText(value *pep3score.NormValue) string {
+	text := formatNormText(value)
+	if text == "" || strings.Contains(text, "月") || strings.Contains(text, "岁") || strings.Contains(text, "年") {
+		return text
+	}
+	return text + "个月"
 }
 
 func formatIntPtr(value *int) string {
