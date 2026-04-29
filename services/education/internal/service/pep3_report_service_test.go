@@ -85,6 +85,15 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 	if len(report.DevelopmentRows) != 1 || report.DevelopmentRows[0].ScaleCode != "CVP" || report.DevelopmentRows[0].ScaledScoreText != "9" {
 		t.Fatalf("unexpected development rows: %+v", report.DevelopmentRows)
 	}
+	if report.TemplateCode != "PEP3_EXPLANATORY_REPORT" || report.Title == "" {
+		t.Fatalf("unexpected template metadata: %+v", report)
+	}
+	if len(report.Sections) == 0 || report.Sections[0].SectionCode != "basic_info" {
+		t.Fatalf("expected frontend-fillable report sections: %+v", report.Sections)
+	}
+	if report.Sections[1].Table == nil || len(report.Sections[1].Table.Rows) != 1 {
+		t.Fatalf("expected score table rows in report sections: %+v", report.Sections[1])
+	}
 	if len(report.CompositeRows) != 1 || report.CompositeRows[0].StandardScoreSumText != "32" || report.CompositeRows[0].DevelopmentAgeText != "20个月" {
 		t.Fatalf("unexpected composite rows: %+v", report.CompositeRows)
 	}

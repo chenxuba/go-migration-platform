@@ -48,10 +48,14 @@ type AssessmentRecordDetailVO struct {
 
 type PEP3ReportVO struct {
 	Record              AssessmentRecordSummaryVO `json:"record"`
+	TemplateCode        string                    `json:"templateCode"`
+	TemplateVersion     string                    `json:"templateVersion"`
+	Title               string                    `json:"title"`
 	ScaleCode           string                    `json:"scaleCode"`
 	ScaleVersion        string                    `json:"scaleVersion"`
 	DataStatus          string                    `json:"dataStatus,omitempty"`
 	Sources             []string                  `json:"sources,omitempty"`
+	Sections            []PEP3TemplateSection     `json:"sections"`
 	BasicInfo           PEP3ReportBasicInfo       `json:"basicInfo"`
 	DevelopmentRows     []PEP3ReportScaleRow      `json:"developmentRows"`
 	BehaviorRows        []PEP3ReportScaleRow      `json:"behaviorRows"`
@@ -95,4 +99,62 @@ type PEP3ReportCompositeRow struct {
 	DevelopmentAgeText   string   `json:"developmentAgeText,omitempty"`
 	Level                string   `json:"level,omitempty"`
 	Warnings             []string `json:"warnings,omitempty"`
+}
+
+type PEP3TemplateField struct {
+	Key         string `json:"key"`
+	Label       string `json:"label"`
+	Value       string `json:"value"`
+	RawValue    any    `json:"rawValue,omitempty"`
+	Unit        string `json:"unit,omitempty"`
+	Placeholder string `json:"placeholder,omitempty"`
+}
+
+type PEP3TemplateColumn struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+	Width int    `json:"width,omitempty"`
+	Align string `json:"align,omitempty"`
+}
+
+type PEP3TemplateTable struct {
+	Columns    []PEP3TemplateColumn `json:"columns"`
+	Rows       []map[string]any     `json:"rows"`
+	FooterRows []map[string]any     `json:"footerRows,omitempty"`
+}
+
+type PEP3TemplateSection struct {
+	SectionCode     string              `json:"sectionCode"`
+	Title           string              `json:"title"`
+	Type            string              `json:"type"`
+	Layout          string              `json:"layout,omitempty"`
+	SourcePDFPageNo int                 `json:"sourcePdfPageNo,omitempty"`
+	BookletPageNo   int                 `json:"bookletPageNo,omitempty"`
+	Fields          []PEP3TemplateField `json:"fields,omitempty"`
+	Table           *PEP3TemplateTable  `json:"table,omitempty"`
+	TextItems       []string            `json:"textItems,omitempty"`
+	Meta            map[string]any      `json:"meta,omitempty"`
+}
+
+type PEP3BookletVO struct {
+	Record          AssessmentRecordSummaryVO `json:"record"`
+	TemplateCode    string                    `json:"templateCode"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Title           string                    `json:"title"`
+	ScaleCode       string                    `json:"scaleCode"`
+	ScaleVersion    string                    `json:"scaleVersion"`
+	DataStatus      string                    `json:"dataStatus,omitempty"`
+	Sources         []string                  `json:"sources,omitempty"`
+	SourcePDF       string                    `json:"sourcePdf"`
+	Pages           []PEP3BookletPage         `json:"pages"`
+	Warnings        []string                  `json:"warnings,omitempty"`
+}
+
+type PEP3BookletPage struct {
+	PageNo          int                   `json:"pageNo"`
+	SourcePDFPageNo int                   `json:"sourcePdfPageNo"`
+	Title           string                `json:"title"`
+	PageType        string                `json:"pageType"`
+	Sections        []PEP3TemplateSection `json:"sections"`
+	Meta            map[string]any        `json:"meta,omitempty"`
 }
