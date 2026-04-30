@@ -3,6 +3,7 @@ import {
   BookOutlined,
   CheckCircleOutlined,
   CloseOutlined,
+  CopyOutlined,
   FileTextOutlined,
   FormOutlined,
   ReloadOutlined,
@@ -17,10 +18,12 @@ import {
   getPEP3AssessmentDraftDetailApi,
   getPEP3AssessmentFormTemplateApi,
   getPEP3AssessmentReportApi,
+  invitePEP3CaregiverReportApi,
   pagePEP3AssessmentDraftsApi,
   pagePEP3AssessmentRecordsApi,
   savePEP3AssessmentDraftApi,
   submitPEP3AssessmentDraftApi,
+  type PEP3CaregiverReportInvite,
   type PEP3AssessmentDraftDetail,
   type PEP3AssessmentDraftSummary,
   type PEP3AssessmentFormTemplate,
@@ -49,6 +52,7 @@ interface DraftEditorState {
   itemScores: Record<number, number | undefined>
   rawScores: Record<string, number | undefined>
   itemRecordValues: Record<number, Record<string, unknown>>
+  caregiverReport?: PEP3DraftSaveRequest['caregiverReport']
 }
 
 const activeTab = ref<WorkbenchTab>('drafts')
@@ -59,6 +63,7 @@ const drawerOpen = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
 const previewLoading = ref(false)
+const caregiverInviteLoading = ref(false)
 
 const template = ref<PEP3AssessmentFormTemplate>()
 const draftRows = ref<PEP3AssessmentDraftSummary[]>([])
@@ -67,8 +72,10 @@ const currentProgress = ref<PEP3AssessmentDraftDetail['progress']>()
 const activeGroupKeys = ref<string[]>(['booklet_page_2'])
 const reportModalOpen = ref(false)
 const bookletModalOpen = ref(false)
+const caregiverInviteModalOpen = ref(false)
 const currentReport = ref<PEP3Report>()
 const currentBooklet = ref<PEP3Booklet>()
+const currentCaregiverInvite = ref<PEP3CaregiverReportInvite>()
 
 const draftPagination = reactive({
   current: 1,
@@ -202,7 +209,7 @@ const draftColumns: any[] = [
   { title: '测试员', dataIndex: 'examinerName', key: 'examinerName', width: 140 },
   { title: '更新时间', dataIndex: 'updatedTime', key: 'updatedTime', width: 170 },
   { title: '备注', dataIndex: 'remark', key: 'remark', width: 200 },
-  { title: '操作', dataIndex: 'action', key: 'action', width: 220, fixed: 'right' },
+  { title: '操作', dataIndex: 'action', key: 'action', width: 300, fixed: 'right' },
 ]
 
 const recordColumns: any[] = [
@@ -242,6 +249,10 @@ function statusMeta(status?: string) {
   return map[status || ''] || { color: 'default', text: status || '-' }
 }
 
+function isSubmittedDraft(row?: Partial<PEP3AssessmentDraftSummary>) {
+  return row?.status === 'submitted' || Number(row?.submittedRecordId || 0) > 0
+}
+
 function getErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.message || error?.message || fallback
 }
@@ -258,6 +269,7 @@ function resetEditor() {
   editor.itemScores = {}
   editor.rawScores = {}
   editor.itemRecordValues = {}
+  editor.caregiverReport = undefined
   currentProgress.value = undefined
   activeGroupKeys.value = ['booklet_page_2']
 }
@@ -275,6 +287,7 @@ function applyDraftInput(input?: PEP3DraftSaveRequest) {
   editor.itemScores = {}
   editor.rawScores = {}
   editor.itemRecordValues = {}
+  editor.caregiverReport = input.caregiverReport
   Object.entries(input.itemScores || {}).forEach(([itemNo, score]) => {
     editor.itemScores[Number(itemNo)] = Number(score)
   })
@@ -397,6 +410,7 @@ function buildPayload(): PEP3DraftSaveRequest {
     itemScoreList,
     rawScoreList,
     itemRecordValueList,
+    caregiverReport: editor.caregiverReport,
   }
 }
 
@@ -567,6 +581,53 @@ function confirmDeleteDraft(row: PEP3AssessmentDraftSummary) {
   })
 }
 
+async function openCaregiverInvite(row: PEP3AssessmentDraftSummary) {
+  if (isSubmittedDraft(row)) {
+    messageService.warning('该测评已提交为正式记录，不能再让家长填写照顾者报告')
+    return
+  }
+  caregiverInviteLoading.value = true
+  currentCaregiverInvite.value = undefined
+  try {
+    const res = await invitePEP3CaregiverReportApi(row.id)
+    currentCaregiverInvite.value = unwrap<PEP3CaregiverReportInvite>(res)
+    caregiverInviteModalOpen.value = true
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '生成家长填写入口失败'))
+  }
+  finally {
+    caregiverInviteLoading.value = false
+  }
+}
+
+async function copyCaregiverInviteText(value?: string) {
+  const text = `${value || ''}`.trim()
+  if (!text) {
+    messageService.warning('暂无可复制内容')
+    return
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(text)
+    }
+    else {
+      const textarea = document.createElement('textarea')
+      textarea.value = text
+      textarea.style.position = 'fixed'
+      textarea.style.opacity = '0'
+      document.body.appendChild(textarea)
+      textarea.select()
+      document.execCommand('copy')
+      document.body.removeChild(textarea)
+    }
+    messageService.success('已复制')
+  }
+  catch (error) {
+    messageService.error('复制失败，请手动复制')
+  }
+}
+
 async function openReport(row: PEP3AssessmentRecordSummary) {
   previewLoading.value = true
   try {
@@ -624,6 +685,10 @@ function continueDraftRow(row: Record<string, any>) {
 
 function submitDraftRow(row: Record<string, any>) {
   return continueDraft(row as PEP3AssessmentDraftSummary).then(() => submitDraft())
+}
+
+function openCaregiverInviteRow(row: Record<string, any>) {
+  return openCaregiverInvite(row as PEP3AssessmentDraftSummary)
 }
 
 function confirmDeleteDraftRow(row: Record<string, any>) {
@@ -788,7 +853,6 @@ onMounted(async () => {
                 <a-select-option value="draft">草稿</a-select-option>
                 <a-select-option value="ready_to_score">可评分</a-select-option>
                 <a-select-option value="complete">已完整</a-select-option>
-                <a-select-option value="submitted">已提交</a-select-option>
               </a-select>
             </a-space>
             <a-button type="primary" @click="openNewAssessment">新建测评</a-button>
@@ -832,11 +896,13 @@ onMounted(async () => {
                 </a-tooltip>
               </template>
               <template v-else-if="column.key === 'action'">
-                <a-space>
+                <a-space v-if="!isSubmittedDraft(record)">
                   <a @click="continueDraftRow(record)">继续</a>
+                  <a @click="openCaregiverInviteRow(record)">家长填写</a>
                   <a @click="submitDraftRow(record)">提交</a>
                   <a class="danger-link" @click="confirmDeleteDraftRow(record)">删除</a>
                 </a-space>
+                <a-tag v-else color="purple">已生成正式记录</a-tag>
               </template>
             </template>
           </a-table>
@@ -1106,6 +1172,61 @@ onMounted(async () => {
         </div>
       </template>
     </a-drawer>
+
+    <a-modal
+      v-model:open="caregiverInviteModalOpen"
+      title="家长端照顾者报告"
+      width="720px"
+      :footer="null"
+      :confirm-loading="caregiverInviteLoading"
+    >
+      <a-spin :spinning="caregiverInviteLoading">
+        <div class="caregiver-invite">
+          <a-alert
+            type="info"
+            show-icon
+            message="请把小程序路径发送给家长。家长提交后，PB/PSC/AB原始分会自动回写到当前PEP-3草稿。"
+          />
+          <div class="caregiver-invite__meta">
+            <div>
+              <span>儿童</span>
+              <strong>{{ currentCaregiverInvite?.studentName || '-' }}</strong>
+            </div>
+            <div>
+              <span>有效期</span>
+              <strong>{{ formatDateTime(currentCaregiverInvite?.expiresAt) }}</strong>
+            </div>
+          </div>
+          <a-form layout="vertical">
+            <a-form-item label="小程序页面路径">
+              <a-input-group compact>
+                <a-textarea
+                  :value="currentCaregiverInvite?.miniProgramPath"
+                  :auto-size="{ minRows: 2, maxRows: 4 }"
+                  readonly
+                  style="width: calc(100% - 92px)"
+                />
+                <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.miniProgramPath)">
+                  复制
+                </a-button>
+              </a-input-group>
+            </a-form-item>
+            <a-form-item label="调试链接">
+              <a-input-group compact>
+                <a-input
+                  :value="currentCaregiverInvite?.url"
+                  readonly
+                  style="width: calc(100% - 92px)"
+                />
+                <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.url)">
+                  复制
+                </a-button>
+              </a-input-group>
+            </a-form-item>
+          </a-form>
+        </div>
+      </a-spin>
+    </a-modal>
 
     <a-modal
       v-model:open="reportModalOpen"
@@ -1601,6 +1722,39 @@ onMounted(async () => {
 .drawer-footer {
   display: flex;
   justify-content: flex-end;
+}
+
+.caregiver-invite {
+  display: grid;
+  gap: 16px;
+}
+
+.caregiver-invite__meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+
+  div {
+    padding: 12px;
+    background: #f8fafc;
+    border: 1px solid #eef1f5;
+    border-radius: 8px;
+  }
+
+  span {
+    display: block;
+    color: #667085;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  strong {
+    display: block;
+    margin-top: 4px;
+    color: #111827;
+    font-size: 14px;
+    line-height: 20px;
+  }
 }
 
 .preview-content {

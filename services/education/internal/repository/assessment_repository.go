@@ -470,6 +470,8 @@ func (repo *Repository) PageAssessmentDrafts(ctx context.Context, instID int64, 
 	if status := strings.TrimSpace(query.Status); status != "" {
 		where = append(where, "status = ?")
 		args = append(args, status)
+	} else {
+		where = append(where, "status <> 'submitted'")
 	}
 	if query.StudentID != nil && *query.StudentID > 0 {
 		where = append(where, "student_id = ?")
@@ -576,6 +578,53 @@ func (repo *Repository) DeleteAssessmentDraft(ctx context.Context, instID, draft
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+func (repo *Repository) UpdateAssessmentDraftInputAndProgress(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, operatorID int64) error {
+	inputRaw, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft input: %w", err)
+	}
+	progressRaw, err := json.Marshal(progress)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft progress: %w", err)
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "draft"
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_draft
+		SET input_json = ?,
+		    progress_json = ?,
+		    answered_item_count = ?,
+		    raw_score_count = ?,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0 AND submitted_record_id = 0
+	`,
+		string(inputRaw),
+		string(progressRaw),
+		answeredItemCount,
+		rawScoreCount,
+		status,
+		operatorID,
+		draftID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (repo *Repository) MarkAssessmentDraftSubmitted(ctx context.Context, instID, draftID, recordID, operatorID int64) (bool, error) {

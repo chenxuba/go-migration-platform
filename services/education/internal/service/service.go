@@ -78,6 +78,9 @@ func (svc *Service) Orders(ctx tenant.Context) map[string]any {
 }
 
 func (svc *Service) ParseToken(token string) (authx.Claims, error) {
+	if svc == nil || svc.tokenManager == nil {
+		return authx.Claims{}, errors.New("token manager is not configured")
+	}
 	return svc.tokenManager.Parse(token)
 }
 

@@ -65,6 +65,12 @@ func TestBuildPEP3AssessmentFormTemplate(t *testing.T) {
 	if item85 == nil || len(item85.RecordFields) != 1 || item85.RecordFields[0].FieldType != "checkbox_group" || item85.RecordFields[0].DisplayType != "打勾" || len(item85.RecordFields[0].Options) != 20 {
 		t.Fatalf("expected item 85 picture check record field, got: %+v", item85)
 	}
+	for _, itemNo := range []int{58, 59, 60} {
+		item := findPEP3TemplateItemForTest(template, itemNo)
+		if item == nil || len(item.RecordFields) != 1 || item.RecordFields[0].FieldType != "checkbox_group" || item.RecordFields[0].DisplayType != "打勾" || len(item.RecordFields[0].Options) != 3 {
+			t.Fatalf("expected item %d attempt check record field, got: %+v", itemNo, item)
+		}
+	}
 	item86 := findPEP3TemplateItemForTest(template, 86)
 	if item86 == nil || len(item86.RecordFields) != 1 || item86.RecordFields[0].FieldType != "checkbox_group" || item86.RecordFields[0].DisplayType != "打勾" || len(item86.RecordFields[0].Options) != 20 {
 		t.Fatalf("expected item 86 picture check record field, got: %+v", item86)
@@ -78,8 +84,16 @@ func TestBuildPEP3AssessmentFormTemplate(t *testing.T) {
 		t.Fatalf("expected item 101 page 12 record fields, got: %+v", item101)
 	}
 	item112 := findPEP3TemplateItemForTest(template, 112)
-	if item112 == nil || len(item112.RecordFields) != 2 || item112.RecordFields[0].Key != "digits_7_9" {
+	if item112 == nil || item112.ItemTitle != "（112） 重复2个数字" || len(item112.RecordFields) != 1 || item112.RecordFields[0].Key != "repeated_two_digits" || item112.RecordFields[0].FieldType != "checkbox_group" || item112.RecordFields[0].DisplayType != "打勾" {
 		t.Fatalf("expected item 112 record fields, got: %+v", item112)
+	}
+	item113 := findPEP3TemplateItemForTest(template, 113)
+	if item113 == nil || item113.ItemTitle != "（113） 重复3个数字" || len(item113.RecordFields) != 1 || item113.RecordFields[0].Key != "repeated_three_digits" || item113.RecordFields[0].FieldType != "checkbox_group" || item113.RecordFields[0].DisplayType != "打勾" {
+		t.Fatalf("expected item 113 record fields, got: %+v", item113)
+	}
+	item114 := findPEP3TemplateItemForTest(template, 114)
+	if item114 == nil || len(item114.RecordFields) != 1 || item114.RecordFields[0].Key != "repeated_words" || item114.RecordFields[0].FieldType != "checkbox_group" || item114.RecordFields[0].DisplayType != "打勾" || len(item114.RecordFields[0].Options) != 3 {
+		t.Fatalf("expected item 114 record fields, got: %+v", item114)
 	}
 	group152 := findPEP3TemplateGroupForItemForTest(template, 152)
 	if group152 == nil || group152.BookletPageNo != 16 {

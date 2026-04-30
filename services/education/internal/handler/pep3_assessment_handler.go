@@ -54,20 +54,21 @@ type pep3AssessmentRecordCreateRequest struct {
 }
 
 type pep3AssessmentDraftSaveRequest struct {
-	ID                  int64                        `json:"id,omitempty"`
-	StudentID           int64                        `json:"studentId,omitempty"`
-	StudentName         string                       `json:"studentName,omitempty"`
-	ExaminerName        string                       `json:"examinerName,omitempty"`
-	Remark              string                       `json:"remark,omitempty"`
-	BirthDate           string                       `json:"birthDate,omitempty"`
-	AssessmentDate      string                       `json:"assessmentDate,omitempty"`
-	ItemScores          map[int]int                  `json:"itemScores,omitempty"`
-	ItemScoreList       []pep3ItemScoreRequest       `json:"itemScoreList,omitempty"`
-	RawScores           map[string]int               `json:"rawScores,omitempty"`
-	RawScoreList        []pep3RawScoreRequest        `json:"rawScoreList,omitempty"`
-	ItemRecordValues    map[int]map[string]any       `json:"itemRecordValues,omitempty"`
-	ItemRecordValueList []pep3ItemRecordValueRequest `json:"itemRecordValueList,omitempty"`
-	AllowMissingItems   bool                         `json:"allowMissingItems,omitempty"`
+	ID                  int64                                `json:"id,omitempty"`
+	StudentID           int64                                `json:"studentId,omitempty"`
+	StudentName         string                               `json:"studentName,omitempty"`
+	ExaminerName        string                               `json:"examinerName,omitempty"`
+	Remark              string                               `json:"remark,omitempty"`
+	BirthDate           string                               `json:"birthDate,omitempty"`
+	AssessmentDate      string                               `json:"assessmentDate,omitempty"`
+	ItemScores          map[int]int                          `json:"itemScores,omitempty"`
+	ItemScoreList       []pep3ItemScoreRequest               `json:"itemScoreList,omitempty"`
+	RawScores           map[string]int                       `json:"rawScores,omitempty"`
+	RawScoreList        []pep3RawScoreRequest                `json:"rawScoreList,omitempty"`
+	ItemRecordValues    map[int]map[string]any               `json:"itemRecordValues,omitempty"`
+	ItemRecordValueList []pep3ItemRecordValueRequest         `json:"itemRecordValueList,omitempty"`
+	AllowMissingItems   bool                                 `json:"allowMissingItems,omitempty"`
+	CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 }
 
 type pep3AssessmentDraftDeleteRequest struct {
@@ -461,20 +462,21 @@ func (req pep3AssessmentDraftSaveRequest) toDraftSaveInput() (service.PEP3Assess
 
 func (req pep3AssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any) any {
 	return struct {
-		ID                  int64                        `json:"id,omitempty"`
-		StudentID           int64                        `json:"studentId,omitempty"`
-		StudentName         string                       `json:"studentName,omitempty"`
-		ExaminerName        string                       `json:"examinerName,omitempty"`
-		Remark              string                       `json:"remark,omitempty"`
-		BirthDate           string                       `json:"birthDate,omitempty"`
-		AssessmentDate      string                       `json:"assessmentDate,omitempty"`
-		ItemScores          map[int]int                  `json:"itemScores,omitempty"`
-		ItemScoreList       []pep3ItemScoreRequest       `json:"itemScoreList,omitempty"`
-		RawScores           map[string]int               `json:"rawScores,omitempty"`
-		RawScoreList        []pep3RawScoreRequest        `json:"rawScoreList,omitempty"`
-		ItemRecordValues    map[int]map[string]any       `json:"itemRecordValues,omitempty"`
-		ItemRecordValueList []pep3ItemRecordValueRequest `json:"itemRecordValueList,omitempty"`
-		AllowMissingItems   bool                         `json:"allowMissingItems,omitempty"`
+		ID                  int64                                `json:"id,omitempty"`
+		StudentID           int64                                `json:"studentId,omitempty"`
+		StudentName         string                               `json:"studentName,omitempty"`
+		ExaminerName        string                               `json:"examinerName,omitempty"`
+		Remark              string                               `json:"remark,omitempty"`
+		BirthDate           string                               `json:"birthDate,omitempty"`
+		AssessmentDate      string                               `json:"assessmentDate,omitempty"`
+		ItemScores          map[int]int                          `json:"itemScores,omitempty"`
+		ItemScoreList       []pep3ItemScoreRequest               `json:"itemScoreList,omitempty"`
+		RawScores           map[string]int                       `json:"rawScores,omitempty"`
+		RawScoreList        []pep3RawScoreRequest                `json:"rawScoreList,omitempty"`
+		ItemRecordValues    map[int]map[string]any               `json:"itemRecordValues,omitempty"`
+		ItemRecordValueList []pep3ItemRecordValueRequest         `json:"itemRecordValueList,omitempty"`
+		AllowMissingItems   bool                                 `json:"allowMissingItems,omitempty"`
+		CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 	}{
 		ID:                  req.ID,
 		StudentID:           req.StudentID,
@@ -490,6 +492,7 @@ func (req pep3AssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]
 		ItemRecordValues:    itemRecordValues,
 		ItemRecordValueList: itemRecordValueListFromMap(itemRecordValues),
 		AllowMissingItems:   req.AllowMissingItems,
+		CaregiverReport:     req.CaregiverReport,
 	}
 }
 

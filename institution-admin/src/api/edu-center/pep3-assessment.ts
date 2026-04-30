@@ -73,6 +73,7 @@ export interface PEP3DraftSaveRequest {
   itemRecordValues?: Record<number, Record<string, unknown>>
   itemRecordValueList?: PEP3ItemRecordValueInput[]
   allowMissingItems?: boolean
+  caregiverReport?: PEP3CaregiverReportSubmission
 }
 
 export interface PEP3RecordCreateRequest extends PEP3ScoreRequest {
@@ -167,6 +168,55 @@ export interface PEP3CaregiverReportTemplate {
   instructions: string
   scoreRules: PEP3CaregiverScoreRule[]
   sections: PEP3CaregiverReportSection[]
+}
+
+export interface PEP3CaregiverRawScore {
+  scaleCode: PEP3ScaleCode
+  rawScore: number
+}
+
+export interface PEP3CaregiverReportSubmission {
+  respondentName?: string
+  relationship?: string
+  answers?: Record<string, Record<string, unknown>>
+  rawScores?: Partial<Record<PEP3ScaleCode, number>>
+  rawScoreList?: PEP3CaregiverRawScore[]
+  submittedAt?: string
+  source?: string
+}
+
+export interface PEP3CaregiverReportInvite {
+  draftId: number
+  studentName?: string
+  token: string
+  expiresAt?: string
+  miniProgramPath: string
+  url: string
+}
+
+export interface PEP3CaregiverReportPublicTemplate {
+  draftId: number
+  studentId?: number
+  studentName?: string
+  birthDate?: string
+  assessmentDate?: string
+  template: PEP3CaregiverReportTemplate
+  submission?: PEP3CaregiverReportSubmission
+}
+
+export interface PEP3CaregiverReportSubmitRequest {
+  token: string
+  respondentName?: string
+  relationship?: string
+  answers: Record<string, Record<string, unknown>>
+}
+
+export interface PEP3CaregiverReportSubmitResult {
+  draftId: number
+  studentName?: string
+  rawScores: Partial<Record<PEP3ScaleCode, number>>
+  progress: PEP3AssessmentDraftProgress
+  submittedAt?: string
 }
 
 export interface PEP3ItemRecordField {
@@ -516,6 +566,10 @@ export function getPEP3AssessmentDraftDetailApi(id: number) {
 
 export function pagePEP3AssessmentDraftsApi(data: PEP3DraftPageRequest) {
   return usePost<PageResult<PEP3AssessmentDraftSummary>>('/api/v1/assessments/pep3/drafts/page', data)
+}
+
+export function invitePEP3CaregiverReportApi(draftId: number) {
+  return usePost<PEP3CaregiverReportInvite>('/api/v1/assessments/pep3/drafts/caregiver-report/invite', { draftId })
 }
 
 export function submitPEP3AssessmentDraftApi(id: number) {

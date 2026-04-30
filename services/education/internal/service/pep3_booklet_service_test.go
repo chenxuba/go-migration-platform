@@ -38,8 +38,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 		"rawScores":     map[string]int{"FM": 2},
 		"itemRecordValues": map[string]map[string]any{
 			"112": {
-				"digits_7_9": "79",
-				"digits_5_3": "53",
+				"repeated_two_digits": []string{"7-9", "5-3"},
 			},
 			"116": {
 				"eye_contact": "brief",
@@ -89,11 +88,12 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 		t.Fatalf("expected item 112 row in booklet")
 	}
 	recordValues, ok := row112["recordValues"].(map[string]any)
-	if !ok || recordValues["digits_7_9"] != "79" || recordValues["digits_5_3"] != "53" {
+	repeatedDigits, _ := recordValues["repeated_two_digits"].([]any)
+	if !ok || len(repeatedDigits) != 2 {
 		t.Fatalf("expected item 112 record values, got: %+v", row112["recordValues"])
 	}
 	recordFields, ok := row112["recordFields"].([]model.PEP3ItemRecordField)
-	if !ok || len(recordFields) != 2 || recordFields[0].Key != "digits_7_9" {
+	if !ok || len(recordFields) != 1 || recordFields[0].Key != "repeated_two_digits" || recordFields[0].FieldType != "checkbox_group" {
 		t.Fatalf("expected item 112 record fields, got: %+v", row112["recordFields"])
 	}
 }
@@ -141,8 +141,9 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			"86":  {"picture_naming": []string{"A 牛", "J 电风扇", "T 整路"}},
 			"95":  {"reading_comprehension_questions": []string{"小明有哪些动物呀？", "什么跳过小明的皮球？"}},
 			"108": {"classification_prompt": "部分示范", "classification_basis": "颜色", "completed_card_count": "8"},
-			"112": {"digits_7_9": "79", "digits_5_3": "53"},
-			"113": {"digits_2_4_1": "241", "digits_5_7_9": "579"},
+			"112": {"repeated_two_digits": []string{"7-9", "5-3"}},
+			"113": {"repeated_three_digits": []string{"2-4-1", "5-7-9"}},
+			"114": {"repeated_words": []string{"街街", "车车", "拜拜"}},
 			"115": {"repeated_sentences": []string{"bb_looking", "want_biscuit"}},
 			"116": {"eye_contact": "brief"},
 			"117": {"delayed_echolalia": "not_applicable"},

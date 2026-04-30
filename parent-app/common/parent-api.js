@@ -362,3 +362,18 @@ export function saveParentRehabFeedback(token, payload = {}) {
 		token
 	})
 }
+
+export function getPEP3CaregiverReportTemplate(token = '') {
+	return request({
+		url: `/api/v1/parent/pep3/caregiver-report/template${buildQueryString({ token })}`,
+		method: 'GET'
+	})
+}
+
+export function submitPEP3CaregiverReport(payload = {}) {
+	return request({
+		url: '/api/v1/parent/pep3/caregiver-report/submit',
+		method: 'POST',
+		data: payload
+	})
+}

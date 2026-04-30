@@ -16,13 +16,14 @@ import (
 const pep3RecordBookletPDF = "测试员记录册彩(1).pdf"
 
 type pep3SavedInputSnapshot struct {
-	ItemScores          map[int]int                       `json:"itemScores"`
-	ItemScoreList       []pep3SavedItemScore              `json:"itemScoreList"`
-	RawScores           map[string]int                    `json:"rawScores"`
-	RawScoreList        []pep3SavedRawScore               `json:"rawScoreList"`
-	ItemRecordValues    map[int]map[string]any            `json:"itemRecordValues"`
-	ItemRecordValueList []pep3SavedItemRecordValueRequest `json:"itemRecordValueList"`
-	AllowMissingItems   bool                              `json:"allowMissingItems"`
+	ItemScores          map[int]int                          `json:"itemScores"`
+	ItemScoreList       []pep3SavedItemScore                 `json:"itemScoreList"`
+	RawScores           map[string]int                       `json:"rawScores"`
+	RawScoreList        []pep3SavedRawScore                  `json:"rawScoreList"`
+	ItemRecordValues    map[int]map[string]any               `json:"itemRecordValues"`
+	ItemRecordValueList []pep3SavedItemRecordValueRequest    `json:"itemRecordValueList"`
+	AllowMissingItems   bool                                 `json:"allowMissingItems"`
+	CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 }
 
 type pep3SavedItemScore struct {

@@ -80,6 +80,12 @@
 			}
 		},
 		{
+			"path": "pages/pep3-caregiver-report/index",
+			"style": {
+				"navigationStyle": "custom"
+			}
+		},
+		{
 			"path": "pages/select-student/index",
 			"style": {
 				"navigationStyle": "custom"

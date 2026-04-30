@@ -1156,15 +1156,21 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 			"摸鼻":    pep3PDFMark(242.0, 182.0, 18.0),
 			"举手+摸鼻": pep3PDFMark(220.0, 197.3, 18.0),
 		}),
-		pep3PDFRecordText(6, 58, "first_attempt", 197.3, 352.0, 18.7),
-		pep3PDFRecordText(6, 58, "second_attempt", 246.7, 352.0, 18.0),
-		pep3PDFRecordText(6, 58, "third_attempt", 198.0, 367.7, 17.3),
-		pep3PDFRecordText(6, 59, "first_attempt", 197.3, 387.3, 18.7),
-		pep3PDFRecordText(6, 59, "second_attempt", 246.0, 387.3, 18.7),
-		pep3PDFRecordText(6, 59, "third_attempt", 197.3, 402.7, 18.7),
-		pep3PDFRecordText(6, 60, "first_attempt", 197.3, 422.7, 19.4),
-		pep3PDFRecordText(6, 60, "second_attempt", 247.3, 422.7, 18.0),
-		pep3PDFRecordText(6, 60, "third_attempt", 197.3, 438.0, 19.4),
+		pep3PDFRecordMarks(6, 58, "catch_ball_attempts", map[string]pep3BookletPDFOptionMark{ // 58 接球：第1/2/3次打勾
+			"第1次": pep3PDFMark(197.3, 352.0, 18.7),
+			"第2次": pep3PDFMark(246.7, 352.0, 18.0),
+			"第3次": pep3PDFMark(198.0, 367.7, 17.3),
+		}),
+		pep3PDFRecordMarks(6, 59, "throw_ball_attempts", map[string]pep3BookletPDFOptionMark{ // 59 抛球：第1/2/3次打勾
+			"第1次": pep3PDFMark(197.3, 387.3, 18.7),
+			"第2次": pep3PDFMark(246.0, 387.3, 18.7),
+			"第3次": pep3PDFMark(197.3, 402.7, 18.7),
+		}),
+		pep3PDFRecordMarks(6, 60, "kick_ball_attempts", map[string]pep3BookletPDFOptionMark{ // 60 踢球：第1/2/3次打勾
+			"第1次": pep3PDFMark(197.3, 422.7, 19.4),
+			"第2次": pep3PDFMark(247.3, 422.7, 18.0),
+			"第3次": pep3PDFMark(197.3, 438.0, 19.4),
+		}),
 		pep3PDFRecordText(6, 61, "kick_ball", 190.3, 457.7, 25.7),
 		pep3PDFRecordText(6, 61, "stairs", 199.3, 473.0, 16.7),
 
@@ -1251,13 +1257,19 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 		}),
 
 		// 第13页：112-122
-		pep3PDFRecordText(13, 112, "digits_7_9", 182.7, 87.0, 20.3),
-		pep3PDFRecordText(13, 112, "digits_5_3", 220.7, 86.7, 22.0),
-		pep3PDFRecordText(13, 113, "digits_2_4_1", 190.0, 106.3, 22.0),
-		pep3PDFRecordText(13, 113, "digits_5_7_9", 236.0, 106.3, 22.0),
-		pep3PDFRecordText(13, 114, "word_street", 188.7, 126.0, 22.0),
-		pep3PDFRecordText(13, 114, "word_car", 234.0, 126.0, 22.0),
-		pep3PDFRecordText(13, 114, "word_bye", 188.7, 140.0, 22.0),
+		pep3PDFRecordMarks(13, 112, "repeated_two_digits", map[string]pep3BookletPDFOptionMark{ // 112 重复2个数字：7-9/5-3
+			"7-9": pep3PDFMark(182.7, 87.0, 20.3),
+			"5-3": pep3PDFMark(220.7, 86.7, 22.0),
+		}),
+		pep3PDFRecordMarks(13, 113, "repeated_three_digits", map[string]pep3BookletPDFOptionMark{ // 113 重复3个数字：2-4-1/5-7-9
+			"2-4-1": pep3PDFMark(190.0, 106.3, 22.0),
+			"5-7-9": pep3PDFMark(236.0, 106.3, 22.0),
+		}),
+		pep3PDFRecordMarks(13, 114, "repeated_words", map[string]pep3BookletPDFOptionMark{ // 114 重复2个字词：街街/车车/拜拜
+			"街街": pep3PDFMark(188.7, 126.0, 22.0),
+			"车车": pep3PDFMark(234.0, 126.0, 22.0),
+			"拜拜": pep3PDFMark(188.7, 140.0, 22.0),
+		}),
 		pep3PDFRecordRects(13, 115, "repeated_sentences", map[string]pep3BookletPDFRect{ // 115 正确复述短句
 			"bb_looking":    pep3PDFCircle(190.0, 153.0, 45.0, 11.5), // BB 望住
 			"want_biscuit":  pep3PDFCircle(196.0, 167.0, 55.0, 11.5), // 又要饼干
