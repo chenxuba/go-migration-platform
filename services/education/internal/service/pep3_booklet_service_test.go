@@ -82,23 +82,15 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 		t.Skipf("PEP-3 PDF font not available: %v", err)
 	}
 	resultRaw := pep3BookletTestScoreRaw(t)
+	itemScoreList := make([]map[string]int, 0, 172)
+	for itemNo := 1; itemNo <= 172; itemNo++ {
+		itemScoreList = append(itemScoreList, map[string]int{
+			"itemNo": itemNo,
+			"score":  itemNo % 3,
+		})
+	}
 	inputRaw, err := json.Marshal(map[string]any{
-		"itemScoreList": []map[string]int{
-			{"itemNo": 1, "score": 2},
-			{"itemNo": 2, "score": 1},
-			{"itemNo": 3, "score": 0},
-			{"itemNo": 4, "score": 2},
-			{"itemNo": 5, "score": 1},
-			{"itemNo": 6, "score": 2},
-			{"itemNo": 7, "score": 1},
-			{"itemNo": 8, "score": 2},
-			{"itemNo": 9, "score": 0},
-			{"itemNo": 10, "score": 2},
-			{"itemNo": 11, "score": 1},
-			{"itemNo": 12, "score": 2},
-			{"itemNo": 13, "score": 1},
-			{"itemNo": 14, "score": 0},
-		},
+		"itemScoreList": itemScoreList,
 	})
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)

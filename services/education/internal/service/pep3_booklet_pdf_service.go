@@ -60,6 +60,10 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
+	items, err := loadPEP3BookletItems()
+	if err != nil {
+		return nil, err
+	}
 	fontPath, err := resolvePEP3PDFFontPath()
 	if err != nil {
 		return nil, err
@@ -89,7 +93,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	}
 	renderer := pep3BookletPDFRenderer{pdf: &pdf}
 	renderer.drawCoverPage(record, score, institutionName)
-	renderer.drawDevelopmentBehaviorScorePage2(itemScores)
+	renderer.drawDevelopmentBehaviorScorePages(itemScores, pep3BookletPDFItemDomainMap(items))
 
 	return pdf.GetBytesPdfReturnErr()
 }
@@ -195,72 +199,47 @@ type pep3BookletPDFPoint struct {
 	Y float64
 }
 
-func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePage2(itemScores map[int]int) {
+type pep3BookletPDFItemPageLayout struct {
+	PageNo       int
+	StartItemNo  int
+	ItemCenters  []pep3BookletPDFPoint
+	DomainX      map[string]float64
+	RawSubtotalY float64
+	TallyY       map[int]float64
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map[int]int, itemDomainByNo map[int]string) {
 	if len(itemScores) == 0 {
 		return
 	}
-	_ = r.pdf.SetPage(2)
 	r.pdf.SetTextColor(58, 58, 58)
 
-	// 第4部分第2页：题目右侧小方框的中心坐标。格式为 题号: {X, Y}。
-	itemScoreBoxCenters := map[int]pep3BookletPDFPoint{
-		1:  {383.0, 96.3},  // 旋开瓶盖
-		2:  {383.0, 115.7}, // 吹肥皂泡
-		3:  {383.0, 135.7}, // 目光追视
-		4:  {382.7, 155.0}, // 目光追视跨越中线
-		5:  {515.7, 194.0}, // 检视触觉块
-		6:  {435.7, 237.3}, // 使用万花筒
-		7:  {382.3, 271.0}, // 表现出能够使用惯用眼
-		8:  {303.0, 321.7}, // 转向手摇铃声
-		9:  {435.7, 365.0}, // 模仿按动响铃2次
-		10: {435.7, 413.3}, // 手指插入胶泥并做出凹位
-		11: {382.3, 433.0}, // 抓握竹棒
-		12: {435.3, 453.0}, // 听生日歌假装吹蜡烛
-		13: {435.7, 472.3}, // 享受音乐
-		14: {435.3, 492.3}, // 搓胶泥条
+	for _, layout := range pep3BookletPDFItemPageLayouts() {
+		_ = r.pdf.SetPage(layout.PageNo)
+		for index, point := range layout.ItemCenters {
+			itemNo := layout.StartItemNo + index
+			score, ok := itemScores[itemNo]
+			if !ok {
+				continue
+			}
+			r.centerInBox(point.X, point.Y, 18, 8.5, strconv.Itoa(score))
+		}
+
+		r.drawDevelopmentBehaviorScorePageTally(layout, itemScores, itemDomainByNo)
 	}
-	for itemNo, point := range itemScoreBoxCenters {
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePageTally(layout pep3BookletPDFItemPageLayout, itemScores map[int]int, itemDomainByNo map[int]string) {
+	tally := make(map[string]map[int]int, len(layout.DomainX))
+	rawSubtotal := make(map[string]int, len(layout.DomainX))
+	for index := range layout.ItemCenters {
+		itemNo := layout.StartItemNo + index
 		score, ok := itemScores[itemNo]
 		if !ok {
 			continue
 		}
-		r.centerInBox(point.X, point.Y, 18, 8.5, strconv.Itoa(score))
-	}
-
-	r.drawDevelopmentBehaviorScorePage2Tally(itemScores)
-}
-
-func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePage2Tally(itemScores map[int]int) {
-	// 第4部分第2页总和：底部汇总表各副测验列的中心 x 坐标。
-	domainX := map[string]float64{
-		"CVP": 302.3,
-		"EL":  328.7,
-		"RL":  355.3,
-		"FM":  382.0,
-		"GM":  408.7,
-		"VMI": 435.3,
-		"AE":  462.0,
-		"SR":  489.0,
-		"CMB": 516.0,
-		"CVB": 542.3,
-	}
-	// 第4部分第2页总和：底部汇总表各得分行的中心 y 坐标。
-	tallyY := map[int]float64{
-		2: 544.3, // （2）通过 / 恰当
-		1: 559.3, // （1）部分通过 / 轻微
-		0: 574.3, // （0）未能通过 / 严重
-	}
-	rawSubtotalY := 529.7 // 第2页总和/原始分小计
-
-	page2Items := map[int]string{
-		1: "FM", 2: "FM", 3: "FM", 4: "FM", 5: "CMB", 6: "VMI", 7: "FM",
-		8: "CVP", 9: "VMI", 10: "VMI", 11: "FM", 12: "VMI", 13: "VMI", 14: "VMI",
-	}
-	tally := make(map[string]map[int]int, len(domainX))
-	rawSubtotal := make(map[string]int, len(domainX))
-	for itemNo, domainCode := range page2Items {
-		score, ok := itemScores[itemNo]
-		if !ok {
+		domainCode := itemDomainByNo[itemNo]
+		if domainCode == "" {
 			continue
 		}
 		if tally[domainCode] == nil {
@@ -271,19 +250,366 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePage2Tally(itemScore
 	}
 
 	for _, domainCode := range pep3BookletDomainOrder() {
-		x, ok := domainX[domainCode]
+		x, ok := layout.DomainX[domainCode]
 		if !ok {
 			continue
 		}
 		for _, scoreValue := range []int{2, 1, 0} {
 			count := tally[domainCode][scoreValue]
 			if count > 0 {
-				r.centerInBox(x, tallyY[scoreValue], 18, 8, strconv.Itoa(count))
+				r.centerInBox(x, layout.TallyY[scoreValue], 18, 8, strconv.Itoa(count))
 			}
 		}
 		if subtotal := rawSubtotal[domainCode]; subtotal > 0 {
-			r.centerInBox(x, rawSubtotalY, 18, 8, strconv.Itoa(subtotal))
+			r.centerInBox(x, layout.RawSubtotalY, 18, 8, strconv.Itoa(subtotal))
 		}
+	}
+}
+
+func pep3BookletPDFItemDomainMap(items []pep3BookletItemDefinition) map[int]string {
+	out := make(map[int]string, len(items))
+	for _, item := range items {
+		if item.ItemNo > 0 {
+			out[item.ItemNo] = strings.ToUpper(strings.TrimSpace(item.DomainCode))
+		}
+	}
+	return out
+}
+
+func pep3BookletPDFItemPageLayouts() []pep3BookletPDFItemPageLayout {
+	// 第4部分：儿童表现记录页。PageNo 是 PDF 逻辑页码，StartItemNo 是该页第一题题号。
+	// ItemCenters 按页面上题号顺序排列；需要微调单题得分位置时，改对应页面里的 {X, Y}。
+	return []pep3BookletPDFItemPageLayout{
+		{
+			PageNo:      2,
+			StartItemNo: 1,
+			ItemCenters: []pep3BookletPDFPoint{
+				{383.0, 96.3},
+				{383.0, 115.7},
+				{383.0, 135.7},
+				{382.7, 155.0},
+				{515.7, 194.0},
+				{435.7, 237.3},
+				{382.3, 271.0},
+				{303.0, 321.7},
+				{435.7, 365.0},
+				{435.7, 413.3},
+				{382.3, 433.0},
+				{435.3, 453.0},
+				{435.7, 472.3},
+				{435.3, 492.3},
+			},
+			DomainX:      pep3BookletPDFDomainX(302.3, 328.7, 355.3, 382.0, 408.7, 435.3, 462.0, 489.0, 516.0, 542.3),
+			RawSubtotalY: 529.8,
+			TallyY:       pep3BookletPDFTallyY(544.5, 559.3, 574.3),
+		},
+		{
+			PageNo:      3,
+			StartItemNo: 15,
+			ItemCenters: []pep3BookletPDFPoint{
+				{438.3, 95.0},
+				{438.3, 118.0},
+				{358.3, 153.0},
+				{358.7, 185.0},
+				{332.3, 220.0},
+				{491.7, 239.7},
+				{306.0, 281.7},
+				{385.7, 318.0},
+				{332.3, 351.7},
+				{359.0, 386.3},
+				{306.3, 441.7},
+				{412.0, 473.0},
+				{306.3, 515.7},
+			},
+			DomainX:      pep3BookletPDFDomainX(306.0, 332.0, 358.7, 385.3, 412.0, 438.7, 465.3, 491.8, 518.2, 544.7),
+			RawSubtotalY: 556.3,
+			TallyY:       pep3BookletPDFTallyY(571.0, 586.0, 601.0),
+		},
+		{
+			PageNo:      4,
+			StartItemNo: 28,
+			ItemCenters: []pep3BookletPDFPoint{
+				{382.0, 89.0},
+				{328.7, 124.0},
+				{355.0, 160.3},
+				{302.3, 212.3},
+				{382.3, 245.0},
+				{302.7, 287.0},
+				{303.0, 361.7},
+				{302.7, 427.0},
+				{329.0, 501.7},
+				{435.7, 551.7},
+			},
+			DomainX:      pep3BookletPDFDomainX(303.3, 329.3, 356.0, 382.7, 409.3, 436.0, 462.7, 489.5, 516.2, 542.5),
+			RawSubtotalY: 603.0,
+			TallyY:       pep3BookletPDFTallyY(617.7, 632.5, 647.3),
+		},
+		{
+			PageNo:      5,
+			StartItemNo: 38,
+			ItemCenters: []pep3BookletPDFPoint{
+				{356.0, 89.7},
+				{303.7, 149.7},
+				{356.3, 202.0},
+				{383.7, 251.7},
+				{304.0, 290.0},
+				{304.0, 332.3},
+				{304.3, 393.0},
+				{516.0, 433.7},
+				{516.0, 453.7},
+				{410.3, 473.7},
+				{410.3, 493.3},
+				{463.7, 513.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(304.8, 331.0, 357.7, 384.5, 411.2, 437.7, 464.2, 490.7, 517.0, 543.3),
+			RawSubtotalY: 544.8,
+			TallyY:       pep3BookletPDFTallyY(559.7, 574.5, 589.3),
+		},
+		{
+			PageNo:      6,
+			StartItemNo: 50,
+			ItemCenters: []pep3BookletPDFPoint{
+				{460.0, 85.3},
+				{486.3, 122.3},
+				{486.3, 142.0},
+				{406.7, 158.7},
+				{433.0, 185.0},
+				{406.3, 232.7},
+				{406.7, 268.0},
+				{513.3, 310.0},
+				{406.3, 359.0},
+				{406.3, 390.7},
+				{406.3, 421.0},
+				{406.3, 461.7},
+				{406.3, 490.7},
+				{406.7, 509.3},
+			},
+			DomainX:      pep3BookletPDFDomainX(300.0, 326.0, 352.7, 379.3, 406.0, 432.7, 459.7, 486.7, 513.3, 539.7),
+			RawSubtotalY: 540.7,
+			TallyY:       pep3BookletPDFTallyY(555.5, 570.2, 585.0),
+		},
+		{
+			PageNo:      7,
+			StartItemNo: 64,
+			ItemCenters: []pep3BookletPDFPoint{
+				{510.0, 105.3},
+				{377.7, 122.3},
+				{404.3, 141.3},
+				{377.7, 181.0},
+				{378.0, 202.3},
+				{404.3, 220.3},
+				{378.0, 260.3},
+				{404.7, 278.7},
+				{378.0, 308.7},
+				{299.0, 333.7},
+				{299.0, 355.0},
+				{299.0, 373.0},
+				{299.0, 394.3},
+				{299.0, 413.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(299.3, 325.3, 352.0, 378.7, 405.3, 432.0, 458.7, 485.2, 511.5, 538.5),
+			RawSubtotalY: 444.0,
+			TallyY:       pep3BookletPDFTallyY(459.0, 474.0, 489.0),
+		},
+		{
+			PageNo:      8,
+			StartItemNo: 78,
+			ItemCenters: []pep3BookletPDFPoint{
+				{382.7, 82.3},
+				{303.3, 102.3},
+				{303.3, 122.0},
+				{303.3, 141.7},
+				{383.0, 180.3},
+				{303.7, 219.0},
+				{303.7, 254.7},
+			},
+			DomainX:      pep3BookletPDFDomainX(303.7, 329.7, 356.3, 383.0, 409.7, 436.3, 463.0, 489.7, 516.3, 542.7),
+			RawSubtotalY: 300.0,
+			TallyY:       pep3BookletPDFTallyY(314.7, 329.7, 344.7),
+		},
+		{
+			PageNo:      9,
+			StartItemNo: 85,
+			ItemCenters: []pep3BookletPDFPoint{
+				{352.7, 82.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(299.7, 326.0, 352.7, 379.3, 406.0, 432.7, 459.0, 485.3, 511.7, 537.7),
+			RawSubtotalY: 700.0,
+			TallyY:       pep3BookletPDFTallyY(714.7, 729.3, 744.3),
+		},
+		{
+			PageNo:      10,
+			StartItemNo: 86,
+			ItemCenters: []pep3BookletPDFPoint{
+				{327.7, 81.0},
+				{329.3, 413.0},
+				{356.0, 467.3},
+				{329.7, 518.3},
+				{304.0, 588.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(303.7, 330.0, 356.7, 383.2, 409.8, 436.7, 463.3, 490.0, 516.5, 542.8),
+			RawSubtotalY: 651.0,
+			TallyY:       pep3BookletPDFTallyY(665.8, 680.5, 695.3),
+		},
+		{
+			PageNo:      11,
+			StartItemNo: 91,
+			ItemCenters: []pep3BookletPDFPoint{
+				{325.0, 101.7},
+				{325.0, 121.3},
+				{325.0, 156.3},
+				{325.0, 301.3},
+				{325.0, 321.0},
+				{325.0, 437.0},
+				{378.7, 491.3},
+				{484.7, 511.0},
+				{378.7, 559.0},
+				{351.7, 613.3},
+			},
+			DomainX:      pep3BookletPDFDomainX(299.0, 325.3, 352.0, 378.7, 405.3, 432.0, 458.5, 484.8, 511.2, 537.5),
+			RawSubtotalY: 653.7,
+			TallyY:       pep3BookletPDFTallyY(668.7, 683.3, 698.3),
+		},
+		{
+			PageNo:      12,
+			StartItemNo: 101,
+			ItemCenters: []pep3BookletPDFPoint{
+				{354.7, 99.0},
+				{328.3, 138.0},
+				{328.3, 157.7},
+				{302.7, 199.7},
+				{302.3, 253.7},
+				{328.7, 288.7},
+				{355.3, 324.3},
+				{303.0, 392.3},
+				{303.3, 441.7},
+				{303.3, 464.0},
+				{303.7, 483.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(303.7, 330.0, 356.7, 383.3, 410.0, 436.7, 463.3, 490.0, 516.7, 543.0),
+			RawSubtotalY: 574.8,
+			TallyY:       pep3BookletPDFTallyY(589.5, 604.2, 619.0),
+		},
+		{
+			PageNo:      13,
+			StartItemNo: 112,
+			ItemCenters: []pep3BookletPDFPoint{
+				{298.3, 84.3},
+				{298.3, 103.7},
+				{298.7, 123.7},
+				{298.3, 167.7},
+				{484.0, 202.0},
+				{537.0, 235.7},
+				{324.7, 274.3},
+				{351.0, 293.7},
+				{324.7, 332.7},
+				{325.0, 387.0},
+				{325.0, 456.7},
+			},
+			DomainX:      pep3BookletPDFDomainX(298.7, 324.7, 351.3, 378.0, 404.7, 431.3, 458.0, 484.3, 510.7, 537.0),
+			RawSubtotalY: 504.2,
+			TallyY:       pep3BookletPDFTallyY(518.8, 533.5, 548.5),
+		},
+		{
+			PageNo:      14,
+			StartItemNo: 123,
+			ItemCenters: []pep3BookletPDFPoint{
+				{354.0, 97.7},
+				{381.3, 224.7},
+				{354.3, 244.3},
+				{354.3, 310.3},
+				{354.3, 345.7},
+				{354.3, 365.7},
+				{328.0, 385.0},
+				{328.0, 405.0},
+				{354.7, 424.7},
+				{328.3, 460.0},
+				{354.7, 479.7},
+			},
+			DomainX:      pep3BookletPDFDomainX(301.7, 328.0, 354.7, 381.3, 408.0, 434.7, 461.3, 488.0, 514.7, 541.3),
+			RawSubtotalY: 524.2,
+			TallyY:       pep3BookletPDFTallyY(539.0, 553.8, 568.7),
+		},
+		{
+			PageNo:      15,
+			StartItemNo: 134,
+			ItemCenters: []pep3BookletPDFPoint{
+				{303.3, 82.3},
+				{514.7, 147.7},
+				{514.7, 167.0},
+				{515.0, 202.3},
+				{515.0, 222.0},
+				{515.0, 241.7},
+				{515.0, 261.7},
+				{515.0, 281.3},
+				{515.3, 301.0},
+				{330.3, 321.3},
+				{542.3, 340.3},
+				{542.3, 375.7},
+				{542.7, 410.7},
+				{543.0, 445.7},
+				{543.0, 465.7},
+				{543.0, 485.7},
+				{543.0, 505.0},
+				{543.3, 525.3},
+			},
+			DomainX:      pep3BookletPDFDomainX(305.0, 331.3, 358.0, 384.7, 411.3, 438.0, 464.5, 490.8, 517.0, 543.3),
+			RawSubtotalY: 557.2,
+			TallyY:       pep3BookletPDFTallyY(571.8, 586.7, 601.7),
+		},
+		{
+			PageNo:      16,
+			StartItemNo: 152,
+			ItemCenters: []pep3BookletPDFPoint{
+				{535.3, 84.7},
+				{535.7, 104.3},
+				{482.0, 124.0},
+				{322.3, 143.7},
+				{455.0, 163.3},
+				{455.0, 183.0},
+				{455.0, 203.0},
+				{455.0, 222.3},
+				{455.0, 242.3},
+				{455.0, 262.0},
+				{508.3, 281.7},
+				{455.0, 301.7},
+				{455.0, 321.0},
+				{455.0, 341.0},
+				{482.0, 360.7},
+				{482.0, 380.3},
+				{482.0, 400.0},
+				{508.3, 419.7},
+				{482.0, 439.7},
+				{482.0, 459.0},
+				{482.3, 478.0},
+			},
+			DomainX:      pep3BookletPDFDomainX(296.3, 322.7, 349.3, 376.0, 402.7, 429.3, 456.0, 482.7, 509.3, 535.7),
+			RawSubtotalY: 512.3,
+			TallyY:       pep3BookletPDFTallyY(527.0, 541.8, 556.5),
+		},
+	}
+}
+
+func pep3BookletPDFDomainX(cvp, el, rl, fm, gm, vmi, ae, sr, cmb, cvb float64) map[string]float64 {
+	return map[string]float64{
+		"CVP": cvp,
+		"EL":  el,
+		"RL":  rl,
+		"FM":  fm,
+		"GM":  gm,
+		"VMI": vmi,
+		"AE":  ae,
+		"SR":  sr,
+		"CMB": cmb,
+		"CVB": cvb,
+	}
+}
+
+func pep3BookletPDFTallyY(score2, score1, score0 float64) map[int]float64 {
+	return map[int]float64{
+		2: score2,
+		1: score1,
+		0: score0,
 	}
 }
 
