@@ -1290,8 +1290,8 @@ onMounted(async () => {
               </a-button>
             </div>
           </div>
-          <a-form layout="vertical">
-            <a-form-item v-if="currentCaregiverInvite?.wechatUrlLink" label="微信 URL Link">
+          <a-form v-if="currentCaregiverInvite?.wechatUrlLink" layout="vertical">
+            <a-form-item label="微信 URL Link">
               <a-input-group compact>
                 <a-input
                   :value="currentCaregiverInvite?.wechatUrlLink"
@@ -1299,31 +1299,6 @@ onMounted(async () => {
                   style="width: calc(100% - 92px)"
                 />
                 <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.wechatUrlLink)">
-                  复制
-                </a-button>
-              </a-input-group>
-            </a-form-item>
-            <a-form-item label="小程序页面路径">
-              <a-input-group compact>
-                <a-textarea
-                  :value="currentCaregiverInvite?.miniProgramPath"
-                  :auto-size="{ minRows: 2, maxRows: 4 }"
-                  readonly
-                  style="width: calc(100% - 92px)"
-                />
-                <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.miniProgramPath)">
-                  复制
-                </a-button>
-              </a-input-group>
-            </a-form-item>
-            <a-form-item label="调试链接">
-              <a-input-group compact>
-                <a-input
-                  :value="currentCaregiverInvite?.url"
-                  readonly
-                  style="width: calc(100% - 92px)"
-                />
-                <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.url)">
                   复制
                 </a-button>
               </a-input-group>
