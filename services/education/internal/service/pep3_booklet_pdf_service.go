@@ -1115,9 +1115,9 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 		}),
 		pep3PDFRecordMultilineText(5, 40, "pointed_objects", []pep3BookletPDFTextLine{ // 40 指出物件
 			// 第40题第1行：从“指出物件：”后面的横线开始写。X 越小越靠左，Y 越小越靠上，Width 控制本行可写长度。
-			{X: 220.0, Y: 198.7, Width: 58.0},
+			{X: 220.0, Y: 198.7, Width: 40.0},
 			// 第40题第2行：第一行写不下时自动换到这条横线。
-			{X: 170.0, Y: 229.3, Width: 96.0},
+			{X: 178.0, Y: 214.0, Width: 88.0},
 		}),
 		pep3PDFRecordText(5, 43, "first_attempt", 201.3, 330.7, 19.4),
 		pep3PDFRecordText(5, 43, "second_attempt", 250.7, 330.7, 19.3),
@@ -1897,11 +1897,23 @@ func (r pep3BookletPDFRenderer) consumeTextLine(value string, width float64) (st
 		candidate := current + string(char)
 		textWidth, err := r.pdf.MeasureTextWidth(candidate)
 		if err == nil && textWidth > width && current != "" {
+			if pep3BookletPDFIsLineSeparator(char) {
+				return current + string(char), strings.TrimSpace(string(runes[index+1:]))
+			}
 			return current, strings.TrimSpace(string(runes[index:]))
 		}
 		current = candidate
 	}
 	return current, ""
+}
+
+func pep3BookletPDFIsLineSeparator(char rune) bool {
+	switch char {
+	case '、', '，', ',', '；', ';':
+		return true
+	default:
+		return false
+	}
 }
 
 // center 用于居中填值：x 是居中区域左边界，y 是底图横线位置，width 是居中区域宽度，size 是字号。

@@ -143,6 +143,14 @@ func TestPEP3BookletPDFRecordPlacementsCoverDefinedRecordFields(t *testing.T) {
 				t.Fatalf("missing PDF placement for item %d field %s (%s)", itemNo, field.Key, field.Label)
 			}
 			if len(field.Options) == 0 || (len(placement.OptionMarks) == 0 && len(placement.OptionRects) == 0) {
+				if len(placement.TextLines) > 0 {
+					for index, line := range placement.TextLines {
+						if line.X == 0 || line.Y == 0 || line.Width == 0 {
+							t.Fatalf("multiline text PDF placement for item %d field %s line %d has empty coordinates: %+v", itemNo, field.Key, index, placement)
+						}
+					}
+					continue
+				}
 				if placement.X == 0 || placement.Y == 0 || placement.Width == 0 {
 					t.Fatalf("text PDF placement for item %d field %s has empty coordinates: %+v", itemNo, field.Key, placement)
 				}
