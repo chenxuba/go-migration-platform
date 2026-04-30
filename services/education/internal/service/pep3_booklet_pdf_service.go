@@ -155,7 +155,7 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	}
 	// 第3部分：标准分小格每一列的 x 坐标。只调左右位置时改这里。
 	standardScoreX := map[string]float64{
-		"CVP": 135, // CVP 标准分
+		"CVP": 136, // CVP 标准分
 		"EL":  162, // EL 标准分
 		"RL":  188, // RL 标准分
 		"FM":  214, // FM 标准分
