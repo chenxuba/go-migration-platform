@@ -96,15 +96,15 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	assessmentYear, assessmentMonth, assessmentDay := dateParts(record.AssessmentDate)
 	birthYear, birthMonth, birthDay := dateParts(record.BirthDate)
 	// 第1部分：右侧日期/年龄。格式为 center(x, y, 居中宽度, 字号, 值)。
-	r.center(pep3RightPageX(956), 217, 48, 9, assessmentYear)                  // 评估日期-年
-	r.center(pep3RightPageX(1012), 217, 45, 9, assessmentMonth)                // 评估日期-月
-	r.center(pep3RightPageX(1069), 217, 45, 9, assessmentDay)                  // 评估日期-日
-	r.center(pep3RightPageX(956), 237, 48, 9, birthYear)                       // 出生日期-年
-	r.center(pep3RightPageX(1012), 237, 45, 9, birthMonth)                     // 出生日期-月
-	r.center(pep3RightPageX(1069), 237, 45, 9, birthDay)                       // 出生日期-日
-	r.center(pep3RightPageX(956), 257, 48, 9, strconv.Itoa(record.AgeYears))   // 年龄-年
-	r.center(pep3RightPageX(1012), 257, 45, 9, strconv.Itoa(record.AgeMonths)) // 年龄-月
-	r.center(pep3RightPageX(1069), 257, 45, 9, strconv.Itoa(record.AgeDays))   // 年龄-日
+	r.center(pep3RightPageX(950), 220, 48, 9, assessmentYear)                  // 评估日期-年
+	r.center(pep3RightPageX(1006), 220, 45, 9, assessmentMonth)                // 评估日期-月
+	r.center(pep3RightPageX(1063), 220, 45, 9, assessmentDay)                  // 评估日期-日
+	r.center(pep3RightPageX(950), 239, 48, 9, birthYear)                       // 出生日期-年
+	r.center(pep3RightPageX(1006), 239, 45, 9, birthMonth)                     // 出生日期-月
+	r.center(pep3RightPageX(1063), 239, 45, 9, birthDay)                       // 出生日期-日
+	r.center(pep3RightPageX(950), 259, 48, 9, strconv.Itoa(record.AgeYears))   // 年龄-年
+	r.center(pep3RightPageX(1006), 259, 45, 9, strconv.Itoa(record.AgeMonths)) // 年龄-月
+	r.center(pep3RightPageX(1063), 259, 45, 9, strconv.Itoa(record.AgeDays))   // 年龄-日
 
 	scaleRows := append([]model.PEP3ReportScaleRow{}, buildPEP3ScaleRows(score.Result.Scales, "发展及行为副测验", []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "AE", "SR", "CMB", "CVB"})...)
 	scaleRows = append(scaleRows, buildPEP3ScaleRows(score.Result.Scales, "儿童照顾者报告副测验", []string{"PB", "PSC", "AB"})...)
@@ -114,16 +114,16 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	}
 	// 第2部分：副测验分数每一行的 y 坐标。只调上下位置时改这里。
 	scaleY := map[string]float64{
-		"CVP": 347, // 认知（语言/语前）
-		"EL":  366, // 语言表达
-		"RL":  385, // 语言理解
-		"FM":  404, // 小肌肉
-		"GM":  423, // 大肌肉
-		"VMI": 442, // 模仿（视觉/动作）
+		"CVP": 352, // 认知（语言/语前）
+		"EL":  370, // 语言表达
+		"RL":  389, // 语言理解
+		"FM":  407, // 小肌肉
+		"GM":  425, // 大肌肉
+		"VMI": 443, // 模仿（视觉/动作）
 		"AE":  461, // 情感表达
-		"SR":  480, // 社交互助
-		"CMB": 499, // 行为特征-非语言
-		"CVB": 518, // 行为特征-语言
+		"SR":  479, // 社交互助
+		"CMB": 496, // 行为特征-非语言
+		"CVB": 515, // 行为特征-语言
 		"PB":  554, // 问题行为
 		"PSC": 573, // 个人自理
 		"AB":  592, // 适应行为
@@ -135,10 +135,10 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 		}
 		y := scaleY[code]
 		// 第2部分：副测验分数每一列的 x 坐标。只调左右位置时改这里。
-		r.center(pep3RightPageX(827), y, 38, 8.5, strconv.Itoa(row.RawScore)) // 原积/原始分
-		r.center(pep3RightPageX(900), y, 45, 8.5, row.DevelopmentAgeText)     // 发展年龄
-		r.center(pep3RightPageX(976), y, 48, 8.5, row.PercentileRankText)     // 百分比级数
-		r.center(pep3RightPageX(1050), y, 85, 8.5, row.Level)                 // 发展/适应程度
+		r.center(pep3RightPageX(826), y, 38, 8.5, strconv.Itoa(row.RawScore)) // 原积/原始分
+		r.center(pep3RightPageX(896), y, 45, 8.5, row.DevelopmentAgeText)     // 发展年龄
+		r.center(pep3RightPageX(968), y, 48, 8.5, row.PercentileRankText)     // 百分比级数
+		r.center(pep3RightPageX(1036), y, 85, 8.5, row.Level)                 // 发展/适应程度
 	}
 
 	compositeRows := buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)
