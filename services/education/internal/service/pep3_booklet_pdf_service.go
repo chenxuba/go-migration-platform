@@ -5,6 +5,7 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -361,16 +362,35 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 	r.text(352.0, topInfoY, 9, formatReportDate(record.AssessmentDate))       // 评估日期
 	r.center(431.0, topInfoY, 46.0, 8.5, pep3BookletPDFAgeMonthsText(record)) // 评估年龄（月龄）
 
-	// 第19页：发展表现图七个副测验栏的中心 x 坐标，同时用于折线点和底部两个计数框。
-	// 如果折线或底部数字左右不齐，只调这里。
-	xByScale := map[string]float64{
-		"CVP": 131.2, // CVP 列
-		"EL":  188.1, // EL 列
-		"RL":  244.4, // RL 列
-		"FM":  301.1, // FM 列
-		"GM":  357.3, // GM 列
-		"VMI": 411.2, // VMI 列
-		"PSC": 461.5, // PSC 列
+	// 第19页：底部两个分数框的中心 x 坐标。
+	// 如果底部“通过项目分数/部份通过项目分数”左右不齐，只调这里。
+	bottomBoxXByScale := map[string]float64{
+		"CVP": 131.2, // CVP 底部分数框中心 x
+		"EL":  188.1, // EL 底部分数框中心 x
+		"RL":  244.4, // RL 底部分数框中心 x
+		"FM":  301.1, // FM 底部分数框中心 x
+		"GM":  357.3, // GM 底部分数框中心 x
+		"VMI": 411.2, // VMI 底部分数框中心 x
+		"PSC": 461.5, // PSC 底部分数框中心 x
+	}
+	// 第19页：发展表现图里椭圆/折线点的中心 x 坐标。
+	// 这里要对准底图每列“原积分数值”的中心；如果圆圈没圈在数值正中间，只调这里。
+	pointXByScale := map[string]float64{
+		"CVP": 130.9, // CVP 图表数值列中心 x
+		"EL":  185.7, // EL 图表数值列中心 x
+		"RL":  240.3, // RL 图表数值列中心 x
+		"FM":  300.4, // FM 图表数值列中心 x
+		"GM":  355.9, // GM 图表数值列中心 x
+		"VMI": 409.8, // VMI 图表数值列中心 x
+		"PSC": 461.0, // PSC 图表数值列中心 x
+	}
+	// 第19页：单个圆圈的微调量。正数 x 往右，负数 y 往上。
+	// 目前按用户截图微调：25列右移、34点上移、24列右移、12点上移。
+	pointOffsetByScale := map[string]pep3BookletPDFPoint{
+		"RL":  {X: 1.6, Y: 0.0},  // 25 那一列往右一点
+		"FM":  {X: 0.0, Y: -1.8}, // 34 那个往上一点
+		"GM":  {X: 1.6, Y: 0.0},  // 24 那一列往右一点
+		"VMI": {X: 0.0, Y: -1.8}, // 12 那一列往上一点
 	}
 	order := []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"}
 
@@ -382,7 +402,7 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 		partialScoreY = 746.0 // 部份通过项目分数
 	)
 	for _, scaleCode := range order {
-		x := xByScale[scaleCode]
+		x := bottomBoxXByScale[scaleCode]
 		profileScore := profileScores[scaleCode]
 		if !profileScore.HasBreakdown {
 			continue
@@ -391,15 +411,21 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 		r.centerInBox(x, partialScoreY, 24, 8, strconv.Itoa(profileScore.PartialScore)) // 部份通过项目分数：1分项目贡献的分数总和
 	}
 
-	r.drawDevelopmentProfileLine(profileScores, normRecords, order, xByScale)
+	r.drawDevelopmentProfileLine(profileScores, normRecords, order, pointXByScale, pointOffsetByScale)
 }
 
-func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[string]pep3BookletPDFProfileScore, normRecords []pep3score.NormRecord, order []string, xByScale map[string]float64) {
+func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[string]pep3BookletPDFProfileScore, normRecords []pep3score.NormRecord, order []string, pointXByScale map[string]float64, pointOffsetByScale map[string]pep3BookletPDFPoint) {
 	// 第19页：发展表现图纵轴。topY 对应92个月这一行，rowGap 是相邻月龄行距。
 	// 折线整体上下偏差时调 topY；行距不贴合月份网格时调 rowGap。
 	const (
 		topY   = 81.6
 		rowGap = 7.82
+	)
+	// 第19页：折线点位椭圆。正版样式是用横向空心椭圆圈住该列数值/范围，不填充。
+	// 椭圆过宽/过窄调 markerRadiusX，过高/过矮调 markerRadiusY。
+	const (
+		markerRadiusX = 7.0
+		markerRadiusY = 4.0
 	)
 	type graphPoint struct {
 		x float64
@@ -422,12 +448,14 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[str
 			hasLastPoint = false
 			continue
 		}
+		offset := pointOffsetByScale[scaleCode]
 		point := graphPoint{
-			x: xByScale[scaleCode],
-			y: pep3BookletPDFDevelopmentProfileY(months, lessThan, greaterThan, topY, rowGap),
+			x: pointXByScale[scaleCode] + offset.X,
+			y: pep3BookletPDFDevelopmentProfileY(months, lessThan, greaterThan, topY, rowGap) + offset.Y,
 		}
 		if hasLastPoint {
-			r.pdf.Line(lastPoint.x, lastPoint.y, point.x, point.y)
+			x1, y1, x2, y2 := pep3BookletPDFLineBetweenEllipseBorders(lastPoint.x, lastPoint.y, point.x, point.y, markerRadiusX, markerRadiusY)
+			r.pdf.Line(x1, y1, x2, y2)
 		}
 		points = append(points, point)
 		lastPoint = point
@@ -437,14 +465,32 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[str
 		return
 	}
 	for _, point := range points {
-		// 第19页：折线点位椭圆。正版样式是用横向空心椭圆圈住该列数值/范围，不填充。
-		// 椭圆过宽/过窄调 markerRadiusX，过高/过矮调 markerRadiusY。
-		const (
-			markerRadiusX = 7.0
-			markerRadiusY = 4.0
-		)
 		r.pdf.Oval(point.x-markerRadiusX, point.y-markerRadiusY, point.x+markerRadiusX, point.y+markerRadiusY)
 	}
+}
+
+func pep3BookletPDFLineBetweenEllipseBorders(x1, y1, x2, y2, radiusX, radiusY float64) (float64, float64, float64, float64) {
+	dx := x2 - x1
+	dy := y2 - y1
+	length := math.Hypot(dx, dy)
+	if length == 0 || radiusX <= 0 || radiusY <= 0 {
+		return x1, y1, x2, y2
+	}
+	unitX := dx / length
+	unitY := dy / length
+	offset := pep3BookletPDFEllipseRadiusOnVector(unitX, unitY, radiusX, radiusY)
+	if offset <= 0 || offset*2 >= length {
+		return x1, y1, x2, y2
+	}
+	return x1 + unitX*offset, y1 + unitY*offset, x2 - unitX*offset, y2 - unitY*offset
+}
+
+func pep3BookletPDFEllipseRadiusOnVector(unitX, unitY, radiusX, radiusY float64) float64 {
+	denominator := math.Sqrt((unitX*unitX)/(radiusX*radiusX) + (unitY*unitY)/(radiusY*radiusY))
+	if denominator == 0 {
+		return 0
+	}
+	return 1 / denominator
 }
 
 func pep3BookletPDFLayoutScoreSummary(layout pep3BookletPDFItemPageLayout, itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFDomainScoreSummary {
