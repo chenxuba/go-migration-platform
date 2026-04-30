@@ -117,6 +117,58 @@ export interface PEP3ItemRecordFieldOption {
   label: string
 }
 
+export interface PEP3CaregiverReportOption {
+  value: string
+  label: string
+  score?: number
+}
+
+export interface PEP3CaregiverReportItem {
+  itemNo: number
+  key: string
+  prompt: string
+  fieldType: 'number' | 'radio' | 'textarea' | string
+  unit?: string
+  required?: boolean
+  scored: boolean
+  options?: PEP3CaregiverReportOption[]
+}
+
+export interface PEP3CaregiverDiagnosisCategory {
+  key: string
+  label: string
+}
+
+export interface PEP3CaregiverReportSection {
+  sectionCode: string
+  title: string
+  description?: string
+  inputType: 'age_estimate' | 'diagnosis_matrix' | 'single_choice' | string
+  scaleCode?: PEP3ScaleCode
+  scaleName?: string
+  scored: boolean
+  maxRawScore?: number
+  items?: PEP3CaregiverReportItem[]
+  diagnosisCategories?: PEP3CaregiverDiagnosisCategory[]
+}
+
+export interface PEP3CaregiverScoreRule {
+  scaleCode: PEP3ScaleCode
+  scaleName: string
+  sectionCode: string
+  maxRawScore: number
+  description: string
+}
+
+export interface PEP3CaregiverReportTemplate {
+  reportName: string
+  sourcePdf: string
+  submitMode: 'caregiver_self_report' | string
+  instructions: string
+  scoreRules: PEP3CaregiverScoreRule[]
+  sections: PEP3CaregiverReportSection[]
+}
+
 export interface PEP3ItemRecordField {
   key: string
   label: string
@@ -219,6 +271,7 @@ export interface PEP3AssessmentFormTemplate extends PEP3NormDataInfo {
   domains: PEP3AssessmentDomain[]
   rawScoreFields: PEP3RawScoreField[]
   itemGroups: PEP3AssessmentItemGroup[]
+  caregiverReport: PEP3CaregiverReportTemplate
   submitContract: PEP3SubmitContract
 }
 

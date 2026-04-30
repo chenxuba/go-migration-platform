@@ -284,8 +284,8 @@
   {
     "scale_code": "PB",
     "scale_name": "问题行为",
-    "item_count": null,
-    "max_raw_score": null,
+    "item_count": 10,
+    "max_raw_score": 20,
     "item_numbers": [],
     "is_caregiver_report": true,
     "composite_code": ""
@@ -293,8 +293,8 @@
   {
     "scale_code": "PSC",
     "scale_name": "个人自理",
-    "item_count": null,
-    "max_raw_score": null,
+    "item_count": 13,
+    "max_raw_score": 26,
     "item_numbers": [],
     "is_caregiver_report": true,
     "composite_code": ""
@@ -302,8 +302,8 @@
   {
     "scale_code": "AB",
     "scale_name": "适应行为",
-    "item_count": null,
-    "max_raw_score": null,
+    "item_count": 15,
+    "max_raw_score": 30,
     "item_numbers": [],
     "is_caregiver_report": true,
     "composite_code": ""

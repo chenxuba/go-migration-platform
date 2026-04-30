@@ -136,15 +136,16 @@ type PEP3AssessmentFormTemplateVO struct {
 	ScaleCode       string `json:"scaleCode"`
 	ScaleVersion    string `json:"scaleVersion"`
 	PEP3NormDataInfo
-	DataStatus     string                    `json:"dataStatus,omitempty"`
-	Sources        []string                  `json:"sources,omitempty"`
-	ItemCount      int                       `json:"itemCount"`
-	ScoreOptions   []PEP3ScoreOption         `json:"scoreOptions"`
-	BasicFields    []PEP3AssessmentFormField `json:"basicFields"`
-	Domains        []PEP3AssessmentDomain    `json:"domains"`
-	RawScoreFields []PEP3RawScoreField       `json:"rawScoreFields"`
-	ItemGroups     []PEP3AssessmentItemGroup `json:"itemGroups"`
-	SubmitContract PEP3SubmitContract        `json:"submitContract"`
+	DataStatus      string                      `json:"dataStatus,omitempty"`
+	Sources         []string                    `json:"sources,omitempty"`
+	ItemCount       int                         `json:"itemCount"`
+	ScoreOptions    []PEP3ScoreOption           `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField   `json:"basicFields"`
+	Domains         []PEP3AssessmentDomain      `json:"domains"`
+	RawScoreFields  []PEP3RawScoreField         `json:"rawScoreFields"`
+	ItemGroups      []PEP3AssessmentItemGroup   `json:"itemGroups"`
+	CaregiverReport PEP3CaregiverReportTemplate `json:"caregiverReport"`
+	SubmitContract  PEP3SubmitContract          `json:"submitContract"`
 }
 
 type PEP3AssessmentFormField struct {
@@ -225,6 +226,58 @@ type PEP3ItemRecordField struct {
 type PEP3ItemRecordFieldOption struct {
 	Value string `json:"value"`
 	Label string `json:"label"`
+}
+
+type PEP3CaregiverReportTemplate struct {
+	ReportName   string                       `json:"reportName"`
+	SourcePDF    string                       `json:"sourcePdf"`
+	SubmitMode   string                       `json:"submitMode"`
+	Instructions string                       `json:"instructions"`
+	ScoreRules   []PEP3CaregiverScoreRule     `json:"scoreRules"`
+	Sections     []PEP3CaregiverReportSection `json:"sections"`
+}
+
+type PEP3CaregiverScoreRule struct {
+	ScaleCode   string `json:"scaleCode"`
+	ScaleName   string `json:"scaleName"`
+	SectionCode string `json:"sectionCode"`
+	MaxRawScore int    `json:"maxRawScore"`
+	Description string `json:"description"`
+}
+
+type PEP3CaregiverReportSection struct {
+	SectionCode         string                           `json:"sectionCode"`
+	Title               string                           `json:"title"`
+	Description         string                           `json:"description,omitempty"`
+	InputType           string                           `json:"inputType"`
+	ScaleCode           string                           `json:"scaleCode,omitempty"`
+	ScaleName           string                           `json:"scaleName,omitempty"`
+	Scored              bool                             `json:"scored"`
+	MaxRawScore         *int                             `json:"maxRawScore,omitempty"`
+	Items               []PEP3CaregiverReportItem        `json:"items,omitempty"`
+	DiagnosisCategories []PEP3CaregiverDiagnosisCategory `json:"diagnosisCategories,omitempty"`
+}
+
+type PEP3CaregiverDiagnosisCategory struct {
+	Key   string `json:"key"`
+	Label string `json:"label"`
+}
+
+type PEP3CaregiverReportItem struct {
+	ItemNo    int                         `json:"itemNo"`
+	Key       string                      `json:"key"`
+	Prompt    string                      `json:"prompt"`
+	FieldType string                      `json:"fieldType"`
+	Unit      string                      `json:"unit,omitempty"`
+	Required  bool                        `json:"required,omitempty"`
+	Scored    bool                        `json:"scored"`
+	Options   []PEP3CaregiverReportOption `json:"options,omitempty"`
+}
+
+type PEP3CaregiverReportOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+	Score *int   `json:"score,omitempty"`
 }
 
 type PEP3SubmitContract struct {

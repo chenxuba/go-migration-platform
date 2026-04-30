@@ -321,18 +321,22 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 				pep3SameValueRecordFieldOption("槌子"),
 			),
 		},
-		85: pep3PictureAnswerFields("picture_identification", []string{
-			"A 杯子", "B 洋娃娃", "C 锁匙", "D 飞机", "E 鸟笼",
-			"F 雨伞", "G 煮食", "H 系鞋带", "I 门", "J 木偶",
-			"K 公鸡", "L 接球", "M 建筑", "N 警察", "O 砌积木",
-			"P 烧烤", "Q 洗澡", "R 水壶", "S 火车头", "T 火箭起飞",
-		}),
-		86: pep3PictureAnswerFields("picture_naming", []string{
-			"A 牛", "B 皮球/波", "C 花", "D 婴儿车", "E 牙刷",
-			"F 雪柜", "G 油油", "H 打秋千", "I 樽", "J 电风扇",
-			"K 企鹅", "L 溜冰", "M 抱着狗", "N 医生", "O 跳水",
-			"P 踏车", "Q 举起", "R 教堂", "S 炉", "T 整路",
-		}),
+		85: {
+			pep3PictureCheckRecordField("picture_identification", "辨认14幅图画", []string{
+				"A 杯子", "B 洋娃娃", "C 锁匙", "D 飞机", "E 鸟笼",
+				"F 雨伞", "G 煮食", "H 系鞋带", "I 门", "J 木偶",
+				"K 公鸡", "L 接球", "M 建筑", "N 警察", "O 砌积木",
+				"P 烧烤", "Q 洗澡", "R 水壶", "S 火车头", "T 火箭起飞",
+			}),
+		},
+		86: {
+			pep3PictureCheckRecordField("picture_naming", "说出14幅图画名称", []string{
+				"A 牛", "B 皮球/波", "C 花", "D 婴儿车", "E 牙刷",
+				"F 雪柜", "G 油油", "H 打秋千", "I 樽", "J 电风扇",
+				"K 企鹅", "L 溜冰", "M 抱着狗", "N 医生", "O 跳水",
+				"P 踏车", "Q 举起", "R 教堂", "S 炉", "T 整路",
+			}),
+		},
 		87: {
 			pep3TextareaRecordField("spoken_phrase", "4-5词片语", "记录儿童说出的片语"),
 		},
@@ -384,9 +388,11 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 			),
 		},
 		95: {
-			pep3TextRecordField("animal_question", "有啲动物吗", "记录答案"),
-			pep3TextRecordField("play_question", "玩乜嘢呀", "记录答案"),
-			pep3TextRecordField("where_question", "皮球在哪里", "记录答案"),
+			pep3MultiRecordField("reading_comprehension_questions", "阅读理解问题",
+				pep3SameValueRecordFieldOption("小明有哪些动物呀？"),
+				pep3SameValueRecordFieldOption("小明在玩什么？"),
+				pep3SameValueRecordFieldOption("什么跳过小明的皮球？"),
+			),
 		},
 		96: {
 			pep3MultiRecordField("sentence_commands", "句子及遵从指令",
@@ -510,7 +516,7 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 				pep3SameValueRecordFieldOption("拍吓个盒"),
 				pep3SameValueRecordFieldOption("摸吓只狗"),
 				pep3SameValueRecordFieldOption("企起身跳"),
-				pep3SameValueRecordFieldOption("攞个杯给我，然后坐低"),
+				pep3SameValueRecordFieldOption("攞个杯给我，然后坐下"),
 				pep3SameValueRecordFieldOption("敲吓度门，然后摸吓度墙"),
 			),
 		},
@@ -519,8 +525,8 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 				pep3SameValueRecordFieldOption("叫名字+招手"),
 				pep3SameValueRecordFieldOption("坐下+拿走积木"),
 				pep3SameValueRecordFieldOption("交回颜色笔"),
+				pep3SameValueRecordFieldOption("其他"),
 			),
-			pep3TextRecordField("other_response", "其他", "记录其他反应"),
 		},
 		126: {
 			pep3MultiRecordField("no_stop_commands", "回应指令",
@@ -537,7 +543,7 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 		131: {
 			pep3MultiRecordField("single_actions", "单项动作",
 				pep3SameValueRecordFieldOption("跳"),
-				pep3SameValueRecordFieldOption("坐低"),
+				pep3SameValueRecordFieldOption("坐下"),
 				pep3SameValueRecordFieldOption("企起身"),
 			),
 		},
@@ -551,14 +557,14 @@ func pep3ItemRecordFieldDefinitions() map[int][]model.PEP3ItemRecordField {
 		},
 		134: {
 			pep3MultiRecordField("simple_action_commands", "遵从简单动作指令",
-				pep3SameValueRecordFieldOption("坐低"),
+				pep3SameValueRecordFieldOption("坐下"),
 				pep3SameValueRecordFieldOption("起身"),
 				pep3SameValueRecordFieldOption("过来"),
 				pep3SameValueRecordFieldOption("伸我"),
 				pep3SameValueRecordFieldOption("放低手"),
 				pep3SameValueRecordFieldOption("开门"),
+				pep3SameValueRecordFieldOption("其他"),
 			),
-			pep3TextRecordField("other_command", "其他", "记录其他指令"),
 		},
 		135: {
 			pep3RadioRecordField("visual_self_stimulation", "视觉自我刺激",
@@ -801,4 +807,12 @@ func pep3PictureAnswerFields(prefix string, labels []string) []model.PEP3ItemRec
 		fields = append(fields, pep3TextRecordField(key, label, "记录儿童答案"))
 	}
 	return fields
+}
+
+func pep3PictureCheckRecordField(key, label string, labels []string) model.PEP3ItemRecordField {
+	options := make([]model.PEP3ItemRecordFieldOption, 0, len(labels))
+	for _, optionLabel := range labels {
+		options = append(options, pep3SameValueRecordFieldOption(optionLabel))
+	}
+	return pep3MultiRecordField(key, label, options...)
 }

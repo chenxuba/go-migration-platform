@@ -1171,7 +1171,7 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 		// 第7页：64-77
 		pep3PDFRecordRects(7, 64, "string_reaction", map[string]pep3BookletPDFRect{ // 64 无兴趣/怪异反应
 			"无兴趣":  pep3PDFRect(177.0, 94.0, 34.0, 11.0),
-			"怪异反应": pep3PDFRect(218.0, 94.0, 45.0, 11.0),
+			"怪异反应": pep3PDFRect(214.0, 96.0, 40.0, 11.0),
 		}),
 		pep3PDFRecordText(7, 65, "completed_bead_count", 190.7, 126.3, 18.6),
 		pep3PDFRecordText(7, 67, "completed_bead_count", 191.0, 185.0, 18.7),
@@ -1193,48 +1193,10 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 		}),
 
 		// 第9页：85
-		pep3PDFRecordText(9, 85, "picture_identification_a_answer", 187.7, 119.7, 29.3),
-		pep3PDFRecordText(9, 85, "picture_identification_b_answer", 187.3, 148.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_c_answer", 187.3, 177.3, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_d_answer", 187.7, 206.3, 29.0),
-		pep3PDFRecordText(9, 85, "picture_identification_e_answer", 187.3, 235.3, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_f_answer", 187.3, 264.0, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_g_answer", 187.3, 293.3, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_h_answer", 187.3, 322.0, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_i_answer", 187.3, 350.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_j_answer", 187.3, 380.0, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_k_answer", 187.3, 408.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_l_answer", 187.7, 437.7, 28.6),
-		pep3PDFRecordText(9, 85, "picture_identification_m_answer", 187.3, 466.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_n_answer", 188.0, 495.7, 29.3),
-		pep3PDFRecordText(9, 85, "picture_identification_o_answer", 187.3, 524.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_p_answer", 187.3, 553.3, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_q_answer", 187.3, 582.0, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_r_answer", 187.3, 610.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_s_answer", 187.3, 639.7, 30.0),
-		pep3PDFRecordText(9, 85, "picture_identification_t_answer", 187.3, 668.7, 30.0),
+		pep3PDFRecordMarks(9, 85, "picture_identification", pep3PDFPictureIdentificationMarks()),
 
 		// 第10页：86-90
-		pep3PDFRecordText(10, 86, "picture_naming_a_answer", 222.7, 100.7, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_b_answer", 222.7, 116.7, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_c_answer", 222.7, 132.0, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_d_answer", 222.7, 147.3, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_e_answer", 222.7, 162.7, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_f_answer", 222.7, 178.3, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_g_answer", 222.7, 194.0, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_h_answer", 222.7, 209.3, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_i_answer", 222.7, 224.7, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_j_answer", 222.7, 240.0, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_k_answer", 222.7, 255.3, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_l_answer", 222.7, 271.0, 21.3),
-		pep3PDFRecordText(10, 86, "picture_naming_m_answer", 222.7, 286.7, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_n_answer", 222.7, 302.0, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_o_answer", 222.7, 317.3, 22.6),
-		pep3PDFRecordText(10, 86, "picture_naming_p_answer", 246.0, 332.7, 22.7),
-		pep3PDFRecordText(10, 86, "picture_naming_q_answer", 222.7, 348.0, 22.0),
-		pep3PDFRecordText(10, 86, "picture_naming_r_answer", 222.7, 364.0, 22.6),
-		pep3PDFRecordText(10, 86, "picture_naming_s_answer", 222.7, 379.3, 22.6),
-		pep3PDFRecordText(10, 86, "picture_naming_t_answer", 222.7, 394.7, 22.6),
+		pep3PDFRecordMarks(10, 86, "picture_naming", pep3PDFPictureNamingMarks()),
 		pep3PDFRecordText(10, 87, "spoken_phrase", 188.0, 414.7, 67.3),
 		pep3PDFRecordMarks(10, 88, "recognized_characters", pep3PDFCharacterMarks(470.0)),
 		pep3PDFRecordMarks(10, 89, "read_characters", pep3PDFCharacterMarks(519.7)),
@@ -1247,9 +1209,11 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 			"猫": pep3PDFMark(180.7, 138.0, 22.0),
 			"屋": pep3PDFMark(217.3, 138.0, 22.7),
 		}),
-		pep3PDFRecordText(11, 95, "animal_question", 201.3, 337.3, 23.4),
-		pep3PDFRecordText(11, 95, "play_question", 229.3, 368.3, 22.7),
-		pep3PDFRecordText(11, 95, "where_question", 183.3, 399.3, 23.4),
+		pep3PDFRecordMarks(11, 95, "reading_comprehension_questions", map[string]pep3BookletPDFOptionMark{ // 95 阅读理解问题
+			"小明有哪些动物呀？":  pep3PDFMark(201.3, 337.3, 23.4),
+			"小明在玩什么？":    pep3PDFMark(229.3, 368.3, 22.7),
+			"什么跳过小明的皮球？": pep3PDFMark(183.3, 399.3, 23.4),
+		}),
 		pep3PDFRecordMarks(11, 96, "sentence_commands", map[string]pep3BookletPDFOptionMark{ // 96 阅读句子及遵从指令
 			"拿起皮球":   pep3PDFMark(192.0, 439.7, 55.3),
 			"皮球放桌子上": pep3PDFMark(210.0, 453.3, 37.3),
@@ -1317,15 +1281,15 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 			"拍吓个盒":        pep3PDFMark(217.3, 99.7, 22.0),
 			"摸吓只狗":        pep3PDFMark(217.3, 114.0, 22.0),
 			"企起身跳":        pep3PDFMark(217.3, 129.7, 22.0),
-			"攞个杯给我，然后坐低":  pep3PDFMark(218.0, 160.3, 22.0),
+			"攞个杯给我，然后坐下":  pep3PDFMark(218.0, 160.3, 22.0),
 			"敲吓度门，然后摸吓度墙": pep3PDFMark(236.0, 191.3, 22.0),
 		}),
 		pep3PDFRecordMarks(14, 125, "gesture_responses", map[string]pep3BookletPDFOptionMark{ // 125 对手势反应
 			"叫名字+招手":  pep3PDFMark(232.0, 246.3, 29.7),
 			"坐下+拿走积木": pep3PDFMark(192.0, 261.0, 14.7),
 			"交回颜色笔":   pep3PDFMark(246.0, 261.0, 14.7),
+			"其他":      pep3PDFMark(220.0, 292.0, 40.7),
 		}),
-		pep3PDFRecordText(14, 125, "other_response", 220.0, 276.3, 40.7),
 		pep3PDFRecordMarks(14, 126, "no_stop_commands", map[string]pep3BookletPDFOptionMark{ // 126 不要/停止
 			"不要": pep3PDFMark(192.0, 313.3, 29.3),
 			"停止": pep3PDFMark(192.0, 327.3, 29.3),
@@ -1334,7 +1298,7 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 		pep3PDFRecordText(14, 130, "child_answer", 217.3, 407.3, 36.7),
 		pep3PDFRecordMarks(14, 131, "single_actions", map[string]pep3BookletPDFOptionMark{ // 131 动词动作
 			"跳":   pep3PDFMark(192.0, 427.0, 29.3),
-			"坐低":  pep3PDFMark(228.3, 427.0, 21.7),
+			"坐下":  pep3PDFMark(228.3, 427.0, 21.7),
 			"企起身": pep3PDFMark(192.0, 441.3, 22.0),
 		}),
 		pep3PDFRecordMarks(14, 133, "wh_questions", map[string]pep3BookletPDFOptionMark{ // 133 问句
@@ -1346,14 +1310,14 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 
 		// 第15页：134-151
 		pep3PDFRecordMarks(15, 134, "simple_action_commands", map[string]pep3BookletPDFOptionMark{ // 134 简单动作指令
-			"坐低":  pep3PDFMark(193.3, 85.3, 22.0),
+			"坐下":  pep3PDFMark(193.3, 85.3, 22.0),
 			"起身":  pep3PDFMark(244.0, 85.0, 17.3),
 			"过来":  pep3PDFMark(194.0, 99.0, 20.3),
 			"伸我":  pep3PDFMark(244.0, 98.7, 17.3),
 			"放低手": pep3PDFMark(202.7, 114.7, 18.0),
 			"开门":  pep3PDFMark(244.0, 114.0, 18.0),
+			"其他":  pep3PDFMark(202.7, 130.0, 22.0),
 		}),
-		pep3PDFRecordText(15, 134, "other_command", 202.7, 130.0, 22.0),
 		pep3PDFRecordRects(15, 135, "visual_self_stimulation", pep3PDFSlashRects(139.0, 193.0, 27.0, 226.0, 45.0)),
 		pep3PDFRecordRects(15, 136, "space_material_exploration", pep3PDFSlashRects(164.0, 193.0, 34.0, 229.0, 45.0)),
 		pep3PDFRecordRects(15, 137, "environment_exploration", pep3PDFSlashRects(204.0, 193.0, 34.0, 229.0, 45.0)),
@@ -1474,6 +1438,56 @@ func pep3PDFColorMarks(topY float64) map[string]pep3BookletPDFOptionMark {
 		"蓝": pep3PDFMark(239.7, topY, 14.6),
 		"白": pep3PDFMark(184.0, topY+15.3, 14.7),
 		"绿": pep3PDFMark(212.7, topY+15.3, 15.3),
+	}
+}
+
+func pep3PDFPictureIdentificationMarks() map[string]pep3BookletPDFOptionMark {
+	return map[string]pep3BookletPDFOptionMark{
+		"A 杯子":   pep3PDFMark(187.7, 119.7, 29.3),
+		"B 洋娃娃":  pep3PDFMark(187.3, 148.7, 30.0),
+		"C 锁匙":   pep3PDFMark(187.3, 177.3, 30.0),
+		"D 飞机":   pep3PDFMark(187.7, 206.3, 29.0),
+		"E 鸟笼":   pep3PDFMark(187.3, 235.3, 30.0),
+		"F 雨伞":   pep3PDFMark(187.3, 264.0, 30.0),
+		"G 煮食":   pep3PDFMark(187.3, 293.3, 30.0),
+		"H 系鞋带":  pep3PDFMark(187.3, 322.0, 30.0),
+		"I 门":    pep3PDFMark(187.3, 350.7, 30.0),
+		"J 木偶":   pep3PDFMark(187.3, 380.0, 30.0),
+		"K 公鸡":   pep3PDFMark(187.3, 408.7, 30.0),
+		"L 接球":   pep3PDFMark(187.7, 437.7, 28.6),
+		"M 建筑":   pep3PDFMark(187.3, 466.7, 30.0),
+		"N 警察":   pep3PDFMark(188.0, 495.7, 29.3),
+		"O 砌积木":  pep3PDFMark(187.3, 524.7, 30.0),
+		"P 烧烤":   pep3PDFMark(187.3, 553.3, 30.0),
+		"Q 洗澡":   pep3PDFMark(187.3, 582.0, 30.0),
+		"R 水壶":   pep3PDFMark(187.3, 610.7, 30.0),
+		"S 火车头":  pep3PDFMark(187.3, 639.7, 30.0),
+		"T 火箭起飞": pep3PDFMark(187.3, 668.7, 30.0),
+	}
+}
+
+func pep3PDFPictureNamingMarks() map[string]pep3BookletPDFOptionMark {
+	return map[string]pep3BookletPDFOptionMark{
+		"A 牛":    pep3PDFMark(222.7, 100.7, 22.0),
+		"B 皮球/波": pep3PDFMark(222.7, 116.7, 22.0),
+		"C 花":    pep3PDFMark(222.7, 132.0, 22.0),
+		"D 婴儿车":  pep3PDFMark(222.7, 147.3, 22.0),
+		"E 牙刷":   pep3PDFMark(222.7, 162.7, 22.0),
+		"F 雪柜":   pep3PDFMark(222.7, 178.3, 22.0),
+		"G 油油":   pep3PDFMark(222.7, 194.0, 22.0),
+		"H 打秋千":  pep3PDFMark(222.7, 209.3, 22.0),
+		"I 樽":    pep3PDFMark(222.7, 224.7, 22.0),
+		"J 电风扇":  pep3PDFMark(222.7, 240.0, 22.0),
+		"K 企鹅":   pep3PDFMark(222.7, 255.3, 22.0),
+		"L 溜冰":   pep3PDFMark(222.7, 271.0, 21.3),
+		"M 抱着狗":  pep3PDFMark(222.7, 286.7, 22.0),
+		"N 医生":   pep3PDFMark(222.7, 302.0, 22.0),
+		"O 跳水":   pep3PDFMark(222.7, 317.3, 22.6),
+		"P 踏车":   pep3PDFMark(246.0, 332.7, 22.7),
+		"Q 举起":   pep3PDFMark(222.7, 348.0, 22.0),
+		"R 教堂":   pep3PDFMark(222.7, 364.0, 22.6),
+		"S 炉":    pep3PDFMark(222.7, 379.3, 22.6),
+		"T 整路":   pep3PDFMark(222.7, 394.7, 22.6),
 	}
 }
 

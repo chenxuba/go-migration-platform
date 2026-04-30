@@ -137,6 +137,9 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			"31":  {"cat_puzzle_prompt": "需示范", "completed_piece_count": "3"},
 			"33":  {"cow_puzzle_prompt": "自行", "completed_piece_count": "4"},
 			"40":  {"pointed_objects": "气球、板凳、手鼓、杯子、剪刀"},
+			"85":  {"picture_identification": []string{"A 杯子", "H 系鞋带", "T 火箭起飞"}},
+			"86":  {"picture_naming": []string{"A 牛", "J 电风扇", "T 整路"}},
+			"95":  {"reading_comprehension_questions": []string{"小明有哪些动物呀？", "什么跳过小明的皮球？"}},
 			"108": {"classification_prompt": "部分示范", "classification_basis": "颜色", "completed_card_count": "8"},
 			"112": {"digits_7_9": "79", "digits_5_3": "53"},
 			"113": {"digits_2_4_1": "241", "digits_5_7_9": "579"},
@@ -144,6 +147,8 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			"116": {"eye_contact": "brief"},
 			"117": {"delayed_echolalia": "not_applicable"},
 			"119": {"pronoun_response": "玩具"},
+			"125": {"gesture_responses": []string{"叫名字+招手", "其他"}},
+			"134": {"simple_action_commands": []string{"坐下", "其他"}},
 		},
 	})
 	if err != nil {

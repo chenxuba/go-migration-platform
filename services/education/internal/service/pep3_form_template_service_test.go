@@ -62,8 +62,16 @@ func TestBuildPEP3AssessmentFormTemplate(t *testing.T) {
 		t.Fatalf("expected 13 PEP-3 domains, got %d", len(template.Domains))
 	}
 	item85 := findPEP3TemplateItemForTest(template, 85)
-	if item85 == nil || len(item85.RecordFields) != 20 || item85.RecordFields[0].FieldType != "text" {
-		t.Fatalf("expected item 85 picture answer record fields, got: %+v", item85)
+	if item85 == nil || len(item85.RecordFields) != 1 || item85.RecordFields[0].FieldType != "checkbox_group" || item85.RecordFields[0].DisplayType != "打勾" || len(item85.RecordFields[0].Options) != 20 {
+		t.Fatalf("expected item 85 picture check record field, got: %+v", item85)
+	}
+	item86 := findPEP3TemplateItemForTest(template, 86)
+	if item86 == nil || len(item86.RecordFields) != 1 || item86.RecordFields[0].FieldType != "checkbox_group" || item86.RecordFields[0].DisplayType != "打勾" || len(item86.RecordFields[0].Options) != 20 {
+		t.Fatalf("expected item 86 picture check record field, got: %+v", item86)
+	}
+	item95 := findPEP3TemplateItemForTest(template, 95)
+	if item95 == nil || len(item95.RecordFields) != 1 || item95.RecordFields[0].FieldType != "checkbox_group" || item95.RecordFields[0].DisplayType != "打勾" || len(item95.RecordFields[0].Options) != 3 {
+		t.Fatalf("expected item 95 reading comprehension check record field, got: %+v", item95)
 	}
 	item101 := findPEP3TemplateItemForTest(template, 101)
 	if item101 == nil || len(item101.RecordFields) != 2 || item101.RecordFields[0].Key != "two_blocks" || item101.RecordFields[0].FieldType != "number" {
@@ -82,16 +90,35 @@ func TestBuildPEP3AssessmentFormTemplate(t *testing.T) {
 		t.Fatalf("expected item 116 radio record field, got: %+v", item116)
 	}
 	item125 := findPEP3TemplateItemForTest(template, 125)
-	if item125 == nil || len(item125.RecordFields) != 2 || item125.RecordFields[0].DisplayType != "打勾" || item125.RecordFields[1].DisplayType != "填空" {
-		t.Fatalf("expected item 125 check plus text record fields, got: %+v", item125)
+	if item125 == nil || len(item125.RecordFields) != 1 || item125.RecordFields[0].DisplayType != "打勾" || len(item125.RecordFields[0].Options) != 4 {
+		t.Fatalf("expected item 125 check record field, got: %+v", item125)
+	}
+	item134 := findPEP3TemplateItemForTest(template, 134)
+	if item134 == nil || len(item134.RecordFields) != 1 || item134.RecordFields[0].DisplayType != "打勾" || len(item134.RecordFields[0].Options) != 7 {
+		t.Fatalf("expected item 134 check record field, got: %+v", item134)
 	}
 	item108 := findPEP3TemplateItemForTest(template, 108)
 	if item108 == nil || len(item108.RecordFields) != 3 || item108.RecordFields[0].DisplayType != "单选" || item108.RecordFields[1].DisplayType != "单选" || item108.RecordFields[2].DisplayType != "数字" {
 		t.Fatalf("expected item 108 radio plus number record fields, got: %+v", item108)
 	}
 	pbField := findPEP3RawScoreFieldForTest(template.RawScoreFields, "PB")
-	if pbField == nil || pbField.InputMode != "manual_raw_score" || pbField.Category != "caregiver_report" {
+	if pbField == nil || pbField.InputMode != "manual_raw_score" || pbField.Category != "caregiver_report" || pbField.MaxScore == nil || *pbField.MaxScore != 20 {
 		t.Fatalf("expected caregiver raw score field: %+v", pbField)
+	}
+	if template.CaregiverReport.ReportName != "PEP-3儿童照顾者报告" || len(template.CaregiverReport.Sections) != 5 {
+		t.Fatalf("expected caregiver report template, got: %+v", template.CaregiverReport)
+	}
+	problemSection := findPEP3CaregiverSectionForTest(template.CaregiverReport.Sections, "problem_behavior")
+	if problemSection == nil || problemSection.ScaleCode != "PB" || problemSection.MaxRawScore == nil || *problemSection.MaxRawScore != 20 || len(problemSection.Items) != 11 {
+		t.Fatalf("expected problem behavior caregiver section, got: %+v", problemSection)
+	}
+	selfCareSection := findPEP3CaregiverSectionForTest(template.CaregiverReport.Sections, "personal_self_care")
+	if selfCareSection == nil || selfCareSection.ScaleCode != "PSC" || selfCareSection.MaxRawScore == nil || *selfCareSection.MaxRawScore != 26 || len(selfCareSection.Items) != 14 {
+		t.Fatalf("expected personal self-care caregiver section, got: %+v", selfCareSection)
+	}
+	adaptiveSection := findPEP3CaregiverSectionForTest(template.CaregiverReport.Sections, "adaptive_behavior")
+	if adaptiveSection == nil || adaptiveSection.ScaleCode != "AB" || adaptiveSection.MaxRawScore == nil || *adaptiveSection.MaxRawScore != 30 || len(adaptiveSection.Items) != 16 {
+		t.Fatalf("expected adaptive behavior caregiver section, got: %+v", adaptiveSection)
 	}
 	if template.SubmitContract.ItemScoreListKey != "itemScoreList" || template.SubmitContract.CreateRecordEndpoint == "" {
 		t.Fatalf("unexpected submit contract: %+v", template.SubmitContract)
@@ -197,6 +224,15 @@ func findPEP3RawScoreFieldForTest(fields []model.PEP3RawScoreField, scaleCode st
 	for i := range fields {
 		if fields[i].ScaleCode == scaleCode {
 			return &fields[i]
+		}
+	}
+	return nil
+}
+
+func findPEP3CaregiverSectionForTest(sections []model.PEP3CaregiverReportSection, sectionCode string) *model.PEP3CaregiverReportSection {
+	for i := range sections {
+		if sections[i].SectionCode == sectionCode {
+			return &sections[i]
 		}
 	}
 	return nil

@@ -63,6 +63,7 @@ func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, erro
 		Domains:          pep3AssessmentDomains(domains),
 		RawScoreFields:   pep3RawScoreFields(domains),
 		ItemGroups:       pep3AssessmentItemGroups(items),
+		CaregiverReport:  pep3CaregiverReportTemplate(),
 		SubmitContract: model.PEP3SubmitContract{
 			ScoreEndpoint:          "/api/v1/assessments/pep3/score",
 			CreateRecordEndpoint:   "/api/v1/assessments/pep3/records/create",
