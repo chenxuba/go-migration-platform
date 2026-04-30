@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"embed"
 	"errors"
 	"fmt"
@@ -37,7 +38,11 @@ func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64) (st
 		return "", nil, err
 	}
 	detail = svc.rescorePEP3AssessmentRecordDetail(detail)
-	content, err := buildPEP3BookletPDF(detail)
+	institutionName, err := svc.repo.GetInstitutionName(context.Background(), detail.InstID)
+	if err != nil {
+		return "", nil, err
+	}
+	content, err := buildPEP3BookletPDF(detail, institutionName)
 	if err != nil {
 		return "", nil, err
 	}
@@ -46,7 +51,7 @@ func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64) (st
 	return filename, content, nil
 }
 
-func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO) ([]byte, error) {
+func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName string) ([]byte, error) {
 	score, err := decodeSavedPEP3Score(record.ResultJSON)
 	if err != nil {
 		return nil, err
@@ -79,12 +84,12 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO) ([]byte, error) 
 		return nil, fmt.Errorf("load PEP-3 PDF font: %w", err)
 	}
 	renderer := pep3BookletPDFRenderer{pdf: &pdf}
-	renderer.drawCoverPage(record, score)
+	renderer.drawCoverPage(record, score, institutionName)
 
 	return pdf.GetBytesPdfReturnErr()
 }
 
-func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse) {
+func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, institutionName string) {
 	_ = r.pdf.SetPage(1)
 	r.pdf.SetTextColor(58, 58, 58)
 
@@ -144,22 +149,22 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	compositeRows := buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)
 	// 第3部分：合成分数三行的 y 坐标。只调上下位置时改这里。
 	compositeY := map[string]float64{
-		pep3score.CompositeCommunication:       674, // 沟通（C）
-		pep3score.CompositeMotor:               705, // 体能（M）
-		pep3score.CompositeMaladaptiveBehavior: 735, // 行为（MB）
+		pep3score.CompositeCommunication:       680, // 沟通（C）
+		pep3score.CompositeMotor:               698, // 体能（M）
+		pep3score.CompositeMaladaptiveBehavior: 715, // 行为（MB）
 	}
 	// 第3部分：标准分小格每一列的 x 坐标。只调左右位置时改这里。
 	standardScoreX := map[string]float64{
-		"CVP": 133, // CVP 标准分
-		"EL":  160, // EL 标准分
-		"RL":  187, // RL 标准分
+		"CVP": 135, // CVP 标准分
+		"EL":  162, // EL 标准分
+		"RL":  188, // RL 标准分
 		"FM":  214, // FM 标准分
-		"GM":  241, // GM 标准分
-		"VMI": 268, // VMI 标准分
-		"AE":  295, // AE 标准分
-		"SR":  322, // SR 标准分
-		"CMB": 349, // CMB 标准分
-		"CVB": 376, // CVB 标准分
+		"GM":  240, // GM 标准分
+		"VMI": 266, // VMI 标准分
+		"AE":  292, // AE 标准分
+		"SR":  318, // SR 标准分
+		"CMB": 344, // CMB 标准分
+		"CVB": 369, // CVB 标准分
 	}
 	for _, row := range compositeRows {
 		y := compositeY[row.CompositeCode]
@@ -167,15 +172,43 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 			r.center(standardScoreX[code]-12, y, 24, 8.2, row.MemberScaleScores[code]) // 标准分小格单项得分
 		}
 		// 第3部分：合成分数右侧汇总列的 x 坐标。
-		r.center(386, y, 24, 8.2, row.StandardScoreSumText) // 标准分总和
-		r.center(424, y, 32, 8.2, row.PercentileRankText)   // 百分比级数
-		r.center(463, y, 62, 8.2, row.Level)                // 发展/适应程度
-		r.center(525, y, 44, 8.2, row.DevelopmentAgeText)   // 发展年龄
+		r.center(384, y, 24, 8.2, row.StandardScoreSumText) // 标准分总和
+		r.center(413, y, 32, 8.2, row.PercentileRankText)   // 百分比级数
+		r.center(450, y, 62, 8.2, row.Level)                // 发展/适应程度
+		r.center(517, y, 44, 8.2, row.DevelopmentAgeText)   // 发展年龄
 	}
+
+	r.drawCoverInstitutionMark(institutionName)
 }
 
 func pep3RightPageX(spreadX float64) float64 {
 	return spreadX - pep3BookletPDFRightPageOffsetX
+}
+
+func (r pep3BookletPDFRenderer) drawCoverInstitutionMark(institutionName string) {
+	institutionName = strings.TrimSpace(institutionName)
+	if institutionName == "" {
+		return
+	}
+
+	// 第1页右下角版权标记遮盖区域。需要改遮盖范围时调 x/y/width/height。
+	const (
+		x      = 452.0 // 遮盖区域左边界
+		y      = 732.0 // 遮盖区域上边界
+		width  = 120.0 // 遮盖区域宽度
+		height = 28.0  // 遮盖区域高度
+	)
+	r.pdf.SetFillColor(255, 255, 255)
+	r.pdf.RectFromUpperLeftWithStyle(x, y, width, height, "F")
+
+	// 第1页右下角机构名称。需要改文字位置时调 textX/textY/fontSize。
+	const (
+		textX    = x + 4
+		textY    = y + 17
+		fontSize = 8.5
+	)
+	r.pdf.SetTextColor(58, 58, 58)
+	r.text(textX, textY, fontSize, institutionName)
 }
 
 // text 用于左对齐填值：x 是文字起点，y 是底图横线位置，size 是字号。

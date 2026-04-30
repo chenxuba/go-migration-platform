@@ -101,7 +101,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			ExaminerName:   "测试员A",
 		},
 		ResultJSON: resultRaw,
-	})
+	}, "测试机构")
 	if err != nil {
 		t.Fatalf("buildPEP3BookletPDF returned error: %v", err)
 	}
