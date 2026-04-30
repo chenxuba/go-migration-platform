@@ -122,21 +122,29 @@ type PEP3DomainProgress struct {
 	Complete          bool   `json:"complete"`
 }
 
+type PEP3NormDataInfo struct {
+	NormVersion             string `json:"normVersion"`
+	DevelopmentAgeMaxMonths int    `json:"developmentAgeMaxMonths"`
+	NormAgeBandMaxMonths    int    `json:"normAgeBandMaxMonths"`
+	NormSourcePDF           string `json:"normSourcePdf"`
+}
+
 type PEP3AssessmentFormTemplateVO struct {
-	TemplateCode    string                    `json:"templateCode"`
-	TemplateVersion string                    `json:"templateVersion"`
-	Title           string                    `json:"title"`
-	ScaleCode       string                    `json:"scaleCode"`
-	ScaleVersion    string                    `json:"scaleVersion"`
-	DataStatus      string                    `json:"dataStatus,omitempty"`
-	Sources         []string                  `json:"sources,omitempty"`
-	ItemCount       int                       `json:"itemCount"`
-	ScoreOptions    []PEP3ScoreOption         `json:"scoreOptions"`
-	BasicFields     []PEP3AssessmentFormField `json:"basicFields"`
-	Domains         []PEP3AssessmentDomain    `json:"domains"`
-	RawScoreFields  []PEP3RawScoreField       `json:"rawScoreFields"`
-	ItemGroups      []PEP3AssessmentItemGroup `json:"itemGroups"`
-	SubmitContract  PEP3SubmitContract        `json:"submitContract"`
+	TemplateCode    string `json:"templateCode"`
+	TemplateVersion string `json:"templateVersion"`
+	Title           string `json:"title"`
+	ScaleCode       string `json:"scaleCode"`
+	ScaleVersion    string `json:"scaleVersion"`
+	PEP3NormDataInfo
+	DataStatus     string                    `json:"dataStatus,omitempty"`
+	Sources        []string                  `json:"sources,omitempty"`
+	ItemCount      int                       `json:"itemCount"`
+	ScoreOptions   []PEP3ScoreOption         `json:"scoreOptions"`
+	BasicFields    []PEP3AssessmentFormField `json:"basicFields"`
+	Domains        []PEP3AssessmentDomain    `json:"domains"`
+	RawScoreFields []PEP3RawScoreField       `json:"rawScoreFields"`
+	ItemGroups     []PEP3AssessmentItemGroup `json:"itemGroups"`
+	SubmitContract PEP3SubmitContract        `json:"submitContract"`
 }
 
 type PEP3AssessmentFormField struct {
@@ -183,18 +191,19 @@ type PEP3AssessmentItemGroup struct {
 }
 
 type PEP3AssessmentItem struct {
-	ItemNo       int               `json:"itemNo"`
-	ItemTitle    string            `json:"itemTitle"`
-	TestItem     string            `json:"testItem"`
-	Materials    string            `json:"materials,omitempty"`
-	Method       string            `json:"method,omitempty"`
-	DomainCode   string            `json:"domainCode"`
-	DomainName   string            `json:"domainName"`
-	Standard     string            `json:"standard"`
-	ScoreOptions []PEP3ScoreOption `json:"scoreOptions"`
-	SourcePDF    string            `json:"sourcePdf,omitempty"`
-	SourcePages  []int             `json:"sourcePages,omitempty"`
-	OCRStatus    string            `json:"ocrStatus,omitempty"`
+	ItemNo       int                   `json:"itemNo"`
+	ItemTitle    string                `json:"itemTitle"`
+	TestItem     string                `json:"testItem"`
+	Materials    string                `json:"materials,omitempty"`
+	Method       string                `json:"method,omitempty"`
+	DomainCode   string                `json:"domainCode"`
+	DomainName   string                `json:"domainName"`
+	Standard     string                `json:"standard"`
+	ScoreOptions []PEP3ScoreOption     `json:"scoreOptions"`
+	RecordFields []PEP3ItemRecordField `json:"recordFields,omitempty"`
+	SourcePDF    string                `json:"sourcePdf,omitempty"`
+	SourcePages  []int                 `json:"sourcePages,omitempty"`
+	OCRStatus    string                `json:"ocrStatus,omitempty"`
 }
 
 type PEP3ScoreOption struct {
@@ -203,14 +212,31 @@ type PEP3ScoreOption struct {
 	Description string `json:"description,omitempty"`
 }
 
+type PEP3ItemRecordField struct {
+	Key         string                      `json:"key"`
+	Label       string                      `json:"label"`
+	FieldType   string                      `json:"fieldType"`
+	DisplayType string                      `json:"displayType,omitempty"`
+	Required    bool                        `json:"required,omitempty"`
+	Placeholder string                      `json:"placeholder,omitempty"`
+	Options     []PEP3ItemRecordFieldOption `json:"options,omitempty"`
+}
+
+type PEP3ItemRecordFieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
 type PEP3SubmitContract struct {
-	ScoreEndpoint        string   `json:"scoreEndpoint"`
-	CreateRecordEndpoint string   `json:"createRecordEndpoint"`
-	DateFormat           string   `json:"dateFormat"`
-	ItemScoreListKey     string   `json:"itemScoreListKey"`
-	RawScoreListKey      string   `json:"rawScoreListKey"`
-	RequiredBaseFields   []string `json:"requiredBaseFields"`
-	AllowedItemScores    []int    `json:"allowedItemScores"`
+	ScoreEndpoint          string   `json:"scoreEndpoint"`
+	CreateRecordEndpoint   string   `json:"createRecordEndpoint"`
+	DateFormat             string   `json:"dateFormat"`
+	ItemScoreListKey       string   `json:"itemScoreListKey"`
+	RawScoreListKey        string   `json:"rawScoreListKey"`
+	ItemRecordValuesKey    string   `json:"itemRecordValuesKey,omitempty"`
+	ItemRecordValueListKey string   `json:"itemRecordValueListKey,omitempty"`
+	RequiredBaseFields     []string `json:"requiredBaseFields"`
+	AllowedItemScores      []int    `json:"allowedItemScores"`
 }
 
 type PEP3ReportVO struct {
@@ -220,9 +246,10 @@ type PEP3ReportVO struct {
 	Title           string                    `json:"title"`
 	ScaleCode       string                    `json:"scaleCode"`
 	ScaleVersion    string                    `json:"scaleVersion"`
-	DataStatus      string                    `json:"dataStatus,omitempty"`
-	Sources         []string                  `json:"sources,omitempty"`
-	Sections        []PEP3TemplateSection     `json:"sections"`
+	PEP3NormDataInfo
+	DataStatus string                `json:"dataStatus,omitempty"`
+	Sources    []string              `json:"sources,omitempty"`
+	Sections   []PEP3TemplateSection `json:"sections"`
 }
 
 type PEP3ReportScaleRow struct {
@@ -293,11 +320,12 @@ type PEP3BookletVO struct {
 	Title           string                    `json:"title"`
 	ScaleCode       string                    `json:"scaleCode"`
 	ScaleVersion    string                    `json:"scaleVersion"`
-	DataStatus      string                    `json:"dataStatus,omitempty"`
-	Sources         []string                  `json:"sources,omitempty"`
-	SourcePDF       string                    `json:"sourcePdf"`
-	Pages           []PEP3BookletPage         `json:"pages"`
-	Warnings        []string                  `json:"warnings,omitempty"`
+	PEP3NormDataInfo
+	DataStatus string            `json:"dataStatus,omitempty"`
+	Sources    []string          `json:"sources,omitempty"`
+	SourcePDF  string            `json:"sourcePdf"`
+	Pages      []PEP3BookletPage `json:"pages"`
+	Warnings   []string          `json:"warnings,omitempty"`
 }
 
 type PEP3BookletPage struct {

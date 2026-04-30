@@ -19,7 +19,7 @@
 - `basicFields`：保存测评记录所需的基础字段
 - `domains`：13 个分量表定义，包括发展、行为和照顾者报告分量表
 - `rawScoreFields`：原始分字段；发展/行为副测验可由逐题分自动汇总，照顾者报告当前按原始分录入
-- `itemGroups`：按测试员记录册页面分组的题目列表
+- `itemGroups`：按测试员记录册页面分组的题目列表；题目如需填写儿童表现记录，会在 `recordFields` 中返回文本、长文本、单选或多选字段
 - `submitContract`：前端提交到计分接口或保存接口时使用的字段约定
 
 题目片段示例：
@@ -47,7 +47,8 @@
           "standard": "2- 能自行旋开瓶盖\n1- ...\n0- ...",
           "scoreOptions": [
             { "value": 2, "label": "2分", "description": "能自行旋开瓶盖" }
-          ]
+          ],
+          "recordFields": []
         }
       ]
     }
@@ -106,7 +107,11 @@
 响应会返回：
 
 - `scaleCode`：量表编码，目前为 `PEP3`
-- `scaleVersion`：当前数据版本，目前为 `2025-draft`
+- `scaleVersion`：当前数据版本，目前为 `2025-92mo-draft`
+- `normVersion`：当前常模版本，目前为 `2025-92mo-draft`
+- `developmentAgeMaxMonths`：发展年龄换算表的最高月龄，目前为 `92`
+- `normAgeBandMaxMonths`：按实足年龄查百分位/标准分的最高常模年龄组上限，目前为 `89`
+- `normSourcePdf`：常模来源 PDF，目前为 `PEP-3常模(2025).pdf`
 - `dataStatus`：数据状态说明
 - `sources`：本次评分加载的数据文件
 - `result`：年龄、分量表原始分、发展年龄、百分比级数、标准分和合成分结果
@@ -144,6 +149,11 @@
     { "itemNo": 1, "score": 2 },
     { "itemNo": 2, "score": 1 }
   ],
+  "itemRecordValueList": [
+    { "itemNo": 112, "fieldKey": "digits_7_9", "value": "79" },
+    { "itemNo": 112, "fieldKey": "digits_5_3", "value": "53" },
+    { "itemNo": 116, "fieldKey": "eye_contact", "value": "brief" }
+  ],
   "rawScoreList": [
     { "scaleCode": "PB", "rawScore": 7 }
   ],
@@ -160,6 +170,8 @@
 - `progress.domainProgress`：按分量表统计的完成情况
 - `progress.canScore`：当前草稿是否已有足够数据调用计分接口
 - `status`：`draft`、`ready_to_score` 或 `complete`
+
+`itemRecordValueList` / `itemRecordValues` 只保存儿童表现记录，不参与 `2/1/0` 计分、原始分汇总或常模换算。记录册上的横线文字用 `text` / `textarea`，数量用 `number`，斜杠圈选用 `radio`，多项表现标记用 `checkbox_group`。`recordFields[].displayType` 返回业务类型文案，例如 `填空`、`数字`、`单选`、`打勾`、`选择`；前端应渲染为输入框、数字框、按钮式单选和复选框组。记录册 PDF 回显时，已配置坐标的文本字段填到横线上，选择字段按记录册底图圈出对应选项文字。
 
 查询草稿详情：
 
@@ -241,6 +253,15 @@
   "birthDate": "2000-10-29",
   "assessmentDate": "2004-02-10",
   "remark": "首次评估",
+  "itemScoreList": [
+    { "itemNo": 112, "score": 2 },
+    { "itemNo": 116, "score": 1 }
+  ],
+  "itemRecordValueList": [
+    { "itemNo": 112, "fieldKey": "digits_7_9", "value": "79" },
+    { "itemNo": 112, "fieldKey": "digits_5_3", "value": "53" },
+    { "itemNo": 116, "fieldKey": "eye_contact", "value": "brief" }
+  ],
   "rawScores": {
     "CVP": 16,
     "EL": 18,
@@ -317,14 +338,14 @@
 
 `GET /api/v1/assessments/pep3/records/booklet?id=1`
 
-这个接口专门对应 `测试员记录册彩(1).pdf`。返回的是 14 个扫描 PDF 页面的页面数据，前端后续可以按 `pages[].sections[]` 直接填充记录册样式：
+这个接口专门对应 `测试员记录册彩(1).pdf`。返回的是扫描 PDF 第 1-16 页的页面数据，其中第 2-16 页为逐题儿童表现记录，前端后续可以按 `pages[].sections[]` 直接填充记录册样式：
 
 - `templateCode`：记录册模板编码，目前为 `PEP3_RECORD_BOOKLET`
 - `sourcePdf`：对应的记录册源文件
 - `pages`：PDF 页数组，`sourcePdfPageNo` 与扫描 PDF 页码一致
 - `sections[].layout`：区块在扫描页上的版面区域，常见为 `left`、`right`、`full`
 - `sections[].type`：区块类型，例如 `field_grid`、`score_summary_table`、`composite_score_table`、`item_grid`、`page_tally`、`domain_score_table`
-- `item_grid.table.rows`：逐题记录行，包含 `itemNo`、`itemTitle`、`domainCode`、`score` 以及 `CVP/EL/RL/FM/GM/VMI/AE/SR/CMB/CVB` 对应得分格
+- `item_grid.table.rows`：逐题记录行，包含 `itemNo`、`itemTitle`、`domainCode`、`score`、`recordFields`、`recordValues` 以及 `CVP/EL/RL/FM/GM/VMI/AE/SR/CMB/CVB` 对应得分格
 - `page_tally.table.rows`：每页按 2/1/0 与原始分小计生成的分领域汇总
 - `domain_score_table.table.rows`：按领域归集的原始分计算表
 
@@ -354,6 +375,8 @@
                 "itemNo": 1,
                 "itemTitle": "（1） 旋开瓶盖",
                 "domainCode": "FM",
+                "recordFields": [],
+                "recordValues": {},
                 "score": 2,
                 "FM": 2
               }

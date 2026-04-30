@@ -14,7 +14,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	score := PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
 			ScaleCode:    "PEP3",
-			ScaleVersion: "2025-draft",
+			ScaleVersion: "2025-92mo-draft",
 			Sources:      []string{"pep3-item-bank-simplified-draft.json"},
 		},
 		Result: pep3score.AssessmentResult{
@@ -36,6 +36,15 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	inputRaw, err := json.Marshal(map[string]any{
 		"itemScoreList": []map[string]int{{"itemNo": 1, "score": 2}},
 		"rawScores":     map[string]int{"FM": 2},
+		"itemRecordValues": map[string]map[string]any{
+			"112": {
+				"digits_7_9": "79",
+				"digits_5_3": "53",
+			},
+			"116": {
+				"eye_contact": "brief",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)
@@ -49,7 +58,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 			StudentName:    "李东尼",
 			AssessmentCode: "PEP3",
 			AssessmentName: "PEP-3儿童心理教育评核",
-			ScaleVersion:   "2025-draft",
+			ScaleVersion:   "2025-92mo-draft",
 			BirthDate:      &birthDate,
 			AssessmentDate: &assessmentDate,
 			AgeYears:       3,
@@ -64,7 +73,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPEP3Booklet returned error: %v", err)
 	}
-	if booklet.TemplateCode != "PEP3_RECORD_BOOKLET" || len(booklet.Pages) != 14 {
+	if booklet.TemplateCode != "PEP3_RECORD_BOOKLET" || len(booklet.Pages) != 16 {
 		t.Fatalf("unexpected booklet metadata: %+v", booklet)
 	}
 	page2 := booklet.Pages[1]
@@ -75,6 +84,34 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	if len(rows) == 0 || rows[0]["itemNo"] != 1 || rows[0]["score"] != 2 || rows[0]["FM"] != 2 {
 		t.Fatalf("expected item 1 score to fill FM cell: %+v", rows[:1])
 	}
+	row112 := findPEP3BookletRowForTest(booklet, 112)
+	if row112 == nil {
+		t.Fatalf("expected item 112 row in booklet")
+	}
+	recordValues, ok := row112["recordValues"].(map[string]any)
+	if !ok || recordValues["digits_7_9"] != "79" || recordValues["digits_5_3"] != "53" {
+		t.Fatalf("expected item 112 record values, got: %+v", row112["recordValues"])
+	}
+	recordFields, ok := row112["recordFields"].([]model.PEP3ItemRecordField)
+	if !ok || len(recordFields) != 2 || recordFields[0].Key != "digits_7_9" {
+		t.Fatalf("expected item 112 record fields, got: %+v", row112["recordFields"])
+	}
+}
+
+func findPEP3BookletRowForTest(booklet model.PEP3BookletVO, itemNo int) map[string]any {
+	for _, page := range booklet.Pages {
+		for _, section := range page.Sections {
+			if section.Type != "item_grid" || section.Table == nil {
+				continue
+			}
+			for _, row := range section.Table.Rows {
+				if row["itemNo"] == itemNo {
+					return row
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
@@ -91,6 +128,22 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 	}
 	inputRaw, err := json.Marshal(map[string]any{
 		"itemScoreList": itemScoreList,
+		"itemRecordValues": map[string]map[string]any{
+			"5":   {"touch_block_reaction": "no_interest"},
+			"6":   {"kaleidoscope_action": []string{"watch", "watch_and_turn"}},
+			"7":   {"first_observation": "right_eye", "second_observation": "left_eye"},
+			"9":   {"bell_attempts": []string{"first_attempt", "second_attempt"}},
+			"29":  {"size_naming": []string{"first_big", "second_small"}},
+			"31":  {"cat_puzzle_prompt": "需示范", "completed_piece_count": "3"},
+			"33":  {"cow_puzzle_prompt": "自行", "completed_piece_count": "4"},
+			"108": {"classification_prompt": "部分示范", "classification_basis": "颜色", "completed_card_count": "8"},
+			"112": {"digits_7_9": "79", "digits_5_3": "53"},
+			"113": {"digits_2_4_1": "241", "digits_5_7_9": "579"},
+			"115": {"repeated_sentences": []string{"bb_looking", "want_biscuit"}},
+			"116": {"eye_contact": "brief"},
+			"117": {"delayed_echolalia": "not_applicable"},
+			"119": {"pronoun_response": "玩具"},
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal input: %v", err)
@@ -104,7 +157,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			StudentName:    "李东尼",
 			AssessmentCode: "PEP3",
 			AssessmentName: "PEP-3儿童心理教育评核",
-			ScaleVersion:   "2025-draft",
+			ScaleVersion:   "2025-92mo-draft",
 			BirthDate:      &birthDate,
 			AssessmentDate: &assessmentDate,
 			AgeYears:       4,
@@ -138,7 +191,7 @@ func pep3BookletTestScoreRaw(t *testing.T) []byte {
 	score := PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
 			ScaleCode:    "PEP3",
-			ScaleVersion: "2025-draft",
+			ScaleVersion: "2025-92mo-draft",
 			Sources:      []string{"pep3-item-bank-simplified-draft.json"},
 		},
 		Result: pep3score.AssessmentResult{

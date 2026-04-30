@@ -62,6 +62,10 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
+	itemRecordValues, err := decodeSavedPEP3ItemRecordValues(record.InputJSON)
+	if err != nil {
+		return nil, err
+	}
 	if len(rawScores) == 0 {
 		rawScores = rawScoresFromPEP3Result(score.Result.Scales)
 	}
@@ -104,6 +108,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	itemDomainByNo := pep3BookletPDFItemDomainMap(items)
 	renderer.drawCoverPage(record, score, institutionName)
 	renderer.drawDevelopmentBehaviorScorePages(itemScores, itemDomainByNo)
+	renderer.drawDevelopmentBehaviorRecordValues(itemRecordValues)
 	renderer.drawDevelopmentBehaviorRawTotalTable(score, rawScores, itemScores, itemDomainByNo)
 	renderer.drawDevelopmentProfilePage(record, score, rawScores, itemScores, itemDomainByNo, normRecords)
 
@@ -211,6 +216,13 @@ type pep3BookletPDFPoint struct {
 	Y float64
 }
 
+type pep3BookletPDFRect struct {
+	X float64
+	Y float64
+	W float64
+	H float64
+}
+
 type pep3BookletPDFItemPageLayout struct {
 	PageNo       int
 	StartItemNo  int
@@ -229,6 +241,33 @@ type pep3BookletPDFDomainScoreSummary struct {
 type pep3BookletPDFIntValue struct {
 	Value   int
 	Present bool
+}
+
+type pep3BookletPDFRecordFieldPlacement struct {
+	PageNo      int                                 // PDF页码；第4部分儿童表现记录对应记录册第2-16页。
+	ItemNo      int                                 // 题号。
+	FieldKey    string                              // 前端/接口里的儿童表现记录字段key。
+	X           float64                             // 文本横线左边界；向右调大，向左调小。
+	Y           float64                             // 文本横线基线位置；向下调大，向上调小。
+	Width       float64                             // 文本在横线上的居中区域宽度。
+	Size        float64                             // 字号。
+	TextLines   []pep3BookletPDFTextLine            // 多行文本横线；配置后按行左对齐并自动换行。
+	OptionRects map[string]pep3BookletPDFRect       // 斜杠选项：每个可圈选文字的独立椭圆坐标。
+	OptionMarks map[string]pep3BookletPDFOptionMark // 横线选项：每个可选横线的独立填充坐标。
+}
+
+type pep3BookletPDFTextLine struct {
+	X     float64 // 该行文字起点；向右调大，向左调小。
+	Y     float64 // 该行横线基线；向下调大，向上调小。
+	Width float64 // 该行可写宽度；超出会换到下一条 TextLines。
+}
+
+type pep3BookletPDFOptionMark struct {
+	X     float64 // 标记横线左边界；向右调大，向左调小。
+	Y     float64 // 标记横线基线位置；向下调大，向上调小。
+	Width float64 // 标记居中区域宽度。
+	Size  float64 // 标记字号。
+	Text  string  // 为空时默认填“√”。
 }
 
 type pep3BookletPDFProfileScore struct {
@@ -257,6 +296,71 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map
 		}
 
 		r.drawDevelopmentBehaviorScorePageTally(layout, itemScores, itemDomainByNo)
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordValues(itemRecordValues map[int]map[string]any) {
+	if len(itemRecordValues) == 0 {
+		return
+	}
+	r.pdf.SetTextColor(58, 58, 58)
+	r.pdf.SetStrokeColor(92, 92, 92)
+	r.pdf.SetLineWidth(0.8)
+	for _, placement := range pep3BookletPDFRecordFieldPlacements() {
+		values := itemRecordValues[placement.ItemNo]
+		if len(values) == 0 {
+			continue
+		}
+		value, ok := values[placement.FieldKey]
+		if !ok {
+			continue
+		}
+		_ = r.pdf.SetPage(placement.PageNo)
+		if len(placement.OptionRects) > 0 {
+			r.drawDevelopmentBehaviorRecordOptionValue(placement, value)
+			continue
+		}
+		if len(placement.OptionMarks) > 0 {
+			r.drawDevelopmentBehaviorRecordOptionMark(placement, value)
+			continue
+		}
+		text := pep3BookletPDFRecordValueTextForField(placement.ItemNo, placement.FieldKey, value)
+			if text == "" {
+				continue
+			}
+			if len(placement.TextLines) > 0 {
+				r.multilineText(placement.TextLines, placement.Size, text)
+				continue
+			}
+			r.center(placement.X, placement.Y, placement.Width, placement.Size, text)
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordOptionValue(placement pep3BookletPDFRecordFieldPlacement, value any) {
+	for _, token := range pep3BookletPDFRecordValueTokensForField(placement.ItemNo, placement.FieldKey, value) {
+		rect, ok := placement.OptionRects[token]
+		if !ok {
+			continue
+		}
+		r.pdf.Oval(rect.X, rect.Y, rect.X+rect.W, rect.Y+rect.H)
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordOptionMark(placement pep3BookletPDFRecordFieldPlacement, value any) {
+	for _, token := range pep3BookletPDFRecordValueTokensForField(placement.ItemNo, placement.FieldKey, value) {
+		mark, ok := placement.OptionMarks[token]
+		if !ok {
+			continue
+		}
+		text := mark.Text
+		size := mark.Size
+		if text == "" {
+			text = "√"
+			size += 2.0
+			r.centerBold(mark.X, mark.Y, mark.Width, size, text)
+			continue
+		}
+		r.center(mark.X, mark.Y, mark.Width, size, text)
 	}
 }
 
@@ -387,13 +491,13 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 	// 第19页：每个圆圈的独立微调量。正数 x 往右，负数 y 往上。
 	// 所有列都显式写在这里；某列不需要微调时填 0，后面逐个点手工校准就改对应这一行。
 	pointOffsetByScale := map[string]pep3BookletPDFPoint{
-		"CVP": {X: 0.0, Y: 0.0},  // CVP 圆圈微调
-		"EL":  {X: 0.0, Y: 0.0},  // EL 圆圈微调
-		"RL":  {X: 1, Y: 0.0},  // RL 圆圈微调：25 那一列往右一点
-		"FM":  {X: 0.0, Y: -1}, // FM 圆圈微调：34 那个往上一点
-		"GM":  {X: 1, Y: -1},  // GM 圆圈微调：24 那一列往右一点
-		"VMI": {X: 1, Y: -1.8}, // VMI 圆圈微调：12 那一列往上一点
-		"PSC": {X: 0.0, Y: 0.0},  // PSC 圆圈微调
+		"CVP": {X: 0.0, Y: 0.0}, // CVP 圆圈微调
+		"EL":  {X: 0.0, Y: 0.0}, // EL 圆圈微调
+		"RL":  {X: 1, Y: 0.0},   // RL 圆圈微调：25 那一列往右一点
+		"FM":  {X: 0.0, Y: -1},  // FM 圆圈微调：34 那个往上一点
+		"GM":  {X: 1, Y: -1},    // GM 圆圈微调：24 那一列往右一点
+		"VMI": {X: 1, Y: -1.8},  // VMI 圆圈微调：12 那一列往上一点
+		"PSC": {X: 0.0, Y: 0.0}, // PSC 圆圈微调
 	}
 	order := []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"}
 
@@ -682,6 +786,144 @@ func pep3BookletPDFDevelopmentProfileY(months float64, lessThan, greaterThan boo
 	return topY + (maxMonth-months)*rowGap
 }
 
+func pep3BookletPDFRecordValueText(value any) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		return strings.TrimSpace(typed)
+	case []string:
+		return strings.Join(typed, "、")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := pep3BookletPDFRecordValueText(item); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "、")
+	default:
+		return strings.TrimSpace(fmt.Sprint(value))
+	}
+}
+
+func pep3BookletPDFRecordValueTextForField(itemNo int, fieldKey string, value any) string {
+	optionLabels := map[string]string{}
+	for _, field := range pep3ItemRecordFields(itemNo) {
+		if field.Key != fieldKey {
+			continue
+		}
+		for _, option := range field.Options {
+			optionLabels[option.Value] = option.Label
+		}
+		break
+	}
+	if len(optionLabels) == 0 {
+		return pep3BookletPDFRecordValueText(value)
+	}
+	return pep3BookletPDFRecordValueLabelText(value, optionLabels)
+}
+
+func pep3BookletPDFRecordValueLabelText(value any, optionLabels map[string]string) string {
+	switch typed := value.(type) {
+	case nil:
+		return ""
+	case string:
+		text := strings.TrimSpace(typed)
+		if label, ok := optionLabels[text]; ok {
+			return label
+		}
+		return text
+	case []string:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := pep3BookletPDFRecordValueLabelText(item, optionLabels); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "、")
+	case []any:
+		parts := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if text := pep3BookletPDFRecordValueLabelText(item, optionLabels); text != "" {
+				parts = append(parts, text)
+			}
+		}
+		return strings.Join(parts, "、")
+	default:
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if label, ok := optionLabels[text]; ok {
+			return label
+		}
+		return text
+	}
+}
+
+func pep3BookletPDFRecordValueTokens(value any) []string {
+	switch typed := value.(type) {
+	case nil:
+		return nil
+	case string:
+		text := strings.TrimSpace(typed)
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	case []string:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			if token := strings.TrimSpace(item); token != "" {
+				out = append(out, token)
+			}
+		}
+		return out
+	case []any:
+		out := make([]string, 0, len(typed))
+		for _, item := range typed {
+			out = append(out, pep3BookletPDFRecordValueTokens(item)...)
+		}
+		return out
+	default:
+		text := strings.TrimSpace(fmt.Sprint(value))
+		if text == "" {
+			return nil
+		}
+		return []string{text}
+	}
+}
+
+func pep3BookletPDFRecordValueTokensForField(itemNo int, fieldKey string, value any) []string {
+	tokens := pep3BookletPDFRecordValueTokens(value)
+	if len(tokens) == 0 {
+		return nil
+	}
+	aliases := map[string]string{}
+	for _, field := range pep3ItemRecordFields(itemNo) {
+		if field.Key != fieldKey {
+			continue
+		}
+		for _, option := range field.Options {
+			aliases[option.Value] = option.Label
+			aliases[option.Label] = option.Value
+		}
+		break
+	}
+	out := make([]string, 0, len(tokens)*2)
+	seen := map[string]bool{}
+	for _, token := range tokens {
+		if token == "" || seen[token] {
+			continue
+		}
+		out = append(out, token)
+		seen[token] = true
+		if alias := aliases[token]; alias != "" && !seen[alias] {
+			out = append(out, alias)
+			seen[alias] = true
+		}
+	}
+	return out
+}
+
 func pep3BookletPDFAgeMonthsText(record model.AssessmentRecordDetailVO) string {
 	months := record.NormAgeMonths
 	if months == 0 {
@@ -718,6 +960,521 @@ func pep3BookletPDFItemDomainMap(items []pep3BookletItemDefinition) map[int]stri
 		}
 	}
 	return out
+}
+
+func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement {
+	// 儿童表现记录填空和选择项坐标。这里按“页码 + 题号 + 字段 key”逐项配置，
+	// 不再共用通用偏移。文本类字段 X/Y/Width 对准底图横线；斜杠选项使用
+	// OptionRects 圈出底图上的选项文字；横线选项使用 OptionMarks 填到对应横线。
+	return []pep3BookletPDFRecordFieldPlacement{
+		// 第2页：1-14
+		pep3PDFRecordRects(2, 5, "touch_block_reaction", map[string]pep3BookletPDFRect{ // 5 检视触觉块：无兴趣/怪异兴趣
+			"no_interest":      pep3PDFCircle(195.0, 186.0, 30.0, 11.5), // 无兴趣
+			"unusual_interest": pep3PDFCircle(237.0, 186.0, 40.0, 11.5), // 怪异兴趣
+		}),
+		pep3PDFRecordMarks(2, 6, "kaleidoscope_action", map[string]pep3BookletPDFOptionMark{ // 6 使用万花筒：观看/扭动/观看+扭动
+			"watch":          pep3PDFMark(193.3, 233.3, 22.0),
+			"turn":           pep3PDFMark(239.3, 233.3, 22.0),
+			"watch_and_turn": pep3PDFMark(223.3, 248.7, 22.7),
+		}),
+		pep3PDFRecordText(2, 7, "first_observation", 227.3, 268.3, 22.7),  // 7 第1次观察
+		pep3PDFRecordText(2, 7, "second_observation", 227.3, 283.7, 22.7), // 7 第2次观察
+		pep3PDFRecordMarks(2, 9, "bell_attempts", map[string]pep3BookletPDFOptionMark{ // 9 响铃尝试
+			"first_attempt":  pep3PDFMark(226.7, 361.3, 23.3),
+			"second_attempt": pep3PDFMark(227.3, 376.7, 22.7),
+		}),
+
+		// 第3页：15-27
+		pep3PDFRecordMarks(3, 16, "daily_actions", map[string]pep3BookletPDFOptionMark{ // 16 模仿日常动作
+			"喂食": pep3PDFMark(196.0, 116.0, 22.7),
+			"饮水": pep3PDFMark(242.0, 116.0, 22.0),
+			"刷牙": pep3PDFMark(196.0, 131.3, 22.7),
+			"抹鼻": pep3PDFMark(242.0, 131.3, 22.0),
+		}),
+		pep3PDFRecordMarks(3, 17, "puppet_body_parts", map[string]pep3BookletPDFOptionMark{ // 17 手偶身体部位
+			"眼": pep3PDFMark(187.3, 151.0, 22.4),
+			"耳": pep3PDFMark(224.0, 151.0, 22.7),
+			"口": pep3PDFMark(187.3, 166.3, 22.7),
+			"鼻": pep3PDFMark(224.0, 166.3, 23.0),
+		}),
+		pep3PDFRecordMarks(3, 18, "self_body_parts", map[string]pep3BookletPDFOptionMark{ // 18 自己身体部位
+			"眼": pep3PDFMark(187.7, 187.7, 21.6),
+			"耳": pep3PDFMark(224.0, 187.7, 22.0),
+			"口": pep3PDFMark(187.3, 201.3, 22.7),
+			"鼻": pep3PDFMark(224.0, 201.3, 22.7),
+		}),
+		pep3PDFRecordMarks(3, 21, "shape_positions", map[string]pep3BookletPDFOptionMark{ // 21 拼块正确位置
+			"三角形": pep3PDFMark(204.7, 279.3, 23.3),
+			"圆形":  pep3PDFMark(250.7, 279.3, 23.3),
+			"正方形": pep3PDFMark(205.3, 295.0, 23.0),
+		}),
+		pep3PDFRecordMarks(3, 22, "shape_board_completed", map[string]pep3BookletPDFOptionMark{ // 22 完成形状拼板
+			"三角形": pep3PDFMark(205.3, 314.7, 22.7),
+			"圆形":  pep3PDFMark(251.3, 314.7, 22.0),
+			"正方形": pep3PDFMark(205.3, 330.0, 22.7),
+		}),
+		pep3PDFRecordMarks(3, 23, "shape_names", map[string]pep3BookletPDFOptionMark{ // 23 说出形状名称
+			"三角形": pep3PDFMark(205.3, 349.7, 22.7),
+			"圆形":  pep3PDFMark(251.3, 349.7, 22.7),
+			"正方形": pep3PDFMark(205.3, 365.3, 23.4),
+		}),
+		pep3PDFRecordMarks(3, 24, "shape_selection", map[string]pep3BookletPDFOptionMark{ // 24 挑选形状
+			"三角形": pep3PDFMark(205.3, 384.7, 22.7),
+			"圆形":  pep3PDFMark(251.3, 384.7, 22.0),
+			"正方形": pep3PDFMark(206.0, 400.3, 22.0),
+		}),
+		pep3PDFRecordMarks(3, 25, "object_puzzle_completed", map[string]pep3BookletPDFOptionMark{ // 25 物件拼板
+			"小鸡": pep3PDFMark(196.0, 439.3, 23.3),
+			"雨伞": pep3PDFMark(242.0, 439.3, 22.7),
+			"蝴蝶": pep3PDFMark(196.7, 454.7, 22.6),
+			"雪梨": pep3PDFMark(242.7, 454.7, 22.6),
+		}),
+		pep3PDFRecordMarks(3, 27, "mitten_position_sizes", map[string]pep3BookletPDFOptionMark{ // 27 手套拼块正确位置
+			"大": pep3PDFMark(187.3, 513.3, 22.7),
+			"中": pep3PDFMark(224.3, 513.0, 21.4),
+			"小": pep3PDFMark(188.0, 528.7, 22.7),
+		}),
+
+		// 第4页：28-37
+		pep3PDFRecordMarks(4, 28, "mitten_completed_sizes", map[string]pep3BookletPDFOptionMark{ // 28 完成手套拼板
+			"大": pep3PDFMark(184.0, 86.7, 22.0),
+			"中": pep3PDFMark(220.7, 86.7, 22.6),
+			"小": pep3PDFMark(184.0, 102.0, 22.7),
+		}),
+		pep3PDFRecordMarks(4, 29, "size_naming", map[string]pep3BookletPDFOptionMark{ // 29 说出物件大小
+			"first_big":    pep3PDFMark(218.0, 121.7, 18.7),
+			"first_small":  pep3PDFMark(249.3, 121.7, 18.7),
+			"second_big":   pep3PDFMark(218.7, 137.0, 18.6),
+			"second_small": pep3PDFMark(249.7, 137.0, 18.6),
+		}),
+		pep3PDFRecordMarks(4, 30, "size_selection", map[string]pep3BookletPDFOptionMark{ // 30 挑选大小物件
+			"first_big":    pep3PDFMark(218.0, 156.7, 18.7),
+			"first_small":  pep3PDFMark(249.3, 156.7, 18.7),
+			"second_big":   pep3PDFMark(218.7, 172.0, 18.0),
+			"second_small": pep3PDFMark(250.0, 172.0, 18.0),
+		}),
+		pep3PDFRecordRects(4, 31, "cat_puzzle_prompt", map[string]pep3BookletPDFRect{ // 31 完成方式
+			// 第31题“自行”的椭圆：pep3PDFCircle(centerX, y, width, height)。
+			// centerX 越小越靠左，y 越小越靠上，width/height 控制椭圆大小。
+			"自行": pep3PDFCircle(190.0, 202, 24.0, 11.0),
+			// 第31题“需示范”的椭圆：当前如果太靠右，就把 232.0 调小；如果太靠下，就把 205.5 调小。
+			"需示范": pep3PDFCircle(223.0, 202, 34.0, 11.0),
+		}),
+		pep3PDFRecordText(4, 31, "completed_piece_count", 227.0, 226.3, 30.0),
+		pep3PDFRecordText(4, 32, "interlocked_piece_count", 193.3, 248.0, 22.0),
+		pep3PDFRecordRects(4, 33, "cow_puzzle_prompt", map[string]pep3BookletPDFRect{ // 33 完成方式
+			"自行":  pep3PDFCircle(190.0, 202, 24.0, 11.0), // 自行
+			"需示范": pep3PDFCircle(223.0, 202, 34.0, 11.0), // 需示范
+		}),
+		pep3PDFRecordText(4, 33, "completed_piece_count", 227.0, 300.3, 33.7),
+		pep3PDFRecordMarks(4, 34, "boy_puzzle_parts", map[string]pep3BookletPDFOptionMark{ // 34 男孩拼图部位
+			"头":  pep3PDFMark(184.0, 339.3, 30.0),
+			"头发": pep3PDFMark(237.3, 339.3, 26.0),
+			"双眼": pep3PDFMark(193.3, 354.7, 20.7),
+			"鼻":  pep3PDFMark(228.7, 354.7, 34.6),
+			"口":  pep3PDFMark(184.0, 370.0, 30.0),
+			"身":  pep3PDFMark(228.7, 370.0, 34.6),
+			"脚":  pep3PDFMark(184.0, 385.3, 30.0),
+		}),
+		pep3PDFRecordMarks(4, 35, "sound_objects", map[string]pep3BookletPDFOptionMark{ // 35 发声物
+			"响板": pep3PDFMark(192.7, 424.3, 23.0),
+			"手铃": pep3PDFMark(239.0, 424.3, 22.3),
+			"匙子": pep3PDFMark(193.3, 439.3, 22.7),
+		}),
+		pep3PDFRecordText(4, 36, "sock", 193.3, 478.7, 22.0),
+		pep3PDFRecordText(4, 36, "cup", 239.3, 478.7, 22.0),
+		pep3PDFRecordText(4, 36, "toothbrush", 193.3, 494.0, 22.0),
+		pep3PDFRecordText(4, 36, "crayon", 239.3, 494.0, 22.0),
+		pep3PDFRecordText(4, 36, "scissors", 193.3, 509.3, 22.0),
+		pep3PDFRecordText(4, 36, "comb", 239.3, 509.3, 22.0),
+		pep3PDFRecordText(4, 36, "pencil", 193.3, 525.0, 22.0),
+		pep3PDFRecordMarks(4, 37, "object_use", map[string]pep3BookletPDFOptionMark{ // 37 正确使用物件
+			"杯子": pep3PDFMark(192.7, 544.7, 23.3),
+			"匙子": pep3PDFMark(238.7, 544.7, 22.6),
+			"蜡笔": pep3PDFMark(192.7, 559.7, 23.3),
+			"梳子": pep3PDFMark(238.7, 559.7, 22.6),
+			"剪刀": pep3PDFMark(192.7, 574.7, 23.3),
+		}),
+
+		// 第5页：38-49
+		pep3PDFRecordMarks(5, 38, "requested_objects", map[string]pep3BookletPDFOptionMark{ // 38 交出物件
+			"杯子": pep3PDFMark(194.0, 82.7, 22.0),
+			"匙子": pep3PDFMark(240.0, 82.3, 22.0),
+			"蜡笔": pep3PDFMark(194.0, 98.0, 22.0),
+			"梳子": pep3PDFMark(240.0, 98.0, 22.0),
+			"剪刀": pep3PDFMark(194.0, 113.3, 22.0),
+		}),
+		pep3PDFRecordMarks(5, 39, "matched_picture_objects", map[string]pep3BookletPDFOptionMark{ // 39 实物配对图片
+			"袜子": pep3PDFMark(194.0, 133.0, 22.7),
+			"杯子": pep3PDFMark(240.0, 133.0, 23.0),
+			"牙刷": pep3PDFMark(194.0, 148.3, 22.7),
+			"匙子": pep3PDFMark(240.3, 148.3, 23.0),
+			"剪刀": pep3PDFMark(194.0, 163.7, 23.0),
+			"梳子": pep3PDFMark(240.3, 163.7, 23.0),
+			"铅笔": pep3PDFMark(194.0, 179.3, 23.3),
+		}),
+		pep3PDFRecordMultilineText(5, 40, "pointed_objects", []pep3BookletPDFTextLine{ // 40 指出物件
+			// 第40题第1行：从“指出物件：”后面的横线开始写。X 越小越靠左，Y 越小越靠上，Width 控制本行可写长度。
+			{X: 220.0, Y: 198.7, Width: 58.0},
+			// 第40题第2行：第一行写不下时自动换到这条横线。
+			{X: 170.0, Y: 229.3, Width: 96.0},
+		}),
+		pep3PDFRecordText(5, 43, "first_attempt", 201.3, 330.7, 19.4),
+		pep3PDFRecordText(5, 43, "second_attempt", 250.7, 330.7, 19.3),
+		pep3PDFRecordText(5, 43, "third_attempt", 201.3, 346.0, 19.4),
+		pep3PDFRecordMarks(5, 44, "tactile_objects", map[string]pep3BookletPDFOptionMark{ // 44 触觉辨别物件
+			"球":  pep3PDFMark(187.3, 384.7, 29.4),
+			"积木": pep3PDFMark(238.7, 384.7, 23.3),
+			"蜡笔": pep3PDFMark(195.7, 400.3, 21.0),
+			"硬币": pep3PDFMark(239.0, 400.3, 22.0),
+			"匙子": pep3PDFMark(194.7, 416.0, 22.0),
+		}),
+		pep3PDFRecordRects(5, 45, "material_inspection", map[string]pep3BookletPDFRect{ // 45 短暂/没有
+			"短暂": pep3PDFRect(177.0, 424.0, 27.0, 11.0),
+			"没有": pep3PDFRect(211.0, 424.0, 24.0, 11.0),
+		}),
+		pep3PDFRecordRects(5, 46, "visual_inspection", map[string]pep3BookletPDFRect{ // 46 过分兴趣/过分抗拒
+			"过分兴趣": pep3PDFRect(177.0, 444.0, 44.0, 11.0),
+			"过分抗拒": pep3PDFRect(226.0, 444.0, 44.0, 11.0),
+		}),
+		pep3PDFRecordRects(5, 49, "body_contact", map[string]pep3BookletPDFRect{ // 49 拒绝/过分抗拒
+			"拒绝":   pep3PDFRect(177.0, 502.0, 27.0, 11.0),
+			"过分抗拒": pep3PDFRect(216.0, 502.0, 45.0, 11.0),
+		}),
+
+		// 第6页：50-63
+		pep3PDFRecordRects(6, 50, "tickle_response", map[string]pep3BookletPDFRect{ // 50 拒绝/过分反应
+			"拒绝":   pep3PDFRect(177.0, 78.0, 27.0, 11.0),
+			"过分反应": pep3PDFRect(216.0, 78.0, 45.0, 11.0),
+		}),
+		pep3PDFRecordRects(6, 52, "social_communication", map[string]pep3BookletPDFRect{ // 52 被动/完全无反应
+			"被动":    pep3PDFRect(177.0, 124.0, 27.0, 11.0),
+			"完全无反应": pep3PDFRect(216.0, 124.0, 58.0, 11.0),
+		}),
+		pep3PDFRecordMarks(6, 54, "gross_motor_imitation", map[string]pep3BookletPDFOptionMark{ // 54 模仿大肌肉动作
+			"举手":    pep3PDFMark(200.0, 182.0, 18.0),
+			"摸鼻":    pep3PDFMark(242.0, 182.0, 18.0),
+			"举手+摸鼻": pep3PDFMark(220.0, 197.3, 18.0),
+		}),
+		pep3PDFRecordText(6, 58, "first_attempt", 197.3, 352.0, 18.7),
+		pep3PDFRecordText(6, 58, "second_attempt", 246.7, 352.0, 18.0),
+		pep3PDFRecordText(6, 58, "third_attempt", 198.0, 367.7, 17.3),
+		pep3PDFRecordText(6, 59, "first_attempt", 197.3, 387.3, 18.7),
+		pep3PDFRecordText(6, 59, "second_attempt", 246.0, 387.3, 18.7),
+		pep3PDFRecordText(6, 59, "third_attempt", 197.3, 402.7, 18.7),
+		pep3PDFRecordText(6, 60, "first_attempt", 197.3, 422.7, 19.4),
+		pep3PDFRecordText(6, 60, "second_attempt", 247.3, 422.7, 18.0),
+		pep3PDFRecordText(6, 60, "third_attempt", 197.3, 438.0, 19.4),
+		pep3PDFRecordText(6, 61, "kick_ball", 190.3, 457.7, 25.7),
+		pep3PDFRecordText(6, 61, "stairs", 199.3, 473.0, 16.7),
+
+		// 第7页：64-77
+		pep3PDFRecordRects(7, 64, "string_reaction", map[string]pep3BookletPDFRect{ // 64 无兴趣/怪异反应
+			"无兴趣":  pep3PDFRect(177.0, 94.0, 34.0, 11.0),
+			"怪异反应": pep3PDFRect(218.0, 94.0, 45.0, 11.0),
+		}),
+		pep3PDFRecordText(7, 65, "completed_bead_count", 190.7, 126.3, 18.6),
+		pep3PDFRecordText(7, 67, "completed_bead_count", 191.0, 185.0, 18.7),
+		pep3PDFRecordText(7, 71, "dominant_hand", 207.3, 282.7, 21.4),
+		pep3PDFRecordMarks(7, 72, "traced_shapes", map[string]pep3BookletPDFOptionMark{ // 72 沿线描画图形
+			"圆形":  pep3PDFMark(191.3, 302.3, 20.7),
+			"正方形": pep3PDFMark(246.3, 302.3, 20.7),
+			"三角形": pep3PDFMark(191.3, 317.3, 20.7),
+			"菱形":  pep3PDFMark(246.3, 317.3, 21.0),
+		}),
+
+		// 第8页：78-84
+		pep3PDFRecordMarks(8, 84, "pretend_picture_objects", map[string]pep3BookletPDFOptionMark{ // 84 假装使用图画物件
+			"哨子": pep3PDFMark(194.0, 240.0, 22.0),
+			"球":  pep3PDFMark(232.0, 240.0, 30.0),
+			"鼓":  pep3PDFMark(186.7, 255.3, 29.3),
+			"钥匙": pep3PDFMark(240.0, 255.3, 22.0),
+			"槌子": pep3PDFMark(194.0, 272.7, 22.0),
+		}),
+
+		// 第9页：85
+		pep3PDFRecordText(9, 85, "picture_identification_a_answer", 187.7, 119.7, 29.3),
+		pep3PDFRecordText(9, 85, "picture_identification_b_answer", 187.3, 148.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_c_answer", 187.3, 177.3, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_d_answer", 187.7, 206.3, 29.0),
+		pep3PDFRecordText(9, 85, "picture_identification_e_answer", 187.3, 235.3, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_f_answer", 187.3, 264.0, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_g_answer", 187.3, 293.3, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_h_answer", 187.3, 322.0, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_i_answer", 187.3, 350.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_j_answer", 187.3, 380.0, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_k_answer", 187.3, 408.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_l_answer", 187.7, 437.7, 28.6),
+		pep3PDFRecordText(9, 85, "picture_identification_m_answer", 187.3, 466.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_n_answer", 188.0, 495.7, 29.3),
+		pep3PDFRecordText(9, 85, "picture_identification_o_answer", 187.3, 524.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_p_answer", 187.3, 553.3, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_q_answer", 187.3, 582.0, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_r_answer", 187.3, 610.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_s_answer", 187.3, 639.7, 30.0),
+		pep3PDFRecordText(9, 85, "picture_identification_t_answer", 187.3, 668.7, 30.0),
+
+		// 第10页：86-90
+		pep3PDFRecordText(10, 86, "picture_naming_a_answer", 222.7, 100.7, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_b_answer", 222.7, 116.7, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_c_answer", 222.7, 132.0, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_d_answer", 222.7, 147.3, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_e_answer", 222.7, 162.7, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_f_answer", 222.7, 178.3, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_g_answer", 222.7, 194.0, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_h_answer", 222.7, 209.3, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_i_answer", 222.7, 224.7, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_j_answer", 222.7, 240.0, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_k_answer", 222.7, 255.3, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_l_answer", 222.7, 271.0, 21.3),
+		pep3PDFRecordText(10, 86, "picture_naming_m_answer", 222.7, 286.7, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_n_answer", 222.7, 302.0, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_o_answer", 222.7, 317.3, 22.6),
+		pep3PDFRecordText(10, 86, "picture_naming_p_answer", 246.0, 332.7, 22.7),
+		pep3PDFRecordText(10, 86, "picture_naming_q_answer", 222.7, 348.0, 22.0),
+		pep3PDFRecordText(10, 86, "picture_naming_r_answer", 222.7, 364.0, 22.6),
+		pep3PDFRecordText(10, 86, "picture_naming_s_answer", 222.7, 379.3, 22.6),
+		pep3PDFRecordText(10, 86, "picture_naming_t_answer", 222.7, 394.7, 22.6),
+		pep3PDFRecordText(10, 87, "spoken_phrase", 188.0, 414.7, 67.3),
+		pep3PDFRecordMarks(10, 88, "recognized_characters", pep3PDFCharacterMarks(470.0)),
+		pep3PDFRecordMarks(10, 89, "read_characters", pep3PDFCharacterMarks(519.7)),
+		pep3PDFRecordMarks(10, 90, "matched_characters", pep3PDFCharacterMarks(584.7)),
+
+		// 第11页：91-100
+		pep3PDFRecordMarks(11, 92, "read_words", map[string]pep3BookletPDFOptionMark{ // 92 读出单字
+			"球": pep3PDFMark(180.0, 123.3, 22.7),
+			"狗": pep3PDFMark(217.3, 123.3, 22.7),
+			"猫": pep3PDFMark(180.7, 138.0, 22.0),
+			"屋": pep3PDFMark(217.3, 138.0, 22.7),
+		}),
+		pep3PDFRecordText(11, 95, "animal_question", 201.3, 337.3, 23.4),
+		pep3PDFRecordText(11, 95, "play_question", 229.3, 368.3, 22.7),
+		pep3PDFRecordText(11, 95, "where_question", 183.3, 399.3, 23.4),
+		pep3PDFRecordMarks(11, 96, "sentence_commands", map[string]pep3BookletPDFOptionMark{ // 96 阅读句子及遵从指令
+			"拿起皮球":   pep3PDFMark(192.0, 439.7, 55.3),
+			"皮球放桌子上": pep3PDFMark(210.0, 453.3, 37.3),
+		}),
+		pep3PDFRecordText(11, 97, "put_in_block_count", 173.3, 494.0, 30.0),
+		pep3PDFRecordText(11, 99, "first_attempt", 203.3, 551.0, 33.4),
+		pep3PDFRecordText(11, 99, "second_attempt", 203.3, 566.0, 33.4),
+		pep3PDFRecordText(11, 99, "third_attempt", 203.3, 581.0, 33.4),
+
+		// 第12页：101-111
+		pep3PDFRecordText(12, 101, "two_blocks", 189.3, 102.0, 26.0),
+		pep3PDFRecordText(12, 101, "six_blocks", 234.7, 101.7, 25.6),
+		pep3PDFRecordText(12, 102, "two_blocks", 189.3, 141.0, 24.4),
+		pep3PDFRecordText(12, 102, "seven_blocks", 232.7, 140.7, 25.3),
+		pep3PDFRecordText(12, 104, "stack_completed", 211.3, 197.3, 32.7),
+		pep3PDFRecordText(12, 104, "jar_completed", 213.0, 213.0, 30.3),
+		pep3PDFRecordMarks(12, 105, "matched_colors", pep3PDFColorMarks(251.7)),
+		pep3PDFRecordMarks(12, 106, "named_colors", pep3PDFColorMarks(287.0)),
+		pep3PDFRecordMarks(12, 107, "selected_colors", pep3PDFColorMarks(322.0)),
+		pep3PDFRecordRects(12, 108, "classification_prompt", map[string]pep3BookletPDFRect{ // 108 示范情况
+			"自行完成": pep3PDFCircle(198.0, 366.0, 42.0, 11.0), // 自行完成
+			"部分示范": pep3PDFCircle(247.0, 366.0, 42.0, 11.0), // 部分示范
+			"全部示范": pep3PDFCircle(198.0, 383.0, 42.0, 11.0), // 全部示范
+		}),
+		pep3PDFRecordRects(12, 108, "classification_basis", map[string]pep3BookletPDFRect{ // 108 分类依据
+			"颜色": pep3PDFCircle(189.5, 401.0, 25.0, 11.0), // 颜色
+			"形状": pep3PDFCircle(223.5, 401.0, 25.0, 11.0), // 形状
+		}),
+		pep3PDFRecordText(12, 108, "completed_card_count", 198.0, 422.7, 22.0),
+		pep3PDFRecordMarks(12, 111, "imitated_sounds", map[string]pep3BookletPDFOptionMark{ // 111 模仿声音
+			"m-m-m": pep3PDFMark(198.0, 500.0, 22.0),
+			"ba-ba": pep3PDFMark(206.0, 516.0, 26.0),
+			"pa-ta": pep3PDFMark(206.7, 531.3, 26.0),
+			"la-la": pep3PDFMark(205.3, 546.7, 28.0),
+		}),
+
+		// 第13页：112-122
+		pep3PDFRecordText(13, 112, "digits_7_9", 182.7, 87.0, 20.3),
+		pep3PDFRecordText(13, 112, "digits_5_3", 220.7, 86.7, 22.0),
+		pep3PDFRecordText(13, 113, "digits_2_4_1", 190.0, 106.3, 22.0),
+		pep3PDFRecordText(13, 113, "digits_5_7_9", 236.0, 106.3, 22.0),
+		pep3PDFRecordText(13, 114, "word_street", 188.7, 126.0, 22.0),
+		pep3PDFRecordText(13, 114, "word_car", 234.0, 126.0, 22.0),
+		pep3PDFRecordText(13, 114, "word_bye", 188.7, 140.0, 22.0),
+		pep3PDFRecordRects(13, 115, "repeated_sentences", map[string]pep3BookletPDFRect{ // 115 正确复述短句
+			"bb_looking":    pep3PDFCircle(190.0, 153.0, 45.0, 11.5), // BB 望住
+			"want_biscuit":  pep3PDFCircle(196.0, 167.0, 55.0, 11.5), // 又要饼干
+			"crying_loudly": pep3PDFCircle(196.0, 181.0, 55.0, 11.5), // 佢大声喊
+		}),
+		pep3PDFRecordRects(13, 116, "eye_contact", map[string]pep3BookletPDFRect{ // 116 短暂/没有
+			"brief": pep3PDFRect(177.0, 196.3, 24.0, 9.5),
+			"none":  pep3PDFRect(213.0, 196.3, 24.0, 9.5),
+		}),
+		pep3PDFRecordRects(13, 117, "delayed_echolalia", map[string]pep3BookletPDFRect{ // 117 不适用/过多
+			"not_applicable": pep3PDFRect(177.0, 230.0, 34.0, 9.5),
+			"too_much":       pep3PDFRect(220.0, 230.0, 24.0, 9.5),
+		}),
+		pep3PDFRecordText(13, 119, "pronoun_response", 170.7, 294.7, 40.0),
+		pep3PDFRecordText(13, 120, "spoken_words", 169.3, 349.3, 66.7),
+		pep3PDFRecordText(13, 121, "spoken_words", 169.3, 403.3, 66.7),
+		pep3PDFRecordText(13, 122, "spoken_phrase", 169.3, 473.3, 66.7),
+
+		// 第14页：123-133
+		pep3PDFRecordMarks(14, 123, "oral_commands", map[string]pep3BookletPDFOptionMark{ // 123 口语指令
+			"拍吓个盒":        pep3PDFMark(217.3, 99.7, 22.0),
+			"摸吓只狗":        pep3PDFMark(217.3, 114.0, 22.0),
+			"企起身跳":        pep3PDFMark(217.3, 129.7, 22.0),
+			"攞个杯给我，然后坐低":  pep3PDFMark(218.0, 160.3, 22.0),
+			"敲吓度门，然后摸吓度墙": pep3PDFMark(236.0, 191.3, 22.0),
+		}),
+		pep3PDFRecordMarks(14, 125, "gesture_responses", map[string]pep3BookletPDFOptionMark{ // 125 对手势反应
+			"叫名字+招手":  pep3PDFMark(232.0, 246.3, 29.7),
+			"坐下+拿走积木": pep3PDFMark(192.0, 261.0, 14.7),
+			"交回颜色笔":   pep3PDFMark(246.0, 261.0, 14.7),
+		}),
+		pep3PDFRecordText(14, 125, "other_response", 220.0, 276.3, 40.7),
+		pep3PDFRecordMarks(14, 126, "no_stop_commands", map[string]pep3BookletPDFOptionMark{ // 126 不要/停止
+			"不要": pep3PDFMark(192.0, 313.3, 29.3),
+			"停止": pep3PDFMark(192.0, 327.3, 29.3),
+		}),
+		pep3PDFRecordText(14, 129, "child_answer", 218.0, 387.7, 36.7),
+		pep3PDFRecordText(14, 130, "child_answer", 217.3, 407.3, 36.7),
+		pep3PDFRecordMarks(14, 131, "single_actions", map[string]pep3BookletPDFOptionMark{ // 131 动词动作
+			"跳":   pep3PDFMark(192.0, 427.0, 29.3),
+			"坐低":  pep3PDFMark(228.3, 427.0, 21.7),
+			"企起身": pep3PDFMark(192.0, 441.3, 22.0),
+		}),
+		pep3PDFRecordMarks(14, 133, "wh_questions", map[string]pep3BookletPDFOptionMark{ // 133 问句
+			"何人": pep3PDFMark(191.3, 482.0, 22.7),
+			"何事": pep3PDFMark(237.3, 482.0, 22.0),
+			"何地": pep3PDFMark(192.0, 496.3, 22.0),
+			"何时": pep3PDFMark(237.3, 496.3, 22.0),
+		}),
+
+		// 第15页：134-151
+		pep3PDFRecordMarks(15, 134, "simple_action_commands", map[string]pep3BookletPDFOptionMark{ // 134 简单动作指令
+			"坐低":  pep3PDFMark(193.3, 85.3, 22.0),
+			"起身":  pep3PDFMark(244.0, 85.0, 17.3),
+			"过来":  pep3PDFMark(194.0, 99.0, 20.3),
+			"伸我":  pep3PDFMark(244.0, 98.7, 17.3),
+			"放低手": pep3PDFMark(202.7, 114.7, 18.0),
+			"开门":  pep3PDFMark(244.0, 114.0, 18.0),
+		}),
+		pep3PDFRecordText(15, 134, "other_command", 202.7, 130.0, 22.0),
+		pep3PDFRecordRects(15, 135, "visual_self_stimulation", pep3PDFSlashRects(139.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(15, 136, "space_material_exploration", pep3PDFSlashRects(164.0, 193.0, 34.0, 229.0, 45.0)),
+		pep3PDFRecordRects(15, 137, "environment_exploration", pep3PDFSlashRects(204.0, 193.0, 34.0, 229.0, 45.0)),
+		pep3PDFRecordRects(15, 138, "sound_response", pep3PDFSlashRects(223.0, 193.0, 34.0, 229.0, 45.0)),
+		pep3PDFRecordRects(15, 139, "texture_exploration", pep3PDFSlashRects(242.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(15, 140, "taste_use", pep3PDFSlashRects(263.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(15, 141, "smell_interest", pep3PDFSlashRects(282.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(15, 142, "completed_tests", pep3PDFSlashRects(301.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(15, 144, "repeated_sentences_heard", pep3PDFSlashRects(343.0, 193.0, 31.0, 228.0, 28.0)),
+		pep3PDFRecordRects(15, 145, "repeated_words_sounds", pep3PDFSlashRects(382.0, 193.0, 31.0, 228.0, 28.0)),
+		pep3PDFRecordRects(15, 146, "speech_tone_volume_speed", pep3PDFSlashRects(404.0, 193.0, 31.0, 228.0, 28.0)),
+		pep3PDFRecordRects(15, 147, "meaningless_sounds", pep3PDFSlashRects(444.0, 193.0, 31.0, 228.0, 28.0)),
+		pep3PDFRecordRects(15, 148, "age_appropriate_vocabulary", pep3PDFSlashRects(464.0, 193.0, 31.0, 228.0, 31.0)),
+		pep3PDFRecordRects(15, 149, "self_talk", pep3PDFSlashRects(484.0, 193.0, 31.0, 228.0, 28.0)),
+		pep3PDFRecordRects(15, 150, "age_appropriate_articulation", pep3PDFSlashRects(504.0, 193.0, 31.0, 228.0, 45.0)),
+		pep3PDFRecordRects(15, 151, "spontaneous_communication", pep3PDFSlashRects(524.0, 193.0, 20.0, 218.0, 45.0)),
+
+		// 第16页：152-172
+		pep3PDFRecordRects(16, 154, "cooperation", pep3PDFSlashRects(114.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(16, 155, "organization", pep3PDFSlashRects(139.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(16, 159, "pleasant_emotion", pep3PDFSlashRects(219.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(16, 160, "fear_response", pep3PDFSlashRects(239.0, 193.0, 20.0, 218.0, 28.0)),
+		pep3PDFRecordRects(16, 161, "attention", pep3PDFSlashRects(259.0, 193.0, 20.0, 218.0, 45.0)),
+		pep3PDFRecordRects(16, 162, "transition", pep3PDFSlashRects(279.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(16, 168, "request_help", pep3PDFSlashRects(399.0, 193.0, 20.0, 218.0, 45.0)),
+		pep3PDFRecordRects(16, 169, "movement", pep3PDFSlashRects(419.0, 193.0, 27.0, 226.0, 45.0)),
+		pep3PDFRecordRects(16, 170, "return_to_examiner", pep3PDFSlashRects(439.0, 193.0, 34.0, 232.0, 28.0)),
+		pep3PDFRecordRects(16, 171, "reward_response", pep3PDFSlashRects(459.0, 193.0, 31.0, 228.0, 20.0)),
+		pep3PDFRecordRects(16, 172, "social_reward_response", pep3PDFSlashRects(479.0, 193.0, 31.0, 228.0, 20.0)),
+	}
+}
+
+func pep3PDFRecordText(pageNo, itemNo int, fieldKey string, x, y, width float64) pep3BookletPDFRecordFieldPlacement {
+	return pep3BookletPDFRecordFieldPlacement{PageNo: pageNo, ItemNo: itemNo, FieldKey: fieldKey, X: x, Y: y, Width: width, Size: 7.2}
+}
+
+func pep3PDFRecordMultilineText(pageNo, itemNo int, fieldKey string, lines []pep3BookletPDFTextLine) pep3BookletPDFRecordFieldPlacement {
+	return pep3BookletPDFRecordFieldPlacement{PageNo: pageNo, ItemNo: itemNo, FieldKey: fieldKey, Size: 7.2, TextLines: lines}
+}
+
+func pep3PDFRecordMarks(pageNo, itemNo int, fieldKey string, marks map[string]pep3BookletPDFOptionMark) pep3BookletPDFRecordFieldPlacement {
+	return pep3BookletPDFRecordFieldPlacement{PageNo: pageNo, ItemNo: itemNo, FieldKey: fieldKey, OptionMarks: marks}
+}
+
+func pep3PDFRecordRects(pageNo, itemNo int, fieldKey string, rects map[string]pep3BookletPDFRect) pep3BookletPDFRecordFieldPlacement {
+	return pep3BookletPDFRecordFieldPlacement{PageNo: pageNo, ItemNo: itemNo, FieldKey: fieldKey, OptionRects: rects}
+}
+
+func pep3PDFMark(x, y, width float64) pep3BookletPDFOptionMark {
+	return pep3BookletPDFOptionMark{X: x, Y: y, Width: width, Size: 7.2}
+}
+
+func pep3PDFRect(x, y, w, h float64) pep3BookletPDFRect {
+	return pep3BookletPDFRect{X: x, Y: y, W: w, H: h}
+}
+
+func pep3PDFCircle(centerX, y, w, h float64) pep3BookletPDFRect {
+	return pep3BookletPDFRect{X: centerX - w/2, Y: y, W: w, H: h}
+}
+
+func pep3PDFSlashRects(y, firstX, firstW, secondX, secondW float64) map[string]pep3BookletPDFRect {
+	// 扫描底图里星号在选项左侧，圈选时需要避开星号并贴住文字本身。
+	firstX -= 16.0
+	secondX -= 12.0
+	return map[string]pep3BookletPDFRect{
+		"正常":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"无兴趣":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"无反应":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"抗拒":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"不适用":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"无":    pep3PDFRect(firstX, y, firstW, 11.0),
+		"短":    pep3PDFRect(firstX, y, firstW, 11.0),
+		"接受":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"不察觉":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"不一致":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"反复":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"间中":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"无变化":  pep3PDFRect(firstX, y, firstW, 11.0),
+		"过分刺激": pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异行为": pep3PDFRect(secondX, y, secondW, 11.0),
+		"过度反应": pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异兴趣": pep3PDFRect(secondX, y, secondW, 11.0),
+		"过分兴趣": pep3PDFRect(secondX, y, secondW, 11.0),
+		"混乱":   pep3PDFRect(firstX, y, firstW, 11.0),
+		"过多":   pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异":   pep3PDFRect(secondX, y, secondW, 11.0),
+		"不恰当":  pep3PDFRect(secondX, y, secondW, 11.0),
+		"无法明白": pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异沉迷": pep3PDFRect(secondX, y, secondW, 11.0),
+		"过分反抗": pep3PDFRect(secondX, y, secondW, 11.0),
+		"经常混乱": pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异反应": pep3PDFRect(secondX, y, secondW, 11.0),
+		"极端反应": pep3PDFRect(secondX, y, secondW, 11.0),
+		"过分要求": pep3PDFRect(secondX, y, secondW, 11.0),
+		"怪异动作": pep3PDFRect(secondX, y, secondW, 11.0),
+		"被动":   pep3PDFRect(secondX, y, secondW, 11.0),
+	}
+}
+
+func pep3PDFCharacterMarks(topY float64) map[string]pep3BookletPDFOptionMark {
+	return map[string]pep3BookletPDFOptionMark{
+		"人": pep3PDFMark(184.0, topY, 18.7),
+		"口": pep3PDFMark(215.3, topY, 18.7),
+		"上": pep3PDFMark(250.0, topY, 18.7),
+		"山": pep3PDFMark(184.0, topY+14.3, 18.7),
+		"刀": pep3PDFMark(216.0, topY+14.3, 18.7),
+		"天": pep3PDFMark(250.0, topY+14.3, 18.7),
+		"火": pep3PDFMark(184.0, topY+30.0, 18.7),
+		"手": pep3PDFMark(216.0, topY+30.0, 18.7),
+		"田": pep3PDFMark(250.0, topY+30.0, 18.7),
+	}
+}
+
+func pep3PDFColorMarks(topY float64) map[string]pep3BookletPDFOptionMark {
+	return map[string]pep3BookletPDFOptionMark{
+		"红": pep3PDFMark(183.3, topY, 15.4),
+		"黄": pep3PDFMark(212.3, topY, 15.0),
+		"蓝": pep3PDFMark(239.7, topY, 14.6),
+		"白": pep3PDFMark(184.0, topY+15.3, 14.7),
+		"绿": pep3PDFMark(212.7, topY+15.3, 15.3),
+	}
 }
 
 func pep3BookletPDFItemPageLayouts() []pep3BookletPDFItemPageLayout {
@@ -1108,6 +1865,45 @@ func (r pep3BookletPDFRenderer) text(x, y, size float64, value string) {
 	_ = r.pdf.Text(value)
 }
 
+func (r pep3BookletPDFRenderer) multilineText(lines []pep3BookletPDFTextLine, size float64, value string) {
+	value = cleanPEP3BookletPDFValue(value)
+	if value == "" || len(lines) == 0 {
+		return
+	}
+	_ = r.pdf.SetFont(pep3BookletPDFFontFamily, "", size)
+	remaining := value
+	for _, line := range lines {
+		if strings.TrimSpace(remaining) == "" {
+			return
+		}
+		text, rest := r.consumeTextLine(remaining, line.Width)
+		if strings.TrimSpace(text) == "" {
+			continue
+		}
+		r.pdf.SetXY(line.X, line.Y-pep3BookletPDFLineBaselineGap)
+		_ = r.pdf.Text(text)
+		remaining = rest
+	}
+}
+
+func (r pep3BookletPDFRenderer) consumeTextLine(value string, width float64) (string, string) {
+	value = strings.TrimSpace(value)
+	if value == "" || width <= 0 {
+		return value, ""
+	}
+	runes := []rune(value)
+	current := ""
+	for index, char := range runes {
+		candidate := current + string(char)
+		textWidth, err := r.pdf.MeasureTextWidth(candidate)
+		if err == nil && textWidth > width && current != "" {
+			return current, strings.TrimSpace(string(runes[index:]))
+		}
+		current = candidate
+	}
+	return current, ""
+}
+
 // center 用于居中填值：x 是居中区域左边界，y 是底图横线位置，width 是居中区域宽度，size 是字号。
 func (r pep3BookletPDFRenderer) center(x, y, width, size float64, value string) {
 	value = cleanPEP3BookletPDFValue(value)
@@ -1121,6 +1917,24 @@ func (r pep3BookletPDFRenderer) center(x, y, width, size float64, value string) 
 	}
 	r.pdf.SetXY(x+(width-textWidth)/2, y-pep3BookletPDFLineBaselineGap)
 	_ = r.pdf.Text(value)
+}
+
+func (r pep3BookletPDFRenderer) centerBold(x, y, width, size float64, value string) {
+	value = cleanPEP3BookletPDFValue(value)
+	if value == "" {
+		return
+	}
+	_ = r.pdf.SetFont(pep3BookletPDFFontFamily, "", size)
+	textWidth, err := r.pdf.MeasureTextWidth(value)
+	if err != nil || textWidth > width {
+		textWidth = 0
+	}
+	baseX := x + (width-textWidth)/2
+	baseY := y - pep3BookletPDFLineBaselineGap
+	for _, offsetX := range []float64{0, 0.35, -0.35} {
+		r.pdf.SetXY(baseX+offsetX, baseY)
+		_ = r.pdf.Text(value)
+	}
 }
 
 func cleanPEP3BookletPDFValue(value string) string {

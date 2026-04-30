@@ -16,11 +16,13 @@ import (
 const pep3RecordBookletPDF = "测试员记录册彩(1).pdf"
 
 type pep3SavedInputSnapshot struct {
-	ItemScores        map[int]int          `json:"itemScores"`
-	ItemScoreList     []pep3SavedItemScore `json:"itemScoreList"`
-	RawScores         map[string]int       `json:"rawScores"`
-	RawScoreList      []pep3SavedRawScore  `json:"rawScoreList"`
-	AllowMissingItems bool                 `json:"allowMissingItems"`
+	ItemScores          map[int]int                       `json:"itemScores"`
+	ItemScoreList       []pep3SavedItemScore              `json:"itemScoreList"`
+	RawScores           map[string]int                    `json:"rawScores"`
+	RawScoreList        []pep3SavedRawScore               `json:"rawScoreList"`
+	ItemRecordValues    map[int]map[string]any            `json:"itemRecordValues"`
+	ItemRecordValueList []pep3SavedItemRecordValueRequest `json:"itemRecordValueList"`
+	AllowMissingItems   bool                              `json:"allowMissingItems"`
 }
 
 type pep3SavedItemScore struct {
@@ -31,6 +33,12 @@ type pep3SavedItemScore struct {
 type pep3SavedRawScore struct {
 	ScaleCode string `json:"scaleCode"`
 	RawScore  int    `json:"rawScore"`
+}
+
+type pep3SavedItemRecordValueRequest struct {
+	ItemNo   int    `json:"itemNo"`
+	FieldKey string `json:"fieldKey"`
+	Value    any    `json:"value"`
 }
 
 type pep3BookletItemDefinition struct {
@@ -81,6 +89,10 @@ func buildPEP3Booklet(record model.AssessmentRecordDetailVO) (model.PEP3BookletV
 	if err != nil {
 		return model.PEP3BookletVO{}, err
 	}
+	itemRecordValues, err := decodeSavedPEP3ItemRecordValues(record.InputJSON)
+	if err != nil {
+		return model.PEP3BookletVO{}, err
+	}
 	if len(rawScores) == 0 {
 		rawScores = rawScoresFromPEP3Result(score.Result.Scales)
 	}
@@ -92,22 +104,25 @@ func buildPEP3Booklet(record model.AssessmentRecordDetailVO) (model.PEP3BookletV
 	}
 	warnings = append(warnings, "记录册页面结构已按扫描版PDF的页面和左右版面输出；少数跨页大题的视觉细分行后续可继续补充坐标级布局。")
 
+	pageCount := pep3BookletJSONPageCount()
+	normDataInfo := pep3NormalizeNormDataInfo(score.PEP3NormDataInfo)
 	booklet := model.PEP3BookletVO{
-		Record:          record.AssessmentRecordSummaryVO,
-		TemplateCode:    "PEP3_RECORD_BOOKLET",
-		TemplateVersion: nonEmptyString(score.ScaleVersion, record.ScaleVersion, pep3ScaleVersion),
-		Title:           "PEP-3测试员记录册",
-		ScaleCode:       nonEmptyString(score.ScaleCode, record.AssessmentCode, pep3ScaleCode),
-		ScaleVersion:    nonEmptyString(score.ScaleVersion, record.ScaleVersion),
-		DataStatus:      nonEmptyString(score.DataStatus, record.DataStatus),
-		Sources:         append([]string(nil), score.Sources...),
-		SourcePDF:       pep3RecordBookletPDF,
-		Pages:           make([]model.PEP3BookletPage, 0, 14),
-		Warnings:        uniqueNonEmptyStrings(warnings),
+		Record:           record.AssessmentRecordSummaryVO,
+		TemplateCode:     "PEP3_RECORD_BOOKLET",
+		TemplateVersion:  nonEmptyString(score.ScaleVersion, record.ScaleVersion, pep3ScaleVersion),
+		Title:            "PEP-3测试员记录册",
+		ScaleCode:        nonEmptyString(score.ScaleCode, record.AssessmentCode, pep3ScaleCode),
+		ScaleVersion:     nonEmptyString(score.ScaleVersion, record.ScaleVersion),
+		PEP3NormDataInfo: normDataInfo,
+		DataStatus:       nonEmptyString(score.DataStatus, record.DataStatus),
+		Sources:          append([]string(nil), score.Sources...),
+		SourcePDF:        pep3RecordBookletPDF,
+		Pages:            make([]model.PEP3BookletPage, 0, pageCount),
+		Warnings:         uniqueNonEmptyStrings(warnings),
 	}
 
-	pages := make(map[int]*model.PEP3BookletPage, 14)
-	for pageNo := 1; pageNo <= 14; pageNo++ {
+	pages := make(map[int]*model.PEP3BookletPage, pageCount)
+	for pageNo := 1; pageNo <= pageCount; pageNo++ {
 		page := model.PEP3BookletPage{
 			PageNo:          pageNo,
 			SourcePDFPageNo: pageNo,
@@ -129,14 +144,29 @@ func buildPEP3Booklet(record model.AssessmentRecordDetailVO) (model.PEP3BookletV
 	for _, itemRange := range pep3BookletItemRanges() {
 		page := pages[itemRange.SourcePDFPageNo]
 		rangeItems := filterPEP3BookletItemsByRange(items, itemRange.StartItemNo, itemRange.EndItemNo)
-		page.Sections = append(page.Sections, buildPEP3BookletItemGridSection(itemRange, rangeItems, itemScores))
+		page.Sections = append(page.Sections, buildPEP3BookletItemGridSection(itemRange, rangeItems, itemScores, itemRecordValues))
 		page.Sections = append(page.Sections, buildPEP3BookletPageTallySection(itemRange, rangeItems, itemScores))
 	}
 
-	for pageNo := 1; pageNo <= 14; pageNo++ {
+	for pageNo := 1; pageNo <= pageCount; pageNo++ {
 		booklet.Pages = append(booklet.Pages, *pages[pageNo])
 	}
 	return booklet, nil
+}
+
+func pep3BookletJSONPageCount() int {
+	pageCount := 1
+	for _, itemRange := range pep3BookletItemRanges() {
+		if itemRange.SourcePDFPageNo > pageCount {
+			pageCount = itemRange.SourcePDFPageNo
+		}
+	}
+	for _, placement := range pep3BookletDomainPlacements() {
+		if placement.SourcePDFPageNo > pageCount {
+			pageCount = placement.SourcePDFPageNo
+		}
+	}
+	return pageCount
 }
 
 func buildPEP3BookletCoverSections(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse) []model.PEP3TemplateSection {
@@ -197,7 +227,7 @@ func buildPEP3BookletCoverSections(record model.AssessmentRecordDetailVO, score 
 	return []model.PEP3TemplateSection{basicInfo, scoreSummary, compositeSummary}
 }
 
-func buildPEP3BookletItemGridSection(itemRange pep3BookletItemRange, items []pep3BookletItemDefinition, itemScores map[int]int) model.PEP3TemplateSection {
+func buildPEP3BookletItemGridSection(itemRange pep3BookletItemRange, items []pep3BookletItemDefinition, itemScores map[int]int, itemRecordValues map[int]map[string]any) model.PEP3TemplateSection {
 	return model.PEP3TemplateSection{
 		SectionCode:     fmt.Sprintf("page_%d_item_grid", itemRange.BookletPageNo),
 		Title:           fmt.Sprintf("第%d页 儿童表现记录", itemRange.BookletPageNo),
@@ -207,7 +237,7 @@ func buildPEP3BookletItemGridSection(itemRange pep3BookletItemRange, items []pep
 		BookletPageNo:   itemRange.BookletPageNo,
 		Table: &model.PEP3TemplateTable{
 			Columns: pep3BookletItemGridColumns(),
-			Rows:    pep3BookletItemGridRows(items, itemScores),
+			Rows:    pep3BookletItemGridRows(items, itemScores, itemRecordValues),
 		},
 		Meta: map[string]any{
 			"startItemNo": itemRange.StartItemNo,
@@ -260,6 +290,7 @@ func pep3BookletItemGridColumns() []model.PEP3TemplateColumn {
 	columns := []model.PEP3TemplateColumn{
 		{Key: "itemNo", Label: "项目", Width: 70, Align: "center"},
 		{Key: "itemTitle", Label: "儿童表现记录", Width: 280},
+		{Key: "recordValues", Label: "记录值", Width: 180},
 		{Key: "score", Label: "得分", Width: 70, Align: "center"},
 		{Key: "scoreOptions", Label: "选项", Width: 80, Align: "center"},
 	}
@@ -277,15 +308,19 @@ func pep3BookletDomainColumns(firstKey, firstLabel string) []model.PEP3TemplateC
 	return columns
 }
 
-func pep3BookletItemGridRows(items []pep3BookletItemDefinition, itemScores map[int]int) []map[string]any {
+func pep3BookletItemGridRows(items []pep3BookletItemDefinition, itemScores map[int]int, itemRecordValues map[int]map[string]any) []map[string]any {
 	rows := make([]map[string]any, 0, len(items))
 	for _, item := range items {
 		score, ok := itemScores[item.ItemNo]
+		recordFields := pep3ItemRecordFields(item.ItemNo)
+		recordValues := copyPEP3ItemRecordValues(itemRecordValues[item.ItemNo])
 		row := map[string]any{
 			"itemNo":       item.ItemNo,
 			"itemTitle":    nonEmptyString(item.ItemTitle, item.TestItem),
 			"domainCode":   item.DomainCode,
 			"domainName":   item.Domain,
+			"recordFields": recordFields,
+			"recordValues": recordValues,
 			"score":        "",
 			"scoreOptions": item.ScoreOptions,
 			"standard":     item.Standard,
@@ -303,6 +338,17 @@ func pep3BookletItemGridRows(items []pep3BookletItemDefinition, itemScores map[i
 		rows = append(rows, row)
 	}
 	return rows
+}
+
+func copyPEP3ItemRecordValues(values map[string]any) map[string]any {
+	if len(values) == 0 {
+		return map[string]any{}
+	}
+	out := make(map[string]any, len(values))
+	for key, value := range values {
+		out[key] = value
+	}
+	return out
 }
 
 func pep3BookletDomainRows(items []pep3BookletItemDefinition, itemScores map[int]int) []map[string]any {
@@ -385,6 +431,44 @@ func decodeSavedPEP3InputScores(raw json.RawMessage) (map[int]int, map[string]in
 		}
 	}
 	return itemScores, rawScores, nil
+}
+
+func decodeSavedPEP3ItemRecordValues(raw json.RawMessage) (map[int]map[string]any, error) {
+	if len(raw) == 0 {
+		return map[int]map[string]any{}, nil
+	}
+	var snapshot pep3SavedInputSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return nil, fmt.Errorf("decode PEP-3 input snapshot: %w", err)
+	}
+	return normalizeSavedPEP3ItemRecordValues(snapshot), nil
+}
+
+func normalizeSavedPEP3ItemRecordValues(snapshot pep3SavedInputSnapshot) map[int]map[string]any {
+	out := make(map[int]map[string]any, len(snapshot.ItemRecordValues)+len(snapshot.ItemRecordValueList))
+	for itemNo, values := range snapshot.ItemRecordValues {
+		if itemNo <= 0 {
+			continue
+		}
+		for fieldKey, value := range values {
+			addPEP3ItemRecordValue(out, itemNo, fieldKey, value)
+		}
+	}
+	for _, item := range snapshot.ItemRecordValueList {
+		addPEP3ItemRecordValue(out, item.ItemNo, item.FieldKey, item.Value)
+	}
+	return out
+}
+
+func addPEP3ItemRecordValue(out map[int]map[string]any, itemNo int, fieldKey string, value any) {
+	fieldKey = strings.TrimSpace(fieldKey)
+	if itemNo <= 0 || fieldKey == "" {
+		return
+	}
+	if out[itemNo] == nil {
+		out[itemNo] = map[string]any{}
+	}
+	out[itemNo][fieldKey] = value
 }
 
 func loadPEP3BookletItems() ([]pep3BookletItemDefinition, error) {
@@ -477,10 +561,12 @@ func pep3BookletItemRanges() []pep3BookletItemRange {
 		{SourcePDFPageNo: 8, BookletPageNo: 8, Layout: "left", StartItemNo: 78, EndItemNo: 84},
 		{SourcePDFPageNo: 9, BookletPageNo: 9, Layout: "right", StartItemNo: 85, EndItemNo: 85},
 		{SourcePDFPageNo: 10, BookletPageNo: 10, Layout: "left", StartItemNo: 86, EndItemNo: 90},
-		{SourcePDFPageNo: 11, BookletPageNo: 11, Layout: "right", StartItemNo: 91, EndItemNo: 108},
-		{SourcePDFPageNo: 12, BookletPageNo: 12, Layout: "left", StartItemNo: 109, EndItemNo: 134},
-		{SourcePDFPageNo: 13, BookletPageNo: 13, Layout: "full", StartItemNo: 135, EndItemNo: 153},
-		{SourcePDFPageNo: 14, BookletPageNo: 14, Layout: "full", StartItemNo: 154, EndItemNo: 172},
+		{SourcePDFPageNo: 11, BookletPageNo: 11, Layout: "right", StartItemNo: 91, EndItemNo: 100},
+		{SourcePDFPageNo: 12, BookletPageNo: 12, Layout: "left", StartItemNo: 101, EndItemNo: 111},
+		{SourcePDFPageNo: 13, BookletPageNo: 13, Layout: "full", StartItemNo: 112, EndItemNo: 122},
+		{SourcePDFPageNo: 14, BookletPageNo: 14, Layout: "full", StartItemNo: 123, EndItemNo: 133},
+		{SourcePDFPageNo: 15, BookletPageNo: 15, Layout: "full", StartItemNo: 134, EndItemNo: 151},
+		{SourcePDFPageNo: 16, BookletPageNo: 16, Layout: "full", StartItemNo: 152, EndItemNo: 172},
 	}
 }
 

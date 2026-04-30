@@ -62,17 +62,19 @@ func buildPEP3Report(record model.AssessmentRecordDetailVO) (model.PEP3ReportVO,
 	compositeRows := buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)
 	warnings := collectPEP3ReportWarnings(score)
 	summary := buildPEP3ReportSummary(compositeRows, warnings)
+	normDataInfo := pep3NormalizeNormDataInfo(score.PEP3NormDataInfo)
 
 	report := model.PEP3ReportVO{
-		Record:          record.AssessmentRecordSummaryVO,
-		TemplateCode:    "PEP3_EXPLANATORY_REPORT",
-		TemplateVersion: nonEmptyString(score.ScaleVersion, record.ScaleVersion, pep3ScaleVersion),
-		Title:           "PEP-3解释性报告",
-		ScaleCode:       nonEmptyString(score.ScaleCode, record.AssessmentCode, pep3ScaleCode),
-		ScaleVersion:    nonEmptyString(score.ScaleVersion, record.ScaleVersion),
-		DataStatus:      nonEmptyString(score.DataStatus, record.DataStatus),
-		Sources:         append([]string(nil), score.Sources...),
-		Sections:        buildPEP3ReportSections(record, developmentRows, behaviorRows, caregiverReportRows, compositeRows, summary, warnings),
+		Record:           record.AssessmentRecordSummaryVO,
+		TemplateCode:     "PEP3_EXPLANATORY_REPORT",
+		TemplateVersion:  nonEmptyString(score.ScaleVersion, record.ScaleVersion, pep3ScaleVersion),
+		Title:            "PEP-3解释性报告",
+		ScaleCode:        nonEmptyString(score.ScaleCode, record.AssessmentCode, pep3ScaleCode),
+		ScaleVersion:     nonEmptyString(score.ScaleVersion, record.ScaleVersion),
+		PEP3NormDataInfo: normDataInfo,
+		DataStatus:       nonEmptyString(score.DataStatus, record.DataStatus),
+		Sources:          append([]string(nil), score.Sources...),
+		Sections:         buildPEP3ReportSections(record, developmentRows, behaviorRows, caregiverReportRows, compositeRows, summary, warnings),
 	}
 	return report, nil
 }
@@ -83,6 +85,7 @@ func decodeSavedPEP3Score(raw json.RawMessage) (PEP3ScoreResponse, error) {
 	}
 	var score PEP3ScoreResponse
 	if err := json.Unmarshal(raw, &score); err == nil && score.Result.Scales != nil {
+		score.PEP3ScoreDataInfo = pep3NormalizeScoreDataInfo(score.PEP3ScoreDataInfo)
 		return score, nil
 	}
 
@@ -95,8 +98,9 @@ func decodeSavedPEP3Score(raw json.RawMessage) (PEP3ScoreResponse, error) {
 	}
 	return PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
-			ScaleCode:    pep3ScaleCode,
-			ScaleVersion: pep3ScaleVersion,
+			ScaleCode:        pep3ScaleCode,
+			ScaleVersion:     pep3ScaleVersion,
+			PEP3NormDataInfo: pep3DefaultNormDataInfo(),
 		},
 		Result: result,
 	}, nil

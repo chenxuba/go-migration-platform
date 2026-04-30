@@ -2,6 +2,7 @@
 import {
   BookOutlined,
   CheckCircleOutlined,
+  CloseOutlined,
   FileTextOutlined,
   FormOutlined,
   ReloadOutlined,
@@ -26,6 +27,7 @@ import {
   type PEP3AssessmentRecordSummary,
   type PEP3Booklet,
   type PEP3DraftSaveRequest,
+  type PEP3ItemRecordField,
   type PEP3RawScoreField,
   type PEP3Report,
   type PEP3ScaleCode,
@@ -46,6 +48,7 @@ interface DraftEditorState {
   allowMissingItems: boolean
   itemScores: Record<number, number | undefined>
   rawScores: Record<string, number | undefined>
+  itemRecordValues: Record<number, Record<string, unknown>>
 }
 
 const activeTab = ref<WorkbenchTab>('drafts')
@@ -101,6 +104,7 @@ const editor = reactive<DraftEditorState>({
   allowMissingItems: true,
   itemScores: {},
   rawScores: {},
+  itemRecordValues: {},
 })
 
 const developmentRawScoreFields = computed(() => {
@@ -253,6 +257,7 @@ function resetEditor() {
   editor.allowMissingItems = true
   editor.itemScores = {}
   editor.rawScores = {}
+  editor.itemRecordValues = {}
   currentProgress.value = undefined
   activeGroupKeys.value = ['booklet_page_2']
 }
@@ -269,6 +274,7 @@ function applyDraftInput(input?: PEP3DraftSaveRequest) {
   editor.allowMissingItems = input.allowMissingItems ?? true
   editor.itemScores = {}
   editor.rawScores = {}
+  editor.itemRecordValues = {}
   Object.entries(input.itemScores || {}).forEach(([itemNo, score]) => {
     editor.itemScores[Number(itemNo)] = Number(score)
   })
@@ -280,6 +286,12 @@ function applyDraftInput(input?: PEP3DraftSaveRequest) {
   })
   ;(input.rawScoreList || []).forEach((item) => {
     editor.rawScores[item.scaleCode] = item.rawScore
+  })
+  Object.entries(input.itemRecordValues || {}).forEach(([itemNo, values]) => {
+    editor.itemRecordValues[Number(itemNo)] = { ...(values || {}) }
+  })
+  ;(input.itemRecordValueList || []).forEach((item) => {
+    setItemRecordValue(item.itemNo, item.fieldKey, item.value)
   })
 }
 
@@ -367,6 +379,11 @@ function buildPayload(): PEP3DraftSaveRequest {
     .filter(([scaleCode, score]) => caregiverScaleCodes.value.has(scaleCode) && typeof score === 'number' && Number.isFinite(score))
     .map(([scaleCode, rawScore]) => ({ scaleCode: scaleCode as PEP3ScaleCode, rawScore: Number(rawScore) }))
     .sort((a, b) => a.scaleCode.localeCompare(b.scaleCode))
+  const itemRecordValueList = Object.entries(editor.itemRecordValues)
+    .flatMap(([itemNo, values]) => Object.entries(values || {})
+      .filter(([, value]) => !isEmptyRecordValue(value))
+      .map(([fieldKey, value]) => ({ itemNo: Number(itemNo), fieldKey, value })))
+    .sort((a, b) => a.itemNo - b.itemNo || a.fieldKey.localeCompare(b.fieldKey))
 
   return {
     id: editor.id,
@@ -379,7 +396,82 @@ function buildPayload(): PEP3DraftSaveRequest {
     allowMissingItems: editor.allowMissingItems,
     itemScoreList,
     rawScoreList,
+    itemRecordValueList,
   }
+}
+
+function getItemRecordValue(itemNo: number, fieldKey: string) {
+  return editor.itemRecordValues[itemNo]?.[fieldKey]
+}
+
+function getItemRecordTextValue(itemNo: number, fieldKey: string) {
+  const value = getItemRecordValue(itemNo, fieldKey)
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : ''
+}
+
+function getItemRecordNumberValue(itemNo: number, fieldKey: string) {
+  const value = getItemRecordValue(itemNo, fieldKey)
+  if (typeof value === 'number' && Number.isFinite(value))
+    return value
+  if (typeof value === 'string' && value.trim() !== '' && Number.isFinite(Number(value)))
+    return Number(value)
+  return undefined
+}
+
+function getItemRecordSelectValue(itemNo: number, fieldKey: string) {
+  const value = getItemRecordValue(itemNo, fieldKey)
+  return typeof value === 'string' || typeof value === 'number' ? value : undefined
+}
+
+function getItemRecordArrayValue(itemNo: number, fieldKey: string): string[] {
+  const value = getItemRecordValue(itemNo, fieldKey)
+  return Array.isArray(value) ? value.map(item => String(item)) : []
+}
+
+function recordFieldOptions(field: PEP3ItemRecordField) {
+  return (field.options || []).map(option => ({
+    label: option.label,
+    value: option.value,
+  }))
+}
+
+function recordFieldControlClass(field: PEP3ItemRecordField) {
+  return [
+    'record-field',
+    `record-field--${field.fieldType}`,
+  ]
+}
+
+function setItemRecordValue(itemNo: number, fieldKey: string, value: unknown) {
+  if (isEmptyRecordValue(value)) {
+    clearItemRecordValue(itemNo, fieldKey)
+    return
+  }
+  if (!editor.itemRecordValues[itemNo])
+    editor.itemRecordValues[itemNo] = {}
+  editor.itemRecordValues[itemNo][fieldKey] = value
+}
+
+function clearItemRecordValue(itemNo: number, fieldKey: string) {
+  if (!editor.itemRecordValues[itemNo])
+    return
+  delete editor.itemRecordValues[itemNo][fieldKey]
+  if (!Object.keys(editor.itemRecordValues[itemNo]).length)
+    delete editor.itemRecordValues[itemNo]
+}
+
+function hasItemRecordValue(itemNo: number, fieldKey: string) {
+  return !isEmptyRecordValue(getItemRecordValue(itemNo, fieldKey))
+}
+
+function isEmptyRecordValue(value: unknown) {
+  if (value === undefined || value === null)
+    return true
+  if (typeof value === 'string')
+    return value.trim() === ''
+  if (Array.isArray(value))
+    return value.length === 0
+  return false
 }
 
 async function saveDraft(silent = false) {
@@ -559,7 +651,7 @@ function antTableColumns(section: PEP3TemplateSection) {
       key: column.key,
       width: column.width,
       align: column.align as any,
-      customRender: ({ text }: { text: unknown }) => formatPreviewCell(text, column.key),
+      customRender: ({ text, record }: { text: unknown, record: Record<string, any> }) => formatPreviewCell(text, column.key, record),
     }
     if (!column.group) {
       columns.push(antColumn)
@@ -580,15 +672,47 @@ function antTableColumns(section: PEP3TemplateSection) {
   return columns
 }
 
-function formatPreviewCell(value: unknown, columnKey: string) {
+function formatPreviewCell(value: unknown, columnKey: string, record?: Record<string, any>) {
   if (Array.isArray(value))
     return value.join('、')
+  if (columnKey === 'recordValues' && value && typeof value === 'object')
+    return formatRecordValues(value as Record<string, unknown>, record?.recordFields || [])
   if (value === undefined || value === null || value === '') {
     return ['developmentAge', 'percentileRank', 'scaledScore', 'standardScoreSum', 'level'].includes(columnKey)
       ? '待校对'
       : '-'
   }
   return value
+}
+
+function formatRecordValues(values: Record<string, unknown>, fields: Array<{ key: string, label: string, displayType?: string, options?: Array<{ value: string, label: string }> }> = []) {
+  const fieldByKey = new Map(fields.map(field => [field.key, field]))
+  const knownEntries = fields
+    .filter(field => !isEmptyRecordValue(values?.[field.key]))
+    .map(field => [field.key, values[field.key], field] as const)
+  const unknownEntries = Object.entries(values || {})
+    .filter(([key, value]) => !fieldByKey.has(key) && !isEmptyRecordValue(value))
+    .map(([key, value]) => [key, value, undefined] as const)
+  const entries = [...knownEntries, ...unknownEntries]
+  if (!entries.length)
+    return '-'
+  return entries.map(([key, value, field]) => {
+    const type = field?.displayType ? `(${field.displayType})` : ''
+    return `${field?.label || key}${type}: ${formatRecordValue(value, field)}`
+  }).join('；')
+}
+
+function formatRecordValue(value: unknown, field?: { options?: Array<{ value: string, label: string }> }): string {
+  if (Array.isArray(value))
+    return value.map(item => formatRecordValue(item, field)).filter(Boolean).join('、')
+  if (value === undefined || value === null)
+    return ''
+  const optionLabel = field?.options?.find(option => option.value === String(value))?.label
+  if (optionLabel)
+    return optionLabel
+  if (typeof value === 'object')
+    return JSON.stringify(value)
+  return String(value)
 }
 
 function caregiverRawScoreDisplay(row: { progress?: { caregiverRawScoreCount?: number }, rawScoreCount?: number }) {
@@ -836,6 +960,87 @@ onMounted(async () => {
                         </template>
                         <a class="standard-link">评分标准</a>
                       </a-popover>
+                      <div v-if="item.recordFields?.length" class="record-field-list">
+                        <div v-for="field in item.recordFields" :key="field.key" :class="recordFieldControlClass(field)">
+                          <div class="record-field__head">
+                            <span class="record-field__label">{{ field.label }}</span>
+                            <a-tag v-if="field.displayType" class="record-field__type">{{ field.displayType }}</a-tag>
+                          </div>
+                          <a-input
+                            v-if="field.fieldType === 'text'"
+                            allow-clear
+                            size="small"
+                            class="record-field__input"
+                            :placeholder="field.placeholder"
+                            :value="getItemRecordTextValue(item.itemNo, field.key)"
+                            @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                          />
+                          <a-input-number
+                            v-else-if="field.fieldType === 'number'"
+                            size="small"
+                            class="record-field__number"
+                            :min="0"
+                            :precision="0"
+                            :placeholder="field.placeholder"
+                            :value="getItemRecordNumberValue(item.itemNo, field.key)"
+                            @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                          />
+                          <a-textarea
+                            v-else-if="field.fieldType === 'textarea'"
+                            allow-clear
+                            size="small"
+                            class="record-field__textarea"
+                            :auto-size="{ minRows: 1, maxRows: 3 }"
+                            :placeholder="field.placeholder"
+                            :value="getItemRecordTextValue(item.itemNo, field.key)"
+                            @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                          />
+                          <div
+                            v-else-if="field.fieldType === 'radio'"
+                            class="record-field__radio-wrap"
+                          >
+                            <a-radio-group
+                              size="small"
+                              button-style="solid"
+                              class="record-field__radio"
+                              :value="getItemRecordSelectValue(item.itemNo, field.key)"
+                              @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                            >
+                              <a-radio-button v-for="option in field.options || []" :key="option.value" :value="option.value">
+                                {{ option.label }}
+                              </a-radio-button>
+                            </a-radio-group>
+                            <a-tooltip v-if="hasItemRecordValue(item.itemNo, field.key)" title="清除选择">
+                              <a-button
+                                type="text"
+                                size="small"
+                                class="record-field__clear"
+                                @click="clearItemRecordValue(item.itemNo, field.key)"
+                              >
+                                <template #icon>
+                                  <CloseOutlined />
+                                </template>
+                              </a-button>
+                            </a-tooltip>
+                          </div>
+                          <a-checkbox-group
+                            v-else-if="field.fieldType === 'checkbox_group'"
+                            class="record-field__checks"
+                            :options="recordFieldOptions(field)"
+                            :value="getItemRecordArrayValue(item.itemNo, field.key)"
+                            @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                          />
+                          <a-input
+                            v-else
+                            allow-clear
+                            size="small"
+                            class="record-field__input"
+                            :placeholder="field.placeholder"
+                            :value="getItemRecordTextValue(item.itemNo, field.key)"
+                            @update:value="value => setItemRecordValue(item.itemNo, field.key, value)"
+                          />
+                        </div>
+                      </div>
                     </div>
                     <a-radio-group v-model:value="editor.itemScores[item.itemNo]" button-style="solid" size="small">
                       <a-radio-button v-for="option in item.scoreOptions" :key="option.value" :value="option.value">
@@ -1177,6 +1382,118 @@ onMounted(async () => {
   }
 }
 
+.record-field-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px 12px;
+  margin-top: 10px;
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e7edf3;
+  border-radius: 6px;
+}
+
+.record-field {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+
+.record-field--checkbox_group,
+.record-field--textarea {
+  grid-column: span 2;
+}
+
+.record-field__head {
+  display: flex;
+  flex: 0 0 112px;
+  align-items: center;
+  gap: 6px;
+  min-height: 24px;
+  min-width: 0;
+}
+
+.record-field__label {
+  min-width: 0;
+  color: #475467;
+  font-size: 12px;
+  line-height: 24px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.record-field__type {
+  flex: 0 0 auto;
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.record-field__input {
+  width: 220px;
+  max-width: 100%;
+}
+
+.record-field__number {
+  width: 120px;
+}
+
+.record-field__textarea {
+  flex: 1;
+  min-width: 280px;
+}
+
+.record-field__radio-wrap {
+  display: flex;
+  flex: 1;
+  align-items: flex-start;
+  gap: 4px;
+  min-width: 0;
+}
+
+.record-field__radio {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.record-field__radio :deep(.ant-radio-button-wrapper) {
+  height: 24px;
+  padding: 0 10px;
+  line-height: 22px;
+  border-radius: 4px;
+}
+
+.record-field__clear {
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #98a2b3;
+}
+
+.record-field__clear:hover {
+  color: #667085;
+  background: #eef2f6;
+}
+
+.record-field__checks {
+  display: flex;
+  flex: 1;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-top: 2px;
+}
+
+.record-field__checks :deep(.ant-checkbox-wrapper) {
+  margin-inline-start: 0;
+  color: #344054;
+  font-size: 12px;
+}
+
 .raw-score-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -1347,6 +1664,30 @@ onMounted(async () => {
 
   .editor-side {
     order: -1;
+  }
+
+  .record-field-list {
+    grid-template-columns: 1fr;
+  }
+
+  .record-field--checkbox_group,
+  .record-field--textarea {
+    grid-column: span 1;
+  }
+
+  .record-field {
+    flex-wrap: wrap;
+  }
+
+  .record-field__head {
+    flex-basis: 100%;
+  }
+
+  .record-field__input,
+  .record-field__textarea {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
   }
 }
 </style>

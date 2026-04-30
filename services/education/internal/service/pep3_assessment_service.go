@@ -17,7 +17,9 @@ import (
 
 const (
 	pep3ScaleCode       = "PEP3"
-	pep3ScaleVersion    = "2025-draft"
+	pep3ScaleVersion    = "2025-92mo-draft"
+	pep3LegacyVersion   = "2025-draft"
+	pep3NormSourcePDF   = "PEP-3常模(2025).pdf"
 	pep3ItemBankFile    = "pep3-item-bank-simplified-draft.json"
 	pep3DomainMapFile   = "pep3-score-domain-map.json"
 	pep3NormFile        = "pep3-norm-conversion-ocr-draft.json"
@@ -26,10 +28,11 @@ const (
 )
 
 type PEP3ScoreDataInfo struct {
-	ScaleCode    string   `json:"scaleCode"`
-	ScaleVersion string   `json:"scaleVersion"`
-	DataStatus   string   `json:"dataStatus"`
-	Sources      []string `json:"sources"`
+	ScaleCode    string `json:"scaleCode"`
+	ScaleVersion string `json:"scaleVersion"`
+	model.PEP3NormDataInfo
+	DataStatus string   `json:"dataStatus"`
+	Sources    []string `json:"sources"`
 }
 
 type PEP3ScoreResponse struct {
@@ -189,17 +192,76 @@ func buildPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
 	if err != nil {
 		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("load PEP-3 norm records: %w", err)
 	}
+	normDataInfo := pep3NormDataInfoFromRecords(norms)
 	engine, err := pep3score.NewEngine(items, domains, norms)
 	if err != nil {
 		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("build PEP-3 score engine: %w", err)
 	}
 
 	return engine, PEP3ScoreDataInfo{
-		ScaleCode:    pep3ScaleCode,
-		ScaleVersion: pep3ScaleVersion,
-		DataStatus:   dataStatus,
-		Sources:      sources,
+		ScaleCode:        pep3ScaleCode,
+		ScaleVersion:     pep3ScaleVersion,
+		PEP3NormDataInfo: normDataInfo,
+		DataStatus:       dataStatus,
+		Sources:          sources,
 	}, nil
+}
+
+func pep3DefaultNormDataInfo() model.PEP3NormDataInfo {
+	return model.PEP3NormDataInfo{
+		NormVersion:             pep3ScaleVersion,
+		DevelopmentAgeMaxMonths: 92,
+		NormAgeBandMaxMonths:    89,
+		NormSourcePDF:           pep3NormSourcePDF,
+	}
+}
+
+func pep3NormDataInfoFromRecords(records []pep3score.NormRecord) model.PEP3NormDataInfo {
+	info := pep3DefaultNormDataInfo()
+	for _, record := range records {
+		if record.SourcePDF != "" {
+			info.NormSourcePDF = record.SourcePDF
+		}
+		switch record.TableType {
+		case pep3score.TableDevelopmentAge:
+			if record.DevelopmentAgeMonths != nil && *record.DevelopmentAgeMonths > info.DevelopmentAgeMaxMonths {
+				info.DevelopmentAgeMaxMonths = *record.DevelopmentAgeMonths
+			}
+		case pep3score.TablePercentile, pep3score.TableScaledScore:
+			if record.AgeMaxMonths != nil && *record.AgeMaxMonths > info.NormAgeBandMaxMonths {
+				info.NormAgeBandMaxMonths = *record.AgeMaxMonths
+			}
+		}
+	}
+	return info
+}
+
+func pep3NormalizeNormDataInfo(info model.PEP3NormDataInfo) model.PEP3NormDataInfo {
+	defaultInfo := pep3DefaultNormDataInfo()
+	if strings.TrimSpace(info.NormVersion) == "" || strings.TrimSpace(info.NormVersion) == pep3LegacyVersion {
+		info.NormVersion = defaultInfo.NormVersion
+	}
+	if info.DevelopmentAgeMaxMonths == 0 {
+		info.DevelopmentAgeMaxMonths = defaultInfo.DevelopmentAgeMaxMonths
+	}
+	if info.NormAgeBandMaxMonths == 0 {
+		info.NormAgeBandMaxMonths = defaultInfo.NormAgeBandMaxMonths
+	}
+	if strings.TrimSpace(info.NormSourcePDF) == "" {
+		info.NormSourcePDF = defaultInfo.NormSourcePDF
+	}
+	return info
+}
+
+func pep3NormalizeScoreDataInfo(info PEP3ScoreDataInfo) PEP3ScoreDataInfo {
+	if strings.TrimSpace(info.ScaleCode) == "" {
+		info.ScaleCode = pep3ScaleCode
+	}
+	if strings.TrimSpace(info.ScaleVersion) == "" || strings.TrimSpace(info.ScaleVersion) == pep3LegacyVersion {
+		info.ScaleVersion = pep3ScaleVersion
+	}
+	info.PEP3NormDataInfo = pep3NormalizeNormDataInfo(info.PEP3NormDataInfo)
+	return info
 }
 
 func resolvePEP3DataDir() (string, error) {

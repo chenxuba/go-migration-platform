@@ -37,6 +37,12 @@ export interface PEP3ItemScoreInput {
   score: 0 | 1 | 2 | number
 }
 
+export interface PEP3ItemRecordValueInput {
+  itemNo: number
+  fieldKey: string
+  value: unknown
+}
+
 export interface PEP3RawScoreInput {
   scaleCode: PEP3ScaleCode
   rawScore: number
@@ -64,6 +70,8 @@ export interface PEP3DraftSaveRequest {
   itemScoreList?: PEP3ItemScoreInput[]
   rawScores?: Partial<Record<PEP3ScaleCode, number>>
   rawScoreList?: PEP3RawScoreInput[]
+  itemRecordValues?: Record<number, Record<string, unknown>>
+  itemRecordValueList?: PEP3ItemRecordValueInput[]
   allowMissingItems?: boolean
 }
 
@@ -72,6 +80,8 @@ export interface PEP3RecordCreateRequest extends PEP3ScoreRequest {
   studentName?: string
   examinerName?: string
   remark?: string
+  itemRecordValues?: Record<number, Record<string, unknown>>
+  itemRecordValueList?: PEP3ItemRecordValueInput[]
 }
 
 export interface PEP3AssessmentRecordQueryModel {
@@ -100,6 +110,21 @@ export interface PEP3ScoreOption {
   value: number
   label: string
   description?: string
+}
+
+export interface PEP3ItemRecordFieldOption {
+  value: string
+  label: string
+}
+
+export interface PEP3ItemRecordField {
+  key: string
+  label: string
+  fieldType: 'text' | 'textarea' | 'number' | 'radio' | 'checkbox_group' | string
+  displayType?: string
+  required?: boolean
+  placeholder?: string
+  options?: PEP3ItemRecordFieldOption[]
 }
 
 export interface PEP3AssessmentFormField {
@@ -144,6 +169,7 @@ export interface PEP3AssessmentItem {
   domainName: string
   standard: string
   scoreOptions: PEP3ScoreOption[]
+  recordFields?: PEP3ItemRecordField[]
   sourcePdf?: string
   sourcePages?: number[]
   ocrStatus?: string
@@ -166,11 +192,20 @@ export interface PEP3SubmitContract {
   dateFormat: string
   itemScoreListKey: string
   rawScoreListKey: string
+  itemRecordValuesKey?: string
+  itemRecordValueListKey?: string
   requiredBaseFields: string[]
   allowedItemScores: number[]
 }
 
-export interface PEP3AssessmentFormTemplate {
+export interface PEP3NormDataInfo {
+  normVersion: string
+  developmentAgeMaxMonths: number
+  normAgeBandMaxMonths: number
+  normSourcePdf: string
+}
+
+export interface PEP3AssessmentFormTemplate extends PEP3NormDataInfo {
   templateCode: 'PEP3_ASSESSMENT_FORM' | string
   templateVersion: string
   title: string
@@ -243,7 +278,7 @@ export interface PEP3AssessmentResult {
   warnings?: string[]
 }
 
-export interface PEP3ScoreResponse {
+export interface PEP3ScoreResponse extends PEP3NormDataInfo {
   scaleCode: 'PEP3' | string
   scaleVersion: string
   dataStatus: string
@@ -375,7 +410,7 @@ export interface PEP3TemplateSection {
   meta?: Record<string, unknown>
 }
 
-export interface PEP3Report {
+export interface PEP3Report extends PEP3NormDataInfo {
   record: PEP3AssessmentRecordSummary
   templateCode: 'PEP3_EXPLANATORY_REPORT' | string
   templateVersion: string
@@ -396,7 +431,7 @@ export interface PEP3BookletPage {
   meta?: Record<string, unknown>
 }
 
-export interface PEP3Booklet {
+export interface PEP3Booklet extends PEP3NormDataInfo {
   record: PEP3AssessmentRecordSummary
   templateCode: 'PEP3_RECORD_BOOKLET' | string
   templateVersion: string
