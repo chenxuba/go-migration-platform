@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 
 export type PEP3DateString = string
@@ -450,6 +452,19 @@ export function getPEP3AssessmentReportApi(id: number) {
 
 export function getPEP3AssessmentBookletApi(id: number) {
   return useGet<PEP3Booklet>('/api/v1/assessments/pep3/records/booklet', { id })
+}
+
+export function downloadPEP3AssessmentBookletPdfApi(id: number) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/assessments/pep3/records/booklet/pdf', {
+    params: { id },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
 }
 
 export function pagePEP3AssessmentRecordsApi(data: PEP3RecordPageRequest) {

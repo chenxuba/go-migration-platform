@@ -10,6 +10,7 @@ require (
 	github.com/meilisearch/meilisearch-go v0.36.2
 	github.com/nats-io/nats.go v1.51.0
 	github.com/qiniu/go-sdk/v7 v7.26.5
+	github.com/signintech/gopdf v0.33.0
 	github.com/xuri/excelize/v2 v2.9.1
 	golang.org/x/crypto v0.49.0
 )
@@ -30,6 +31,8 @@ require (
 	github.com/klauspost/compress v1.18.5 // indirect
 	github.com/nats-io/nkeys v0.4.15 // indirect
 	github.com/nats-io/nuid v1.0.1 // indirect
+	github.com/phpdave11/gofpdi v1.0.14-0.20211212211723-1f10f9844311 // indirect
+	github.com/pkg/errors v0.8.1 // indirect
 	github.com/richardlehane/mscfb v1.0.4 // indirect
 	github.com/richardlehane/msoleps v1.0.4 // indirect
 	github.com/tiendc/go-deepcopy v1.6.0 // indirect

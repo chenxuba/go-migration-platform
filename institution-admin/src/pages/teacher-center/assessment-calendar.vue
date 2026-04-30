@@ -11,6 +11,7 @@ import { Modal } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import {
   deletePEP3AssessmentDraftApi,
+  downloadPEP3AssessmentBookletPdfApi,
   getPEP3AssessmentBookletApi,
   getPEP3AssessmentDraftDetailApi,
   getPEP3AssessmentFormTemplateApi,
@@ -208,7 +209,7 @@ const recordColumns: any[] = [
   { title: '测试员', dataIndex: 'examinerName', key: 'examinerName', width: 140 },
   { title: '数据状态', dataIndex: 'dataStatus', key: 'dataStatus', width: 260 },
   { title: '创建时间', dataIndex: 'createdTime', key: 'createdTime', width: 170 },
-  { title: '操作', dataIndex: 'action', key: 'action', width: 190, fixed: 'right' },
+  { title: '操作', dataIndex: 'action', key: 'action', width: 250, fixed: 'right' },
 ]
 
 function unwrap<T>(res: { data?: T, result?: T }): T {
@@ -504,6 +505,27 @@ async function openBooklet(row: PEP3AssessmentRecordSummary) {
   }
 }
 
+async function openBookletPdf(row: PEP3AssessmentRecordSummary) {
+  previewLoading.value = true
+  const previewWindow = window.open('', '_blank')
+  try {
+    const response = await downloadPEP3AssessmentBookletPdfApi(row.id)
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    if (previewWindow)
+      previewWindow.location.href = url
+    else
+      window.open(url, '_blank', 'noopener,noreferrer')
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+  catch (error: any) {
+    previewWindow?.close()
+    messageService.error(getErrorMessage(error, '生成记录册PDF失败'))
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
 function continueDraftRow(row: Record<string, any>) {
   return continueDraft(row as PEP3AssessmentDraftSummary)
 }
@@ -522,6 +544,10 @@ function openReportRow(row: Record<string, any>) {
 
 function openBookletRow(row: Record<string, any>) {
   return openBooklet(row as PEP3AssessmentRecordSummary)
+}
+
+function openBookletPdfRow(row: Record<string, any>) {
+  return openBookletPdf(row as PEP3AssessmentRecordSummary)
 }
 
 function antTableColumns(section: PEP3TemplateSection) {
@@ -737,6 +763,7 @@ onMounted(async () => {
                 <a-space>
                   <a @click="openReportRow(record)">解释报告</a>
                   <a @click="openBookletRow(record)">记录册</a>
+                  <a @click="openBookletPdfRow(record)">记录册PDF</a>
                 </a-space>
               </template>
             </template>
