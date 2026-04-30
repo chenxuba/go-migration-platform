@@ -23,7 +23,8 @@ const (
 	pep3BookletPDFPageHeight       = 779.4000244140625
 	pep3BookletPDFRightPageOffsetX = pep3BookletPDFPageWidth
 	pep3BookletPDFFontFamily       = "pep3-cjk"
-	pep3BookletPDFLineBaselineGap  = 2.2
+	// 全局竖向微调：数值越大，所有填充值越靠上；数值越小，所有填充值越靠下。
+	pep3BookletPDFLineBaselineGap = 2.2
 )
 
 type pep3BookletPDFRenderer struct {
@@ -87,21 +88,23 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	_ = r.pdf.SetPage(1)
 	r.pdf.SetTextColor(58, 58, 58)
 
-	r.text(pep3RightPageX(690), 177, 10, record.StudentName)
-	r.text(pep3RightPageX(690), 232, 10, record.ExaminerName)
-	r.text(pep3RightPageX(690), 252, 10, record.Remark)
+	// 第1部分：儿童资料。格式为 text(x, y, 字号, 值)，x/y 对应底图横线位置。
+	r.text(pep3RightPageX(690), 185, 10, record.StudentName)  // 儿童姓名
+	r.text(pep3RightPageX(690), 240, 10, record.ExaminerName) // 测试员姓名
+	r.text(pep3RightPageX(690), 252, 10, record.Remark)       // 备注
 
 	assessmentYear, assessmentMonth, assessmentDay := dateParts(record.AssessmentDate)
 	birthYear, birthMonth, birthDay := dateParts(record.BirthDate)
-	r.center(pep3RightPageX(956), 217, 48, 9, assessmentYear)
-	r.center(pep3RightPageX(1012), 217, 45, 9, assessmentMonth)
-	r.center(pep3RightPageX(1069), 217, 45, 9, assessmentDay)
-	r.center(pep3RightPageX(956), 237, 48, 9, birthYear)
-	r.center(pep3RightPageX(1012), 237, 45, 9, birthMonth)
-	r.center(pep3RightPageX(1069), 237, 45, 9, birthDay)
-	r.center(pep3RightPageX(956), 257, 48, 9, strconv.Itoa(record.AgeYears))
-	r.center(pep3RightPageX(1012), 257, 45, 9, strconv.Itoa(record.AgeMonths))
-	r.center(pep3RightPageX(1069), 257, 45, 9, strconv.Itoa(record.AgeDays))
+	// 第1部分：右侧日期/年龄。格式为 center(x, y, 居中宽度, 字号, 值)。
+	r.center(pep3RightPageX(956), 217, 48, 9, assessmentYear)                  // 评估日期-年
+	r.center(pep3RightPageX(1012), 217, 45, 9, assessmentMonth)                // 评估日期-月
+	r.center(pep3RightPageX(1069), 217, 45, 9, assessmentDay)                  // 评估日期-日
+	r.center(pep3RightPageX(956), 237, 48, 9, birthYear)                       // 出生日期-年
+	r.center(pep3RightPageX(1012), 237, 45, 9, birthMonth)                     // 出生日期-月
+	r.center(pep3RightPageX(1069), 237, 45, 9, birthDay)                       // 出生日期-日
+	r.center(pep3RightPageX(956), 257, 48, 9, strconv.Itoa(record.AgeYears))   // 年龄-年
+	r.center(pep3RightPageX(1012), 257, 45, 9, strconv.Itoa(record.AgeMonths)) // 年龄-月
+	r.center(pep3RightPageX(1069), 257, 45, 9, strconv.Itoa(record.AgeDays))   // 年龄-日
 
 	scaleRows := append([]model.PEP3ReportScaleRow{}, buildPEP3ScaleRows(score.Result.Scales, "发展及行为副测验", []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "AE", "SR", "CMB", "CVB"})...)
 	scaleRows = append(scaleRows, buildPEP3ScaleRows(score.Result.Scales, "儿童照顾者报告副测验", []string{"PB", "PSC", "AB"})...)
@@ -109,10 +112,21 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	for _, row := range scaleRows {
 		scaleRowByCode[row.ScaleCode] = row
 	}
+	// 第2部分：副测验分数每一行的 y 坐标。只调上下位置时改这里。
 	scaleY := map[string]float64{
-		"CVP": 347, "EL": 366, "RL": 385, "FM": 404, "GM": 423, "VMI": 442,
-		"AE": 461, "SR": 480, "CMB": 499, "CVB": 518,
-		"PB": 554, "PSC": 573, "AB": 592,
+		"CVP": 347, // 认知（语言/语前）
+		"EL":  366, // 语言表达
+		"RL":  385, // 语言理解
+		"FM":  404, // 小肌肉
+		"GM":  423, // 大肌肉
+		"VMI": 442, // 模仿（视觉/动作）
+		"AE":  461, // 情感表达
+		"SR":  480, // 社交互助
+		"CMB": 499, // 行为特征-非语言
+		"CVB": 518, // 行为特征-语言
+		"PB":  554, // 问题行为
+		"PSC": 573, // 个人自理
+		"AB":  592, // 适应行为
 	}
 	for _, code := range []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "AE", "SR", "CMB", "CVB", "PB", "PSC", "AB"} {
 		row, ok := scaleRowByCode[code]
@@ -120,31 +134,43 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 			continue
 		}
 		y := scaleY[code]
-		r.center(pep3RightPageX(827), y, 38, 8.5, strconv.Itoa(row.RawScore))
-		r.center(pep3RightPageX(900), y, 45, 8.5, row.DevelopmentAgeText)
-		r.center(pep3RightPageX(976), y, 48, 8.5, row.PercentileRankText)
-		r.center(pep3RightPageX(1050), y, 85, 8.5, row.Level)
+		// 第2部分：副测验分数每一列的 x 坐标。只调左右位置时改这里。
+		r.center(pep3RightPageX(827), y, 38, 8.5, strconv.Itoa(row.RawScore)) // 原积/原始分
+		r.center(pep3RightPageX(900), y, 45, 8.5, row.DevelopmentAgeText)     // 发展年龄
+		r.center(pep3RightPageX(976), y, 48, 8.5, row.PercentileRankText)     // 百分比级数
+		r.center(pep3RightPageX(1050), y, 85, 8.5, row.Level)                 // 发展/适应程度
 	}
 
 	compositeRows := buildPEP3CompositeRows(score.Result.Composites, score.Result.Scales)
+	// 第3部分：合成分数三行的 y 坐标。只调上下位置时改这里。
 	compositeY := map[string]float64{
-		pep3score.CompositeCommunication:       674,
-		pep3score.CompositeMotor:               705,
-		pep3score.CompositeMaladaptiveBehavior: 735,
+		pep3score.CompositeCommunication:       674, // 沟通（C）
+		pep3score.CompositeMotor:               705, // 体能（M）
+		pep3score.CompositeMaladaptiveBehavior: 735, // 行为（MB）
 	}
+	// 第3部分：标准分小格每一列的 x 坐标。只调左右位置时改这里。
 	standardScoreX := map[string]float64{
-		"CVP": 133, "EL": 160, "RL": 187, "FM": 214, "GM": 241,
-		"VMI": 268, "AE": 295, "SR": 322, "CMB": 349, "CVB": 376,
+		"CVP": 133, // CVP 标准分
+		"EL":  160, // EL 标准分
+		"RL":  187, // RL 标准分
+		"FM":  214, // FM 标准分
+		"GM":  241, // GM 标准分
+		"VMI": 268, // VMI 标准分
+		"AE":  295, // AE 标准分
+		"SR":  322, // SR 标准分
+		"CMB": 349, // CMB 标准分
+		"CVB": 376, // CVB 标准分
 	}
 	for _, row := range compositeRows {
 		y := compositeY[row.CompositeCode]
 		for _, code := range pep3CompositeScaleCodes() {
-			r.center(standardScoreX[code]-12, y, 24, 8.2, row.MemberScaleScores[code])
+			r.center(standardScoreX[code]-12, y, 24, 8.2, row.MemberScaleScores[code]) // 标准分小格单项得分
 		}
-		r.center(386, y, 24, 8.2, row.StandardScoreSumText)
-		r.center(424, y, 32, 8.2, row.PercentileRankText)
-		r.center(463, y, 62, 8.2, row.Level)
-		r.center(525, y, 44, 8.2, row.DevelopmentAgeText)
+		// 第3部分：合成分数右侧汇总列的 x 坐标。
+		r.center(386, y, 24, 8.2, row.StandardScoreSumText) // 标准分总和
+		r.center(424, y, 32, 8.2, row.PercentileRankText)   // 百分比级数
+		r.center(463, y, 62, 8.2, row.Level)                // 发展/适应程度
+		r.center(525, y, 44, 8.2, row.DevelopmentAgeText)   // 发展年龄
 	}
 }
 
@@ -152,6 +178,7 @@ func pep3RightPageX(spreadX float64) float64 {
 	return spreadX - pep3BookletPDFRightPageOffsetX
 }
 
+// text 用于左对齐填值：x 是文字起点，y 是底图横线位置，size 是字号。
 func (r pep3BookletPDFRenderer) text(x, y, size float64, value string) {
 	value = cleanPEP3BookletPDFValue(value)
 	if value == "" {
@@ -162,6 +189,7 @@ func (r pep3BookletPDFRenderer) text(x, y, size float64, value string) {
 	_ = r.pdf.Text(value)
 }
 
+// center 用于居中填值：x 是居中区域左边界，y 是底图横线位置，width 是居中区域宽度，size 是字号。
 func (r pep3BookletPDFRenderer) center(x, y, width, size float64, value string) {
 	value = cleanPEP3BookletPDFValue(value)
 	if value == "" {
