@@ -281,12 +281,20 @@ type PEP3CaregiverReportOption struct {
 }
 
 type PEP3CaregiverReportInviteVO struct {
-	DraftID         int64      `json:"draftId"`
-	StudentName     string     `json:"studentName,omitempty"`
-	Token           string     `json:"token"`
-	ExpiresAt       *time.Time `json:"expiresAt,omitempty"`
-	MiniProgramPath string     `json:"miniProgramPath"`
-	URL             string     `json:"url"`
+	DraftID                int64      `json:"draftId"`
+	RecordID               int64      `json:"recordId,omitempty"`
+	StudentName            string     `json:"studentName,omitempty"`
+	Ticket                 string     `json:"ticket,omitempty"`
+	Token                  string     `json:"token"`
+	ExpiresAt              *time.Time `json:"expiresAt,omitempty"`
+	MiniProgramPath        string     `json:"miniProgramPath"`
+	MiniProgramEnvVersion  string     `json:"miniProgramEnvVersion,omitempty"`
+	MiniProgramCodeDataURL string     `json:"miniProgramCodeDataUrl,omitempty"`
+	WeChatURLLink          string     `json:"wechatUrlLink,omitempty"`
+	QRCodeValue            string     `json:"qrCodeValue,omitempty"`
+	QRCodeType             string     `json:"qrCodeType,omitempty"`
+	QRCodeMessage          string     `json:"qrCodeMessage,omitempty"`
+	URL                    string     `json:"url"`
 }
 
 type PEP3CaregiverReportPublicTemplateVO struct {
@@ -301,6 +309,7 @@ type PEP3CaregiverReportPublicTemplateVO struct {
 
 type PEP3CaregiverReportSubmissionInput struct {
 	Token          string                    `json:"token"`
+	Ticket         string                    `json:"ticket,omitempty"`
 	RespondentName string                    `json:"respondentName,omitempty"`
 	Relationship   string                    `json:"relationship,omitempty"`
 	Answers        map[string]map[string]any `json:"answers"`
@@ -322,11 +331,13 @@ type PEP3CaregiverRawScore struct {
 }
 
 type PEP3CaregiverReportSubmitVO struct {
-	DraftID     int64                       `json:"draftId"`
-	StudentName string                      `json:"studentName,omitempty"`
-	RawScores   map[string]int              `json:"rawScores"`
-	Progress    PEP3AssessmentDraftProgress `json:"progress"`
-	SubmittedAt *time.Time                  `json:"submittedAt,omitempty"`
+	DraftID       int64                       `json:"draftId"`
+	RecordID      int64                       `json:"recordId,omitempty"`
+	RecordUpdated bool                        `json:"recordUpdated"`
+	StudentName   string                      `json:"studentName,omitempty"`
+	RawScores     map[string]int              `json:"rawScores"`
+	Progress      PEP3AssessmentDraftProgress `json:"progress"`
+	SubmittedAt   *time.Time                  `json:"submittedAt,omitempty"`
 }
 
 type PEP3SubmitContract struct {

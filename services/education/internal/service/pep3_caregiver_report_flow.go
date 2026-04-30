@@ -2,7 +2,10 @@ package service
 
 import (
 	"context"
+	"crypto/rand"
 	"database/sql"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,7 +15,9 @@ import (
 	"time"
 
 	"go-migration-platform/pkg/authx"
+	"go-migration-platform/pkg/pep3score"
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 const (
@@ -20,6 +25,10 @@ const (
 	pep3CaregiverReportInviteTTL       = 14 * 24 * time.Hour
 	pep3CaregiverReportMiniProgramPage = "pages/pep3-caregiver-report/index"
 )
+
+type pep3CaregiverReportAccess struct {
+	Claims authx.Claims
+}
 
 func (svc *Service) GeneratePEP3CaregiverReportInvite(claims authx.Claims, draftID int64) (model.PEP3CaregiverReportInviteVO, error) {
 	if svc == nil || svc.repo == nil {
@@ -46,13 +55,51 @@ func (svc *Service) GeneratePEP3CaregiverReportInvite(claims authx.Claims, draft
 	if strings.TrimSpace(draft.AssessmentCode) != pep3ScaleCode {
 		return model.PEP3CaregiverReportInviteVO{}, errors.New("assessment draft is not PEP-3")
 	}
-	if draft.Status == "submitted" || draft.SubmittedRecordID > 0 {
-		return model.PEP3CaregiverReportInviteVO{}, errors.New("已提交的测评不能再填写照顾者报告，请在未提交草稿中生成家长填写入口")
+	return svc.buildPEP3CaregiverReportInvite(claims, instID, draft, draft.SubmittedRecordID)
+}
+
+func (svc *Service) GeneratePEP3CaregiverReportInviteForRecord(claims authx.Claims, recordID int64) (model.PEP3CaregiverReportInviteVO, error) {
+	if svc == nil || svc.repo == nil {
+		return model.PEP3CaregiverReportInviteVO{}, errors.New("assessment repository is not configured")
+	}
+	if svc.tokenManager == nil {
+		return model.PEP3CaregiverReportInviteVO{}, errors.New("token manager is not configured")
+	}
+	if recordID <= 0 {
+		return model.PEP3CaregiverReportInviteVO{}, errors.New("invalid recordId")
 	}
 
+	instID, err := svc.pep3AssessmentInstID(claims.UserID)
+	if err != nil {
+		return model.PEP3CaregiverReportInviteVO{}, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PEP3CaregiverReportInviteVO{}, errors.New("assessment record not found")
+		}
+		return model.PEP3CaregiverReportInviteVO{}, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != pep3ScaleCode {
+		return model.PEP3CaregiverReportInviteVO{}, errors.New("assessment record is not PEP-3")
+	}
+	draft, err := svc.repo.GetAssessmentDraftBySubmittedRecordID(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PEP3CaregiverReportInviteVO{}, errors.New("该正式记录没有关联草稿，暂时不能生成家长填写入口")
+		}
+		return model.PEP3CaregiverReportInviteVO{}, err
+	}
+	if strings.TrimSpace(draft.AssessmentCode) != pep3ScaleCode {
+		return model.PEP3CaregiverReportInviteVO{}, errors.New("assessment draft is not PEP-3")
+	}
+	return svc.buildPEP3CaregiverReportInvite(claims, instID, draft, recordID)
+}
+
+func (svc *Service) buildPEP3CaregiverReportInvite(claims authx.Claims, instID int64, draft model.AssessmentDraftDetailVO, recordID int64) (model.PEP3CaregiverReportInviteVO, error) {
 	expiresAt := time.Now().Add(pep3CaregiverReportInviteTTL)
 	token, err := svc.tokenManager.Generate(authx.Claims{
-		UserID:    draftID,
+		UserID:    draft.ID,
 		Username:  "pep3_caregiver",
 		LoginType: pep3CaregiverReportLoginType,
 		TenantID:  strings.TrimSpace(claims.TenantID),
@@ -61,27 +108,73 @@ func (svc *Service) GeneratePEP3CaregiverReportInvite(claims authx.Claims, draft
 	if err != nil {
 		return model.PEP3CaregiverReportInviteVO{}, err
 	}
+	ticket, err := svc.createPEP3CaregiverReportInviteTicket(instID, draft.ID, recordID, expiresAt)
+	if err != nil {
+		return model.PEP3CaregiverReportInviteVO{}, err
+	}
 
-	path := buildPEP3CaregiverReportMiniProgramPath(token)
+	path, page, query := buildPEP3CaregiverReportMiniProgramPath(ticket)
+	qrCodeValue := path
+	qrCodeType := "mini_program_path"
+	qrCodeMessage := "当前二维码为小程序路径调试码；如果微信 URL Link 未生成，普通微信扫码不会自动跳转小程序。"
+	wechatURLLink := ""
+	miniProgramCodeDataURL := ""
+	envVersion := ""
+	if svc.wechatMiniProgram != nil && svc.wechatMiniProgram.isEnabled() {
+		envVersion = svc.wechatMiniProgram.config.EnvVersion
+		if image, contentType, codeErr := svc.wechatMiniProgram.generateUnlimitedQRCode(context.Background(), ticket, pep3CaregiverReportMiniProgramPage, false); codeErr == nil && len(image) > 0 {
+			miniProgramCodeDataURL = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(image)
+			qrCodeValue = ticket
+			qrCodeType = "wechat_mini_program_code"
+			qrCodeMessage = "微信扫码直接进入" + miniProgramEnvLabel(envVersion) + "照顾者报告页。"
+		} else if link, linkErr := svc.wechatMiniProgram.generateURLLink(context.Background(), page, query, expiresAt); linkErr == nil && strings.TrimSpace(link) != "" {
+			wechatURLLink = strings.TrimSpace(link)
+			qrCodeValue = wechatURLLink
+			qrCodeType = "wechat_url_link"
+			qrCodeMessage = "小程序码生成失败，已生成微信 URL Link：" + codeErr.Error()
+		} else if linkErr != nil {
+			if apiErr, ok := linkErr.(weChatMiniProgramAPIError); ok && apiErr.ErrCode == weChatMiniProgramInvalidPagePathErrCode {
+				if link, retryErr := svc.wechatMiniProgram.generateURLLink(context.Background(), "", buildPEP3CaregiverReportHomeRedirectQuery(ticket), expiresAt); retryErr == nil && strings.TrimSpace(link) != "" {
+					wechatURLLink = strings.TrimSpace(link)
+					qrCodeValue = wechatURLLink
+					qrCodeType = "wechat_url_link"
+					qrCodeMessage = "小程序码生成失败，且微信当前版本还未识别照顾者报告页面，已生成默认入口中转码：" + codeErr.Error()
+				} else {
+					qrCodeMessage = "小程序码生成失败：" + codeErr.Error() + "；URL Link 也失败：" + retryErr.Error()
+				}
+			} else {
+				qrCodeMessage = "小程序码生成失败：" + codeErr.Error() + "；URL Link 也失败，已降级为路径调试码：" + linkErr.Error()
+			}
+		}
+	}
+
 	return model.PEP3CaregiverReportInviteVO{
-		DraftID:         draftID,
-		StudentName:     draft.StudentName,
-		Token:           token,
-		ExpiresAt:       &expiresAt,
-		MiniProgramPath: path,
-		URL:             "/" + path,
+		DraftID:                draft.ID,
+		RecordID:               recordID,
+		StudentName:            draft.StudentName,
+		Ticket:                 ticket,
+		Token:                  token,
+		ExpiresAt:              &expiresAt,
+		MiniProgramPath:        path,
+		MiniProgramEnvVersion:  envVersion,
+		MiniProgramCodeDataURL: miniProgramCodeDataURL,
+		WeChatURLLink:          wechatURLLink,
+		QRCodeValue:            qrCodeValue,
+		QRCodeType:             qrCodeType,
+		QRCodeMessage:          qrCodeMessage,
+		URL:                    "/" + path,
 	}, nil
 }
 
-func (svc *Service) GetPEP3CaregiverReportPublicTemplate(token string) (model.PEP3CaregiverReportPublicTemplateVO, error) {
+func (svc *Service) GetPEP3CaregiverReportPublicTemplate(token, ticket string) (model.PEP3CaregiverReportPublicTemplateVO, error) {
 	if svc == nil || svc.repo == nil {
 		return model.PEP3CaregiverReportPublicTemplateVO{}, errors.New("assessment repository is not configured")
 	}
-	claims, err := svc.parsePEP3CaregiverReportToken(token)
+	access, err := svc.resolvePEP3CaregiverReportAccess(token, ticket)
 	if err != nil {
 		return model.PEP3CaregiverReportPublicTemplateVO{}, err
 	}
-	draft, err := svc.repo.GetAssessmentDraft(context.Background(), claims.OrgID, claims.UserID)
+	draft, err := svc.repo.GetAssessmentDraft(context.Background(), access.Claims.OrgID, access.Claims.UserID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.PEP3CaregiverReportPublicTemplateVO{}, errors.New("assessment draft not found")
@@ -111,10 +204,11 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 	if svc == nil || svc.repo == nil {
 		return model.PEP3CaregiverReportSubmitVO{}, errors.New("assessment repository is not configured")
 	}
-	claims, err := svc.parsePEP3CaregiverReportToken(input.Token)
+	access, err := svc.resolvePEP3CaregiverReportAccess(input.Token, input.Ticket)
 	if err != nil {
 		return model.PEP3CaregiverReportSubmitVO{}, err
 	}
+	claims := access.Claims
 
 	draft, err := svc.repo.GetAssessmentDraft(context.Background(), claims.OrgID, claims.UserID)
 	if err != nil {
@@ -126,10 +220,6 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 	if strings.TrimSpace(draft.AssessmentCode) != pep3ScaleCode {
 		return model.PEP3CaregiverReportSubmitVO{}, errors.New("assessment draft is not PEP-3")
 	}
-	if draft.Status == "submitted" || draft.SubmittedRecordID > 0 {
-		return model.PEP3CaregiverReportSubmitVO{}, errors.New("已提交的测评不能再填写照顾者报告，请联系老师在未提交草稿中重新生成填写入口")
-	}
-
 	answers := normalizePEP3CaregiverAnswers(input.Answers)
 	caregiverRawScores, missing, err := scorePEP3CaregiverReportAnswers(pep3CaregiverReportTemplate(), answers)
 	if err != nil {
@@ -172,7 +262,20 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 		return model.PEP3CaregiverReportSubmitVO{}, err
 	}
 
-	if err := svc.repo.UpdateAssessmentDraftInputAndProgress(
+	nextDraftStatus := pep3DraftStatus(progress)
+	if draft.Status == "submitted" || draft.SubmittedRecordID > 0 {
+		nextDraftStatus = "submitted"
+	}
+
+	recordUpdated := false
+	if draft.SubmittedRecordID > 0 {
+		if err := svc.updatePEP3SubmittedRecordCaregiverReport(claims.OrgID, draft.SubmittedRecordID, caregiverRawScores, submission); err != nil {
+			return model.PEP3CaregiverReportSubmitVO{}, err
+		}
+		recordUpdated = true
+	}
+
+	if err := svc.repo.UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
 		context.Background(),
 		claims.OrgID,
 		claims.UserID,
@@ -180,21 +283,151 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 		progress,
 		progress.AnsweredItemCount,
 		progress.RawScoreCount,
-		pep3DraftStatus(progress),
+		nextDraftStatus,
 		0,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return model.PEP3CaregiverReportSubmitVO{}, errors.New("assessment draft not found or already submitted")
+			return model.PEP3CaregiverReportSubmitVO{}, errors.New("assessment draft not found")
 		}
 		return model.PEP3CaregiverReportSubmitVO{}, err
 	}
 
 	return model.PEP3CaregiverReportSubmitVO{
-		DraftID:     draft.ID,
-		StudentName: draft.StudentName,
-		RawScores:   caregiverRawScores,
-		Progress:    progress,
-		SubmittedAt: &submittedAt,
+		DraftID:       draft.ID,
+		RecordID:      draft.SubmittedRecordID,
+		RecordUpdated: recordUpdated,
+		StudentName:   draft.StudentName,
+		RawScores:     caregiverRawScores,
+		Progress:      progress,
+		SubmittedAt:   &submittedAt,
+	}, nil
+}
+
+func (svc *Service) updatePEP3SubmittedRecordCaregiverReport(instID, recordID int64, caregiverRawScores map[string]int, submission model.PEP3CaregiverReportSubmission) error {
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("assessment record not found")
+		}
+		return err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != pep3ScaleCode {
+		return errors.New("assessment record is not PEP-3")
+	}
+	if record.BirthDate == nil || record.BirthDate.IsZero() {
+		return errors.New("assessment record birthDate is required before updating caregiver report")
+	}
+	if record.AssessmentDate == nil || record.AssessmentDate.IsZero() {
+		return errors.New("assessment record assessmentDate is required before updating caregiver report")
+	}
+
+	itemScores, rawScores, err := decodeSavedPEP3InputScores(record.InputJSON)
+	if err != nil {
+		return err
+	}
+	if rawScores == nil {
+		rawScores = map[string]int{}
+	}
+	for scaleCode, rawScore := range caregiverRawScores {
+		rawScores[scaleCode] = rawScore
+	}
+	var snapshot pep3SavedInputSnapshot
+	_ = json.Unmarshal(record.InputJSON, &snapshot)
+	scoreResult, err := svc.ScorePEP3(pep3score.AssessmentInput{
+		BirthDate:         *record.BirthDate,
+		AssessmentDate:    *record.AssessmentDate,
+		ItemScores:        itemScores,
+		RawScores:         rawScores,
+		AllowMissingItems: snapshot.AllowMissingItems,
+	})
+	if err != nil {
+		return err
+	}
+	nextInput, err := mergePEP3CaregiverReportInput(record.InputJSON, rawScores, submission)
+	if err != nil {
+		return err
+	}
+	return svc.repo.UpdateAssessmentRecordInputAndResult(
+		context.Background(),
+		instID,
+		recordID,
+		nextInput,
+		scoreResult,
+		scoreResult.ScaleVersion,
+		scoreResult.Result.Age.Years,
+		scoreResult.Result.Age.Months,
+		scoreResult.Result.Age.Days,
+		scoreResult.Result.Age.TotalMonthsForNorm,
+		scoreResult.DataStatus,
+	)
+}
+
+func (svc *Service) createPEP3CaregiverReportInviteTicket(instID, draftID, recordID int64, expiresAt time.Time) (string, error) {
+	for attempt := 0; attempt < 5; attempt++ {
+		ticket, err := newPEP3CaregiverReportTicket()
+		if err != nil {
+			return "", err
+		}
+		err = svc.repo.CreateAssessmentCaregiverInvite(context.Background(), repository.AssessmentCaregiverInviteEntity{
+			Ticket:    ticket,
+			InstID:    instID,
+			DraftID:   draftID,
+			RecordID:  recordID,
+			ExpiresAt: expiresAt,
+		})
+		if err == nil {
+			return ticket, nil
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			continue
+		}
+		return "", err
+	}
+	return "", errors.New("generate caregiver report invite ticket failed")
+}
+
+func newPEP3CaregiverReportTicket() (string, error) {
+	var raw [12]byte
+	if _, err := rand.Read(raw[:]); err != nil {
+		return "", err
+	}
+	return "pc" + hex.EncodeToString(raw[:]), nil
+}
+
+func (svc *Service) resolvePEP3CaregiverReportAccess(token, ticket string) (pep3CaregiverReportAccess, error) {
+	token = strings.TrimSpace(token)
+	if token != "" {
+		claims, err := svc.parsePEP3CaregiverReportToken(token)
+		if err != nil {
+			return pep3CaregiverReportAccess{}, err
+		}
+		return pep3CaregiverReportAccess{Claims: claims}, nil
+	}
+
+	ticket = strings.TrimSpace(ticket)
+	if ticket == "" {
+		return pep3CaregiverReportAccess{}, errors.New("token or ticket is required")
+	}
+	invite, err := svc.repo.GetAssessmentCaregiverInviteByTicket(context.Background(), ticket)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return pep3CaregiverReportAccess{}, errors.New("caregiver report ticket is invalid or expired")
+		}
+		return pep3CaregiverReportAccess{}, err
+	}
+	if invite.DraftID <= 0 || invite.InstID <= 0 {
+		return pep3CaregiverReportAccess{}, errors.New("caregiver report ticket is invalid")
+	}
+	if !invite.ExpiresAt.IsZero() && time.Now().After(invite.ExpiresAt) {
+		return pep3CaregiverReportAccess{}, errors.New("caregiver report ticket is invalid or expired")
+	}
+	return pep3CaregiverReportAccess{
+		Claims: authx.Claims{
+			UserID:    invite.DraftID,
+			Username:  "pep3_caregiver",
+			LoginType: pep3CaregiverReportLoginType,
+			OrgID:     invite.InstID,
+		},
 	}, nil
 }
 
@@ -216,10 +449,30 @@ func (svc *Service) parsePEP3CaregiverReportToken(token string) (authx.Claims, e
 	return claims, nil
 }
 
-func buildPEP3CaregiverReportMiniProgramPath(token string) string {
+func buildPEP3CaregiverReportMiniProgramPath(ticket string) (string, string, string) {
 	values := url.Values{}
-	values.Set("token", strings.TrimSpace(token))
-	return pep3CaregiverReportMiniProgramPage + "?" + values.Encode()
+	values.Set("ticket", strings.TrimSpace(ticket))
+	query := values.Encode()
+	return pep3CaregiverReportMiniProgramPage + "?" + query, pep3CaregiverReportMiniProgramPage, query
+}
+
+func buildPEP3CaregiverReportHomeRedirectQuery(ticket string) string {
+	values := url.Values{}
+	values.Set("ticket", strings.TrimSpace(ticket))
+	return values.Encode()
+}
+
+func miniProgramEnvLabel(envVersion string) string {
+	switch strings.TrimSpace(envVersion) {
+	case "develop":
+		return "开发版"
+	case "trial":
+		return "体验版"
+	case "release":
+		return "正式版"
+	default:
+		return "当前版本"
+	}
 }
 
 func scorePEP3CaregiverReportAnswers(template model.PEP3CaregiverReportTemplate, answers map[string]map[string]any) (map[string]int, []string, error) {

@@ -137,7 +137,7 @@
 
 <script setup>
 import { computed } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import { authorizeByWechatPhone } from '@/common/parent-auth'
 import {
 	getParentWeChatOfficialStatus,
@@ -242,10 +242,47 @@ const campusLogoText = computed(() => {
 	return `${title}`.slice(0, 1)
 })
 
+onLoad(query => {
+	redirectPEP3CaregiverReport(query)
+})
+
 onShow(() => {
 	refreshHomeSummary()
 	refreshWeChatOfficialPreview()
 })
+
+function redirectPEP3CaregiverReport(query = {}) {
+	const target = `${query?.target || ''}`.trim()
+	const token = `${query?.pep3Token || query?.token || ''}`.trim()
+	const ticket = resolvePEP3CaregiverTicket(query)
+	if (!ticket && (target !== 'pep3_caregiver_report' || !token)) {
+		return
+	}
+	const params = ticket ? `ticket=${encodeURIComponent(ticket)}` : `token=${encodeURIComponent(token)}`
+	uni.redirectTo({
+		url: `/pages/pep3-caregiver-report/index?${params}`
+	})
+}
+
+function resolvePEP3CaregiverTicket(query = {}) {
+	const direct = `${query?.ticket || ''}`.trim()
+	if (direct) {
+		return direct
+	}
+	const scene = decodeURIComponent(`${query?.scene || ''}`.trim())
+	if (!scene) {
+		return ''
+	}
+	if (scene.startsWith('pc')) {
+		return scene
+	}
+	const params = scene.split('&').reduce((out, part) => {
+		const [key, value = ''] = part.split('=')
+		out[decodeURIComponent(key || '')] = decodeURIComponent(value || '')
+		return out
+	}, {})
+	return `${params.ticket || ''}`.trim()
+}
 
 function goCampusPage() {
 	uni.navigateTo({

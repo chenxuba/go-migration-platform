@@ -35,6 +35,7 @@ type ServiceConfig struct {
 	WeChatOfficialToken                   string
 	WeChatMiniProgramAppID                string
 	WeChatMiniProgramSecret               string
+	WeChatMiniProgramEnvVersion           string
 	WeChatOfficialMiniProgramAppID        string
 	WeChatOfficialMiniProgramPagePath     string
 	WeChatOfficialMiniProgramThumbMediaID string
@@ -77,6 +78,7 @@ func Load(name, defaultPort string) ServiceConfig {
 		WeChatOfficialToken:                   envOrDefault("WECHAT_OFFICIAL_TOKEN", "ybc365"),
 		WeChatMiniProgramAppID:                envOrDefault("WECHAT_MINI_PROGRAM_APP_ID", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279")),
 		WeChatMiniProgramSecret:               envOrDefault("WECHAT_MINI_PROGRAM_SECRET", envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_SECRET", "7c1dcb6ff32ca7bb95c7f38febe7ec55")),
+		WeChatMiniProgramEnvVersion:           envOrDefault("WECHAT_MINI_PROGRAM_ENV_VERSION", defaultMiniProgramEnvVersion(envOrDefault("APP_ENV", "dev"))),
 		WeChatOfficialMiniProgramAppID:        envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_APP_ID", "wxd48d83d618bda279"),
 		WeChatOfficialMiniProgramPagePath:     envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_PAGE_PATH", "pages/home/index"),
 		WeChatOfficialMiniProgramThumbMediaID: envOrDefault("WECHAT_OFFICIAL_MINI_PROGRAM_THUMB_MEDIA_ID", "r5H2TtQwf0Oeeipv4BzaTxjpYU70i1bVcQeCjdTQXpg-cKPw7Q-sqfvqms_Mp7b5"),
@@ -97,4 +99,13 @@ func envOrDefault(key, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func defaultMiniProgramEnvVersion(appEnv string) string {
+	switch strings.ToLower(strings.TrimSpace(appEnv)) {
+	case "prod", "production":
+		return "release"
+	default:
+		return "develop"
+	}
 }

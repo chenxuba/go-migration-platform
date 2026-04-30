@@ -8,7 +8,8 @@ import {
   FormOutlined,
   ReloadOutlined,
 } from '@ant-design/icons-vue'
-import { computed, h, onMounted, reactive, ref } from 'vue'
+import QRCode from 'qrcode'
+import { computed, h, onMounted, reactive, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import {
@@ -19,6 +20,7 @@ import {
   getPEP3AssessmentFormTemplateApi,
   getPEP3AssessmentReportApi,
   invitePEP3CaregiverReportApi,
+  invitePEP3CaregiverReportForRecordApi,
   pagePEP3AssessmentDraftsApi,
   pagePEP3AssessmentRecordsApi,
   savePEP3AssessmentDraftApi,
@@ -76,6 +78,8 @@ const caregiverInviteModalOpen = ref(false)
 const currentReport = ref<PEP3Report>()
 const currentBooklet = ref<PEP3Booklet>()
 const currentCaregiverInvite = ref<PEP3CaregiverReportInvite>()
+const caregiverQRCodeDataUrl = ref('')
+const caregiverQRCodeError = ref('')
 
 const draftPagination = reactive({
   current: 1,
@@ -220,7 +224,7 @@ const recordColumns: any[] = [
   { title: '测试员', dataIndex: 'examinerName', key: 'examinerName', width: 140 },
   { title: '数据状态', dataIndex: 'dataStatus', key: 'dataStatus', width: 260 },
   { title: '创建时间', dataIndex: 'createdTime', key: 'createdTime', width: 170 },
-  { title: '操作', dataIndex: 'action', key: 'action', width: 250, fixed: 'right' },
+  { title: '操作', dataIndex: 'action', key: 'action', width: 330, fixed: 'right' },
 ]
 
 function unwrap<T>(res: { data?: T, result?: T }): T {
@@ -247,6 +251,21 @@ function statusMeta(status?: string) {
     submitted: { color: 'purple', text: '已提交' },
   }
   return map[status || ''] || { color: 'default', text: status || '-' }
+}
+
+function miniProgramEnvLabel(value?: string) {
+  const map: Record<string, string> = {
+    develop: '开发版',
+    trial: '体验版',
+    release: '正式版',
+  }
+  return map[String(value || '').trim()] || value || '-'
+}
+
+function caregiverQRCodeTypeLabel(value?: string) {
+  if (value === 'wechat_mini_program_code')
+    return '微信小程序码'
+  return value === 'wechat_url_link' ? '微信小程序直达码' : '路径调试码'
 }
 
 function isSubmittedDraft(row?: Partial<PEP3AssessmentDraftSummary>) {
@@ -582,12 +601,10 @@ function confirmDeleteDraft(row: PEP3AssessmentDraftSummary) {
 }
 
 async function openCaregiverInvite(row: PEP3AssessmentDraftSummary) {
-  if (isSubmittedDraft(row)) {
-    messageService.warning('该测评已提交为正式记录，不能再让家长填写照顾者报告')
-    return
-  }
   caregiverInviteLoading.value = true
   currentCaregiverInvite.value = undefined
+  caregiverQRCodeDataUrl.value = ''
+  caregiverQRCodeError.value = ''
   try {
     const res = await invitePEP3CaregiverReportApi(row.id)
     currentCaregiverInvite.value = unwrap<PEP3CaregiverReportInvite>(res)
@@ -598,6 +615,50 @@ async function openCaregiverInvite(row: PEP3AssessmentDraftSummary) {
   }
   finally {
     caregiverInviteLoading.value = false
+  }
+}
+
+async function openCaregiverInviteForRecord(row: PEP3AssessmentRecordSummary) {
+  caregiverInviteLoading.value = true
+  currentCaregiverInvite.value = undefined
+  caregiverQRCodeDataUrl.value = ''
+  caregiverQRCodeError.value = ''
+  try {
+    const res = await invitePEP3CaregiverReportForRecordApi(row.id)
+    currentCaregiverInvite.value = unwrap<PEP3CaregiverReportInvite>(res)
+    caregiverInviteModalOpen.value = true
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '生成家长填写入口失败'))
+  }
+  finally {
+    caregiverInviteLoading.value = false
+  }
+}
+
+async function generateCaregiverQRCode(invite?: PEP3CaregiverReportInvite) {
+  caregiverQRCodeDataUrl.value = ''
+  caregiverQRCodeError.value = ''
+  if (invite?.miniProgramCodeDataUrl) {
+    caregiverQRCodeDataUrl.value = invite.miniProgramCodeDataUrl
+    return
+  }
+  const value = `${invite?.qrCodeValue || invite?.wechatUrlLink || invite?.miniProgramPath || ''}`.trim()
+  if (!value)
+    return
+  try {
+    caregiverQRCodeDataUrl.value = await QRCode.toDataURL(value, {
+      width: 220,
+      margin: 1,
+      color: {
+        dark: '#111827',
+        light: '#FFFFFF',
+      },
+    })
+  }
+  catch (error) {
+    console.error('generate caregiver qrcode failed:', error)
+    caregiverQRCodeError.value = '二维码生成失败，请复制链接发送给家长'
   }
 }
 
@@ -689,6 +750,10 @@ function submitDraftRow(row: Record<string, any>) {
 
 function openCaregiverInviteRow(row: Record<string, any>) {
   return openCaregiverInvite(row as PEP3AssessmentDraftSummary)
+}
+
+function openCaregiverInviteForRecordRow(row: Record<string, any>) {
+  return openCaregiverInviteForRecord(row as PEP3AssessmentRecordSummary)
 }
 
 function confirmDeleteDraftRow(row: Record<string, any>) {
@@ -797,6 +862,8 @@ function cannotSubmitMessage(progress?: PEP3AssessmentDraftDetail['progress']) {
 function rawScoreLabel(field: PEP3RawScoreField) {
   return field.maxScore ? `${field.scaleName}（${field.scaleCode}，0-${field.maxScore}）` : `${field.scaleName}（${field.scaleCode}）`
 }
+
+watch(currentCaregiverInvite, invite => generateCaregiverQRCode(invite))
 
 onMounted(async () => {
   await fetchTemplate()
@@ -954,6 +1021,7 @@ onMounted(async () => {
                   <a @click="openReportRow(record)">解释报告</a>
                   <a @click="openBookletRow(record)">记录册</a>
                   <a @click="openBookletPdfRow(record)">记录册PDF</a>
+                  <a @click="openCaregiverInviteForRecordRow(record)">家长填写</a>
                 </a-space>
               </template>
             </template>
@@ -1185,7 +1253,7 @@ onMounted(async () => {
           <a-alert
             type="info"
             show-icon
-            message="请把小程序路径发送给家长。家长提交后，PB/PSC/AB原始分会自动回写到当前PEP-3草稿。"
+            message="家长扫码提交后，PB/PSC/AB原始分会自动回写；如果老师已提交正式记录，也会同步合并并重新评分。"
           />
           <div class="caregiver-invite__meta">
             <div>
@@ -1196,8 +1264,45 @@ onMounted(async () => {
               <span>有效期</span>
               <strong>{{ formatDateTime(currentCaregiverInvite?.expiresAt) }}</strong>
             </div>
+            <div>
+              <span>入口环境</span>
+              <strong>{{ miniProgramEnvLabel(currentCaregiverInvite?.miniProgramEnvVersion) }}</strong>
+            </div>
+            <div>
+              <span>二维码类型</span>
+              <strong>{{ caregiverQRCodeTypeLabel(currentCaregiverInvite?.qrCodeType) }}</strong>
+            </div>
+          </div>
+          <div class="caregiver-qrcode-card">
+            <div class="caregiver-qrcode-card__image">
+              <img v-if="caregiverQRCodeDataUrl" :src="caregiverQRCodeDataUrl" alt="家长填写二维码">
+              <a-spin v-else-if="currentCaregiverInvite?.qrCodeValue && !caregiverQRCodeError" />
+              <span v-else>{{ caregiverQRCodeError || '暂无二维码' }}</span>
+            </div>
+            <div class="caregiver-qrcode-card__content">
+              <strong>微信扫码填写照顾者报告</strong>
+              <p>{{ currentCaregiverInvite?.qrCodeMessage || '请让家长使用微信扫描二维码进入小程序。' }}</p>
+              <a-button
+                :icon="h(CopyOutlined)"
+                @click="copyCaregiverInviteText(currentCaregiverInvite?.qrCodeValue || currentCaregiverInvite?.wechatUrlLink || currentCaregiverInvite?.miniProgramPath)"
+              >
+                复制二维码内容
+              </a-button>
+            </div>
           </div>
           <a-form layout="vertical">
+            <a-form-item v-if="currentCaregiverInvite?.wechatUrlLink" label="微信 URL Link">
+              <a-input-group compact>
+                <a-input
+                  :value="currentCaregiverInvite?.wechatUrlLink"
+                  readonly
+                  style="width: calc(100% - 92px)"
+                />
+                <a-button :icon="h(CopyOutlined)" style="width: 92px" @click="copyCaregiverInviteText(currentCaregiverInvite?.wechatUrlLink)">
+                  复制
+                </a-button>
+              </a-input-group>
+            </a-form-item>
             <a-form-item label="小程序页面路径">
               <a-input-group compact>
                 <a-textarea
@@ -1731,7 +1836,7 @@ onMounted(async () => {
 
 .caregiver-invite__meta {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
 
   div {
@@ -1754,6 +1859,59 @@ onMounted(async () => {
     color: #111827;
     font-size: 14px;
     line-height: 20px;
+  }
+}
+
+.caregiver-qrcode-card {
+  display: grid;
+  grid-template-columns: 240px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 14px;
+  background: #fff;
+  border: 1px solid #eef1f5;
+  border-radius: 8px;
+}
+
+.caregiver-qrcode-card__image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 220px;
+  height: 220px;
+  background: #f8fafc;
+  border: 1px dashed #d0d5dd;
+  border-radius: 8px;
+
+  img {
+    display: block;
+    width: 220px;
+    height: 220px;
+  }
+
+  span {
+    padding: 0 16px;
+    color: #667085;
+    font-size: 13px;
+    line-height: 20px;
+    text-align: center;
+  }
+}
+
+.caregiver-qrcode-card__content {
+  min-width: 0;
+
+  strong {
+    display: block;
+    color: #111827;
+    font-size: 16px;
+    line-height: 24px;
+  }
+
+  p {
+    margin: 8px 0 14px;
+    color: #667085;
+    line-height: 22px;
   }
 }
 

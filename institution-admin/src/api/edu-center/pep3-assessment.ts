@@ -187,10 +187,18 @@ export interface PEP3CaregiverReportSubmission {
 
 export interface PEP3CaregiverReportInvite {
   draftId: number
+  recordId?: number
   studentName?: string
+  ticket?: string
   token: string
   expiresAt?: string
   miniProgramPath: string
+  miniProgramEnvVersion?: 'develop' | 'trial' | 'release' | string
+  miniProgramCodeDataUrl?: string
+  wechatUrlLink?: string
+  qrCodeValue?: string
+  qrCodeType?: 'wechat_mini_program_code' | 'wechat_url_link' | 'mini_program_path' | string
+  qrCodeMessage?: string
   url: string
 }
 
@@ -213,6 +221,8 @@ export interface PEP3CaregiverReportSubmitRequest {
 
 export interface PEP3CaregiverReportSubmitResult {
   draftId: number
+  recordId?: number
+  recordUpdated?: boolean
   studentName?: string
   rawScores: Partial<Record<PEP3ScaleCode, number>>
   progress: PEP3AssessmentDraftProgress
@@ -570,6 +580,10 @@ export function pagePEP3AssessmentDraftsApi(data: PEP3DraftPageRequest) {
 
 export function invitePEP3CaregiverReportApi(draftId: number) {
   return usePost<PEP3CaregiverReportInvite>('/api/v1/assessments/pep3/drafts/caregiver-report/invite', { draftId })
+}
+
+export function invitePEP3CaregiverReportForRecordApi(recordId: number) {
+  return usePost<PEP3CaregiverReportInvite>('/api/v1/assessments/pep3/records/caregiver-report/invite', { recordId })
 }
 
 export function submitPEP3AssessmentDraftApi(id: number) {

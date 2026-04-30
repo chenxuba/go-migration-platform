@@ -57,6 +57,15 @@ type AssessmentDraftEntity struct {
 	UpdatedBy         int64
 }
 
+type AssessmentCaregiverInviteEntity struct {
+	ID        int64
+	Ticket    string
+	InstID    int64
+	DraftID   int64
+	RecordID  int64
+	ExpiresAt time.Time
+}
+
 func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS assessment_record (
@@ -89,7 +98,7 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 	`); err != nil {
 		return err
 	}
-	_, err := db.ExecContext(ctx, `
+	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS assessment_draft (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
 			inst_id BIGINT NOT NULL DEFAULT 0,
@@ -117,6 +126,24 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_assessment_draft_inst_code_date (inst_id, assessment_code, assessment_date, id),
 			KEY idx_assessment_draft_inst_student (inst_id, student_id, update_time, id),
 			KEY idx_assessment_draft_status (inst_id, assessment_code, status, update_time, id)
+		)
+	`); err != nil {
+		return err
+	}
+	_, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_caregiver_invite (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			ticket VARCHAR(64) NOT NULL DEFAULT '',
+			inst_id BIGINT NOT NULL DEFAULT 0,
+			draft_id BIGINT NOT NULL DEFAULT 0,
+			record_id BIGINT NOT NULL DEFAULT 0,
+			expires_at DATETIME NULL,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_caregiver_invite_ticket (ticket),
+			KEY idx_assessment_caregiver_invite_draft (inst_id, draft_id, update_time),
+			KEY idx_assessment_caregiver_invite_record (inst_id, record_id, update_time)
 		)
 	`)
 	return err
@@ -212,6 +239,53 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 	item.InputJSON = json.RawMessage(inputRaw)
 	item.ResultJSON = json.RawMessage(resultRaw)
 	return item, nil
+}
+
+func (repo *Repository) UpdateAssessmentRecordInputAndResult(ctx context.Context, instID, recordID int64, input any, result any, scaleVersion string, ageYears, ageMonths, ageDays, normAgeMonths int, dataStatus string) error {
+	inputRaw, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("marshal assessment input: %w", err)
+	}
+	resultRaw, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshal assessment result: %w", err)
+	}
+
+	updateResult, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_record
+		SET input_json = ?,
+		    result_json = ?,
+		    scale_version = ?,
+		    age_years = ?,
+		    age_months = ?,
+		    age_days = ?,
+		    norm_age_months = ?,
+		    data_status = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		string(inputRaw),
+		string(resultRaw),
+		strings.TrimSpace(scaleVersion),
+		ageYears,
+		ageMonths,
+		ageDays,
+		normAgeMonths,
+		strings.TrimSpace(dataStatus),
+		recordID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := updateResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
@@ -459,6 +533,20 @@ func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID 
 	return item, nil
 }
 
+func (repo *Repository) GetAssessmentDraftBySubmittedRecordID(ctx context.Context, instID, recordID int64) (model.AssessmentDraftDetailVO, error) {
+	var draftID int64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM assessment_draft
+		WHERE inst_id = ? AND submitted_record_id = ? AND del_flag = 0
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, instID, recordID).Scan(&draftID); err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	return repo.GetAssessmentDraft(ctx, instID, draftID)
+}
+
 func (repo *Repository) PageAssessmentDrafts(ctx context.Context, instID int64, query model.AssessmentDraftQueryModel, current, size int) (model.PageResult[model.AssessmentDraftSummaryVO], error) {
 	current, size = normalizeAssessmentPage(current, size)
 	where := []string{"inst_id = ?", "del_flag = 0"}
@@ -627,6 +715,53 @@ func (repo *Repository) UpdateAssessmentDraftInputAndProgress(ctx context.Contex
 	return nil
 }
 
+func (repo *Repository) UpdateAssessmentDraftInputAndProgressIncludingSubmitted(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, operatorID int64) error {
+	inputRaw, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft input: %w", err)
+	}
+	progressRaw, err := json.Marshal(progress)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft progress: %w", err)
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "draft"
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_draft
+		SET input_json = ?,
+		    progress_json = ?,
+		    answered_item_count = ?,
+		    raw_score_count = ?,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		string(inputRaw),
+		string(progressRaw),
+		answeredItemCount,
+		rawScoreCount,
+		status,
+		operatorID,
+		draftID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (repo *Repository) MarkAssessmentDraftSubmitted(ctx context.Context, instID, draftID, recordID, operatorID int64) (bool, error) {
 	result, err := repo.db.ExecContext(ctx, `
 		UPDATE assessment_draft
@@ -644,6 +779,48 @@ func (repo *Repository) MarkAssessmentDraftSubmitted(ctx context.Context, instID
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+func (repo *Repository) CreateAssessmentCaregiverInvite(ctx context.Context, entity AssessmentCaregiverInviteEntity) error {
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO assessment_caregiver_invite (
+			ticket, inst_id, draft_id, record_id, expires_at, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), 0)
+	`,
+		strings.TrimSpace(entity.Ticket),
+		entity.InstID,
+		entity.DraftID,
+		entity.RecordID,
+		entity.ExpiresAt,
+	)
+	return err
+}
+
+func (repo *Repository) GetAssessmentCaregiverInviteByTicket(ctx context.Context, ticket string) (AssessmentCaregiverInviteEntity, error) {
+	var (
+		item      AssessmentCaregiverInviteEntity
+		expiresAt sql.NullTime
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, ticket, inst_id, draft_id, record_id, expires_at
+		FROM assessment_caregiver_invite
+		WHERE ticket = ? AND del_flag = 0
+		LIMIT 1
+	`, strings.TrimSpace(ticket)).Scan(
+		&item.ID,
+		&item.Ticket,
+		&item.InstID,
+		&item.DraftID,
+		&item.RecordID,
+		&expiresAt,
+	)
+	if err != nil {
+		return AssessmentCaregiverInviteEntity{}, err
+	}
+	if expiresAt.Valid {
+		item.ExpiresAt = expiresAt.Time
+	}
+	return item, nil
 }
 
 func fillAssessmentRecordTimes(item *model.AssessmentRecordSummaryVO, birthDate, assessmentDate, createdAt, updatedAt sql.NullTime) {

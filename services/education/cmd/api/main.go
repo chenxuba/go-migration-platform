@@ -77,8 +77,9 @@ func main() {
 		AccountName:             cfg.WeChatOfficialAccountName,
 	})
 	svc.ConfigureWeChatMiniProgram(service.WeChatMiniProgramConfig{
-		AppID:  cfg.WeChatMiniProgramAppID,
-		Secret: cfg.WeChatMiniProgramSecret,
+		AppID:      cfg.WeChatMiniProgramAppID,
+		Secret:     cfg.WeChatMiniProgramSecret,
+		EnvVersion: cfg.WeChatMiniProgramEnvVersion,
 	})
 	svc.StartBackgroundJobs(context.Background())
 	h := handler.New(svc)

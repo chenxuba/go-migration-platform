@@ -14,6 +14,10 @@ type pep3CaregiverReportInviteRequest struct {
 	DraftID int64 `json:"draftId"`
 }
 
+type pep3CaregiverReportRecordInviteRequest struct {
+	RecordID int64 `json:"recordId"`
+}
+
 func (handler *Handler) invitePEP3CaregiverReport(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -43,6 +47,35 @@ func (handler *Handler) invitePEP3CaregiverReport(w http.ResponseWriter, r *http
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) invitePEP3CaregiverReportForRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req pep3CaregiverReportRecordInviteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.RecordID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid recordId", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.GeneratePEP3CaregiverReportInviteForRecord(claims, req.RecordID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) pep3CaregiverReportPublicTemplate(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if r.Method != http.MethodGet {
@@ -50,7 +83,8 @@ func (handler *Handler) pep3CaregiverReportPublicTemplate(w http.ResponseWriter,
 		return
 	}
 	token := strings.TrimSpace(r.URL.Query().Get("token"))
-	result, err := handler.service.GetPEP3CaregiverReportPublicTemplate(token)
+	ticket := strings.TrimSpace(r.URL.Query().Get("ticket"))
+	result, err := handler.service.GetPEP3CaregiverReportPublicTemplate(token, ticket)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
