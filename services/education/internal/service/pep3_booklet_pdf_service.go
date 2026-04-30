@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -56,11 +57,18 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
-	itemScores, _, err := decodeSavedPEP3InputScores(record.InputJSON)
+	itemScores, rawScores, err := decodeSavedPEP3InputScores(record.InputJSON)
 	if err != nil {
 		return nil, err
 	}
+	if len(rawScores) == 0 {
+		rawScores = rawScoresFromPEP3Result(score.Result.Scales)
+	}
 	items, err := loadPEP3BookletItems()
+	if err != nil {
+		return nil, err
+	}
+	normRecords, err := loadPEP3BookletPDFNormRecords()
 	if err != nil {
 		return nil, err
 	}
@@ -92,8 +100,11 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 		return nil, fmt.Errorf("load PEP-3 PDF font: %w", err)
 	}
 	renderer := pep3BookletPDFRenderer{pdf: &pdf}
+	itemDomainByNo := pep3BookletPDFItemDomainMap(items)
 	renderer.drawCoverPage(record, score, institutionName)
-	renderer.drawDevelopmentBehaviorScorePages(itemScores, pep3BookletPDFItemDomainMap(items))
+	renderer.drawDevelopmentBehaviorScorePages(itemScores, itemDomainByNo)
+	renderer.drawDevelopmentBehaviorRawTotalTable(score, rawScores, itemScores, itemDomainByNo)
+	renderer.drawDevelopmentProfilePage(record, score, rawScores, itemScores, itemDomainByNo, normRecords)
 
 	return pdf.GetBytesPdfReturnErr()
 }
@@ -208,6 +219,25 @@ type pep3BookletPDFItemPageLayout struct {
 	TallyY       map[int]float64
 }
 
+type pep3BookletPDFDomainScoreSummary struct {
+	Answered    int
+	RawSubtotal int
+	ScoreCounts map[int]int
+}
+
+type pep3BookletPDFIntValue struct {
+	Value   int
+	Present bool
+}
+
+type pep3BookletPDFProfileScore struct {
+	PassedScore  int
+	PartialScore int
+	TotalScore   int
+	HasBreakdown bool
+	HasTotal     bool
+}
+
 func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map[int]int, itemDomainByNo map[int]string) {
 	if len(itemScores) == 0 {
 		return
@@ -230,8 +260,195 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map
 }
 
 func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePageTally(layout pep3BookletPDFItemPageLayout, itemScores map[int]int, itemDomainByNo map[int]string) {
-	tally := make(map[string]map[int]int, len(layout.DomainX))
-	rawSubtotal := make(map[string]int, len(layout.DomainX))
+	summaryByDomain := pep3BookletPDFLayoutScoreSummary(layout, itemScores, itemDomainByNo)
+
+	for _, domainCode := range pep3BookletDomainOrder() {
+		x, ok := layout.DomainX[domainCode]
+		if !ok {
+			continue
+		}
+		summary := summaryByDomain[domainCode]
+		for _, scoreValue := range []int{2, 1, 0} {
+			count := summary.ScoreCounts[scoreValue]
+			if count > 0 {
+				r.centerInBox(x, layout.TallyY[scoreValue], 18, 8, strconv.Itoa(count))
+			}
+		}
+		if summary.Answered > 0 {
+			r.centerInBox(x, layout.RawSubtotalY, 18, 8, strconv.Itoa(summary.RawSubtotal))
+		}
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRawTotalTable(score PEP3ScoreResponse, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string) {
+	if len(itemScores) == 0 && len(rawScores) == 0 && len(score.Result.Scales) == 0 {
+		return
+	}
+	_ = r.pdf.SetPage(17)
+	r.pdf.SetTextColor(58, 58, 58)
+
+	// 第17页：发展及行为副测验原积分总和表，每个副测验列的中心 x 坐标。
+	// 如果横向位置有偏差，只调这里的 x 值。
+	xByDomain := map[string]float64{
+		"CVP": 223.7, // CVP 列
+		"EL":  249.7, // EL 列
+		"RL":  276.3, // RL 列
+		"FM":  303.0, // FM 列
+		"GM":  329.6, // GM 列
+		"VMI": 356.2, // VMI 列
+		"AE":  382.9, // AE 列
+		"SR":  409.5, // SR 列
+		"CMB": 436.1, // CMB 列
+		"CVB": 462.8, // CVB 列
+	}
+	// 第17页：第2页总和到第16页总和，每一行的中心 y 坐标。
+	// 如果整行上下有偏差，只调对应页码的 y 值。
+	yByPageNo := map[int]float64{
+		2:  115.0, // 第2页总和
+		3:  131.6, // 第3页总和
+		4:  148.2, // 第4页总和
+		5:  165.2, // 第5页总和
+		6:  182.2, // 第6页总和
+		7:  198.8, // 第7页总和
+		8:  215.8, // 第8页总和
+		9:  233.5, // 第9页总和
+		10: 250.8, // 第10页总和
+		11: 267.4, // 第11页总和
+		12: 284.4, // 第12页总和
+		13: 301.8, // 第13页总和
+		14: 318.7, // 第14页总和
+		15: 335.4, // 第15页总和
+		16: 352.4, // 第16页总和
+	}
+
+	for _, layout := range pep3BookletPDFItemPageLayouts() {
+		y, ok := yByPageNo[layout.PageNo]
+		if !ok {
+			continue
+		}
+		summaryByDomain := pep3BookletPDFLayoutScoreSummary(layout, itemScores, itemDomainByNo)
+		for _, domainCode := range pep3BookletDomainOrder() {
+			x, ok := xByDomain[domainCode]
+			if !ok {
+				continue
+			}
+			summary := summaryByDomain[domainCode]
+			if summary.Answered > 0 {
+				r.centerInBox(x, y, 18, 8, strconv.Itoa(summary.RawSubtotal))
+			}
+		}
+	}
+
+	// 第17页：底部“原积分总和（抄写到第1页）”粉色格子的中心 y 坐标。
+	const rawTotalY = 381.0
+	totalByDomain := pep3BookletPDFRawScoreTotals(score.Result.Scales, rawScores, itemScores, itemDomainByNo)
+	for _, domainCode := range pep3BookletDomainOrder() {
+		total := totalByDomain[domainCode]
+		if total.Present {
+			r.centerInBox(xByDomain[domainCode], rawTotalY, 18, 8, strconv.Itoa(total.Value))
+		}
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string, normRecords []pep3score.NormRecord) {
+	_ = r.pdf.SetPage(19)
+	r.pdf.SetTextColor(58, 58, 58)
+
+	// 第19页：顶部儿童姓名、评估日期、年龄（月龄）的位置。
+	// y 是底图横线位置；如果文字没压在线上，只调对应 y 值。
+	const topInfoY = 51.2
+	r.text(170.0, topInfoY, 9, record.StudentName)                            // 儿童姓名
+	r.text(352.0, topInfoY, 9, formatReportDate(record.AssessmentDate))       // 评估日期
+	r.center(431.0, topInfoY, 46.0, 8.5, pep3BookletPDFAgeMonthsText(record)) // 评估年龄（月龄）
+
+	// 第19页：发展表现图七个副测验栏的中心 x 坐标，同时用于折线点和底部两个计数框。
+	// 如果折线或底部数字左右不齐，只调这里。
+	xByScale := map[string]float64{
+		"CVP": 131.2, // CVP 列
+		"EL":  188.1, // EL 列
+		"RL":  244.4, // RL 列
+		"FM":  301.1, // FM 列
+		"GM":  357.3, // GM 列
+		"VMI": 411.2, // VMI 列
+		"PSC": 461.5, // PSC 列
+	}
+	order := []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"}
+
+	profileScores := pep3BookletPDFProfileScores(score.Result.Scales, rawScores, itemScores, itemDomainByNo)
+	// 第19页：底部“通过项目分数”和“部份通过项目分数”两个计数框的中心 y 坐标。
+	// 如果底部数字上下不齐，只调这两个 y 值。
+	const (
+		passedScoreY  = 728.0 // 通过项目分数
+		partialScoreY = 746.0 // 部份通过项目分数
+	)
+	for _, scaleCode := range order {
+		x := xByScale[scaleCode]
+		profileScore := profileScores[scaleCode]
+		if !profileScore.HasBreakdown {
+			continue
+		}
+		r.centerInBox(x, passedScoreY, 24, 8, strconv.Itoa(profileScore.PassedScore))   // 通过项目分数：2分项目贡献的分数总和
+		r.centerInBox(x, partialScoreY, 24, 8, strconv.Itoa(profileScore.PartialScore)) // 部份通过项目分数：1分项目贡献的分数总和
+	}
+
+	r.drawDevelopmentProfileLine(profileScores, normRecords, order, xByScale)
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[string]pep3BookletPDFProfileScore, normRecords []pep3score.NormRecord, order []string, xByScale map[string]float64) {
+	// 第19页：发展表现图纵轴。topY 对应92个月这一行，rowGap 是相邻月龄行距。
+	// 折线整体上下偏差时调 topY；行距不贴合月份网格时调 rowGap。
+	const (
+		topY   = 81.6
+		rowGap = 7.82
+	)
+	type graphPoint struct {
+		x float64
+		y float64
+	}
+	points := make([]graphPoint, 0, len(order))
+	// 第19页：折线和椭圆颜色。正版不是纯黑，偏灰；要更深/更浅时调这里。
+	r.pdf.SetStrokeColor(92, 92, 92)
+	r.pdf.SetLineWidth(1.0)
+	var lastPoint graphPoint
+	hasLastPoint := false
+	for _, scaleCode := range order {
+		profileScore := profileScores[scaleCode]
+		if !profileScore.HasTotal {
+			hasLastPoint = false
+			continue
+		}
+		months, lessThan, greaterThan, ok := pep3BookletPDFDevelopmentAgeMonthsByRawScore(normRecords, scaleCode, profileScore.TotalScore)
+		if !ok {
+			hasLastPoint = false
+			continue
+		}
+		point := graphPoint{
+			x: xByScale[scaleCode],
+			y: pep3BookletPDFDevelopmentProfileY(months, lessThan, greaterThan, topY, rowGap),
+		}
+		if hasLastPoint {
+			r.pdf.Line(lastPoint.x, lastPoint.y, point.x, point.y)
+		}
+		points = append(points, point)
+		lastPoint = point
+		hasLastPoint = true
+	}
+	if len(points) == 0 {
+		return
+	}
+	for _, point := range points {
+		// 第19页：折线点位椭圆。正版样式是用横向空心椭圆圈住该列数值/范围，不填充。
+		// 椭圆过宽/过窄调 markerRadiusX，过高/过矮调 markerRadiusY。
+		const (
+			markerRadiusX = 7.0
+			markerRadiusY = 4.0
+		)
+		r.pdf.Oval(point.x-markerRadiusX, point.y-markerRadiusY, point.x+markerRadiusX, point.y+markerRadiusY)
+	}
+}
+
+func pep3BookletPDFLayoutScoreSummary(layout pep3BookletPDFItemPageLayout, itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFDomainScoreSummary {
+	summaryByDomain := make(map[string]pep3BookletPDFDomainScoreSummary, len(layout.DomainX))
 	for index := range layout.ItemCenters {
 		itemNo := layout.StartItemNo + index
 		score, ok := itemScores[itemNo]
@@ -242,28 +459,206 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePageTally(layout pep
 		if domainCode == "" {
 			continue
 		}
-		if tally[domainCode] == nil {
-			tally[domainCode] = map[int]int{}
+		summary := summaryByDomain[domainCode]
+		if summary.ScoreCounts == nil {
+			summary.ScoreCounts = map[int]int{}
 		}
-		tally[domainCode][score]++
-		rawSubtotal[domainCode] += score
+		summary.Answered++
+		summary.RawSubtotal += score
+		summary.ScoreCounts[score]++
+		summaryByDomain[domainCode] = summary
 	}
+	return summaryByDomain
+}
 
+func pep3BookletPDFAllItemScoreSummary(itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFDomainScoreSummary {
+	out := make(map[string]pep3BookletPDFDomainScoreSummary)
+	for _, layout := range pep3BookletPDFItemPageLayouts() {
+		for domainCode, pageSummary := range pep3BookletPDFLayoutScoreSummary(layout, itemScores, itemDomainByNo) {
+			summary := out[domainCode]
+			if summary.ScoreCounts == nil {
+				summary.ScoreCounts = map[int]int{}
+			}
+			summary.Answered += pageSummary.Answered
+			summary.RawSubtotal += pageSummary.RawSubtotal
+			for scoreValue, count := range pageSummary.ScoreCounts {
+				summary.ScoreCounts[scoreValue] += count
+			}
+			out[domainCode] = summary
+		}
+	}
+	return out
+}
+
+func pep3BookletPDFRawScoreTotals(scales map[string]pep3score.ScaleResult, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFIntValue {
+	out := make(map[string]pep3BookletPDFIntValue, len(pep3BookletDomainOrder()))
+	itemSummary := pep3BookletPDFAllItemScoreSummary(itemScores, itemDomainByNo)
 	for _, domainCode := range pep3BookletDomainOrder() {
-		x, ok := layout.DomainX[domainCode]
-		if !ok {
+		if scale, ok := scales[domainCode]; ok {
+			out[domainCode] = pep3BookletPDFIntValue{Value: scale.RawScore, Present: true}
 			continue
 		}
-		for _, scoreValue := range []int{2, 1, 0} {
-			count := tally[domainCode][scoreValue]
-			if count > 0 {
-				r.centerInBox(x, layout.TallyY[scoreValue], 18, 8, strconv.Itoa(count))
-			}
+		if rawScore, ok := rawScores[domainCode]; ok {
+			out[domainCode] = pep3BookletPDFIntValue{Value: rawScore, Present: true}
+			continue
 		}
-		if subtotal := rawSubtotal[domainCode]; subtotal > 0 {
-			r.centerInBox(x, layout.RawSubtotalY, 18, 8, strconv.Itoa(subtotal))
+		if summary := itemSummary[domainCode]; summary.Answered > 0 {
+			out[domainCode] = pep3BookletPDFIntValue{Value: summary.RawSubtotal, Present: true}
 		}
 	}
+	return out
+}
+
+func pep3BookletPDFProfileScores(scales map[string]pep3score.ScaleResult, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFProfileScore {
+	out := make(map[string]pep3BookletPDFProfileScore)
+	itemSummary := pep3BookletPDFAllItemScoreSummary(itemScores, itemDomainByNo)
+	for _, scaleCode := range []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"} {
+		if summary := itemSummary[scaleCode]; summary.Answered > 0 {
+			passedScore := summary.ScoreCounts[2] * 2
+			partialScore := summary.ScoreCounts[1]
+			out[scaleCode] = pep3BookletPDFProfileScore{
+				PassedScore:  passedScore,
+				PartialScore: partialScore,
+				TotalScore:   passedScore + partialScore,
+				HasBreakdown: true,
+				HasTotal:     true,
+			}
+			continue
+		}
+		if scale, ok := scales[scaleCode]; ok {
+			out[scaleCode] = pep3BookletPDFProfileScore{TotalScore: scale.RawScore, HasTotal: true}
+			continue
+		}
+		if rawScore, ok := rawScores[scaleCode]; ok {
+			out[scaleCode] = pep3BookletPDFProfileScore{TotalScore: rawScore, HasTotal: true}
+		}
+	}
+	return out
+}
+
+func pep3BookletPDFDevelopmentAgeMonths(value *pep3score.NormValue) (float64, bool, bool, bool) {
+	if value == nil {
+		return 0, false, false, false
+	}
+	text := strings.TrimSpace(value.Text)
+	lessThan := value.Comparator == "<" || strings.HasPrefix(text, "<") || strings.HasPrefix(text, "＜")
+	greaterThan := value.Comparator == ">" || strings.HasPrefix(text, ">") || strings.HasPrefix(text, "＞")
+	if value.Number != nil {
+		return float64(*value.Number), lessThan, greaterThan, true
+	}
+	if months, ok := pep3BookletPDFFirstNumberOrRangeAverage(text); ok {
+		return months, lessThan, greaterThan, true
+	}
+	return 0, lessThan, greaterThan, false
+}
+
+func pep3BookletPDFFirstNumberOrRangeAverage(value string) (float64, bool) {
+	numbers := make([]int, 0, 2)
+	current := -1
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			if current < 0 {
+				current = 0
+			}
+			current = current*10 + int(char-'0')
+			continue
+		}
+		if current >= 0 {
+			numbers = append(numbers, current)
+			current = -1
+		}
+	}
+	if current >= 0 {
+		numbers = append(numbers, current)
+	}
+	if len(numbers) == 0 {
+		return 0, false
+	}
+	if len(numbers) >= 2 && (strings.Contains(value, "-") || strings.Contains(value, "－") || strings.Contains(value, "~") || strings.Contains(value, "至")) {
+		return float64(numbers[0]+numbers[1]) / 2, true
+	}
+	return float64(numbers[0]), true
+}
+
+func pep3BookletPDFDevelopmentAgeMonthsByRawScore(normRecords []pep3score.NormRecord, scaleCode string, rawScore int) (float64, bool, bool, bool) {
+	for _, record := range normRecords {
+		if record.TableType != pep3score.TableDevelopmentAge || record.ScaleCode != scaleCode {
+			continue
+		}
+		if !pep3BookletPDFRawScoreInRange(rawScore, record.RawScoreMin, record.RawScoreMax) {
+			continue
+		}
+		lessThan := record.DevelopmentAgeComparator == "<" || strings.HasPrefix(record.DevelopmentAgeMonthsLabel, "<") || strings.HasPrefix(record.DevelopmentAgeMonthsLabel, "＜")
+		greaterThan := record.DevelopmentAgeComparator == ">" || strings.HasPrefix(record.DevelopmentAgeMonthsLabel, ">") || strings.HasPrefix(record.DevelopmentAgeMonthsLabel, "＞")
+		if record.DevelopmentAgeMonths != nil {
+			return float64(*record.DevelopmentAgeMonths), lessThan, greaterThan, true
+		}
+		if months, ok := pep3BookletPDFFirstNumberOrRangeAverage(record.DevelopmentAgeMonthsLabel); ok {
+			return months, lessThan, greaterThan, true
+		}
+		if lessThan {
+			return 12, true, false, true
+		}
+		if greaterThan {
+			return 92, false, true, true
+		}
+	}
+	return 0, false, false, false
+}
+
+func pep3BookletPDFRawScoreInRange(rawScore int, min, max *int) bool {
+	if min == nil && max == nil {
+		return false
+	}
+	if min != nil && rawScore < *min {
+		return false
+	}
+	if max != nil && rawScore > *max {
+		return false
+	}
+	return true
+}
+
+func pep3BookletPDFDevelopmentProfileY(months float64, lessThan, greaterThan bool, topY, rowGap float64) float64 {
+	const (
+		minMonth = 12.0
+		maxMonth = 92.0
+	)
+	if (lessThan && months <= minMonth) || months < minMonth {
+		return topY + 81*rowGap
+	}
+	if (greaterThan && months >= maxMonth) || months > maxMonth {
+		return topY
+	}
+	return topY + (maxMonth-months)*rowGap
+}
+
+func pep3BookletPDFAgeMonthsText(record model.AssessmentRecordDetailVO) string {
+	months := record.NormAgeMonths
+	if months == 0 {
+		months = record.AgeYears*12 + record.AgeMonths
+	}
+	if months <= 0 {
+		return ""
+	}
+	return strconv.Itoa(months) + "个月"
+}
+
+func loadPEP3BookletPDFNormRecords() ([]pep3score.NormRecord, error) {
+	dataDir, err := resolvePEP3DataDir()
+	if err != nil {
+		return nil, err
+	}
+	paths := []string{filepath.Join(dataDir, pep3NormFile)}
+	correctionPath := filepath.Join(dataDir, pep3CorrectionFile)
+	if fileExists(correctionPath) {
+		paths = append(paths, correctionPath)
+	}
+	records, err := pep3score.LoadMergedNormRecordsFiles(paths...)
+	if err != nil {
+		return nil, fmt.Errorf("load PEP-3 booklet PDF norm records: %w", err)
+	}
+	return records, nil
 }
 
 func pep3BookletPDFItemDomainMap(items []pep3BookletItemDefinition) map[int]string {

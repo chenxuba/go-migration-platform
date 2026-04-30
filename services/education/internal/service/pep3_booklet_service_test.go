@@ -144,10 +144,47 @@ func pep3BookletTestScoreRaw(t *testing.T) []byte {
 		Result: pep3score.AssessmentResult{
 			Age: pep3score.Age{Years: 4, Months: 0, Days: 0, TotalMonthsForNorm: 48},
 			Scales: map[string]pep3score.ScaleResult{
+				"CVP": {
+					ScaleCode:      "CVP",
+					ScaleName:      "认知（语言/语前）",
+					RawScore:       58,
+					DevelopmentAge: pep3BookletTestNormValue("49", 49),
+				},
+				"EL": {
+					ScaleCode:      "EL",
+					ScaleName:      "语言表达",
+					RawScore:       35,
+					DevelopmentAge: pep3BookletTestNormValue("48", 48),
+				},
+				"RL": {
+					ScaleCode:      "RL",
+					ScaleName:      "语言理解",
+					RawScore:       29,
+					DevelopmentAge: pep3BookletTestNormValue("32", 32),
+				},
 				"FM": {
-					ScaleCode: "FM",
-					ScaleName: "小肌肉",
-					RawScore:  2,
+					ScaleCode:      "FM",
+					ScaleName:      "小肌肉",
+					RawScore:       38,
+					DevelopmentAge: pep3BookletTestNormValue("48", 48),
+				},
+				"GM": {
+					ScaleCode:      "GM",
+					ScaleName:      "大肌肉",
+					RawScore:       28,
+					DevelopmentAge: pep3BookletTestNormValue("31", 31),
+				},
+				"VMI": {
+					ScaleCode:      "VMI",
+					ScaleName:      "模仿（视觉/动作）",
+					RawScore:       20,
+					DevelopmentAge: pep3BookletTestNormValue("48", 48),
+				},
+				"PSC": {
+					ScaleCode:      "PSC",
+					ScaleName:      "个人自理",
+					RawScore:       21,
+					DevelopmentAge: pep3BookletTestNormValue("48", 48),
 				},
 			},
 			Composites: map[string]pep3score.CompositeResult{},
@@ -158,4 +195,8 @@ func pep3BookletTestScoreRaw(t *testing.T) []byte {
 		t.Fatalf("marshal score: %v", err)
 	}
 	return raw
+}
+
+func pep3BookletTestNormValue(text string, number int) *pep3score.NormValue {
+	return &pep3score.NormValue{Text: text, Number: &number}
 }
