@@ -82,6 +82,27 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 		t.Skipf("PEP-3 PDF font not available: %v", err)
 	}
 	resultRaw := pep3BookletTestScoreRaw(t)
+	inputRaw, err := json.Marshal(map[string]any{
+		"itemScoreList": []map[string]int{
+			{"itemNo": 1, "score": 2},
+			{"itemNo": 2, "score": 1},
+			{"itemNo": 3, "score": 0},
+			{"itemNo": 4, "score": 2},
+			{"itemNo": 5, "score": 1},
+			{"itemNo": 6, "score": 2},
+			{"itemNo": 7, "score": 1},
+			{"itemNo": 8, "score": 2},
+			{"itemNo": 9, "score": 0},
+			{"itemNo": 10, "score": 2},
+			{"itemNo": 11, "score": 1},
+			{"itemNo": 12, "score": 2},
+			{"itemNo": 13, "score": 1},
+			{"itemNo": 14, "score": 0},
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
 	birthDate := time.Date(2020, 1, 1, 0, 0, 0, 0, time.Local)
 	assessmentDate := time.Date(2024, 1, 1, 0, 0, 0, 0, time.Local)
 
@@ -100,6 +121,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			NormAgeMonths:  48,
 			ExaminerName:   "测试员A",
 		},
+		InputJSON:  inputRaw,
 		ResultJSON: resultRaw,
 	}, "测试机构")
 	if err != nil {

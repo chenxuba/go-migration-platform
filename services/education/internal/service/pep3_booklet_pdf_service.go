@@ -56,6 +56,10 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
+	itemScores, _, err := decodeSavedPEP3InputScores(record.InputJSON)
+	if err != nil {
+		return nil, err
+	}
 	fontPath, err := resolvePEP3PDFFontPath()
 	if err != nil {
 		return nil, err
@@ -85,6 +89,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	}
 	renderer := pep3BookletPDFRenderer{pdf: &pdf}
 	renderer.drawCoverPage(record, score, institutionName)
+	renderer.drawDevelopmentBehaviorScorePage2(itemScores)
 
 	return pdf.GetBytesPdfReturnErr()
 }
@@ -185,6 +190,103 @@ func pep3RightPageX(spreadX float64) float64 {
 	return spreadX - pep3BookletPDFRightPageOffsetX
 }
 
+type pep3BookletPDFPoint struct {
+	X float64
+	Y float64
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePage2(itemScores map[int]int) {
+	if len(itemScores) == 0 {
+		return
+	}
+	_ = r.pdf.SetPage(2)
+	r.pdf.SetTextColor(58, 58, 58)
+
+	// 第4部分第2页：题目右侧小方框的中心坐标。格式为 题号: {X, Y}。
+	itemScoreBoxCenters := map[int]pep3BookletPDFPoint{
+		1:  {383.0, 96.3},  // 旋开瓶盖
+		2:  {383.0, 115.7}, // 吹肥皂泡
+		3:  {383.0, 135.7}, // 目光追视
+		4:  {382.7, 155.0}, // 目光追视跨越中线
+		5:  {515.7, 194.0}, // 检视触觉块
+		6:  {435.7, 237.3}, // 使用万花筒
+		7:  {382.3, 271.0}, // 表现出能够使用惯用眼
+		8:  {303.0, 321.7}, // 转向手摇铃声
+		9:  {435.7, 365.0}, // 模仿按动响铃2次
+		10: {435.7, 413.3}, // 手指插入胶泥并做出凹位
+		11: {382.3, 433.0}, // 抓握竹棒
+		12: {435.3, 453.0}, // 听生日歌假装吹蜡烛
+		13: {435.7, 472.3}, // 享受音乐
+		14: {435.3, 492.3}, // 搓胶泥条
+	}
+	for itemNo, point := range itemScoreBoxCenters {
+		score, ok := itemScores[itemNo]
+		if !ok {
+			continue
+		}
+		r.centerInBox(point.X, point.Y, 18, 8.5, strconv.Itoa(score))
+	}
+
+	r.drawDevelopmentBehaviorScorePage2Tally(itemScores)
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePage2Tally(itemScores map[int]int) {
+	// 第4部分第2页总和：底部汇总表各副测验列的中心 x 坐标。
+	domainX := map[string]float64{
+		"CVP": 302.3,
+		"EL":  328.7,
+		"RL":  355.3,
+		"FM":  382.0,
+		"GM":  408.7,
+		"VMI": 435.3,
+		"AE":  462.0,
+		"SR":  489.0,
+		"CMB": 516.0,
+		"CVB": 542.3,
+	}
+	// 第4部分第2页总和：底部汇总表各得分行的中心 y 坐标。
+	tallyY := map[int]float64{
+		2: 544.3, // （2）通过 / 恰当
+		1: 559.3, // （1）部分通过 / 轻微
+		0: 574.3, // （0）未能通过 / 严重
+	}
+	rawSubtotalY := 529.7 // 第2页总和/原始分小计
+
+	page2Items := map[int]string{
+		1: "FM", 2: "FM", 3: "FM", 4: "FM", 5: "CMB", 6: "VMI", 7: "FM",
+		8: "CVP", 9: "VMI", 10: "VMI", 11: "FM", 12: "VMI", 13: "VMI", 14: "VMI",
+	}
+	tally := make(map[string]map[int]int, len(domainX))
+	rawSubtotal := make(map[string]int, len(domainX))
+	for itemNo, domainCode := range page2Items {
+		score, ok := itemScores[itemNo]
+		if !ok {
+			continue
+		}
+		if tally[domainCode] == nil {
+			tally[domainCode] = map[int]int{}
+		}
+		tally[domainCode][score]++
+		rawSubtotal[domainCode] += score
+	}
+
+	for _, domainCode := range pep3BookletDomainOrder() {
+		x, ok := domainX[domainCode]
+		if !ok {
+			continue
+		}
+		for _, scoreValue := range []int{2, 1, 0} {
+			count := tally[domainCode][scoreValue]
+			if count > 0 {
+				r.centerInBox(x, tallyY[scoreValue], 18, 8, strconv.Itoa(count))
+			}
+		}
+		if subtotal := rawSubtotal[domainCode]; subtotal > 0 {
+			r.centerInBox(x, rawSubtotalY, 18, 8, strconv.Itoa(subtotal))
+		}
+	}
+}
+
 func (r pep3BookletPDFRenderer) drawCoverInstitutionMark(institutionName string) {
 	institutionName = strings.TrimSpace(institutionName)
 	if institutionName == "" {
@@ -209,6 +311,20 @@ func (r pep3BookletPDFRenderer) drawCoverInstitutionMark(institutionName string)
 	)
 	r.pdf.SetTextColor(58, 58, 58)
 	r.text(textX, textY, fontSize, institutionName)
+}
+
+func (r pep3BookletPDFRenderer) centerInBox(centerX, centerY, width, size float64, value string) {
+	value = cleanPEP3BookletPDFValue(value)
+	if value == "" {
+		return
+	}
+	_ = r.pdf.SetFont(pep3BookletPDFFontFamily, "", size)
+	textWidth, err := r.pdf.MeasureTextWidth(value)
+	if err != nil || textWidth > width {
+		textWidth = 0
+	}
+	r.pdf.SetXY(centerX-textWidth/2, centerY+size*0.35)
+	_ = r.pdf.Text(value)
 }
 
 // text 用于左对齐填值：x 是文字起点，y 是底图横线位置，size 是字号。
