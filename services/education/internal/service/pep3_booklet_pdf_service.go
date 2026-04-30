@@ -325,14 +325,14 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordValues(itemRecordVa
 			continue
 		}
 		text := pep3BookletPDFRecordValueTextForField(placement.ItemNo, placement.FieldKey, value)
-			if text == "" {
-				continue
-			}
-			if len(placement.TextLines) > 0 {
-				r.multilineText(placement.TextLines, placement.Size, text)
-				continue
-			}
-			r.center(placement.X, placement.Y, placement.Width, placement.Size, text)
+		if text == "" {
+			continue
+		}
+		if len(placement.TextLines) > 0 {
+			r.multilineText(placement.TextLines, placement.Size, text)
+			continue
+		}
+		r.center(placement.X, placement.Y, placement.Width, placement.Size, text)
 	}
 }
 

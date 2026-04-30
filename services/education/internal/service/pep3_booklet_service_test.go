@@ -136,6 +136,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			"29":  {"size_naming": []string{"first_big", "second_small"}},
 			"31":  {"cat_puzzle_prompt": "需示范", "completed_piece_count": "3"},
 			"33":  {"cow_puzzle_prompt": "自行", "completed_piece_count": "4"},
+			"40":  {"pointed_objects": "气球、板凳、手鼓、杯子、剪刀"},
 			"108": {"classification_prompt": "部分示范", "classification_basis": "颜色", "completed_card_count": "8"},
 			"112": {"digits_7_9": "79", "digits_5_3": "53"},
 			"113": {"digits_2_4_1": "241", "digits_5_7_9": "579"},
