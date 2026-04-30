@@ -384,13 +384,16 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 		"VMI": 409.8, // VMI 图表数值列中心 x
 		"PSC": 461.0, // PSC 图表数值列中心 x
 	}
-	// 第19页：单个圆圈的微调量。正数 x 往右，负数 y 往上。
-	// 目前按用户截图微调：25列右移、34点上移、24列右移、12点上移。
+	// 第19页：每个圆圈的独立微调量。正数 x 往右，负数 y 往上。
+	// 所有列都显式写在这里；某列不需要微调时填 0，后面逐个点手工校准就改对应这一行。
 	pointOffsetByScale := map[string]pep3BookletPDFPoint{
-		"RL":  {X: 1.6, Y: 0.0},  // 25 那一列往右一点
-		"FM":  {X: 0.0, Y: -1.8}, // 34 那个往上一点
-		"GM":  {X: 1.6, Y: 0.0},  // 24 那一列往右一点
-		"VMI": {X: 0.0, Y: -1.8}, // 12 那一列往上一点
+		"CVP": {X: 0.0, Y: 0.0},  // CVP 圆圈微调
+		"EL":  {X: 0.0, Y: 0.0},  // EL 圆圈微调
+		"RL":  {X: 1, Y: 0.0},  // RL 圆圈微调：25 那一列往右一点
+		"FM":  {X: 0.0, Y: -1}, // FM 圆圈微调：34 那个往上一点
+		"GM":  {X: 1, Y: -1},  // GM 圆圈微调：24 那一列往右一点
+		"VMI": {X: 1, Y: -1.8}, // VMI 圆圈微调：12 那一列往上一点
+		"PSC": {X: 0.0, Y: 0.0},  // PSC 圆圈微调
 	}
 	order := []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"}
 
