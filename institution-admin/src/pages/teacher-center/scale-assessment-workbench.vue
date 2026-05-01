@@ -1146,8 +1146,10 @@ function goBack() {
 .pep3-workbench-page {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh;
+  min-height: 0;
   margin: 0;
+  overflow: hidden;
   color: #1f2937;
   background: #f3f5f9;
 }
@@ -1156,6 +1158,7 @@ function goBack() {
   position: sticky;
   top: 0;
   z-index: 30;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
   min-height: 52px;
@@ -1264,9 +1267,46 @@ function goBack() {
   display: grid;
   grid-template-columns: 240px minmax(420px, 1fr) 256px;
   gap: 10px;
-  flex: 1;
+  flex: 1 1 auto;
   min-height: 0;
+  overflow: hidden;
   padding: 10px 10px 0;
+}
+
+.page-sidebar,
+.question-panel {
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-width: thin;
+}
+
+.page-sidebar::-webkit-scrollbar,
+.question-panel::-webkit-scrollbar,
+.score-sidebar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.page-sidebar::-webkit-scrollbar-track,
+.question-panel::-webkit-scrollbar-track,
+.score-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-sidebar::-webkit-scrollbar-thumb,
+.question-panel::-webkit-scrollbar-thumb,
+.score-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.page-sidebar::-webkit-scrollbar-thumb:hover,
+.question-panel::-webkit-scrollbar-thumb:hover,
+.score-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .page-sidebar,
@@ -1279,18 +1319,24 @@ function goBack() {
 }
 
 .page-sidebar {
-  overflow: hidden;
+  scrollbar-gutter: stable;
 }
 
 .sidebar-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
   height: 34px;
   padding: 0 16px;
+  background: rgba(255, 255, 255, 0.98);
   border-bottom: 1px solid #e5eaf1;
+  border-radius: 8px 8px 0 0;
   font-size: 13px;
   font-weight: 700;
+  backdrop-filter: blur(8px);
 }
 
 .page-group {
@@ -1819,6 +1865,14 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  min-height: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding-right: 2px;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
 }
 
 .right-card {
@@ -1984,6 +2038,7 @@ function goBack() {
   position: sticky;
   bottom: 0;
   z-index: 11;
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: 136px 1fr 146px 158px 142px;
   align-items: center;
