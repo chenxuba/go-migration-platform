@@ -8,32 +8,18 @@ import {
   ExperimentOutlined,
   FileDoneOutlined,
   FileTextOutlined,
-  HeartOutlined,
   SearchOutlined,
   TeamOutlined,
 } from '@ant-design/icons-vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import {
+  getScaleLibraryApi,
+  type ScaleLibraryItem,
+  type ScaleLibraryResponse,
+  type ScaleLibraryStatus,
+} from '@/api/teacher-center/scale-library'
 import scaleIntroImage from '@/assets/images/image.png'
 import messageService from '@/utils/messageService'
-
-type ScaleStatus = 'available' | 'disabled'
-
-interface ScaleCard {
-  id: number
-  name: string
-  description: string
-  tags: string[]
-  category: string
-  ageRange: string
-  status: ScaleStatus
-  itemCount: number
-  domainCount: number
-  duration: string
-  latestUse: string
-  usageCount: number
-  references: string[]
-  acknowledgements: string[]
-}
 
 interface ChildOption {
   id: number
@@ -49,162 +35,19 @@ interface ChildOption {
 const searchText = ref('')
 const childSearchText = ref('')
 const ageScope = ref('all')
+const categoryFilter = ref('all')
+const scenarioFilter = ref('')
+const statusFilter = ref('')
+const durationScope = ref('')
 const selectedChildId = ref<number>(10015)
 const startModalOpen = ref(false)
 const detailModalOpen = ref(false)
-const activeScale = ref<ScaleCard>()
-
-const categoryTabs = [
-  { key: 'all', label: '全部', count: 68, color: 'blue', icon: AppstoreOutlined },
-  { key: 'standard', label: '标准化测评', count: 24, color: 'blue', icon: CheckCircleFilled },
-  { key: 'screening', label: '筛查量表', count: 18, color: 'orange', icon: ExperimentOutlined },
-  { key: 'development', label: '发展评估', count: 10, color: 'orange', icon: TeamOutlined },
-  { key: 'social', label: '社交行为', count: 8, color: 'purple', icon: HeartOutlined },
-  { key: 'sensory', label: '感觉统合', count: 6, color: 'orange', icon: ExperimentOutlined },
-  { key: 'emotion', label: '情绪行为', count: 7, color: 'purple', icon: HeartOutlined },
-]
-
-const summaryCards = [
-  { label: '全部量表', value: 68, suffix: '个', desc: '覆盖8大类评估领域', icon: AppstoreOutlined, tone: 'blue' },
-  { label: '可用量表', value: 58, suffix: '个', desc: '可正常发起测评', icon: CheckCircleFilled, tone: 'green' },
-  { label: '停用量表', value: 10, suffix: '个', desc: '暂不可发起测评', icon: FileTextOutlined, tone: 'orange' },
-  { label: '本月已测评', value: 156, suffix: '次', desc: '较上月 ↑ 23%', icon: BarsOutlined, tone: 'purple' },
-]
-
-const scaleCards: ScaleCard[] = [
-  {
-    id: 1,
-    name: 'PEP-3 儿童心理教育评核',
-    description: '评估儿童认知、语言、运动、行为及照顾者报告表现。',
-    tags: ['标准化测评', '2-7岁', '阶段复测'],
-    category: '标准化测评',
-    ageRange: '2-7岁',
-    status: 'available',
-    itemCount: 172,
-    domainCount: 13,
-    duration: '45-90分钟',
-    latestUse: '2025-05-12',
-    usageCount: 128,
-    references: [
-      'Schopler, E., Lansing, M. D., Reichler, R. J., & Marcus, L. M. (2005). Psychoeducational Profile: Third Edition (PEP-3). PRO-ED.',
-      'PEP-3 中文版手册及机构本土化施测记录规范。',
-    ],
-    acknowledgements: [
-      '王晓琳博士（儿童发展评估顾问）',
-      '陈志远老师（PEP-3 施测支持）',
-    ],
-  },
-  {
-    id: 2,
-    name: '感觉统合能力筛查',
-    description: '筛查儿童感觉统合发展状况与功能水平。',
-    tags: ['筛查量表', '3-12岁', '专项筛查'],
-    category: '筛查量表',
-    ageRange: '3-12岁',
-    status: 'available',
-    itemCount: 62,
-    domainCount: 16,
-    duration: '15-30分钟',
-    latestUse: '2025-05-08',
-    usageCount: 96,
-    references: [
-      'Dunn, W. (1999). Sensory Profile: User\'s Manual. Psychological Corporation.',
-      '儿童感觉统合评估工具与机构专项筛查条目。',
-    ],
-    acknowledgements: [
-      '刘文静老师（感觉统合顾问）',
-      '赵明教授（筛查工具修订）',
-    ],
-  },
-  {
-    id: 3,
-    name: '社交互动能力评估',
-    description: '评估儿童社交理解、社交表达及社交互动能力。',
-    tags: ['社交行为', '4-12岁', '日常跟踪'],
-    category: '社交行为',
-    ageRange: '4-12岁',
-    status: 'available',
-    itemCount: 88,
-    domainCount: 6,
-    duration: '20-40分钟',
-    latestUse: '2025-05-10',
-    usageCount: 67,
-    references: [
-      '参考社交沟通与互动观察量表编制规范。',
-      '结合机构本土化评估条目与课堂观察记录形成。',
-    ],
-    acknowledgements: [
-      '周嘉宁老师（社交行为观察）',
-      '何雪梅老师（课堂记录支持）',
-    ],
-  },
-  {
-    id: 4,
-    name: '语言沟通能力评估',
-    description: '覆盖语言理解、语言表达、语用沟通及互动意图。',
-    tags: ['发展评估', '2-8岁', '阶段复测'],
-    category: '发展评估',
-    ageRange: '2-8岁',
-    status: 'disabled',
-    itemCount: 96,
-    domainCount: 11,
-    duration: '30-45分钟',
-    latestUse: '2025-05-09',
-    usageCount: 12,
-    references: [
-      '参考儿童语言发展评估与语用沟通观察资料。',
-      '结合机构教学评估场景与阶段复测记录形成。',
-    ],
-    acknowledgements: [
-      '唐可欣博士（语言发展顾问）',
-      '宋雨晴老师（语用沟通支持）',
-    ],
-  },
-  {
-    id: 5,
-    name: '行为观察记录表',
-    description: '用于记录儿童在自然情境中的行为表现与频率。',
-    tags: ['情绪行为', '2-12岁', '日常跟踪'],
-    category: '情绪行为',
-    ageRange: '2-12岁',
-    status: 'disabled',
-    itemCount: 36,
-    domainCount: 4,
-    duration: '10-20分钟',
-    latestUse: '2025-05-07',
-    usageCount: 8,
-    references: [
-      '参考应用行为分析观察记录方法。',
-      '结合机构课堂、训练场景与日常跟踪记录形成。',
-    ],
-    acknowledgements: [
-      '吴思远老师（行为观察顾问）',
-      '郑雅宁老师（ABA 记录支持）',
-    ],
-  },
-  {
-    id: 6,
-    name: '生活自理能力评估',
-    description: '评估儿童进食、穿脱、如厕、清洁等日常自理能力。',
-    tags: ['康复评估', '3-10岁', '结案评估'],
-    category: '康复评估',
-    ageRange: '3-10岁',
-    status: 'available',
-    itemCount: 54,
-    domainCount: 7,
-    duration: '20-30分钟',
-    latestUse: '2025-05-06',
-    usageCount: 43,
-    references: [
-      '参考儿童日常生活能力评估与康复训练记录资料。',
-      '结合机构康复目标与结案评估场景形成。',
-    ],
-    acknowledgements: [
-      '林安然老师（康复训练顾问）',
-      '黄若彤老师（日常生活能力支持）',
-    ],
-  },
-]
+const activeScale = ref<ScaleLibraryItem>()
+const library = ref<ScaleLibraryResponse>({
+  items: [],
+  summary: { total: 0, available: 0, unavailable: 0, monthUsage: 0, usageCount: 0, reservedAuths: 0 },
+  filterOptions: { categories: [], scenarios: [], statuses: [], ageScopes: ['all', '0-2', '2-6', '6-12', '12+'], durations: ['0-15', '15-30', '30-60', '60+'] },
+})
 
 const childOptions: ChildOption[] = [
   { id: 10012, shortName: '乐', name: '乐乐', gender: '男', age: '5岁2个月', contactPhone: '爸爸 176****0124', className: '小海豚班', latestAssessment: '2025-04-28' },
@@ -215,11 +58,60 @@ const childOptions: ChildOption[] = [
 ]
 
 const filteredScales = computed(() => {
-  const keyword = searchText.value.trim()
-  if (!keyword)
-    return scaleCards
-  return scaleCards.filter(item => `${item.name}${item.description}${item.tags.join('')}${item.ageRange}`.includes(keyword))
+  const keyword = searchText.value.trim().toLowerCase()
+  return library.value.items.filter((item) => {
+    if (keyword) {
+      const hit = [
+        item.name,
+        item.code,
+        item.summary,
+        item.category,
+        item.scenario,
+        item.ageRange,
+        item.duration,
+        item.currentVersion,
+        item.dataStatus,
+      ].join(' ').toLowerCase().includes(keyword)
+      if (!hit)
+        return false
+    }
+    if (categoryFilter.value !== 'all' && item.category !== categoryFilter.value)
+      return false
+    if (scenarioFilter.value && item.scenario !== scenarioFilter.value)
+      return false
+    if (statusFilter.value && item.status !== statusFilter.value)
+      return false
+    if (ageScope.value !== 'all' && !ageRangeMatches(item.ageRange, ageScope.value))
+      return false
+    if (durationScope.value && !durationMatches(item.durationMinMinutes, item.durationMaxMinutes, durationScope.value))
+      return false
+    return true
+  })
 })
+
+const categoryTabs = computed(() => {
+  const categories = library.value.filterOptions.categories || []
+  return [
+    { key: 'all', label: '全部', count: library.value.items.length, color: 'blue', icon: AppstoreOutlined },
+    ...categories.map((category, index) => ({
+      key: category,
+      label: category,
+      count: library.value.items.filter(item => item.category === category).length,
+      color: index % 2 === 0 ? 'blue' : 'orange',
+      icon: index % 2 === 0 ? CheckCircleFilled : ExperimentOutlined,
+    })),
+  ]
+})
+
+const summaryCards = computed(() => [
+  { label: '全部量表', value: library.value.summary.total, suffix: '个', desc: '来自系统量表库', icon: AppstoreOutlined, tone: 'blue' },
+  { label: '可用量表', value: library.value.summary.available, suffix: '个', desc: '已配置测评入口', icon: CheckCircleFilled, tone: 'green' },
+  { label: '预留授权', value: library.value.summary.reservedAuths, suffix: '个', desc: '后续接入分配/授权', icon: FileTextOutlined, tone: 'orange' },
+  { label: '本月已测评', value: library.value.summary.monthUsage, suffix: '次', desc: '按当前机构统计', icon: BarsOutlined, tone: 'purple' },
+])
+
+const scenarioOptions = computed(() => library.value.filterOptions.scenarios || [])
+const selectedChild = computed(() => childOptions.find(item => item.id === selectedChildId.value))
 
 const filteredChildOptions = computed(() => {
   const keyword = childSearchText.value.trim()
@@ -228,36 +120,102 @@ const filteredChildOptions = computed(() => {
   return childOptions.filter(item => `${item.name}${item.contactPhone}${item.className}${item.latestAssessment}${item.gender}${item.age}`.includes(keyword))
 })
 
-const selectedChild = computed(() => childOptions.find(item => item.id === selectedChildId.value))
+function unwrap<T>(res: any): T {
+  return (res?.data ?? res?.result ?? res) as T
+}
 
-function statusMeta(status: ScaleStatus) {
-  const map: Record<ScaleStatus, { text: string, className: string }> = {
-    available: { text: '可用', className: 'is-available' },
-    disabled: { text: '停用', className: 'is-disabled' },
+function statusMeta(status: ScaleLibraryStatus, statusText?: string) {
+  const map: Record<string, { text: string, className: string }> = {
+    available: { text: statusText || '可用', className: 'is-available' },
+    unavailable: { text: statusText || '暂不可用', className: 'is-disabled' },
   }
-  return map[status]
+  return map[status] || { text: statusText || '未知', className: 'is-disabled' }
 }
 
 function tagClass(index: number) {
   return ['tag-blue', 'tag-green', 'tag-purple'][index % 3]
 }
 
-function openStartModal(scale: ScaleCard) {
-  if (scale.status === 'disabled') {
-    messageService.warning('该量表已停用，暂不可发起测评')
+function ageRangeMatches(ageRange: string, scope: string) {
+  if (!scope || scope === 'all')
+    return true
+  if (scope === '0-2')
+    return /0|1|2/.test(ageRange)
+  if (scope === '2-6')
+    return /2|3|4|5|6/.test(ageRange)
+  if (scope === '6-12')
+    return /6|7|8|9|10|11|12/.test(ageRange)
+  if (scope === '12+')
+    return /12|以上/.test(ageRange)
+  return ageRange.includes(scope)
+}
+
+function durationMatches(minMinutes: number, maxMinutes: number, scope: string) {
+  let min = Number(minMinutes || 0)
+  let max = Number(maxMinutes || 0)
+  if (min <= 0 && max <= 0)
+    return false
+  if (max <= 0)
+    max = min
+  if (min <= 0)
+    min = max
+  if (scope === '0-15')
+    return max <= 15
+  if (scope === '15-30')
+    return max >= 15 && min <= 30
+  if (scope === '30-60')
+    return max >= 30 && min <= 60
+  if (scope === '60+')
+    return max > 60
+  return true
+}
+
+async function fetchScaleLibrary() {
+  try {
+    const res = await getScaleLibraryApi()
+    library.value = unwrap<ScaleLibraryResponse>(res)
+  } catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || '获取量表库失败')
+  }
+}
+
+function resetFilters() {
+  searchText.value = ''
+  ageScope.value = 'all'
+  categoryFilter.value = 'all'
+  scenarioFilter.value = ''
+  statusFilter.value = ''
+  durationScope.value = ''
+}
+
+function setStatusFilter(value: string) {
+  statusFilter.value = value
+}
+
+function setScenarioFilter(value: string) {
+  scenarioFilter.value = value
+}
+
+function setDurationScope(value: string) {
+  durationScope.value = value
+}
+
+function openStartModal(scale: ScaleLibraryItem) {
+  if (scale.status !== 'available') {
+    messageService.warning('该量表暂不可发起测评')
     return
   }
   activeScale.value = scale
   startModalOpen.value = true
 }
 
-function openDetailModal(scale: ScaleCard) {
+function openDetailModal(scale: ScaleLibraryItem) {
   activeScale.value = scale
   detailModalOpen.value = true
 }
 
-function openIepLibrary(scale: ScaleCard) {
-  messageService.info(`进入 ${scale.name} 的 IEP 库配置`)
+function openIepLibrary(scale: ScaleLibraryItem) {
+  messageService.info(`${scale.name} 的 IEP 库入口已预留`)
 }
 
 function confirmStartAssessment() {
@@ -266,6 +224,8 @@ function confirmStartAssessment() {
   messageService.success(`已选择 ${selectedChild.value.name}，准备开始 ${activeScale.value.name}`)
   startModalOpen.value = false
 }
+
+onMounted(fetchScaleLibrary)
 </script>
 
 <template>
@@ -276,7 +236,8 @@ function confirmStartAssessment() {
         :key="item.key"
         type="button"
         class="category-tab"
-        :class="[`is-${item.color}`, { 'is-active': item.key === 'all' }]"
+        :class="[`is-${item.color}`, { 'is-active': item.key === categoryFilter }]"
+        @click="categoryFilter = item.key"
       >
         <component :is="item.icon" />
         <span>{{ item.label }}</span>
@@ -303,14 +264,14 @@ function confirmStartAssessment() {
       <aside class="filter-panel">
         <div class="filter-title">
           <strong>快速筛选</strong>
-          <a>清空</a>
+          <a @click="resetFilters">清空</a>
         </div>
 
         <div class="filter-group">
           <div class="filter-group__title">状态</div>
-          <a-checkbox checked>全部状态</a-checkbox>
-          <a-checkbox>可用 <span>58</span></a-checkbox>
-          <a-checkbox>停用 <span>10</span></a-checkbox>
+          <a-checkbox :checked="statusFilter === ''" @change="setStatusFilter('')">全部状态</a-checkbox>
+          <a-checkbox :checked="statusFilter === 'available'" @change="setStatusFilter('available')">可用 <span>{{ library.summary.available }}</span></a-checkbox>
+          <a-checkbox :checked="statusFilter === 'unavailable'" @change="setStatusFilter('unavailable')">停用 <span>{{ library.summary.unavailable }}</span></a-checkbox>
         </div>
 
         <div class="filter-group">
@@ -326,19 +287,23 @@ function confirmStartAssessment() {
 
         <div class="filter-group">
           <div class="filter-group__title">使用场景</div>
-          <a-checkbox>入园评估</a-checkbox>
-          <a-checkbox>阶段复测</a-checkbox>
-          <a-checkbox>结案评估</a-checkbox>
-          <a-checkbox>日常跟踪</a-checkbox>
-          <a-checkbox>专项筛查</a-checkbox>
+          <a-checkbox :checked="scenarioFilter === ''" @change="setScenarioFilter('')">全部场景</a-checkbox>
+          <a-checkbox
+            v-for="scenario in scenarioOptions"
+            :key="scenario"
+            :checked="scenarioFilter === scenario"
+            @change="setScenarioFilter(scenario)"
+          >
+            {{ scenario }}
+          </a-checkbox>
         </div>
 
         <div class="filter-group">
           <div class="filter-group__title">测评时长</div>
-          <a-checkbox>15分钟以内</a-checkbox>
-          <a-checkbox>15-30分钟</a-checkbox>
-          <a-checkbox>30-60分钟</a-checkbox>
-          <a-checkbox>60分钟以上</a-checkbox>
+          <a-checkbox :checked="durationScope === '0-15'" @change="setDurationScope(durationScope === '0-15' ? '' : '0-15')">15分钟以内</a-checkbox>
+          <a-checkbox :checked="durationScope === '15-30'" @change="setDurationScope(durationScope === '15-30' ? '' : '15-30')">15-30分钟</a-checkbox>
+          <a-checkbox :checked="durationScope === '30-60'" @change="setDurationScope(durationScope === '30-60' ? '' : '30-60')">30-60分钟</a-checkbox>
+          <a-checkbox :checked="durationScope === '60+'" @change="setDurationScope(durationScope === '60+' ? '' : '60+')">60分钟以上</a-checkbox>
         </div>
       </aside>
 
@@ -350,13 +315,16 @@ function confirmStartAssessment() {
                 <div>
                   <h2>{{ scale.name }}</h2>
                   <div class="tag-list">
-                    <span v-for="(tag, index) in scale.tags" :key="tag" :class="tagClass(index)">{{ tag }}</span>
+                    <span v-if="scale.code" :class="tagClass(0)">{{ scale.code }}</span>
+                    <span v-if="scale.category" :class="tagClass(1)">{{ scale.category }}</span>
+                    <span v-if="scale.ageRange" :class="tagClass(2)">{{ scale.ageRange }}</span>
+                    <span v-if="scale.scenario" :class="tagClass(3)">{{ scale.scenario }}</span>
                   </div>
                 </div>
                 <div class="card-side">
                   <div class="card-status">
-                    <span class="status-pill" :class="statusMeta(scale.status).className">
-                      {{ statusMeta(scale.status).text }}
+                    <span class="status-pill" :class="statusMeta(scale.status, scale.statusText).className">
+                      {{ statusMeta(scale.status, scale.statusText).text }}
                     </span>
                   </div>
                   <div class="card-side-actions">
@@ -364,34 +332,34 @@ function confirmStartAssessment() {
                       <BookOutlined />
                       <span>IEP库</span>
                     </button>
-                  <a-popover placement="bottomRight" trigger="hover" overlay-class-name="reference-popover">
-                    <template #content>
-                      <div class="reference-popover-content">
-                        <div class="reference-section">
-                          <div class="reference-section__title">引用文献</div>
-                          <div
-                            v-for="(reference, referenceIndex) in scale.references"
-                            :key="reference"
-                            class="reference-item"
-                          >
-                            <span>{{ referenceIndex + 1 }}</span>
-                            <p>{{ reference }}</p>
+                    <a-popover placement="bottomRight" trigger="hover" overlay-class-name="reference-popover">
+                      <template #content>
+                        <div class="reference-popover-content">
+                          <div class="reference-section">
+                            <div class="reference-section__title">引用文献</div>
+                            <div
+                              v-for="(reference, referenceIndex) in scale.references"
+                              :key="reference.content"
+                              class="reference-item"
+                            >
+                              <span>{{ referenceIndex + 1 }}</span>
+                              <p>{{ reference.content }}</p>
+                            </div>
+                          </div>
+                          <div class="reference-divider"></div>
+                          <div class="reference-section">
+                            <div class="reference-section__title">特别鸣谢</div>
+                            <div
+                              v-for="(acknowledgement, acknowledgementIndex) in scale.acknowledgements"
+                              :key="acknowledgement.content"
+                              class="acknowledgement-item"
+                            >
+                              <span>{{ acknowledgementIndex + 1 }}</span>
+                              <p>{{ acknowledgement.content }}</p>
+                            </div>
                           </div>
                         </div>
-                        <div class="reference-divider"></div>
-                        <div class="reference-section">
-                          <div class="reference-section__title">特别鸣谢</div>
-                          <div
-                            v-for="(acknowledgement, acknowledgementIndex) in scale.acknowledgements"
-                            :key="acknowledgement"
-                            class="acknowledgement-item"
-                          >
-                            <span>{{ acknowledgementIndex + 1 }}</span>
-                            <p>{{ acknowledgement }}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </template>
+                      </template>
                       <button type="button" class="reference-trigger">
                         <FileTextOutlined />
                         <span>引用文献</span>
@@ -401,22 +369,22 @@ function confirmStartAssessment() {
                 </div>
               </div>
 
-              <p class="scale-desc">{{ scale.description }}</p>
+              <p class="scale-desc">{{ scale.summary || scale.dataStatus || '暂无量表说明' }}</p>
 
               <div class="scale-meta">
                 <div><FileTextOutlined /><span>题目数量</span><b>{{ scale.itemCount }}题</b></div>
                 <div><TeamOutlined /><span>评估维度</span><b>{{ scale.domainCount }}个</b></div>
-                <div><ClockCircleOutlined /><span>测评时长</span><b>{{ scale.duration }}</b></div>
-                <div><FileDoneOutlined /><span>最近使用</span><b>{{ scale.latestUse }}</b></div>
+                <div><ClockCircleOutlined /><span>测评时长</span><b>{{ scale.duration || '--' }}</b></div>
+                <div><FileDoneOutlined /><span>最近使用</span><b>{{ scale.latestUse || '--' }}</b></div>
               </div>
 
               <div class="scale-card__footer">
-                <span>使用次数 {{ scale.usageCount }}次</span>
+                <span>使用次数 {{ scale.usageCount }}次，本月 {{ scale.monthUsage }}次</span>
                 <div class="card-actions">
                   <a-button @click="openDetailModal(scale)">量表介绍</a-button>
                   <a-button
                     type="primary"
-                    :disabled="scale.status === 'disabled'"
+                    :disabled="scale.status !== 'available'"
                     @click="openStartModal(scale)"
                   >
                     开始测评

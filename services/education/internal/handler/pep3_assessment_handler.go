@@ -130,6 +130,31 @@ func (handler *Handler) pep3AssessmentFormTemplate(w http.ResponseWriter, r *htt
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) scaleLibrary(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetScaleLibrary(claims.UserID, model.ScaleLibraryQuery{
+		Keyword:  r.URL.Query().Get("keyword"),
+		Category: r.URL.Query().Get("category"),
+		Scenario: r.URL.Query().Get("scenario"),
+		Status:   r.URL.Query().Get("status"),
+		AgeScope: r.URL.Query().Get("ageScope"),
+		Duration: r.URL.Query().Get("duration"),
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) savePEP3AssessmentDraft(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

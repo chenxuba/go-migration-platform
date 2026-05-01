@@ -53,6 +53,7 @@ func New(db *sql.DB) *Repository {
 	_ = repo.ensureCurrentInstitutionColumn(context.Background())
 	_ = repo.ensureInstUserTeacherColumn(context.Background())
 	_ = repo.ensureInstUserSupervisorColumn(context.Background())
+	_ = repo.ensureScaleLibrarySchema(context.Background())
 	return repo
 }
 

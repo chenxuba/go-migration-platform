@@ -19,6 +19,9 @@ export interface ScaleRecord {
   category: string
   scenario: string
   ageRange: string
+  duration: string
+  durationMinMinutes: number
+  durationMaxMinutes: number
   currentVersion: string
   itemCount: number
   domainCount: number

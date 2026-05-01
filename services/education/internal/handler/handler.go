@@ -54,6 +54,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/students", handler.students)
 	mux.HandleFunc("/api/v1/students/detail", handler.studentDetailView)
 	mux.HandleFunc("/api/v1/assessments/pep3/score", handler.scorePEP3)
+	mux.HandleFunc("/api/v1/assessments/scales/library", handler.scaleLibrary)
 	mux.HandleFunc("/api/v1/assessments/pep3/form-template", handler.pep3AssessmentFormTemplate)
 	mux.HandleFunc("/api/v1/assessments/pep3/drafts/save", handler.savePEP3AssessmentDraft)
 	mux.HandleFunc("/api/v1/assessments/pep3/drafts/item/save", handler.savePEP3AssessmentDraftItem)

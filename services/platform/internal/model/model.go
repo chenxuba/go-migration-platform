@@ -59,25 +59,28 @@ type ScaleTextResourceMutation struct {
 }
 
 type ScaleRecord struct {
-	ID               int64                 `json:"id"`
-	Name             string                `json:"name"`
-	Code             string                `json:"code"`
-	Category         string                `json:"category"`
-	Scenario         string                `json:"scenario"`
-	AgeRange         string                `json:"ageRange"`
-	CurrentVersion   string                `json:"currentVersion"`
-	ItemCount        int                   `json:"itemCount"`
-	DomainCount      int                   `json:"domainCount"`
-	InstitutionCount int                   `json:"institutionCount"`
-	MonthUsage       int                   `json:"monthUsage"`
-	DataStatus       string                `json:"dataStatus"`
-	UpdatedAt        string                `json:"updatedAt"`
-	Summary          string                `json:"summary"`
-	ExecutionEntry   string                `json:"executionEntry"`
-	APIPackage       string                `json:"apiPackage"`
-	References       []ScaleTextResource   `json:"references"`
-	Acknowledgements []ScaleTextResource   `json:"acknowledgements"`
-	AuthInstitutions []ScaleInstitutionRow `json:"authInstitutions"`
+	ID                 int64                 `json:"id"`
+	Name               string                `json:"name"`
+	Code               string                `json:"code"`
+	Category           string                `json:"category"`
+	Scenario           string                `json:"scenario"`
+	AgeRange           string                `json:"ageRange"`
+	Duration           string                `json:"duration"`
+	DurationMinMinutes int                   `json:"durationMinMinutes"`
+	DurationMaxMinutes int                   `json:"durationMaxMinutes"`
+	CurrentVersion     string                `json:"currentVersion"`
+	ItemCount          int                   `json:"itemCount"`
+	DomainCount        int                   `json:"domainCount"`
+	InstitutionCount   int                   `json:"institutionCount"`
+	MonthUsage         int                   `json:"monthUsage"`
+	DataStatus         string                `json:"dataStatus"`
+	UpdatedAt          string                `json:"updatedAt"`
+	Summary            string                `json:"summary"`
+	ExecutionEntry     string                `json:"executionEntry"`
+	APIPackage         string                `json:"apiPackage"`
+	References         []ScaleTextResource   `json:"references"`
+	Acknowledgements   []ScaleTextResource   `json:"acknowledgements"`
+	AuthInstitutions   []ScaleInstitutionRow `json:"authInstitutions"`
 }
 
 type ScaleMutation struct {
