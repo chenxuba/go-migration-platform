@@ -54,7 +54,6 @@ const library = ref<ScaleLibraryResponse>({
 })
 let libraryRequestSeq = 0
 let childRequestSeq = 0
-let childSearchTimer: number | undefined
 
 const categoryTabs = computed(() => {
   const categories = library.value.filterOptions.categories || []
@@ -143,14 +142,6 @@ async function fetchChildCandidates() {
     selectedChildId.value = undefined
     messageService.error(error?.response?.data?.message || error?.message || '获取学员列表失败')
   }
-}
-
-function scheduleFetchChildCandidates() {
-  if (childSearchTimer)
-    window.clearTimeout(childSearchTimer)
-  childSearchTimer = window.setTimeout(() => {
-    void fetchChildCandidates()
-  }, 260)
 }
 
 function handleChildAvatarError(child: ScaleAssessmentStudentCandidate) {
@@ -243,6 +234,17 @@ function openStartModal(scale: ScaleLibraryItem) {
   void fetchChildCandidates()
 }
 
+function searchChildCandidates() {
+  selectedChildId.value = undefined
+  void fetchChildCandidates()
+}
+
+function resetChildCandidates() {
+  childSearchText.value = ''
+  selectedChildId.value = undefined
+  void fetchChildCandidates()
+}
+
 function openDetailModal(scale: ScaleLibraryItem) {
   activeScale.value = scale
   detailModalOpen.value = true
@@ -269,20 +271,12 @@ function confirmStartAssessment() {
   })
 }
 
-watch(childSearchText, () => {
-  if (!startModalOpen.value)
-    return
-  scheduleFetchChildCandidates()
-})
-
 onMounted(() => {
   void fetchScaleLibrary()
   window.addEventListener('resize', updateCategoryScrollState)
 })
 
 onBeforeUnmount(() => {
-  if (childSearchTimer)
-    window.clearTimeout(childSearchTimer)
   window.removeEventListener('resize', updateCategoryScrollState)
 })
 </script>
@@ -500,21 +494,18 @@ onBeforeUnmount(() => {
           v-model:value="childSearchText"
           allow-clear
           placeholder="搜索儿童姓名 / 联系电话"
+          @press-enter="searchChildCandidates"
         >
           <template #suffix>
             <SearchOutlined />
           </template>
         </a-input>
-        <a-select placeholder="班级" style="width: 108px">
-          <a-select-option value="小海豚班">小海豚班</a-select-option>
-          <a-select-option value="海星班">海星班</a-select-option>
-        </a-select>
-        <a-select placeholder="在读状态" style="width: 118px">
-          <a-select-option value="在读">在读</a-select-option>
-        </a-select>
-        <a-select placeholder="测评状态" style="width: 118px">
-          <a-select-option value="未测评">未测评</a-select-option>
-        </a-select>
+        <a-button type="primary" @click="searchChildCandidates">
+          搜索
+        </a-button>
+        <a-button @click="resetChildCandidates">
+          重置
+        </a-button>
       </div>
 
       <div class="child-table">
@@ -1281,7 +1272,7 @@ onBeforeUnmount(() => {
 
 .child-filter-bar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 108px 118px 118px;
+  grid-template-columns: minmax(0, 1fr) 84px 84px;
   gap: 12px;
   margin-bottom: 14px;
 }
