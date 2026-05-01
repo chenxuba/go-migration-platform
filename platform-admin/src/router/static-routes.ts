@@ -55,6 +55,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/scales',
+    name: 'PlatformScales',
+    component: () => import('~/pages/platform/scales/index.vue'),
+    meta: {
+      title: '量表管理',
+      access: [PlatformAccessEnum.scaleManage],
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/tenants',
     name: 'PlatformTenants',
     component: () => import('~/pages/platform/tenants/index.vue'),

@@ -113,7 +113,7 @@ const routes: RouteRecordRaw[] = [
       title: '系统配置',
       icon: 'SettingOutlined',
       tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
-      access: [PlatformAccessEnum.systemConfig, PlatformAccessEnum.defaultRole, PlatformAccessEnum.version, PlatformAccessEnum.storage, PlatformAccessEnum.loginTemplate, PlatformAccessEnum.permission],
+      access: [PlatformAccessEnum.systemConfig, PlatformAccessEnum.defaultRole, PlatformAccessEnum.version, PlatformAccessEnum.scaleManage, PlatformAccessEnum.storage, PlatformAccessEnum.loginTemplate, PlatformAccessEnum.permission],
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -135,6 +135,16 @@ const routes: RouteRecordRaw[] = [
           title: '版本管理',
           tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.version],
+        },
+      },
+      {
+        path: '/platform/scales',
+        name: 'PlatformScales',
+        component: () => import('~/pages/platform/scales/index.vue'),
+        meta: {
+          title: '量表管理',
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
+          access: [PlatformAccessEnum.scaleManage],
         },
       },
       {

@@ -24,14 +24,14 @@ const (
 	pep3DomainMapFile   = "pep3-score-domain-map.json"
 	pep3NormFile        = "pep3-norm-conversion-ocr-draft.json"
 	pep3CorrectionFile  = "pep3-norm-manual-corrections.json"
-	pep3DraftDataStatus = "题库为简体整理稿；常模为OCR草稿并叠加人工校对修正，投产前需完成全表核验"
+	pep3DraftDataStatus = ""
 )
 
 type PEP3ScoreDataInfo struct {
 	ScaleCode    string `json:"scaleCode"`
 	ScaleVersion string `json:"scaleVersion"`
 	model.PEP3NormDataInfo
-	DataStatus string   `json:"dataStatus"`
+	DataStatus string   `json:"dataStatus,omitempty"`
 	Sources    []string `json:"sources"`
 }
 

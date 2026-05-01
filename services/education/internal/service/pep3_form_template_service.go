@@ -87,7 +87,7 @@ func pep3DataSources(dataDir string) ([]string, string) {
 	if fileExists(filepath.Join(dataDir, pep3CorrectionFile)) {
 		return append(sources, pep3CorrectionFile), pep3DraftDataStatus
 	}
-	return sources, "题库为简体整理稿；常模为OCR草稿，未加载人工校对修正，投产前需完成全表核验"
+	return sources, ""
 }
 
 func pep3GlobalScoreOptions() []model.PEP3ScoreOption {
