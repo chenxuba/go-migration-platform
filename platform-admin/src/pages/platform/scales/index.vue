@@ -1,40 +1,24 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
 import {
-  BookOutlined,
   DownOutlined,
   PlusOutlined,
   ReloadOutlined,
-  TeamOutlined,
+  SearchOutlined,
 } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
 import messageService from '@/utils/messageService'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 import { PlatformAccessEnum } from '~@/constants/access'
 
-type ScaleStatus = 'available' | 'disabled'
-type DetailTab = 'base' | 'versions' | 'auth' | 'iep' | 'citation'
+type DetailTab = 'base' | 'auth'
 type LooseScaleRecord = ScaleRecord | Record<string, any>
-
-interface ScaleVersionRow {
-  version: string
-  status: string
-  itemCount: number
-  updatedAt: string
-}
 
 interface ScaleInstitutionRow {
   name: string
   contact: string
   authState: string
   expireAt: string
-}
-
-interface ScaleIepRow {
-  name: string
-  count: number
-  owner: string
-  updatedAt: string
 }
 
 interface ScaleRecord {
@@ -44,8 +28,6 @@ interface ScaleRecord {
   category: string
   scenario: string
   ageRange: string
-  status: ScaleStatus
-  engineType: string
   currentVersion: string
   itemCount: number
   domainCount: number
@@ -56,20 +38,15 @@ interface ScaleRecord {
   summary: string
   executionEntry: string
   apiPackage: string
-  references: string[]
-  acknowledgements: string[]
-  versionRows: ScaleVersionRow[]
   authInstitutions: ScaleInstitutionRow[]
-  iepLibraries: ScaleIepRow[]
 }
 
 const { hasAccess } = useAccess()
 
 const keyword = ref('')
+const appliedKeyword = ref('')
 const categoryFilter = ref('')
 const scenarioFilter = ref('')
-const statusFilter = ref<'all' | ScaleStatus>('all')
-const engineFilter = ref('')
 const activeDetailTab = ref<DetailTab>('base')
 const detailOpen = ref(false)
 const selectedScale = ref<ScaleRecord | null>(null)
@@ -82,9 +59,7 @@ const scaleRecords = ref<ScaleRecord[]>([
     category: '标准化测评',
     scenario: '现场测评',
     ageRange: '2岁6个月 - 6岁',
-    status: 'available',
-    engineType: '内置评分引擎',
-    currentVersion: '2025-92mo-draft',
+    currentVersion: '2025-92题版',
     itemCount: 172,
     domainCount: 13,
     institutionCount: 29,
@@ -94,42 +69,26 @@ const scaleRecords = ref<ScaleRecord[]>([
     summary: '面向儿童心理教育与康复评估的标准化量表，已接入机构端测评工作台。',
     executionEntry: '机构端 /teacherCenter/assessment-calendar',
     apiPackage: '/api/v1/assessments/pep3/*',
-    references: [
-      'Schopler, E. et al. PEP-3 Clinical Guide',
-      '儿童心理教育评核相关本土化译注',
-      '康复评估与教育干预常模整理稿',
-    ],
-    acknowledgements: ['张老师', '李博士', '王主任', '周老师'],
-    versionRows: [
-      { version: '2025-92mo-draft', status: '已发布', itemCount: 172, updatedAt: '2026-05-01 09:20' },
-      { version: '2025-92mo-rev01', status: '草稿', itemCount: 172, updatedAt: '2026-04-28 16:12' },
-      { version: '2024-90mo-initial', status: '停用', itemCount: 168, updatedAt: '2026-04-10 10:30' },
-    ],
     authInstitutions: [
       { name: '星河康复中心', contact: '主任 138****1024', authState: '已授权', expireAt: '2026-12-31' },
       { name: '启明特殊教育学校', contact: '教务 176****2311', authState: '已授权', expireAt: '2026-10-15' },
       { name: '晨曦儿童发展中心', contact: '院长 139****9088', authState: '待复核', expireAt: '2026-08-30' },
     ],
-    iepLibraries: [
-      { name: 'PEP3-IEP 基础版', count: 42, owner: '教研中心', updatedAt: '2026-04-30 14:20' },
-      { name: 'PEP3-IEP 语言训练', count: 18, owner: '语训组', updatedAt: '2026-04-29 17:45' },
-      { name: 'PEP3-IEP 认知干预', count: 25, owner: '康复组', updatedAt: '2026-04-28 11:15' },
-    ],
   },
 ])
 
 const columns: TableColumnsType<ScaleRecord> = [
-  { title: '量表信息', key: 'scale', width: 220, fixed: 'left' as const },
-  { title: '分类 / 场景', key: 'meta', width: 160 },
-  { title: '当前版本', key: 'version', width: 140 },
-  { title: '题库', key: 'data', width: 120, align: 'center' as const },
-  { title: '授权机构', key: 'auth', width: 110, align: 'center' as const },
-  { title: '最近更新', key: 'updatedAt', width: 140 },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
+  { title: '量表信息', key: 'scale', width: 300, fixed: 'left' as const },
+  { title: '分类 / 场景', key: 'meta', width: 170 },
+  { title: '当前版本', key: 'version', width: 170 },
+  { title: '题库', key: 'data', width: 130, align: 'center' as const },
+  { title: '授权机构', key: 'auth', width: 130, align: 'center' as const },
+  { title: '最近更新', key: 'updatedAt', width: 160 },
+  { title: '操作', key: 'action', width: 190, fixed: 'right' as const },
 ]
 
 const filteredScaleRecords = computed(() => {
-  const key = keyword.value.trim().toLowerCase()
+  const key = appliedKeyword.value.trim().toLowerCase()
   return scaleRecords.value.filter((item) => {
     if (key) {
       const hit = [item.name, item.code, item.currentVersion, item.category, item.scenario, item.ageRange]
@@ -142,10 +101,6 @@ const filteredScaleRecords = computed(() => {
     if (categoryFilter.value && item.category !== categoryFilter.value)
       return false
     if (scenarioFilter.value && item.scenario !== scenarioFilter.value)
-      return false
-    if (statusFilter.value !== 'all' && item.status !== statusFilter.value)
-      return false
-    if (engineFilter.value && item.engineType !== engineFilter.value)
       return false
     return true
   })
@@ -161,41 +116,27 @@ const scenarioOptions = computed(() => ['全部场景', ...new Set(scaleRecords.
   value: item === '全部场景' ? '' : item,
 })))
 
-const engineOptions = computed(() => ['全部引擎', ...new Set(scaleRecords.value.map(item => item.engineType))].map(item => ({
-  label: item,
-  value: item === '全部引擎' ? '' : item,
-})))
-
 const summaryCards = computed(() => {
   const total = scaleRecords.value.length
-  const availableCount = scaleRecords.value.filter(item => item.status === 'available').length
-  const disabledCount = scaleRecords.value.filter(item => item.status === 'disabled').length
   const institutionCount = scaleRecords.value.reduce((sum, item) => sum + item.institutionCount, 0)
   const monthUsage = scaleRecords.value.reduce((sum, item) => sum + item.monthUsage, 0)
 
   return [
     { label: '全部量表', value: total, hint: '量表包总数' },
-    { label: '可用量表', value: availableCount, hint: '可供机构授权' },
-    { label: '停用量表', value: disabledCount, hint: '当前不可执行' },
     { label: '已授权机构', value: institutionCount, hint: '跨量表授权数' },
     { label: '本月测评', value: monthUsage, hint: '按量表汇总' },
   ]
 })
-
-function formatStatus(status: ScaleStatus) {
-  return status === 'available' ? '可用' : '停用'
-}
-
-function statusColor(status: ScaleStatus) {
-  return status === 'available' ? 'green' : 'default'
-}
 
 function formatDateOnly(value: string) {
   return value?.slice(0, 10) || '--'
 }
 
 function formatTimeOnly(value: string) {
-  return value?.slice(11, 19) || '--'
+  const time = value?.slice(11, 19) || ''
+  if (!time)
+    return '--'
+  return time.length === 5 ? `${time}:00` : time
 }
 
 function asScaleRecord(record: LooseScaleRecord) {
@@ -208,23 +149,19 @@ function openScaleDetail(record: LooseScaleRecord, tab: DetailTab = 'base') {
   detailOpen.value = true
 }
 
-function handleToggleStatus(record: LooseScaleRecord) {
-  const scale = asScaleRecord(record)
-  scale.status = scale.status === 'available' ? 'disabled' : 'available'
-  messageService.success(`已切换为${formatStatus(scale.status)}状态`)
+function handleSearch() {
+  appliedKeyword.value = keyword.value.trim()
 }
 
-function handlePublishVersion(record: LooseScaleRecord) {
-  const scale = asScaleRecord(record)
-  messageService.success(`已触发 ${scale.name} 的版本发布流程`)
+function handlePendingAction(actionName: string) {
+  messageService.info(`${actionName}功能暂未开放`)
 }
 
 function resetFilters() {
   keyword.value = ''
+  appliedKeyword.value = ''
   categoryFilter.value = ''
   scenarioFilter.value = ''
-  statusFilter.value = 'all'
-  engineFilter.value = ''
 }
 </script>
 
@@ -267,46 +204,46 @@ function resetFilters() {
     <div class="scale-panel">
       <div class="scale-toolbar">
         <div class="scale-toolbar__filters">
-          <a-input
-            v-model:value="keyword"
-            allow-clear
-            placeholder="搜索量表名称、编码、版本、场景"
-            class="scale-toolbar__keyword"
-          />
+          <div class="scale-filter-item scale-filter-item--keyword">
+            <span class="scale-filter-item__label">关键词搜索</span>
+            <a-input
+              v-model:value="keyword"
+              allow-clear
+              placeholder="搜索量表名称、编码、版本、场景"
+              class="scale-toolbar__keyword"
+              @press-enter="handleSearch"
+            />
+          </div>
 
-          <a-select
-            v-model:value="categoryFilter"
-            :options="categoryOptions"
-            placeholder="分类"
-            allow-clear
-            class="scale-toolbar__select"
-          />
+          <div class="scale-filter-item">
+            <span class="scale-filter-item__label">量表分类</span>
+            <a-select
+              v-model:value="categoryFilter"
+              :options="categoryOptions"
+              placeholder="分类"
+              allow-clear
+              class="scale-toolbar__select"
+            />
+          </div>
 
-          <a-select
-            v-model:value="scenarioFilter"
-            :options="scenarioOptions"
-            placeholder="使用场景"
-            allow-clear
-            class="scale-toolbar__select"
-          />
+          <div class="scale-filter-item">
+            <span class="scale-filter-item__label">使用场景</span>
+            <a-select
+              v-model:value="scenarioFilter"
+              :options="scenarioOptions"
+              placeholder="使用场景"
+              allow-clear
+              class="scale-toolbar__select"
+            />
+          </div>
 
-          <a-select
-            v-model:value="engineFilter"
-            :options="engineOptions"
-            placeholder="评分引擎"
-            allow-clear
-            class="scale-toolbar__select"
-          />
+          <a-button type="primary" class="scale-toolbar__search" @click="handleSearch">
+            <template #icon>
+              <SearchOutlined />
+            </template>
+            搜索
+          </a-button>
 
-          <a-segmented
-            v-model:value="statusFilter"
-            class="scale-toolbar__status"
-            :options="[
-              { label: '全部', value: 'all' },
-              { label: '可用', value: 'available' },
-              { label: '停用', value: 'disabled' },
-            ]"
-          />
         </div>
 
         <a-button class="scale-toolbar__reset" @click="resetFilters">
@@ -322,7 +259,7 @@ function resetFilters() {
         :columns="columns"
         :data-source="filteredScaleRecords"
         :pagination="false"
-        :scroll="{ x: 1070 }"
+        :scroll="{ x: 1250 }"
         row-key="id"
         size="small"
       >
@@ -338,10 +275,6 @@ function resetFilters() {
                     {{ record.name }}
                   </div>
                 </a-tooltip>
-                <span class="scale-state" :class="`scale-state--${record.status}`">
-                  <span class="scale-state__dot" />
-                  {{ formatStatus(record.status) }}
-                </span>
               </div>
 
               <div class="scale-cell__meta">
@@ -367,9 +300,6 @@ function resetFilters() {
               <div class="meta-cell__main">
                 {{ record.currentVersion }}
               </div>
-              <div class="meta-cell__sub">
-                {{ record.engineType }}
-              </div>
             </div>
           </template>
 
@@ -379,7 +309,7 @@ function resetFilters() {
                 {{ record.itemCount }}题
               </div>
               <div class="metric-cell__label">
-                {{ record.domainCount }} 个维度
+                {{ record.domainCount }}个维度
               </div>
             </div>
           </template>
@@ -422,27 +352,15 @@ function resetFilters() {
                   <DownOutlined class="scale-actions__arrow" />
                 </a>
                 <template #overlay>
-                  <a-menu class="scale-actions__menu" @click="({ key }) => {
-                    if (key === 'versions')
-                      openScaleDetail(record, 'versions')
-                    if (key === 'iep')
-                      openScaleDetail(record, 'iep')
-                    if (key === 'publish')
-                      handlePublishVersion(record)
-                    if (key === 'toggle')
-                      handleToggleStatus(record)
-                  }">
-                    <a-menu-item key="versions">
-                      版本数据
-                    </a-menu-item>
-                    <a-menu-item key="iep">
+                  <a-menu class="scale-actions__menu">
+                    <a-menu-item key="iep" @click="handlePendingAction('IEP库')">
                       IEP库
                     </a-menu-item>
-                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManagePublish)" key="publish">
-                      发布版本
+                    <a-menu-item key="references" @click="handlePendingAction('引用文献')">
+                      引用文献
                     </a-menu-item>
-                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageEdit)" key="toggle">
-                      {{ record.status === 'available' ? '停用量表' : '启用量表' }}
+                    <a-menu-item key="acknowledgements" @click="handlePendingAction('特别鸣谢')">
+                      特别鸣谢
                     </a-menu-item>
                   </a-menu>
                 </template>
@@ -471,14 +389,9 @@ function resetFilters() {
             </div>
           </div>
 
-          <div class="detail-top__tags">
-            <a-tag :color="statusColor(selectedScale.status)">
-              {{ formatStatus(selectedScale.status) }}
-            </a-tag>
-            <a-tag color="blue">
-              {{ selectedScale.currentVersion }}
-            </a-tag>
-          </div>
+          <a-tag color="blue">
+            {{ selectedScale.currentVersion }}
+          </a-tag>
         </div>
 
         <a-tabs v-model:activeKey="activeDetailTab" class="detail-tabs">
@@ -503,9 +416,6 @@ function resetFilters() {
                 <a-descriptions-item label="适用年龄">
                   {{ selectedScale.ageRange }}
                 </a-descriptions-item>
-                <a-descriptions-item label="评分引擎">
-                  {{ selectedScale.engineType }}
-                </a-descriptions-item>
                 <a-descriptions-item label="执行入口">
                   {{ selectedScale.executionEntry }}
                 </a-descriptions-item>
@@ -516,32 +426,6 @@ function resetFilters() {
                   {{ selectedScale.dataStatus }}
                 </a-descriptions-item>
               </a-descriptions>
-            </div>
-          </a-tab-pane>
-
-          <a-tab-pane key="versions" tab="版本数据">
-            <div class="detail-section">
-              <div class="detail-section__head">
-                <div class="detail-section__title">
-                  版本列表
-                </div>
-                <a-tag color="blue">
-                  {{ selectedScale.versionRows.length }} 个版本
-                </a-tag>
-              </div>
-
-              <a-table
-                :columns="[
-                  { title: '版本', dataIndex: 'version', key: 'version' },
-                  { title: '状态', dataIndex: 'status', key: 'status', width: 110 },
-                  { title: '题数', dataIndex: 'itemCount', key: 'itemCount', width: 100, align: 'center' },
-                  { title: '更新时间', dataIndex: 'updatedAt', key: 'updatedAt', width: 160 },
-                ]"
-                :data-source="selectedScale.versionRows"
-                :pagination="false"
-                row-key="version"
-                size="small"
-              />
             </div>
           </a-tab-pane>
 
@@ -571,67 +455,6 @@ function resetFilters() {
             </div>
           </a-tab-pane>
 
-          <a-tab-pane key="iep" tab="IEP库">
-            <div class="detail-section">
-              <div class="detail-section__head">
-                <div class="detail-section__title">
-                  IEP 库入口
-                </div>
-                <a-tag color="blue">
-                  {{ selectedScale.iepLibraries.length }} 个库
-                </a-tag>
-              </div>
-
-              <div class="iep-grid">
-                <div v-for="item in selectedScale.iepLibraries" :key="item.name" class="iep-card">
-                  <div class="iep-card__title">
-                    {{ item.name }}
-                  </div>
-                  <div class="iep-card__meta">
-                    <span>{{ item.count }} 条目标</span>
-                    <span>{{ item.owner }}</span>
-                  </div>
-                  <div class="iep-card__time">
-                    {{ item.updatedAt }}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </a-tab-pane>
-
-          <a-tab-pane key="citation" tab="引用与鸣谢">
-            <div class="detail-section">
-              <div class="detail-section__group">
-                <div class="detail-section__head">
-                  <div class="detail-section__title">
-                    引用文献
-                  </div>
-                </div>
-                <div class="detail-list">
-                  <div v-for="item in selectedScale.references" :key="item" class="detail-list__item">
-                    <BookOutlined />
-                    <span>{{ item }}</span>
-                  </div>
-                </div>
-              </div>
-
-              <a-divider />
-
-              <div class="detail-section__group">
-                <div class="detail-section__head">
-                  <div class="detail-section__title">
-                    特别鸣谢
-                  </div>
-                </div>
-                <div class="detail-list detail-list--people">
-                  <div v-for="person in selectedScale.acknowledgements" :key="person" class="detail-list__item">
-                    <TeamOutlined />
-                    <span>{{ person }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </a-tab-pane>
         </a-tabs>
       </template>
     </PlatformModalShell>
@@ -682,7 +505,7 @@ function resetFilters() {
 
 .scale-summary {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   overflow: hidden;
   border: 1px solid #e9edf3;
   border-radius: 10px;
@@ -690,8 +513,11 @@ function resetFilters() {
 }
 
 .scale-summary__item {
-  min-height: 58px;
-  padding: 9px 16px;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  min-height: 42px;
+  padding: 8px 18px;
   border-right: 1px solid #eef2f6;
 }
 
@@ -701,22 +527,24 @@ function resetFilters() {
 
 .scale-summary__label {
   color: #667085;
-  font-size: 12px;
-  line-height: 18px;
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
 }
 
 .scale-summary__value {
-  margin-top: 2px;
   color: #1f2329;
   font-size: 20px;
   font-weight: 700;
   line-height: 24px;
+  white-space: nowrap;
 }
 
 .scale-summary__hint {
   color: #98a2b3;
   font-size: 12px;
-  line-height: 18px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
 .scale-panel {
@@ -738,19 +566,37 @@ function resetFilters() {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 16px;
   min-width: 0;
 }
 
+.scale-filter-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.scale-filter-item--keyword {
+  gap: 8px;
+}
+
+.scale-filter-item__label {
+  flex-shrink: 0;
+  color: #262626;
+  font-size: 14px;
+  line-height: 32px;
+  white-space: nowrap;
+}
+
 .scale-toolbar__keyword {
-  width: 340px;
+  width: 300px;
 }
 
 .scale-toolbar__select {
-  width: 142px;
+  width: 150px;
 }
 
-.scale-toolbar__status {
+.scale-toolbar__search {
   flex-shrink: 0;
 }
 
@@ -820,31 +666,6 @@ function resetFilters() {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.scale-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  color: #667085;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.scale-state__dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 999px;
-  background: #98a2b3;
-}
-
-.scale-state--available {
-  color: #389e0d;
-}
-
-.scale-state--available .scale-state__dot {
-  background: #52c41a;
 }
 
 .scale-cell__meta {
@@ -974,13 +795,6 @@ function resetFilters() {
   line-height: 20px;
 }
 
-.detail-top__tags {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
-}
-
 .detail-tabs :deep(.ant-tabs-nav) {
   margin-bottom: 12px;
 }
@@ -1009,63 +823,6 @@ function resetFilters() {
   font-size: 14px;
   font-weight: 700;
   line-height: 22px;
-}
-
-.iep-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 12px;
-}
-
-.iep-card {
-  padding: 14px 16px;
-  border: 1px solid #e9edf3;
-  border-radius: 12px;
-  background: #fff;
-}
-
-.iep-card__title {
-  color: #1f2329;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.iep-card__meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-top: 8px;
-  color: #667085;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.iep-card__time {
-  margin-top: 10px;
-  color: #98a2b3;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.detail-list {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.detail-list--people {
-  gap: 8px;
-}
-
-.detail-list__item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: #344054;
-  font-size: 13px;
-  line-height: 20px;
 }
 
 @media (max-width: 1200px) {

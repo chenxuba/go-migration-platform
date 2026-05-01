@@ -14,7 +14,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	score := PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
 			ScaleCode:    "PEP3",
-			ScaleVersion: "2025-92mo-draft",
+			ScaleVersion: "2025-92题版",
 			Sources:      []string{"pep3-item-bank-simplified-draft.json"},
 		},
 		Result: pep3score.AssessmentResult{
@@ -57,7 +57,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 			StudentName:    "李东尼",
 			AssessmentCode: "PEP3",
 			AssessmentName: "PEP-3儿童心理教育评核",
-			ScaleVersion:   "2025-92mo-draft",
+			ScaleVersion:   "2025-92题版",
 			BirthDate:      &birthDate,
 			AssessmentDate: &assessmentDate,
 			AgeYears:       3,
@@ -164,7 +164,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 			StudentName:    "李东尼",
 			AssessmentCode: "PEP3",
 			AssessmentName: "PEP-3儿童心理教育评核",
-			ScaleVersion:   "2025-92mo-draft",
+			ScaleVersion:   "2025-92题版",
 			BirthDate:      &birthDate,
 			AssessmentDate: &assessmentDate,
 			AgeYears:       4,
@@ -198,7 +198,7 @@ func pep3BookletTestScoreRaw(t *testing.T) []byte {
 	score := PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
 			ScaleCode:    "PEP3",
-			ScaleVersion: "2025-92mo-draft",
+			ScaleVersion: "2025-92题版",
 			Sources:      []string{"pep3-item-bank-simplified-draft.json"},
 		},
 		Result: pep3score.AssessmentResult{

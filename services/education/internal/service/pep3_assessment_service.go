@@ -17,7 +17,7 @@ import (
 
 const (
 	pep3ScaleCode       = "PEP3"
-	pep3ScaleVersion    = "2025-92mo-draft"
+	pep3ScaleVersion    = "2025-92题版"
 	pep3LegacyVersion   = "2025-draft"
 	pep3NormSourcePDF   = "PEP-3常模(2025).pdf"
 	pep3ItemBankFile    = "pep3-item-bank-simplified-draft.json"

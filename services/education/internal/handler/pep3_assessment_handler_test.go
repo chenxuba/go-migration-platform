@@ -160,10 +160,10 @@ func TestScorePEP3EndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	if !envelope.Success {
 		t.Fatalf("expected success response: %+v", envelope)
 	}
-	if envelope.Data.ScaleCode != "PEP3" || envelope.Data.ScaleVersion != "2025-92mo-draft" {
+	if envelope.Data.ScaleCode != "PEP3" || envelope.Data.ScaleVersion != "2025-92题版" {
 		t.Fatalf("unexpected scale info: %+v", envelope.Data)
 	}
-	if envelope.Data.NormVersion != "2025-92mo-draft" || envelope.Data.DevelopmentAgeMaxMonths != 92 || envelope.Data.NormAgeBandMaxMonths != 89 || envelope.Data.NormSourcePDF != "PEP-3常模(2025).pdf" {
+	if envelope.Data.NormVersion != "2025-92题版" || envelope.Data.DevelopmentAgeMaxMonths != 92 || envelope.Data.NormAgeBandMaxMonths != 89 || envelope.Data.NormSourcePDF != "PEP-3常模(2025).pdf" {
 		t.Fatalf("unexpected norm info: %+v", envelope.Data)
 	}
 	if envelope.Data.Result.Age.Years != 3 || envelope.Data.Result.Age.Months != 3 || envelope.Data.Result.Age.Days != 11 || envelope.Data.Result.Age.TotalMonthsForNorm != 39 {

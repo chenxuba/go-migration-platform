@@ -18,7 +18,7 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 	score := PEP3ScoreResponse{
 		PEP3ScoreDataInfo: PEP3ScoreDataInfo{
 			ScaleCode:    "PEP3",
-			ScaleVersion: "2025-92mo-draft",
+			ScaleVersion: "2025-92题版",
 			DataStatus:   "常模OCR草稿，需复核",
 			Sources:      []string{"pep3-norm-conversion-ocr-draft.json"},
 		},
@@ -75,7 +75,7 @@ func TestBuildPEP3ReportFromSavedScore(t *testing.T) {
 			StudentName:    "李东尼",
 			AssessmentCode: "PEP3",
 			AssessmentName: "PEP-3儿童心理教育评核",
-			ScaleVersion:   "2025-92mo-draft",
+			ScaleVersion:   "2025-92题版",
 			BirthDate:      &birthDate,
 			AssessmentDate: &assessmentDate,
 			AgeYears:       3,

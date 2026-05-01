@@ -107,8 +107,8 @@
 响应会返回：
 
 - `scaleCode`：量表编码，目前为 `PEP3`
-- `scaleVersion`：当前数据版本，目前为 `2025-92mo-draft`
-- `normVersion`：当前常模版本，目前为 `2025-92mo-draft`
+- `scaleVersion`：当前数据版本，目前为 `2025-92题版`
+- `normVersion`：当前常模版本，目前为 `2025-92题版`
 - `developmentAgeMaxMonths`：发展年龄换算表的最高月龄，目前为 `92`
 - `normAgeBandMaxMonths`：按实足年龄查百分位/标准分的最高常模年龄组上限，目前为 `89`
 - `normSourcePdf`：常模来源 PDF，目前为 `PEP-3常模(2025).pdf`
