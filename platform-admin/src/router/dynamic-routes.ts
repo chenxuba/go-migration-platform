@@ -106,6 +106,30 @@ const routes: RouteRecordRaw[] = [
     ],
   },
   {
+    path: '/platform/scale-config',
+    redirect: '/platform/scales',
+    name: 'PlatformScaleConfigCenter',
+    meta: {
+      title: '量表配置',
+      icon: 'ProfileOutlined',
+      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
+      access: [PlatformAccessEnum.scaleConfig, PlatformAccessEnum.scaleManage],
+    },
+    component: basicRouteMap.RouteView,
+    children: [
+      {
+        path: '/platform/scales',
+        name: 'PlatformScales',
+        component: () => import('~/pages/platform/scales/index.vue'),
+        meta: {
+          title: '量表管理',
+          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
+          access: [PlatformAccessEnum.scaleManage],
+        },
+      },
+    ],
+  },
+  {
     path: '/platform/system-config',
     redirect: '/platform/versions',
     name: 'PlatformSystemConfigCenter',
@@ -165,30 +189,6 @@ const routes: RouteRecordRaw[] = [
           title: '权限管理',
           access: [PlatformAccessEnum.permission],
           tenantRoles: ['platform_admin'],
-        },
-      },
-    ],
-  },
-  {
-    path: '/platform/scale-config',
-    redirect: '/platform/scales',
-    name: 'PlatformScaleConfigCenter',
-    meta: {
-      title: '量表配置',
-      icon: 'ProfileOutlined',
-      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
-      access: [PlatformAccessEnum.scaleConfig, PlatformAccessEnum.scaleManage],
-    },
-    component: basicRouteMap.RouteView,
-    children: [
-      {
-        path: '/platform/scales',
-        name: 'PlatformScales',
-        component: () => import('~/pages/platform/scales/index.vue'),
-        meta: {
-          title: '量表管理',
-          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
-          access: [PlatformAccessEnum.scaleManage],
         },
       },
     ],

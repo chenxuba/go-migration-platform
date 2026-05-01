@@ -343,20 +343,28 @@ function resetFilters() {
                 授权机构
               </a>
 
-              <a-dropdown placement="bottomRight" :trigger="['click']">
+              <a-dropdown
+                v-if="hasAccess([
+                  PlatformAccessEnum.scaleManageIepTarget,
+                  PlatformAccessEnum.scaleManageReference,
+                  PlatformAccessEnum.scaleManageThanks,
+                ])"
+                placement="bottomRight"
+                :trigger="['click']"
+              >
                 <a class="scale-actions__link scale-actions__more">
                   更多
                   <DownOutlined class="scale-actions__arrow" />
                 </a>
                 <template #overlay>
                   <a-menu class="scale-actions__menu">
-                    <a-menu-item key="iep" @click="handlePendingAction('IEP库')">
-                      IEP库
+                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageIepTarget)" key="iep" @click="handlePendingAction('IEP目标库')">
+                      IEP目标库
                     </a-menu-item>
-                    <a-menu-item key="references" @click="handlePendingAction('引用文献')">
+                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageReference)" key="references" @click="handlePendingAction('引用文献')">
                       引用文献
                     </a-menu-item>
-                    <a-menu-item key="acknowledgements" @click="handlePendingAction('特别鸣谢')">
+                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageThanks)" key="acknowledgements" @click="handlePendingAction('特别鸣谢')">
                       特别鸣谢
                     </a-menu-item>
                   </a-menu>

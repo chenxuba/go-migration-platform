@@ -151,6 +151,9 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 					Children: []platformMenuSeed{
 						consoleButtonSeed("新增量表", "sysScaleAdd", 10, "量表管理新增量表操作权限。"),
 						consoleButtonSeed("机构授权", "sysScaleAuth", 20, "量表管理配置量表机构授权操作权限。"),
+						consoleButtonSeed("IEP目标库", "sysScaleIepTarget", 30, "量表管理查看IEP目标库操作权限。"),
+						consoleButtonSeed("引用文献", "sysScaleReference", 40, "量表管理查看引用文献操作权限。"),
+						consoleButtonSeed("特别鸣谢", "sysScaleThanks", 50, "量表管理查看特别鸣谢操作权限。"),
 					},
 				},
 			},
