@@ -83,6 +83,9 @@ const expandedGroupKeys = ref<string[]>([])
 const draftItemSaveStatus = ref<Record<number, DraftItemSaveStatus>>({})
 const draftItemSaveErrors = ref<Record<number, string>>({})
 const draftItemSaveTimers = new Map<number, number>()
+const draftItemSaveSeq = new Map<number, number>()
+const draftItemSaveInFlight = new Set<number>()
+const autoSaveLastSavedAt = ref('')
 let draftCreationPromise: Promise<PEP3AssessmentDraftDetail | undefined> | undefined
 
 const editor = reactive<{
@@ -167,6 +170,19 @@ const previousScoreOption = computed(() => {
   if (previousScore.value === undefined)
     return undefined
   return currentScoreOptions.value.find(item => item.value === previousScore.value)
+})
+const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
+  const statuses = Object.values(draftItemSaveStatus.value)
+  if (statuses.some(status => status === 'queued' || status === 'saving'))
+    return 'saving'
+  return autoSaveLastSavedAt.value ? 'saved' : 'idle'
+})
+const autoSaveText = computed(() => {
+  if (autoSaveState.value === 'saving')
+    return '自动保存中...'
+  if (autoSaveState.value === 'saved')
+    return `已自动保存为草稿 ${autoSaveLastSavedAt.value}`
+  return ''
 })
 const currentDisplayIndex = computed(() => totalItemCount.value ? currentIndex.value + 1 : 0)
 const hasPreviousItem = computed(() => currentIndex.value > 0)
@@ -413,6 +429,11 @@ async function restartAssessment() {
 
 function resetAssessmentInputForRestart() {
   clearDraftItemSaveTimers()
+  draftItemSaveSeq.clear()
+  draftItemSaveInFlight.clear()
+  draftItemSaveStatus.value = {}
+  draftItemSaveErrors.value = {}
+  autoSaveLastSavedAt.value = ''
   draft.value = undefined
   currentProgress.value = undefined
   caregiverInvite.value = undefined
@@ -767,14 +788,15 @@ function clearDraftItemSaveTimers() {
 function queueDraftItemSave(itemNo: number) {
   if (itemNo <= 0)
     return
-  setDraftItemSaveStatus(itemNo, 'queued')
+  draftItemSaveSeq.set(itemNo, (draftItemSaveSeq.get(itemNo) || 0) + 1)
   const existingTimer = draftItemSaveTimers.get(itemNo)
-  if (existingTimer)
+  if (existingTimer) {
     window.clearTimeout(existingTimer)
-  draftItemSaveTimers.set(itemNo, window.setTimeout(() => {
     draftItemSaveTimers.delete(itemNo)
+  }
+  setDraftItemSaveStatus(itemNo, 'saving')
+  if (!draftItemSaveInFlight.has(itemNo))
     void saveDraftItem(itemNo)
-  }, 450))
 }
 
 async function ensureDraftForItemSave() {
@@ -794,29 +816,43 @@ async function ensureDraftForItemSave() {
 async function saveDraftItem(itemNo: number) {
   if (itemNo <= 0)
     return
-  setDraftItemSaveStatus(itemNo, 'saving')
-  const canSave = await ensureDraftForItemSave()
-  if (!canSave || !editor.id) {
-    setDraftItemSaveStatus(itemNo, 'error', '草稿创建失败')
+  if (draftItemSaveInFlight.has(itemNo))
     return
-  }
-  const score = editor.itemScores[itemNo]
+
+  draftItemSaveInFlight.add(itemNo)
   try {
-    const res = await savePEP3AssessmentDraftItemApi({
-      draftId: editor.id,
-      itemNo,
-      score: isValidScore(score) ? Number(score) : undefined,
-      recordValues: draftItemRecordValues(itemNo),
-    })
-    const detail = unwrap<PEP3AssessmentDraftDetail>(res)
-    draft.value = detail
-    currentProgress.value = detail.progress
-    setDraftItemSaveStatus(itemNo, 'saved')
+    while (true) {
+      const saveSeq = draftItemSaveSeq.get(itemNo) || 0
+      setDraftItemSaveStatus(itemNo, 'saving')
+      const canSave = await ensureDraftForItemSave()
+      if (!canSave || !editor.id) {
+        setDraftItemSaveStatus(itemNo, 'error', '草稿创建失败')
+        return
+      }
+      const score = editor.itemScores[itemNo]
+      const res = await savePEP3AssessmentDraftItemApi({
+        draftId: editor.id,
+        itemNo,
+        score: isValidScore(score) ? Number(score) : undefined,
+        recordValues: draftItemRecordValues(itemNo),
+      })
+      const detail = unwrap<PEP3AssessmentDraftDetail>(res)
+      draft.value = detail
+      currentProgress.value = detail.progress
+      autoSaveLastSavedAt.value = dayjs().format('MM-DD HH:mm')
+      if ((draftItemSaveSeq.get(itemNo) || 0) === saveSeq) {
+        setDraftItemSaveStatus(itemNo, 'saved')
+        return
+      }
+    }
   }
   catch (error: any) {
     const message = getErrorMessage(error, `第${itemNo}题自动保存失败`)
     setDraftItemSaveStatus(itemNo, 'error', message)
     messageService.error(message)
+  }
+  finally {
+    draftItemSaveInFlight.delete(itemNo)
   }
 }
 
@@ -1006,6 +1042,13 @@ function goBack() {
       <span class="header-divider"></span>
       <span class="header-meta">施测者：<b>{{ examinerName }}</b></span>
       <div class="header-actions">
+        <span
+          v-if="autoSaveText"
+          class="auto-save-status"
+          :class="{ 'is-saving': autoSaveState === 'saving', 'is-saved': autoSaveState === 'saved' }"
+        >
+          {{ autoSaveText }}
+        </span>
         <a-button size="large" class="outline-action" :loading="saving" @click="saveDraft(false)">
           <template #icon>
             <SaveOutlined />
@@ -1371,6 +1414,23 @@ function goBack() {
   align-items: center;
   gap: 8px;
   margin-left: auto;
+}
+
+.auto-save-status {
+  min-width: 190px;
+  color: #64748b;
+  font-size: 13px;
+  line-height: 20px;
+  text-align: right;
+  white-space: nowrap;
+
+  &.is-saving {
+    color: #2563eb;
+  }
+
+  &.is-saved {
+    color: #475569;
+  }
 }
 
 .outline-action,

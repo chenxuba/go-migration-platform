@@ -60,7 +60,7 @@ const allColumns = ref([
     title: '量表分类',
     dataIndex: 'scaleCategory',
     key: 'scaleCategory',
-    width: 120,
+    width: 160,
   },
   {
     title: '测评年龄',
