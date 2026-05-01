@@ -130,6 +130,63 @@ func TestCompositeGreaterThanRangeLookup(t *testing.T) {
 	assertNormValue(t, &value, ">99", 99)
 }
 
+func TestLookupAgeBandValueFallsBackToNearestUsableRawScore(t *testing.T) {
+	engine, err := NewEngine(nil, nil, []NormRecord{
+		ageBandRecord(TableScaledScore, "3.3", "CVP", 10, "5", 5),
+		ageBandRecord(TableScaledScore, "3.3", "CVP", 11, "777", 777),
+		ageBandRecord(TableScaledScore, "3.3", "CVP", 12, "6", 6),
+		ageBandRecord(TableScaledScore, "3.3", "EL", 12, "6", 6),
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	value, ok := engine.lookupAgeBandValue(TableScaledScore, 36, "CVP", 11)
+	if !ok {
+		t.Fatal("expected fallback value for missing/invalid raw score")
+	}
+	assertNormValue(t, &value, "5", 5)
+
+	value, ok = engine.lookupAgeBandValue(TableScaledScore, 36, "EL", 10)
+	if !ok {
+		t.Fatal("expected fallback value before first available raw score")
+	}
+	assertNormValue(t, &value, "6", 6)
+}
+
+func TestLookupDevelopmentAgeFallsBackToNearestRange(t *testing.T) {
+	engine, err := NewEngine(nil, nil, []NormRecord{
+		developmentAgeRecord("CVP", 10, 10, "20", 20),
+		developmentAgeRecord("CVP", 12, 12, "22", 22),
+	})
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	value, ok := engine.lookupDevelopmentAge("CVP", 11)
+	if !ok {
+		t.Fatal("expected fallback development age")
+	}
+	assertNormValue(t, &value, "20", 20)
+}
+
+func TestAverageDevelopmentAgeUsesBoundaryText(t *testing.T) {
+	scales := map[string]ScaleResult{
+		"CVP": {DevelopmentAge: &NormValue{Text: "<12", Comparator: "<"}},
+		"EL":  {DevelopmentAge: &NormValue{Text: "12-14"}},
+		"RL":  {DevelopmentAge: &NormValue{Text: "17", Number: intPtr(17)}},
+	}
+
+	got, ok := averageDevelopmentAge(scales, []string{"CVP", "EL", "RL"})
+	if !ok {
+		t.Fatal("expected boundary development ages to be averaged")
+	}
+	want := 14.0
+	if got != want {
+		t.Fatalf("unexpected averaged development age: got %v want %v", got, want)
+	}
+}
+
 func TestMergeNormRecordsLaterRecordsOverrideEarlier(t *testing.T) {
 	base := []NormRecord{ageBandRecord(TablePercentile, "2.3", "CVP", 16, "10", 10)}
 	override := []NormRecord{ageBandRecord(TablePercentile, "2.3", "CVP", 16, "23", 23)}
@@ -294,6 +351,122 @@ func TestGeneratedDraftsWithManualCorrectionsScoreSample(t *testing.T) {
 	assertComposite(t, userReportSample.Composites[CompositeCommunication], 30, "39", 39)
 	assertComposite(t, userReportSample.Composites[CompositeMotor], 27, "24", 24)
 	assertComposite(t, userReportSample.Composites[CompositeMaladaptiveBehavior], 38, "38", 38)
+}
+
+func TestGeneratedNormLookupsCoverEveryAgeBandWithFallback(t *testing.T) {
+	root := filepath.Join("..", "..")
+	domainPath := filepath.Join(root, "docs", "pep3-score-domain-map.json")
+	normPath := filepath.Join(root, "docs", "pep3-norm-conversion-ocr-draft.json")
+	correctionPath := filepath.Join(root, "docs", "pep3-norm-manual-corrections.json")
+	for _, path := range []string{domainPath, normPath, correctionPath} {
+		if _, err := os.Stat(path); err != nil {
+			t.Skipf("generated PEP-3 draft data not present: %s", path)
+		}
+	}
+
+	domains, err := LoadDomainDefinitionsFile(domainPath)
+	if err != nil {
+		t.Fatalf("LoadDomainDefinitionsFile: %v", err)
+	}
+	norms, err := LoadMergedNormRecordsFiles(normPath, correctionPath)
+	if err != nil {
+		t.Fatalf("LoadMergedNormRecordsFiles: %v", err)
+	}
+	engine, err := NewEngine(nil, domains, norms)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	exactAgeBandRecords := make(map[string]struct{}, len(norms))
+	developmentRecords := make(map[string][]NormRecord)
+	for _, record := range norms {
+		switch record.TableType {
+		case TablePercentile, TableScaledScore:
+			if record.RawScore == nil || !usableAgeBandRecord(record) {
+				continue
+			}
+			exactAgeBandRecords[exactAgeBandKey(record.TableType, record.TableNo, record.ScaleCode, *record.RawScore)] = struct{}{}
+		case TableDevelopmentAge:
+			developmentRecords[record.ScaleCode] = append(developmentRecords[record.ScaleCode], record)
+		}
+	}
+
+	for _, domain := range domains {
+		if domain.MaxRawScore == nil {
+			continue
+		}
+		for raw := 0; raw <= *domain.MaxRawScore; raw++ {
+			if engine.isDevelopmentAgeScale(domain.ScaleCode) {
+				if !developmentAgeCovered(developmentRecords[domain.ScaleCode], raw) {
+					t.Fatalf("missing exact development age for %s raw %d", domain.ScaleCode, raw)
+				}
+				value, ok := engine.lookupDevelopmentAge(domain.ScaleCode, raw)
+				if !ok {
+					t.Fatalf("missing development age fallback for %s raw %d", domain.ScaleCode, raw)
+				}
+				if value.Number == nil {
+					t.Fatalf("development age is not computable for %s raw %d: %+v", domain.ScaleCode, raw, value)
+				}
+			}
+			for _, ageMonths := range []int{24, 30, 36, 42, 48, 54, 60, 66, 72, 78} {
+				percentileTableNo := normTableNo("2", ageMonths)
+				if _, ok := exactAgeBandRecords[exactAgeBandKey(TablePercentile, percentileTableNo, domain.ScaleCode, raw)]; !ok {
+					t.Fatalf("missing exact percentile for age %d %s raw %d", ageMonths, domain.ScaleCode, raw)
+				}
+				if _, ok := engine.lookupAgeBandValue(TablePercentile, ageMonths, domain.ScaleCode, raw); !ok {
+					t.Fatalf("missing percentile fallback for age %d %s raw %d", ageMonths, domain.ScaleCode, raw)
+				}
+				scaledScoreTableNo := normTableNo("3", ageMonths)
+				if _, ok := exactAgeBandRecords[exactAgeBandKey(TableScaledScore, scaledScoreTableNo, domain.ScaleCode, raw)]; !ok {
+					t.Fatalf("missing exact scaled score for age %d %s raw %d", ageMonths, domain.ScaleCode, raw)
+				}
+				if engine.needsScaledScore(domain.ScaleCode) {
+					if _, ok := engine.lookupAgeBandValue(TableScaledScore, ageMonths, domain.ScaleCode, raw); !ok {
+						t.Fatalf("missing scaled score fallback for age %d %s raw %d", ageMonths, domain.ScaleCode, raw)
+					}
+				}
+			}
+		}
+	}
+
+	lowScoreResult, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2023, 5, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		RawScores: map[string]int{
+			"CVP": 0, "EL": 0, "RL": 0,
+			"FM": 0, "GM": 0, "VMI": 0,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score low development-age sample: %v", err)
+	}
+	for _, compositeCode := range []string{CompositeCommunication, CompositeMotor} {
+		developmentAge := lowScoreResult.Composites[compositeCode].DevelopmentAgeMonths
+		if developmentAge == nil || *developmentAge != 12 {
+			t.Fatalf("expected low-score composite %s development age to use <12 boundary, got %+v", compositeCode, developmentAge)
+		}
+	}
+}
+
+func exactAgeBandKey(tableType, tableNo, scaleCode string, rawScore int) string {
+	return tableType + "|" + tableNo + "|" + scaleCode + "|" + strconv.Itoa(rawScore)
+}
+
+func normTableNo(prefix string, ageMonths int) string {
+	band := (ageMonths-24)/6 + 1
+	if band >= 10 {
+		return prefix + ".10"
+	}
+	return prefix + "." + strconv.Itoa(band)
+}
+
+func developmentAgeCovered(records []NormRecord, raw int) bool {
+	for _, record := range records {
+		if rawScoreInRange(raw, record.RawScoreMin, record.RawScoreMax) {
+			return true
+		}
+	}
+	return false
 }
 
 func assertNormValue(t *testing.T, value *NormValue, wantText string, wantNumber int) {

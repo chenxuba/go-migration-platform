@@ -201,31 +201,78 @@ func (e *Engine) scoreComposite(scales map[string]ScaleResult, code, name string
 }
 
 func averageDevelopmentAge(scales map[string]ScaleResult, members []string) (float64, bool) {
-	total := 0
+	total := 0.0
 	count := 0
 	for _, scaleCode := range members {
 		scale := scales[scaleCode]
-		if scale.DevelopmentAge == nil || scale.DevelopmentAge.Number == nil {
+		months, ok := developmentAgeMonthsForAverage(scale.DevelopmentAge)
+		if !ok {
 			return 0, false
 		}
-		if scale.DevelopmentAge.Comparator != "" && scale.DevelopmentAge.Comparator != "=" {
-			return 0, false
-		}
-		total += *scale.DevelopmentAge.Number
+		total += months
 		count++
 	}
 	if count == 0 {
 		return 0, false
 	}
-	return float64(total) / float64(count), true
+	return total / float64(count), true
+}
+
+func developmentAgeMonthsForAverage(value *NormValue) (float64, bool) {
+	if value == nil {
+		return 0, false
+	}
+	if value.Number != nil {
+		return float64(*value.Number), true
+	}
+	return firstNumberOrRangeAverage(value.Text)
+}
+
+func firstNumberOrRangeAverage(value string) (float64, bool) {
+	numbers := make([]int, 0, 2)
+	current := -1
+	for _, char := range value {
+		if char >= '0' && char <= '9' {
+			if current < 0 {
+				current = 0
+			}
+			current = current*10 + int(char-'0')
+			continue
+		}
+		if current >= 0 {
+			numbers = append(numbers, current)
+			current = -1
+		}
+	}
+	if current >= 0 {
+		numbers = append(numbers, current)
+	}
+	if len(numbers) == 0 {
+		return 0, false
+	}
+	if len(numbers) >= 2 && (strings.Contains(value, "-") || strings.Contains(value, "－") || strings.Contains(value, "~") || strings.Contains(value, "至")) {
+		return float64(numbers[0]+numbers[1]) / 2, true
+	}
+	return float64(numbers[0]), true
 }
 
 func (e *Engine) lookupDevelopmentAge(scaleCode string, rawScore int) (NormValue, bool) {
+	var nearest *NormRecord
+	nearestDistance := 0
+	nearestIsLower := false
 	for _, record := range e.normRecords {
 		if record.TableType != TableDevelopmentAge || record.ScaleCode != scaleCode {
 			continue
 		}
 		if !rawScoreInRange(rawScore, record.RawScoreMin, record.RawScoreMax) {
+			if distance, isLower, ok := developmentAgeDistance(rawScore, record); ok {
+				if nearest == nil || distance < nearestDistance || (distance == nearestDistance && isLower && !nearestIsLower) {
+					recordCopy := record
+					nearest = &recordCopy
+					nearestDistance = distance
+					nearestIsLower = isLower
+				}
+			}
 			continue
 		}
 		number := record.DevelopmentAgeMonths
@@ -240,18 +287,50 @@ func (e *Engine) lookupDevelopmentAge(scaleCode string, rawScore int) (NormValue
 			OCRStatus:   record.OCRStatus,
 		}, true
 	}
+	if nearest != nil {
+		number := nearest.DevelopmentAgeMonths
+		return NormValue{
+			Text:        nonEmpty(nearest.DevelopmentAgeMonthsLabel, nearest.ValueText),
+			Comparator:  nearest.DevelopmentAgeComparator,
+			Number:      number,
+			TableNo:     nearest.TableNo,
+			Appendix:    nearest.Appendix,
+			SourcePDF:   nearest.SourcePDF,
+			SourcePages: append([]int(nil), nearest.SourcePages...),
+			OCRStatus:   nearest.OCRStatus,
+		}, true
+	}
 	return NormValue{}, false
 }
 
 func (e *Engine) lookupAgeBandValue(tableType string, ageMonths int, scaleCode string, rawScore int) (NormValue, bool) {
+	var nearest *NormRecord
+	nearestDistance := 0
+	nearestIsLower := false
 	for _, record := range e.normRecords {
 		if record.TableType != tableType || record.ScaleCode != scaleCode || record.RawScore == nil || *record.RawScore != rawScore {
+			if record.TableType == tableType && record.ScaleCode == scaleCode && record.RawScore != nil && ageInBand(ageMonths, record.AgeMinMonths, record.AgeMaxMonths) && usableAgeBandRecord(record) {
+				distance := absInt(*record.RawScore - rawScore)
+				isLower := *record.RawScore < rawScore
+				if nearest == nil || distance < nearestDistance || (distance == nearestDistance && isLower && !nearestIsLower) {
+					recordCopy := record
+					nearest = &recordCopy
+					nearestDistance = distance
+					nearestIsLower = isLower
+				}
+			}
 			continue
 		}
 		if !ageInBand(ageMonths, record.AgeMinMonths, record.AgeMaxMonths) {
 			continue
 		}
+		if !usableAgeBandRecord(record) {
+			continue
+		}
 		return normValue(record), true
+	}
+	if nearest != nil {
+		return normValue(*nearest), true
 	}
 	return NormValue{}, false
 }
@@ -299,6 +378,38 @@ func rawScoreInRange(raw int, minScore, maxScore *int) bool {
 		return false
 	}
 	return true
+}
+
+func developmentAgeDistance(raw int, record NormRecord) (int, bool, bool) {
+	if record.RawScoreMin != nil && raw < *record.RawScoreMin {
+		return *record.RawScoreMin - raw, false, true
+	}
+	if record.RawScoreMax != nil && raw > *record.RawScoreMax {
+		return raw - *record.RawScoreMax, true, true
+	}
+	return 0, false, false
+}
+
+func usableAgeBandRecord(record NormRecord) bool {
+	if record.ValueNumber == nil {
+		return false
+	}
+	value := *record.ValueNumber
+	switch record.TableType {
+	case TablePercentile:
+		return value >= 0 && value <= 99
+	case TableScaledScore:
+		return value >= 1 && value <= 20
+	default:
+		return true
+	}
+}
+
+func absInt(value int) int {
+	if value < 0 {
+		return -value
+	}
+	return value
 }
 
 func ageInBand(ageMonths int, minMonths, maxMonths *int) bool {
