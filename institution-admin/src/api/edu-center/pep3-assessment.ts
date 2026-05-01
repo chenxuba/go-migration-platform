@@ -283,8 +283,10 @@ export interface PEP3AssessmentItem {
   itemTitle: string
   testItem: string
   materials?: string
+  materialImages?: string[]
   method?: string
   guidance?: string
+  guidanceVideo?: string
   domainCode: PEP3ScaleCode
   domainName: string
   standard: string

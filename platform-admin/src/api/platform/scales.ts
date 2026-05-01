@@ -89,14 +89,15 @@ export interface ScaleQuestionBankItem {
   itemTitle: string
   testItem: string
   materials: string
+  materialImages: string[]
   method: string
   describes?: string
   guidance: string
+  guidanceVideo: string
   domainCode: string
   domainName: string
   standard: string
   scoreOptions: ScaleQuestionBankScoreOption[]
-  scoreOptionText: string
   recordFields: ScaleQuestionBankRecordField[]
   sourcePdf?: string
   sourcePages?: number[]

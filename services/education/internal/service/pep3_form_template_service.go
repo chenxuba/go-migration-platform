@@ -15,20 +15,21 @@ import (
 )
 
 type pep3FormItemDefinition struct {
-	ItemNo       int    `json:"item_no"`
-	ItemTitle    string `json:"item_title"`
-	TestItem     string `json:"test_item"`
-	Materials    string `json:"materials"`
-	Method       string `json:"method"`
-	Describes    string `json:"describes"`
-	Guidance     string `json:"guidance"`
-	Domain       string `json:"domain"`
-	DomainCode   string `json:"domain_code"`
-	Standard     string `json:"standard"`
-	ScoreOptions string `json:"score_options"`
-	SourcePDF    string `json:"source_pdf"`
-	SourcePages  []int  `json:"source_pages"`
-	OCRStatus    string `json:"ocr_status"`
+	ItemNo         int      `json:"item_no"`
+	ItemTitle      string   `json:"item_title"`
+	TestItem       string   `json:"test_item"`
+	Materials      string   `json:"materials"`
+	MaterialImages []string `json:"material_images,omitempty"`
+	Method         string   `json:"method"`
+	Describes      string   `json:"describes"`
+	Guidance       string   `json:"guidance"`
+	GuidanceVideo  string   `json:"guidance_video,omitempty"`
+	Domain         string   `json:"domain"`
+	DomainCode     string   `json:"domain_code"`
+	Standard       string   `json:"standard"`
+	SourcePDF      string   `json:"source_pdf"`
+	SourcePages    []int    `json:"source_pages"`
+	OCRStatus      string   `json:"ocr_status"`
 }
 
 func (svc *Service) GetPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, error) {
@@ -178,20 +179,22 @@ func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int, record
 			continue
 		}
 		out = append(out, model.PEP3AssessmentItem{
-			ItemNo:       item.ItemNo,
-			ItemTitle:    nonEmptyString(item.ItemTitle, item.TestItem),
-			TestItem:     nonEmptyString(item.TestItem, item.ItemTitle),
-			Materials:    strings.TrimSpace(item.Materials),
-			Method:       strings.TrimSpace(item.Method),
-			Guidance:     nonEmptyString(item.Describes, item.Guidance),
-			DomainCode:   strings.TrimSpace(item.DomainCode),
-			DomainName:   strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
-			Standard:     strings.TrimSpace(item.Standard),
-			ScoreOptions: pep3ItemScoreOptions(item.ScoreOptions, item.Standard),
-			RecordFields: pep3RecordFieldsForItem(recordFields, item.ItemNo),
-			SourcePDF:    strings.TrimSpace(item.SourcePDF),
-			SourcePages:  append([]int(nil), item.SourcePages...),
-			OCRStatus:    strings.TrimSpace(item.OCRStatus),
+			ItemNo:         item.ItemNo,
+			ItemTitle:      nonEmptyString(item.ItemTitle, item.TestItem),
+			TestItem:       nonEmptyString(item.TestItem, item.ItemTitle),
+			Materials:      strings.TrimSpace(item.Materials),
+			MaterialImages: uniqueNonEmptyStrings(item.MaterialImages),
+			Method:         strings.TrimSpace(item.Method),
+			Guidance:       nonEmptyString(item.Describes, item.Guidance),
+			GuidanceVideo:  strings.TrimSpace(item.GuidanceVideo),
+			DomainCode:     strings.TrimSpace(item.DomainCode),
+			DomainName:     strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
+			Standard:       strings.TrimSpace(item.Standard),
+			ScoreOptions:   pep3ItemScoreOptions(item.Standard),
+			RecordFields:   pep3RecordFieldsForItem(recordFields, item.ItemNo),
+			SourcePDF:      strings.TrimSpace(item.SourcePDF),
+			SourcePages:    append([]int(nil), item.SourcePages...),
+			OCRStatus:      strings.TrimSpace(item.OCRStatus),
 		})
 	}
 	return out
@@ -212,12 +215,9 @@ func pep3RecordFieldsForItem(recordFields map[int][]model.PEP3ItemRecordField, i
 	return pep3ItemRecordFields(itemNo)
 }
 
-func pep3ItemScoreOptions(rawOptions, standard string) []model.PEP3ScoreOption {
+func pep3ItemScoreOptions(standard string) []model.PEP3ScoreOption {
 	criteria := splitPEP3StandardByScore(standard)
-	values := parsePEP3ScoreOptionValues(rawOptions)
-	if len(values) == 0 {
-		values = []int{2, 1, 0}
-	}
+	values := []int{2, 1, 0}
 	options := make([]model.PEP3ScoreOption, 0, len(values))
 	for _, value := range values {
 		options = append(options, model.PEP3ScoreOption{
@@ -227,23 +227,6 @@ func pep3ItemScoreOptions(rawOptions, standard string) []model.PEP3ScoreOption {
 		})
 	}
 	return options
-}
-
-func parsePEP3ScoreOptionValues(raw string) []int {
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == '/' || r == ',' || r == '，' || r == '、' || r == ' '
-	})
-	values := make([]int, 0, len(parts))
-	seen := make(map[int]bool, len(parts))
-	for _, part := range parts {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || seen[value] {
-			continue
-		}
-		seen[value] = true
-		values = append(values, value)
-	}
-	return values
 }
 
 func splitPEP3StandardByScore(standard string) map[int]string {

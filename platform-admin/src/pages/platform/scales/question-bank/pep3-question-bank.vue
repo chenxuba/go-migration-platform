@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import { Empty } from 'ant-design-vue'
-import { CloseOutlined, EditOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, DeleteOutlined, EditOutlined, PlayCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref, watch } from 'vue'
+import * as qiniu from 'qiniu-js'
 import {
   getScaleQuestionBankApi,
   type ScaleQuestionBank,
@@ -12,7 +14,9 @@ import {
   type ScaleQuestionBankScoreOption,
   updateScaleQuestionBankItemApi,
 } from '@/api/platform/scales'
+import { getQiniuToken, getVideoUploadToken } from '@/api/qiniu'
 import { useQueryBreakpoints } from '@/composables/query-breakpoints'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import messageService from '@/utils/messageService'
 
 const props = defineProps<{
@@ -27,6 +31,10 @@ const activeDomainCode = ref('all')
 const keyword = ref('')
 const appliedKeyword = ref('')
 const editOpen = ref(false)
+const materialImageUploading = ref(false)
+const materialImageUploadProgress = ref(0)
+const guidanceVideoUploading = ref(false)
+const guidanceVideoUploadProgress = ref(0)
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const { isMobile, isPad } = useQueryBreakpoints()
 
@@ -228,13 +236,14 @@ const form = reactive<ScaleQuestionBankItem & { scaleCode: string, scaleVersion:
   itemTitle: '',
   testItem: '',
   materials: '',
+  materialImages: [],
   method: '',
   guidance: '',
+  guidanceVideo: '',
   domainCode: '',
   domainName: '',
   standard: '',
   scoreOptions: [],
-  scoreOptionText: '',
   recordFields: [],
   sourcePages: [],
 })
@@ -308,6 +317,16 @@ function normalizeOptions(options?: ScaleQuestionBankRecordFieldOption[] | null)
   })).filter(item => item.value || item.label)
 }
 
+function normalizeStringArray(values?: string[] | null) {
+  const seen = new Set<string>()
+  return (Array.isArray(values) ? values : []).map(value => String(value || '').trim()).filter((value) => {
+    if (!value || seen.has(value))
+      return false
+    seen.add(value)
+    return true
+  })
+}
+
 function cloneRecordFields(fields?: ScaleQuestionBankRecordField[] | null) {
   return (Array.isArray(fields) ? fields : []).map(field => ({
     key: normalizeQuestionBankText(field.key || ''),
@@ -353,13 +372,14 @@ function normalizeQuestionBank(data: ScaleQuestionBank): ScaleQuestionBank {
       itemTitle: normalizeQuestionBankText(item.itemTitle),
       testItem: normalizeQuestionBankText(item.testItem),
       materials: normalizeQuestionBankText(item.materials),
+      materialImages: normalizeStringArray(item.materialImages),
       method: normalizeQuestionBankText(item.method),
       guidance: normalizeQuestionBankText(item.guidance),
+      guidanceVideo: String(item.guidanceVideo || '').trim(),
       domainCode: normalizeQuestionBankText(item.domainCode),
       domainName: normalizeQuestionBankText(item.domainName),
       standard: normalizeQuestionBankText(item.standard),
       scoreOptions,
-      scoreOptionText: normalizeQuestionBankText(item.scoreOptionText || scoreOptions.map(option => option.value).join('/')),
       recordFields: cloneRecordFields(item.recordFields),
       sourcePdf: normalizeQuestionBankText(item.sourcePdf),
       sourcePages: normalizeNumberArray(item.sourcePages),
@@ -388,19 +408,24 @@ function fillForm(record: ScaleQuestionBankItem) {
   form.itemTitle = normalizeQuestionBankText(record.itemTitle)
   form.testItem = normalizeQuestionBankText(record.testItem)
   form.materials = normalizeQuestionBankText(record.materials)
+  form.materialImages = normalizeStringArray(record.materialImages)
   form.method = normalizeQuestionBankText(record.method)
   form.guidance = normalizeQuestionBankText(record.guidance)
+  form.guidanceVideo = String(record.guidanceVideo || '').trim()
   form.domainCode = normalizeQuestionBankText(record.domainCode)
   form.domainName = normalizeQuestionBankText(record.domainName)
   form.standard = normalizeQuestionBankText(record.standard)
   form.scoreOptions = cloneScoreOptions(record.scoreOptions)
-  form.scoreOptionText = normalizeQuestionBankText(record.scoreOptionText || form.scoreOptions.map(item => item.value).join('/'))
   form.recordFields = cloneRecordFields(record.recordFields)
   form.sourcePages = [...(record.sourcePages || [])]
 }
 
 function openEdit(record: ScaleQuestionBankItem) {
   fillForm(record)
+  materialImageUploading.value = false
+  materialImageUploadProgress.value = 0
+  guidanceVideoUploading.value = false
+  guidanceVideoUploadProgress.value = 0
   editOpen.value = true
 }
 
@@ -449,13 +474,14 @@ function buildPayload() {
     itemTitle: normalizeQuestionBankText(form.itemTitle),
     testItem: normalizeQuestionBankText(form.testItem),
     materials: normalizeQuestionBankText(form.materials),
+    materialImages: normalizeStringArray(form.materialImages),
     method: normalizeQuestionBankText(form.method),
     guidance: normalizeQuestionBankText(form.guidance),
+    guidanceVideo: String(form.guidanceVideo || '').trim(),
     domainCode: normalizeQuestionBankText(form.domainCode),
     domainName: normalizeQuestionBankText(domainNameMap.value.get(form.domainCode) || form.domainName || ''),
     standard: buildScoreStandard(scoreOptions),
     scoreOptions,
-    scoreOptionText: normalizeQuestionBankText(form.scoreOptionText),
     recordFields: form.recordFields.map(field => ({
       key: normalizeQuestionBankText(field.key),
       label: normalizeQuestionBankText(field.label),
@@ -469,6 +495,151 @@ function buildPayload() {
   }
 }
 
+function resolveFileExt(file: File, fallback: string) {
+  const name = file.name || ''
+  if (!name.includes('.'))
+    return fallback
+  return name.slice(name.lastIndexOf('.')) || fallback
+}
+
+function beforeMaterialImageUpload(file: File) {
+  if (!file.type?.startsWith('image/')) {
+    messageService.warning('材料图片只能上传图片文件')
+    return false
+  }
+  if (file.size / 1024 / 1024 > 8) {
+    messageService.warning('材料图片大小不能超过 8MB')
+    return false
+  }
+  return true
+}
+
+function beforeGuidanceVideoUpload(file: File) {
+  if (!file.type?.startsWith('video/')) {
+    messageService.warning('指导视频只能上传视频文件')
+    return false
+  }
+  return true
+}
+
+async function handleMaterialImageUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforeMaterialImageUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  materialImageUploading.value = true
+  materialImageUploadProgress.value = 0
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '材料图片')
+
+    const key = `scale/question/material/${uuid}${resolveFileExt(rawFile, '.png')}`
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      next(result) {
+        materialImageUploadProgress.value = Math.floor(result.total.percent)
+      },
+      error(error) {
+        console.error('upload PEP3 material image failed', error)
+        messageService.error(resolveUploadErrorMessage(error, '材料图片上传失败'))
+        materialImageUploading.value = false
+        materialImageUploadProgress.value = 0
+        options.onError?.(error)
+      },
+      complete(result) {
+        const imageUrl = `${buckethostname}${result.key}`
+        form.materialImages = normalizeStringArray([...form.materialImages, imageUrl])
+        materialImageUploading.value = false
+        materialImageUploadProgress.value = 100
+        messageService.success('材料图片上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    console.error('prepare PEP3 material image upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, '材料图片上传失败'))
+    materialImageUploading.value = false
+    materialImageUploadProgress.value = 0
+    options.onError?.(error)
+  }
+}
+
+async function handleGuidanceVideoUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforeGuidanceVideoUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  guidanceVideoUploading.value = true
+  guidanceVideoUploadProgress.value = 0
+  try {
+    const tokenRes: any = await getVideoUploadToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '指导视频')
+
+    const key = String(uuid || '').trim()
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      next(result) {
+        guidanceVideoUploadProgress.value = Math.floor(result.total.percent)
+      },
+      error(error) {
+        console.error('upload PEP3 guidance video failed', error)
+        messageService.error(resolveUploadErrorMessage(error, '指导视频上传失败'))
+        guidanceVideoUploading.value = false
+        guidanceVideoUploadProgress.value = 0
+        options.onError?.(error)
+      },
+      complete(result) {
+        form.guidanceVideo = `${buckethostname}${result.key}`
+        guidanceVideoUploading.value = false
+        guidanceVideoUploadProgress.value = 100
+        messageService.success('指导视频上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    console.error('prepare PEP3 guidance video upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, '指导视频上传失败'))
+    guidanceVideoUploading.value = false
+    guidanceVideoUploadProgress.value = 0
+    options.onError?.(error)
+  }
+}
+
+function removeMaterialImage(index: number) {
+  form.materialImages = form.materialImages.filter((_, itemIndex) => itemIndex !== index)
+}
+
+function clearGuidanceVideo() {
+  form.guidanceVideo = ''
+  guidanceVideoUploadProgress.value = 0
+}
+
 async function submitEdit() {
   if (!form.itemTitle.trim()) {
     messageService.warning('请输入题目')
@@ -476,6 +647,10 @@ async function submitEdit() {
   }
   if (!form.domainCode.trim()) {
     messageService.warning('请选择维度')
+    return
+  }
+  if (materialImageUploading.value || guidanceVideoUploading.value) {
+    messageService.warning('资源还在上传中，请稍后再保存')
     return
   }
   saving.value = true
@@ -732,8 +907,72 @@ onMounted(loadQuestionBank)
               <a-input v-model:value="form.materials" />
             </a-form-item>
 
+            <a-form-item label="材料图片">
+              <div class="pep3-question-bank-media-field">
+                <div class="pep3-question-bank-media-field__wall">
+                  <div v-for="(imageUrl, imageIndex) in form.materialImages" :key="`${imageUrl}-${imageIndex}`" class="pep3-question-bank-media-field__image">
+                    <img :src="imageUrl" alt="材料图片">
+                    <a-button type="text" danger size="small" class="pep3-question-bank-media-field__remove" @click="removeMaterialImage(imageIndex)">
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                    </a-button>
+                  </div>
+
+                  <a-upload
+                    :custom-request="handleMaterialImageUpload"
+                    :show-upload-list="false"
+                    accept="image/*"
+                    :disabled="materialImageUploading"
+                  >
+                    <div class="pep3-question-bank-media-field__upload-tile">
+                      <PlusOutlined v-if="!materialImageUploading" />
+                      <UploadOutlined v-else />
+                      <span>{{ materialImageUploading ? `${materialImageUploadProgress}%` : '上传图片' }}</span>
+                    </div>
+                  </a-upload>
+                </div>
+
+                <div class="pep3-question-bank-media-field__hint">
+                  支持多张图片，保存后会作为数组写入题目数据。
+                </div>
+              </div>
+            </a-form-item>
+
             <a-form-item label="指导语">
               <a-input v-model:value="form.guidance" :maxlength="160" />
+            </a-form-item>
+
+            <a-form-item label="指导视频">
+              <div class="pep3-question-bank-media-field pep3-question-bank-media-field--video">
+                <div v-if="form.guidanceVideo" class="pep3-question-bank-media-field__video">
+                  <PlayCircleOutlined />
+                  <a :href="form.guidanceVideo" target="_blank" rel="noopener noreferrer">
+                    查看指导视频
+                  </a>
+                  <a-button type="link" size="small" danger :disabled="guidanceVideoUploading" @click="clearGuidanceVideo">
+                    清除
+                  </a-button>
+                </div>
+
+                <a-upload
+                  class="pep3-question-bank-media-field__video-upload"
+                  :custom-request="handleGuidanceVideoUpload"
+                  :show-upload-list="false"
+                  accept="video/*"
+                  :disabled="guidanceVideoUploading"
+                >
+                  <a-button :loading="guidanceVideoUploading">
+                    <template #icon>
+                      <UploadOutlined />
+                    </template>
+                    {{ form.guidanceVideo ? '重新上传视频' : '上传指导视频' }}
+                    <template v-if="guidanceVideoUploading">
+                      {{ guidanceVideoUploadProgress }}%
+                    </template>
+                  </a-button>
+                </a-upload>
+              </div>
             </a-form-item>
           </section>
 
@@ -749,9 +988,6 @@ onMounted(loadQuestionBank)
               <div class="pep3-question-bank-form__section-head">
                 <span>评分选项</span>
               </div>
-              <a-form-item label="选项组合">
-                <a-input v-model:value="form.scoreOptionText" disabled class="pep3-question-bank-form__score-text" />
-              </a-form-item>
               <div v-for="(option, index) in form.scoreOptions" :key="index" class="pep3-question-bank-form__score-row">
                 <a-input-number v-model:value="option.value" disabled :precision="0" />
                 <a-input v-model:value="option.label" disabled />
@@ -1251,16 +1487,18 @@ onMounted(loadQuestionBank)
   font-weight: 600;
 }
 
-.pep3-question-bank-form__score-text {
-  margin-bottom: 8px;
-}
-
 .pep3-question-bank-form__score-row {
   display: grid;
-  grid-template-columns: 84px 112px minmax(0, 1fr);
+  grid-template-columns: 72px 88px minmax(0, 1fr);
   gap: 8px;
   align-items: center;
   margin-top: 8px;
+}
+
+.pep3-question-bank-form__score-row :deep(.ant-input),
+.pep3-question-bank-form__score-row :deep(.ant-input-number) {
+  width: 100%;
+  min-width: 0;
 }
 
 .pep3-question-bank-form__field-option {
@@ -1297,6 +1535,135 @@ onMounted(loadQuestionBank)
 .pep3-question-bank-form__field-option-head {
   color: #667085;
   font-size: 12px;
+}
+
+.pep3-question-bank-media-field {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pep3-question-bank-media-field--video {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.pep3-question-bank-media-field--video :deep(.ant-upload-wrapper),
+.pep3-question-bank-media-field--video :deep(.ant-upload) {
+  display: block;
+  width: auto;
+  line-height: 1;
+}
+
+.pep3-question-bank-media-field__wall {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 112px);
+  gap: 10px;
+  align-items: start;
+}
+
+.pep3-question-bank-media-field__wall :deep(.ant-upload-wrapper),
+.pep3-question-bank-media-field__wall :deep(.ant-upload) {
+  display: block;
+  width: 112px;
+  height: 88px;
+  line-height: 1;
+}
+
+.pep3-question-bank-media-field__image {
+  position: relative;
+  width: 112px;
+  height: 88px;
+  overflow: hidden;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #f8fafc;
+}
+
+.pep3-question-bank-media-field__image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.pep3-question-bank-media-field__remove {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.12);
+}
+
+.pep3-question-bank-media-field__upload-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 112px;
+  height: 88px;
+  border: 1px dashed #cfd8e3;
+  border-radius: 8px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 18px;
+  background: #fbfcfe;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pep3-question-bank-media-field__upload-tile .anticon {
+  font-size: 18px;
+}
+
+.pep3-question-bank-media-field__upload-tile:hover {
+  border-color: var(--pro-ant-color-primary, #1677ff);
+  color: var(--pro-ant-color-primary, #1677ff);
+}
+
+.pep3-question-bank-media-field__hint {
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.pep3-question-bank-media-field__video {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 8px 10px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.pep3-question-bank-media-field__video .anticon {
+  color: var(--pro-ant-color-primary, #1677ff);
+  font-size: 16px;
+}
+
+.pep3-question-bank-media-field__video a {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pep3-question-bank-media-field__video-upload {
+  flex: none;
+}
+
+.pep3-question-bank-media-field__video-upload :deep(.ant-btn) {
+  height: 38px;
+  border-radius: 8px;
 }
 
 .pep3-question-bank-form__empty {

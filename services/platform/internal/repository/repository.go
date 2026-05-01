@@ -1325,20 +1325,21 @@ func (repo *Repository) ListScales(ctx context.Context, keyword, category, scena
 }
 
 type scaleQuestionBankItemRaw struct {
-	ItemNo       int    `json:"item_no"`
-	ItemTitle    string `json:"item_title"`
-	TestItem     string `json:"test_item"`
-	Materials    string `json:"materials"`
-	Method       string `json:"method"`
-	Describes    string `json:"describes,omitempty"`
-	Guidance     string `json:"guidance"`
-	Domain       string `json:"domain"`
-	DomainCode   string `json:"domain_code"`
-	Standard     string `json:"standard"`
-	ScoreOptions string `json:"score_options"`
-	SourcePDF    string `json:"source_pdf"`
-	SourcePages  []int  `json:"source_pages"`
-	OCRStatus    string `json:"ocr_status"`
+	ItemNo         int      `json:"item_no"`
+	ItemTitle      string   `json:"item_title"`
+	TestItem       string   `json:"test_item"`
+	Materials      string   `json:"materials"`
+	MaterialImages []string `json:"material_images"`
+	Method         string   `json:"method"`
+	Describes      string   `json:"describes,omitempty"`
+	Guidance       string   `json:"guidance"`
+	GuidanceVideo  string   `json:"guidance_video"`
+	Domain         string   `json:"domain"`
+	DomainCode     string   `json:"domain_code"`
+	Standard       string   `json:"standard"`
+	SourcePDF      string   `json:"source_pdf"`
+	SourcePages    []int    `json:"source_pages"`
+	OCRStatus      string   `json:"ocr_status"`
 }
 
 type scaleQuestionBankDomainRaw struct {
@@ -1369,6 +1370,23 @@ func scaleQuestionBankDefaultGuidance(raw scaleQuestionBankItemRaw) string {
 
 func scaleQuestionBankGuidance(raw scaleQuestionBankItemRaw) string {
 	return strings.TrimSpace(firstNonEmptyString(raw.Describes, raw.Guidance, scaleQuestionBankDefaultGuidance(raw)))
+}
+
+func normalizeScaleQuestionBankStringArray(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func extractScaleQuestionBankGuidance(method string) string {
@@ -1467,23 +1485,24 @@ func (repo *Repository) GetScaleQuestionBank(ctx context.Context, scaleCode, sca
 			domainName = domainNames[domainCode]
 		}
 		result.Items = append(result.Items, model.ScaleQuestionBankItem{
-			ItemNo:          raw.ItemNo,
-			ItemTitle:       strings.TrimSpace(firstNonEmptyString(raw.ItemTitle, raw.TestItem)),
-			TestItem:        strings.TrimSpace(firstNonEmptyString(raw.TestItem, raw.ItemTitle)),
-			Materials:       strings.TrimSpace(raw.Materials),
-			Method:          strings.TrimSpace(raw.Method),
-			Describes:       strings.TrimSpace(raw.Describes),
-			Guidance:        scaleQuestionBankGuidance(raw),
-			DomainCode:      domainCode,
-			DomainName:      domainName,
-			Standard:        strings.TrimSpace(raw.Standard),
-			ScoreOptions:    scaleQuestionBankScoreOptions(raw.ScoreOptions, raw.Standard),
-			ScoreOptionText: strings.TrimSpace(raw.ScoreOptions),
-			RecordFields:    append([]model.ScaleQuestionBankRecordField{}, recordFields[raw.ItemNo]...),
-			SourcePDF:       strings.TrimSpace(raw.SourcePDF),
-			SourcePages:     append([]int{}, raw.SourcePages...),
-			OCRStatus:       strings.TrimSpace(raw.OCRStatus),
-			UpdatedAt:       updatedAt,
+			ItemNo:         raw.ItemNo,
+			ItemTitle:      strings.TrimSpace(firstNonEmptyString(raw.ItemTitle, raw.TestItem)),
+			TestItem:       strings.TrimSpace(firstNonEmptyString(raw.TestItem, raw.ItemTitle)),
+			Materials:      strings.TrimSpace(raw.Materials),
+			MaterialImages: normalizeScaleQuestionBankStringArray(raw.MaterialImages),
+			Method:         strings.TrimSpace(raw.Method),
+			Describes:      strings.TrimSpace(raw.Describes),
+			Guidance:       scaleQuestionBankGuidance(raw),
+			GuidanceVideo:  strings.TrimSpace(raw.GuidanceVideo),
+			DomainCode:     domainCode,
+			DomainName:     domainName,
+			Standard:       strings.TrimSpace(raw.Standard),
+			ScoreOptions:   scaleQuestionBankScoreOptions(raw.Standard),
+			RecordFields:   append([]model.ScaleQuestionBankRecordField{}, recordFields[raw.ItemNo]...),
+			SourcePDF:      strings.TrimSpace(raw.SourcePDF),
+			SourcePages:    append([]int{}, raw.SourcePages...),
+			OCRStatus:      strings.TrimSpace(raw.OCRStatus),
+			UpdatedAt:      updatedAt,
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -1524,13 +1543,14 @@ func (repo *Repository) UpdateScaleQuestionBankItem(ctx context.Context, input m
 	raw.ItemTitle = strings.TrimSpace(input.ItemTitle)
 	raw.TestItem = strings.TrimSpace(input.TestItem)
 	raw.Materials = strings.TrimSpace(input.Materials)
+	raw.MaterialImages = normalizeScaleQuestionBankStringArray(input.MaterialImages)
 	raw.Method = strings.TrimSpace(input.Method)
 	raw.Describes = strings.TrimSpace(firstNonEmptyString(input.Describes, input.Guidance))
 	raw.Guidance = raw.Describes
+	raw.GuidanceVideo = strings.TrimSpace(input.GuidanceVideo)
 	raw.DomainCode = strings.ToUpper(strings.TrimSpace(input.DomainCode))
 	raw.Domain = strings.TrimSpace(input.DomainName)
 	raw.Standard = strings.TrimSpace(input.Standard)
-	raw.ScoreOptions = normalizeScoreOptionText(input.ScoreOptionText, input.ScoreOptions)
 	if raw.ItemTitle == "" {
 		raw.ItemTitle = raw.TestItem
 	}
@@ -1712,25 +1732,6 @@ func firstNonEmptyString(values ...string) string {
 	return ""
 }
 
-func normalizeScoreOptionText(raw string, options []model.ScaleQuestionBankScoreOption) string {
-	if strings.TrimSpace(raw) != "" {
-		return strings.TrimSpace(raw)
-	}
-	values := make([]string, 0, len(options))
-	seen := make(map[int]bool, len(options))
-	for _, option := range options {
-		if seen[option.Value] {
-			continue
-		}
-		seen[option.Value] = true
-		values = append(values, strconv.Itoa(option.Value))
-	}
-	if len(values) == 0 {
-		return "2/1/0"
-	}
-	return strings.Join(values, "/")
-}
-
 func normalizeQuestionBankRecordFieldOptions(scaleCode string, options []model.ScaleQuestionBankRecordFieldOption) []model.ScaleQuestionBankRecordFieldOption {
 	out := make([]model.ScaleQuestionBankRecordFieldOption, 0, len(options))
 	useNumericValues := strings.EqualFold(strings.TrimSpace(scaleCode), "PEP3")
@@ -1761,12 +1762,9 @@ func normalizeQuestionBankRecordFieldOptions(scaleCode string, options []model.S
 	return out
 }
 
-func scaleQuestionBankScoreOptions(rawOptions, standard string) []model.ScaleQuestionBankScoreOption {
+func scaleQuestionBankScoreOptions(standard string) []model.ScaleQuestionBankScoreOption {
 	criteria := splitScaleQuestionBankStandardByScore(standard)
-	values := parseScaleQuestionBankScoreOptionValues(rawOptions)
-	if len(values) == 0 {
-		values = []int{2, 1, 0}
-	}
+	values := []int{2, 1, 0}
 	options := make([]model.ScaleQuestionBankScoreOption, 0, len(values))
 	for _, value := range values {
 		options = append(options, model.ScaleQuestionBankScoreOption{
@@ -1776,23 +1774,6 @@ func scaleQuestionBankScoreOptions(rawOptions, standard string) []model.ScaleQue
 		})
 	}
 	return options
-}
-
-func parseScaleQuestionBankScoreOptionValues(raw string) []int {
-	parts := strings.FieldsFunc(raw, func(r rune) bool {
-		return r == '/' || r == ',' || r == '，' || r == '、' || r == ' '
-	})
-	values := make([]int, 0, len(parts))
-	seen := make(map[int]bool, len(parts))
-	for _, part := range parts {
-		value, err := strconv.Atoi(strings.TrimSpace(part))
-		if err != nil || seen[value] {
-			continue
-		}
-		seen[value] = true
-		values = append(values, value)
-	}
-	return values
 }
 
 func splitScaleQuestionBankStandardByScore(standard string) map[int]string {

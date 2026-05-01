@@ -192,20 +192,22 @@ type PEP3AssessmentItemGroup struct {
 }
 
 type PEP3AssessmentItem struct {
-	ItemNo       int                   `json:"itemNo"`
-	ItemTitle    string                `json:"itemTitle"`
-	TestItem     string                `json:"testItem"`
-	Materials    string                `json:"materials,omitempty"`
-	Method       string                `json:"method,omitempty"`
-	Guidance     string                `json:"guidance,omitempty"`
-	DomainCode   string                `json:"domainCode"`
-	DomainName   string                `json:"domainName"`
-	Standard     string                `json:"standard"`
-	ScoreOptions []PEP3ScoreOption     `json:"scoreOptions"`
-	RecordFields []PEP3ItemRecordField `json:"recordFields,omitempty"`
-	SourcePDF    string                `json:"sourcePdf,omitempty"`
-	SourcePages  []int                 `json:"sourcePages,omitempty"`
-	OCRStatus    string                `json:"ocrStatus,omitempty"`
+	ItemNo         int                   `json:"itemNo"`
+	ItemTitle      string                `json:"itemTitle"`
+	TestItem       string                `json:"testItem"`
+	Materials      string                `json:"materials,omitempty"`
+	MaterialImages []string              `json:"materialImages,omitempty"`
+	Method         string                `json:"method,omitempty"`
+	Guidance       string                `json:"guidance,omitempty"`
+	GuidanceVideo  string                `json:"guidanceVideo,omitempty"`
+	DomainCode     string                `json:"domainCode"`
+	DomainName     string                `json:"domainName"`
+	Standard       string                `json:"standard"`
+	ScoreOptions   []PEP3ScoreOption     `json:"scoreOptions"`
+	RecordFields   []PEP3ItemRecordField `json:"recordFields,omitempty"`
+	SourcePDF      string                `json:"sourcePdf,omitempty"`
+	SourcePages    []int                 `json:"sourcePages,omitempty"`
+	OCRStatus      string                `json:"ocrStatus,omitempty"`
 }
 
 type PEP3ScoreOption struct {

@@ -129,23 +129,24 @@ type ScaleQuestionBankDomain struct {
 }
 
 type ScaleQuestionBankItem struct {
-	ItemNo          int                            `json:"itemNo"`
-	ItemTitle       string                         `json:"itemTitle"`
-	TestItem        string                         `json:"testItem"`
-	Materials       string                         `json:"materials"`
-	Method          string                         `json:"method"`
-	Describes       string                         `json:"describes,omitempty"`
-	Guidance        string                         `json:"guidance"`
-	DomainCode      string                         `json:"domainCode"`
-	DomainName      string                         `json:"domainName"`
-	Standard        string                         `json:"standard"`
-	ScoreOptions    []ScaleQuestionBankScoreOption `json:"scoreOptions"`
-	ScoreOptionText string                         `json:"scoreOptionText"`
-	RecordFields    []ScaleQuestionBankRecordField `json:"recordFields"`
-	SourcePDF       string                         `json:"sourcePdf"`
-	SourcePages     []int                          `json:"sourcePages"`
-	OCRStatus       string                         `json:"ocrStatus"`
-	UpdatedAt       string                         `json:"updatedAt"`
+	ItemNo         int                            `json:"itemNo"`
+	ItemTitle      string                         `json:"itemTitle"`
+	TestItem       string                         `json:"testItem"`
+	Materials      string                         `json:"materials"`
+	MaterialImages []string                       `json:"materialImages"`
+	Method         string                         `json:"method"`
+	Describes      string                         `json:"describes,omitempty"`
+	Guidance       string                         `json:"guidance"`
+	GuidanceVideo  string                         `json:"guidanceVideo"`
+	DomainCode     string                         `json:"domainCode"`
+	DomainName     string                         `json:"domainName"`
+	Standard       string                         `json:"standard"`
+	ScoreOptions   []ScaleQuestionBankScoreOption `json:"scoreOptions"`
+	RecordFields   []ScaleQuestionBankRecordField `json:"recordFields"`
+	SourcePDF      string                         `json:"sourcePdf"`
+	SourcePages    []int                          `json:"sourcePages"`
+	OCRStatus      string                         `json:"ocrStatus"`
+	UpdatedAt      string                         `json:"updatedAt"`
 }
 
 type ScaleQuestionBankScoreOption struct {
@@ -170,21 +171,22 @@ type ScaleQuestionBankRecordFieldOption struct {
 }
 
 type ScaleQuestionBankItemMutation struct {
-	ScaleCode       string                         `json:"scaleCode"`
-	ScaleVersion    string                         `json:"scaleVersion"`
-	ItemNo          int                            `json:"itemNo"`
-	ItemTitle       string                         `json:"itemTitle"`
-	TestItem        string                         `json:"testItem"`
-	Materials       string                         `json:"materials"`
-	Method          string                         `json:"method"`
-	Describes       string                         `json:"describes,omitempty"`
-	Guidance        string                         `json:"guidance"`
-	DomainCode      string                         `json:"domainCode"`
-	DomainName      string                         `json:"domainName"`
-	Standard        string                         `json:"standard"`
-	ScoreOptions    []ScaleQuestionBankScoreOption `json:"scoreOptions"`
-	ScoreOptionText string                         `json:"scoreOptionText"`
-	RecordFields    []ScaleQuestionBankRecordField `json:"recordFields"`
+	ScaleCode      string                         `json:"scaleCode"`
+	ScaleVersion   string                         `json:"scaleVersion"`
+	ItemNo         int                            `json:"itemNo"`
+	ItemTitle      string                         `json:"itemTitle"`
+	TestItem       string                         `json:"testItem"`
+	Materials      string                         `json:"materials"`
+	MaterialImages []string                       `json:"materialImages"`
+	Method         string                         `json:"method"`
+	Describes      string                         `json:"describes,omitempty"`
+	Guidance       string                         `json:"guidance"`
+	GuidanceVideo  string                         `json:"guidanceVideo"`
+	DomainCode     string                         `json:"domainCode"`
+	DomainName     string                         `json:"domainName"`
+	Standard       string                         `json:"standard"`
+	ScoreOptions   []ScaleQuestionBankScoreOption `json:"scoreOptions"`
+	RecordFields   []ScaleQuestionBankRecordField `json:"recordFields"`
 }
 
 type Notice struct {

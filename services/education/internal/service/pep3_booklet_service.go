@@ -40,14 +40,13 @@ type pep3SavedItemRecordValueRequest struct {
 }
 
 type pep3BookletItemDefinition struct {
-	ItemNo       int    `json:"item_no"`
-	ItemTitle    string `json:"item_title"`
-	TestItem     string `json:"test_item"`
-	Domain       string `json:"domain"`
-	DomainCode   string `json:"domain_code"`
-	Standard     string `json:"standard"`
-	ScoreOptions string `json:"score_options"`
-	SourcePages  []int  `json:"source_pages"`
+	ItemNo      int    `json:"item_no"`
+	ItemTitle   string `json:"item_title"`
+	TestItem    string `json:"test_item"`
+	Domain      string `json:"domain"`
+	DomainCode  string `json:"domain_code"`
+	Standard    string `json:"standard"`
+	SourcePages []int  `json:"source_pages"`
 }
 
 type pep3BookletItemRange struct {
@@ -290,7 +289,6 @@ func pep3BookletItemGridColumns() []model.PEP3TemplateColumn {
 		{Key: "itemTitle", Label: "儿童表现记录", Width: 280},
 		{Key: "recordValues", Label: "记录值", Width: 180},
 		{Key: "score", Label: "得分", Width: 70, Align: "center"},
-		{Key: "scoreOptions", Label: "选项", Width: 80, Align: "center"},
 	}
 	return append(columns, pep3BookletDomainColumns("", "")...)
 }
@@ -320,7 +318,6 @@ func pep3BookletItemGridRows(items []pep3BookletItemDefinition, itemScores map[i
 			"recordFields": recordFields,
 			"recordValues": recordValues,
 			"score":        "",
-			"scoreOptions": item.ScoreOptions,
 			"standard":     item.Standard,
 			"sourcePages":  append([]int(nil), item.SourcePages...),
 		}
