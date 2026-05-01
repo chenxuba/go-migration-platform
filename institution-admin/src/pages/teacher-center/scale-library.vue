@@ -9,7 +9,6 @@ import {
   FileTextOutlined,
   HeartOutlined,
   SearchOutlined,
-  StarOutlined,
   TeamOutlined,
 } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
@@ -30,7 +29,7 @@ interface ScaleCard {
   duration: string
   latestUse: string
   usageCount: number
-  favorite?: boolean
+  references: string[]
 }
 
 interface ChildOption {
@@ -58,7 +57,7 @@ const categoryTabs = [
   { key: 'screening', label: '筛查量表', count: 18, color: 'orange', icon: ExperimentOutlined },
   { key: 'development', label: '发展评估', count: 10, color: 'orange', icon: TeamOutlined },
   { key: 'social', label: '社交行为', count: 8, color: 'purple', icon: HeartOutlined },
-  { key: 'sensory', label: '感统', count: 6, color: 'orange', icon: ExperimentOutlined },
+  { key: 'sensory', label: '感觉统合', count: 6, color: 'orange', icon: ExperimentOutlined },
   { key: 'emotion', label: '情绪行为', count: 7, color: 'purple', icon: HeartOutlined },
 ]
 
@@ -74,7 +73,7 @@ const scaleCards: ScaleCard[] = [
     id: 1,
     name: 'PEP-3 儿童心理教育评核',
     description: '评估儿童认知、语言、运动、行为及照顾者报告表现。',
-    tags: ['标准化测评', '2-7岁', '康复评估'],
+    tags: ['标准化测评', '2-7岁', '阶段复测'],
     category: '标准化测评',
     ageRange: '2-7岁',
     status: 'available',
@@ -83,13 +82,16 @@ const scaleCards: ScaleCard[] = [
     duration: '45-90分钟',
     latestUse: '2025-05-12',
     usageCount: 128,
-    favorite: true,
+    references: [
+      'Schopler, E., Lansing, M. D., Reichler, R. J., & Marcus, L. M. (2005). Psychoeducational Profile: Third Edition (PEP-3). PRO-ED.',
+      'PEP-3 中文版手册及机构本土化施测记录规范。',
+    ],
   },
   {
     id: 2,
     name: '感觉统合能力筛查',
     description: '筛查儿童感觉统合发展状况与功能水平。',
-    tags: ['筛查量表', '3-12岁', '感统'],
+    tags: ['筛查量表', '3-12岁', '专项筛查'],
     category: '筛查量表',
     ageRange: '3-12岁',
     status: 'available',
@@ -98,12 +100,16 @@ const scaleCards: ScaleCard[] = [
     duration: '15-30分钟',
     latestUse: '2025-05-08',
     usageCount: 96,
+    references: [
+      'Dunn, W. (1999). Sensory Profile: User\'s Manual. Psychological Corporation.',
+      '儿童感觉统合评估工具与机构专项筛查条目。',
+    ],
   },
   {
     id: 3,
     name: '社交互动能力评估',
     description: '评估儿童社交理解、社交表达及社交互动能力。',
-    tags: ['标准化测评', '4-12岁', '社交行为'],
+    tags: ['社交行为', '4-12岁', '日常跟踪'],
     category: '社交行为',
     ageRange: '4-12岁',
     status: 'available',
@@ -112,12 +118,16 @@ const scaleCards: ScaleCard[] = [
     duration: '20-40分钟',
     latestUse: '2025-05-10',
     usageCount: 67,
+    references: [
+      '参考社交沟通与互动观察量表编制规范。',
+      '结合机构本土化评估条目与课堂观察记录形成。',
+    ],
   },
   {
     id: 4,
     name: '语言沟通能力评估',
     description: '覆盖语言理解、语言表达、语用沟通及互动意图。',
-    tags: ['发展评估', '2-8岁', '语言沟通'],
+    tags: ['发展评估', '2-8岁', '阶段复测'],
     category: '发展评估',
     ageRange: '2-8岁',
     status: 'draft',
@@ -126,12 +136,16 @@ const scaleCards: ScaleCard[] = [
     duration: '30-45分钟',
     latestUse: '2025-05-09',
     usageCount: 12,
+    references: [
+      '参考儿童语言发展评估与语用沟通观察资料。',
+      '结合机构教学评估场景与阶段复测记录形成。',
+    ],
   },
   {
     id: 5,
     name: '行为观察记录表',
     description: '用于记录儿童在自然情境中的行为表现与频率。',
-    tags: ['观察记录', '2-12岁', '行为观察'],
+    tags: ['情绪行为', '2-12岁', '日常跟踪'],
     category: '情绪行为',
     ageRange: '2-12岁',
     status: 'review',
@@ -140,12 +154,16 @@ const scaleCards: ScaleCard[] = [
     duration: '10-20分钟',
     latestUse: '2025-05-07',
     usageCount: 8,
+    references: [
+      '参考应用行为分析观察记录方法。',
+      '结合机构课堂、训练场景与日常跟踪记录形成。',
+    ],
   },
   {
     id: 6,
     name: '生活自理能力评估',
     description: '评估儿童进食、穿脱、如厕、清洁等日常自理能力。',
-    tags: ['康复评估', '3-10岁', '生活自理'],
+    tags: ['康复评估', '3-10岁', '结案评估'],
     category: '康复评估',
     ageRange: '3-10岁',
     status: 'available',
@@ -154,6 +172,10 @@ const scaleCards: ScaleCard[] = [
     duration: '20-30分钟',
     latestUse: '2025-05-06',
     usageCount: 43,
+    references: [
+      '参考儿童日常生活能力评估与康复训练记录资料。',
+      '结合机构康复目标与结案评估场景形成。',
+    ],
   },
 ]
 
@@ -260,7 +282,7 @@ function confirmStartAssessment() {
 
         <div class="filter-group">
           <div class="filter-group__title">适用年龄</div>
-          <a-radio-group v-model:value="ageScope" class="custom-radio filter-radio-group">
+          <a-radio-group v-model:value="ageScope" class="custom-radio filter-radio-group age-radio-group">
             <a-radio value="all">全部年龄</a-radio>
             <a-radio value="0-2">0-2岁</a-radio>
             <a-radio value="2-6">2-6岁</a-radio>
@@ -270,20 +292,20 @@ function confirmStartAssessment() {
         </div>
 
         <div class="filter-group">
-          <div class="filter-group__title">测评时长</div>
-          <a-checkbox>15分钟以内</a-checkbox>
-          <a-checkbox>15-30分钟</a-checkbox>
-          <a-checkbox>30-60分钟</a-checkbox>
-          <a-checkbox>60分钟以上</a-checkbox>
-        </div>
-
-        <div class="filter-group">
           <div class="filter-group__title">使用场景</div>
           <a-checkbox>入园评估</a-checkbox>
           <a-checkbox>阶段复测</a-checkbox>
           <a-checkbox>结案评估</a-checkbox>
           <a-checkbox>日常跟踪</a-checkbox>
           <a-checkbox>专项筛查</a-checkbox>
+        </div>
+
+        <div class="filter-group">
+          <div class="filter-group__title">测评时长</div>
+          <a-checkbox>15分钟以内</a-checkbox>
+          <a-checkbox>15-30分钟</a-checkbox>
+          <a-checkbox>30-60分钟</a-checkbox>
+          <a-checkbox>60分钟以上</a-checkbox>
         </div>
       </aside>
 
@@ -298,11 +320,30 @@ function confirmStartAssessment() {
                     <span v-for="(tag, index) in scale.tags" :key="tag" :class="tagClass(index)">{{ tag }}</span>
                   </div>
                 </div>
-                <div class="card-status">
-                  <span class="status-pill" :class="statusMeta(scale.status).className">
-                    {{ statusMeta(scale.status).text }}
-                  </span>
-                  <StarOutlined :class="{ 'is-favorite': scale.favorite }" />
+                <div class="card-side">
+                  <div class="card-status">
+                    <span class="status-pill" :class="statusMeta(scale.status).className">
+                      {{ statusMeta(scale.status).text }}
+                    </span>
+                  </div>
+                  <a-popover placement="bottomRight" trigger="hover" overlay-class-name="reference-popover">
+                    <template #content>
+                      <div class="reference-popover-content">
+                        <div
+                          v-for="(reference, referenceIndex) in scale.references"
+                          :key="reference"
+                          class="reference-item"
+                        >
+                          <span>{{ referenceIndex + 1 }}</span>
+                          <p>{{ reference }}</p>
+                        </div>
+                      </div>
+                    </template>
+                    <button type="button" class="reference-trigger">
+                      <FileTextOutlined />
+                      <span>引用文献</span>
+                    </button>
+                  </a-popover>
                 </div>
               </div>
 
@@ -310,7 +351,7 @@ function confirmStartAssessment() {
 
               <div class="scale-meta">
                 <div><FileTextOutlined /><span>题目数量</span><b>{{ scale.itemCount }}题</b></div>
-                <div><TeamOutlined /><span>分量表</span><b>{{ scale.domainCount }}个</b></div>
+                <div><TeamOutlined /><span>评估维度</span><b>{{ scale.domainCount }}个</b></div>
                 <div><ClockCircleOutlined /><span>测评时长</span><b>{{ scale.duration }}</b></div>
                 <div><FileDoneOutlined /><span>最近使用</span><b>{{ scale.latestUse }}</b></div>
               </div>
@@ -426,9 +467,17 @@ function confirmStartAssessment() {
         </div>
         <div class="detail-grid">
           <div><span>题目数量</span><b>{{ activeScale.itemCount }}题</b></div>
-          <div><span>分量表</span><b>{{ activeScale.domainCount }}个</b></div>
+          <div><span>评估维度</span><b>{{ activeScale.domainCount }}个</b></div>
           <div><span>测评时长</span><b>{{ activeScale.duration }}</b></div>
           <div><span>最近使用</span><b>{{ activeScale.latestUse }}</b></div>
+        </div>
+        <div class="detail-reference">
+          <span>引用文献</span>
+          <ul>
+            <li v-for="reference in activeScale.references" :key="reference">
+              {{ reference }}
+            </li>
+          </ul>
         </div>
       </div>
     </a-modal>
@@ -471,9 +520,10 @@ function confirmStartAssessment() {
 .category-tab {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   gap: 10px;
-  flex: 0 0 auto;
-  min-width: 128px;
+  flex: 1 0 148px;
+  min-width: 148px;
   height: 46px;
   padding: 0 18px;
   color: #344054;
@@ -483,11 +533,13 @@ function confirmStartAssessment() {
   cursor: pointer;
 
   span {
+    white-space: nowrap;
     font-size: 14px;
     font-weight: 600;
   }
 
   b {
+    flex: 0 0 auto;
     min-width: 28px;
     padding: 2px 8px;
     color: #667085;
@@ -715,6 +767,10 @@ function confirmStartAssessment() {
   border-color: #d9d9d9;
 }
 
+.age-radio-group :deep(.ant-radio-wrapper) {
+  margin: 4px 0;
+}
+
 .filter-group__title {
   margin-bottom: 8px;
   color: #111827;
@@ -778,7 +834,7 @@ function confirmStartAssessment() {
 .scale-card {
   display: flex;
   flex-direction: column;
-  min-height: 258px;
+  min-height: 244px;
   padding: 16px 18px;
   background: #fff;
   border: 1px solid #e6eaf0;
@@ -806,15 +862,83 @@ function confirmStartAssessment() {
   }
 }
 
+.card-side {
+  display: flex;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+
 .card-status {
   display: flex;
   align-items: center;
-  gap: 10px;
   flex: 0 0 auto;
   color: #667085;
+}
 
-  .is-favorite {
-    color: #2f6bff;
+.reference-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 26px;
+  padding: 0 10px;
+  color: #145dff;
+  background: #f4f8ff;
+  border: 1px solid #d7e5ff;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+
+  &:hover {
+    color: #0f4fd7;
+    background: #edf5ff;
+    border-color: #9fc1ff;
+  }
+}
+
+:global(.reference-popover) {
+  max-width: 390px;
+}
+
+:global(.reference-popover .ant-popover-inner) {
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgb(15 23 42 / 12%);
+}
+
+.reference-popover-content {
+  display: grid;
+  gap: 10px;
+  width: 340px;
+  max-width: 72vw;
+}
+
+.reference-item {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr);
+  gap: 8px;
+  color: #344054;
+
+  span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    color: #145dff;
+    background: #eef5ff;
+    border-radius: 50%;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  p {
+    margin: 0;
+    color: #475467;
+    font-size: 13px;
+    line-height: 20px;
   }
 }
 
@@ -884,7 +1008,7 @@ function confirmStartAssessment() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px 14px;
-  margin-top: 16px;
+  margin-top: 12px;
 
   div {
     display: grid;
@@ -1076,6 +1200,54 @@ function confirmStartAssessment() {
     margin-top: 6px;
     color: #111827;
     font-size: 18px;
+  }
+}
+
+.detail-reference {
+  margin-top: 16px;
+  padding: 14px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+
+  span {
+    display: block;
+    color: #667085;
+    font-size: 13px;
+  }
+
+  p {
+    margin: 6px 0 0;
+    color: #344054;
+    font-size: 14px;
+    line-height: 22px;
+  }
+
+  ul {
+    display: grid;
+    gap: 8px;
+    margin: 8px 0 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  li {
+    position: relative;
+    padding-left: 16px;
+    color: #344054;
+    font-size: 14px;
+    line-height: 22px;
+
+    &::before {
+      position: absolute;
+      top: 9px;
+      left: 2px;
+      width: 5px;
+      height: 5px;
+      background: #98a2b3;
+      border-radius: 50%;
+      content: '';
+    }
   }
 }
 
