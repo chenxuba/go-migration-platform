@@ -2,10 +2,10 @@
 import {
   AppstoreOutlined,
   BarsOutlined,
+  BookOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
   ExperimentOutlined,
-  BookOutlined,
   FileDoneOutlined,
   FileTextOutlined,
   HeartOutlined,
@@ -13,6 +13,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
+import scaleIntroImage from '@/assets/images/image.png'
 import messageService from '@/utils/messageService'
 
 type ScaleStatus = 'available' | 'disabled'
@@ -412,7 +413,7 @@ function confirmStartAssessment() {
               <div class="scale-card__footer">
                 <span>使用次数 {{ scale.usageCount }}次</span>
                 <div class="card-actions">
-                  <a-button @click="openDetailModal(scale)">查看详情</a-button>
+                  <a-button @click="openDetailModal(scale)">量表介绍</a-button>
                   <a-button
                     type="primary"
                     :disabled="scale.status === 'disabled'"
@@ -510,43 +511,15 @@ function confirmStartAssessment() {
 
     <a-modal
       v-model:open="detailModalOpen"
-      width="680px"
-      title="量表详情"
-      ok-text="开始测评"
-      cancel-text="关闭"
-      :ok-button-props="{ disabled: activeScale?.status === 'disabled' }"
-      @ok="activeScale && openStartModal(activeScale); detailModalOpen = false"
+      width="760px"
+      title="量表介绍"
+      :centered='true'
+      wrap-class-name="scale-intro-modal"
+      :footer="null"
+      :body-style="{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto', padding: '16px' }"
     >
-      <div v-if="activeScale" class="detail-content">
-        <h2>{{ activeScale.name }}</h2>
-        <p>{{ activeScale.description }}</p>
-        <div class="detail-tags">
-          <span v-for="(tag, index) in activeScale.tags" :key="tag" :class="tagClass(index)">
-            {{ tag }}
-          </span>
-        </div>
-        <div class="detail-grid">
-          <div><span>题目数量</span><b>{{ activeScale.itemCount }}题</b></div>
-          <div><span>评估维度</span><b>{{ activeScale.domainCount }}个</b></div>
-          <div><span>测评时长</span><b>{{ activeScale.duration }}</b></div>
-          <div><span>最近使用</span><b>{{ activeScale.latestUse }}</b></div>
-        </div>
-        <div class="detail-reference">
-          <span>引用文献</span>
-          <ul>
-            <li v-for="reference in activeScale.references" :key="reference">
-              {{ reference }}
-            </li>
-          </ul>
-        </div>
-        <div class="detail-acknowledgements">
-          <span>特别鸣谢</span>
-          <ul>
-            <li v-for="acknowledgement in activeScale.acknowledgements" :key="acknowledgement">
-              {{ acknowledgement }}
-            </li>
-          </ul>
-        </div>
+      <div v-if="activeScale" class="scale-intro-preview">
+        <img :src="scaleIntroImage" alt="PEP-3 量表介绍">
       </div>
     </a-modal>
   </div>
@@ -895,7 +868,7 @@ function confirmStartAssessment() {
 
 .scale-card-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(483.5px, 1fr));
   gap: 18px;
 }
 
@@ -1296,6 +1269,19 @@ function confirmStartAssessment() {
 
   strong {
     color: #145dff;
+  }
+}
+
+.scale-intro-preview {
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
   }
 }
 
