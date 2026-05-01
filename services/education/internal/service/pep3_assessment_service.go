@@ -157,6 +157,17 @@ func (svc *Service) PagePEP3AssessmentRecords(userID int64, query model.Assessme
 	return svc.repo.PageAssessmentRecords(context.Background(), instID, query.QueryModel, query.PageRequestModel.PageIndex, query.PageRequestModel.PageSize)
 }
 
+func (svc *Service) DeletePEP3AssessmentRecord(userID, recordID int64) (bool, error) {
+	if svc.repo == nil {
+		return false, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	return svc.repo.DeleteAssessmentRecord(context.Background(), instID, recordID)
+}
+
 func loadPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
 	pep3EngineOnce.Do(func() {
 		pep3Engine, pep3EngineInfo, pep3EngineLoadErr = buildPEP3Engine()

@@ -475,13 +475,13 @@ var institutionMenuSeeds = []institutionMenuSeed{
 		ParentDesc: "教研、评估与康复记录相关权限。",
 		Children: []institutionMenuSeedChild{
 			{
-				Name:        "评估量表",
+				Name:        "量表库",
 				Code:        "grp:tchAsmScl",
 				Sort:        10,
-				Title:       "评估量表",
-				Description: "评估量表查看与使用权限。",
+				Title:       "量表库",
+				Description: "量表库查看与使用权限。",
 				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看评估量表", Code: "perm:tchAsmSclView", Sort: 10, Weight: 0, Remark: "支持查看和使用评估量表。"},
+					{Name: "查看量表库", Code: "perm:tchAsmSclView", Sort: 10, Weight: 0, Remark: "支持查看和使用量表库。"},
 				},
 			},
 			{

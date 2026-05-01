@@ -348,7 +348,7 @@ onBeforeUnmount(() => {
       <aside class="filter-panel">
         <div class="filter-title">
           <strong>快速筛选</strong>
-          <a @click="resetFilters">清空</a>
+          <a @click="resetFilters">重置</a>
         </div>
 
         <div class="filter-group">

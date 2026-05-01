@@ -675,7 +675,7 @@ async function submitDraft() {
     const result = unwrap<any>(res)
     messageService.success('已生成正式测评记录')
     if (result?.recordId)
-      await router.push('/teacherCenter/assessment-calendar')
+      await router.push('/teacherCenter/evaluationRecord')
   }
   catch (error: any) {
     messageService.error(getErrorMessage(error, '提交正式记录失败'))

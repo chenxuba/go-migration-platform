@@ -1,182 +1,332 @@
 <script setup>
-import { DownOutlined } from '@ant-design/icons-vue'
+import dayjs from 'dayjs'
+import messageService from '@/utils/messageService'
 import { useTableColumns } from '@/composables/useTableColumns'
+import {
+  deletePEP3AssessmentRecordApi,
+  downloadPEP3AssessmentBookletPdfApi,
+  getPEP3AssessmentReportApi,
+  pagePEP3AssessmentRecordsApi,
+} from '@/api/edu-center/pep3-assessment'
+import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
 
-const displayArray = ref(['intention', 'createTime', 'intentionCourse', 'reference', 'classEndingTime', 'classStopTime', 'currentStatus', 'orNotFenClass'])
-const dataSource = ref([{}, {}])
+const displayArray = ref(['scaleCategory', 'createTime'])
+const loading = ref(false)
+const previewLoading = ref(false)
+const exportingId = ref()
+const deletingId = ref()
+const dataSource = ref([])
+const scaleCategoryOptions = ref([])
+const currentReport = ref(null)
+const reportModalOpen = ref(false)
+
+const queryModel = reactive({
+  scaleCategory: undefined,
+  studentId: undefined,
+  assessmentDateBegin: undefined,
+  assessmentDateEnd: undefined,
+})
+
+const pagination = reactive({
+  current: 1,
+  pageSize: 10,
+  total: 0,
+  showSizeChanger: true,
+  showTotal: total => `共 ${total} 条`,
+})
+
 const allColumns = ref([
   {
     title: '学员/性别',
-    dataIndex: 'name',
-    key: 'name',
+    dataIndex: 'student',
+    key: 'student',
     fixed: 'left',
-    width: 120,
-    required: true, // 新增必选标识
+    width: 210,
+    required: true,
   },
   {
-    title: '测评类型',
-    dataIndex: 'type',
-    width: 180,
-    fixed: 'left',
-    key: 'type',
+    title: '评估量表',
+    dataIndex: 'assessmentName',
+    key: 'assessmentName',
+    width: 220,
   },
   {
-    title: '测评日期',
-    key: 'date',
-    dataIndex: 'date',
+    title: '评估日期',
+    dataIndex: 'assessmentDate',
+    key: 'assessmentDate',
     width: 140,
   },
   {
-    title: '展示对比',
-    key: 'showCompare',
-    dataIndex: 'showCompare',
-    width: 100,
-
+    title: '量表分类',
+    dataIndex: 'scaleCategory',
+    key: 'scaleCategory',
+    width: 120,
   },
   {
-    title: '家长端是否展示',
-    dataIndex: 'isShow',
-    key: 'isShow',
-    width: 110,
+    title: '测评年龄',
+    dataIndex: 'age',
+    key: 'age',
+    width: 120,
   },
   {
-    title: '下次测评建议日期',
-    dataIndex: 'nextEvaluationDate',
-    key: 'nextEvaluationDate',
+    title: '评估老师',
+    dataIndex: 'examinerName',
+    key: 'examinerName',
+    width: 130,
+  },
+  {
+    title: '创建时间',
+    dataIndex: 'createdTime',
+    key: 'createdTime',
     width: 160,
   },
-  // 操作
   {
     title: '操作',
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 120,
+    width: 170,
   },
 ])
-const rowSelection = {
-  onChange: (selectedRowKeys, selectedRows) => {
-    console.log(`selectedRowKeys: ${selectedRowKeys}`, 'selectedRows: ', selectedRows)
+
+const { selectedValues, columnOptions, filteredColumns, totalWidth } = useTableColumns({
+  storageKey: 'evaluationRecord',
+  allColumns,
+  excludeKeys: ['action'],
+})
+
+const filterUpdateHandlers = {
+  'update:scaleCategoryFilter': (val, isClearAll) => {
+    queryModel.scaleCategory = isClearAll ? undefined : (val || undefined)
+    reload()
+  },
+  'update:createTimeFilter': (val, isClearAll) => {
+    const range = Array.isArray(val) ? val : []
+    queryModel.assessmentDateBegin = !isClearAll && range[0] ? dayjs(range[0]).format('YYYY-MM-DD') : undefined
+    queryModel.assessmentDateEnd = !isClearAll && range[1] ? dayjs(range[1]).format('YYYY-MM-DD') : undefined
+    reload()
+  },
+  'update:stuPhoneSearchFilter': (val, isClearAll) => {
+    queryModel.studentId = isClearAll || Array.isArray(val) ? undefined : (val || undefined)
+    reload()
   },
 }
-const defaultOrNotFenClass = ref([0])
-const defaultCurrentStatus = ref([1, 3])
-const { selectedValues, columnOptions, filteredColumns, totalWidth }
-  = useTableColumns({
-    storageKey: 'evaluationRecord', // 本地存储键名
-    allColumns, // 原始列配置
-    excludeKeys: ['action'], // 需要排除的列键
-  })
+
+function unwrap(res) {
+  return res?.data ?? res?.result ?? res
+}
+
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
+function formatDate(value) {
+  if (!value)
+    return '-'
+  return dayjs(value).isValid() ? dayjs(value).format('YYYY-MM-DD') : value
+}
+
+function formatDateTime(value) {
+  if (!value)
+    return '-'
+  return dayjs(value).isValid() ? dayjs(value).format('YYYY-MM-DD HH:mm') : value
+}
+
+function formatAge(row) {
+  const parts = []
+  if (row.ageYears)
+    parts.push(`${row.ageYears}岁`)
+  if (row.ageMonths)
+    parts.push(`${row.ageMonths}月`)
+  if (row.ageDays)
+    parts.push(`${row.ageDays}天`)
+  return parts.join('') || '-'
+}
+
+function reload() {
+  pagination.current = 1
+  fetchRecords()
+}
+
+async function fetchScaleCategories() {
+  try {
+    const res = await getScaleCategoryOptionsApi()
+    const list = unwrap(res) || []
+    scaleCategoryOptions.value = list.map(item => ({ id: item, value: item }))
+  }
+  catch (error) {
+    messageService.error(getErrorMessage(error, '获取量表分类失败'))
+  }
+}
+
+async function fetchRecords() {
+  loading.value = true
+  try {
+    const res = await pagePEP3AssessmentRecordsApi({
+      pageRequestModel: {
+        pageIndex: pagination.current,
+        pageSize: pagination.pageSize,
+      },
+      queryModel: {
+        scaleCategory: queryModel.scaleCategory,
+        studentId: queryModel.studentId,
+        assessmentDateBegin: queryModel.assessmentDateBegin,
+        assessmentDateEnd: queryModel.assessmentDateEnd,
+      },
+    })
+    const data = unwrap(res)
+    dataSource.value = data?.items || []
+    pagination.total = data?.total || 0
+  }
+  catch (error) {
+    messageService.error(getErrorMessage(error, '获取评估记录失败'))
+  }
+  finally {
+    loading.value = false
+  }
+}
+
+function handleTableChange(page) {
+  pagination.current = page.current
+  pagination.pageSize = page.pageSize
+  fetchRecords()
+}
+
+async function viewReport(row) {
+  previewLoading.value = true
+  try {
+    const res = await getPEP3AssessmentReportApi(row.id)
+    currentReport.value = unwrap(res)
+    reportModalOpen.value = true
+  }
+  catch (error) {
+    messageService.error(getErrorMessage(error, '获取评估报告失败'))
+  }
+  finally {
+    previewLoading.value = false
+  }
+}
+
+async function exportReport(row) {
+  exportingId.value = row.id
+  try {
+    const response = await downloadPEP3AssessmentBookletPdfApi(row.id)
+    const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${formatDate(row.assessmentDate)}.pdf`
+    link.click()
+    window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+  }
+  catch (error) {
+    messageService.error(getErrorMessage(error, '导出评估记录失败'))
+  }
+  finally {
+    exportingId.value = undefined
+  }
+}
+
+async function deleteRecord(row) {
+  deletingId.value = row.id
+  try {
+    await deletePEP3AssessmentRecordApi(row.id)
+    messageService.success('评估记录已删除')
+    if (dataSource.value.length === 1 && pagination.current > 1)
+      pagination.current -= 1
+    fetchRecords()
+  }
+  catch (error) {
+    messageService.error(getErrorMessage(error, '删除评估记录失败'))
+  }
+  finally {
+    deletingId.value = undefined
+  }
+}
+
+onMounted(() => {
+  fetchScaleCategories()
+  fetchRecords()
+})
 </script>
 
 <template>
   <div>
-    <!-- 学员筛选条件 -->
-    <div class="filter-wrap  bg-white  pl-3 pr-3 rounded-4">
+    <div class="filter-wrap bg-white pl-3 pr-3 rounded-4">
       <all-filter
-        :default-or-not-fen-class="defaultOrNotFenClass" :default-current-status="defaultCurrentStatus"
-        :display-array="displayArray" :is-quick-show="false" :is-show-search-stu-phonefilter="true"
+        :display-array="displayArray"
+        :is-quick-show="false"
+        :is-show-search-stu-phonefilter="true"
+        :scale-category-options="scaleCategoryOptions"
+        create-time-label="评估时间"
+        v-on="filterUpdateHandlers"
       />
     </div>
+
     <div class="student-list mt-2 pt-3 pb-3 pl-6 pr-6 bg-white rounded-4">
       <div class="tab-table">
         <div class="table-title flex justify-between">
           <div class="total">
-            总计 {{ dataSource.length }} 条
+            总计 {{ pagination.total }} 条
           </div>
           <div class="edit flex">
-            <a-dropdown class="mr-2">
-              <template #overlay>
-                <a-menu>
-                  <a-menu-item key="1">
-                    批量停课
-                  </a-menu-item>
-                  <a-menu-item key="2">
-                    批量复课
-                  </a-menu-item>
-                  <a-menu-item key="3">
-                    批量结课
-                  </a-menu-item>
-                  <a-menu-item key="4">
-                    批量转课
-                  </a-menu-item>
-                  <a-menu-item key="5">
-                    批量修改有效期
-                  </a-menu-item>
-                </a-menu>
-              </template>
-              <a-button>
-                批量操作
-                <DownOutlined :style="{ fontSize: '10px' }" />
-              </a-button>
-            </a-dropdown>
-            <a-dropdown class="mr-2">
-              <template #overlay>
-                <a-menu>
-                  <a-menu-item key="1">
-                    批量导出
-                  </a-menu-item>
-                  <a-menu-item key="2">
-                    导出记录
-                  </a-menu-item>
-                </a-menu>
-              </template>
-              <a-button>
-                导出数据
-                <DownOutlined :style="{ fontSize: '10px' }" />
-              </a-button>
-            </a-dropdown>
-            <!-- 自定义字段 -->
             <customize-code
-              v-model:checked-values="selectedValues" :options="columnOptions" :total="allColumns.length"
+              v-model:checked-values="selectedValues"
+              :options="columnOptions"
+              :total="allColumns.length"
               :num="selectedValues.length"
             />
           </div>
         </div>
         <div class="table-content mt-2">
           <a-table
-            :data-source="dataSource" :pagination="dataSource.length > 10" :columns="filteredColumns"
-            :row-selection="rowSelection" :scroll="{ x: totalWidth }" size="small"
+            :data-source="dataSource"
+            :pagination="pagination"
+            :columns="filteredColumns"
+            :loading="loading"
+            :scroll="{ x: totalWidth }"
+            row-key="id"
+            size="small"
+            @change="handleTableChange"
           >
             <template #bodyCell="{ column, record }">
-              <template v-if="column.key === 'name'">
-                <div class="flex">
-                  <img
-                    width="40" height="40" class="mr-2" style="border-radius: 100%;"
-                    src="https://cdn.schoolpal.cn/schoolpal/next-erp/avator_male.png?x-oss-process=image/resize,w_120"
-                    alt=""
-                  >
-                  <div class="name mt-1">
-                    <div class="text-#222">
-                      龙龙
+              <template v-if="column.key === 'student'">
+                <div class="student-cell">
+                  <img class="student-avatar" :src="record.studentAvatar" alt="">
+                  <div class="student-info">
+                    <div class="student-name">
+                      {{ record.studentName || '-' }}
                     </div>
-                    <div class="text-3 text-#888 flex flex-items-center">
-                      男
+                    <div class="student-meta">
+                      {{ record.studentGender || '-' }}
                     </div>
                   </div>
                 </div>
               </template>
-              <template v-if="column.key === 'type'">
-                语言沟通能力评估
+              <template v-else-if="column.key === 'assessmentName'">
+                <span class="single-line">{{ record.assessmentName || '-' }}</span>
               </template>
-              <template v-if="column.key === 'date'">
-                2024-07-10 10:06
+              <template v-else-if="column.key === 'assessmentDate'">
+                {{ formatDate(record.assessmentDate) }}
               </template>
-              <template v-if="column.key === 'showCompare'">
-                <!-- 开关 -->
-                <a-switch v-model:checked="record.a" />
+              <template v-else-if="column.key === 'scaleCategory'">
+                {{ record.scaleCategory || '-' }}
               </template>
-              <template v-if="column.key === 'isShow'">
-                <a-switch v-model:checked="record.a" />
+              <template v-else-if="column.key === 'age'">
+                {{ formatAge(record) }}
               </template>
-              <template v-if="column.key === 'nextEvaluationDate'">
-                <!-- 日期选择器 -->
-                <a-date-picker v-model:value="record.a" />
+              <template v-else-if="column.key === 'examinerName'">
+                {{ record.examinerName || '-' }}
               </template>
-              <template v-if="column.key === 'action'">
-                <a-space :size="15">
-                  <a>查看报告</a>
-                  <a>删除报告</a>
+              <template v-else-if="column.key === 'createdTime'">
+                {{ formatDateTime(record.createdTime) }}
+              </template>
+              <template v-else-if="column.key === 'action'">
+                <a-space :size="12" class="action-links">
+                  <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
+                  <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
+                    <a :class="{ disabled: deletingId === record.id }">删除</a>
+                  </a-popconfirm>
+                  <a :class="{ disabled: exportingId === record.id }" @click="exportReport(record)">导出</a>
                 </a-space>
               </template>
             </template>
@@ -184,6 +334,44 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
         </div>
       </div>
     </div>
+
+    <a-modal v-model:open="reportModalOpen" width="840px" title="评估报告" :footer="null">
+      <a-spin :spinning="previewLoading">
+        <div v-if="currentReport" class="report-preview">
+          <div class="report-head">
+            <div>
+              <div class="report-title">
+                {{ currentReport.title || currentReport.record?.assessmentName || '评估报告' }}
+              </div>
+              <div class="report-subtitle">
+                {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
+              </div>
+            </div>
+            <a-button type="primary" @click="exportReport(currentReport.record)">
+              导出
+            </a-button>
+          </div>
+          <div class="report-section-list">
+            <div v-for="section in currentReport.sections || []" :key="section.sectionCode" class="report-section">
+              <div class="report-section-title">
+                {{ section.title }}
+              </div>
+              <div v-if="section.fields?.length" class="report-fields">
+                <div v-for="field in section.fields" :key="field.key" class="report-field">
+                  <span>{{ field.label }}</span>
+                  <strong>{{ field.value || '-' }}</strong>
+                </div>
+              </div>
+              <div v-if="section.textItems?.length" class="report-text">
+                <p v-for="(text, index) in section.textItems" :key="index">
+                  {{ text }}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </a-spin>
+    </a-modal>
   </div>
 </template>
 
@@ -207,17 +395,125 @@ const { selectedValues, columnOptions, filteredColumns, totalWidth }
   }
 }
 
-.studentStatus {
+.student-cell {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
 
-  span.dot {
-    border-radius: 50%;
-    display: inline-block;
-    height: 6px;
-    position: relative;
-    vertical-align: middle;
-    width: 6px;
-    margin-right: 4px;
-    background: var(--pro-ant-color-primary);
+.student-avatar {
+  width: 40px;
+  height: 40px;
+  margin-right: 8px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex: 0 0 40px;
+}
+
+.student-info {
+  min-width: 0;
+}
+
+.student-name,
+.single-line {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.student-name {
+  color: #222;
+}
+
+.student-meta {
+  margin-top: 2px;
+  color: #888;
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+
+.action-links {
+  white-space: nowrap;
+}
+
+.disabled {
+  pointer-events: none;
+  color: #999;
+}
+
+.report-preview {
+  max-height: 68vh;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.report-title {
+  color: #222;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.report-subtitle {
+  margin-top: 4px;
+  color: #888;
+  font-size: 13px;
+}
+
+.report-section {
+  padding: 14px 0;
+  border-bottom: 1px solid #f5f5f5;
+}
+
+.report-section-title {
+  color: #222;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.report-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin-top: 10px;
+}
+
+.report-field {
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+  color: #666;
+
+  span,
+  strong {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  strong {
+    max-width: 58%;
+    color: #222;
+    font-weight: 500;
+  }
+}
+
+.report-text {
+  margin-top: 10px;
+  color: #555;
+  line-height: 22px;
+
+  p {
+    margin-bottom: 6px;
   }
 }
 </style>

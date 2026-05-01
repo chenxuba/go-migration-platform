@@ -269,15 +269,6 @@ export default [
         },
       },
       {
-        path: '/teacherCenter/assessment-calendar',
-        name: 'AssessmentCalendar',
-        component: () => import('~/pages/teacher-center/assessment-calendar.vue'),
-        meta: {
-          title: '评估量表',
-          access: [AccessEnum.teacher_scale],
-        },
-      },
-      {
         path: '/teacherCenter/3',
         name: 'TeacherCenter2',
         component: () => import('~/pages/exception/403.vue'),

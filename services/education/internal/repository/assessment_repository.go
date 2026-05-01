@@ -263,21 +263,34 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 		updatedAt sql.NullTime
 		inputRaw  string
 		resultRaw string
+		sex       int
 	)
 	err := repo.db.QueryRowContext(ctx, `
-		SELECT id, inst_id, student_id, student_name, assessment_code, assessment_name, scale_version,
-		       birth_date, assessment_date, age_years, age_months, age_days, norm_age_months,
-		       examiner_id, examiner_name, input_json, result_json, data_status, remark, create_time, update_time
-		FROM assessment_record
-		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
+		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
+		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
+		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
+		       ar.examiner_id, ar.examiner_name, ar.input_json, ar.result_json, ar.data_status, ar.remark, ar.create_time, ar.update_time
+		FROM assessment_record ar
+		LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
+		LEFT JOIN (
+			SELECT scale_code, MAX(category) AS category
+			FROM sys_scale
+			WHERE del_flag = 0
+			GROUP BY scale_code
+			) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+		WHERE ar.id = ? AND ar.inst_id = ? AND ar.del_flag = 0
 		LIMIT 1
 	`, recordID, instID).Scan(
 		&item.ID,
 		&item.InstID,
 		&item.StudentID,
 		&item.StudentName,
+		&sex,
+		&item.StudentAvatar,
 		&item.AssessmentCode,
 		&item.AssessmentName,
+		&item.ScaleCategory,
 		&item.ScaleVersion,
 		&birthDate,
 		&testDate,
@@ -297,6 +310,8 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 	if err != nil {
 		return model.AssessmentRecordDetailVO{}, err
 	}
+	item.StudentGender = scaleLibraryStudentGenderText(sex)
+	item.StudentAvatar = scaleLibraryStudentAvatarURL(item.StudentAvatar, sex)
 	fillAssessmentRecordTimes(&item.AssessmentRecordSummaryVO, birthDate, testDate, createdAt, updatedAt)
 	item.InputJSON = json.RawMessage(inputRaw)
 	item.ResultJSON = json.RawMessage(resultRaw)
@@ -352,43 +367,59 @@ func (repo *Repository) UpdateAssessmentRecordInputAndResult(ctx context.Context
 
 func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
 	current, size = normalizeAssessmentPage(current, size)
-	where := []string{"inst_id = ?", "del_flag = 0"}
+	where := []string{"ar.inst_id = ?", "ar.del_flag = 0"}
 	args := []any{instID}
 	if code := strings.TrimSpace(query.AssessmentCode); code != "" {
-		where = append(where, "assessment_code = ?")
+		where = append(where, "ar.assessment_code = ?")
 		args = append(args, code)
 	}
+	if category := strings.TrimSpace(query.ScaleCategory); category != "" {
+		where = append(where, "IFNULL(sc.category, '') = ?")
+		args = append(args, category)
+	}
 	if query.StudentID != nil && *query.StudentID > 0 {
-		where = append(where, "student_id = ?")
+		where = append(where, "ar.student_id = ?")
 		args = append(args, *query.StudentID)
 	}
 	if searchKey := strings.TrimSpace(query.SearchKey); searchKey != "" {
 		like := "%" + searchKey + "%"
-		where = append(where, "(student_name LIKE ? OR examiner_name LIKE ?)")
-		args = append(args, like, like)
+		where = append(where, "(ar.student_name LIKE ? OR s.stu_name LIKE ? OR s.mobile LIKE ? OR ar.examiner_name LIKE ?)")
+		args = append(args, like, like, like, like)
 	}
 	if begin := strings.TrimSpace(query.AssessmentDateBegin); begin != "" {
-		where = append(where, "assessment_date >= ?")
+		where = append(where, "ar.assessment_date >= ?")
 		args = append(args, begin)
 	}
 	if end := strings.TrimSpace(query.AssessmentDateEnd); end != "" {
-		where = append(where, "assessment_date <= ?")
+		where = append(where, "ar.assessment_date <= ?")
 		args = append(args, end)
 	}
 
 	whereSQL := strings.Join(where, " AND ")
 	var total int
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM assessment_record WHERE "+whereSQL, args...).Scan(&total); err != nil {
+	fromSQL := `
+		FROM assessment_record ar
+		LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
+		LEFT JOIN (
+			SELECT scale_code, MAX(category) AS category
+			FROM sys_scale
+			WHERE del_flag = 0
+			GROUP BY scale_code
+		) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+	`
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+fromSQL+" WHERE "+whereSQL, args...).Scan(&total); err != nil {
 		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
 	}
 	offset := (current - 1) * size
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT id, inst_id, student_id, student_name, assessment_code, assessment_name, scale_version,
-		       birth_date, assessment_date, age_years, age_months, age_days, norm_age_months,
-		       examiner_id, examiner_name, data_status, remark, create_time, update_time
-		FROM assessment_record
+		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
+		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
+		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
+		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
+		       ar.examiner_id, ar.examiner_name, ar.remark, ar.create_time, ar.update_time
+		`+fromSQL+`
 		WHERE `+whereSQL+`
-		ORDER BY assessment_date DESC, id DESC
+		ORDER BY ar.assessment_date DESC, ar.id DESC
 		LIMIT ? OFFSET ?
 	`, append(args, size, offset)...)
 	if err != nil {
@@ -400,6 +431,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 	for rows.Next() {
 		var (
 			item      model.AssessmentRecordSummaryVO
+			sex       int
 			birthDate sql.NullTime
 			testDate  sql.NullTime
 			createdAt sql.NullTime
@@ -410,8 +442,11 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			&item.InstID,
 			&item.StudentID,
 			&item.StudentName,
+			&sex,
+			&item.StudentAvatar,
 			&item.AssessmentCode,
 			&item.AssessmentName,
+			&item.ScaleCategory,
 			&item.ScaleVersion,
 			&birthDate,
 			&testDate,
@@ -421,13 +456,14 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			&item.NormAgeMonths,
 			&item.ExaminerID,
 			&item.ExaminerName,
-			&item.DataStatus,
 			&item.Remark,
 			&createdAt,
 			&updatedAt,
 		); err != nil {
 			return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
 		}
+		item.StudentGender = scaleLibraryStudentGenderText(sex)
+		item.StudentAvatar = scaleLibraryStudentAvatarURL(item.StudentAvatar, sex)
 		fillAssessmentRecordTimes(&item, birthDate, testDate, createdAt, updatedAt)
 		items = append(items, item)
 	}
@@ -440,6 +476,23 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 		Current: current,
 		Size:    size,
 	}, nil
+}
+
+func (repo *Repository) DeleteAssessmentRecord(ctx context.Context, instID, recordID int64) (bool, error) {
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_record
+		SET del_flag = 1,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, recordID, instID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
 }
 
 func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity AssessmentDraftEntity) (int64, error) {

@@ -319,7 +319,7 @@ export const AccessEnum = {
   edu_course: route('page:eduCrs', '教务中心', '课程商品'),
 
   // 教研中心
-  teacher_scale: route('page:tchScl', '教研中心', '评估量表'),
+  teacher_scale: route('page:tchScl', '教研中心', '量表库'),
   teacher_interactive: route('page:tchIact', '教研中心', '交互训练'),
   teacher_plan: route('page:tchPln', '教研中心', '教案中心'),
   teacher_record: route('page:tchRec', '教研中心', '评估记录'),

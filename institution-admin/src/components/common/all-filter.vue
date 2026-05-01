@@ -545,6 +545,10 @@ const props = defineProps({
     type: Array,
     default: () => [],
   },
+  scaleCategoryOptions: {
+    type: Array,
+    default: () => [],
+  },
   // // 课程类别
   // courseCategory: {
   //   type: Array,
@@ -588,6 +592,7 @@ const emit = defineEmits(['update:channelTypeFilter', 'update:channelStatusFilte
   'update:assistantTeacherFilter',
   'update:studentIdentityFilter',
   'update:classStatusFilter',
+  'update:scaleCategoryFilter',
   'update:oneToOneTeacherFilter',
 ])
 const spinning = ref(false)
@@ -923,6 +928,7 @@ const lastClassTimeVals = ref([])
 
 // 创建时间选项
 const createTimeVals = ref([])
+const scaleCategoryVals = ref(null)
 const finishTimeVals = ref([])
 const birthdayVals = ref([]) // 新增生日值
 const birthMonthVals = ref(null)
@@ -2425,6 +2431,11 @@ function handleCourseCategoryChange(e) {
     emit('update:courseCategoryFilter', e)
   })
 }
+function handleScaleCategoryChange(e) {
+  nextTick(() => {
+    emit('update:scaleCategoryFilter', e)
+  })
+}
 function handleStudentStatusChange(e) {
   nextTick(() => {
     console.log('学员状态:', e)
@@ -3431,6 +3442,14 @@ const selectedConditions = computed(() => {
       ),
     },
     {
+      type: 'scaleCategory',
+      label: '量表分类',
+      show: props.displayArray.includes('scaleCategory'),
+      values: props.scaleCategoryOptions.filter(
+        opt => opt.id === scaleCategoryVals.value,
+      ),
+    },
+    {
       type: 'studentStatus',
       label: '学员状态',
       show: props.displayArray.includes('studentStatus'),
@@ -3900,6 +3919,7 @@ watch(
   selectCourseCategoryVals,
   () => (lastUpdated.courseCategory = Date.now()),
 )
+watch(scaleCategoryVals, () => (lastUpdated.scaleCategory = Date.now()))
 watch(selectStudentStatusVals, () => (lastUpdated.studentStatus = Date.now()))
 watch(selectAccountStatusVals, () => (lastUpdated.accountStatus = Date.now()))
 watch(selectUserTypeVals, () => (lastUpdated.userType = Date.now()))
@@ -4021,6 +4041,7 @@ const clearAll = debounce(() => {
     orderSourceVals,
   ].forEach(ref => (ref.value = []))
   birthMonthVals.value = null
+  scaleCategoryVals.value = null
 
   // 使用nextTick确保所有状态更新完成后再一次性发出所有更新事件
   nextTick(() => {
@@ -4061,6 +4082,7 @@ const clearAll = debounce(() => {
     emit('update:stuStatusFilter', [], true)
     emit('update:stuPhoneSearchFilter', [], true)
     emit('update:courseCategoryFilter', undefined, true)
+    emit('update:scaleCategoryFilter', undefined, true)
     emit('update:teachingMethodFilter', undefined, true)
     emit('update:sellStatusFilter', undefined, true)
     emit('update:billingModeFilter', [], true)
@@ -4675,6 +4697,10 @@ function removeCondition(type, id) {
       // selectCourseCategoryVals.value = null;
       emit('update:courseCategoryFilter', undefined, false, id, type)
       break
+    case 'scaleCategory':
+      scaleCategoryVals.value = null
+      emit('update:scaleCategoryFilter', undefined, false, id, type)
+      break
     case 'studentStatus':
       // 重置选中值
       selectStudentStatusVals.value = null
@@ -5132,6 +5158,9 @@ function clearQuickFilter(id, type) {
       break
     case 'courseCategory': // 课程类别移除逻辑
       selectCourseCategoryVals.value = null
+      break
+    case 'scaleCategory':
+      scaleCategoryVals.value = null
       break
     case 'intentionCourse': // 意向课程移除逻辑
       selectCourseValues.value = null
@@ -6723,6 +6752,10 @@ defineExpose({
                 v-model:checked-values="selectCourseCategoryVals" category="course" placeholder="请搜索"
                 :options="courseCategoryOptions" label="课程类别" type="radio" @radio-change="handleCourseCategoryChange"
                 @on-search="onSearchCourseCategoryFun" @on-dropdown-visible-change="queryCourseCategory" />
+
+              <checkbox-filter v-if="filterType === 'scaleCategory'" :ref="(el) => handleRef(el, 'scaleCategory')"
+                v-model:checked-values="scaleCategoryVals" category="noSearchRadio" placeholder="请选择量表分类"
+                :options="scaleCategoryOptions" label="量表分类" type="radio" @radio-change="handleScaleCategoryChange" />
 
               <!-- 学员状态 -->
               <checkbox-filter v-if="filterType === 'studentStatus'" :ref="(el) => handleRef(el, 'studentStatus')"

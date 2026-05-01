@@ -105,6 +105,10 @@ export function getScaleLibraryApi(params?: ScaleLibraryQuery) {
   return useGet<ScaleLibraryResponse, ScaleLibraryQuery>('/api/v1/assessments/scales/library', params)
 }
 
+export function getScaleCategoryOptionsApi() {
+  return useGet<string[]>('/api/v1/assessments/scales/categories')
+}
+
 export function getScaleAssessmentStudentCandidatesApi(params?: ScaleAssessmentStudentCandidateQuery) {
   return useGet<ScaleAssessmentStudentCandidateResponse, ScaleAssessmentStudentCandidateQuery>('/api/v1/assessments/scales/student-candidates', params)
 }

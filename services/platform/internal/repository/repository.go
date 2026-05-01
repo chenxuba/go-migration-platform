@@ -751,7 +751,7 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		MonthUsage:         418,
 		DataStatus:         "题库、常模、评分规则和机构端入口已串联",
 		Summary:            "面向儿童心理教育与康复评估的标准化量表，已接入机构端测评工作台。",
-		ExecutionEntry:     "机构端 /teacherCenter/assessment-calendar",
+		ExecutionEntry:     "机构端 /teacherCenter/scale-library",
 		APIPackage:         "/api/v1/assessments/pep3/*",
 		Sort:               1,
 	})

@@ -12,6 +12,7 @@ type AssessmentRecordPageQueryDTO struct {
 
 type AssessmentRecordQueryModel struct {
 	AssessmentCode      string `json:"assessmentCode,omitempty"`
+	ScaleCategory       string `json:"scaleCategory,omitempty"`
 	StudentID           *int64 `json:"studentId,omitempty"`
 	SearchKey           string `json:"searchKey,omitempty"`
 	AssessmentDateBegin string `json:"assessmentDateBegin,omitempty"`
@@ -37,8 +38,11 @@ type AssessmentRecordSummaryVO struct {
 	InstID         int64      `json:"instId"`
 	StudentID      int64      `json:"studentId,omitempty"`
 	StudentName    string     `json:"studentName,omitempty"`
+	StudentGender  string     `json:"studentGender,omitempty"`
+	StudentAvatar  string     `json:"studentAvatar,omitempty"`
 	AssessmentCode string     `json:"assessmentCode"`
 	AssessmentName string     `json:"assessmentName"`
+	ScaleCategory  string     `json:"scaleCategory,omitempty"`
 	ScaleVersion   string     `json:"scaleVersion"`
 	BirthDate      *time.Time `json:"birthDate,omitempty"`
 	AssessmentDate *time.Time `json:"assessmentDate,omitempty"`

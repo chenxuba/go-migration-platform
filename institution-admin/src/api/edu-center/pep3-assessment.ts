@@ -94,6 +94,7 @@ export interface PEP3RecordCreateRequest extends PEP3ScoreRequest {
 
 export interface PEP3AssessmentRecordQueryModel {
   assessmentCode?: string
+  scaleCategory?: string
   studentId?: number
   searchKey?: string
   assessmentDateBegin?: PEP3DateString
@@ -450,8 +451,11 @@ export interface PEP3AssessmentRecordSummary {
   instId: number
   studentId?: number
   studentName?: string
+  studentGender?: string
+  studentAvatar?: string
   assessmentCode: string
   assessmentName: string
+  scaleCategory?: string
   scaleVersion: string
   birthDate?: string
   assessmentDate?: string
@@ -683,4 +687,8 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number) {
 
 export function pagePEP3AssessmentRecordsApi(data: PEP3RecordPageRequest) {
   return usePost<PageResult<PEP3AssessmentRecordSummary>>('/api/v1/assessments/pep3/records/page', data)
+}
+
+export function deletePEP3AssessmentRecordApi(id: number) {
+  return usePost<boolean>('/api/v1/assessments/pep3/records/delete', { id })
 }
