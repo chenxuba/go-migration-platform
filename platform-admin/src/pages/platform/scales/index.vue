@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
 import {
+  DeleteOutlined,
   DownOutlined,
+  EditOutlined,
+  FileTextOutlined,
+  HeartOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
@@ -230,6 +234,10 @@ function startEditResource(kind: ResourceKind, index: number) {
 
 function isEditingResource(kind: ResourceKind, index: number) {
   return resourceFormKind.value === kind && resourceFormIndex.value === index
+}
+
+function formatResourceIndex(index: number) {
+  return String(index + 1).padStart(2, '0')
 }
 
 function submitResourceForm(kind: ResourceKind) {
@@ -605,18 +613,28 @@ onMounted(() => {
       @close="resetResourceForm"
     >
       <template v-if="activeResourceScale">
-        <div class="resource-manage">
-          <div class="resource-manage__head">
-            <div>
-              <div class="resource-manage__title">
-                引用文献
+        <div class="resource-manage resource-manage--reference">
+          <div class="resource-hero">
+            <div class="resource-hero__icon">
+              <FileTextOutlined />
+            </div>
+
+            <div class="resource-hero__content">
+              <div class="resource-hero__meta">
+                <span>{{ activeResourceScale.code }}</span>
+                <span>{{ activeResourceScale.currentVersion }}</span>
               </div>
-              <div class="resource-manage__sub">
-                当前 {{ activeResourceScale.references.length }} 条
+              <div class="resource-hero__title">
+                引用文献
               </div>
             </div>
 
-            <a-button type="primary" size="small" @click="startCreateResource('references')">
+            <div class="resource-hero__count">
+              <strong>{{ activeResourceScale.references.length }}</strong>
+              <span>条</span>
+            </div>
+
+            <a-button type="primary" class="resource-hero__action" @click="startCreateResource('references')">
               <template #icon>
                 <PlusOutlined />
               </template>
@@ -624,45 +642,73 @@ onMounted(() => {
             </a-button>
           </div>
 
-          <div v-if="resourceFormKind === 'references'" class="resource-form">
-            <a-textarea
-              v-model:value="resourceFormContent"
-              :auto-size="{ minRows: 3, maxRows: 6 }"
-              placeholder="请输入引用文献内容"
-            />
-            <div class="resource-form__actions">
-              <a-button size="small" @click="resetResourceForm">
-                取消
-              </a-button>
-              <a-button type="primary" size="small" @click="submitResourceForm('references')">
-                保存
-              </a-button>
+          <div v-if="resourceFormKind === 'references'" class="resource-editor">
+            <div class="resource-editor__head">
+              <span>{{ resourceFormIndex === null ? '新增引用文献' : '编辑引用文献' }}</span>
             </div>
-          </div>
-
-          <div v-if="activeResourceScale.references.length" class="resource-list">
-            <div
-              v-for="(reference, index) in activeResourceScale.references"
-              :key="`${index}-${reference}`"
-              class="resource-list__item"
-              :class="{ 'is-editing': isEditingResource('references', index) }"
-            >
-              <span class="resource-list__index">{{ index + 1 }}</span>
-              <p>{{ reference }}</p>
-              <div class="resource-list__actions">
-                <a @click="startEditResource('references', index)">编辑</a>
-                <a-popconfirm
-                  title="确认删除这条引用文献？"
-                  ok-text="删除"
-                  cancel-text="取消"
-                  @confirm="removeResource('references', index)"
-                >
-                  <a class="is-danger">删除</a>
-                </a-popconfirm>
+            <div class="resource-editor__body">
+              <a-textarea
+                v-model:value="resourceFormContent"
+                :auto-size="{ minRows: 4, maxRows: 7 }"
+                placeholder="请输入引用文献内容"
+              />
+              <div class="resource-editor__actions">
+                <a-button @click="resetResourceForm">
+                  取消
+                </a-button>
+                <a-button type="primary" @click="submitResourceForm('references')">
+                  保存
+                </a-button>
               </div>
             </div>
           </div>
-          <a-empty v-else description="暂无引用文献" />
+
+          <div class="resource-list-panel">
+            <div v-if="activeResourceScale.references.length" class="resource-list">
+              <div
+                v-for="(reference, index) in activeResourceScale.references"
+                :key="`${index}-${reference}`"
+                class="resource-list__item"
+                :class="{ 'is-editing': isEditingResource('references', index) }"
+              >
+                <span class="resource-list__index">{{ formatResourceIndex(index) }}</span>
+                <div class="resource-list__body">
+                  <p>{{ reference }}</p>
+                </div>
+                <div class="resource-list__actions">
+                  <a-button type="link" size="small" @click="startEditResource('references', index)">
+                    <template #icon>
+                      <EditOutlined />
+                    </template>
+                    编辑
+                  </a-button>
+                  <a-popconfirm
+                    title="确认删除这条引用文献？"
+                    ok-text="删除"
+                    cancel-text="取消"
+                    @confirm="removeResource('references', index)"
+                  >
+                    <a-button type="link" danger size="small">
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                      删除
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+            </div>
+            <div v-else class="resource-empty">
+              <a-empty description="暂无引用文献">
+                <a-button type="primary" @click="startCreateResource('references')">
+                  <template #icon>
+                    <PlusOutlined />
+                  </template>
+                  新增引用文献
+                </a-button>
+              </a-empty>
+            </div>
+          </div>
         </div>
       </template>
     </PlatformModalShell>
@@ -676,18 +722,28 @@ onMounted(() => {
       @close="resetResourceForm"
     >
       <template v-if="activeResourceScale">
-        <div class="resource-manage">
-          <div class="resource-manage__head">
-            <div>
-              <div class="resource-manage__title">
-                特别鸣谢
+        <div class="resource-manage resource-manage--thanks">
+          <div class="resource-hero">
+            <div class="resource-hero__icon">
+              <HeartOutlined />
+            </div>
+
+            <div class="resource-hero__content">
+              <div class="resource-hero__meta">
+                <span>{{ activeResourceScale.code }}</span>
+                <span>{{ activeResourceScale.currentVersion }}</span>
               </div>
-              <div class="resource-manage__sub">
-                当前 {{ activeResourceScale.acknowledgements.length }} 条
+              <div class="resource-hero__title">
+                特别鸣谢
               </div>
             </div>
 
-            <a-button type="primary" size="small" @click="startCreateResource('acknowledgements')">
+            <div class="resource-hero__count">
+              <strong>{{ activeResourceScale.acknowledgements.length }}</strong>
+              <span>条</span>
+            </div>
+
+            <a-button type="primary" class="resource-hero__action" @click="startCreateResource('acknowledgements')">
               <template #icon>
                 <PlusOutlined />
               </template>
@@ -695,45 +751,73 @@ onMounted(() => {
             </a-button>
           </div>
 
-          <div v-if="resourceFormKind === 'acknowledgements'" class="resource-form">
-            <a-textarea
-              v-model:value="resourceFormContent"
-              :auto-size="{ minRows: 3, maxRows: 6 }"
-              placeholder="请输入特别鸣谢内容"
-            />
-            <div class="resource-form__actions">
-              <a-button size="small" @click="resetResourceForm">
-                取消
-              </a-button>
-              <a-button type="primary" size="small" @click="submitResourceForm('acknowledgements')">
-                保存
-              </a-button>
+          <div v-if="resourceFormKind === 'acknowledgements'" class="resource-editor">
+            <div class="resource-editor__head">
+              <span>{{ resourceFormIndex === null ? '新增特别鸣谢' : '编辑特别鸣谢' }}</span>
             </div>
-          </div>
-
-          <div v-if="activeResourceScale.acknowledgements.length" class="resource-list">
-            <div
-              v-for="(acknowledgement, index) in activeResourceScale.acknowledgements"
-              :key="`${index}-${acknowledgement}`"
-              class="resource-list__item"
-              :class="{ 'is-editing': isEditingResource('acknowledgements', index) }"
-            >
-              <span class="resource-list__index">{{ index + 1 }}</span>
-              <p>{{ acknowledgement }}</p>
-              <div class="resource-list__actions">
-                <a @click="startEditResource('acknowledgements', index)">编辑</a>
-                <a-popconfirm
-                  title="确认删除这条特别鸣谢？"
-                  ok-text="删除"
-                  cancel-text="取消"
-                  @confirm="removeResource('acknowledgements', index)"
-                >
-                  <a class="is-danger">删除</a>
-                </a-popconfirm>
+            <div class="resource-editor__body">
+              <a-textarea
+                v-model:value="resourceFormContent"
+                :auto-size="{ minRows: 4, maxRows: 7 }"
+                placeholder="请输入特别鸣谢内容"
+              />
+              <div class="resource-editor__actions">
+                <a-button @click="resetResourceForm">
+                  取消
+                </a-button>
+                <a-button type="primary" @click="submitResourceForm('acknowledgements')">
+                  保存
+                </a-button>
               </div>
             </div>
           </div>
-          <a-empty v-else description="暂无特别鸣谢" />
+
+          <div class="resource-list-panel">
+            <div v-if="activeResourceScale.acknowledgements.length" class="resource-list">
+              <div
+                v-for="(acknowledgement, index) in activeResourceScale.acknowledgements"
+                :key="`${index}-${acknowledgement}`"
+                class="resource-list__item"
+                :class="{ 'is-editing': isEditingResource('acknowledgements', index) }"
+              >
+                <span class="resource-list__index">{{ formatResourceIndex(index) }}</span>
+                <div class="resource-list__body">
+                  <p>{{ acknowledgement }}</p>
+                </div>
+                <div class="resource-list__actions">
+                  <a-button type="link" size="small" @click="startEditResource('acknowledgements', index)">
+                    <template #icon>
+                      <EditOutlined />
+                    </template>
+                    编辑
+                  </a-button>
+                  <a-popconfirm
+                    title="确认删除这条特别鸣谢？"
+                    ok-text="删除"
+                    cancel-text="取消"
+                    @confirm="removeResource('acknowledgements', index)"
+                  >
+                    <a-button type="link" danger size="small">
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                      删除
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+            </div>
+            <div v-else class="resource-empty">
+              <a-empty description="暂无特别鸣谢">
+                <a-button type="primary" @click="startCreateResource('acknowledgements')">
+                  <template #icon>
+                    <PlusOutlined />
+                  </template>
+                  新增特别鸣谢
+                </a-button>
+              </a-empty>
+            </div>
+          </div>
         </div>
       </template>
     </PlatformModalShell>
@@ -1107,51 +1191,139 @@ onMounted(() => {
 .resource-manage {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
 }
 
-.resource-manage__head {
+.resource-hero {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid #e6edf7;
+  border-radius: 10px;
+  background: #fbfcfe;
+}
+
+.resource-manage--thanks .resource-hero {
+  border-color: #f5e3ef;
+  background: #fffafc;
+}
+
+.resource-hero__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  color: #1677ff;
+  background: #eef4ff;
+  font-size: 18px;
+}
+
+.resource-manage--thanks .resource-hero__icon {
+  color: #d4380d;
+  background: #fff1f0;
+}
+
+.resource-hero__content {
+  min-width: 0;
+}
+
+.resource-hero__meta {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 16px;
+  gap: 8px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
 }
 
-.resource-manage__title {
+.resource-hero__meta span + span::before {
+  content: '·';
+  margin-right: 8px;
+  color: #c8cdd6;
+}
+
+.resource-hero__title {
+  margin-top: 2px;
   color: #1f2329;
   font-size: 15px;
   font-weight: 700;
   line-height: 24px;
 }
 
-.resource-manage__sub {
-  margin-top: 2px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
+.resource-hero__count {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f2f5fb;
+  color: #475467;
+  white-space: nowrap;
 }
 
-.resource-form {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  padding: 12px;
+.resource-manage--thanks .resource-hero__count {
+  background: #fff1f5;
+}
+
+.resource-hero__count strong {
+  color: #1f2329;
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.resource-hero__count span {
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.resource-hero__action {
+  justify-self: end;
+}
+
+.resource-editor {
+  padding: 14px 16px 12px;
   border: 1px solid #d6e4ff;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #f8fbff;
 }
 
-.resource-form__actions {
+.resource-manage--thanks .resource-editor {
+  border-color: #f5d6e2;
+  background: #fff8fb;
+}
+
+.resource-editor__head {
+  margin-bottom: 10px;
+  color: #1f2329;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.resource-editor__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.resource-editor__actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.resource-list-panel {
+  padding: 2px 0 0;
 }
 
 .resource-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 0 0 6px;
   margin: 0;
   list-style: none;
 }
@@ -1161,10 +1333,10 @@ onMounted(() => {
   grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 10px 12px;
   align-items: start;
-  padding: 12px 14px;
+  padding: 14px 14px 13px;
   border: 1px solid #edf0f5;
-  border-radius: 8px;
-  background: #fbfcfe;
+  border-radius: 10px;
+  background: #fff;
 }
 
 .resource-list__item.is-editing {
@@ -1187,6 +1359,15 @@ onMounted(() => {
   line-height: 24px;
 }
 
+.resource-manage--thanks .resource-list__index {
+  color: #c41d7f;
+  background: #fff0f6;
+}
+
+.resource-list__body {
+  min-width: 0;
+}
+
 .resource-list__item p {
   margin: 0;
   color: #344054;
@@ -1198,20 +1379,30 @@ onMounted(() => {
 .resource-list__actions {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
-  padding-top: 1px;
-  font-size: 13px;
-  line-height: 22px;
+  gap: 8px;
+  padding-top: 0;
   white-space: nowrap;
 }
 
-.resource-list__actions a {
-  color: #1677ff;
+.resource-list__actions :deep(.ant-btn-link) {
+  height: 28px;
+  padding: 0 4px;
+  color: #667085;
+  font-size: 13px;
   font-weight: 400;
+  line-height: 22px;
 }
 
-.resource-list__actions .is-danger {
+.resource-list__actions :deep(.ant-btn-link:hover) {
+  color: #1677ff;
+}
+
+.resource-list__actions :deep(.ant-btn-link.ant-btn-dangerous) {
   color: #ff4d4f;
+}
+
+.resource-empty {
+  padding: 16px 0 4px;
 }
 
 @media (max-width: 1200px) {
@@ -1250,6 +1441,29 @@ onMounted(() => {
 
   .scale-toolbar__select {
     flex: 1 1 140px;
+  }
+
+  .resource-hero {
+    grid-template-columns: 44px minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .resource-hero__count {
+    justify-self: start;
+  }
+
+  .resource-hero__action {
+    justify-self: start;
+  }
+
+  .resource-list__item {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .resource-list__actions {
+    grid-column: 2 / -1;
+    justify-content: flex-start;
+    padding-top: 2px;
   }
 }
 </style>
