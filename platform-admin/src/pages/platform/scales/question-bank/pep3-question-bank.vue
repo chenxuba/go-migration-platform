@@ -728,10 +728,6 @@ onMounted(loadQuestionBank)
               <a-input v-model:value="form.itemTitle" :maxlength="120" />
             </a-form-item>
 
-            <a-form-item label="测试项目">
-              <a-input v-model:value="form.testItem" />
-            </a-form-item>
-
             <a-form-item label="材料">
               <a-input v-model:value="form.materials" />
             </a-form-item>

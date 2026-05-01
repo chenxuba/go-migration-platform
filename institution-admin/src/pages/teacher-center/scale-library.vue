@@ -315,10 +315,9 @@ onMounted(fetchScaleLibrary)
                 <div>
                   <h2>{{ scale.name }}</h2>
                   <div class="tag-list">
-                    <span v-if="scale.code" :class="tagClass(0)">{{ scale.code }}</span>
-                    <span v-if="scale.category" :class="tagClass(1)">{{ scale.category }}</span>
-                    <span v-if="scale.ageRange" :class="tagClass(2)">{{ scale.ageRange }}</span>
-                    <span v-if="scale.scenario" :class="tagClass(3)">{{ scale.scenario }}</span>
+                    <span v-if="scale.category" :class="tagClass(0)">{{ scale.category }}</span>
+                    <span v-if="scale.ageRange" :class="tagClass(1)">{{ scale.ageRange }}</span>
+                    <span v-if="scale.scenario" :class="tagClass(2)">{{ scale.scenario }}</span>
                   </div>
                 </div>
                 <div class="card-side">
@@ -836,7 +835,8 @@ onMounted(fetchScaleLibrary)
 
 .scale-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(483.5px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(483.5px, 483.5px));
+  justify-content: start;
   gap: 18px;
 }
 
@@ -1406,6 +1406,10 @@ onMounted(fetchScaleLibrary)
 
   .category-tabs {
     flex-wrap: nowrap;
+  }
+
+  .scale-card-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
