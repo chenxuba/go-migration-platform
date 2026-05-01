@@ -10,6 +10,7 @@ import (
 type platformMenuSeed struct {
 	Name        string
 	Code        string
+	Icon        string
 	Sort        int
 	Weight      int
 	Description string
@@ -31,6 +32,7 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 		{
 			Name:        "平台总控",
 			Code:        "grp:plt",
+			Icon:        "ControlOutlined",
 			Sort:        10,
 			Weight:      10,
 			Description: "平台总控入口与租户总览相关菜单。",
@@ -64,6 +66,7 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 		{
 			Name:        "客户管理",
 			Code:        "grp:cust",
+			Icon:        "TeamOutlined",
 			Sort:        20,
 			Weight:      10,
 			Description: "客户机构、政府账户等客户资源管理菜单。",
@@ -99,6 +102,7 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 		{
 			Name:        "内部管理",
 			Code:        "grp:intl",
+			Icon:        "WarningOutlined",
 			Sort:        30,
 			Weight:      10,
 			Description: "总控后台内部员工、部门架构与角色管理菜单。",
@@ -131,8 +135,30 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 			},
 		},
 		{
+			Name:        "量表配置",
+			Code:        "grp:scale",
+			Icon:        "ProfileOutlined",
+			Sort:        35,
+			Weight:      10,
+			Description: "量表配置与机构授权管理菜单。",
+			Children: []platformMenuSeed{
+				{
+					Name:        "量表管理",
+					Code:        "page:sysScale",
+					Sort:        10,
+					Weight:      10,
+					Description: "量表管理页面访问权限。",
+					Children: []platformMenuSeed{
+						consoleButtonSeed("新增量表", "sysScaleAdd", 10, "量表管理新增量表操作权限。"),
+						consoleButtonSeed("机构授权", "sysScaleAuth", 20, "量表管理配置量表机构授权操作权限。"),
+					},
+				},
+			},
+		},
+		{
 			Name:        "系统配置",
 			Code:        "grp:sys",
+			Icon:        "SettingOutlined",
 			Sort:        40,
 			Weight:      10,
 			Description: "默认角色、版本、云存储、登录页模板和权限配置菜单。",
@@ -159,19 +185,6 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 						consoleButtonSeed("编辑版本", "sysVerEdit", 20, "版本管理编辑版本操作权限。"),
 						consoleButtonSeed("删除版本", "sysVerDel", 30, "版本管理删除版本操作权限。"),
 						consoleButtonSeed("配置权限", "sysVerPermCfg", 40, "版本管理配置版本权限范围操作权限。"),
-					},
-				},
-				{
-					Name:        "量表管理",
-					Code:        "page:sysScale",
-					Sort:        25,
-					Weight:      10,
-					Description: "量表管理页面访问权限。",
-					Children: []platformMenuSeed{
-						consoleButtonSeed("新增量表", "sysScaleAdd", 10, "量表管理新增量表操作权限。"),
-						consoleButtonSeed("编辑量表", "sysScaleEdit", 20, "量表管理编辑量表操作权限。"),
-						consoleButtonSeed("发布版本", "sysScalePublish", 30, "量表管理发布量表版本操作权限。"),
-						consoleButtonSeed("机构授权", "sysScaleAuth", 40, "量表管理配置量表机构授权操作权限。"),
 					},
 				},
 				{
@@ -224,6 +237,18 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 		return err
 	}
 	if err := repo.ensureConsoleMenuSeeds(ctx, 1, tenantSeeds, false); err != nil {
+		return err
+	}
+	if err := repo.disableConsoleMenuCodes(ctx, 0, []string{
+		"perm:sysScaleEdit",
+		"perm:sysScalePublish",
+	}); err != nil {
+		return err
+	}
+	if err := repo.disableConsoleMenuCodes(ctx, 1, []string{
+		"perm:sysScaleEdit",
+		"perm:sysScalePublish",
+	}); err != nil {
 		return err
 	}
 	return repo.disableConsoleMenuCodes(ctx, 1, []string{
@@ -279,12 +304,12 @@ func (repo *Repository) ensurePlatformMenuSeedTx(ctx context.Context, tx *sql.Tx
 	if err == sql.ErrNoRows {
 		result, execErr := tx.ExecContext(ctx, `
 			INSERT INTO sso_menu (
-				uuid, version, menu_name, url_path, menu_code, menu_type, pid, sort, is_system,
+				uuid, version, menu_name, icon, url_path, menu_code, menu_type, pid, sort, is_system,
 				introduce, own_type, level, weight, group_code, create_id, create_time,
 				update_id, update_time, del_flag, remark, access_denied_image
 			)
-			VALUES (?, 0, ?, NULL, ?, 0, ?, ?, 1, ?, ?, ?, ?, NULL, ?, NOW(), ?, NOW(), 0, ?, NULL)
-		`, buildUUID(time.Now().UnixNano()), name, code, pid, seed.Sort, seed.Description, ownType, level, seed.Weight, operator, operator, seed.Description)
+			VALUES (?, 0, ?, ?, NULL, ?, 0, ?, ?, 1, ?, ?, ?, ?, NULL, ?, NOW(), ?, NOW(), 0, ?, NULL)
+		`, buildUUID(time.Now().UnixNano()), name, strings.TrimSpace(seed.Icon), code, pid, seed.Sort, seed.Description, ownType, level, seed.Weight, operator, operator, seed.Description)
 		if execErr != nil {
 			return execErr
 		}
@@ -295,10 +320,10 @@ func (repo *Repository) ensurePlatformMenuSeedTx(ctx context.Context, tx *sql.Tx
 	} else {
 		if _, execErr := tx.ExecContext(ctx, `
 			UPDATE sso_menu
-			SET menu_name = ?, pid = ?, sort = ?, introduce = ?, own_type = ?,
+			SET menu_name = ?, icon = ?, pid = ?, sort = ?, introduce = ?, own_type = ?,
 			    level = ?, weight = ?, remark = ?, del_flag = 0, update_id = ?, update_time = NOW()
 			WHERE id = ?
-		`, name, pid, seed.Sort, seed.Description, ownType, level, seed.Weight, seed.Description, operator, id); execErr != nil {
+		`, name, strings.TrimSpace(seed.Icon), pid, seed.Sort, seed.Description, ownType, level, seed.Weight, seed.Description, operator, id); execErr != nil {
 			return execErr
 		}
 	}
@@ -387,6 +412,8 @@ func (repo *Repository) migrateConsoleMenuCodes(ctx context.Context, ownType int
 		{"sys:perm:add", "perm:sysPermAdd"},
 		{"sys:perm:edit", "perm:sysPermEdit"},
 		{"sys:perm:del", "perm:sysPermDel"},
+		{"scale", "grp:scale"},
+		{"scale:manage", "page:sysScale"},
 	}
 
 	for _, pair := range codePairs {

@@ -172,9 +172,6 @@ function resetFilters() {
         <div class="scale-page__title">
           量表管理
         </div>
-        <div class="scale-page__count">
-          共 {{ scaleRecords.length }} 个量表包
-        </div>
       </div>
 
       <div class="scale-page__actions">

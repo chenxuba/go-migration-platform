@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import {
   ControlOutlined,
+  ProfileOutlined,
   SettingOutlined,
   TeamOutlined,
   WarningOutlined,
@@ -14,6 +15,7 @@ const props = defineProps<{
 
 const menuIcons = {
   ControlOutlined,
+  ProfileOutlined,
   SettingOutlined,
   TeamOutlined,
   WarningOutlined,
