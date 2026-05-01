@@ -3,6 +3,7 @@ package pep3score
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -261,6 +262,38 @@ func TestGeneratedDraftsWithManualCorrectionsScoreSample(t *testing.T) {
 	if currentReportSample.Scales["CVP"].Level != "轻微" || currentReportSample.Scales["EL"].Level != "恰当" {
 		t.Fatalf("unexpected current report sample levels: CVP=%s EL=%s", currentReportSample.Scales["CVP"].Level, currentReportSample.Scales["EL"].Level)
 	}
+
+	userReportSample, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2023, 4, 30, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2026, 5, 1, 0, 0, 0, 0, time.UTC),
+		RawScores: map[string]int{
+			"CVP": 31, "EL": 16, "RL": 12, "FM": 22, "GM": 17, "VMI": 14,
+			"AE": 12, "SR": 9, "CMB": 20, "CVB": 14,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score user report sample: %v", err)
+	}
+	expectedPercentiles := map[string]int{
+		"CVP": 42, "EL": 62, "RL": 35, "FM": 19, "GM": 23, "VMI": 54,
+		"AE": 35, "SR": 27, "CMB": 38, "CVB": 65,
+	}
+	expectedScaledScores := map[string]int{
+		"CVP": 10, "EL": 11, "RL": 9, "FM": 8, "GM": 8, "VMI": 11,
+		"AE": 8, "SR": 8, "CMB": 10, "CVB": 12,
+	}
+	for scaleCode, want := range expectedPercentiles {
+		assertNormValue(t, userReportSample.Scales[scaleCode].PercentileRank, strconv.Itoa(want), want)
+		if len(userReportSample.Scales[scaleCode].Warnings) > 0 {
+			t.Fatalf("unexpected warnings for %s: %v", scaleCode, userReportSample.Scales[scaleCode].Warnings)
+		}
+	}
+	for scaleCode, want := range expectedScaledScores {
+		assertNormValue(t, userReportSample.Scales[scaleCode].ScaledScore, strconv.Itoa(want), want)
+	}
+	assertComposite(t, userReportSample.Composites[CompositeCommunication], 30, "39", 39)
+	assertComposite(t, userReportSample.Composites[CompositeMotor], 27, "24", 24)
+	assertComposite(t, userReportSample.Composites[CompositeMaladaptiveBehavior], 38, "38", 38)
 }
 
 func assertNormValue(t *testing.T, value *NormValue, wantText string, wantNumber int) {

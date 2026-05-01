@@ -24,6 +24,7 @@ const (
 	pep3DomainMapFile   = "pep3-score-domain-map.json"
 	pep3NormFile        = "pep3-norm-conversion-ocr-draft.json"
 	pep3CorrectionFile  = "pep3-norm-manual-corrections.json"
+	pep3StaticRevision  = "norm-corrections-2026-05-01"
 	pep3DraftDataStatus = ""
 )
 

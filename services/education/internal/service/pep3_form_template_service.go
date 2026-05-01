@@ -132,7 +132,7 @@ func loadPEP3FormItems(dataDir string) ([]pep3FormItemDefinition, error) {
 }
 
 func pep3DataSources(dataDir string) ([]string, string) {
-	sources := []string{pep3ItemBankFile, pep3DomainMapFile, pep3NormFile}
+	sources := []string{pep3ItemBankFile, pep3DomainMapFile, pep3NormFile, "revision:" + pep3StaticRevision}
 	if fileExists(filepath.Join(dataDir, pep3CorrectionFile)) {
 		return append(sources, pep3CorrectionFile), pep3DraftDataStatus
 	}

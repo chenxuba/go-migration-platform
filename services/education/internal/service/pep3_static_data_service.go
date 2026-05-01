@@ -58,7 +58,13 @@ func (svc *Service) EnsurePEP3ScaleData(ctx context.Context) error {
 			return err
 		}
 		if hasData {
-			return nil
+			dataset, err := svc.repo.GetAssessmentScaleDataset(ctx, pep3ScaleCode, pep3ScaleVersion)
+			if err == nil {
+				expectedSources, sourceErr := pep3ExpectedStaticDataSources()
+				if sourceErr == nil && sameStringSlice(dataset.Sources, expectedSources) {
+					return nil
+				}
+			}
 		}
 	}
 	data, err := loadPEP3StaticDataFromFiles()
@@ -266,6 +272,27 @@ func pep3StaticDataEntity(data pep3StaticData) repository.AssessmentScaleStaticD
 		RecordFields: recordFields,
 		NormRecords:  norms,
 	}
+}
+
+func pep3ExpectedStaticDataSources() ([]string, error) {
+	dataDir, err := resolvePEP3DataDir()
+	if err != nil {
+		return nil, err
+	}
+	sources, _ := pep3DataSources(dataDir)
+	return sources, nil
+}
+
+func sameStringSlice(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for idx := range left {
+		if left[idx] != right[idx] {
+			return false
+		}
+	}
+	return true
 }
 
 func pep3RecordFieldsFromRows(rows []repository.AssessmentScaleItemRecordFieldEntity) map[int][]model.PEP3ItemRecordField {
