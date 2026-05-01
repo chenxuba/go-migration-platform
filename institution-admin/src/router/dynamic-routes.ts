@@ -257,6 +257,17 @@ export default [
         },
       },
       {
+        path: '/teacherCenter/scale-assessment-workbench',
+        name: 'ScaleAssessmentWorkbench',
+        component: () => import('~/pages/teacher-center/scale-assessment-workbench.vue'),
+        meta: {
+          title: '测评工作台',
+          access: [AccessEnum.teacher_scale],
+          hideInMenu: true,
+          parentKeys: ['/teacherCenter/scale-library'],
+        },
+      },
+      {
         path: '/teacherCenter/assessment-calendar',
         name: 'AssessmentCalendar',
         component: () => import('~/pages/teacher-center/assessment-calendar.vue'),

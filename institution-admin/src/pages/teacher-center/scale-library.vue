@@ -15,6 +15,7 @@ import {
 } from '@ant-design/icons-vue'
 import { Empty } from 'ant-design-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   getScaleAssessmentStudentCandidatesApi,
   getScaleLibraryApi,
@@ -28,6 +29,7 @@ import {
 import scaleIntroImage from '@/assets/images/image.png'
 import messageService from '@/utils/messageService'
 
+const router = useRouter()
 const searchText = ref('')
 const childSearchText = ref('')
 const ageScope = ref('all')
@@ -253,8 +255,17 @@ function openIepLibrary(scale: ScaleLibraryItem) {
 function confirmStartAssessment() {
   if (!activeScale.value || !selectedChild.value)
     return
-  messageService.success(`已选择 ${selectedChild.value.name}，准备开始 ${activeScale.value.name}`)
   startModalOpen.value = false
+  void router.push({
+    path: '/teacherCenter/scale-assessment-workbench',
+    query: {
+      scaleName: activeScale.value.name,
+      scaleCode: activeScale.value.code,
+      childId: selectedChild.value.id,
+      childName: selectedChild.value.name,
+      childAge: selectedChild.value.age,
+    },
+  })
 }
 
 watch(childSearchText, () => {
