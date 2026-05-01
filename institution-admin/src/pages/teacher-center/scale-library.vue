@@ -15,6 +15,7 @@ import { computed, onMounted, ref } from 'vue'
 import {
   getScaleLibraryApi,
   type ScaleLibraryItem,
+  type ScaleLibraryQuery,
   type ScaleLibraryResponse,
   type ScaleLibraryStatus,
 } from '@/api/teacher-center/scale-library'
@@ -39,6 +40,7 @@ const categoryFilter = ref('all')
 const scenarioFilter = ref('')
 const statusFilter = ref('')
 const durationScope = ref('')
+const libraryLoading = ref(false)
 const selectedChildId = ref<number>(10015)
 const startModalOpen = ref(false)
 const detailModalOpen = ref(false)
@@ -46,8 +48,9 @@ const activeScale = ref<ScaleLibraryItem>()
 const library = ref<ScaleLibraryResponse>({
   items: [],
   summary: { total: 0, available: 0, unavailable: 0, monthUsage: 0, usageCount: 0, reservedAuths: 0 },
-  filterOptions: { categories: [], scenarios: [], statuses: [], ageScopes: ['all', '0-2', '2-6', '6-12', '12+'], durations: ['0-15', '15-30', '30-60', '60+'] },
+  filterOptions: { categories: [], categoryCounts: {}, scenarios: [], statuses: [], ageScopes: ['all', '0-2', '2-6', '6-12', '12+'], durations: ['0-15', '15-30', '30-60', '60+'] },
 })
+let libraryRequestSeq = 0
 
 const childOptions: ChildOption[] = [
   { id: 10012, shortName: '乐', name: '乐乐', gender: '男', age: '5岁2个月', contactPhone: '爸爸 176****0124', className: '小海豚班', latestAssessment: '2025-04-28' },
@@ -57,46 +60,16 @@ const childOptions: ChildOption[] = [
   { id: 10021, shortName: '糖', name: '糖糖', gender: '女', age: '3岁11个月', contactPhone: '妈妈 177****3056', className: '海星班', latestAssessment: '2025-04-20' },
 ]
 
-const filteredScales = computed(() => {
-  const keyword = searchText.value.trim().toLowerCase()
-  return library.value.items.filter((item) => {
-    if (keyword) {
-      const hit = [
-        item.name,
-        item.code,
-        item.summary,
-        item.category,
-        item.scenario,
-        item.ageRange,
-        item.duration,
-        item.currentVersion,
-        item.dataStatus,
-      ].join(' ').toLowerCase().includes(keyword)
-      if (!hit)
-        return false
-    }
-    if (categoryFilter.value !== 'all' && item.category !== categoryFilter.value)
-      return false
-    if (scenarioFilter.value && item.scenario !== scenarioFilter.value)
-      return false
-    if (statusFilter.value && item.status !== statusFilter.value)
-      return false
-    if (ageScope.value !== 'all' && !ageRangeMatches(item.ageMinMonths, item.ageMaxMonths, ageScope.value))
-      return false
-    if (durationScope.value && !durationMatches(item.durationMinMinutes, item.durationMaxMinutes, durationScope.value))
-      return false
-    return true
-  })
-})
-
 const categoryTabs = computed(() => {
   const categories = library.value.filterOptions.categories || []
+  const counts = library.value.filterOptions.categoryCounts || {}
+  const totalCount = Object.values(counts).reduce((sum, count) => sum + Number(count || 0), 0)
   return [
-    { key: 'all', label: '全部', count: library.value.items.length, color: 'blue', icon: AppstoreOutlined },
+    { key: 'all', label: '全部', count: totalCount || library.value.summary.total, color: 'blue', icon: AppstoreOutlined },
     ...categories.map((category, index) => ({
       key: category,
       label: category,
-      count: library.value.items.filter(item => item.category === category).length,
+      count: counts[category] || 0,
       color: index % 2 === 0 ? 'blue' : 'orange',
       icon: index % 2 === 0 ? CheckCircleFilled : ExperimentOutlined,
     })),
@@ -136,54 +109,29 @@ function tagClass(index: number) {
   return ['tag-blue', 'tag-green', 'tag-purple'][index % 3]
 }
 
-function ageRangeMatches(minMonths: number, maxMonths: number, scope: string) {
-  let min = Number(minMonths || 0)
-  let max = Number(maxMonths || 0)
-  if (min <= 0 && max <= 0)
-    return false
-  if (max <= 0)
-    max = min
-  if (min <= 0)
-    min = max
-  if (!scope || scope === 'all')
-    return true
-  if (scope === '0-2')
-    return max >= 0 && min <= 24
-  if (scope === '2-6')
-    return max >= 24 && min <= 72
-  if (scope === '6-12')
-    return max > 72 && min <= 144
-  if (scope === '12+')
-    return max >= 144
-  return false
-}
-
-function durationMatches(minMinutes: number, maxMinutes: number, scope: string) {
-  let min = Number(minMinutes || 0)
-  let max = Number(maxMinutes || 0)
-  if (min <= 0 && max <= 0)
-    return false
-  if (max <= 0)
-    max = min
-  if (min <= 0)
-    min = max
-  if (scope === '0-15')
-    return max <= 15
-  if (scope === '15-30')
-    return max >= 15 && min <= 30
-  if (scope === '30-60')
-    return max >= 30 && min <= 60
-  if (scope === '60+')
-    return max > 60
-  return true
-}
-
 async function fetchScaleLibrary() {
+  const requestSeq = ++libraryRequestSeq
+  libraryLoading.value = true
   try {
-    const res = await getScaleLibraryApi()
-    library.value = unwrap<ScaleLibraryResponse>(res)
+    const res = await getScaleLibraryApi(buildScaleLibraryQuery())
+    if (requestSeq === libraryRequestSeq)
+      library.value = unwrap<ScaleLibraryResponse>(res)
   } catch (error: any) {
     messageService.error(error?.response?.data?.message || error?.message || '获取量表库失败')
+  } finally {
+    if (requestSeq === libraryRequestSeq)
+      libraryLoading.value = false
+  }
+}
+
+function buildScaleLibraryQuery(): ScaleLibraryQuery {
+  return {
+    keyword: searchText.value.trim() || undefined,
+    category: categoryFilter.value === 'all' ? undefined : categoryFilter.value,
+    scenario: scenarioFilter.value || undefined,
+    status: statusFilter.value || undefined,
+    ageScope: ageScope.value === 'all' ? undefined : ageScope.value,
+    duration: durationScope.value || undefined,
   }
 }
 
@@ -194,18 +142,36 @@ function resetFilters() {
   scenarioFilter.value = ''
   statusFilter.value = ''
   durationScope.value = ''
+  void fetchScaleLibrary()
+}
+
+function setCategoryFilter(value: string) {
+  categoryFilter.value = value
+  void fetchScaleLibrary()
 }
 
 function setStatusFilter(value: string) {
   statusFilter.value = value
+  void fetchScaleLibrary()
+}
+
+function setAgeScope(value: string) {
+  ageScope.value = value
+  void fetchScaleLibrary()
 }
 
 function setScenarioFilter(value: string) {
   scenarioFilter.value = value
+  void fetchScaleLibrary()
 }
 
 function setDurationScope(value: string) {
   durationScope.value = value
+  void fetchScaleLibrary()
+}
+
+function handleAgeScopeChange(event: any) {
+  setAgeScope(event?.target?.value || 'all')
 }
 
 function openStartModal(scale: ScaleLibraryItem) {
@@ -245,7 +211,7 @@ onMounted(fetchScaleLibrary)
         type="button"
         class="category-tab"
         :class="[`is-${item.color}`, { 'is-active': item.key === categoryFilter }]"
-        @click="categoryFilter = item.key"
+        @click="setCategoryFilter(item.key)"
       >
         <component :is="item.icon" />
         <span>{{ item.label }}</span>
@@ -284,7 +250,7 @@ onMounted(fetchScaleLibrary)
 
         <div class="filter-group">
           <div class="filter-group__title">适用年龄</div>
-          <a-radio-group v-model:value="ageScope" class="custom-radio filter-radio-group age-radio-group">
+          <a-radio-group v-model:value="ageScope" class="custom-radio filter-radio-group age-radio-group" @change="handleAgeScopeChange">
             <a-radio value="all">全部年龄</a-radio>
             <a-radio value="0-2">0-2岁</a-radio>
             <a-radio value="2-6">2-6岁</a-radio>
@@ -317,8 +283,9 @@ onMounted(fetchScaleLibrary)
 
       <main class="scale-content">
         <div class="scale-content-scroll">
-          <div class="scale-card-grid">
-            <article v-for="scale in filteredScales" :key="scale.id" class="scale-card">
+          <a-spin :spinning="libraryLoading">
+            <div v-if="library.items.length" class="scale-card-grid">
+              <article v-for="scale in library.items" :key="scale.id" class="scale-card">
               <div class="scale-card__head">
                 <div>
                   <h2>{{ scale.name }}</h2>
@@ -398,8 +365,10 @@ onMounted(fetchScaleLibrary)
                   </a-button>
                 </div>
               </div>
-            </article>
-          </div>
+              </article>
+            </div>
+            <a-empty v-else description="暂无量表" class="scale-empty" />
+          </a-spin>
         </div>
       </main>
     </section>
@@ -509,6 +478,8 @@ onMounted(fetchScaleLibrary)
   display: flex;
   flex-wrap: nowrap;
   gap: 12px;
+  width: 100%;
+  max-width: 100%;
   padding: 0 0 12px 0;
   overflow-x: auto;
   overflow-y: hidden;
@@ -538,8 +509,10 @@ onMounted(fetchScaleLibrary)
   align-items: center;
   justify-content: center;
   gap: 10px;
-  flex: 1 0 148px;
-  min-width: 148px;
+  flex: 0 1 auto;
+  width: auto;
+  min-width: max-content;
+  max-width: none;
   height: 46px;
   padding: 0 18px;
   color: #344054;
@@ -549,6 +522,9 @@ onMounted(fetchScaleLibrary)
   cursor: pointer;
 
   span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
     white-space: nowrap;
     font-size: 14px;
     font-weight: 600;

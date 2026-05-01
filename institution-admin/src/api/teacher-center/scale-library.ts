@@ -53,6 +53,7 @@ export interface ScaleLibrarySummary {
 
 export interface ScaleLibraryFilterOptions {
   categories: string[]
+  categoryCounts?: Record<string, number>
   scenarios: string[]
   statuses: string[]
   ageScopes: string[]

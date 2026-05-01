@@ -59,11 +59,12 @@ type ScaleLibrarySummary struct {
 }
 
 type ScaleLibraryFilterOptions struct {
-	Categories []string `json:"categories"`
-	Scenarios  []string `json:"scenarios"`
-	Statuses   []string `json:"statuses"`
-	AgeScopes  []string `json:"ageScopes"`
-	Durations  []string `json:"durations"`
+	Categories     []string       `json:"categories"`
+	CategoryCounts map[string]int `json:"categoryCounts"`
+	Scenarios      []string       `json:"scenarios"`
+	Statuses       []string       `json:"statuses"`
+	AgeScopes      []string       `json:"ageScopes"`
+	Durations      []string       `json:"durations"`
 }
 
 type ScaleLibraryVO struct {

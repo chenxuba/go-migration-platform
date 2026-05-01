@@ -161,6 +161,57 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 	return filterScaleLibraryItems(items, query), nil
 }
 
+func (repo *Repository) ListScaleLibraryCategoryOptions(ctx context.Context) ([]string, error) {
+	dictExists, err := repo.tableExists(ctx, "sys_dict")
+	if err != nil {
+		return nil, err
+	}
+	if !dictExists {
+		return nil, nil
+	}
+	valueExists, err := repo.tableExists(ctx, "sys_dict_value")
+	if err != nil {
+		return nil, err
+	}
+	if !valueExists {
+		return nil, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT TRIM(IFNULL(v.dict_value, ''))
+		FROM sys_dict_value v
+		JOIN sys_dict d ON v.dict_id = d.id
+		WHERE d.dict_code = 'scale_category'
+		  AND d.del_flag = 0
+		  AND v.del_flag = 0
+		  AND IFNULL(v.is_enable, 0) = 1
+		ORDER BY IFNULL(v.sort, 0) ASC, v.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]string, 0, 8)
+	seen := make(map[string]bool)
+	for rows.Next() {
+		var value string
+		if err := rows.Scan(&value); err != nil {
+			return nil, err
+		}
+		value = strings.TrimSpace(value)
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		items = append(items, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func scaleLibraryStatus(item model.ScaleLibraryItem) (string, string) {
 	if strings.TrimSpace(item.ExecutionEntry) == "" && strings.TrimSpace(item.APIPackage) == "" {
 		return "unavailable", "暂不可用"

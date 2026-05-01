@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"sort"
+	"strings"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -13,22 +14,43 @@ func (svc *Service) GetScaleLibrary(userID int64, query model.ScaleLibraryQuery)
 	if svc.repo == nil {
 		return model.ScaleLibraryVO{}, errors.New("repository is not configured")
 	}
-	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.ScaleLibraryVO{}, errors.New("no institution context")
 		}
 		return model.ScaleLibraryVO{}, err
 	}
-	items, err := svc.repo.ListInstitutionScaleLibrary(context.Background(), instID, query)
+	items, err := svc.repo.ListInstitutionScaleLibrary(ctx, instID, query)
+	if err != nil {
+		return model.ScaleLibraryVO{}, err
+	}
+	filterOptionItems := items
+	if hasScaleLibraryQuery(query) {
+		filterOptionItems, err = svc.repo.ListInstitutionScaleLibrary(ctx, instID, model.ScaleLibraryQuery{})
+		if err != nil {
+			return model.ScaleLibraryVO{}, err
+		}
+	}
+	categoryOptions, err := svc.repo.ListScaleLibraryCategoryOptions(ctx)
 	if err != nil {
 		return model.ScaleLibraryVO{}, err
 	}
 	return model.ScaleLibraryVO{
 		Items:         items,
 		Summary:       buildScaleLibrarySummary(items),
-		FilterOptions: buildScaleLibraryFilterOptions(items),
+		FilterOptions: buildScaleLibraryFilterOptions(filterOptionItems, categoryOptions),
 	}, nil
+}
+
+func hasScaleLibraryQuery(query model.ScaleLibraryQuery) bool {
+	return query.Keyword != "" ||
+		query.Category != "" ||
+		query.Scenario != "" ||
+		query.Status != "" ||
+		query.AgeScope != "" ||
+		query.Duration != ""
 }
 
 func buildScaleLibrarySummary(items []model.ScaleLibraryItem) model.ScaleLibrarySummary {
@@ -48,13 +70,22 @@ func buildScaleLibrarySummary(items []model.ScaleLibraryItem) model.ScaleLibrary
 	return summary
 }
 
-func buildScaleLibraryFilterOptions(items []model.ScaleLibraryItem) model.ScaleLibraryFilterOptions {
+func buildScaleLibraryFilterOptions(items []model.ScaleLibraryItem, categoryOptions []string) model.ScaleLibraryFilterOptions {
 	categories := make(map[string]bool)
+	categoryCounts := make(map[string]int)
 	scenarios := make(map[string]bool)
 	statuses := make(map[string]bool)
+	for _, category := range categoryOptions {
+		category = strings.TrimSpace(category)
+		if category != "" {
+			categories[category] = true
+			categoryCounts[category] = 0
+		}
+	}
 	for _, item := range items {
 		if item.Category != "" {
 			categories[item.Category] = true
+			categoryCounts[item.Category]++
 		}
 		if item.Scenario != "" {
 			scenarios[item.Scenario] = true
@@ -64,11 +95,12 @@ func buildScaleLibraryFilterOptions(items []model.ScaleLibraryItem) model.ScaleL
 		}
 	}
 	return model.ScaleLibraryFilterOptions{
-		Categories: sortedScaleLibraryKeys(categories),
-		Scenarios:  sortedScaleLibraryKeys(scenarios),
-		Statuses:   sortedScaleLibraryKeys(statuses),
-		AgeScopes:  []string{"all", "0-2", "2-6", "6-12", "12+"},
-		Durations:  []string{"0-15", "15-30", "30-60", "60+"},
+		Categories:     sortedScaleLibraryKeys(categories),
+		CategoryCounts: categoryCounts,
+		Scenarios:      sortedScaleLibraryKeys(scenarios),
+		Statuses:       sortedScaleLibraryKeys(statuses),
+		AgeScopes:      []string{"all", "0-2", "2-6", "6-12", "12+"},
+		Durations:      []string{"0-15", "15-30", "30-60", "60+"},
 	}
 }
 
