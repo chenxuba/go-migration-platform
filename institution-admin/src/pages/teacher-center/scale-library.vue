@@ -264,6 +264,7 @@ function confirmStartAssessment() {
       childId: selectedChild.value.id,
       childName: selectedChild.value.name,
       childAge: selectedChild.value.age,
+      childBirthDate: selectedChild.value.birthDate,
     },
   })
 }

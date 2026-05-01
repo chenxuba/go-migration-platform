@@ -308,6 +308,25 @@ export interface PEP3AssessmentItemGroup {
   items: PEP3AssessmentItem[]
 }
 
+export interface PEP3AssessmentItemSummary {
+  itemNo: number
+  itemTitle: string
+  testItem: string
+  domainCode: PEP3ScaleCode
+  domainName: string
+}
+
+export interface PEP3AssessmentItemGroupSummary {
+  groupCode: string
+  title: string
+  bookletPageNo: number
+  sourcePdfPageNo?: number
+  layout?: string
+  startItemNo: number
+  endItemNo: number
+  items: PEP3AssessmentItemSummary[]
+}
+
 export interface PEP3SubmitContract {
   scoreEndpoint: string
   createRecordEndpoint: string
@@ -342,6 +361,23 @@ export interface PEP3AssessmentFormTemplate extends PEP3NormDataInfo {
   rawScoreFields: PEP3RawScoreField[]
   itemGroups: PEP3AssessmentItemGroup[]
   caregiverReport: PEP3CaregiverReportTemplate
+  submitContract: PEP3SubmitContract
+}
+
+export interface PEP3AssessmentFormTemplateSummary extends PEP3NormDataInfo {
+  templateCode: 'PEP3_ASSESSMENT_FORM' | string
+  templateVersion: string
+  title: string
+  scaleCode: 'PEP3' | string
+  scaleVersion: string
+  dataStatus?: string
+  sources?: string[]
+  itemCount: number
+  scoreOptions: PEP3ScoreOption[]
+  basicFields: PEP3AssessmentFormField[]
+  domains: PEP3AssessmentDomain[]
+  rawScoreFields: PEP3RawScoreField[]
+  itemGroups: PEP3AssessmentItemGroupSummary[]
   submitContract: PEP3SubmitContract
 }
 
@@ -570,6 +606,14 @@ export interface PEP3Booklet extends PEP3NormDataInfo {
 
 export function getPEP3AssessmentFormTemplateApi() {
   return useGet<PEP3AssessmentFormTemplate>('/api/v1/assessments/pep3/form-template')
+}
+
+export function getPEP3AssessmentFormTemplateSummaryApi() {
+  return useGet<PEP3AssessmentFormTemplateSummary>('/api/v1/assessments/pep3/form-template/summary')
+}
+
+export function getPEP3AssessmentFormTemplateItemApi(itemNo: number) {
+  return useGet<PEP3AssessmentItem>('/api/v1/assessments/pep3/form-template/item', { itemNo })
 }
 
 export function scorePEP3AssessmentApi(data: PEP3ScoreRequest) {

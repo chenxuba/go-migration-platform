@@ -87,6 +87,7 @@ type ScaleAssessmentStudentCandidate struct {
 	AvatarURL        string `json:"avatarUrl"`
 	Gender           string `json:"gender"`
 	Age              string `json:"age"`
+	BirthDate        string `json:"birthDate,omitempty"`
 	ContactPhone     string `json:"contactPhone"`
 	LatestAssessment string `json:"latestAssessment"`
 }

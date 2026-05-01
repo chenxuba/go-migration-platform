@@ -191,6 +191,43 @@ type PEP3AssessmentItemGroup struct {
 	Items           []PEP3AssessmentItem `json:"items"`
 }
 
+type PEP3AssessmentFormTemplateSummaryVO struct {
+	TemplateCode    string `json:"templateCode"`
+	TemplateVersion string `json:"templateVersion"`
+	Title           string `json:"title"`
+	ScaleCode       string `json:"scaleCode"`
+	ScaleVersion    string `json:"scaleVersion"`
+	PEP3NormDataInfo
+	DataStatus     string                           `json:"dataStatus,omitempty"`
+	Sources        []string                         `json:"sources,omitempty"`
+	ItemCount      int                              `json:"itemCount"`
+	ScoreOptions   []PEP3ScoreOption                `json:"scoreOptions"`
+	BasicFields    []PEP3AssessmentFormField        `json:"basicFields"`
+	Domains        []PEP3AssessmentDomain           `json:"domains"`
+	RawScoreFields []PEP3RawScoreField              `json:"rawScoreFields"`
+	ItemGroups     []PEP3AssessmentItemGroupSummary `json:"itemGroups"`
+	SubmitContract PEP3SubmitContract               `json:"submitContract"`
+}
+
+type PEP3AssessmentItemGroupSummary struct {
+	GroupCode       string                      `json:"groupCode"`
+	Title           string                      `json:"title"`
+	BookletPageNo   int                         `json:"bookletPageNo"`
+	SourcePDFPageNo int                         `json:"sourcePdfPageNo,omitempty"`
+	Layout          string                      `json:"layout,omitempty"`
+	StartItemNo     int                         `json:"startItemNo"`
+	EndItemNo       int                         `json:"endItemNo"`
+	Items           []PEP3AssessmentItemSummary `json:"items"`
+}
+
+type PEP3AssessmentItemSummary struct {
+	ItemNo     int    `json:"itemNo"`
+	ItemTitle  string `json:"itemTitle"`
+	TestItem   string `json:"testItem"`
+	DomainCode string `json:"domainCode"`
+	DomainName string `json:"domainName"`
+}
+
 type PEP3AssessmentItem struct {
 	ItemNo         int                   `json:"itemNo"`
 	ItemTitle      string                `json:"itemTitle"`

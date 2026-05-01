@@ -36,6 +36,23 @@ func (svc *Service) GetPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTem
 	return buildPEP3AssessmentFormTemplate()
 }
 
+func (svc *Service) GetPEP3AssessmentFormTemplateSummary() (model.PEP3AssessmentFormTemplateSummaryVO, error) {
+	return buildPEP3AssessmentFormTemplateSummary()
+}
+
+func (svc *Service) GetPEP3AssessmentFormTemplateItem(itemNo int) (model.PEP3AssessmentItem, error) {
+	data, err := loadPEP3StaticData()
+	if err != nil {
+		return model.PEP3AssessmentItem{}, err
+	}
+	for _, item := range data.formItems {
+		if item.ItemNo == itemNo {
+			return buildPEP3AssessmentItem(item, data.recordFields), nil
+		}
+	}
+	return model.PEP3AssessmentItem{}, fmt.Errorf("PEP-3 item %d not found", itemNo)
+}
+
 func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, error) {
 	data, err := loadPEP3StaticData()
 	if err != nil {
@@ -58,18 +75,47 @@ func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, erro
 		RawScoreFields:   pep3RawScoreFields(data.domains),
 		ItemGroups:       pep3AssessmentItemGroups(data.formItems, data.recordFields),
 		CaregiverReport:  pep3CaregiverReportTemplate(),
-		SubmitContract: model.PEP3SubmitContract{
-			ScoreEndpoint:          "/api/v1/assessments/pep3/score",
-			CreateRecordEndpoint:   "/api/v1/assessments/pep3/records/create",
-			DateFormat:             "YYYY-MM-DD",
-			ItemScoreListKey:       "itemScoreList",
-			RawScoreListKey:        "rawScoreList",
-			ItemRecordValuesKey:    "itemRecordValues",
-			ItemRecordValueListKey: "itemRecordValueList",
-			RequiredBaseFields:     []string{"birthDate", "assessmentDate"},
-			AllowedItemScores:      []int{2, 1, 0},
-		},
+		SubmitContract:   pep3SubmitContract(),
 	}, nil
+}
+
+func buildPEP3AssessmentFormTemplateSummary() (model.PEP3AssessmentFormTemplateSummaryVO, error) {
+	data, err := loadPEP3StaticData()
+	if err != nil {
+		return model.PEP3AssessmentFormTemplateSummaryVO{}, err
+	}
+
+	return model.PEP3AssessmentFormTemplateSummaryVO{
+		TemplateCode:     "PEP3_ASSESSMENT_FORM",
+		TemplateVersion:  pep3ScaleVersion,
+		Title:            "PEP-3测评录入表",
+		ScaleCode:        pep3ScaleCode,
+		ScaleVersion:     pep3ScaleVersion,
+		PEP3NormDataInfo: pep3DefaultNormDataInfo(),
+		DataStatus:       data.dataStatus,
+		Sources:          data.sources,
+		ItemCount:        len(data.formItems),
+		ScoreOptions:     pep3GlobalScoreOptions(),
+		BasicFields:      pep3AssessmentBasicFields(),
+		Domains:          pep3AssessmentDomains(data.domains),
+		RawScoreFields:   pep3RawScoreFields(data.domains),
+		ItemGroups:       pep3AssessmentItemGroupSummaries(data.formItems),
+		SubmitContract:   pep3SubmitContract(),
+	}, nil
+}
+
+func pep3SubmitContract() model.PEP3SubmitContract {
+	return model.PEP3SubmitContract{
+		ScoreEndpoint:          "/api/v1/assessments/pep3/score",
+		CreateRecordEndpoint:   "/api/v1/assessments/pep3/records/create",
+		DateFormat:             "YYYY-MM-DD",
+		ItemScoreListKey:       "itemScoreList",
+		RawScoreListKey:        "rawScoreList",
+		ItemRecordValuesKey:    "itemRecordValues",
+		ItemRecordValueListKey: "itemRecordValueList",
+		RequiredBaseFields:     []string{"birthDate", "assessmentDate"},
+		AllowedItemScores:      []int{2, 1, 0},
+	}
 }
 
 func loadPEP3FormItems(dataDir string) ([]pep3FormItemDefinition, error) {
@@ -172,32 +218,75 @@ func pep3AssessmentItemGroups(items []pep3FormItemDefinition, recordFields map[i
 	return groups
 }
 
+func pep3AssessmentItemGroupSummaries(items []pep3FormItemDefinition) []model.PEP3AssessmentItemGroupSummary {
+	groups := make([]model.PEP3AssessmentItemGroupSummary, 0, len(pep3BookletItemRanges()))
+	for _, itemRange := range pep3BookletItemRanges() {
+		groupItems := pep3FormItemSummariesByRange(items, itemRange.StartItemNo, itemRange.EndItemNo)
+		groups = append(groups, model.PEP3AssessmentItemGroupSummary{
+			GroupCode:       fmt.Sprintf("booklet_page_%d", itemRange.BookletPageNo),
+			Title:           fmt.Sprintf("记录册第%d页题目（%d-%d）", itemRange.BookletPageNo, itemRange.StartItemNo, itemRange.EndItemNo),
+			BookletPageNo:   itemRange.BookletPageNo,
+			SourcePDFPageNo: itemRange.SourcePDFPageNo,
+			Layout:          itemRange.Layout,
+			StartItemNo:     itemRange.StartItemNo,
+			EndItemNo:       itemRange.EndItemNo,
+			Items:           groupItems,
+		})
+	}
+	return groups
+}
+
 func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int, recordFields map[int][]model.PEP3ItemRecordField) []model.PEP3AssessmentItem {
 	out := make([]model.PEP3AssessmentItem, 0, end-start+1)
 	for _, item := range items {
 		if item.ItemNo < start || item.ItemNo > end {
 			continue
 		}
-		out = append(out, model.PEP3AssessmentItem{
-			ItemNo:         item.ItemNo,
-			ItemTitle:      nonEmptyString(item.ItemTitle, item.TestItem),
-			TestItem:       nonEmptyString(item.TestItem, item.ItemTitle),
-			Materials:      strings.TrimSpace(item.Materials),
-			MaterialImages: uniqueNonEmptyStrings(item.MaterialImages),
-			Method:         strings.TrimSpace(item.Method),
-			Guidance:       nonEmptyString(item.Describes, item.Guidance),
-			GuidanceVideo:  strings.TrimSpace(item.GuidanceVideo),
-			DomainCode:     strings.TrimSpace(item.DomainCode),
-			DomainName:     strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
-			Standard:       strings.TrimSpace(item.Standard),
-			ScoreOptions:   pep3ItemScoreOptions(item.Standard),
-			RecordFields:   pep3RecordFieldsForItem(recordFields, item.ItemNo),
-			SourcePDF:      strings.TrimSpace(item.SourcePDF),
-			SourcePages:    append([]int(nil), item.SourcePages...),
-			OCRStatus:      strings.TrimSpace(item.OCRStatus),
-		})
+		out = append(out, buildPEP3AssessmentItem(item, recordFields))
 	}
 	return out
+}
+
+func pep3FormItemSummariesByRange(items []pep3FormItemDefinition, start, end int) []model.PEP3AssessmentItemSummary {
+	out := make([]model.PEP3AssessmentItemSummary, 0, end-start+1)
+	for _, item := range items {
+		if item.ItemNo < start || item.ItemNo > end {
+			continue
+		}
+		out = append(out, buildPEP3AssessmentItemSummary(item))
+	}
+	return out
+}
+
+func buildPEP3AssessmentItem(item pep3FormItemDefinition, recordFields map[int][]model.PEP3ItemRecordField) model.PEP3AssessmentItem {
+	return model.PEP3AssessmentItem{
+		ItemNo:         item.ItemNo,
+		ItemTitle:      nonEmptyString(item.ItemTitle, item.TestItem),
+		TestItem:       nonEmptyString(item.TestItem, item.ItemTitle),
+		Materials:      strings.TrimSpace(item.Materials),
+		MaterialImages: uniqueNonEmptyStrings(item.MaterialImages),
+		Method:         strings.TrimSpace(item.Method),
+		Guidance:       nonEmptyString(item.Describes, item.Guidance),
+		GuidanceVideo:  strings.TrimSpace(item.GuidanceVideo),
+		DomainCode:     strings.TrimSpace(item.DomainCode),
+		DomainName:     strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
+		Standard:       strings.TrimSpace(item.Standard),
+		ScoreOptions:   pep3ItemScoreOptions(item.Standard),
+		RecordFields:   pep3RecordFieldsForItem(recordFields, item.ItemNo),
+		SourcePDF:      strings.TrimSpace(item.SourcePDF),
+		SourcePages:    append([]int(nil), item.SourcePages...),
+		OCRStatus:      strings.TrimSpace(item.OCRStatus),
+	}
+}
+
+func buildPEP3AssessmentItemSummary(item pep3FormItemDefinition) model.PEP3AssessmentItemSummary {
+	return model.PEP3AssessmentItemSummary{
+		ItemNo:     item.ItemNo,
+		ItemTitle:  nonEmptyString(item.ItemTitle, item.TestItem),
+		TestItem:   nonEmptyString(item.TestItem, item.ItemTitle),
+		DomainCode: strings.TrimSpace(item.DomainCode),
+		DomainName: strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
+	}
 }
 
 func pep3RecordFieldsForItem(recordFields map[int][]model.PEP3ItemRecordField, itemNo int) []model.PEP3ItemRecordField {

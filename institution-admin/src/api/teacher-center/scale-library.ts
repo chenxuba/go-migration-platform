@@ -82,6 +82,7 @@ export interface ScaleAssessmentStudentCandidate {
   avatarUrl: string
   gender: string
   age: string
+  birthDate?: string
   contactPhone: string
   latestAssessment: string
 }

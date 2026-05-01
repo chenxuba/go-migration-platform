@@ -324,6 +324,7 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 		item.Gender = scaleLibraryStudentGenderText(sex)
 		if birthday.Valid {
 			item.Age = scaleLibraryStudentAgeText(birthday.Time, now)
+			item.BirthDate = birthday.Time.Format("2006-01-02")
 		}
 		item.ContactPhone = scaleLibraryStudentContactPhone(phoneRelationship, mobile)
 		item.LatestAssessment = latestAssessment
