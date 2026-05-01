@@ -8,10 +8,13 @@ import {
   ExperimentOutlined,
   FileDoneOutlined,
   FileTextOutlined,
+  LeftOutlined,
+  RightOutlined,
   SearchOutlined,
   TeamOutlined,
 } from '@ant-design/icons-vue'
-import { computed, onMounted, ref } from 'vue'
+import { Empty } from 'ant-design-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import {
   getScaleLibraryApi,
   type ScaleLibraryItem,
@@ -41,6 +44,10 @@ const scenarioFilter = ref('')
 const statusFilter = ref('')
 const durationScope = ref('')
 const libraryLoading = ref(false)
+const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
+const categoryTabsRef = ref<HTMLElement | null>(null)
+const canScrollCategoryLeft = ref(false)
+const canScrollCategoryRight = ref(false)
 const selectedChildId = ref<number>(10015)
 const startModalOpen = ref(false)
 const detailModalOpen = ref(false)
@@ -114,14 +121,41 @@ async function fetchScaleLibrary() {
   libraryLoading.value = true
   try {
     const res = await getScaleLibraryApi(buildScaleLibraryQuery())
-    if (requestSeq === libraryRequestSeq)
+    if (requestSeq === libraryRequestSeq) {
       library.value = unwrap<ScaleLibraryResponse>(res)
+      await nextTick()
+      updateCategoryScrollState()
+    }
   } catch (error: any) {
     messageService.error(error?.response?.data?.message || error?.message || '获取量表库失败')
   } finally {
     if (requestSeq === libraryRequestSeq)
       libraryLoading.value = false
   }
+}
+
+function updateCategoryScrollState() {
+  const el = categoryTabsRef.value
+  if (!el) {
+    canScrollCategoryLeft.value = false
+    canScrollCategoryRight.value = false
+    return
+  }
+  const maxScrollLeft = el.scrollWidth - el.clientWidth
+  canScrollCategoryLeft.value = el.scrollLeft > 2
+  canScrollCategoryRight.value = maxScrollLeft - el.scrollLeft > 2
+}
+
+function scrollCategoryTabs(direction: 'left' | 'right') {
+  const el = categoryTabsRef.value
+  if (!el)
+    return
+  const distance = Math.max(Math.floor(el.clientWidth * 0.6), 240)
+  el.scrollBy({
+    left: direction === 'left' ? -distance : distance,
+    behavior: 'smooth',
+  })
+  window.setTimeout(updateCategoryScrollState, 260)
 }
 
 function buildScaleLibraryQuery(): ScaleLibraryQuery {
@@ -199,23 +233,55 @@ function confirmStartAssessment() {
   startModalOpen.value = false
 }
 
-onMounted(fetchScaleLibrary)
+onMounted(() => {
+  void fetchScaleLibrary()
+  window.addEventListener('resize', updateCategoryScrollState)
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', updateCategoryScrollState)
+})
 </script>
 
 <template>
   <div class="scale-library-page">
-    <section class="category-tabs">
+    <section
+      class="category-tabs-shell"
+      :class="{ 'has-left-arrow': canScrollCategoryLeft, 'has-right-arrow': canScrollCategoryRight }"
+    >
       <button
-        v-for="item in categoryTabs"
-        :key="item.key"
+        v-if="canScrollCategoryLeft"
         type="button"
-        class="category-tab"
-        :class="[`is-${item.color}`, { 'is-active': item.key === categoryFilter }]"
-        @click="setCategoryFilter(item.key)"
+        class="category-tabs-arrow category-tabs-arrow--left"
+        aria-label="向左滚动分类"
+        @click="scrollCategoryTabs('left')"
       >
-        <component :is="item.icon" />
-        <span>{{ item.label }}</span>
-        <b>{{ item.count }}</b>
+        <LeftOutlined />
+      </button>
+
+      <div ref="categoryTabsRef" class="category-tabs" @scroll="updateCategoryScrollState">
+        <button
+          v-for="item in categoryTabs"
+          :key="item.key"
+          type="button"
+          class="category-tab"
+          :class="[`is-${item.color}`, { 'is-active': item.key === categoryFilter }]"
+          @click="setCategoryFilter(item.key)"
+        >
+          <component :is="item.icon" />
+          <span>{{ item.label }}</span>
+          <b>{{ item.count }}</b>
+        </button>
+      </div>
+
+      <button
+        v-if="canScrollCategoryRight"
+        type="button"
+        class="category-tabs-arrow category-tabs-arrow--right"
+        aria-label="向右滚动分类"
+        @click="scrollCategoryTabs('right')"
+      >
+        <RightOutlined />
       </button>
     </section>
 
@@ -367,7 +433,7 @@ onMounted(fetchScaleLibrary)
               </div>
               </article>
             </div>
-            <a-empty v-else description="暂无量表" class="scale-empty" />
+            <a-empty v-else :image="simpleEmptyImage" description="暂无量表" class="scale-empty" />
           </a-spin>
         </div>
       </main>
@@ -474,34 +540,72 @@ onMounted(fetchScaleLibrary)
   color: #111827;
 }
 
+.category-tabs-shell {
+  position: relative;
+  width: 100%;
+  max-width: 100%;
+  padding: 0 0 12px;
+}
+
 .category-tabs {
   display: flex;
   flex-wrap: nowrap;
   gap: 12px;
   width: 100%;
   max-width: 100%;
-  padding: 0 0 12px 0;
+  padding: 0 2px;
   overflow-x: auto;
   overflow-y: hidden;
-  scrollbar-width: thin;
-  scrollbar-color: #c9d5ea transparent;
+  scroll-behavior: smooth;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 
   &::-webkit-scrollbar {
-    height: 8px;
+    display: none;
+    width: 0;
+    height: 0;
   }
+}
 
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
+.category-tabs-shell.has-left-arrow .category-tabs {
+  padding-left: 42px;
+}
 
-  &::-webkit-scrollbar-thumb {
-    background: #c9d5ea;
-    border-radius: 999px;
-  }
+.category-tabs-shell.has-right-arrow .category-tabs {
+  padding-right: 42px;
+}
 
-  &::-webkit-scrollbar-thumb:hover {
-    background: #b3c4df;
-  }
+.category-tabs-arrow {
+  position: absolute;
+  top: 23px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  color: #2f6bff;
+  background: #fff;
+  border: 1px solid #dfe6f1;
+  border-radius: 50%;
+  box-shadow: 0 8px 18px rgb(15 23 42 / 10%);
+  cursor: pointer;
+  transform: translateY(-50%);
+}
+
+.category-tabs-arrow--left {
+  left: 0;
+}
+
+.category-tabs-arrow--right {
+  right: 0;
+}
+
+.category-tabs-arrow:hover {
+  color: #145dff;
+  border-color: #b8cdfa;
+  background: #f8fbff;
 }
 
 .category-tab {
@@ -509,7 +613,7 @@ onMounted(fetchScaleLibrary)
   align-items: center;
   justify-content: center;
   gap: 10px;
-  flex: 0 1 auto;
+  flex: 0 0 auto;
   width: auto;
   min-width: max-content;
   max-width: none;
@@ -822,6 +926,10 @@ onMounted(fetchScaleLibrary)
   grid-template-columns: repeat(auto-fill, minmax(483.5px, 483.5px));
   justify-content: start;
   gap: 18px;
+}
+
+.scale-empty {
+  padding: 80px 0;
 }
 
 .scale-card {
