@@ -4,14 +4,16 @@ import {
   CheckCircleFilled,
   FileDoneOutlined,
   FileTextOutlined,
-  InfoCircleOutlined,
   LeftOutlined,
+  MessageOutlined,
   RightOutlined,
   SaveOutlined,
   SlidersOutlined,
   SwapOutlined,
+  WechatOutlined,
 } from '@ant-design/icons-vue'
-import { computed, ref } from 'vue'
+import QRCode from 'qrcode'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 const route = useRoute()
@@ -19,6 +21,7 @@ const router = useRouter()
 
 const selectedScore = ref(1)
 const autoNext = ref(true)
+const caregiverQRCodeDataUrl = ref('')
 
 const studentName = computed(() => String(route.query.childName || '浩浩'))
 const studentAge = computed(() => String(route.query.childAge || '3;2'))
@@ -51,23 +54,33 @@ const pageGroups = [
   { title: '第 5 页  43-56题', count: '0/14 题', percent: 0, expanded: false, items: [] },
 ]
 
-const rawScores = [
-  ['CVP 认知（语言/语前）', 28],
-  ['EXP 表达性语言', 24],
-  ['RCP 接受性语言', 26],
-  ['VSI 视觉感知', 21],
-  ['Fine 精细动作', 18],
-  ['GMI 粗大动作', 17],
-  ['SOC 社会交往', 22],
-  ['SED 社会情绪发展', 16],
-  ['Self 自理技能', 14],
-]
+const trainingRecordField = {
+  label: '正确位置',
+  displayType: '打勾',
+  options: [
+    { value: '1', label: '三角形' },
+    { value: '2', label: '圆形' },
+    { value: '3', label: '正方形' },
+  ],
+}
+const checkedTrainingRecordValues = ref(['1', '2'])
 
 const scoreOptions = [
   { value: 2, title: '2 分', desc: '通过', tone: 'green', checkColor: '#0d9749' },
   { value: 1, title: '1 分', desc: '部分通过', tone: 'blue', checkColor: '#0757e6' },
   { value: 0, title: '0 分', desc: '未通过', tone: 'red', checkColor: '#d41f1f' },
 ]
+
+onMounted(async () => {
+  caregiverQRCodeDataUrl.value = await QRCode.toDataURL(`https://pep3.example.com/caregiver-report?child=${encodeURIComponent(studentName.value)}`, {
+    width: 132,
+    margin: 1,
+    color: {
+      dark: '#111827',
+      light: '#FFFFFF',
+    },
+  })
+})
 
 function goBack() {
   void router.push('/teacherCenter/scale-library')
@@ -210,18 +223,41 @@ function goBack() {
           </div>
         </section>
 
-        <section class="right-card caregiver-card">
-          <h2>照护者报告原始分 <InfoCircleOutlined /></h2>
-          <label><span>PB（行为问题）</span><em>-</em></label>
-          <label><span>PSC（问题严重性）</span><em>-</em></label>
-          <label><span>AB（适应行为）</span><em>-</em></label>
+        <section class="right-card training-record-card">
+          <h2>儿童训练记录</h2>
+          <div class="training-record-field">
+            <div class="training-record-field__head">
+              <span>{{ trainingRecordField.label }}</span>
+              <a-tag class="training-record-field__type">{{ trainingRecordField.displayType }}</a-tag>
+            </div>
+            <a-checkbox-group
+              v-model:value="checkedTrainingRecordValues"
+              class="training-record-checks"
+              :options="trainingRecordField.options"
+            />
+          </div>
         </section>
 
-        <section class="right-card raw-score-card">
-          <h2>自动汇总原始分 <span>（已完成部分）</span></h2>
-          <div v-for="item in rawScores" :key="item[0]" class="raw-score-row">
-            <span>{{ item[0] }}</span>
-            <strong>{{ item[1] }}</strong>
+        <section class="right-card caregiver-card">
+          <h2>照护者报告</h2>
+          <div class="caregiver-qrcode">
+            <img v-if="caregiverQRCodeDataUrl" :src="caregiverQRCodeDataUrl" alt="照护者报告填写二维码">
+            <a-spin v-else />
+            <p>家长扫码填写照护者报告</p>
+          </div>
+          <div class="caregiver-actions">
+            <a-button block class="caregiver-action">
+              <template #icon>
+                <MessageOutlined />
+              </template>
+              发送短信给家长
+            </a-button>
+            <a-button block type="primary" class="caregiver-action caregiver-action--wechat">
+              <template #icon>
+                <WechatOutlined />
+              </template>
+              推送微信消息
+            </a-button>
           </div>
         </section>
       </aside>
@@ -774,63 +810,98 @@ function goBack() {
 }
 
 .caregiver-card {
-  label {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 78px;
-    align-items: center;
-    gap: 8px;
-    margin-top: 6px;
-    color: #374151;
-    font-size: 12px;
+  padding: 14px 16px;
+}
 
-    em {
-      height: 26px;
-      color: #374151;
-      background: #fbfdff;
-      border: 1px solid #dbe3ed;
-      border-radius: 6px;
-      font-style: normal;
-      line-height: 24px;
-      text-align: center;
-    }
+.caregiver-qrcode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 0 12px;
+  text-align: center;
+
+  img {
+    width: 132px;
+    height: 132px;
+    padding: 6px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+
+  p {
+    margin: 8px 0 0;
+    color: #667085;
+    font-size: 12px;
   }
 }
 
-.raw-score-card {
+.caregiver-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.caregiver-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 30px;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 700;
+
+  :deep(.ant-btn-icon) {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-end: 0;
+  }
+}
+
+.caregiver-action--wechat {
+  background: #0757e6;
+}
+
+.training-record-card {
   padding: 14px 16px;
 
   h2 {
     margin-bottom: 10px;
   }
-
-  h2 span {
-    color: #6b7280;
-    font-size: 12px;
-    font-weight: 500;
-  }
 }
 
-.raw-score-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+.training-record-field {
+  padding: 10px;
+  background: #f8fafc;
+  border: 1px solid #e7edf3;
+  border-radius: 6px;
+}
+
+.training-record-field__head {
+  display: flex;
   align-items: center;
-  column-gap: 12px;
-  min-height: 28px;
-  color: #374151;
-  border-bottom: 1px solid #edf1f6;
-  font-size: 13px;
+  gap: 6px;
+  margin-bottom: 8px;
+  color: #475467;
+  font-size: 12px;
+  line-height: 22px;
+}
 
-  span {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+.training-record-field__type {
+  margin-inline-end: 0;
+  font-size: 11px;
+  line-height: 18px;
+}
 
-  strong {
-    color: #0b8f43;
-    font-size: 14px;
-    text-align: right;
-  }
+.training-record-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+
+.training-record-checks :deep(.ant-checkbox-wrapper) {
+  margin-inline-start: 0;
+  color: #344054;
+  font-size: 12px;
 }
 
 .workbench-footer {
