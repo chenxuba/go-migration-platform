@@ -155,6 +155,32 @@ func (handler *Handler) scaleLibrary(w http.ResponseWriter, r *http.Request) {
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) scaleAssessmentStudentCandidates(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query := r.URL.Query()
+	pageIndex, _ := strconv.Atoi(query.Get("pageIndex"))
+	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
+	result, err := handler.service.ListScaleAssessmentStudentCandidates(claims.UserID, model.ScaleAssessmentStudentCandidateQuery{
+		ScaleCode: query.Get("scaleCode"),
+		Keyword:   query.Get("keyword"),
+		PageIndex: pageIndex,
+		PageSize:  pageSize,
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) savePEP3AssessmentDraft(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

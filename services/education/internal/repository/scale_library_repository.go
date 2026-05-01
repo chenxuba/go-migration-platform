@@ -2,7 +2,10 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"fmt"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -212,6 +215,134 @@ func (repo *Repository) ListScaleLibraryCategoryOptions(ctx context.Context) ([]
 	return items, nil
 }
 
+func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context, instID int64, query model.ScaleAssessmentStudentCandidateQuery) (model.PageResult[model.ScaleAssessmentStudentCandidate], error) {
+	current := query.PageIndex
+	size := query.PageSize
+	if current <= 0 {
+		current = 1
+	}
+	if size <= 0 {
+		size = 50
+	}
+	if size > 100 {
+		size = 100
+	}
+	offset := (current - 1) * size
+
+	scaleCode := strings.TrimSpace(query.ScaleCode)
+	latestFilters := []string{"inst_id = ?", "del_flag = 0"}
+	latestArgs := []any{instID}
+	if scaleCode != "" {
+		latestFilters = append(latestFilters, "assessment_code = ?")
+		latestArgs = append(latestArgs, scaleCode)
+	}
+
+	fromSQL := `
+		FROM inst_student s
+		LEFT JOIN (
+			SELECT
+				student_id,
+				MAX(COALESCE(assessment_date, DATE(create_time))) AS latest_assessment
+			FROM assessment_record
+			WHERE ` + strings.Join(latestFilters, " AND ") + `
+			GROUP BY student_id
+		) latest ON latest.student_id = s.id
+	`
+	fromArgs := append([]any{}, latestArgs...)
+
+	filters := []string{
+		"s.del_flag = 0",
+		"s.inst_id = ?",
+		"s.student_status = ?",
+	}
+	whereArgs := []any{instID, model.InstStudentStatusEnrolled}
+	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
+		like := "%" + keyword + "%"
+		filters = append(filters, "(s.stu_name LIKE ? OR s.mobile LIKE ?)")
+		whereArgs = append(whereArgs, like, like)
+	}
+	whereSQL := strings.Join(filters, " AND ")
+
+	queryArgs := append(append([]any{}, fromArgs...), whereArgs...)
+	var total int
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+fromSQL+" WHERE "+whereSQL, queryArgs...).Scan(&total); err != nil {
+		return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.stu_name, ''),
+			IFNULL(s.avatar_url, ''),
+			IFNULL(s.stu_sex, 0),
+			IFNULL(s.mobile, ''),
+			IFNULL(s.phone_relationship, 0),
+			s.birthday,
+			IFNULL(DATE_FORMAT(latest.latest_assessment, '%Y-%m-%d'), '')
+		`+fromSQL+`
+		WHERE `+whereSQL+`
+		ORDER BY
+			CASE WHEN latest.latest_assessment IS NULL THEN 1 ELSE 0 END ASC,
+			latest.latest_assessment DESC,
+			s.create_time DESC,
+			s.id DESC
+		LIMIT ? OFFSET ?
+	`, append(queryArgs, size, offset)...)
+	if err != nil {
+		return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, err
+	}
+	defer rows.Close()
+
+	now := time.Now()
+	items := make([]model.ScaleAssessmentStudentCandidate, 0, size)
+	for rows.Next() {
+		var (
+			item              model.ScaleAssessmentStudentCandidate
+			name              string
+			avatarURL         string
+			sex               int
+			mobile            string
+			phoneRelationship int
+			birthday          sql.NullTime
+			latestAssessment  string
+		)
+		if err := rows.Scan(
+			&item.ID,
+			&name,
+			&avatarURL,
+			&sex,
+			&mobile,
+			&phoneRelationship,
+			&birthday,
+			&latestAssessment,
+		); err != nil {
+			return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, err
+		}
+		item.Name = name
+		item.ShortName = scaleLibraryStudentShortName(name)
+		item.AvatarURL = scaleLibraryStudentAvatarURL(avatarURL, sex)
+		item.Gender = scaleLibraryStudentGenderText(sex)
+		if birthday.Valid {
+			item.Age = scaleLibraryStudentAgeText(birthday.Time, now)
+		}
+		item.ContactPhone = scaleLibraryStudentContactPhone(phoneRelationship, mobile)
+		item.LatestAssessment = latestAssessment
+		if item.LatestAssessment == "" {
+			item.LatestAssessment = "未测评"
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, err
+	}
+	return model.PageResult[model.ScaleAssessmentStudentCandidate]{
+		Items:   items,
+		Total:   total,
+		Current: current,
+		Size:    size,
+	}, nil
+}
+
 func scaleLibraryStatus(item model.ScaleLibraryItem) (string, string) {
 	if strings.TrimSpace(item.ExecutionEntry) == "" && strings.TrimSpace(item.APIPackage) == "" {
 		return "unavailable", "暂不可用"
@@ -265,6 +396,99 @@ func scaleLibraryAgeRangeMatches(minMonths, maxMonths int, ageScope string) bool
 		return maxMonths >= 144
 	default:
 		return false
+	}
+}
+
+func scaleLibraryStudentShortName(name string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return "学"
+	}
+	runes := []rune(name)
+	return string(runes[0])
+}
+
+func scaleLibraryStudentGenderText(sex int) string {
+	switch sex {
+	case 1:
+		return "男"
+	case 0:
+		return "女"
+	default:
+		return "-"
+	}
+}
+
+func scaleLibraryStudentAvatarURL(avatarURL string, sex int) string {
+	const (
+		defaultMaleAvatar    = "https://pcsys.admin.ybc365.com/c04d0ea2-a8b0-4001-b19b-946a980cb726.png"
+		defaultFemaleAvatar  = "https://pcsys.admin.ybc365.com/d92afddc-ffac-40aa-aa61-bd97d91aa1ec.png"
+		defaultUnknownAvatar = "https://pcsys.admin.ybc365.com/a369a751-2be5-4929-974d-9ae4439f54c4.png"
+	)
+	avatarURL = strings.TrimSpace(avatarURL)
+	if avatarURL != "" {
+		return avatarURL
+	}
+	switch sex {
+	case 1:
+		return defaultMaleAvatar
+	case 0:
+		return defaultFemaleAvatar
+	default:
+		return defaultUnknownAvatar
+	}
+}
+
+func scaleLibraryStudentAgeText(birthday time.Time, now time.Time) string {
+	if birthday.IsZero() || birthday.After(now) {
+		return ""
+	}
+	years := now.Year() - birthday.Year()
+	months := int(now.Month()) - int(birthday.Month())
+	if now.Day() < birthday.Day() {
+		months--
+	}
+	if months < 0 {
+		years--
+		months += 12
+	}
+	if years < 0 {
+		return ""
+	}
+	if years > 0 && months > 0 {
+		return fmt.Sprintf("%d岁%d个月", years, months)
+	}
+	if years > 0 {
+		return fmt.Sprintf("%d岁", years)
+	}
+	return fmt.Sprintf("%d个月", months)
+}
+
+func scaleLibraryStudentContactPhone(phoneRelationship int, mobile string) string {
+	mobile = strings.TrimSpace(mobile)
+	if mobile == "" {
+		return ""
+	}
+	relationship := scaleLibraryPhoneRelationshipText(phoneRelationship)
+	phone := maskPhoneLocal(mobile)
+	if relationship == "" {
+		return phone
+	}
+	return relationship + " " + phone
+}
+
+func scaleLibraryPhoneRelationshipText(value int) string {
+	switch value {
+	case 1:
+		return "爸爸"
+	case 2:
+		return "妈妈"
+	case 3:
+		return "爷爷"
+	case 4:
+		return "奶奶"
+	default:
+		return ""
 	}
 }
 

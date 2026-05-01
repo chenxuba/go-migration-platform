@@ -72,3 +72,21 @@ type ScaleLibraryVO struct {
 	Summary       ScaleLibrarySummary       `json:"summary"`
 	FilterOptions ScaleLibraryFilterOptions `json:"filterOptions"`
 }
+
+type ScaleAssessmentStudentCandidateQuery struct {
+	ScaleCode string `json:"scaleCode,omitempty"`
+	Keyword   string `json:"keyword,omitempty"`
+	PageIndex int    `json:"pageIndex,omitempty"`
+	PageSize  int    `json:"pageSize,omitempty"`
+}
+
+type ScaleAssessmentStudentCandidate struct {
+	ID               int64  `json:"id"`
+	ShortName        string `json:"shortName"`
+	Name             string `json:"name"`
+	AvatarURL        string `json:"avatarUrl"`
+	Gender           string `json:"gender"`
+	Age              string `json:"age"`
+	ContactPhone     string `json:"contactPhone"`
+	LatestAssessment string `json:"latestAssessment"`
+}

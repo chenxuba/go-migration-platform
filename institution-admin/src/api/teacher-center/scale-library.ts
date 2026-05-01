@@ -75,6 +75,35 @@ export interface ScaleLibraryQuery {
   duration?: string
 }
 
+export interface ScaleAssessmentStudentCandidate {
+  id: number
+  shortName: string
+  name: string
+  avatarUrl: string
+  gender: string
+  age: string
+  contactPhone: string
+  latestAssessment: string
+}
+
+export interface ScaleAssessmentStudentCandidateQuery {
+  scaleCode?: string
+  keyword?: string
+  pageIndex?: number
+  pageSize?: number
+}
+
+export interface ScaleAssessmentStudentCandidateResponse {
+  items: ScaleAssessmentStudentCandidate[]
+  total: number
+  current: number
+  size: number
+}
+
 export function getScaleLibraryApi(params?: ScaleLibraryQuery) {
   return useGet<ScaleLibraryResponse, ScaleLibraryQuery>('/api/v1/assessments/scales/library', params)
+}
+
+export function getScaleAssessmentStudentCandidatesApi(params?: ScaleAssessmentStudentCandidateQuery) {
+  return useGet<ScaleAssessmentStudentCandidateResponse, ScaleAssessmentStudentCandidateQuery>('/api/v1/assessments/scales/student-candidates', params)
 }

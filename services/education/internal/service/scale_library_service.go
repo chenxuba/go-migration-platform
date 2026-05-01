@@ -44,6 +44,21 @@ func (svc *Service) GetScaleLibrary(userID int64, query model.ScaleLibraryQuery)
 	}, nil
 }
 
+func (svc *Service) ListScaleAssessmentStudentCandidates(userID int64, query model.ScaleAssessmentStudentCandidateQuery) (model.PageResult[model.ScaleAssessmentStudentCandidate], error) {
+	if svc.repo == nil {
+		return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, errors.New("repository is not configured")
+	}
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, errors.New("no institution context")
+		}
+		return model.PageResult[model.ScaleAssessmentStudentCandidate]{}, err
+	}
+	return svc.repo.ListScaleAssessmentStudentCandidates(ctx, instID, query)
+}
+
 func hasScaleLibraryQuery(query model.ScaleLibraryQuery) bool {
 	return query.Keyword != "" ||
 		query.Category != "" ||

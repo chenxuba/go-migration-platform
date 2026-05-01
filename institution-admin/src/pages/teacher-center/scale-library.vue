@@ -14,9 +14,12 @@ import {
   TeamOutlined,
 } from '@ant-design/icons-vue'
 import { Empty } from 'ant-design-vue'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import {
+  getScaleAssessmentStudentCandidatesApi,
   getScaleLibraryApi,
+  type ScaleAssessmentStudentCandidate,
+  type ScaleAssessmentStudentCandidateResponse,
   type ScaleLibraryItem,
   type ScaleLibraryQuery,
   type ScaleLibraryResponse,
@@ -24,17 +27,6 @@ import {
 } from '@/api/teacher-center/scale-library'
 import scaleIntroImage from '@/assets/images/image.png'
 import messageService from '@/utils/messageService'
-
-interface ChildOption {
-  id: number
-  shortName: string
-  name: string
-  gender: string
-  age: string
-  contactPhone: string
-  className: string
-  latestAssessment: string
-}
 
 const searchText = ref('')
 const childSearchText = ref('')
@@ -48,24 +40,19 @@ const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const categoryTabsRef = ref<HTMLElement | null>(null)
 const canScrollCategoryLeft = ref(false)
 const canScrollCategoryRight = ref(false)
-const selectedChildId = ref<number>(10015)
+const selectedChildId = ref<number>()
 const startModalOpen = ref(false)
 const detailModalOpen = ref(false)
 const activeScale = ref<ScaleLibraryItem>()
+const childOptions = ref<ScaleAssessmentStudentCandidate[]>([])
 const library = ref<ScaleLibraryResponse>({
   items: [],
   summary: { total: 0, available: 0, unavailable: 0, monthUsage: 0, usageCount: 0, reservedAuths: 0 },
   filterOptions: { categories: [], categoryCounts: {}, scenarios: [], statuses: [], ageScopes: ['all', '0-2', '2-6', '6-12', '12+'], durations: ['0-15', '15-30', '30-60', '60+'] },
 })
 let libraryRequestSeq = 0
-
-const childOptions: ChildOption[] = [
-  { id: 10012, shortName: '乐', name: '乐乐', gender: '男', age: '5岁2个月', contactPhone: '爸爸 176****0124', className: '小海豚班', latestAssessment: '2025-04-28' },
-  { id: 10015, shortName: '小', name: '小宇', gender: '男', age: '4岁8个月', contactPhone: '妈妈 188****5630', className: '小海豚班', latestAssessment: '2025-05-12' },
-  { id: 10009, shortName: '安', name: '安安', gender: '女', age: '6岁1个月', contactPhone: '妈妈 139****8902', className: '小海豚班', latestAssessment: '2025-04-15' },
-  { id: 10007, shortName: '浩', name: '浩浩', gender: '男', age: '7岁3个月', contactPhone: '爸爸 185****7721', className: '海星班', latestAssessment: '2025-05-10' },
-  { id: 10021, shortName: '糖', name: '糖糖', gender: '女', age: '3岁11个月', contactPhone: '妈妈 177****3056', className: '海星班', latestAssessment: '2025-04-20' },
-]
+let childRequestSeq = 0
+let childSearchTimer: number | undefined
 
 const categoryTabs = computed(() => {
   const categories = library.value.filterOptions.categories || []
@@ -91,14 +78,9 @@ const summaryCards = computed(() => [
 ])
 
 const scenarioOptions = computed(() => library.value.filterOptions.scenarios || [])
-const selectedChild = computed(() => childOptions.find(item => item.id === selectedChildId.value))
+const selectedChild = computed(() => childOptions.value.find(item => item.id === selectedChildId.value))
 
-const filteredChildOptions = computed(() => {
-  const keyword = childSearchText.value.trim()
-  if (!keyword)
-    return childOptions
-  return childOptions.filter(item => `${item.name}${item.contactPhone}${item.className}${item.latestAssessment}${item.gender}${item.age}`.includes(keyword))
-})
+const filteredChildOptions = computed(() => childOptions.value)
 
 function unwrap<T>(res: any): T {
   return (res?.data ?? res?.result ?? res) as T
@@ -132,6 +114,45 @@ async function fetchScaleLibrary() {
     if (requestSeq === libraryRequestSeq)
       libraryLoading.value = false
   }
+}
+
+async function fetchChildCandidates() {
+  const scale = activeScale.value
+  if (!scale)
+    return
+  const requestSeq = ++childRequestSeq
+  try {
+    const res = await getScaleAssessmentStudentCandidatesApi({
+      scaleCode: scale.code,
+      keyword: childSearchText.value.trim() || undefined,
+      pageIndex: 1,
+      pageSize: 50,
+    })
+    if (requestSeq !== childRequestSeq)
+      return
+    const data = unwrap<ScaleAssessmentStudentCandidateResponse>(res)
+    childOptions.value = data.items || []
+    if (!childOptions.value.some(item => item.id === selectedChildId.value))
+      selectedChildId.value = childOptions.value[0]?.id
+  } catch (error: any) {
+    if (requestSeq !== childRequestSeq)
+      return
+    childOptions.value = []
+    selectedChildId.value = undefined
+    messageService.error(error?.response?.data?.message || error?.message || '获取学员列表失败')
+  }
+}
+
+function scheduleFetchChildCandidates() {
+  if (childSearchTimer)
+    window.clearTimeout(childSearchTimer)
+  childSearchTimer = window.setTimeout(() => {
+    void fetchChildCandidates()
+  }, 260)
+}
+
+function handleChildAvatarError(child: ScaleAssessmentStudentCandidate) {
+  child.avatarUrl = ''
 }
 
 function updateCategoryScrollState() {
@@ -214,7 +235,10 @@ function openStartModal(scale: ScaleLibraryItem) {
     return
   }
   activeScale.value = scale
+  childOptions.value = []
+  selectedChildId.value = undefined
   startModalOpen.value = true
+  void fetchChildCandidates()
 }
 
 function openDetailModal(scale: ScaleLibraryItem) {
@@ -233,12 +257,20 @@ function confirmStartAssessment() {
   startModalOpen.value = false
 }
 
+watch(childSearchText, () => {
+  if (!startModalOpen.value)
+    return
+  scheduleFetchChildCandidates()
+})
+
 onMounted(() => {
   void fetchScaleLibrary()
   window.addEventListener('resize', updateCategoryScrollState)
 })
 
 onBeforeUnmount(() => {
+  if (childSearchTimer)
+    window.clearTimeout(childSearchTimer)
   window.removeEventListener('resize', updateCategoryScrollState)
 })
 </script>
@@ -479,7 +511,6 @@ onBeforeUnmount(() => {
           <span>性别</span>
           <span>年龄</span>
           <span>联系电话</span>
-          <span>班级</span>
           <span>最近测评</span>
           <span>操作</span>
         </div>
@@ -492,13 +523,17 @@ onBeforeUnmount(() => {
           @click="selectedChildId = child.id"
         >
           <span class="child-name">
-            <i>{{ child.shortName }}</i>
+            <i>
+              <img v-if="child.avatarUrl" :src="child.avatarUrl" alt="" @error="handleChildAvatarError(child)">
+              <template v-else>
+                {{ child.shortName }}
+              </template>
+            </i>
             <strong>{{ child.name }}</strong>
           </span>
           <span>{{ child.gender }}</span>
           <span>{{ child.age }}</span>
           <span>{{ child.contactPhone }}</span>
-          <span>{{ child.className }}</span>
           <span>{{ child.latestAssessment }}</span>
           <span class="radio-mark">
             <b v-if="child.id === selectedChildId"></b>
@@ -1248,7 +1283,7 @@ onBeforeUnmount(() => {
 .child-table__head,
 .child-row {
   display: grid;
-  grid-template-columns: 1.08fr .52fr .75fr 1.28fr .84fr .9fr .38fr;
+  grid-template-columns: 1.08fr .52fr .75fr 1.28fr .9fr .38fr;
   align-items: center;
   column-gap: 10px;
 }
@@ -1296,6 +1331,14 @@ onBeforeUnmount(() => {
     border-radius: 50%;
     font-style: normal;
     font-weight: 700;
+    overflow: hidden;
+
+    img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      border-radius: 50%;
+    }
   }
 }
 
