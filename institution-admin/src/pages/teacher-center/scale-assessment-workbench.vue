@@ -16,6 +16,7 @@ import {
 import QRCode from 'qrcode'
 import dayjs from 'dayjs'
 import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { Modal } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getPEP3AssessmentDraftDetailApi,
@@ -655,10 +656,20 @@ async function submitDraft() {
     const detail = await saveDraft(true)
     if (!detail?.id)
       return
-    if (!detail.progress?.canScore) {
+    if (!canSubmitByRequiredFields(detail.progress)) {
       currentProgress.value = detail.progress
       messageService.warning(cannotSubmitMessage(detail.progress))
       return
+    }
+    if (!isAllQuestionsAnswered(detail.progress)) {
+      currentProgress.value = detail.progress
+      messageService.warning(incompleteItemsMessage(detail.progress))
+      return
+    }
+    if (isCaregiverReportMissing(detail.progress)) {
+      const confirmed = await confirmSubmitWithoutCaregiverReport()
+      if (!confirmed)
+        return
     }
     const res = await submitPEP3AssessmentDraftApi(detail.id)
     const result = unwrap<any>(res)
@@ -674,13 +685,49 @@ async function submitDraft() {
   }
 }
 
+function canSubmitByRequiredFields(progress?: PEP3AssessmentDraftDetail['progress']) {
+  const missing = progress?.missingRequiredFields || []
+  return !missing.includes('birthDate') && !missing.includes('assessmentDate')
+}
+
+function isAllQuestionsAnswered(progress?: PEP3AssessmentDraftDetail['progress']) {
+  const itemCount = progress?.itemCount || totalItemCount.value
+  const answered = progress?.answeredItemCount ?? answeredItemCount.value
+  return itemCount > 0 && answered >= itemCount && (progress?.missingItemCount ?? missingItemCount.value) <= 0
+}
+
+function isCaregiverReportMissing(progress?: PEP3AssessmentDraftDetail['progress']) {
+  return (progress?.caregiverRawScoreCount || 0) < 3
+}
+
 function cannotSubmitMessage(progress?: PEP3AssessmentDraftDetail['progress']) {
   const missing = progress?.missingRequiredFields || []
   if (missing.includes('birthDate') || missing.includes('assessmentDate'))
     return '请补全出生日期和测评日期后再提交'
-  if (progress?.missingItemCount)
-    return `还有 ${progress.missingItemCount} 道题未评分`
+  if (!isAllQuestionsAnswered(progress))
+    return incompleteItemsMessage(progress)
   return '当前草稿还不能提交，请补全必填内容'
+}
+
+function incompleteItemsMessage(progress?: PEP3AssessmentDraftDetail['progress']) {
+  const itemCount = progress?.itemCount || totalItemCount.value
+  const answered = progress?.answeredItemCount ?? answeredItemCount.value
+  const missing = progress?.missingItemCount ?? Math.max(itemCount - answered, 0)
+  return `还有 ${missing} 道题未评分，请完成全部 ${itemCount} 道题后再提交正式记录`
+}
+
+function confirmSubmitWithoutCaregiverReport() {
+  return new Promise<boolean>((resolve) => {
+    Modal.confirm({
+      title: '照护者报告尚未提交',
+      content: '当前测评题目已完成，但家长还没有提交照护者报告。可以先提交正式记录；家长后续提交后，系统会自动合并照护者报告数据并更新记录。是否继续提交？',
+      okText: '先提交记录',
+      cancelText: '暂不提交',
+      centered: true,
+      onOk: () => resolve(true),
+      onCancel: () => resolve(false),
+    })
+  })
 }
 
 function setCurrentItemScore(value: number) {

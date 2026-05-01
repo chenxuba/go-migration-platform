@@ -232,9 +232,11 @@ func (svc *Service) SubmitPEP3AssessmentDraft(userID, draftID int64) (model.PEP3
 	if len(itemScores) == 0 && len(rawScores) == 0 {
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("draft item scores or raw scores are required before submit")
 	}
-	var snapshot pep3DraftSubmitSnapshot
-	_ = json.Unmarshal(draft.InputJSON, &snapshot)
-
+	if missingItemCount, err := pep3MissingItemScoreCount(itemScores); err != nil {
+		return model.PEP3AssessmentDraftSubmitVO{}, err
+	} else if missingItemCount > 0 {
+		return model.PEP3AssessmentDraftSubmitVO{}, fmt.Errorf("还有 %d 道题未评分，请完成全部题目后再提交正式记录", missingItemCount)
+	}
 	record, err := svc.CreatePEP3AssessmentRecord(userID, PEP3AssessmentRecordSaveInput{
 		StudentID:    draft.StudentID,
 		StudentName:  draft.StudentName,
@@ -245,7 +247,7 @@ func (svc *Service) SubmitPEP3AssessmentDraft(userID, draftID int64) (model.PEP3
 			AssessmentDate:    *draft.AssessmentDate,
 			ItemScores:        itemScores,
 			RawScores:         rawScores,
-			AllowMissingItems: snapshot.AllowMissingItems,
+			AllowMissingItems: false,
 		},
 		InputSnapshot: json.RawMessage(draft.InputJSON),
 	})
@@ -265,6 +267,20 @@ func (svc *Service) SubmitPEP3AssessmentDraft(userID, draftID int64) (model.PEP3
 		DraftStatus: "submitted",
 		Record:      record,
 	}, nil
+}
+
+func pep3MissingItemScoreCount(itemScores map[int]int) (int, error) {
+	data, err := loadPEP3StaticData()
+	if err != nil {
+		return 0, err
+	}
+	missing := 0
+	for _, item := range data.formItems {
+		if _, ok := itemScores[item.ItemNo]; !ok {
+			missing++
+		}
+	}
+	return missing, nil
 }
 
 func mergePEP3DraftInputSnapshot(raw json.RawMessage, itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any) (any, error) {
