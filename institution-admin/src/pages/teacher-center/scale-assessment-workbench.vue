@@ -23,11 +23,13 @@ import {
   getPEP3AssessmentFormTemplateSummaryApi,
   getPEP3AssessmentRecordDetailApi,
   invitePEP3CaregiverReportApi,
+  pagePEP3AssessmentDraftsApi,
   pagePEP3AssessmentRecordsApi,
   savePEP3AssessmentDraftApi,
   savePEP3AssessmentDraftItemApi,
   submitPEP3AssessmentDraftApi,
   type PEP3AssessmentDraftDetail,
+  type PEP3AssessmentDraftSummary,
   type PEP3AssessmentFormTemplateSummary,
   type PEP3AssessmentItem,
   type PEP3AssessmentItemGroupSummary,
@@ -70,6 +72,8 @@ const autoNext = ref(true)
 const caregiverQRCodeDataUrl = ref('')
 const caregiverInviteLoading = ref(false)
 const caregiverInvite = ref<PEP3CaregiverReportInvite>()
+const draftResumeModalOpen = ref(false)
+const existingDraft = ref<PEP3AssessmentDraftSummary>()
 const guidanceVideoOpen = ref(false)
 const materialPreviewOpen = ref(false)
 const previousScoreDate = ref('')
@@ -246,6 +250,14 @@ function formatDate(value?: string) {
   return date.isValid() ? date.format('YYYY-MM-DD') : text
 }
 
+function formatDateTime(value?: string) {
+  const text = String(value || '').trim()
+  if (!text)
+    return '-'
+  const date = dayjs(text)
+  return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : text
+}
+
 function normalizeText(value?: string, fallback = '-') {
   const text = String(value || '').replace(/\s+/g, ' ').trim()
   return text || fallback
@@ -330,15 +342,87 @@ function toggleGroup(key: string) {
 
 async function initializeWorkbench() {
   await fetchTemplate()
-  if (editor.id)
+  if (editor.id) {
     await fetchDraftDetail(editor.id)
+    await hydrateStudentBirthDate()
+    await fetchPreviousAssessment()
+    if (validateDraftHeader(true))
+      await refreshCaregiverInvite(true)
+    return
+  }
+
   await hydrateStudentBirthDate()
+  const draftToResume = await findExistingDraft()
+  if (draftToResume) {
+    existingDraft.value = draftToResume
+    draftResumeModalOpen.value = true
+    return
+  }
+
+  await startNewAssessment()
+}
+
+async function startNewAssessment() {
   await fetchPreviousAssessment()
   if (validateDraftHeader(true)) {
     const detail = await saveDraft(true)
     if (detail?.id)
       await refreshCaregiverInvite(true)
   }
+}
+
+async function findExistingDraft() {
+  if (!editor.studentId)
+    return undefined
+  try {
+    const res = await pagePEP3AssessmentDraftsApi({
+      pageRequestModel: { pageIndex: 1, pageSize: 1 },
+      queryModel: {
+        assessmentCode: 'PEP3',
+        studentId: editor.studentId,
+      },
+    })
+    const data = unwrap<any>(res)
+    return (data?.items || [])[0] as PEP3AssessmentDraftSummary | undefined
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '查询未完成草稿失败'))
+    return undefined
+  }
+}
+
+async function continueExistingDraft() {
+  const target = existingDraft.value
+  draftResumeModalOpen.value = false
+  if (!target?.id)
+    return
+  await fetchDraftDetail(Number(target.id))
+  const missingItemNo = target.progress?.missingItemNos?.[0]
+  if (missingItemNo && allItems.value.some(item => item.itemNo === missingItemNo))
+    currentItemNo.value = missingItemNo
+  await fetchPreviousAssessment()
+  await refreshCaregiverInvite(true)
+}
+
+async function restartAssessment() {
+  draftResumeModalOpen.value = false
+  resetAssessmentInputForRestart()
+  await startNewAssessment()
+}
+
+function resetAssessmentInputForRestart() {
+  clearDraftItemSaveTimers()
+  draft.value = undefined
+  currentProgress.value = undefined
+  caregiverInvite.value = undefined
+  caregiverQRCodeDataUrl.value = ''
+  editor.id = undefined
+  editor.remark = ''
+  editor.allowMissingItems = true
+  editor.itemScores = {}
+  editor.rawScores = {}
+  editor.itemRecordValues = {}
+  editor.caregiverReport = undefined
 }
 
 async function fetchTemplate() {
@@ -1116,6 +1200,27 @@ function goBack() {
     </footer>
 
     <a-modal
+      v-model:open="draftResumeModalOpen"
+      title="发现未完成草稿"
+      ok-text="继续测试"
+      cancel-text="重新测试"
+      :width="430"
+      :closable="false"
+      :mask-closable="false"
+      centered
+      @ok="continueExistingDraft"
+      @cancel="restartAssessment"
+    >
+      <div class="draft-resume-tip">
+        <p>当前儿童存在一份未提交的 PEP-3 测评草稿。</p>
+        <div class="draft-resume-meta">
+          <span>已完成：<b>{{ existingDraft?.answeredItemCount || 0 }}</b> / {{ existingDraft?.progress?.itemCount || totalItemCount }} 题</span>
+          <span>更新时间：<b>{{ formatDateTime(existingDraft?.updatedTime) }}</b></span>
+        </div>
+      </div>
+    </a-modal>
+
+    <a-modal
       v-model:open="guidanceVideoOpen"
       title="指导视频"
       :footer="null"
@@ -1666,6 +1771,30 @@ function goBack() {
     width: 100%;
     max-height: 420px;
     background: #0f172a;
+  }
+}
+
+.draft-resume-tip {
+  p {
+    margin: 0 0 12px;
+    color: #1f2937;
+    font-size: 14px;
+    line-height: 1.6;
+  }
+}
+
+.draft-resume-meta {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  color: #667085;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  font-size: 13px;
+
+  b {
+    color: #111827;
   }
 }
 
