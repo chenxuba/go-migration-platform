@@ -6,6 +6,7 @@ import {
   FileTextOutlined,
   LeftOutlined,
   MessageOutlined,
+  PlayCircleOutlined,
   RightOutlined,
   SaveOutlined,
   SlidersOutlined,
@@ -15,6 +16,7 @@ import {
 import QRCode from 'qrcode'
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import bubbleBottleImage from '~@/assets/images/pep3-bubble-bottle.svg'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,6 +26,10 @@ const previousScore = ref(2)
 const previousScoreDate = '2026-04-18'
 const autoNext = ref(true)
 const caregiverQRCodeDataUrl = ref('')
+const guidanceVideoOpen = ref(false)
+const materialPreviewOpen = ref(false)
+const guidanceVideoUrl = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+const materialImageUrl = bubbleBottleImage
 
 const studentName = computed(() => String(route.query.childName || '浩浩'))
 const studentAge = computed(() => String(route.query.childAge || '3;2'))
@@ -167,9 +173,14 @@ function goBack() {
           <a-tag color="blue">CVP 认知（语言/语前）</a-tag>
         </div>
 
-        <article class="instruction-card">
-          <h2><FileTextOutlined />材料</h2>
-          <p>泡泡瓶</p>
+        <article class="instruction-card material-card">
+          <div class="material-card__text">
+            <h2><FileTextOutlined />材料</h2>
+            <p>泡泡瓶</p>
+          </div>
+          <button type="button" class="material-card__image" @click="materialPreviewOpen = true">
+            <img :src="materialImageUrl" alt="泡泡瓶">
+          </button>
         </article>
 
         <article class="instruction-card">
@@ -177,9 +188,16 @@ function goBack() {
           <p>测试员将泡泡瓶放在桌子上，并示意儿童打开瓶盖。若儿童无法完成，测试员可进行示范后再让儿童尝试。</p>
         </article>
 
-        <article class="instruction-card">
-          <h2><FileTextOutlined />指导语</h2>
-          <p>把泡泡瓶盖打开，我们来吹泡泡。</p>
+        <article class="instruction-card guidance-card">
+          <div class="guidance-card__text">
+            <h2><FileTextOutlined />指导语</h2>
+            <p>把泡泡瓶盖打开，我们来吹泡泡。</p>
+          </div>
+          <button type="button" class="guidance-video-entry" @click="guidanceVideoOpen = true">
+            <span><PlayCircleOutlined /></span>
+            <strong>指导视频</strong>
+            <em>点击观看</em>
+          </button>
         </article>
 
         <article class="instruction-card">
@@ -301,6 +319,31 @@ function goBack() {
         <a-switch v-model:checked="autoNext" />
       </div>
     </footer>
+
+    <a-modal
+      v-model:open="guidanceVideoOpen"
+      title="指导视频"
+      :footer="null"
+      :width="720"
+      centered
+      destroy-on-close
+    >
+      <div class="guidance-video-player">
+        <video :src="guidanceVideoUrl" controls autoplay></video>
+      </div>
+    </a-modal>
+
+    <a-modal
+      v-model:open="materialPreviewOpen"
+      title="材料图片"
+      :footer="null"
+      :width="520"
+      centered
+    >
+      <div class="material-preview">
+        <img :src="materialImageUrl" alt="泡泡瓶">
+      </div>
+    </a-modal>
   </div>
 </template>
 
@@ -639,6 +682,132 @@ function goBack() {
     color: #3f4856;
     font-size: 13px;
     line-height: 1.45;
+  }
+}
+
+.material-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 16px;
+}
+
+.material-card__text {
+  min-width: 0;
+}
+
+.material-card__image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 52px;
+  padding: 4px;
+  background: #f8fafc;
+  border: 1px solid #dbe5f0;
+  border-radius: 6px;
+  cursor: pointer;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+
+  &:hover {
+    border-color: #75a7ff;
+    background: #f3f8ff;
+  }
+}
+
+.material-preview {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: #f8fafc;
+  border-radius: 8px;
+
+  img {
+    display: block;
+    max-width: 100%;
+    max-height: 420px;
+    object-fit: contain;
+  }
+}
+
+.guidance-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 154px;
+  align-items: center;
+  gap: 16px;
+}
+
+.guidance-card__text {
+  min-width: 0;
+}
+
+.guidance-video-entry {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  min-height: 58px;
+  padding: 8px 10px;
+  color: #155bdc;
+  text-align: left;
+  background: #f7faff;
+  border: 1px solid #c8dcff;
+  border-radius: 8px;
+  cursor: pointer;
+
+  span {
+    grid-row: span 2;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    color: #fff;
+    background: #0757e6;
+    border-radius: 50%;
+    font-size: 16px;
+  }
+
+  strong {
+    overflow: hidden;
+    color: #0f2a5f;
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  em {
+    color: #667085;
+    font-size: 12px;
+    font-style: normal;
+    line-height: 1.2;
+  }
+
+  &:hover {
+    background: #eef5ff;
+    border-color: #75a7ff;
+  }
+}
+
+.guidance-video-player {
+  overflow: hidden;
+  background: #0f172a;
+  border-radius: 8px;
+
+  video {
+    display: block;
+    width: 100%;
+    max-height: 420px;
+    background: #0f172a;
   }
 }
 
