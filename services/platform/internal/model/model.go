@@ -125,6 +125,8 @@ type ScaleQuestionBankItem struct {
 	TestItem        string                         `json:"testItem"`
 	Materials       string                         `json:"materials"`
 	Method          string                         `json:"method"`
+	Describes       string                         `json:"describes,omitempty"`
+	Guidance        string                         `json:"guidance"`
 	DomainCode      string                         `json:"domainCode"`
 	DomainName      string                         `json:"domainName"`
 	Standard        string                         `json:"standard"`
@@ -166,6 +168,8 @@ type ScaleQuestionBankItemMutation struct {
 	TestItem        string                         `json:"testItem"`
 	Materials       string                         `json:"materials"`
 	Method          string                         `json:"method"`
+	Describes       string                         `json:"describes,omitempty"`
+	Guidance        string                         `json:"guidance"`
 	DomainCode      string                         `json:"domainCode"`
 	DomainName      string                         `json:"domainName"`
 	Standard        string                         `json:"standard"`

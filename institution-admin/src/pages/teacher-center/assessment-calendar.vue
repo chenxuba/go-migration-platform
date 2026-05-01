@@ -9,9 +9,10 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons-vue'
 import QRCode from 'qrcode'
-import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
+import StudentSelect from '@/components/common/student-select.vue'
 import {
   deletePEP3AssessmentDraftApi,
   downloadPEP3AssessmentBookletPdfApi,
@@ -43,6 +44,15 @@ import messageService from '@/utils/messageService'
 
 type WorkbenchTab = 'drafts' | 'records'
 type DraftItemSaveStatus = 'queued' | 'saving' | 'saved' | 'error'
+type StudentOption = {
+  id?: number | string
+  stuName?: string
+  studentName?: string
+  birthday?: string
+  birthDay?: string
+  mobile?: string
+  studentStatus?: number
+}
 
 interface DraftEditorState {
   id?: number
@@ -84,6 +94,7 @@ const currentBooklet = ref<PEP3Booklet>()
 const currentCaregiverInvite = ref<PEP3CaregiverReportInvite>()
 const caregiverQRCodeDataUrl = ref('')
 const caregiverQRCodeError = ref('')
+const studentSelectRef = ref<any>()
 
 const draftPagination = reactive({
   current: 1,
@@ -286,6 +297,7 @@ function getErrorMessage(error: any, fallback: string) {
 function resetEditor() {
   clearDraftItemSaveTimers()
   clearDraftItemSaveState()
+  studentSelectRef.value?.reset?.()
   editor.id = undefined
   editor.studentId = undefined
   editor.studentName = ''
@@ -336,6 +348,31 @@ function applyDraftInput(input?: PEP3DraftSaveRequest) {
       editor.itemRecordValues[item.itemNo] = {}
     editor.itemRecordValues[item.itemNo][item.fieldKey] = item.value
   })
+  void loadSelectedStudent()
+}
+
+async function loadSelectedStudent() {
+  if (!editor.studentId)
+    return
+  await nextTick()
+  const student = await studentSelectRef.value?.loadStudentById?.(editor.studentId)
+  if (student)
+    handleStudentSelect(student)
+}
+
+function handleStudentSelect(student?: StudentOption | null) {
+  if (!student) {
+    editor.studentId = undefined
+    editor.studentName = ''
+    editor.birthDate = null
+    return
+  }
+  const studentID = Number(student.id)
+  editor.studentId = Number.isFinite(studentID) && studentID > 0 ? studentID : undefined
+  editor.studentName = String(student.stuName || student.studentName || '').trim()
+  const birthday = String(student.birthday || student.birthDay || '').trim()
+  if (birthday)
+    editor.birthDate = dayjs(birthday)
 }
 
 async function fetchTemplate() {
@@ -444,6 +481,15 @@ function buildPayload(): PEP3DraftSaveRequest {
   }
 }
 
+function validateDraftHeader(silent = false) {
+  if (!editor.studentId || !editor.studentName.trim()) {
+    if (!silent)
+      messageService.warning('请先选择真实儿童')
+    return false
+  }
+  return true
+}
+
 function getItemRecordValue(itemNo: number, fieldKey: string) {
   return editor.itemRecordValues[itemNo]?.[fieldKey]
 }
@@ -545,6 +591,8 @@ function queueDraftItemSave(itemNo: number) {
 }
 
 async function ensureDraftForItemSave() {
+  if (!validateDraftHeader(true))
+    return false
   if (editor.id)
     return true
   if (!draftCreationPromise) {
@@ -562,7 +610,7 @@ async function saveDraftItem(itemNo: number) {
   setDraftItemSaveStatus(itemNo, 'saving')
   const canSave = await ensureDraftForItemSave()
   if (!canSave || !editor.id) {
-    setDraftItemSaveStatus(itemNo, 'error', '草稿创建失败')
+    setDraftItemSaveStatus(itemNo, 'error', editor.studentId ? '草稿创建失败' : '请先选择真实儿童')
     return
   }
   const score = editor.itemScores[itemNo]
@@ -641,6 +689,8 @@ function isEmptyRecordValue(value: unknown) {
 }
 
 async function saveDraft(silent = false) {
+  if (!validateDraftHeader(silent))
+    return undefined
   saving.value = true
   try {
     const res = await savePEP3AssessmentDraftApi(buildPayload())
@@ -1183,11 +1233,19 @@ onMounted(async () => {
           <div class="editor-main">
             <a-form layout="vertical">
               <div class="form-grid">
-                <a-form-item label="儿童姓名">
-                  <a-input v-model:value="editor.studentName" placeholder="儿童姓名" />
-                </a-form-item>
-                <a-form-item label="学员ID">
-                  <a-input-number v-model:value="editor.studentId" :min="1" style="width: 100%" placeholder="系统学员ID" />
+                <a-form-item label="儿童" class="student-picker-cell" required>
+                  <StudentSelect
+                    ref="studentSelectRef"
+                    v-model="editor.studentId"
+                    placeholder="搜索儿童姓名/手机号"
+                    width="100%"
+                    :allow-clear="true"
+                    @select="handleStudentSelect"
+                  />
+                  <div v-if="editor.studentName" class="student-picker-meta">
+                    <span>{{ editor.studentName }}</span>
+                    <small>ID {{ editor.studentId }}</small>
+                  </div>
                 </a-form-item>
                 <a-form-item label="出生日期">
                   <a-date-picker v-model:value="editor.birthDate" style="width: 100%" />
@@ -1196,7 +1254,7 @@ onMounted(async () => {
                   <a-date-picker v-model:value="editor.assessmentDate" style="width: 100%" />
                 </a-form-item>
                 <a-form-item label="测试员">
-                  <a-input v-model:value="editor.examinerName" placeholder="默认取当前登录员工" />
+                  <a-input v-model:value="editor.examinerName" disabled placeholder="自动取当前登录老师" />
                 </a-form-item>
                 <a-form-item label="缺题评分">
                   <a-switch v-model:checked="editor.allowMissingItems" checked-children="允许" un-checked-children="不允许" />
@@ -1688,6 +1746,25 @@ onMounted(async () => {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0 12px;
+}
+
+.student-picker-cell {
+  grid-column: span 2;
+}
+
+.student-picker-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 22px;
+  margin-top: 6px;
+  color: #1f2329;
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.student-picker-meta small {
+  color: #8a9099;
 }
 
 .item-collapse {

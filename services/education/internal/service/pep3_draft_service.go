@@ -51,6 +51,9 @@ func (svc *Service) SavePEP3AssessmentDraft(userID int64, input PEP3AssessmentDr
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	progress, err := buildPEP3AssessmentDraftProgress(input.BirthDate, input.AssessmentDate, input.ItemScores, input.RawScores, input.AllowMissingItems)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
@@ -382,6 +385,26 @@ func (svc *Service) pep3AssessmentActor(userID int64, requestedExaminerName stri
 		examinerName = svc.repo.GetStaffNameByID(context.Background(), &examinerID)
 	}
 	return instID, examinerID, examinerName, nil
+}
+
+func (svc *Service) validatePEP3AssessmentStudent(instID, studentID int64, studentName string) error {
+	if studentID <= 0 {
+		return errors.New("请选择真实儿童")
+	}
+	if strings.TrimSpace(studentName) == "" {
+		return errors.New("儿童姓名不能为空")
+	}
+	studentInstID, err := svc.repo.FindInstIDByStudentID(context.Background(), studentID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("请选择当前机构的真实儿童")
+		}
+		return err
+	}
+	if studentInstID != instID {
+		return errors.New("请选择当前机构的真实儿童")
+	}
+	return nil
 }
 
 func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, itemScores map[int]int, rawScores map[string]int, allowMissingItems bool) (model.PEP3AssessmentDraftProgress, error) {

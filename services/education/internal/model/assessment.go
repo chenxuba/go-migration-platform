@@ -197,6 +197,7 @@ type PEP3AssessmentItem struct {
 	TestItem     string                `json:"testItem"`
 	Materials    string                `json:"materials,omitempty"`
 	Method       string                `json:"method,omitempty"`
+	Guidance     string                `json:"guidance,omitempty"`
 	DomainCode   string                `json:"domainCode"`
 	DomainName   string                `json:"domainName"`
 	Standard     string                `json:"standard"`

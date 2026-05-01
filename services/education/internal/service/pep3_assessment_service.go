@@ -82,6 +82,9 @@ func (svc *Service) CreatePEP3AssessmentRecord(userID int64, input PEP3Assessmen
 		}
 		return model.AssessmentRecordDetailVO{}, err
 	}
+	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
 	examinerID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

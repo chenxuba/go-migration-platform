@@ -15,6 +15,7 @@ import (
 type assessmentRepoExpectation struct {
 	query        string
 	args         []any
+	rows         []driver.Value
 	rowsAffected int64
 	commit       bool
 }
@@ -36,7 +37,10 @@ type assessmentRepoScriptedTx struct {
 	state *assessmentRepoScriptedState
 }
 
-type assessmentRepoScriptedRows struct{}
+type assessmentRepoScriptedRows struct {
+	values []driver.Value
+	read   bool
+}
 
 var assessmentRepoScriptedDriverCounter uint64
 
@@ -86,7 +90,28 @@ func (c *assessmentRepoScriptedConn) ExecContext(ctx context.Context, query stri
 }
 
 func (c *assessmentRepoScriptedConn) QueryContext(ctx context.Context, query string, args []driver.NamedValue) (driver.Rows, error) {
-	return nil, fmt.Errorf("unexpected query: %s", normalizeAssessmentRepoSQL(query))
+	if c.state.index >= len(c.state.expectations) {
+		return nil, fmt.Errorf("unexpected query: %s", normalizeAssessmentRepoSQL(query))
+	}
+	expectation := c.state.expectations[c.state.index]
+	if expectation.commit {
+		return nil, fmt.Errorf("expected commit but got query: %s", normalizeAssessmentRepoSQL(query))
+	}
+	actualQuery := normalizeAssessmentRepoSQL(query)
+	expectedQuery := normalizeAssessmentRepoSQL(expectation.query)
+	if actualQuery != expectedQuery {
+		return nil, fmt.Errorf("unexpected query\nexpected: %s\nactual:   %s", expectedQuery, actualQuery)
+	}
+	if len(args) != len(expectation.args) {
+		return nil, fmt.Errorf("unexpected args length for query %s: expected %d, got %d", expectedQuery, len(expectation.args), len(args))
+	}
+	for idx, arg := range args {
+		if !reflect.DeepEqual(arg.Value, expectation.args[idx]) {
+			return nil, fmt.Errorf("unexpected arg %d for query %s: expected %#v, got %#v", idx, expectedQuery, expectation.args[idx], arg.Value)
+		}
+	}
+	c.state.index++
+	return &assessmentRepoScriptedRows{values: expectation.rows}, nil
 }
 
 func (c *assessmentRepoScriptedConn) CheckNamedValue(value *driver.NamedValue) error {
@@ -110,7 +135,7 @@ func (tx *assessmentRepoScriptedTx) Rollback() error {
 }
 
 func (r *assessmentRepoScriptedRows) Columns() []string {
-	return nil
+	return []string{"id"}
 }
 
 func (r *assessmentRepoScriptedRows) Close() error {
@@ -118,7 +143,12 @@ func (r *assessmentRepoScriptedRows) Close() error {
 }
 
 func (r *assessmentRepoScriptedRows) Next(dest []driver.Value) error {
-	return io.EOF
+	if r.read || len(r.values) == 0 {
+		return io.EOF
+	}
+	copy(dest, r.values)
+	r.read = true
+	return nil
 }
 
 func TestUpdateAssessmentDraftInputProgressAndItemDetailsPersistsOneItemInTransaction(t *testing.T) {
@@ -129,6 +159,16 @@ func TestUpdateAssessmentDraftInputProgressAndItemDetailsPersistsOneItemInTransa
 		operatorID int64 = 30
 	)
 	expectations := []assessmentRepoExpectation{
+		{
+			query: `
+				SELECT id
+				FROM assessment_draft
+				WHERE id = ? AND inst_id = ? AND del_flag = 0 AND submitted_record_id = 0
+				FOR UPDATE
+			`,
+			args: []any{draftID, instID},
+			rows: []driver.Value{draftID},
+		},
 		{
 			query: `
 				UPDATE assessment_draft

@@ -20,6 +20,8 @@ type pep3FormItemDefinition struct {
 	TestItem     string `json:"test_item"`
 	Materials    string `json:"materials"`
 	Method       string `json:"method"`
+	Describes    string `json:"describes"`
+	Guidance     string `json:"guidance"`
 	Domain       string `json:"domain"`
 	DomainCode   string `json:"domain_code"`
 	Standard     string `json:"standard"`
@@ -181,6 +183,7 @@ func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int, record
 			TestItem:     nonEmptyString(item.TestItem, item.ItemTitle),
 			Materials:    strings.TrimSpace(item.Materials),
 			Method:       strings.TrimSpace(item.Method),
+			Guidance:     nonEmptyString(item.Describes, item.Guidance),
 			DomainCode:   strings.TrimSpace(item.DomainCode),
 			DomainName:   strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
 			Standard:     strings.TrimSpace(item.Standard),

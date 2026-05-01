@@ -10,8 +10,8 @@
   },
   "scripts": {
     "dev": "mist --host",
-    "local": "vite --host --mode mylocal",
-    "local:chen": "vite --host --mode chenlocal",
+    "local": "vite --host 0.0.0.0 --mode mylocal --force",
+    "local:chen": "vite --host 0.0.0.0 --mode chenlocal --force",
     "build": "vue-tsc && mist build",
     "clear:vercel": "rm -rf ./vercel.json",
     "build:vercel": "run-s clear:vercel build:nitro",

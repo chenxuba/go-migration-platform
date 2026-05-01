@@ -84,6 +84,8 @@ export interface ScaleQuestionBankItem {
   testItem: string
   materials: string
   method: string
+  describes?: string
+  guidance: string
   domainCode: string
   domainName: string
   standard: string

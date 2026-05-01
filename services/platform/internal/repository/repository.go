@@ -499,6 +499,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.seedPEP3RecordFields(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.seedPEP3ItemGuidance(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.seedScaleDictionaries(context.Background()); err != nil {
 		return nil, err
 	}
@@ -841,6 +844,70 @@ func (repo *Repository) seedPEP3RecordFields(ctx context.Context) error {
 			`, scaleVersion, itemNo, strings.TrimSpace(field.Key), idx+1, string(raw)); err != nil {
 				return err
 			}
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) seedPEP3ItemGuidance(ctx context.Context) error {
+	scaleVersion, err := repo.resolveScaleVersion(ctx, "PEP3", "")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(scaleVersion) == "" {
+		scaleVersion = "2025-92题版"
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, item_json
+		FROM assessment_scale_item
+		WHERE scale_code = 'PEP3' AND scale_version = ? AND del_flag = 0
+		ORDER BY item_no
+	`, scaleVersion)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	type itemGuidancePatch struct {
+		itemNo int
+		raw    []byte
+	}
+	patches := make([]itemGuidancePatch, 0)
+	for rows.Next() {
+		var (
+			itemNo  int
+			rawJSON string
+		)
+		if err := rows.Scan(&itemNo, &rawJSON); err != nil {
+			return err
+		}
+		var raw scaleQuestionBankItemRaw
+		if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+			return fmt.Errorf("decode PEP-3 item guidance %d: %w", itemNo, err)
+		}
+		if strings.TrimSpace(firstNonEmptyString(raw.Describes, raw.Guidance)) != "" {
+			continue
+		}
+		raw.Guidance = scaleQuestionBankDefaultGuidance(raw)
+		if strings.TrimSpace(raw.Guidance) == "" {
+			continue
+		}
+		nextRaw, err := json.Marshal(raw)
+		if err != nil {
+			return err
+		}
+		patches = append(patches, itemGuidancePatch{itemNo: itemNo, raw: nextRaw})
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, patch := range patches {
+		if _, err := repo.db.ExecContext(ctx, `
+			UPDATE assessment_scale_item
+			SET item_json = ?, update_id = 0, update_time = NOW()
+			WHERE scale_code = 'PEP3' AND scale_version = ? AND item_no = ? AND del_flag = 0
+		`, string(patch.raw), scaleVersion, patch.itemNo); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1193,6 +1260,8 @@ type scaleQuestionBankItemRaw struct {
 	TestItem     string `json:"test_item"`
 	Materials    string `json:"materials"`
 	Method       string `json:"method"`
+	Describes    string `json:"describes,omitempty"`
+	Guidance     string `json:"guidance"`
 	Domain       string `json:"domain"`
 	DomainCode   string `json:"domain_code"`
 	Standard     string `json:"standard"`
@@ -1213,6 +1282,46 @@ type scaleQuestionBankDomainRaw struct {
 	IsBehaviorSubtest    bool   `json:"is_behavior_subtest"`
 	IsCaregiverReport    bool   `json:"is_caregiver_report"`
 	CompositeCode        string `json:"composite_code"`
+}
+
+var (
+	scaleQuestionBankTranslatedGuidancePattern = regexp.MustCompile(`[说說]\s*[：:]?\s*「[^」]+」[，。]?\s*（([^）]+)）`)
+	scaleQuestionBankQuotedGuidancePattern     = regexp.MustCompile(`[说說]\s*[：:]?\s*「([^」]+)」`)
+)
+
+func scaleQuestionBankDefaultGuidance(raw scaleQuestionBankItemRaw) string {
+	switch raw.ItemNo {
+	case 1:
+		return "把泡泡瓶盖打开，我们来吹泡泡"
+	}
+	return extractScaleQuestionBankGuidance(raw.Method)
+}
+
+func scaleQuestionBankGuidance(raw scaleQuestionBankItemRaw) string {
+	return strings.TrimSpace(firstNonEmptyString(raw.Describes, raw.Guidance, scaleQuestionBankDefaultGuidance(raw)))
+}
+
+func extractScaleQuestionBankGuidance(method string) string {
+	method = normalizeScaleQuestionBankInlineText(method)
+	if method == "" {
+		return ""
+	}
+	if match := scaleQuestionBankTranslatedGuidancePattern.FindStringSubmatch(method); len(match) == 2 {
+		return normalizeScaleQuestionBankInlineText(match[1])
+	}
+	if match := scaleQuestionBankQuotedGuidancePattern.FindStringSubmatch(method); len(match) == 2 {
+		return normalizeScaleQuestionBankInlineText(match[1])
+	}
+	return ""
+}
+
+func normalizeScaleQuestionBankInlineText(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.ReplaceAll(text, "\r", "\n")
+	text = strings.Join(strings.Fields(text), "")
+	text = strings.TrimSpace(text)
+	text = strings.Trim(text, "。；;，,")
+	return text
 }
 
 func (repo *Repository) GetScaleQuestionBank(ctx context.Context, scaleCode, scaleVersion string) (model.ScaleQuestionBank, error) {
@@ -1293,6 +1402,8 @@ func (repo *Repository) GetScaleQuestionBank(ctx context.Context, scaleCode, sca
 			TestItem:        strings.TrimSpace(firstNonEmptyString(raw.TestItem, raw.ItemTitle)),
 			Materials:       strings.TrimSpace(raw.Materials),
 			Method:          strings.TrimSpace(raw.Method),
+			Describes:       strings.TrimSpace(raw.Describes),
+			Guidance:        scaleQuestionBankGuidance(raw),
 			DomainCode:      domainCode,
 			DomainName:      domainName,
 			Standard:        strings.TrimSpace(raw.Standard),
@@ -1344,6 +1455,8 @@ func (repo *Repository) UpdateScaleQuestionBankItem(ctx context.Context, input m
 	raw.TestItem = strings.TrimSpace(input.TestItem)
 	raw.Materials = strings.TrimSpace(input.Materials)
 	raw.Method = strings.TrimSpace(input.Method)
+	raw.Describes = strings.TrimSpace(firstNonEmptyString(input.Describes, input.Guidance))
+	raw.Guidance = raw.Describes
 	raw.DomainCode = strings.ToUpper(strings.TrimSpace(input.DomainCode))
 	raw.Domain = strings.TrimSpace(input.DomainName)
 	raw.Standard = strings.TrimSpace(input.Standard)
@@ -1392,7 +1505,7 @@ func (repo *Repository) UpdateScaleQuestionBankItem(ctx context.Context, input m
 		if field.Key == "" || field.Label == "" || field.FieldType == "" {
 			continue
 		}
-		field.Options = normalizeQuestionBankRecordFieldOptions(field.Options)
+		field.Options = normalizeQuestionBankRecordFieldOptions(scaleCode, field.Options)
 		rawField, marshalErr := json.Marshal(field)
 		if marshalErr != nil {
 			err = marshalErr
@@ -1514,7 +1627,7 @@ func (repo *Repository) listScaleQuestionBankRecordFields(ctx context.Context, s
 		if strings.TrimSpace(field.Key) == "" {
 			continue
 		}
-		field.Options = normalizeQuestionBankRecordFieldOptions(field.Options)
+		field.Options = normalizeQuestionBankRecordFieldOptions(scaleCode, field.Options)
 		out[itemNo] = append(out[itemNo], field)
 	}
 	return out, rows.Err()
@@ -1548,19 +1661,25 @@ func normalizeScoreOptionText(raw string, options []model.ScaleQuestionBankScore
 	return strings.Join(values, "/")
 }
 
-func normalizeQuestionBankRecordFieldOptions(options []model.ScaleQuestionBankRecordFieldOption) []model.ScaleQuestionBankRecordFieldOption {
+func normalizeQuestionBankRecordFieldOptions(scaleCode string, options []model.ScaleQuestionBankRecordFieldOption) []model.ScaleQuestionBankRecordFieldOption {
 	out := make([]model.ScaleQuestionBankRecordFieldOption, 0, len(options))
+	useNumericValues := strings.EqualFold(strings.TrimSpace(scaleCode), "PEP3")
 	seen := make(map[string]bool, len(options))
 	for _, option := range options {
 		value := strings.TrimSpace(option.Value)
 		label := strings.TrimSpace(option.Label)
-		if value == "" {
-			value = label
-		}
 		if label == "" {
 			label = value
 		}
-		if value == "" || seen[value] {
+		if label == "" {
+			continue
+		}
+		if useNumericValues {
+			value = strconv.Itoa(len(out) + 1)
+		} else if value == "" {
+			value = label
+		}
+		if value == "" || (!useNumericValues && seen[value]) {
 			continue
 		}
 		seen[value] = true

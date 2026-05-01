@@ -284,7 +284,27 @@ func pep3RecordFieldsFromRows(rows []repository.AssessmentScaleItemRecordFieldEn
 		if strings.TrimSpace(field.Key) == "" {
 			continue
 		}
+		field.Options = normalizePEP3RecordFieldOptions(field.Options)
 		out[row.ItemNo] = append(out[row.ItemNo], field)
+	}
+	return out
+}
+
+func normalizePEP3RecordFieldOptions(options []model.PEP3ItemRecordFieldOption) []model.PEP3ItemRecordFieldOption {
+	out := make([]model.PEP3ItemRecordFieldOption, 0, len(options))
+	for _, option := range options {
+		originalValue := strings.TrimSpace(option.Value)
+		label := strings.TrimSpace(option.Label)
+		if label == "" {
+			label = originalValue
+		}
+		if label == "" {
+			continue
+		}
+		out = append(out, model.PEP3ItemRecordFieldOption{
+			Value: strconv.Itoa(len(out) + 1),
+			Label: label,
+		})
 	}
 	return out
 }

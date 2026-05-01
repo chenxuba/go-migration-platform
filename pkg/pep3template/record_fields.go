@@ -1,5 +1,7 @@
 package pep3template
 
+import "strconv"
+
 type ItemRecordField struct {
 	Key         string                  `json:"key"`
 	Label       string                  `json:"label"`
@@ -808,12 +810,17 @@ func pep3ChoiceRecordField(key, label, fieldType string, options ...ItemRecordFi
 	if fieldType == "checkbox_group" {
 		displayType = "打勾"
 	}
+	normalizedOptions := make([]ItemRecordFieldOption, 0, len(options))
+	for idx, option := range options {
+		option.Value = strconv.Itoa(idx + 1)
+		normalizedOptions = append(normalizedOptions, option)
+	}
 	return ItemRecordField{
 		Key:         key,
 		Label:       label,
 		FieldType:   fieldType,
 		DisplayType: displayType,
-		Options:     append([]ItemRecordFieldOption(nil), options...),
+		Options:     normalizedOptions,
 	}
 }
 

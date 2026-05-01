@@ -549,8 +549,9 @@ func (repo *Repository) SyncAssessmentDraftDetails(ctx context.Context, instID, 
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
@@ -563,8 +564,11 @@ func (repo *Repository) SyncAssessmentDraftDetails(ctx context.Context, instID, 
 	if err = replaceAssessmentDraftItemRecordValues(ctx, tx, instID, draftID, itemRecordValues, operatorID); err != nil {
 		return err
 	}
-	err = tx.Commit()
-	return err
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (repo *Repository) UpsertAssessmentDraftItemDetails(ctx context.Context, instID, draftID int64, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
@@ -572,16 +576,20 @@ func (repo *Repository) UpsertAssessmentDraftItemDetails(ctx context.Context, in
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
 	if err = upsertAssessmentDraftItemDetailsInTx(ctx, tx, instID, draftID, itemNo, score, recordValues, replaceRecordValues, operatorID); err != nil {
 		return err
 	}
-	err = tx.Commit()
-	return err
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func (repo *Repository) UpdateAssessmentDraftInputProgressAndItemDetails(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
@@ -602,12 +610,22 @@ func (repo *Repository) UpdateAssessmentDraftInputProgressAndItemDetails(ctx con
 	if err != nil {
 		return err
 	}
+	committed := false
 	defer func() {
-		if err != nil {
+		if !committed {
 			_ = tx.Rollback()
 		}
 	}()
-	result, err := tx.ExecContext(ctx, `
+	var existingDraftID int64
+	if err = tx.QueryRowContext(ctx, `
+		SELECT id
+		FROM assessment_draft
+		WHERE id = ? AND inst_id = ? AND del_flag = 0 AND submitted_record_id = 0
+		FOR UPDATE
+	`, draftID, instID).Scan(&existingDraftID); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `
 		UPDATE assessment_draft
 		SET input_json = ?,
 		    progress_json = ?,
@@ -626,22 +644,17 @@ func (repo *Repository) UpdateAssessmentDraftInputProgressAndItemDetails(ctx con
 		operatorID,
 		draftID,
 		instID,
-	)
-	if err != nil {
+	); err != nil {
 		return err
-	}
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if affected == 0 {
-		return sql.ErrNoRows
 	}
 	if err = upsertAssessmentDraftItemDetailsInTx(ctx, tx, instID, draftID, itemNo, score, recordValues, replaceRecordValues, operatorID); err != nil {
 		return err
 	}
-	err = tx.Commit()
-	return err
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
 
 func upsertAssessmentDraftItemDetailsInTx(ctx context.Context, tx *sql.Tx, instID, draftID int64, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {

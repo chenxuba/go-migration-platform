@@ -959,19 +959,19 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 	return []pep3BookletPDFRecordFieldPlacement{
 		// 第2页：1-14
 		pep3PDFRecordRects(2, 5, "touch_block_reaction", map[string]pep3BookletPDFRect{ // 5 检视触觉块：无兴趣/怪异兴趣
-			"no_interest":      pep3PDFCircle(195.0, 186.0, 30.0, 11.5), // 无兴趣
-			"unusual_interest": pep3PDFCircle(237.0, 186.0, 40.0, 11.5), // 怪异兴趣
+			"1": pep3PDFCircle(195.0, 186.0, 30.0, 11.5), // 无兴趣
+			"2": pep3PDFCircle(237.0, 186.0, 40.0, 11.5), // 怪异兴趣
 		}),
 		pep3PDFRecordMarks(2, 6, "kaleidoscope_action", map[string]pep3BookletPDFOptionMark{ // 6 使用万花筒：观看/扭动/观看+扭动
-			"watch":          pep3PDFMark(193.3, 233.3, 22.0),
-			"turn":           pep3PDFMark(239.3, 233.3, 22.0),
-			"watch_and_turn": pep3PDFMark(223.3, 248.7, 22.7),
+			"1": pep3PDFMark(193.3, 233.3, 22.0),
+			"2": pep3PDFMark(239.3, 233.3, 22.0),
+			"3": pep3PDFMark(223.3, 248.7, 22.7),
 		}),
 		pep3PDFRecordText(2, 7, "first_observation", 227.3, 268.3, 22.7),  // 7 第1次观察
 		pep3PDFRecordText(2, 7, "second_observation", 227.3, 283.7, 22.7), // 7 第2次观察
 		pep3PDFRecordMarks(2, 9, "bell_attempts", map[string]pep3BookletPDFOptionMark{ // 9 响铃尝试
-			"first_attempt":  pep3PDFMark(226.7, 361.3, 23.3),
-			"second_attempt": pep3PDFMark(227.3, 376.7, 22.7),
+			"1": pep3PDFMark(226.7, 361.3, 23.3),
+			"2": pep3PDFMark(227.3, 376.7, 22.7),
 		}),
 
 		// 第3页：15-27
@@ -1032,16 +1032,16 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 			"小": pep3PDFMark(184.0, 102.0, 22.7),
 		}),
 		pep3PDFRecordMarks(4, 29, "size_naming", map[string]pep3BookletPDFOptionMark{ // 29 说出物件大小
-			"first_big":    pep3PDFMark(218.0, 121.7, 18.7),
-			"first_small":  pep3PDFMark(249.3, 121.7, 18.7),
-			"second_big":   pep3PDFMark(218.7, 137.0, 18.6),
-			"second_small": pep3PDFMark(249.7, 137.0, 18.6),
+			"1": pep3PDFMark(218.0, 121.7, 18.7),
+			"2": pep3PDFMark(249.3, 121.7, 18.7),
+			"3": pep3PDFMark(218.7, 137.0, 18.6),
+			"4": pep3PDFMark(249.7, 137.0, 18.6),
 		}),
 		pep3PDFRecordMarks(4, 30, "size_selection", map[string]pep3BookletPDFOptionMark{ // 30 挑选大小物件
-			"first_big":    pep3PDFMark(218.0, 156.7, 18.7),
-			"first_small":  pep3PDFMark(249.3, 156.7, 18.7),
-			"second_big":   pep3PDFMark(218.7, 172.0, 18.0),
-			"second_small": pep3PDFMark(250.0, 172.0, 18.0),
+			"1": pep3PDFMark(218.0, 156.7, 18.7),
+			"2": pep3PDFMark(249.3, 156.7, 18.7),
+			"3": pep3PDFMark(218.7, 172.0, 18.0),
+			"4": pep3PDFMark(250.0, 172.0, 18.0),
 		}),
 		pep3PDFRecordRects(4, 31, "cat_puzzle_prompt", map[string]pep3BookletPDFRect{ // 31 完成方式
 			// 第31题“自行”的椭圆：pep3PDFCircle(centerX, y, width, height)。
@@ -1261,17 +1261,17 @@ func pep3BookletPDFRecordFieldPlacements() []pep3BookletPDFRecordFieldPlacement 
 			"拜拜": pep3PDFMark(188.7, 140.0, 22.0),
 		}),
 		pep3PDFRecordRects(13, 115, "repeated_sentences", map[string]pep3BookletPDFRect{ // 115 正确复述短句
-			"bb_looking":    pep3PDFCircle(190.0, 153.0, 45.0, 11.5), // BB 望住
-			"want_biscuit":  pep3PDFCircle(196.0, 167.0, 55.0, 11.5), // 又要饼干
-			"crying_loudly": pep3PDFCircle(196.0, 181.0, 55.0, 11.5), // 佢大声喊
+			"1": pep3PDFCircle(190.0, 153.0, 45.0, 11.5), // BB 望住
+			"2": pep3PDFCircle(196.0, 167.0, 55.0, 11.5), // 我要饼干
+			"3": pep3PDFCircle(196.0, 181.0, 55.0, 11.5), // 佢大声喊
 		}),
 		pep3PDFRecordRects(13, 116, "eye_contact", map[string]pep3BookletPDFRect{ // 116 短暂/没有
-			"brief": pep3PDFRect(177.0, 196.3, 24.0, 9.5),
-			"none":  pep3PDFRect(213.0, 196.3, 24.0, 9.5),
+			"1": pep3PDFRect(177.0, 196.3, 24.0, 9.5),
+			"2": pep3PDFRect(213.0, 196.3, 24.0, 9.5),
 		}),
 		pep3PDFRecordRects(13, 117, "delayed_echolalia", map[string]pep3BookletPDFRect{ // 117 不适用/过多
-			"not_applicable": pep3PDFRect(177.0, 230.0, 34.0, 9.5),
-			"too_much":       pep3PDFRect(220.0, 230.0, 24.0, 9.5),
+			"1": pep3PDFRect(177.0, 230.0, 34.0, 9.5),
+			"2": pep3PDFRect(220.0, 230.0, 24.0, 9.5),
 		}),
 		pep3PDFRecordText(13, 119, "pronoun_response", 170.7, 294.7, 40.0),
 		pep3PDFRecordText(13, 120, "spoken_words", 169.3, 349.3, 66.7),
