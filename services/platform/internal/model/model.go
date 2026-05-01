@@ -37,6 +37,64 @@ type DictValueMutation struct {
 	Remark    string `json:"remark"`
 }
 
+type ScaleInstitutionRow struct {
+	Name      string `json:"name"`
+	Contact   string `json:"contact"`
+	AuthState string `json:"authState"`
+	ExpireAt  string `json:"expireAt"`
+}
+
+type ScaleTextResource struct {
+	ID      int64  `json:"id"`
+	ScaleID int64  `json:"scaleId"`
+	Content string `json:"content"`
+	Sort    int    `json:"sort"`
+}
+
+type ScaleTextResourceMutation struct {
+	ID      *int64 `json:"id"`
+	ScaleID *int64 `json:"scaleId"`
+	Content string `json:"content"`
+	Sort    *int   `json:"sort"`
+}
+
+type ScaleRecord struct {
+	ID               int64                 `json:"id"`
+	Name             string                `json:"name"`
+	Code             string                `json:"code"`
+	Category         string                `json:"category"`
+	Scenario         string                `json:"scenario"`
+	AgeRange         string                `json:"ageRange"`
+	CurrentVersion   string                `json:"currentVersion"`
+	ItemCount        int                   `json:"itemCount"`
+	DomainCount      int                   `json:"domainCount"`
+	InstitutionCount int                   `json:"institutionCount"`
+	MonthUsage       int                   `json:"monthUsage"`
+	DataStatus       string                `json:"dataStatus"`
+	UpdatedAt        string                `json:"updatedAt"`
+	Summary          string                `json:"summary"`
+	ExecutionEntry   string                `json:"executionEntry"`
+	APIPackage       string                `json:"apiPackage"`
+	References       []ScaleTextResource   `json:"references"`
+	Acknowledgements []ScaleTextResource   `json:"acknowledgements"`
+	AuthInstitutions []ScaleInstitutionRow `json:"authInstitutions"`
+}
+
+type ScaleMutation struct {
+	ID             *int64 `json:"id"`
+	Name           string `json:"name"`
+	Code           string `json:"code"`
+	Category       string `json:"category"`
+	Scenario       string `json:"scenario"`
+	AgeRange       string `json:"ageRange"`
+	CurrentVersion string `json:"currentVersion"`
+	ItemCount      *int   `json:"itemCount"`
+	DomainCount    *int   `json:"domainCount"`
+	Summary        string `json:"summary"`
+	ExecutionEntry string `json:"executionEntry"`
+	APIPackage     string `json:"apiPackage"`
+}
+
 type Notice struct {
 	ID         int64     `json:"id"`
 	Title      string    `json:"title"`

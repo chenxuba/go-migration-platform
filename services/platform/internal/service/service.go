@@ -294,6 +294,42 @@ func (svc *Service) PageDicts(current, size int, keyword, scope string) (model.P
 	return svc.repo.PageDicts(context.Background(), current, size, keyword, scope)
 }
 
+func (svc *Service) ListScales(keyword, category, scenario string) ([]model.ScaleRecord, error) {
+	return svc.repo.ListScales(context.Background(), keyword, category, scenario)
+}
+
+func (svc *Service) CreateScale(input model.ScaleMutation) (int64, error) {
+	return svc.repo.CreateScale(context.Background(), input)
+}
+
+func (svc *Service) UpdateScale(input model.ScaleMutation) error {
+	return svc.repo.UpdateScale(context.Background(), input)
+}
+
+func (svc *Service) CreateScaleReference(input model.ScaleTextResourceMutation) (int64, error) {
+	return svc.repo.CreateScaleReference(context.Background(), input)
+}
+
+func (svc *Service) UpdateScaleReference(input model.ScaleTextResourceMutation) error {
+	return svc.repo.UpdateScaleReference(context.Background(), input)
+}
+
+func (svc *Service) DeleteScaleReference(id int64) error {
+	return svc.repo.DeleteScaleReference(context.Background(), id)
+}
+
+func (svc *Service) CreateScaleAcknowledgement(input model.ScaleTextResourceMutation) (int64, error) {
+	return svc.repo.CreateScaleAcknowledgement(context.Background(), input)
+}
+
+func (svc *Service) UpdateScaleAcknowledgement(input model.ScaleTextResourceMutation) error {
+	return svc.repo.UpdateScaleAcknowledgement(context.Background(), input)
+}
+
+func (svc *Service) DeleteScaleAcknowledgement(id int64) error {
+	return svc.repo.DeleteScaleAcknowledgement(context.Background(), id)
+}
+
 func (svc *Service) CreateDict(input model.DictMutation, creatorID *int64) (int64, error) {
 	return svc.repo.CreateDict(context.Background(), input, creatorID)
 }

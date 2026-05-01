@@ -455,6 +455,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureLoginTemplateSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureScaleSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensurePlatformDictSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -483,6 +486,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.ensureInstitutionMenuCatalog(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.seedScaleCatalog(context.Background()); err != nil {
 		return nil, err
 	}
 	if err := repo.seedScaleDictionaries(context.Background()); err != nil {
@@ -535,6 +541,417 @@ func (repo *Repository) ensurePlatformDictSchema(ctx context.Context) error {
 	return nil
 }
 
+func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS sys_scale (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_name VARCHAR(128) NOT NULL,
+			scale_code VARCHAR(64) NOT NULL,
+			category VARCHAR(64) NOT NULL,
+			scenario VARCHAR(64) NOT NULL,
+			age_range VARCHAR(64) NOT NULL,
+			current_version VARCHAR(64) NOT NULL,
+			item_count INT NOT NULL DEFAULT 0,
+			domain_count INT NOT NULL DEFAULT 0,
+			institution_count INT NOT NULL DEFAULT 0,
+			month_usage INT NOT NULL DEFAULT 0,
+			data_status VARCHAR(512) DEFAULT NULL,
+			summary VARCHAR(1024) DEFAULT NULL,
+			execution_entry VARCHAR(256) DEFAULT NULL,
+			api_package VARCHAR(256) DEFAULT NULL,
+			sort INT NOT NULL DEFAULT 1,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_sys_scale_code (scale_code, del_flag),
+			KEY idx_sys_scale_sort (sort, id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS sys_scale_reference (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_id BIGINT NOT NULL,
+			content TEXT NOT NULL,
+			sort INT NOT NULL DEFAULT 1,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			KEY idx_sys_scale_reference_scale (scale_id, del_flag),
+			KEY idx_sys_scale_reference_sort (scale_id, sort, id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS sys_scale_acknowledgement (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_id BIGINT NOT NULL,
+			content TEXT NOT NULL,
+			sort INT NOT NULL DEFAULT 1,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			KEY idx_sys_scale_ack_scale (scale_id, del_flag),
+			KEY idx_sys_scale_ack_sort (scale_id, sort, id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS sys_scale_auth_institution (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_id BIGINT NOT NULL,
+			institution_name VARCHAR(128) NOT NULL,
+			contact VARCHAR(128) NOT NULL,
+			auth_state VARCHAR(32) NOT NULL,
+			expire_at DATE DEFAULT NULL,
+			sort INT NOT NULL DEFAULT 1,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			KEY idx_sys_scale_auth_scale (scale_id, del_flag),
+			KEY idx_sys_scale_auth_sort (scale_id, sort, id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
+	scaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
+		Name:             "PEP-3 儿童心理教育评核",
+		Code:             "PEP3",
+		Category:         "标准化测评",
+		Scenario:         "现场测评",
+		AgeRange:         "2岁6个月 - 6岁",
+		CurrentVersion:   "2025-92题版",
+		ItemCount:        172,
+		DomainCount:      13,
+		InstitutionCount: 29,
+		MonthUsage:       418,
+		DataStatus:       "题库、常模、评分规则和机构端入口已串联",
+		Summary:          "面向儿童心理教育与康复评估的标准化量表，已接入机构端测评工作台。",
+		ExecutionEntry:   "机构端 /teacherCenter/assessment-calendar",
+		APIPackage:       "/api/v1/assessments/pep3/*",
+		Sort:             1,
+	})
+	if err != nil {
+		return err
+	}
+	if err := repo.repairPep3ItemCount(ctx, scaleID); err != nil {
+		return err
+	}
+
+	references := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "Schopler, E., Lansing, M. D., Reichler, R. J., & Marcus, L. M. (2005). Psychoeducational Profile: Third Edition (PEP-3). PRO-ED.",
+			Sort:    1,
+		},
+		{
+			Content: "PEP-3 中文版手册及机构本土化施测记录规范。",
+			Sort:    2,
+		},
+	}
+	for _, item := range references {
+		if err := repo.ensureScaleReferenceSeed(ctx, scaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
+	acknowledgements := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "王晓琳博士（儿童发展评估顾问）",
+			Sort:    1,
+		},
+		{
+			Content: "陈志远老师（PEP-3 施测支持）",
+			Sort:    2,
+		},
+	}
+	for _, item := range acknowledgements {
+		if err := repo.ensureScaleAcknowledgementSeed(ctx, scaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
+	authInstitutions := []struct {
+		Name      string
+		Contact   string
+		AuthState string
+		ExpireAt  string
+		Sort      int
+	}{
+		{
+			Name:      "星河康复中心",
+			Contact:   "主任 138****1024",
+			AuthState: "已授权",
+			ExpireAt:  "2026-12-31",
+			Sort:      1,
+		},
+		{
+			Name:      "启明特殊教育学校",
+			Contact:   "教务 176****2311",
+			AuthState: "已授权",
+			ExpireAt:  "2026-10-15",
+			Sort:      2,
+		},
+		{
+			Name:      "晨曦儿童发展中心",
+			Contact:   "院长 139****9088",
+			AuthState: "待复核",
+			ExpireAt:  "2026-08-30",
+			Sort:      3,
+		},
+	}
+	for _, item := range authInstitutions {
+		if err := repo.ensureScaleAuthInstitutionSeed(ctx, scaleID, item.Name, item.Contact, item.AuthState, item.ExpireAt, item.Sort); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (repo *Repository) repairPep3ItemCount(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET item_count = 172, update_time = NOW()
+		WHERE id = ? AND scale_code = 'PEP3' AND item_count <> 172 AND del_flag = 0
+	`, scaleID)
+	return err
+}
+
+type scaleSeed struct {
+	Name             string
+	Code             string
+	Category         string
+	Scenario         string
+	AgeRange         string
+	CurrentVersion   string
+	ItemCount        int
+	DomainCount      int
+	InstitutionCount int
+	MonthUsage       int
+	DataStatus       string
+	Summary          string
+	ExecutionEntry   string
+	APIPackage       string
+	Sort             int
+}
+
+const (
+	scaleReferenceTable       = "sys_scale_reference"
+	scaleAcknowledgementTable = "sys_scale_acknowledgement"
+)
+
+func (repo *Repository) ensureScaleSeed(ctx context.Context, seed scaleSeed) (int64, error) {
+	normalizedCode := strings.TrimSpace(seed.Code)
+	if normalizedCode == "" {
+		return 0, errors.New("scale code is required")
+	}
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale
+		WHERE scale_code = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, normalizedCode).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if err == nil {
+		return id, nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale
+		WHERE scale_code = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, normalizedCode).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_scale
+			SET scale_name = ?, category = ?, scenario = ?, age_range = ?, current_version = ?,
+			    item_count = ?, domain_count = ?, institution_count = ?, month_usage = ?, data_status = ?,
+			    summary = ?, execution_entry = ?, api_package = ?, sort = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, strings.TrimSpace(seed.Name), strings.TrimSpace(seed.Category), strings.TrimSpace(seed.Scenario), strings.TrimSpace(seed.AgeRange), strings.TrimSpace(seed.CurrentVersion),
+			seed.ItemCount, seed.DomainCount, seed.InstitutionCount, seed.MonthUsage, strings.TrimSpace(seed.DataStatus),
+			strings.TrimSpace(seed.Summary), strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort, id)
+		return id, updateErr
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale (
+			scale_name, scale_code, category, scenario, age_range, current_version,
+			item_count, domain_count, institution_count, month_usage, data_status, summary,
+			execution_entry, api_package, sort, create_time, update_time, del_flag, version
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0, 0)
+	`, strings.TrimSpace(seed.Name), normalizedCode, strings.TrimSpace(seed.Category), strings.TrimSpace(seed.Scenario), strings.TrimSpace(seed.AgeRange), strings.TrimSpace(seed.CurrentVersion),
+		seed.ItemCount, seed.DomainCount, seed.InstitutionCount, seed.MonthUsage, strings.TrimSpace(seed.DataStatus), strings.TrimSpace(seed.Summary),
+		strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort)
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (repo *Repository) ensureScaleReferenceSeed(ctx context.Context, scaleID int64, content string, sortValue int) error {
+	normalizedContent := strings.TrimSpace(content)
+	if normalizedContent == "" {
+		return nil
+	}
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_reference
+		WHERE scale_id = ? AND content = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedContent).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		return nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_reference
+		WHERE scale_id = ? AND content = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedContent).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_scale_reference
+			SET content = ?, sort = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, normalizedContent, sortValue, id)
+		return updateErr
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale_reference (scale_id, content, sort, create_time, update_time, del_flag, version)
+		VALUES (?, ?, ?, NOW(), NOW(), 0, 0)
+	`, scaleID, normalizedContent, sortValue)
+	return err
+}
+
+func (repo *Repository) ensureScaleAcknowledgementSeed(ctx context.Context, scaleID int64, content string, sortValue int) error {
+	normalizedContent := strings.TrimSpace(content)
+	if normalizedContent == "" {
+		return nil
+	}
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_acknowledgement
+		WHERE scale_id = ? AND content = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedContent).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		return nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_acknowledgement
+		WHERE scale_id = ? AND content = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedContent).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_scale_acknowledgement
+			SET content = ?, sort = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, normalizedContent, sortValue, id)
+		return updateErr
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale_acknowledgement (scale_id, content, sort, create_time, update_time, del_flag, version)
+		VALUES (?, ?, ?, NOW(), NOW(), 0, 0)
+	`, scaleID, normalizedContent, sortValue)
+	return err
+}
+
+func (repo *Repository) ensureScaleAuthInstitutionSeed(ctx context.Context, scaleID int64, name, contact, authState, expireAt string, sortValue int) error {
+	normalizedName := strings.TrimSpace(name)
+	if normalizedName == "" {
+		return nil
+	}
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_auth_institution
+		WHERE scale_id = ? AND institution_name = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedName).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		return nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale_auth_institution
+		WHERE scale_id = ? AND institution_name = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, scaleID, normalizedName).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_scale_auth_institution
+			SET contact = ?, auth_state = ?, expire_at = ?, sort = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, strings.TrimSpace(contact), strings.TrimSpace(authState), strings.TrimSpace(expireAt), sortValue, id)
+		return updateErr
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale_auth_institution (
+			scale_id, institution_name, contact, auth_state, expire_at, sort, create_time, update_time, del_flag, version
+		)
+		VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0, 0)
+	`, scaleID, normalizedName, strings.TrimSpace(contact), strings.TrimSpace(authState), strings.TrimSpace(expireAt), sortValue)
+	return err
+}
+
 func (repo *Repository) seedScaleDictionaries(ctx context.Context) error {
 	categoryID, err := repo.ensureDictSeed(ctx, "量表分类", "scale_category", "量表配置使用的量表分类字典。")
 	if err != nil {
@@ -568,6 +985,471 @@ func (repo *Repository) seedScaleDictionaries(ctx context.Context) error {
 		return err
 	}
 	return repo.ensureDictValueSeed(ctx, scenarioID, "现场测评", "现场测评", 1, "PEP-3 当前使用的测评场景。")
+}
+
+func (repo *Repository) ListScales(ctx context.Context, keyword, category, scenario string) ([]model.ScaleRecord, error) {
+	filters := []string{"del_flag = 0"}
+	args := make([]any, 0, 4)
+
+	if trimmed := strings.TrimSpace(keyword); trimmed != "" {
+		like := "%" + trimmed + "%"
+		filters = append(filters, "(scale_name LIKE ? OR scale_code LIKE ? OR current_version LIKE ? OR category LIKE ? OR scenario LIKE ? OR age_range LIKE ?)")
+		args = append(args, like, like, like, like, like, like)
+	}
+	if trimmed := strings.TrimSpace(category); trimmed != "" {
+		filters = append(filters, "category = ?")
+		args = append(args, trimmed)
+	}
+	if trimmed := strings.TrimSpace(scenario); trimmed != "" {
+		filters = append(filters, "scenario = ?")
+		args = append(args, trimmed)
+	}
+	whereClause := strings.Join(filters, " AND ")
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, scale_name, scale_code, category, scenario, age_range, current_version,
+		       item_count, domain_count, institution_count, month_usage, IFNULL(data_status, ''),
+		       IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), ''),
+		       IFNULL(summary, ''), IFNULL(execution_entry, ''), IFNULL(api_package, '')
+		FROM sys_scale
+		WHERE `+whereClause+`
+		ORDER BY sort ASC, id ASC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ScaleRecord, 0, 8)
+	for rows.Next() {
+		item := model.ScaleRecord{
+			References:       []model.ScaleTextResource{},
+			Acknowledgements: []model.ScaleTextResource{},
+			AuthInstitutions: []model.ScaleInstitutionRow{},
+		}
+		if err := rows.Scan(
+			&item.ID,
+			&item.Name,
+			&item.Code,
+			&item.Category,
+			&item.Scenario,
+			&item.AgeRange,
+			&item.CurrentVersion,
+			&item.ItemCount,
+			&item.DomainCount,
+			&item.InstitutionCount,
+			&item.MonthUsage,
+			&item.DataStatus,
+			&item.UpdatedAt,
+			&item.Summary,
+			&item.ExecutionEntry,
+			&item.APIPackage,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return items, nil
+	}
+
+	if err := repo.loadScaleReferences(ctx, items); err != nil {
+		return nil, err
+	}
+	if err := repo.loadScaleAcknowledgements(ctx, items); err != nil {
+		return nil, err
+	}
+	if err := repo.loadScaleAuthInstitutions(ctx, items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (repo *Repository) CreateScale(ctx context.Context, input model.ScaleMutation) (int64, error) {
+	name := strings.TrimSpace(input.Name)
+	code := strings.TrimSpace(input.Code)
+	category := strings.TrimSpace(input.Category)
+	scenario := strings.TrimSpace(input.Scenario)
+	ageRange := strings.TrimSpace(input.AgeRange)
+	currentVersion := strings.TrimSpace(input.CurrentVersion)
+	if name == "" || code == "" || category == "" || scenario == "" || currentVersion == "" {
+		return 0, errors.New("name, code, category, scenario and currentVersion are required")
+	}
+
+	itemCount := 0
+	if input.ItemCount != nil {
+		itemCount = *input.ItemCount
+	}
+	domainCount := 0
+	if input.DomainCount != nil {
+		domainCount = *input.DomainCount
+	}
+
+	sortValue, err := repo.nextScaleSort(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale (
+			scale_name, scale_code, category, scenario, age_range, current_version,
+			item_count, domain_count, institution_count, month_usage, data_status, summary,
+			execution_entry, api_package, sort, create_time, update_time, del_flag, version
+		)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, NOW(), NOW(), 0, 0)
+	`, name, code, category, scenario, ageRange, currentVersion,
+		itemCount, domainCount, strings.TrimSpace(input.Summary),
+		strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), sortValue)
+	if err != nil {
+		if isDuplicateEntryError(err) {
+			return 0, errors.New("量表编码已存在")
+		}
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (repo *Repository) UpdateScale(ctx context.Context, input model.ScaleMutation) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return errors.New("id is required")
+	}
+	name := strings.TrimSpace(input.Name)
+	category := strings.TrimSpace(input.Category)
+	scenario := strings.TrimSpace(input.Scenario)
+	currentVersion := strings.TrimSpace(input.CurrentVersion)
+	if name == "" || category == "" || scenario == "" || currentVersion == "" {
+		return errors.New("name, category, scenario and currentVersion are required")
+	}
+
+	itemCount := 0
+	if input.ItemCount != nil {
+		itemCount = *input.ItemCount
+	}
+	domainCount := 0
+	if input.DomainCount != nil {
+		domainCount = *input.DomainCount
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET scale_name = ?,
+		    category = ?,
+		    scenario = ?,
+		    age_range = ?,
+		    current_version = ?,
+		    item_count = ?,
+		    domain_count = ?,
+		    summary = ?,
+		    execution_entry = ?,
+		    api_package = ?,
+		    update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, name, category, scenario, strings.TrimSpace(input.AgeRange), currentVersion,
+		itemCount, domainCount, strings.TrimSpace(input.Summary),
+		strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), *input.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (repo *Repository) loadScaleReferences(ctx context.Context, items []model.ScaleRecord) error {
+	scaleIDs := make([]int64, 0, len(items))
+	indexByID := make(map[int64]int, len(items))
+	for index, item := range items {
+		scaleIDs = append(scaleIDs, item.ID)
+		indexByID[item.ID] = index
+	}
+
+	placeholders, args := buildInt64InClause(scaleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, scale_id, content, sort
+		FROM sys_scale_reference
+		WHERE del_flag = 0 AND scale_id IN (`+placeholders+`)
+		ORDER BY scale_id ASC, sort ASC, id ASC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item model.ScaleTextResource
+		if err := rows.Scan(&item.ID, &item.ScaleID, &item.Content, &item.Sort); err != nil {
+			return err
+		}
+		if index, ok := indexByID[item.ScaleID]; ok {
+			items[index].References = append(items[index].References, item)
+		}
+	}
+	return rows.Err()
+}
+
+func (repo *Repository) loadScaleAcknowledgements(ctx context.Context, items []model.ScaleRecord) error {
+	scaleIDs := make([]int64, 0, len(items))
+	indexByID := make(map[int64]int, len(items))
+	for index, item := range items {
+		scaleIDs = append(scaleIDs, item.ID)
+		indexByID[item.ID] = index
+	}
+
+	placeholders, args := buildInt64InClause(scaleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT id, scale_id, content, sort
+		FROM sys_scale_acknowledgement
+		WHERE del_flag = 0 AND scale_id IN (`+placeholders+`)
+		ORDER BY scale_id ASC, sort ASC, id ASC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var item model.ScaleTextResource
+		if err := rows.Scan(&item.ID, &item.ScaleID, &item.Content, &item.Sort); err != nil {
+			return err
+		}
+		if index, ok := indexByID[item.ScaleID]; ok {
+			items[index].Acknowledgements = append(items[index].Acknowledgements, item)
+		}
+	}
+	return rows.Err()
+}
+
+func (repo *Repository) loadScaleAuthInstitutions(ctx context.Context, items []model.ScaleRecord) error {
+	scaleIDs := make([]int64, 0, len(items))
+	indexByID := make(map[int64]int, len(items))
+	for index, item := range items {
+		scaleIDs = append(scaleIDs, item.ID)
+		indexByID[item.ID] = index
+	}
+
+	placeholders, args := buildInt64InClause(scaleIDs)
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT scale_id, institution_name, contact, auth_state, IFNULL(DATE_FORMAT(expire_at, '%Y-%m-%d'), '')
+		FROM sys_scale_auth_institution
+		WHERE del_flag = 0 AND scale_id IN (`+placeholders+`)
+		ORDER BY scale_id ASC, sort ASC, id ASC`, args...)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var scaleID int64
+		var row model.ScaleInstitutionRow
+		if err := rows.Scan(&scaleID, &row.Name, &row.Contact, &row.AuthState, &row.ExpireAt); err != nil {
+			return err
+		}
+		if index, ok := indexByID[scaleID]; ok {
+			items[index].AuthInstitutions = append(items[index].AuthInstitutions, row)
+		}
+	}
+	return rows.Err()
+}
+
+func (repo *Repository) nextScaleSort(ctx context.Context) (int, error) {
+	var nextSort int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(sort), 0) + 1
+		FROM sys_scale
+		WHERE del_flag = 0
+	`).Scan(&nextSort)
+	return nextSort, err
+}
+
+func isDuplicateEntryError(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "duplicate")
+}
+
+func buildInt64InClause(values []int64) (string, []any) {
+	if len(values) == 0 {
+		return "NULL", nil
+	}
+	placeholders := make([]string, 0, len(values))
+	args := make([]any, 0, len(values))
+	for _, value := range values {
+		placeholders = append(placeholders, "?")
+		args = append(args, value)
+	}
+	return strings.Join(placeholders, ","), args
+}
+
+func (repo *Repository) CreateScaleReference(ctx context.Context, input model.ScaleTextResourceMutation) (int64, error) {
+	return repo.createScaleTextResource(ctx, scaleReferenceTable, input)
+}
+
+func (repo *Repository) UpdateScaleReference(ctx context.Context, input model.ScaleTextResourceMutation) error {
+	return repo.updateScaleTextResource(ctx, scaleReferenceTable, input)
+}
+
+func (repo *Repository) DeleteScaleReference(ctx context.Context, id int64) error {
+	return repo.deleteScaleTextResource(ctx, scaleReferenceTable, id)
+}
+
+func (repo *Repository) CreateScaleAcknowledgement(ctx context.Context, input model.ScaleTextResourceMutation) (int64, error) {
+	return repo.createScaleTextResource(ctx, scaleAcknowledgementTable, input)
+}
+
+func (repo *Repository) UpdateScaleAcknowledgement(ctx context.Context, input model.ScaleTextResourceMutation) error {
+	return repo.updateScaleTextResource(ctx, scaleAcknowledgementTable, input)
+}
+
+func (repo *Repository) DeleteScaleAcknowledgement(ctx context.Context, id int64) error {
+	return repo.deleteScaleTextResource(ctx, scaleAcknowledgementTable, id)
+}
+
+func (repo *Repository) createScaleTextResource(ctx context.Context, table string, input model.ScaleTextResourceMutation) (int64, error) {
+	if input.ScaleID == nil || *input.ScaleID <= 0 {
+		return 0, errors.New("scaleId is required")
+	}
+	scaleID := *input.ScaleID
+	if err := repo.ensureScaleExists(ctx, scaleID); err != nil {
+		return 0, err
+	}
+
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return 0, errors.New("content is required")
+	}
+
+	sortValue := 0
+	if input.Sort != nil && *input.Sort > 0 {
+		sortValue = *input.Sort
+	} else {
+		nextSort, err := repo.nextScaleTextResourceSort(ctx, table, scaleID)
+		if err != nil {
+			return 0, err
+		}
+		sortValue = nextSort
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO `+table+` (scale_id, content, sort, create_time, update_time, del_flag, version)
+		VALUES (?, ?, ?, NOW(), NOW(), 0, 0)
+	`, scaleID, content, sortValue)
+	if err != nil {
+		return 0, err
+	}
+	id, err := result.LastInsertId()
+	if err != nil {
+		return 0, err
+	}
+	return id, repo.touchScale(ctx, scaleID)
+}
+
+func (repo *Repository) updateScaleTextResource(ctx context.Context, table string, input model.ScaleTextResourceMutation) error {
+	if input.ID == nil || *input.ID <= 0 {
+		return errors.New("id is required")
+	}
+	content := strings.TrimSpace(input.Content)
+	if content == "" {
+		return errors.New("content is required")
+	}
+
+	var scaleID int64
+	var currentSort int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT scale_id, sort
+		FROM `+table+`
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, *input.ID).Scan(&scaleID, &currentSort); err != nil {
+		return err
+	}
+
+	sortValue := currentSort
+	if input.Sort != nil && *input.Sort > 0 {
+		sortValue = *input.Sort
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE `+table+`
+		SET content = ?, sort = ?, update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, content, sortValue, *input.ID)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return repo.touchScale(ctx, scaleID)
+}
+
+func (repo *Repository) deleteScaleTextResource(ctx context.Context, table string, id int64) error {
+	if id <= 0 {
+		return errors.New("id is required")
+	}
+
+	var scaleID int64
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT scale_id
+		FROM `+table+`
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, id).Scan(&scaleID); err != nil {
+		return err
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE `+table+`
+		SET del_flag = 1, update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, id)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return repo.touchScale(ctx, scaleID)
+}
+
+func (repo *Repository) ensureScaleExists(ctx context.Context, scaleID int64) error {
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_scale
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, scaleID).Scan(&id)
+	return err
+}
+
+func (repo *Repository) nextScaleTextResourceSort(ctx context.Context, table string, scaleID int64) (int, error) {
+	var nextSort int
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT COALESCE(MAX(sort), 0) + 1
+		FROM `+table+`
+		WHERE scale_id = ? AND del_flag = 0
+	`, scaleID).Scan(&nextSort)
+	return nextSort, err
+}
+
+func (repo *Repository) touchScale(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET update_time = NOW()
+		WHERE id = ? AND del_flag = 0
+	`, scaleID)
+	return err
 }
 
 func (repo *Repository) ensureDictSeed(ctx context.Context, name, code, remark string) (int64, error) {

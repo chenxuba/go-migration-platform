@@ -150,10 +150,12 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 					Description: "量表管理页面访问权限。",
 					Children: []platformMenuSeed{
 						consoleButtonSeed("新增量表", "sysScaleAdd", 10, "量表管理新增量表操作权限。"),
-						consoleButtonSeed("机构授权", "sysScaleAuth", 20, "量表管理配置量表机构授权操作权限。"),
-						consoleButtonSeed("IEP目标库", "sysScaleIepTarget", 30, "量表管理查看IEP目标库操作权限。"),
-						consoleButtonSeed("引用文献", "sysScaleReference", 40, "量表管理查看引用文献操作权限。"),
-						consoleButtonSeed("特别鸣谢", "sysScaleThanks", 50, "量表管理查看特别鸣谢操作权限。"),
+						consoleButtonSeed("编辑量表", "sysScaleEdit", 20, "量表管理编辑量表基础信息操作权限。"),
+						consoleButtonSeed("题库管理", "sysScaleQuestionBank", 30, "量表管理查看和维护题库操作权限。"),
+						consoleButtonSeed("机构授权", "sysScaleAuth", 40, "量表管理配置量表机构授权操作权限。"),
+						consoleButtonSeed("IEP目标库", "sysScaleIepTarget", 50, "量表管理查看IEP目标库操作权限。"),
+						consoleButtonSeed("引用文献", "sysScaleReference", 60, "量表管理查看引用文献操作权限。"),
+						consoleButtonSeed("特别鸣谢", "sysScaleThanks", 70, "量表管理查看特别鸣谢操作权限。"),
 					},
 				},
 			},
@@ -260,13 +262,11 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 		return err
 	}
 	if err := repo.disableConsoleMenuCodes(ctx, 0, []string{
-		"perm:sysScaleEdit",
 		"perm:sysScalePublish",
 	}); err != nil {
 		return err
 	}
 	if err := repo.disableConsoleMenuCodes(ctx, 1, []string{
-		"perm:sysScaleEdit",
 		"perm:sysScalePublish",
 	}); err != nil {
 		return err

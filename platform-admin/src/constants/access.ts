@@ -112,6 +112,8 @@ export const PlatformAccessEnum = {
   scaleConfig: group('grp:scale', '量表配置'),
   scaleManage: route('page:sysScale', '量表配置', '量表管理'),
   scaleManageAdd: action('perm:sysScaleAdd', '量表配置', '量表管理', '新增量表'),
+  scaleManageEdit: action('perm:sysScaleEdit', '量表配置', '量表管理', '编辑量表'),
+  scaleManageQuestionBank: action('perm:sysScaleQuestionBank', '量表配置', '量表管理', '题库管理'),
   scaleManageAuth: action('perm:sysScaleAuth', '量表配置', '量表管理', '机构授权'),
   scaleManageIepTarget: action('perm:sysScaleIepTarget', '量表配置', '量表管理', 'IEP目标库'),
   scaleManageReference: action('perm:sysScaleReference', '量表配置', '量表管理', '引用文献'),

@@ -63,6 +63,15 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/dict-values/create", handler.createDictValue)
 	mux.HandleFunc("/api/v1/platform/dict-values/update", handler.updateDictValue)
 	mux.HandleFunc("/api/v1/platform/dict-values/delete", handler.deleteDictValue)
+	mux.HandleFunc("/api/v1/platform/scales", handler.scales)
+	mux.HandleFunc("/api/v1/platform/scales/create", handler.createScale)
+	mux.HandleFunc("/api/v1/platform/scales/update", handler.updateScale)
+	mux.HandleFunc("/api/v1/platform/scales/references/create", handler.createScaleReference)
+	mux.HandleFunc("/api/v1/platform/scales/references/update", handler.updateScaleReference)
+	mux.HandleFunc("/api/v1/platform/scales/references/delete", handler.deleteScaleReference)
+	mux.HandleFunc("/api/v1/platform/scales/acknowledgements/create", handler.createScaleAcknowledgement)
+	mux.HandleFunc("/api/v1/platform/scales/acknowledgements/update", handler.updateScaleAcknowledgement)
+	mux.HandleFunc("/api/v1/platform/scales/acknowledgements/delete", handler.deleteScaleAcknowledgement)
 	mux.HandleFunc("/api/v1/platform/notices", handler.notices)
 	mux.HandleFunc("/api/v1/platform/notices/create", handler.createNotice)
 	mux.HandleFunc("/api/v1/platform/notices/update", handler.updateNotice)
@@ -988,6 +997,257 @@ func (handler *Handler) dictValues(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) scales(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.ListScales(
+		r.URL.Query().Get("keyword"),
+		r.URL.Query().Get("category"),
+		r.URL.Query().Get("scenario"),
+	)
+	if err != nil {
+		httpx.WriteError(w, http.StatusInternalServerError, "load scales failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createScale(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.ScaleMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if message := validateScaleMutation(input, true); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+	id, err := handler.service.CreateScale(input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) updateScale(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.ScaleMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ID == nil || *input.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	if message := validateScaleMutation(input, false); message != "" {
+		httpx.WriteError(w, http.StatusBadRequest, message, ctx.RequestID)
+		return
+	}
+	if err := handler.service.UpdateScale(input); err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "scale not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func validateScaleMutation(input model.ScaleMutation, requireCode bool) string {
+	if strings.TrimSpace(input.Name) == "" {
+		return "name is required"
+	}
+	if requireCode && strings.TrimSpace(input.Code) == "" {
+		return "code is required"
+	}
+	if strings.TrimSpace(input.Category) == "" {
+		return "category is required"
+	}
+	if strings.TrimSpace(input.Scenario) == "" {
+		return "scenario is required"
+	}
+	if strings.TrimSpace(input.CurrentVersion) == "" {
+		return "currentVersion is required"
+	}
+	if input.ItemCount == nil || *input.ItemCount < 0 {
+		return "itemCount is required"
+	}
+	if input.DomainCount == nil || *input.DomainCount < 0 {
+		return "domainCount is required"
+	}
+	return ""
+}
+
+func (handler *Handler) createScaleReference(w http.ResponseWriter, r *http.Request) {
+	handler.createScaleTextResource(w, r, "reference")
+}
+
+func (handler *Handler) updateScaleReference(w http.ResponseWriter, r *http.Request) {
+	handler.updateScaleTextResource(w, r, "reference")
+}
+
+func (handler *Handler) deleteScaleReference(w http.ResponseWriter, r *http.Request) {
+	handler.deleteScaleTextResource(w, r, "reference")
+}
+
+func (handler *Handler) createScaleAcknowledgement(w http.ResponseWriter, r *http.Request) {
+	handler.createScaleTextResource(w, r, "acknowledgement")
+}
+
+func (handler *Handler) updateScaleAcknowledgement(w http.ResponseWriter, r *http.Request) {
+	handler.updateScaleTextResource(w, r, "acknowledgement")
+}
+
+func (handler *Handler) deleteScaleAcknowledgement(w http.ResponseWriter, r *http.Request) {
+	handler.deleteScaleTextResource(w, r, "acknowledgement")
+}
+
+func (handler *Handler) createScaleTextResource(w http.ResponseWriter, r *http.Request, kind string) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.ScaleTextResourceMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ScaleID == nil || *input.ScaleID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "scaleId is required", ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(input.Content) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "content is required", ctx.RequestID)
+		return
+	}
+
+	var (
+		id  int64
+		err error
+	)
+	switch kind {
+	case "reference":
+		id, err = handler.service.CreateScaleReference(input)
+	default:
+		id, err = handler.service.CreateScaleAcknowledgement(input)
+	}
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "scale not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "create scale resource failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"id": id}, ctx.RequestID)
+}
+
+func (handler *Handler) updateScaleTextResource(w http.ResponseWriter, r *http.Request, kind string) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var input model.ScaleTextResourceMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if input.ID == nil || *input.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(input.Content) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "content is required", ctx.RequestID)
+		return
+	}
+
+	var err error
+	switch kind {
+	case "reference":
+		err = handler.service.UpdateScaleReference(input)
+	default:
+		err = handler.service.UpdateScaleAcknowledgement(input)
+	}
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "resource not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "update scale resource failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
+}
+
+func (handler *Handler) deleteScaleTextResource(w http.ResponseWriter, r *http.Request, kind string) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, ok := handler.readIDPayload(w, r, ctx)
+	if !ok {
+		return
+	}
+
+	var err error
+	switch kind {
+	case "reference":
+		err = handler.service.DeleteScaleReference(id)
+	default:
+		err = handler.service.DeleteScaleAcknowledgement(id)
+	}
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "resource not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "delete scale resource failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) createDictValue(w http.ResponseWriter, r *http.Request) {
