@@ -243,7 +243,7 @@ function confirmStartAssessment() {
       </div>
     </section>
 
-    <section class="library-body">
+    <section class="library-workbench">
       <aside class="filter-panel">
         <div class="filter-title">
           <strong>快速筛选</strong>
@@ -285,44 +285,45 @@ function confirmStartAssessment() {
           <a-checkbox>日常跟踪</a-checkbox>
           <a-checkbox>专项筛查</a-checkbox>
         </div>
-
       </aside>
 
       <main class="scale-content">
-        <div class="scale-card-grid">
-          <article v-for="scale in filteredScales" :key="scale.id" class="scale-card">
-            <div class="scale-card__head">
-              <div>
-                <h2>{{ scale.name }}</h2>
-                <div class="tag-list">
-                  <span v-for="(tag, index) in scale.tags" :key="tag" :class="tagClass(index)">{{ tag }}</span>
+        <div class="scale-content-scroll">
+          <div class="scale-card-grid">
+            <article v-for="scale in filteredScales" :key="scale.id" class="scale-card">
+              <div class="scale-card__head">
+                <div>
+                  <h2>{{ scale.name }}</h2>
+                  <div class="tag-list">
+                    <span v-for="(tag, index) in scale.tags" :key="tag" :class="tagClass(index)">{{ tag }}</span>
+                  </div>
+                </div>
+                <div class="card-status">
+                  <span class="status-pill" :class="statusMeta(scale.status).className">
+                    {{ statusMeta(scale.status).text }}
+                  </span>
+                  <StarOutlined :class="{ 'is-favorite': scale.favorite }" />
                 </div>
               </div>
-              <div class="card-status">
-                <span class="status-pill" :class="statusMeta(scale.status).className">
-                  {{ statusMeta(scale.status).text }}
-                </span>
-                <StarOutlined :class="{ 'is-favorite': scale.favorite }" />
+
+              <p class="scale-desc">{{ scale.description }}</p>
+
+              <div class="scale-meta">
+                <div><FileTextOutlined /><span>题目数量</span><b>{{ scale.itemCount }}题</b></div>
+                <div><TeamOutlined /><span>分量表</span><b>{{ scale.domainCount }}个</b></div>
+                <div><ClockCircleOutlined /><span>测评时长</span><b>{{ scale.duration }}</b></div>
+                <div><FileDoneOutlined /><span>最近使用</span><b>{{ scale.latestUse }}</b></div>
               </div>
-            </div>
 
-            <p class="scale-desc">{{ scale.description }}</p>
-
-            <div class="scale-meta">
-              <div><FileTextOutlined /><span>题目数量</span><b>{{ scale.itemCount }}题</b></div>
-              <div><TeamOutlined /><span>分量表</span><b>{{ scale.domainCount }}个</b></div>
-              <div><ClockCircleOutlined /><span>测评时长</span><b>{{ scale.duration }}</b></div>
-              <div><FileDoneOutlined /><span>最近使用</span><b>{{ scale.latestUse }}</b></div>
-            </div>
-
-            <div class="scale-card__footer">
-              <span>使用次数 {{ scale.usageCount }}次</span>
-              <div class="card-actions">
-                <a-button @click="openDetailModal(scale)">查看详情</a-button>
-                <a-button type="primary" @click="openStartModal(scale)">开始测评</a-button>
+              <div class="scale-card__footer">
+                <span>使用次数 {{ scale.usageCount }}次</span>
+                <div class="card-actions">
+                  <a-button @click="openDetailModal(scale)">查看详情</a-button>
+                  <a-button type="primary" @click="openStartModal(scale)">开始测评</a-button>
+                </div>
               </div>
-            </div>
-          </article>
+            </article>
+          </div>
         </div>
       </main>
     </section>
@@ -604,18 +605,45 @@ function confirmStartAssessment() {
   max-width: 50%;
 }
 
-.library-body {
+.library-workbench {
   display: grid;
   grid-template-columns: 208px minmax(0, 1fr);
   gap: 18px;
   margin-top: 18px;
+  align-items: stretch;
+  height: calc(100dvh - 248px);
+  min-height: 560px;
+  overflow: hidden;
 }
 
 .filter-panel {
+  height: 100%;
+  max-height: 100%;
+  overflow-x: hidden;
+  overflow-y: auto;
   padding: 16px;
   background: #fff;
   border: 1px solid #e6eaf0;
   border-radius: 8px;
+  scrollbar-width: thin;
+  scrollbar-color: #c9d5ea transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c9d5ea;
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #b3c4df;
+  }
 }
 
 .filter-title {
@@ -708,6 +736,37 @@ function confirmStartAssessment() {
 
 .scale-content {
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  height: 100%;
+}
+
+.scale-content-scroll {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: #c9d5ea transparent;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c9d5ea;
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #b3c4df;
+  }
 }
 
 .scale-card-grid {
@@ -1021,12 +1080,20 @@ function confirmStartAssessment() {
 }
 
 @media (max-width: 1280px) {
-  .library-body {
+  .library-workbench {
     grid-template-columns: 1fr;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
   }
 
   .filter-panel {
     display: none;
+  }
+
+  .scale-content-scroll {
+    overflow: visible;
+    padding-right: 0;
   }
 
   .summary-grid {
