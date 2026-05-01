@@ -290,8 +290,8 @@ func (svc *Service) qiniuClientForTenant(ctx tenant.Context, claims authx.Claims
 	return qiniux.New(baseConfig), nil
 }
 
-func (svc *Service) PageDicts(current, size int, keyword string) (model.PageResult[model.Dict], error) {
-	return svc.repo.PageDicts(context.Background(), current, size, keyword)
+func (svc *Service) PageDicts(current, size int, keyword, scope string) (model.PageResult[model.Dict], error) {
+	return svc.repo.PageDicts(context.Background(), current, size, keyword, scope)
 }
 
 func (svc *Service) CreateDict(input model.DictMutation, creatorID *int64) (int64, error) {

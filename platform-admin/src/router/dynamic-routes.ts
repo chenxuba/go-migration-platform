@@ -112,7 +112,7 @@ const routes: RouteRecordRaw[] = [
     meta: {
       title: '量表配置',
       icon: 'ProfileOutlined',
-      tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
+      tenantRoles: ['platform_admin', 'platform_staff'],
       access: [PlatformAccessEnum.scaleConfig, PlatformAccessEnum.scaleManage],
     },
     component: basicRouteMap.RouteView,
@@ -123,7 +123,7 @@ const routes: RouteRecordRaw[] = [
         component: () => import('~/pages/platform/scales/index.vue'),
         meta: {
           title: '量表管理',
-          tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
+          tenantRoles: ['platform_admin', 'platform_staff'],
           access: [PlatformAccessEnum.scaleManage],
         },
       },
@@ -137,7 +137,7 @@ const routes: RouteRecordRaw[] = [
       title: '系统配置',
       icon: 'SettingOutlined',
       tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
-      access: [PlatformAccessEnum.systemConfig, PlatformAccessEnum.defaultRole, PlatformAccessEnum.version, PlatformAccessEnum.storage, PlatformAccessEnum.loginTemplate, PlatformAccessEnum.permission],
+      access: [PlatformAccessEnum.systemConfig, PlatformAccessEnum.defaultRole, PlatformAccessEnum.version, PlatformAccessEnum.storage, PlatformAccessEnum.loginTemplate, PlatformAccessEnum.dict, PlatformAccessEnum.permission],
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -179,6 +179,16 @@ const routes: RouteRecordRaw[] = [
           title: '登录页模板',
           tenantRoles: ['platform_admin', 'platform_staff', 'tenant_admin', 'tenant_staff'],
           access: [PlatformAccessEnum.loginTemplate],
+        },
+      },
+      {
+        path: '/platform/dicts',
+        name: 'PlatformDicts',
+        component: () => import('~/pages/platform/dicts/index.vue'),
+        meta: {
+          title: '字典管理',
+          tenantRoles: ['platform_admin', 'platform_staff'],
+          access: [PlatformAccessEnum.dict],
         },
       },
       {

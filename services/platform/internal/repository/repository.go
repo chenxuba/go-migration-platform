@@ -65,6 +65,8 @@ const (
 	defaultInstitutionAdminRoleDescription = "系统内置角色，拥有机构全部权限"
 )
 
+var scaleDictionaryCodes = []string{"scale_category", "scale_usage_scenario"}
+
 var defaultInstitutionVersionModules = []struct {
 	Name  string
 	Price float64
@@ -453,6 +455,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureLoginTemplateSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensurePlatformDictSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := tenantstorage.EnsureSchema(context.Background(), db); err != nil {
 		return nil, err
 	}
@@ -480,10 +485,180 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureInstitutionMenuCatalog(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.seedScaleDictionaries(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.migrateInstitutionSuperAdminRole(context.Background()); err != nil {
 		return nil, err
 	}
 	return repo, nil
+}
+
+func (repo *Repository) ensurePlatformDictSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS sys_dict (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			dict_name VARCHAR(128) NOT NULL,
+			dict_code VARCHAR(128) NOT NULL,
+			is_enable TINYINT(1) NOT NULL DEFAULT 1,
+			remark VARCHAR(512) DEFAULT NULL,
+			create_id BIGINT DEFAULT NULL,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			KEY idx_sys_dict_code (dict_code, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS sys_dict_value (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			dict_id BIGINT NOT NULL,
+			dict_label VARCHAR(128) NOT NULL,
+			dict_value VARCHAR(128) NOT NULL,
+			sort INT NOT NULL DEFAULT 1,
+			is_enable TINYINT(1) NOT NULL DEFAULT 1,
+			remark VARCHAR(512) DEFAULT NULL,
+			create_id BIGINT DEFAULT NULL,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			version BIGINT NOT NULL DEFAULT 0,
+			KEY idx_sys_dict_value_dict (dict_id, del_flag),
+			KEY idx_sys_dict_value_value (dict_id, dict_value, del_flag)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (repo *Repository) seedScaleDictionaries(ctx context.Context) error {
+	categoryID, err := repo.ensureDictSeed(ctx, "量表分类", "scale_category", "量表配置使用的量表分类字典。")
+	if err != nil {
+		return err
+	}
+
+	scaleCategories := []struct {
+		Label  string
+		Value  string
+		Sort   int
+		Remark string
+	}{
+		{Label: "标准化测评", Value: "标准化测评", Sort: 1, Remark: "PEP-3 当前使用的量表分类。"},
+		{Label: "发育筛查", Value: "发育筛查", Sort: 2, Remark: "儿童早期发展水平和风险筛查类量表。"},
+		{Label: "认知能力评估", Value: "认知能力评估", Sort: 3, Remark: "儿童认知、智力和学习相关能力评估类量表。"},
+		{Label: "语言沟通评估", Value: "语言沟通评估", Sort: 4, Remark: "儿童语言理解、表达和沟通能力评估类量表。"},
+		{Label: "社会适应评估", Value: "社会适应评估", Sort: 5, Remark: "儿童适应行为、生活自理和社会功能评估类量表。"},
+		{Label: "情绪行为评估", Value: "情绪行为评估", Sort: 6, Remark: "儿童情绪、注意力和行为问题评估类量表。"},
+		{Label: "感觉统合评估", Value: "感觉统合评估", Sort: 7, Remark: "儿童感觉处理和感觉统合能力评估类量表。"},
+		{Label: "孤独症谱系评估", Value: "孤独症谱系评估", Sort: 8, Remark: "孤独症谱系相关筛查、诊断辅助和能力评估类量表。"},
+		{Label: "运动功能评估", Value: "运动功能评估", Sort: 9, Remark: "儿童粗大运动、精细运动和动作协调评估类量表。"},
+	}
+	for _, category := range scaleCategories {
+		if err := repo.ensureDictValueSeed(ctx, categoryID, category.Label, category.Value, category.Sort, category.Remark); err != nil {
+			return err
+		}
+	}
+
+	scenarioID, err := repo.ensureDictSeed(ctx, "使用场景", "scale_usage_scenario", "量表配置使用的场景字典。")
+	if err != nil {
+		return err
+	}
+	return repo.ensureDictValueSeed(ctx, scenarioID, "现场测评", "现场测评", 1, "PEP-3 当前使用的测评场景。")
+}
+
+func (repo *Repository) ensureDictSeed(ctx context.Context, name, code, remark string) (int64, error) {
+	normalizedCode := strings.TrimSpace(code)
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_dict
+		WHERE dict_code = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, normalizedCode).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if err == nil {
+		return id, nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_dict
+		WHERE dict_code = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, normalizedCode).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return 0, err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_dict
+			SET dict_name = ?, is_enable = 1, remark = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, strings.TrimSpace(name), strings.TrimSpace(remark), id)
+		return id, updateErr
+	}
+
+	result, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_dict (dict_name, dict_code, is_enable, remark, create_time, update_time, del_flag, version)
+		VALUES (?, ?, 1, ?, NOW(), NOW(), 0, 0)
+	`, strings.TrimSpace(name), normalizedCode, strings.TrimSpace(remark))
+	if err != nil {
+		return 0, err
+	}
+	return result.LastInsertId()
+}
+
+func (repo *Repository) ensureDictValueSeed(ctx context.Context, dictID int64, label, value string, sortValue int, remark string) error {
+	normalizedValue := strings.TrimSpace(value)
+
+	var id int64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_dict_value
+		WHERE dict_id = ? AND dict_value = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, dictID, normalizedValue).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		return nil
+	}
+
+	err = repo.db.QueryRowContext(ctx, `
+		SELECT id
+		FROM sys_dict_value
+		WHERE dict_id = ? AND dict_value = ? AND del_flag <> 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, dictID, normalizedValue).Scan(&id)
+	if err != nil && err != sql.ErrNoRows {
+		return err
+	}
+	if err == nil {
+		_, updateErr := repo.db.ExecContext(ctx, `
+			UPDATE sys_dict_value
+			SET dict_label = ?, sort = ?, is_enable = 1, remark = ?, del_flag = 0, update_time = NOW()
+			WHERE id = ?
+		`, strings.TrimSpace(label), sortValue, strings.TrimSpace(remark), id)
+		return updateErr
+	}
+
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO sys_dict_value (dict_id, dict_label, dict_value, sort, is_enable, remark, create_time, update_time, del_flag, version)
+		VALUES (?, ?, ?, ?, 1, ?, NOW(), NOW(), 0, 0)
+	`, dictID, strings.TrimSpace(label), normalizedValue, sortValue, strings.TrimSpace(remark))
+	return err
 }
 
 func (repo *Repository) ensureLoginTemplateSchema(ctx context.Context) error {
@@ -1329,7 +1504,7 @@ func marshalLoginBrandConfig(input model.TenantLoginBrandConfig) string {
 	return string(payload)
 }
 
-func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword string) (model.PageResult[model.Dict], error) {
+func (repo *Repository) PageDicts(ctx context.Context, current, size int, keyword, scope string) (model.PageResult[model.Dict], error) {
 	if current <= 0 {
 		current = 1
 	}
@@ -1340,9 +1515,19 @@ func (repo *Repository) PageDicts(ctx context.Context, current, size int, keywor
 
 	filters := []string{"del_flag = 0"}
 	args := make([]any, 0, 3)
+	orderClause := "id DESC"
 	if strings.TrimSpace(keyword) != "" {
 		filters = append(filters, "(dict_name LIKE ? OR dict_code LIKE ?)")
 		args = append(args, "%"+strings.TrimSpace(keyword)+"%", "%"+strings.TrimSpace(keyword)+"%")
+	}
+	if strings.EqualFold(strings.TrimSpace(scope), "scale") {
+		placeholders := make([]string, 0, len(scaleDictionaryCodes))
+		for _, code := range scaleDictionaryCodes {
+			placeholders = append(placeholders, "?")
+			args = append(args, code)
+		}
+		filters = append(filters, "dict_code IN ("+strings.Join(placeholders, ",")+")")
+		orderClause = "CASE dict_code WHEN 'scale_category' THEN 1 WHEN 'scale_usage_scenario' THEN 2 ELSE 99 END, id DESC"
 	}
 	whereClause := strings.Join(filters, " AND ")
 
@@ -1355,7 +1540,7 @@ func (repo *Repository) PageDicts(ctx context.Context, current, size int, keywor
 		SELECT id, dict_name, dict_code, IFNULL(is_enable, 0), IFNULL(remark, '')
 		FROM sys_dict
 		WHERE `+whereClause+`
-		ORDER BY id DESC
+		ORDER BY `+orderClause+`
 		LIMIT ? OFFSET ?`, append(args, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.Dict]{}, err

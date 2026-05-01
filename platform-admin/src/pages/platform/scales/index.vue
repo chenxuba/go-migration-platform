@@ -6,12 +6,14 @@ import {
   ReloadOutlined,
   SearchOutlined,
 } from '@ant-design/icons-vue'
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
+import { listDictValuesApi } from '@/api/platform/dicts'
 import messageService from '@/utils/messageService'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 import { PlatformAccessEnum } from '~@/constants/access'
 
 type DetailTab = 'base' | 'auth'
+type ResourceKind = 'references' | 'acknowledgements'
 type LooseScaleRecord = ScaleRecord | Record<string, any>
 
 interface ScaleInstitutionRow {
@@ -38,6 +40,8 @@ interface ScaleRecord {
   summary: string
   executionEntry: string
   apiPackage: string
+  references: string[]
+  acknowledgements: string[]
   authInstitutions: ScaleInstitutionRow[]
 }
 
@@ -50,6 +54,20 @@ const scenarioFilter = ref('')
 const activeDetailTab = ref<DetailTab>('base')
 const detailOpen = ref(false)
 const selectedScale = ref<ScaleRecord | null>(null)
+const referenceManageOpen = ref(false)
+const thanksManageOpen = ref(false)
+const activeResourceScale = ref<ScaleRecord | null>(null)
+const resourceFormKind = ref<ResourceKind | null>(null)
+const resourceFormIndex = ref<number | null>(null)
+const resourceFormContent = ref('')
+const categoryOptions = ref([
+  { label: '全部分类', value: '' },
+  { label: '标准化测评', value: '标准化测评' },
+])
+const scenarioOptions = ref([
+  { label: '全部场景', value: '' },
+  { label: '现场测评', value: '现场测评' },
+])
 
 const scaleRecords = ref<ScaleRecord[]>([
   {
@@ -65,10 +83,18 @@ const scaleRecords = ref<ScaleRecord[]>([
     institutionCount: 29,
     monthUsage: 418,
     dataStatus: '题库、常模、评分规则和机构端入口已串联',
-    updatedAt: '2026-05-01 09:20',
+    updatedAt: '2026-05-01 09:20:16',
     summary: '面向儿童心理教育与康复评估的标准化量表，已接入机构端测评工作台。',
     executionEntry: '机构端 /teacherCenter/assessment-calendar',
     apiPackage: '/api/v1/assessments/pep3/*',
+    references: [
+      'Schopler, E., Lansing, M. D., Reichler, R. J., & Marcus, L. M. (2005). Psychoeducational Profile: Third Edition (PEP-3). PRO-ED.',
+      'PEP-3 中文版手册及机构本土化施测记录规范。',
+    ],
+    acknowledgements: [
+      '王晓琳博士（儿童发展评估顾问）',
+      '陈志远老师（PEP-3 施测支持）',
+    ],
     authInstitutions: [
       { name: '星河康复中心', contact: '主任 138****1024', authState: '已授权', expireAt: '2026-12-31' },
       { name: '启明特殊教育学校', contact: '教务 176****2311', authState: '已授权', expireAt: '2026-10-15' },
@@ -105,16 +131,6 @@ const filteredScaleRecords = computed(() => {
     return true
   })
 })
-
-const categoryOptions = computed(() => ['全部分类', ...new Set(scaleRecords.value.map(item => item.category))].map(item => ({
-  label: item,
-  value: item === '全部分类' ? '' : item,
-})))
-
-const scenarioOptions = computed(() => ['全部场景', ...new Set(scaleRecords.value.map(item => item.scenario))].map(item => ({
-  label: item,
-  value: item === '全部场景' ? '' : item,
-})))
 
 const summaryCards = computed(() => {
   const total = scaleRecords.value.length
@@ -157,12 +173,128 @@ function handlePendingAction(actionName: string) {
   messageService.info(`${actionName}功能暂未开放`)
 }
 
+function resetResourceForm() {
+  resourceFormKind.value = null
+  resourceFormIndex.value = null
+  resourceFormContent.value = ''
+}
+
+function openReferenceManage(record: LooseScaleRecord) {
+  const scale = asScaleRecord(record)
+  activeResourceScale.value = scale
+  thanksManageOpen.value = false
+  referenceManageOpen.value = true
+  resetResourceForm()
+}
+
+function openThanksManage(record: LooseScaleRecord) {
+  const scale = asScaleRecord(record)
+  activeResourceScale.value = scale
+  referenceManageOpen.value = false
+  thanksManageOpen.value = true
+  resetResourceForm()
+}
+
+function resourceKindLabel(kind: ResourceKind) {
+  return kind === 'references' ? '引用文献' : '特别鸣谢'
+}
+
+function getResourceList(kind: ResourceKind) {
+  if (!activeResourceScale.value)
+    return []
+  return kind === 'references'
+    ? activeResourceScale.value.references
+    : activeResourceScale.value.acknowledgements
+}
+
+function setResourceList(kind: ResourceKind, list: string[]) {
+  if (!activeResourceScale.value)
+    return
+  if (kind === 'references')
+    activeResourceScale.value.references = list
+  else
+    activeResourceScale.value.acknowledgements = list
+}
+
+function startCreateResource(kind: ResourceKind) {
+  resourceFormKind.value = kind
+  resourceFormIndex.value = null
+  resourceFormContent.value = ''
+}
+
+function startEditResource(kind: ResourceKind, index: number) {
+  resourceFormKind.value = kind
+  resourceFormIndex.value = index
+  resourceFormContent.value = getResourceList(kind)[index] || ''
+}
+
+function isEditingResource(kind: ResourceKind, index: number) {
+  return resourceFormKind.value === kind && resourceFormIndex.value === index
+}
+
+function submitResourceForm(kind: ResourceKind) {
+  const content = resourceFormContent.value.trim()
+  if (!content) {
+    messageService.warning(`请输入${resourceKindLabel(kind)}内容`)
+    return
+  }
+
+  const next = [...getResourceList(kind)]
+  const editIndex = resourceFormIndex.value
+  if (resourceFormKind.value === kind && editIndex !== null && editIndex >= 0)
+    next[editIndex] = content
+  else
+    next.push(content)
+
+  setResourceList(kind, next)
+  messageService.success(`${resourceKindLabel(kind)}已保存`)
+  resetResourceForm()
+}
+
+function removeResource(kind: ResourceKind, index: number) {
+  const next = getResourceList(kind).filter((_, currentIndex) => currentIndex !== index)
+  setResourceList(kind, next)
+  if (isEditingResource(kind, index))
+    resetResourceForm()
+  messageService.success(`${resourceKindLabel(kind)}已删除`)
+}
+
+async function loadDictOptions() {
+  try {
+    const [categoryRes, scenarioRes] = await Promise.all([
+      listDictValuesApi({ code: 'scale_category' }),
+      listDictValuesApi({ code: 'scale_usage_scenario' }),
+    ])
+
+    if (categoryRes.code === 200 && Array.isArray(categoryRes.result)) {
+      const options = categoryRes.result
+        .filter(item => item.isEnable)
+        .map(item => ({ label: item.dictLabel, value: item.dictValue }))
+      categoryOptions.value = [{ label: '全部分类', value: '' }, ...options]
+    }
+
+    if (scenarioRes.code === 200 && Array.isArray(scenarioRes.result)) {
+      const options = scenarioRes.result
+        .filter(item => item.isEnable)
+        .map(item => ({ label: item.dictLabel, value: item.dictValue }))
+      scenarioOptions.value = [{ label: '全部场景', value: '' }, ...options]
+    }
+  }
+  catch (error) {
+    console.error('load scale dict options failed', error)
+  }
+}
+
 function resetFilters() {
   keyword.value = ''
   appliedKeyword.value = ''
   categoryFilter.value = ''
   scenarioFilter.value = ''
 }
+
+onMounted(() => {
+  loadDictOptions()
+})
 </script>
 
 <template>
@@ -361,10 +493,10 @@ function resetFilters() {
                     <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageIepTarget)" key="iep" @click="handlePendingAction('IEP目标库')">
                       IEP目标库
                     </a-menu-item>
-                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageReference)" key="references" @click="handlePendingAction('引用文献')">
+                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageReference)" key="references" @click="openReferenceManage(record)">
                       引用文献
                     </a-menu-item>
-                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageThanks)" key="acknowledgements" @click="handlePendingAction('特别鸣谢')">
+                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageThanks)" key="acknowledgements" @click="openThanksManage(record)">
                       特别鸣谢
                     </a-menu-item>
                   </a-menu>
@@ -461,6 +593,148 @@ function resetFilters() {
           </a-tab-pane>
 
         </a-tabs>
+      </template>
+    </PlatformModalShell>
+
+    <PlatformModalShell
+      v-model:open="referenceManageOpen"
+      :title="activeResourceScale ? `${activeResourceScale.name} · 引用文献管理` : '引用文献管理'"
+      :width="720"
+      :scrollable="true"
+      modal-class="scale-reference-modal"
+      @close="resetResourceForm"
+    >
+      <template v-if="activeResourceScale">
+        <div class="resource-manage">
+          <div class="resource-manage__head">
+            <div>
+              <div class="resource-manage__title">
+                引用文献
+              </div>
+              <div class="resource-manage__sub">
+                当前 {{ activeResourceScale.references.length }} 条
+              </div>
+            </div>
+
+            <a-button type="primary" size="small" @click="startCreateResource('references')">
+              <template #icon>
+                <PlusOutlined />
+              </template>
+              新增引用文献
+            </a-button>
+          </div>
+
+          <div v-if="resourceFormKind === 'references'" class="resource-form">
+            <a-textarea
+              v-model:value="resourceFormContent"
+              :auto-size="{ minRows: 3, maxRows: 6 }"
+              placeholder="请输入引用文献内容"
+            />
+            <div class="resource-form__actions">
+              <a-button size="small" @click="resetResourceForm">
+                取消
+              </a-button>
+              <a-button type="primary" size="small" @click="submitResourceForm('references')">
+                保存
+              </a-button>
+            </div>
+          </div>
+
+          <div v-if="activeResourceScale.references.length" class="resource-list">
+            <div
+              v-for="(reference, index) in activeResourceScale.references"
+              :key="`${index}-${reference}`"
+              class="resource-list__item"
+              :class="{ 'is-editing': isEditingResource('references', index) }"
+            >
+              <span class="resource-list__index">{{ index + 1 }}</span>
+              <p>{{ reference }}</p>
+              <div class="resource-list__actions">
+                <a @click="startEditResource('references', index)">编辑</a>
+                <a-popconfirm
+                  title="确认删除这条引用文献？"
+                  ok-text="删除"
+                  cancel-text="取消"
+                  @confirm="removeResource('references', index)"
+                >
+                  <a class="is-danger">删除</a>
+                </a-popconfirm>
+              </div>
+            </div>
+          </div>
+          <a-empty v-else description="暂无引用文献" />
+        </div>
+      </template>
+    </PlatformModalShell>
+
+    <PlatformModalShell
+      v-model:open="thanksManageOpen"
+      :title="activeResourceScale ? `${activeResourceScale.name} · 特别鸣谢管理` : '特别鸣谢管理'"
+      :width="720"
+      :scrollable="true"
+      modal-class="scale-thanks-modal"
+      @close="resetResourceForm"
+    >
+      <template v-if="activeResourceScale">
+        <div class="resource-manage">
+          <div class="resource-manage__head">
+            <div>
+              <div class="resource-manage__title">
+                特别鸣谢
+              </div>
+              <div class="resource-manage__sub">
+                当前 {{ activeResourceScale.acknowledgements.length }} 条
+              </div>
+            </div>
+
+            <a-button type="primary" size="small" @click="startCreateResource('acknowledgements')">
+              <template #icon>
+                <PlusOutlined />
+              </template>
+              新增特别鸣谢
+            </a-button>
+          </div>
+
+          <div v-if="resourceFormKind === 'acknowledgements'" class="resource-form">
+            <a-textarea
+              v-model:value="resourceFormContent"
+              :auto-size="{ minRows: 3, maxRows: 6 }"
+              placeholder="请输入特别鸣谢内容"
+            />
+            <div class="resource-form__actions">
+              <a-button size="small" @click="resetResourceForm">
+                取消
+              </a-button>
+              <a-button type="primary" size="small" @click="submitResourceForm('acknowledgements')">
+                保存
+              </a-button>
+            </div>
+          </div>
+
+          <div v-if="activeResourceScale.acknowledgements.length" class="resource-list">
+            <div
+              v-for="(acknowledgement, index) in activeResourceScale.acknowledgements"
+              :key="`${index}-${acknowledgement}`"
+              class="resource-list__item"
+              :class="{ 'is-editing': isEditingResource('acknowledgements', index) }"
+            >
+              <span class="resource-list__index">{{ index + 1 }}</span>
+              <p>{{ acknowledgement }}</p>
+              <div class="resource-list__actions">
+                <a @click="startEditResource('acknowledgements', index)">编辑</a>
+                <a-popconfirm
+                  title="确认删除这条特别鸣谢？"
+                  ok-text="删除"
+                  cancel-text="取消"
+                  @confirm="removeResource('acknowledgements', index)"
+                >
+                  <a class="is-danger">删除</a>
+                </a-popconfirm>
+              </div>
+            </div>
+          </div>
+          <a-empty v-else description="暂无特别鸣谢" />
+        </div>
       </template>
     </PlatformModalShell>
   </div>
@@ -828,6 +1102,116 @@ function resetFilters() {
   font-size: 14px;
   font-weight: 700;
   line-height: 22px;
+}
+
+.resource-manage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.resource-manage__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.resource-manage__title {
+  color: #1f2329;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 24px;
+}
+
+.resource-manage__sub {
+  margin-top: 2px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.resource-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid #d6e4ff;
+  border-radius: 8px;
+  background: #f8fbff;
+}
+
+.resource-form__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.resource-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 0 0 6px;
+  margin: 0;
+  list-style: none;
+}
+
+.resource-list__item {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 10px 12px;
+  align-items: start;
+  padding: 12px 14px;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  background: #fbfcfe;
+}
+
+.resource-list__item.is-editing {
+  border-color: #91caff;
+  background: #f5f9ff;
+}
+
+.resource-list__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  margin-top: 1px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 24px;
+}
+
+.resource-list__item p {
+  margin: 0;
+  color: #344054;
+  font-size: 14px;
+  line-height: 22px;
+  word-break: break-word;
+}
+
+.resource-list__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 1px;
+  font-size: 13px;
+  line-height: 22px;
+  white-space: nowrap;
+}
+
+.resource-list__actions a {
+  color: #1677ff;
+  font-weight: 400;
+}
+
+.resource-list__actions .is-danger {
+  color: #ff4d4f;
 }
 
 @media (max-width: 1200px) {

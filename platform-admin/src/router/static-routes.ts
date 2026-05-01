@@ -66,6 +66,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/dicts',
+    name: 'PlatformDicts',
+    component: () => import('~/pages/platform/dicts/index.vue'),
+    meta: {
+      title: '字典管理',
+      access: [PlatformAccessEnum.dict],
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+    },
+  },
+  {
     path: '/platform/tenants',
     name: 'PlatformTenants',
     component: () => import('~/pages/platform/tenants/index.vue'),

@@ -140,7 +140,7 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 			Icon:        "ProfileOutlined",
 			Sort:        35,
 			Weight:      10,
-			Description: "量表配置与机构授权管理菜单。",
+			Description: "量表管理与机构授权配置菜单。",
 			Children: []platformMenuSeed{
 				{
 					Name:        "量表管理",
@@ -164,7 +164,7 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 			Icon:        "SettingOutlined",
 			Sort:        40,
 			Weight:      10,
-			Description: "默认角色、版本、云存储、登录页模板和权限配置菜单。",
+			Description: "默认角色、版本、云存储、登录页模板、字典和权限配置菜单。",
 			Children: []platformMenuSeed{
 				{
 					Name:        "默认角色",
@@ -215,9 +215,24 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 					},
 				},
 				{
+					Name:        "字典管理",
+					Code:        "page:sysDict",
+					Sort:        50,
+					Weight:      10,
+					Description: "系统字典管理页面访问权限。",
+					Children: []platformMenuSeed{
+						consoleButtonSeed("新增字典", "sysDictAdd", 10, "字典管理新增字典操作权限。"),
+						consoleButtonSeed("编辑字典", "sysDictEdit", 20, "字典管理编辑字典操作权限。"),
+						consoleButtonSeed("删除字典", "sysDictDel", 30, "字典管理删除字典操作权限。"),
+						consoleButtonSeed("新增字典项", "sysDictValueAdd", 40, "字典管理新增字典项操作权限。"),
+						consoleButtonSeed("编辑字典项", "sysDictValueEdit", 50, "字典管理编辑字典项操作权限。"),
+						consoleButtonSeed("删除字典项", "sysDictValueDel", 60, "字典管理删除字典项操作权限。"),
+					},
+				},
+				{
 					Name:        "权限管理",
 					Code:        "page:sysPerm",
-					Sort:        50,
+					Sort:        60,
 					Weight:      10,
 					Description: "权限管理页面访问权限。",
 					Children: []platformMenuSeed{
@@ -234,6 +249,8 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 	tenantSeeds = removeMenuSeedsByCode(tenantSeeds, map[string]struct{}{
 		"page:pltTenant": {},
 		"page:custGov":   {},
+		"grp:scale":      {},
+		"page:sysDict":   {},
 	})
 
 	if err := repo.ensureConsoleMenuSeeds(ctx, 0, platformSeeds, true); err != nil {
@@ -257,6 +274,8 @@ func (repo *Repository) ensurePlatformMenuSeeds(ctx context.Context) error {
 	return repo.disableConsoleMenuCodes(ctx, 1, []string{
 		"page:pltTenant",
 		"page:custGov",
+		"grp:scale",
+		"page:sysDict",
 	})
 }
 
@@ -392,6 +411,7 @@ func (repo *Repository) migrateConsoleMenuCodes(ctx context.Context, ownType int
 		{"page:platformScales", "page:sysScale"},
 		{"page:platformStorage", "page:sysOss"},
 		{"page:platformLoginTemplates", "page:sysLoginTpl"},
+		{"page:platformDicts", "page:sysDict"},
 		{"systemModel:menuPermissions", "page:sysPerm"},
 		{"menuPermissions:add", "perm:sysPermAdd"},
 		{"menuPermissions:update", "perm:sysPermEdit"},
@@ -411,12 +431,21 @@ func (repo *Repository) migrateConsoleMenuCodes(ctx context.Context, ownType int
 		{"sys:scale", "page:sysScale"},
 		{"sys:oss", "page:sysOss"},
 		{"sys:login", "page:sysLoginTpl"},
+		{"sys:dict", "page:sysDict"},
 		{"sys:perm", "page:sysPerm"},
 		{"sys:perm:add", "perm:sysPermAdd"},
 		{"sys:perm:edit", "perm:sysPermEdit"},
 		{"sys:perm:del", "perm:sysPermDel"},
 		{"scale", "grp:scale"},
 		{"scale:manage", "page:sysScale"},
+		{"scale:dict", "page:sysDict"},
+		{"page:sysScaleDict", "page:sysDict"},
+		{"perm:sysScaleDictAdd", "perm:sysDictAdd"},
+		{"perm:sysScaleDictEdit", "perm:sysDictEdit"},
+		{"perm:sysScaleDictDel", "perm:sysDictDel"},
+		{"perm:sysScaleDictValueAdd", "perm:sysDictValueAdd"},
+		{"perm:sysScaleDictValueEdit", "perm:sysDictValueEdit"},
+		{"perm:sysScaleDictValueDel", "perm:sysDictValueDel"},
 	}
 
 	for _, pair := range codePairs {
@@ -460,7 +489,13 @@ func (repo *Repository) mergeConsoleMenuCode(ctx context.Context, ownType int, o
 		return nil
 	}
 
-	for _, duplicateID := range append(newIDs[1:], oldIDs...) {
+	duplicateIDs := make([]int64, 0, len(newIDs)+len(oldIDs))
+	if len(newIDs) > 1 {
+		duplicateIDs = append(duplicateIDs, newIDs[1:]...)
+	}
+	duplicateIDs = append(duplicateIDs, oldIDs...)
+
+	for _, duplicateID := range duplicateIDs {
 		if duplicateID <= 0 || duplicateID == targetID {
 			continue
 		}

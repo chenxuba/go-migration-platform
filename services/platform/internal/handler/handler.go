@@ -871,11 +871,16 @@ func (handler *Handler) renewInstitution(w http.ResponseWriter, r *http.Request)
 
 func (handler *Handler) dicts(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 
-	result, err := handler.service.PageDicts(parseInt(r.URL.Query().Get("current"), 1), parseInt(r.URL.Query().Get("size"), 10), r.URL.Query().Get("keyword"))
+	result, err := handler.service.PageDicts(
+		parseInt(r.URL.Query().Get("current"), 1),
+		parseInt(r.URL.Query().Get("size"), 10),
+		r.URL.Query().Get("keyword"),
+		r.URL.Query().Get("scope"),
+	)
 	if err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "load dicts failed", ctx.RequestID)
 		return
@@ -885,7 +890,7 @@ func (handler *Handler) dicts(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) createDict(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	claims, ok := handler.requireAuth(w, r, ctx)
+	claims, ok := handler.requirePlatformManage(w, r, ctx)
 	if !ok {
 		return
 	}
@@ -920,7 +925,7 @@ func (handler *Handler) createDict(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) updateDict(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 	if r.Method != http.MethodPut && r.Method != http.MethodPost {
@@ -936,6 +941,14 @@ func (handler *Handler) updateDict(w http.ResponseWriter, r *http.Request) {
 		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
 		return
 	}
+	if strings.TrimSpace(input.DictName) == "" || strings.TrimSpace(input.DictCode) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "dictName and dictCode are required", ctx.RequestID)
+		return
+	}
+	if input.IsEnable == nil {
+		defaultEnable := true
+		input.IsEnable = &defaultEnable
+	}
 	if err := handler.service.UpdateDict(input); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "update dict failed", ctx.RequestID)
 		return
@@ -945,7 +958,7 @@ func (handler *Handler) updateDict(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) deleteDict(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
@@ -965,7 +978,7 @@ func (handler *Handler) deleteDict(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) dictValues(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 
@@ -979,7 +992,7 @@ func (handler *Handler) dictValues(w http.ResponseWriter, r *http.Request) {
 
 func (handler *Handler) createDictValue(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	claims, ok := handler.requireAuth(w, r, ctx)
+	claims, ok := handler.requirePlatformManage(w, r, ctx)
 	if !ok {
 		return
 	}
@@ -1018,7 +1031,7 @@ func (handler *Handler) createDictValue(w http.ResponseWriter, r *http.Request) 
 
 func (handler *Handler) updateDictValue(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 	if r.Method != http.MethodPut && r.Method != http.MethodPost {
@@ -1034,6 +1047,18 @@ func (handler *Handler) updateDictValue(w http.ResponseWriter, r *http.Request) 
 		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
 		return
 	}
+	if strings.TrimSpace(input.DictLabel) == "" || strings.TrimSpace(input.DictValue) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "dictLabel and dictValue are required", ctx.RequestID)
+		return
+	}
+	if input.Sort == nil {
+		defaultSort := 1
+		input.Sort = &defaultSort
+	}
+	if input.IsEnable == nil {
+		defaultEnable := true
+		input.IsEnable = &defaultEnable
+	}
 	if err := handler.service.UpdateDictValue(input); err != nil {
 		httpx.WriteError(w, http.StatusInternalServerError, "update dict value failed", ctx.RequestID)
 		return
@@ -1043,7 +1068,7 @@ func (handler *Handler) updateDictValue(w http.ResponseWriter, r *http.Request) 
 
 func (handler *Handler) deleteDictValue(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
-	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
 		return
 	}
 	if r.Method != http.MethodDelete && r.Method != http.MethodPost {
@@ -1411,6 +1436,18 @@ func (handler *Handler) requireManage(w http.ResponseWriter, r *http.Request, ct
 		return authx.Claims{}, false
 	}
 	if claims.LoginType != "manage" {
+		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
+		return authx.Claims{}, false
+	}
+	return claims, true
+}
+
+func (handler *Handler) requirePlatformManage(w http.ResponseWriter, r *http.Request, ctx tenant.Context) (authx.Claims, bool) {
+	claims, ok := handler.requireManage(w, r, ctx)
+	if !ok {
+		return authx.Claims{}, false
+	}
+	if strings.TrimSpace(claims.TenantID) != "platform" {
 		httpx.WriteError(w, http.StatusForbidden, "forbidden", ctx.RequestID)
 		return authx.Claims{}, false
 	}
