@@ -1415,7 +1415,15 @@ function goBack() {
   text-align: left;
 
   strong {
+    min-width: 0;
+    overflow: hidden;
     color: inherit;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    white-space: nowrap;
   }
 
   .anticon {
