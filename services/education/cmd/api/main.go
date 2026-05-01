@@ -65,6 +65,9 @@ func main() {
 		messageClient = nil
 	}
 	svc := service.New(store, repo, tokenManager, searchClient, messageClient, qiniuClient)
+	if err := svc.EnsurePEP3ScaleData(context.Background()); err != nil {
+		panic(err)
+	}
 	svc.ConfigureWeChatOfficial(service.WeChatOfficialConfig{
 		AppID:                   cfg.WeChatOfficialAppID,
 		Secret:                  cfg.WeChatOfficialSecret,

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -27,8 +26,17 @@ type PEP3AssessmentDraftSaveInput struct {
 	AssessmentDate    *time.Time
 	ItemScores        map[int]int
 	RawScores         map[string]int
+	ItemRecordValues  map[int]map[string]any
 	AllowMissingItems bool
 	InputSnapshot     any
+}
+
+type PEP3AssessmentDraftItemSaveInput struct {
+	DraftID       int64
+	ItemNo        int
+	Score         *int
+	RecordValues  map[string]any
+	RecordTouched bool
 }
 
 type pep3DraftSubmitSnapshot struct {
@@ -74,7 +82,83 @@ func (svc *Service) SavePEP3AssessmentDraft(userID int64, input PEP3AssessmentDr
 		}
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	if err := svc.repo.SyncAssessmentDraftDetails(context.Background(), instID, draftID, input.ItemScores, input.RawScores, input.ItemRecordValues, examinerID); err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	return svc.repo.GetAssessmentDraft(context.Background(), instID, draftID)
+}
+
+func (svc *Service) SavePEP3AssessmentDraftItem(userID int64, input PEP3AssessmentDraftItemSaveInput) (model.AssessmentDraftDetailVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentDraftDetailVO{}, errors.New("assessment repository is not configured")
+	}
+	if input.DraftID <= 0 {
+		return model.AssessmentDraftDetailVO{}, errors.New("draftId is required")
+	}
+	if input.ItemNo <= 0 {
+		return model.AssessmentDraftDetailVO{}, errors.New("itemNo is required")
+	}
+	if input.Score != nil && (*input.Score < 0 || *input.Score > 2) {
+		return model.AssessmentDraftDetailVO{}, fmt.Errorf("item %d has invalid score %d: expected 0, 1, or 2", input.ItemNo, *input.Score)
+	}
+	instID, examinerID, _, err := svc.pep3AssessmentActor(userID, "")
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	draft, err := svc.repo.GetAssessmentDraft(context.Background(), instID, input.DraftID)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	if draft.Status == "submitted" || draft.SubmittedRecordID > 0 {
+		return model.AssessmentDraftDetailVO{}, errors.New("submitted draft cannot accept item updates")
+	}
+	itemScores, rawScores, err := decodeSavedPEP3InputScores(draft.InputJSON)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	itemRecordValues, err := decodeSavedPEP3ItemRecordValues(draft.InputJSON)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	if input.Score != nil {
+		itemScores[input.ItemNo] = *input.Score
+	}
+	if input.RecordTouched {
+		if len(input.RecordValues) == 0 {
+			delete(itemRecordValues, input.ItemNo)
+		} else {
+			next := make(map[string]any, len(input.RecordValues))
+			for key, value := range input.RecordValues {
+				if !isEmptyPEP3RecordValue(value) {
+					next[strings.TrimSpace(key)] = value
+				}
+			}
+			if len(next) == 0 {
+				delete(itemRecordValues, input.ItemNo)
+			} else {
+				itemRecordValues[input.ItemNo] = next
+			}
+		}
+	}
+
+	var snapshot pep3SavedInputSnapshot
+	_ = json.Unmarshal(draft.InputJSON, &snapshot)
+	allowMissingItems := snapshot.AllowMissingItems
+	progress, err := buildPEP3AssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores, rawScores, allowMissingItems)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	inputSnapshot, err := mergePEP3DraftInputSnapshot(draft.InputJSON, itemScores, rawScores, itemRecordValues)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	if err := svc.repo.UpdateAssessmentDraftInputProgressAndItemDetails(context.Background(), instID, input.DraftID, inputSnapshot, progress, progress.AnsweredItemCount, progress.RawScoreCount, pep3DraftStatus(progress), input.ItemNo, input.Score, input.RecordValues, input.RecordTouched, examinerID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentDraftDetailVO{}, errors.New("assessment draft not found")
+		}
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	return svc.repo.GetAssessmentDraft(context.Background(), instID, input.DraftID)
 }
 
 func (svc *Service) GetPEP3AssessmentDraft(userID, draftID int64) (model.AssessmentDraftDetailVO, error) {
@@ -180,6 +264,96 @@ func (svc *Service) SubmitPEP3AssessmentDraft(userID, draftID int64) (model.PEP3
 	}, nil
 }
 
+func mergePEP3DraftInputSnapshot(raw json.RawMessage, itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any) (any, error) {
+	var snapshot map[string]any
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &snapshot)
+	}
+	if snapshot == nil {
+		snapshot = map[string]any{}
+	}
+	snapshot["itemScores"] = itemScores
+	snapshot["itemScoreList"] = pep3SavedItemScoreListFromMap(itemScores)
+	snapshot["rawScores"] = rawScores
+	snapshot["rawScoreList"] = pep3SavedRawScoreListFromMap(rawScores)
+	snapshot["itemRecordValues"] = itemRecordValues
+	snapshot["itemRecordValueList"] = pep3SavedItemRecordValueListFromMap(itemRecordValues)
+	return snapshot, nil
+}
+
+func pep3SavedItemScoreListFromMap(itemScores map[int]int) []pep3SavedItemScore {
+	itemNos := make([]int, 0, len(itemScores))
+	for itemNo := range itemScores {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]pep3SavedItemScore, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		out = append(out, pep3SavedItemScore{ItemNo: itemNo, Score: itemScores[itemNo]})
+	}
+	return out
+}
+
+func pep3SavedRawScoreListFromMap(rawScores map[string]int) []pep3SavedRawScore {
+	normalizedScores := make(map[string]int, len(rawScores))
+	for scaleCode, rawScore := range rawScores {
+		if normalized := strings.ToUpper(strings.TrimSpace(scaleCode)); normalized != "" {
+			normalizedScores[normalized] = rawScore
+		}
+	}
+	scaleCodes := make([]string, 0, len(normalizedScores))
+	for scaleCode := range normalizedScores {
+		scaleCodes = append(scaleCodes, scaleCode)
+	}
+	sort.Strings(scaleCodes)
+	out := make([]pep3SavedRawScore, 0, len(scaleCodes))
+	for _, scaleCode := range scaleCodes {
+		out = append(out, pep3SavedRawScore{ScaleCode: scaleCode, RawScore: normalizedScores[scaleCode]})
+	}
+	return out
+}
+
+func pep3SavedItemRecordValueListFromMap(itemRecordValues map[int]map[string]any) []pep3SavedItemRecordValueRequest {
+	itemNos := make([]int, 0, len(itemRecordValues))
+	for itemNo := range itemRecordValues {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]pep3SavedItemRecordValueRequest, 0)
+	for _, itemNo := range itemNos {
+		fieldKeys := make([]string, 0, len(itemRecordValues[itemNo]))
+		for fieldKey := range itemRecordValues[itemNo] {
+			fieldKeys = append(fieldKeys, fieldKey)
+		}
+		sort.Strings(fieldKeys)
+		for _, fieldKey := range fieldKeys {
+			key := strings.TrimSpace(fieldKey)
+			value := itemRecordValues[itemNo][fieldKey]
+			if key == "" || isEmptyPEP3RecordValue(value) {
+				continue
+			}
+			out = append(out, pep3SavedItemRecordValueRequest{ItemNo: itemNo, FieldKey: key, Value: value})
+		}
+	}
+	return out
+}
+
+func isEmptyPEP3RecordValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []any:
+		return len(typed) == 0
+	case []string:
+		return len(typed) == 0
+	default:
+		return false
+	}
+}
+
 func (svc *Service) pep3AssessmentInstID(userID int64) (int64, error) {
 	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
 	if err != nil {
@@ -211,30 +385,22 @@ func (svc *Service) pep3AssessmentActor(userID int64, requestedExaminerName stri
 }
 
 func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, itemScores map[int]int, rawScores map[string]int, allowMissingItems bool) (model.PEP3AssessmentDraftProgress, error) {
-	dataDir, err := resolvePEP3DataDir()
+	data, err := loadPEP3StaticData()
 	if err != nil {
 		return model.PEP3AssessmentDraftProgress{}, err
-	}
-	items, err := loadPEP3FormItems(dataDir)
-	if err != nil {
-		return model.PEP3AssessmentDraftProgress{}, err
-	}
-	domains, err := pep3score.LoadDomainDefinitionsFile(filepath.Join(dataDir, pep3DomainMapFile))
-	if err != nil {
-		return model.PEP3AssessmentDraftProgress{}, fmt.Errorf("load PEP-3 domain map: %w", err)
 	}
 
-	itemDomain := make(map[int]string, len(items))
-	for _, item := range items {
+	itemDomain := make(map[int]string, len(data.formItems))
+	for _, item := range data.formItems {
 		itemDomain[item.ItemNo] = item.DomainCode
 	}
-	domainByCode := make(map[string]pep3score.DomainDefinition, len(domains))
-	for _, domain := range domains {
+	domainByCode := make(map[string]pep3score.DomainDefinition, len(data.domains))
+	for _, domain := range data.domains {
 		domainByCode[domain.ScaleCode] = domain
 	}
 
-	answeredByDomain := make(map[string]int, len(domains))
-	itemRawScoreByDomain := make(map[string]int, len(domains))
+	answeredByDomain := make(map[string]int, len(data.domains))
+	itemRawScoreByDomain := make(map[string]int, len(data.domains))
 	answeredItems := make(map[int]bool, len(itemScores))
 	for itemNo, score := range itemScores {
 		if score < 0 || score > 2 {
@@ -270,8 +436,8 @@ func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, item
 		rawScoreByDomain[normalized] = rawScore
 	}
 
-	missingItems := make([]int, 0, len(items)-len(answeredItems))
-	for _, item := range items {
+	missingItems := make([]int, 0, len(data.formItems)-len(answeredItems))
+	for _, item := range data.formItems {
 		if !answeredItems[item.ItemNo] {
 			missingItems = append(missingItems, item.ItemNo)
 		}
@@ -285,8 +451,8 @@ func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, item
 		}
 	}
 
-	domainProgress := make([]model.PEP3DomainProgress, 0, len(domains))
-	for _, domain := range domains {
+	domainProgress := make([]model.PEP3DomainProgress, 0, len(data.domains))
+	for _, domain := range data.domains {
 		itemCount := len(domain.ItemNumbers)
 		rawScore, hasRawScore := rawScoreByDomain[domain.ScaleCode]
 		if !hasRawScore {
@@ -306,7 +472,7 @@ func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, item
 		switch {
 		case domain.IsCaregiverReport:
 			row.Complete = hasRawScore
-		case len(rawScoreByDomain) >= len(domains) && hasRawScore:
+		case len(rawScoreByDomain) >= len(data.domains) && hasRawScore:
 			row.Complete = true
 		default:
 			row.Complete = itemCount > 0 && row.AnsweredItemCount >= itemCount
@@ -325,9 +491,9 @@ func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, item
 		missingRequiredFields = append(missingRequiredFields, "itemScoreList or rawScoreList")
 	}
 
-	totalInputCount := len(items) + 3
+	totalInputCount := len(data.formItems) + 3
 	completedInputCount := len(answeredItems) + caregiverRawScoreCount
-	rawScoreComplete := len(rawScoreByDomain) >= len(domains)
+	rawScoreComplete := len(rawScoreByDomain) >= len(data.domains)
 	if rawScoreComplete && len(answeredItems) == 0 {
 		completedInputCount = totalInputCount
 	}
@@ -335,11 +501,11 @@ func buildPEP3AssessmentDraftProgress(birthDate, assessmentDate *time.Time, item
 	if totalInputCount > 0 {
 		completionPercent = math.Round(float64(completedInputCount)*1000/float64(totalInputCount)) / 10
 	}
-	complete := (len(answeredItems) == len(items) && caregiverRawScoreCount == 3) || rawScoreComplete
-	canScore := len(missingRequiredFields) == 0 && (rawScoreComplete || len(answeredItems) == len(items) || (allowMissingItems && len(answeredItems) > 0))
+	complete := (len(answeredItems) == len(data.formItems) && caregiverRawScoreCount == 3) || rawScoreComplete
+	canScore := len(missingRequiredFields) == 0 && (rawScoreComplete || len(answeredItems) == len(data.formItems) || (allowMissingItems && len(answeredItems) > 0))
 
 	return model.PEP3AssessmentDraftProgress{
-		ItemCount:              len(items),
+		ItemCount:              len(data.formItems),
 		AnsweredItemCount:      len(answeredItems),
 		MissingItemCount:       len(missingItems),
 		RawScoreCount:          len(rawScoreByDomain),

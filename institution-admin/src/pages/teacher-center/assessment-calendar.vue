@@ -9,7 +9,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons-vue'
 import QRCode from 'qrcode'
-import { computed, h, onMounted, reactive, ref, watch } from 'vue'
+import { computed, h, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import dayjs, { type Dayjs } from 'dayjs'
 import {
@@ -24,6 +24,7 @@ import {
   pagePEP3AssessmentDraftsApi,
   pagePEP3AssessmentRecordsApi,
   savePEP3AssessmentDraftApi,
+  savePEP3AssessmentDraftItemApi,
   submitPEP3AssessmentDraftApi,
   type PEP3CaregiverReportInvite,
   type PEP3AssessmentDraftDetail,
@@ -41,6 +42,7 @@ import {
 import messageService from '@/utils/messageService'
 
 type WorkbenchTab = 'drafts' | 'records'
+type DraftItemSaveStatus = 'queued' | 'saving' | 'saved' | 'error'
 
 interface DraftEditorState {
   id?: number
@@ -66,6 +68,8 @@ const saving = ref(false)
 const submitting = ref(false)
 const previewLoading = ref(false)
 const caregiverInviteLoading = ref(false)
+const draftItemSaveStatus = ref<Record<number, DraftItemSaveStatus>>({})
+const draftItemSaveErrors = ref<Record<number, string>>({})
 
 const template = ref<PEP3AssessmentFormTemplate>()
 const draftRows = ref<PEP3AssessmentDraftSummary[]>([])
@@ -117,6 +121,9 @@ const editor = reactive<DraftEditorState>({
   rawScores: {},
   itemRecordValues: {},
 })
+
+const draftItemSaveTimers = new Map<number, ReturnType<typeof setTimeout>>()
+let draftCreationPromise: Promise<PEP3AssessmentDraftDetail | undefined> | undefined
 
 const developmentRawScoreFields = computed(() => {
   return (template.value?.rawScoreFields || []).filter(item => item.category !== 'caregiver_report')
@@ -277,6 +284,8 @@ function getErrorMessage(error: any, fallback: string) {
 }
 
 function resetEditor() {
+  clearDraftItemSaveTimers()
+  clearDraftItemSaveState()
   editor.id = undefined
   editor.studentId = undefined
   editor.studentName = ''
@@ -323,7 +332,9 @@ function applyDraftInput(input?: PEP3DraftSaveRequest) {
     editor.itemRecordValues[Number(itemNo)] = { ...(values || {}) }
   })
   ;(input.itemRecordValueList || []).forEach((item) => {
-    setItemRecordValue(item.itemNo, item.fieldKey, item.value)
+    if (!editor.itemRecordValues[item.itemNo])
+      editor.itemRecordValues[item.itemNo] = {}
+    editor.itemRecordValues[item.itemNo][item.fieldKey] = item.value
   })
 }
 
@@ -483,14 +494,136 @@ function setItemRecordValue(itemNo: number, fieldKey: string, value: unknown) {
   if (!editor.itemRecordValues[itemNo])
     editor.itemRecordValues[itemNo] = {}
   editor.itemRecordValues[itemNo][fieldKey] = value
+  queueDraftItemSave(itemNo)
 }
 
 function clearItemRecordValue(itemNo: number, fieldKey: string) {
-  if (!editor.itemRecordValues[itemNo])
+  if (!editor.itemRecordValues[itemNo]) {
+    queueDraftItemSave(itemNo)
     return
+  }
   delete editor.itemRecordValues[itemNo][fieldKey]
   if (!Object.keys(editor.itemRecordValues[itemNo]).length)
     delete editor.itemRecordValues[itemNo]
+  queueDraftItemSave(itemNo)
+}
+
+function setItemScoreValue(itemNo: number, value: unknown) {
+  const score = Number(value)
+  if (score === 0 || score === 1 || score === 2)
+    editor.itemScores[itemNo] = score
+  else
+    delete editor.itemScores[itemNo]
+  queueDraftItemSave(itemNo)
+}
+
+function draftItemRecordValues(itemNo: number) {
+  return Object.entries(editor.itemRecordValues[itemNo] || {})
+    .filter(([fieldKey, value]) => fieldKey.trim() && !isEmptyRecordValue(value))
+    .reduce<Record<string, unknown>>((out, [fieldKey, value]) => {
+      out[fieldKey.trim()] = value
+      return out
+    }, {})
+}
+
+function clearDraftItemSaveTimers() {
+  draftItemSaveTimers.forEach(timer => clearTimeout(timer))
+  draftItemSaveTimers.clear()
+}
+
+function queueDraftItemSave(itemNo: number) {
+  if (itemNo <= 0)
+    return
+  setDraftItemSaveStatus(itemNo, 'queued')
+  const existingTimer = draftItemSaveTimers.get(itemNo)
+  if (existingTimer)
+    clearTimeout(existingTimer)
+  draftItemSaveTimers.set(itemNo, setTimeout(() => {
+    draftItemSaveTimers.delete(itemNo)
+    void saveDraftItem(itemNo)
+  }, 500))
+}
+
+async function ensureDraftForItemSave() {
+  if (editor.id)
+    return true
+  if (!draftCreationPromise) {
+    draftCreationPromise = saveDraft(true).finally(() => {
+      draftCreationPromise = undefined
+    })
+  }
+  const detail = await draftCreationPromise
+  return !!detail?.id
+}
+
+async function saveDraftItem(itemNo: number) {
+  if (itemNo <= 0)
+    return
+  setDraftItemSaveStatus(itemNo, 'saving')
+  const canSave = await ensureDraftForItemSave()
+  if (!canSave || !editor.id) {
+    setDraftItemSaveStatus(itemNo, 'error', '草稿创建失败')
+    return
+  }
+  const score = editor.itemScores[itemNo]
+  try {
+    const res = await savePEP3AssessmentDraftItemApi({
+      draftId: editor.id,
+      itemNo,
+      score: score === 0 || score === 1 || score === 2 ? Number(score) : undefined,
+      recordValues: draftItemRecordValues(itemNo),
+    })
+    const detail = unwrap<PEP3AssessmentDraftDetail>(res)
+    currentProgress.value = detail.progress
+    setDraftItemSaveStatus(itemNo, 'saved')
+  }
+  catch (error: any) {
+    const message = getErrorMessage(error, `第${itemNo}题自动保存失败`)
+    setDraftItemSaveStatus(itemNo, 'error', message)
+    messageService.error(message)
+  }
+}
+
+function flushDraftItemSaves() {
+  const pendingItemNos = Array.from(draftItemSaveTimers.keys())
+  clearDraftItemSaveTimers()
+  pendingItemNos.forEach(itemNo => void saveDraftItem(itemNo))
+}
+
+function setDraftItemSaveStatus(itemNo: number, status: DraftItemSaveStatus, error?: string) {
+  draftItemSaveStatus.value = { ...draftItemSaveStatus.value, [itemNo]: status }
+  const nextErrors = { ...draftItemSaveErrors.value }
+  if (error)
+    nextErrors[itemNo] = error
+  else
+    delete nextErrors[itemNo]
+  draftItemSaveErrors.value = nextErrors
+}
+
+function clearDraftItemSaveState() {
+  draftItemSaveStatus.value = {}
+  draftItemSaveErrors.value = {}
+}
+
+function draftItemSaveMeta(itemNo: number) {
+  const status = draftItemSaveStatus.value[itemNo]
+  if (status === 'queued')
+    return { text: '待自动保存', color: 'default', clickable: false }
+  if (status === 'saving')
+    return { text: '正在保存', color: 'processing', clickable: false }
+  if (status === 'saved')
+    return { text: '已自动保存', color: 'success', clickable: false }
+  if (status === 'error')
+    return { text: '保存失败，点击重试', color: 'error', clickable: true }
+  return undefined
+}
+
+function retryDraftItemSave(itemNo: number) {
+  const existingTimer = draftItemSaveTimers.get(itemNo)
+  if (existingTimer)
+    clearTimeout(existingTimer)
+  draftItemSaveTimers.delete(itemNo)
+  void saveDraftItem(itemNo)
 }
 
 function hasItemRecordValue(itemNo: number, fieldKey: string) {
@@ -864,6 +997,14 @@ function rawScoreLabel(field: PEP3RawScoreField) {
 }
 
 watch(currentCaregiverInvite, invite => generateCaregiverQRCode(invite))
+watch(drawerOpen, (open) => {
+  if (!open)
+    flushDraftItemSaves()
+})
+
+onBeforeUnmount(() => {
+  flushDraftItemSaves()
+})
 
 onMounted(async () => {
   await fetchTemplate()
@@ -1176,11 +1317,36 @@ onMounted(async () => {
                         </div>
                       </div>
                     </div>
-                    <a-radio-group v-model:value="editor.itemScores[item.itemNo]" button-style="solid" size="small">
-                      <a-radio-button v-for="option in item.scoreOptions" :key="option.value" :value="option.value">
-                        {{ option.value }}
-                      </a-radio-button>
-                    </a-radio-group>
+                    <div class="score-row__actions">
+                      <a-radio-group
+                        :value="editor.itemScores[item.itemNo]"
+                        button-style="solid"
+                        size="small"
+                        @update:value="value => setItemScoreValue(item.itemNo, value)"
+                      >
+                        <a-radio-button v-for="option in item.scoreOptions" :key="option.value" :value="option.value">
+                          {{ option.value }}
+                        </a-radio-button>
+                      </a-radio-group>
+                      <a-tooltip v-if="draftItemSaveErrors[item.itemNo]" :title="draftItemSaveErrors[item.itemNo]">
+                        <a-tag
+                          v-if="draftItemSaveMeta(item.itemNo)"
+                          class="draft-save-tag"
+                          :class="{ 'draft-save-tag--clickable': draftItemSaveMeta(item.itemNo)?.clickable }"
+                          :color="draftItemSaveMeta(item.itemNo)?.color"
+                          @click="draftItemSaveMeta(item.itemNo)?.clickable && retryDraftItemSave(item.itemNo)"
+                        >
+                          {{ draftItemSaveMeta(item.itemNo)?.text }}
+                        </a-tag>
+                      </a-tooltip>
+                      <a-tag
+                        v-else-if="draftItemSaveMeta(item.itemNo)"
+                        class="draft-save-tag"
+                        :color="draftItemSaveMeta(item.itemNo)?.color"
+                      >
+                        {{ draftItemSaveMeta(item.itemNo)?.text }}
+                      </a-tag>
+                    </div>
                   </div>
                 </div>
               </a-collapse-panel>
@@ -1543,6 +1709,24 @@ onMounted(async () => {
   border: 1px solid #eef1f5;
   border-radius: 8px;
   background: #fff;
+}
+
+.score-row__actions {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+  min-width: 112px;
+}
+
+.draft-save-tag {
+  margin-inline-end: 0;
+  font-size: 12px;
+  line-height: 20px;
+}
+
+.draft-save-tag--clickable {
+  cursor: pointer;
 }
 
 .score-row__title {

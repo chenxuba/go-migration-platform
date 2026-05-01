@@ -3,9 +3,6 @@ package service
 import (
 	"encoding/json"
 	"fmt"
-	"os"
-	"path/filepath"
-	"sort"
 	"strconv"
 	"strings"
 
@@ -473,20 +470,11 @@ func addPEP3ItemRecordValue(out map[int]map[string]any, itemNo int, fieldKey str
 }
 
 func loadPEP3BookletItems() ([]pep3BookletItemDefinition, error) {
-	dataDir, err := resolvePEP3DataDir()
+	data, err := loadPEP3StaticData()
 	if err != nil {
 		return nil, err
 	}
-	raw, err := os.ReadFile(filepath.Join(dataDir, pep3ItemBankFile))
-	if err != nil {
-		return nil, err
-	}
-	var items []pep3BookletItemDefinition
-	if err := json.Unmarshal(raw, &items); err != nil {
-		return nil, fmt.Errorf("decode PEP-3 booklet item bank: %w", err)
-	}
-	sort.Slice(items, func(i, j int) bool { return items[i].ItemNo < items[j].ItemNo })
-	return items, nil
+	return unmarshalPEP3BookletItems(data.itemRows)
 }
 
 func groupPEP3BookletItemsByDomain(items []pep3BookletItemDefinition) map[string][]pep3BookletItemDefinition {

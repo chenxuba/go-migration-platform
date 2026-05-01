@@ -76,6 +76,13 @@ export interface PEP3DraftSaveRequest {
   caregiverReport?: PEP3CaregiverReportSubmission
 }
 
+export interface PEP3DraftItemSaveRequest {
+  draftId: number
+  itemNo: number
+  score?: number
+  recordValues?: Record<string, unknown>
+}
+
 export interface PEP3RecordCreateRequest extends PEP3ScoreRequest {
   studentId?: number
   studentName?: string
@@ -568,6 +575,10 @@ export function scorePEP3AssessmentApi(data: PEP3ScoreRequest) {
 
 export function savePEP3AssessmentDraftApi(data: PEP3DraftSaveRequest) {
   return usePost<PEP3AssessmentDraftDetail>('/api/v1/assessments/pep3/drafts/save', data)
+}
+
+export function savePEP3AssessmentDraftItemApi(data: PEP3DraftItemSaveRequest) {
+  return usePost<PEP3AssessmentDraftDetail>('/api/v1/assessments/pep3/drafts/item/save', data)
 }
 
 export function getPEP3AssessmentDraftDetailApi(id: number) {

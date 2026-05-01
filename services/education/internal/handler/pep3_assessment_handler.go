@@ -75,6 +75,13 @@ type pep3AssessmentDraftDeleteRequest struct {
 	ID int64 `json:"id"`
 }
 
+type pep3AssessmentDraftItemSaveRequest struct {
+	DraftID      int64          `json:"draftId"`
+	ItemNo       int            `json:"itemNo"`
+	Score        *int           `json:"score,omitempty"`
+	RecordValues map[string]any `json:"recordValues,omitempty"`
+}
+
 type pep3ItemRecordValueRequest struct {
 	ItemNo   int    `json:"itemNo"`
 	FieldKey string `json:"fieldKey"`
@@ -168,6 +175,49 @@ func (handler *Handler) pep3AssessmentDraftDetail(w http.ResponseWriter, r *http
 		return
 	}
 	result, err := handler.service.GetPEP3AssessmentDraft(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) savePEP3AssessmentDraftItem(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+
+	var req pep3AssessmentDraftItemSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.DraftID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "draftId is required", ctx.RequestID)
+		return
+	}
+	if req.ItemNo <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "itemNo is required", ctx.RequestID)
+		return
+	}
+	if req.Score != nil && (*req.Score < 0 || *req.Score > 2) {
+		httpx.WriteError(w, http.StatusBadRequest, "score must be 0, 1, or 2", ctx.RequestID)
+		return
+	}
+
+	result, err := handler.service.SavePEP3AssessmentDraftItem(claims.UserID, service.PEP3AssessmentDraftItemSaveInput{
+		DraftID:       req.DraftID,
+		ItemNo:        req.ItemNo,
+		Score:         req.Score,
+		RecordValues:  normalizePEP3RecordValueMap(req.RecordValues),
+		RecordTouched: req.RecordValues != nil,
+	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -455,6 +505,7 @@ func (req pep3AssessmentDraftSaveRequest) toDraftSaveInput() (service.PEP3Assess
 		AssessmentDate:    assessmentDate,
 		ItemScores:        itemScores,
 		RawScores:         rawScores,
+		ItemRecordValues:  itemRecordValues,
 		AllowMissingItems: req.AllowMissingItems,
 		InputSnapshot:     req.normalizedSnapshot(itemScores, rawScores, itemRecordValues),
 	}, nil
@@ -660,6 +711,41 @@ func addPEP3ItemRecordValue(out map[int]map[string]any, itemNo int, fieldKey str
 	}
 	out[itemNo][fieldKey] = normalizePEP3ItemRecordValue(value)
 	return nil
+}
+
+func normalizePEP3RecordValueMap(values map[string]any) map[string]any {
+	if values == nil {
+		return nil
+	}
+	normalized := make(map[string]any, len(values))
+	for fieldKey, value := range values {
+		key := strings.TrimSpace(fieldKey)
+		if key == "" {
+			continue
+		}
+		normalizedValue := normalizePEP3ItemRecordValue(value)
+		if isEmptyPEP3ItemRecordValue(normalizedValue) {
+			continue
+		}
+		normalized[key] = normalizedValue
+	}
+	return normalized
+}
+
+func isEmptyPEP3ItemRecordValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch typed := value.(type) {
+	case string:
+		return strings.TrimSpace(typed) == ""
+	case []any:
+		return len(typed) == 0
+	case []string:
+		return len(typed) == 0
+	default:
+		return false
+	}
 }
 
 func normalizePEP3ItemRecordValue(value any) any {

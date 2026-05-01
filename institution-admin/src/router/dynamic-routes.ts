@@ -248,6 +248,15 @@ export default [
     },
     children: [
       {
+        path: '/teacherCenter/scale-library',
+        name: 'ScaleLibrary',
+        component: () => import('~/pages/teacher-center/scale-library.vue'),
+        meta: {
+          title: '量表库',
+          access: [AccessEnum.teacher_scale],
+        },
+      },
+      {
         path: '/teacherCenter/assessment-calendar',
         name: 'AssessmentCalendar',
         component: () => import('~/pages/teacher-center/assessment-calendar.vue'),

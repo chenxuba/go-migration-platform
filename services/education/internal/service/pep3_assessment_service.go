@@ -164,36 +164,13 @@ func loadPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
 }
 
 func buildPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
-	dataDir, err := resolvePEP3DataDir()
+	data, err := loadPEP3StaticData()
 	if err != nil {
 		return nil, PEP3ScoreDataInfo{}, err
 	}
 
-	itemPath := filepath.Join(dataDir, pep3ItemBankFile)
-	domainPath := filepath.Join(dataDir, pep3DomainMapFile)
-	normPath := filepath.Join(dataDir, pep3NormFile)
-	correctionPath := filepath.Join(dataDir, pep3CorrectionFile)
-
-	items, err := pep3score.LoadItemDefinitionsFile(itemPath)
-	if err != nil {
-		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("load PEP-3 item bank: %w", err)
-	}
-	domains, err := pep3score.LoadDomainDefinitionsFile(domainPath)
-	if err != nil {
-		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("load PEP-3 domain map: %w", err)
-	}
-
-	normPaths := []string{normPath}
-	sources, dataStatus := pep3DataSources(dataDir)
-	if fileExists(correctionPath) {
-		normPaths = append(normPaths, correctionPath)
-	}
-	norms, err := pep3score.LoadMergedNormRecordsFiles(normPaths...)
-	if err != nil {
-		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("load PEP-3 norm records: %w", err)
-	}
-	normDataInfo := pep3NormDataInfoFromRecords(norms)
-	engine, err := pep3score.NewEngine(items, domains, norms)
+	normDataInfo := pep3NormDataInfoFromRecords(data.norms)
+	engine, err := pep3score.NewEngine(data.scoreItems, data.domains, data.norms)
 	if err != nil {
 		return nil, PEP3ScoreDataInfo{}, fmt.Errorf("build PEP-3 score engine: %w", err)
 	}
@@ -202,8 +179,8 @@ func buildPEP3Engine() (*pep3score.Engine, PEP3ScoreDataInfo, error) {
 		ScaleCode:        pep3ScaleCode,
 		ScaleVersion:     pep3ScaleVersion,
 		PEP3NormDataInfo: normDataInfo,
-		DataStatus:       dataStatus,
-		Sources:          sources,
+		DataStatus:       data.dataStatus,
+		Sources:          data.sources,
 	}, nil
 }
 

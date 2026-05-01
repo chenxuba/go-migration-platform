@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"math"
 	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -936,20 +935,11 @@ func pep3BookletPDFAgeMonthsText(record model.AssessmentRecordDetailVO) string {
 }
 
 func loadPEP3BookletPDFNormRecords() ([]pep3score.NormRecord, error) {
-	dataDir, err := resolvePEP3DataDir()
+	data, err := loadPEP3StaticData()
 	if err != nil {
 		return nil, err
 	}
-	paths := []string{filepath.Join(dataDir, pep3NormFile)}
-	correctionPath := filepath.Join(dataDir, pep3CorrectionFile)
-	if fileExists(correctionPath) {
-		paths = append(paths, correctionPath)
-	}
-	records, err := pep3score.LoadMergedNormRecordsFiles(paths...)
-	if err != nil {
-		return nil, fmt.Errorf("load PEP-3 booklet PDF norm records: %w", err)
-	}
-	return records, nil
+	return data.norms, nil
 }
 
 func pep3BookletPDFItemDomainMap(items []pep3BookletItemDefinition) map[int]string {

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -64,6 +65,12 @@ type AssessmentCaregiverInviteEntity struct {
 	DraftID   int64
 	RecordID  int64
 	ExpiresAt time.Time
+}
+
+type AssessmentDraftItemRecordValueEntity struct {
+	ItemNo   int    `json:"itemNo"`
+	FieldKey string `json:"fieldKey"`
+	Value    any    `json:"value"`
 }
 
 func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
@@ -126,6 +133,61 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_assessment_draft_inst_code_date (inst_id, assessment_code, assessment_date, id),
 			KEY idx_assessment_draft_inst_student (inst_id, student_id, update_time, id),
 			KEY idx_assessment_draft_status (inst_id, assessment_code, status, update_time, id)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_draft_item_score (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL DEFAULT 0,
+			draft_id BIGINT NOT NULL DEFAULT 0,
+			item_no INT NOT NULL DEFAULT 0,
+			score INT NOT NULL DEFAULT 0,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_draft_item_score (draft_id, item_no),
+			KEY idx_assessment_draft_item_score_inst (inst_id, draft_id, item_no)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_draft_raw_score (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL DEFAULT 0,
+			draft_id BIGINT NOT NULL DEFAULT 0,
+			scale_code VARCHAR(32) NOT NULL DEFAULT '',
+			raw_score INT NOT NULL DEFAULT 0,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_draft_raw_score (draft_id, scale_code),
+			KEY idx_assessment_draft_raw_score_inst (inst_id, draft_id, scale_code)
+		)
+	`); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_draft_item_record_value (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL DEFAULT 0,
+			draft_id BIGINT NOT NULL DEFAULT 0,
+			item_no INT NOT NULL DEFAULT 0,
+			field_key VARCHAR(100) NOT NULL DEFAULT '',
+			value_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_draft_item_record_value (draft_id, item_no, field_key),
+			KEY idx_assessment_draft_item_record_inst (inst_id, draft_id, item_no)
 		)
 	`); err != nil {
 		return err
@@ -482,6 +544,283 @@ func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity Assessme
 	return result.LastInsertId()
 }
 
+func (repo *Repository) SyncAssessmentDraftDetails(ctx context.Context, instID, draftID int64, itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any, operatorID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = replaceAssessmentDraftItemScores(ctx, tx, instID, draftID, itemScores, operatorID); err != nil {
+		return err
+	}
+	if err = replaceAssessmentDraftRawScores(ctx, tx, instID, draftID, rawScores, operatorID); err != nil {
+		return err
+	}
+	if err = replaceAssessmentDraftItemRecordValues(ctx, tx, instID, draftID, itemRecordValues, operatorID); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	return err
+}
+
+func (repo *Repository) UpsertAssessmentDraftItemDetails(ctx context.Context, instID, draftID int64, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = upsertAssessmentDraftItemDetailsInTx(ctx, tx, instID, draftID, itemNo, score, recordValues, replaceRecordValues, operatorID); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	return err
+}
+
+func (repo *Repository) UpdateAssessmentDraftInputProgressAndItemDetails(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
+	inputRaw, err := json.Marshal(input)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft input: %w", err)
+	}
+	progressRaw, err := json.Marshal(progress)
+	if err != nil {
+		return fmt.Errorf("marshal assessment draft progress: %w", err)
+	}
+	status = strings.TrimSpace(status)
+	if status == "" {
+		status = "draft"
+	}
+
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	result, err := tx.ExecContext(ctx, `
+		UPDATE assessment_draft
+		SET input_json = ?,
+		    progress_json = ?,
+		    answered_item_count = ?,
+		    raw_score_count = ?,
+		    status = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0 AND submitted_record_id = 0
+	`,
+		string(inputRaw),
+		string(progressRaw),
+		answeredItemCount,
+		rawScoreCount,
+		status,
+		operatorID,
+		draftID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	if err = upsertAssessmentDraftItemDetailsInTx(ctx, tx, instID, draftID, itemNo, score, recordValues, replaceRecordValues, operatorID); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	return err
+}
+
+func upsertAssessmentDraftItemDetailsInTx(ctx context.Context, tx *sql.Tx, instID, draftID int64, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
+	if itemNo <= 0 {
+		return fmt.Errorf("invalid item no %d", itemNo)
+	}
+	if score != nil {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO assessment_draft_item_score (
+				inst_id, draft_id, item_no, score, create_id, update_id, create_time, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+				inst_id = VALUES(inst_id),
+				score = VALUES(score),
+				update_id = VALUES(update_id),
+				update_time = NOW(),
+				del_flag = 0
+		`, instID, draftID, itemNo, *score, operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+	if replaceRecordValues {
+		if _, err := tx.ExecContext(ctx, `
+			UPDATE assessment_draft_item_record_value
+			SET del_flag = 1, update_id = ?, update_time = NOW()
+			WHERE inst_id = ? AND draft_id = ? AND item_no = ? AND del_flag = 0
+		`, operatorID, instID, draftID, itemNo); err != nil {
+			return err
+		}
+		for fieldKey, value := range recordValues {
+			key := strings.TrimSpace(fieldKey)
+			if key == "" || isAssessmentDraftEmptyDetailValue(value) {
+				continue
+			}
+			raw, marshalErr := json.Marshal(value)
+			if marshalErr != nil {
+				return fmt.Errorf("marshal draft item record value %d/%s: %w", itemNo, key, marshalErr)
+			}
+			if _, err := tx.ExecContext(ctx, `
+					INSERT INTO assessment_draft_item_record_value (
+						inst_id, draft_id, item_no, field_key, value_json, create_id, update_id, create_time, update_time, del_flag
+					) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					value_json = VALUES(value_json),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`, instID, draftID, itemNo, key, string(raw), operatorID, operatorID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func replaceAssessmentDraftItemScores(ctx context.Context, tx *sql.Tx, instID, draftID int64, itemScores map[int]int, operatorID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE assessment_draft_item_score
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+	`, operatorID, instID, draftID); err != nil {
+		return err
+	}
+	itemNos := make([]int, 0, len(itemScores))
+	for itemNo := range itemScores {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	for _, itemNo := range itemNos {
+		if itemNo <= 0 {
+			continue
+		}
+		score := itemScores[itemNo]
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO assessment_draft_item_score (
+				inst_id, draft_id, item_no, score, create_id, update_id, create_time, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+				inst_id = VALUES(inst_id),
+				score = VALUES(score),
+				update_id = VALUES(update_id),
+				update_time = NOW(),
+				del_flag = 0
+		`, instID, draftID, itemNo, score, operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceAssessmentDraftRawScores(ctx context.Context, tx *sql.Tx, instID, draftID int64, rawScores map[string]int, operatorID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE assessment_draft_raw_score
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+	`, operatorID, instID, draftID); err != nil {
+		return err
+	}
+	normalizedScores := make(map[string]int, len(rawScores))
+	for scaleCode, rawScore := range rawScores {
+		if normalized := strings.ToUpper(strings.TrimSpace(scaleCode)); normalized != "" {
+			normalizedScores[normalized] = rawScore
+		}
+	}
+	scaleCodes := make([]string, 0, len(normalizedScores))
+	for scaleCode := range normalizedScores {
+		scaleCodes = append(scaleCodes, scaleCode)
+	}
+	sort.Strings(scaleCodes)
+	for _, scaleCode := range scaleCodes {
+		rawScore := normalizedScores[scaleCode]
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO assessment_draft_raw_score (
+				inst_id, draft_id, scale_code, raw_score, create_id, update_id, create_time, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+				inst_id = VALUES(inst_id),
+				raw_score = VALUES(raw_score),
+				update_id = VALUES(update_id),
+				update_time = NOW(),
+				del_flag = 0
+		`, instID, draftID, scaleCode, rawScore, operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func replaceAssessmentDraftItemRecordValues(ctx context.Context, tx *sql.Tx, instID, draftID int64, itemRecordValues map[int]map[string]any, operatorID int64) error {
+	if _, err := tx.ExecContext(ctx, `
+		UPDATE assessment_draft_item_record_value
+		SET del_flag = 1, update_id = ?, update_time = NOW()
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+	`, operatorID, instID, draftID); err != nil {
+		return err
+	}
+	itemNos := make([]int, 0, len(itemRecordValues))
+	for itemNo := range itemRecordValues {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	for _, itemNo := range itemNos {
+		if itemNo <= 0 {
+			continue
+		}
+		fieldKeys := make([]string, 0, len(itemRecordValues[itemNo]))
+		for fieldKey := range itemRecordValues[itemNo] {
+			fieldKeys = append(fieldKeys, fieldKey)
+		}
+		sort.Strings(fieldKeys)
+		for _, fieldKey := range fieldKeys {
+			key := strings.TrimSpace(fieldKey)
+			value := itemRecordValues[itemNo][fieldKey]
+			if key == "" || isAssessmentDraftEmptyDetailValue(value) {
+				continue
+			}
+			raw, err := json.Marshal(value)
+			if err != nil {
+				return fmt.Errorf("marshal draft item record value %d/%s: %w", itemNo, key, err)
+			}
+			if _, err := tx.ExecContext(ctx, `
+				INSERT INTO assessment_draft_item_record_value (
+					inst_id, draft_id, item_no, field_key, value_json, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					value_json = VALUES(value_json),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`, instID, draftID, itemNo, key, string(raw), operatorID, operatorID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
 func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID int64) (model.AssessmentDraftDetailVO, error) {
 	var (
 		item        model.AssessmentDraftDetailVO
@@ -526,11 +865,208 @@ func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID 
 	}
 	fillAssessmentDraftTimes(&item.AssessmentDraftSummaryVO, birthDate, testDate, createdAt, updatedAt)
 	item.InputJSON = json.RawMessage(inputRaw)
+	if hydratedInput, err := repo.hydrateAssessmentDraftInputFromDetails(ctx, instID, draftID, item.InputJSON); err == nil {
+		item.InputJSON = hydratedInput
+	} else {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	if err := json.Unmarshal([]byte(progressRaw), &item.Progress); err != nil {
 		return model.AssessmentDraftDetailVO{}, fmt.Errorf("decode assessment draft progress: %w", err)
 	}
 	item.CompletionPercent = item.Progress.CompletionPercent
 	return item, nil
+}
+
+func (repo *Repository) hydrateAssessmentDraftInputFromDetails(ctx context.Context, instID, draftID int64, raw json.RawMessage) (json.RawMessage, error) {
+	itemScores, err := repo.ListAssessmentDraftItemScores(ctx, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	rawScores, err := repo.ListAssessmentDraftRawScores(ctx, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	itemRecordValues, err := repo.ListAssessmentDraftItemRecordValues(ctx, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	if len(itemScores) == 0 && len(rawScores) == 0 && len(itemRecordValues) == 0 {
+		return raw, nil
+	}
+	var snapshot map[string]any
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &snapshot)
+	}
+	if snapshot == nil {
+		snapshot = map[string]any{}
+	}
+	if len(itemScores) > 0 {
+		snapshot["itemScores"] = itemScores
+		snapshot["itemScoreList"] = assessmentDraftItemScoreList(itemScores)
+	}
+	if len(rawScores) > 0 {
+		snapshot["rawScores"] = rawScores
+		snapshot["rawScoreList"] = assessmentDraftRawScoreList(rawScores)
+	}
+	if len(itemRecordValues) > 0 {
+		snapshot["itemRecordValues"] = itemRecordValues
+		snapshot["itemRecordValueList"] = assessmentDraftItemRecordValueList(itemRecordValues)
+	}
+	out, err := json.Marshal(snapshot)
+	if err != nil {
+		return nil, fmt.Errorf("marshal hydrated assessment draft input: %w", err)
+	}
+	return json.RawMessage(out), nil
+}
+
+func (repo *Repository) ListAssessmentDraftItemScores(ctx context.Context, instID, draftID int64) (map[int]int, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, score
+		FROM assessment_draft_item_score
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+		ORDER BY item_no
+	`, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]int{}
+	for rows.Next() {
+		var itemNo, score int
+		if err := rows.Scan(&itemNo, &score); err != nil {
+			return nil, err
+		}
+		out[itemNo] = score
+	}
+	return out, rows.Err()
+}
+
+func (repo *Repository) ListAssessmentDraftRawScores(ctx context.Context, instID, draftID int64) (map[string]int, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT scale_code, raw_score
+		FROM assessment_draft_raw_score
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+		ORDER BY scale_code
+	`, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var scaleCode string
+		var rawScore int
+		if err := rows.Scan(&scaleCode, &rawScore); err != nil {
+			return nil, err
+		}
+		if normalized := strings.ToUpper(strings.TrimSpace(scaleCode)); normalized != "" {
+			out[normalized] = rawScore
+		}
+	}
+	return out, rows.Err()
+}
+
+func (repo *Repository) ListAssessmentDraftItemRecordValues(ctx context.Context, instID, draftID int64) (map[int]map[string]any, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, field_key, value_json
+		FROM assessment_draft_item_record_value
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+		ORDER BY item_no, field_key
+	`, instID, draftID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[int]map[string]any{}
+	for rows.Next() {
+		var (
+			itemNo   int
+			fieldKey string
+			raw      string
+			value    any
+		)
+		if err := rows.Scan(&itemNo, &fieldKey, &raw); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal([]byte(raw), &value); err != nil {
+			return nil, fmt.Errorf("decode draft item record value %d/%s: %w", itemNo, fieldKey, err)
+		}
+		key := strings.TrimSpace(fieldKey)
+		if itemNo <= 0 || key == "" || isAssessmentDraftEmptyDetailValue(value) {
+			continue
+		}
+		if out[itemNo] == nil {
+			out[itemNo] = map[string]any{}
+		}
+		out[itemNo][key] = value
+	}
+	return out, rows.Err()
+}
+
+func assessmentDraftItemScoreList(itemScores map[int]int) []map[string]int {
+	itemNos := make([]int, 0, len(itemScores))
+	for itemNo := range itemScores {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]map[string]int, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		out = append(out, map[string]int{"itemNo": itemNo, "score": itemScores[itemNo]})
+	}
+	return out
+}
+
+func assessmentDraftRawScoreList(rawScores map[string]int) []map[string]any {
+	scaleCodes := make([]string, 0, len(rawScores))
+	for scaleCode := range rawScores {
+		scaleCodes = append(scaleCodes, scaleCode)
+	}
+	sort.Strings(scaleCodes)
+	out := make([]map[string]any, 0, len(scaleCodes))
+	for _, scaleCode := range scaleCodes {
+		out = append(out, map[string]any{"scaleCode": scaleCode, "rawScore": rawScores[scaleCode]})
+	}
+	return out
+}
+
+func assessmentDraftItemRecordValueList(itemRecordValues map[int]map[string]any) []AssessmentDraftItemRecordValueEntity {
+	itemNos := make([]int, 0, len(itemRecordValues))
+	for itemNo := range itemRecordValues {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]AssessmentDraftItemRecordValueEntity, 0)
+	for _, itemNo := range itemNos {
+		fieldKeys := make([]string, 0, len(itemRecordValues[itemNo]))
+		for fieldKey := range itemRecordValues[itemNo] {
+			fieldKeys = append(fieldKeys, fieldKey)
+		}
+		sort.Strings(fieldKeys)
+		for _, fieldKey := range fieldKeys {
+			out = append(out, AssessmentDraftItemRecordValueEntity{
+				ItemNo:   itemNo,
+				FieldKey: fieldKey,
+				Value:    itemRecordValues[itemNo][fieldKey],
+			})
+		}
+	}
+	return out
+}
+
+func isAssessmentDraftEmptyDetailValue(value any) bool {
+	if value == nil {
+		return true
+	}
+	switch v := value.(type) {
+	case string:
+		return strings.TrimSpace(v) == ""
+	case []any:
+		return len(v) == 0
+	case []string:
+		return len(v) == 0
+	default:
+		return false
+	}
 }
 
 func (repo *Repository) GetAssessmentDraftBySubmittedRecordID(ctx context.Context, instID, recordID int64) (model.AssessmentDraftDetailVO, error) {

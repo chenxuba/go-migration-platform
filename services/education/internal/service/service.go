@@ -27,6 +27,7 @@ type Service struct {
 }
 
 func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, searchClient *search.Client, messageClient *messaging.Client, qiniuClient *qiniux.Client) *Service {
+	configurePEP3StaticDataRepository(repo)
 	return &Service{
 		store:         store,
 		repo:          repo,

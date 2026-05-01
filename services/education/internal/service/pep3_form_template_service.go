@@ -34,19 +34,10 @@ func (svc *Service) GetPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTem
 }
 
 func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, error) {
-	dataDir, err := resolvePEP3DataDir()
+	data, err := loadPEP3StaticData()
 	if err != nil {
 		return model.PEP3AssessmentFormTemplateVO{}, err
 	}
-	items, err := loadPEP3FormItems(dataDir)
-	if err != nil {
-		return model.PEP3AssessmentFormTemplateVO{}, err
-	}
-	domains, err := pep3score.LoadDomainDefinitionsFile(filepath.Join(dataDir, pep3DomainMapFile))
-	if err != nil {
-		return model.PEP3AssessmentFormTemplateVO{}, fmt.Errorf("load PEP-3 domain map: %w", err)
-	}
-	sources, dataStatus := pep3DataSources(dataDir)
 
 	return model.PEP3AssessmentFormTemplateVO{
 		TemplateCode:     "PEP3_ASSESSMENT_FORM",
@@ -55,14 +46,14 @@ func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, erro
 		ScaleCode:        pep3ScaleCode,
 		ScaleVersion:     pep3ScaleVersion,
 		PEP3NormDataInfo: pep3DefaultNormDataInfo(),
-		DataStatus:       dataStatus,
-		Sources:          sources,
-		ItemCount:        len(items),
+		DataStatus:       data.dataStatus,
+		Sources:          data.sources,
+		ItemCount:        len(data.formItems),
 		ScoreOptions:     pep3GlobalScoreOptions(),
 		BasicFields:      pep3AssessmentBasicFields(),
-		Domains:          pep3AssessmentDomains(domains),
-		RawScoreFields:   pep3RawScoreFields(domains),
-		ItemGroups:       pep3AssessmentItemGroups(items),
+		Domains:          pep3AssessmentDomains(data.domains),
+		RawScoreFields:   pep3RawScoreFields(data.domains),
+		ItemGroups:       pep3AssessmentItemGroups(data.formItems),
 		CaregiverReport:  pep3CaregiverReportTemplate(),
 		SubmitContract: model.PEP3SubmitContract{
 			ScoreEndpoint:          "/api/v1/assessments/pep3/score",

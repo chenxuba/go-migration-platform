@@ -90,6 +90,26 @@ func TestPEP3AssessmentDraftSaveRequestAllowsPartialScores(t *testing.T) {
 	}
 }
 
+func TestNormalizePEP3RecordValueMapTrimsAndDropsEmptyValues(t *testing.T) {
+	values := normalizePEP3RecordValueMap(map[string]any{
+		"  eye  ": "  右眼  ",
+		"blank":   "   ",
+		"checks":  []any{"喂食", " 饮水 "},
+		"":        "ignored",
+	})
+
+	if values["eye"] != "右眼" {
+		t.Fatalf("expected trimmed text value, got: %+v", values)
+	}
+	checks, ok := values["checks"].([]any)
+	if !ok || len(checks) != 2 || checks[0] != "喂食" || checks[1] != "饮水" {
+		t.Fatalf("expected normalized checkbox values, got: %+v", values["checks"])
+	}
+	if _, ok := values["blank"]; ok {
+		t.Fatalf("empty record value should be dropped: %+v", values)
+	}
+}
+
 func TestScorePEP3EndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	itemPath := filepath.Join(root, "docs", "pep3-item-bank-simplified-draft.json")
