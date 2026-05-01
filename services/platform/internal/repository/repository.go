@@ -561,6 +561,8 @@ func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
 			category VARCHAR(64) NOT NULL,
 			scenario VARCHAR(64) NOT NULL,
 			age_range VARCHAR(64) NOT NULL,
+			age_min_months INT NOT NULL DEFAULT 0,
+			age_max_months INT NOT NULL DEFAULT 0,
 			estimated_duration VARCHAR(64) NOT NULL DEFAULT '',
 			duration_min_minutes INT NOT NULL DEFAULT 0,
 			duration_max_minutes INT NOT NULL DEFAULT 0,
@@ -571,6 +573,7 @@ func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
 			month_usage INT NOT NULL DEFAULT 0,
 			data_status VARCHAR(512) DEFAULT NULL,
 			summary VARCHAR(1024) DEFAULT NULL,
+			poster_url VARCHAR(500) DEFAULT NULL,
 			execution_entry VARCHAR(256) DEFAULT NULL,
 			api_package VARCHAR(256) DEFAULT NULL,
 			sort INT NOT NULL DEFAULT 1,
@@ -632,6 +635,16 @@ func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
 	`); err != nil {
 		return err
 	}
+	if err := repo.ensureColumnExists(ctx, "sys_scale", "age_min_months", `
+		ALTER TABLE sys_scale ADD COLUMN age_min_months INT NOT NULL DEFAULT 0 AFTER age_range
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "sys_scale", "age_max_months", `
+		ALTER TABLE sys_scale ADD COLUMN age_max_months INT NOT NULL DEFAULT 0 AFTER age_min_months
+	`); err != nil {
+		return err
+	}
 	if err := repo.ensureColumnExists(ctx, "sys_scale", "duration_min_minutes", `
 		ALTER TABLE sys_scale ADD COLUMN duration_min_minutes INT NOT NULL DEFAULT 0 AFTER estimated_duration
 	`); err != nil {
@@ -639,6 +652,11 @@ func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
 	}
 	if err := repo.ensureColumnExists(ctx, "sys_scale", "duration_max_minutes", `
 		ALTER TABLE sys_scale ADD COLUMN duration_max_minutes INT NOT NULL DEFAULT 0 AFTER duration_min_minutes
+	`); err != nil {
+		return err
+	}
+	if err := repo.ensureColumnExists(ctx, "sys_scale", "poster_url", `
+		ALTER TABLE sys_scale ADD COLUMN poster_url VARCHAR(500) DEFAULT NULL AFTER summary
 	`); err != nil {
 		return err
 	}
@@ -720,7 +738,9 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		Code:               "PEP3",
 		Category:           "标准化测评",
 		Scenario:           "现场测评",
-		AgeRange:           "2岁6个月 - 6岁",
+		AgeRange:           "2.6岁-6岁",
+		AgeMinMonths:       30,
+		AgeMaxMonths:       72,
 		Duration:           "45-90分钟",
 		DurationMinMinutes: 45,
 		DurationMaxMinutes: 90,
@@ -822,12 +842,15 @@ func (repo *Repository) repairPep3ItemCount(ctx context.Context, scaleID int64) 
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE sys_scale
 		SET item_count = 172,
+		    age_range = '2.6岁-6岁',
+		    age_min_months = 30,
+		    age_max_months = 72,
 		    estimated_duration = '45-90分钟',
 		    duration_min_minutes = 45,
 		    duration_max_minutes = 90,
 		    update_time = NOW()
 		WHERE id = ? AND scale_code = 'PEP3' AND del_flag = 0
-		  AND (item_count <> 172 OR IFNULL(estimated_duration, '') = '' OR IFNULL(duration_min_minutes, 0) <> 45 OR IFNULL(duration_max_minutes, 0) <> 90)
+		  AND (item_count <> 172 OR IFNULL(age_min_months, 0) <> 30 OR IFNULL(age_max_months, 0) <> 72 OR IFNULL(estimated_duration, '') = '' OR IFNULL(duration_min_minutes, 0) <> 45 OR IFNULL(duration_max_minutes, 0) <> 90)
 	`, scaleID)
 	return err
 }
@@ -945,6 +968,8 @@ type scaleSeed struct {
 	Category           string
 	Scenario           string
 	AgeRange           string
+	AgeMinMonths       int
+	AgeMaxMonths       int
 	Duration           string
 	DurationMinMinutes int
 	DurationMaxMinutes int
@@ -955,6 +980,7 @@ type scaleSeed struct {
 	MonthUsage         int
 	DataStatus         string
 	Summary            string
+	PosterURL          string
 	ExecutionEntry     string
 	APIPackage         string
 	Sort               int
@@ -1000,29 +1026,31 @@ func (repo *Repository) ensureScaleSeed(ctx context.Context, seed scaleSeed) (in
 		_, updateErr := repo.db.ExecContext(ctx, `
 			UPDATE sys_scale
 			SET scale_name = ?, category = ?, scenario = ?, age_range = ?, current_version = ?,
-			    estimated_duration = ?, duration_min_minutes = ?, duration_max_minutes = ?,
-			    item_count = ?, domain_count = ?, institution_count = ?, month_usage = ?, data_status = ?,
-			    summary = ?, execution_entry = ?, api_package = ?, sort = ?, del_flag = 0, update_time = NOW()
+		    age_min_months = ?, age_max_months = ?,
+		    estimated_duration = ?, duration_min_minutes = ?, duration_max_minutes = ?,
+		    item_count = ?, domain_count = ?, institution_count = ?, month_usage = ?, data_status = ?,
+		    summary = ?, poster_url = ?, execution_entry = ?, api_package = ?, sort = ?, del_flag = 0, update_time = NOW()
 			WHERE id = ?
 		`, strings.TrimSpace(seed.Name), strings.TrimSpace(seed.Category), strings.TrimSpace(seed.Scenario), strings.TrimSpace(seed.AgeRange), strings.TrimSpace(seed.CurrentVersion),
-			strings.TrimSpace(seed.Duration), seed.DurationMinMinutes, seed.DurationMaxMinutes,
+			seed.AgeMinMonths, seed.AgeMaxMonths, strings.TrimSpace(seed.Duration), seed.DurationMinMinutes, seed.DurationMaxMinutes,
 			seed.ItemCount, seed.DomainCount, seed.InstitutionCount, seed.MonthUsage, strings.TrimSpace(seed.DataStatus),
-			strings.TrimSpace(seed.Summary), strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort, id)
+			strings.TrimSpace(seed.Summary), strings.TrimSpace(seed.PosterURL), strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort, id)
 		return id, updateErr
 	}
 
 	result, err := repo.db.ExecContext(ctx, `
 		INSERT INTO sys_scale (
 			scale_name, scale_code, category, scenario, age_range, current_version,
+			age_min_months, age_max_months,
 			estimated_duration, duration_min_minutes, duration_max_minutes,
-			item_count, domain_count, institution_count, month_usage, data_status, summary,
+			item_count, domain_count, institution_count, month_usage, data_status, summary, poster_url,
 			execution_entry, api_package, sort, create_time, update_time, del_flag, version
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0, 0)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0, 0)
 	`, strings.TrimSpace(seed.Name), normalizedCode, strings.TrimSpace(seed.Category), strings.TrimSpace(seed.Scenario), strings.TrimSpace(seed.AgeRange), strings.TrimSpace(seed.CurrentVersion),
-		strings.TrimSpace(seed.Duration), seed.DurationMinMinutes, seed.DurationMaxMinutes,
+		seed.AgeMinMonths, seed.AgeMaxMonths, strings.TrimSpace(seed.Duration), seed.DurationMinMinutes, seed.DurationMaxMinutes,
 		seed.ItemCount, seed.DomainCount, seed.InstitutionCount, seed.MonthUsage, strings.TrimSpace(seed.DataStatus), strings.TrimSpace(seed.Summary),
-		strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort)
+		strings.TrimSpace(seed.PosterURL), strings.TrimSpace(seed.ExecutionEntry), strings.TrimSpace(seed.APIPackage), seed.Sort)
 	if err != nil {
 		return 0, err
 	}
@@ -1228,11 +1256,12 @@ func (repo *Repository) ListScales(ctx context.Context, keyword, category, scena
 
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT id, scale_name, scale_code, category, scenario, age_range,
+		       IFNULL(age_min_months, 0), IFNULL(age_max_months, 0),
 		       IFNULL(estimated_duration, ''), IFNULL(duration_min_minutes, 0), IFNULL(duration_max_minutes, 0),
 		       current_version,
 		       item_count, domain_count, institution_count, month_usage, IFNULL(data_status, ''),
 		       IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), ''),
-		       IFNULL(summary, ''), IFNULL(execution_entry, ''), IFNULL(api_package, '')
+		       IFNULL(summary, ''), IFNULL(poster_url, ''), IFNULL(execution_entry, ''), IFNULL(api_package, '')
 		FROM sys_scale
 		WHERE `+whereClause+`
 		ORDER BY sort ASC, id ASC`, args...)
@@ -1255,6 +1284,8 @@ func (repo *Repository) ListScales(ctx context.Context, keyword, category, scena
 			&item.Category,
 			&item.Scenario,
 			&item.AgeRange,
+			&item.AgeMinMonths,
+			&item.AgeMaxMonths,
 			&item.Duration,
 			&item.DurationMinMinutes,
 			&item.DurationMaxMinutes,
@@ -1266,6 +1297,7 @@ func (repo *Repository) ListScales(ctx context.Context, keyword, category, scena
 			&item.DataStatus,
 			&item.UpdatedAt,
 			&item.Summary,
+			&item.PosterURL,
 			&item.ExecutionEntry,
 			&item.APIPackage,
 		); err != nil {
@@ -1809,12 +1841,65 @@ func scaleQuestionBankFallbackScoreDescription(value int) string {
 	}
 }
 
+func normalizeScaleAgeMonths(minValue, maxValue *int) (int, int) {
+	minMonths := 0
+	if minValue != nil {
+		minMonths = *minValue
+	}
+	maxMonths := 0
+	if maxValue != nil {
+		maxMonths = *maxValue
+	}
+	if minMonths < 0 {
+		minMonths = 0
+	}
+	if maxMonths < 0 {
+		maxMonths = 0
+	}
+	return minMonths, maxMonths
+}
+
+func formatScaleAgeRange(minMonths, maxMonths int) string {
+	if minMonths <= 0 && maxMonths <= 0 {
+		return ""
+	}
+	if maxMonths > 0 && minMonths > maxMonths {
+		minMonths, maxMonths = maxMonths, minMonths
+	}
+	if maxMonths <= 0 || minMonths == maxMonths {
+		return formatScaleAgeLabel(minMonths)
+	}
+	if minMonths <= 0 {
+		return formatScaleAgeLabel(maxMonths) + "以下"
+	}
+	return formatScaleAgeLabel(minMonths) + "-" + formatScaleAgeLabel(maxMonths)
+}
+
+func formatScaleAgeLabel(months int) string {
+	if months <= 0 {
+		return "0岁"
+	}
+	years := months / 12
+	remainMonths := months % 12
+	if remainMonths == 0 {
+		return strconv.Itoa(years) + "岁"
+	}
+	if years == 0 {
+		return strconv.Itoa(remainMonths) + "个月"
+	}
+	return strconv.Itoa(years) + "." + strconv.Itoa(remainMonths) + "岁"
+}
+
 func (repo *Repository) CreateScale(ctx context.Context, input model.ScaleMutation) (int64, error) {
 	name := strings.TrimSpace(input.Name)
 	code := strings.TrimSpace(input.Code)
 	category := strings.TrimSpace(input.Category)
 	scenario := strings.TrimSpace(input.Scenario)
-	ageRange := strings.TrimSpace(input.AgeRange)
+	ageMinMonths, ageMaxMonths := normalizeScaleAgeMonths(input.AgeMinMonths, input.AgeMaxMonths)
+	ageRange := formatScaleAgeRange(ageMinMonths, ageMaxMonths)
+	if ageRange == "" {
+		ageRange = strings.TrimSpace(input.AgeRange)
+	}
 	currentVersion := strings.TrimSpace(input.CurrentVersion)
 	if name == "" || code == "" || category == "" || scenario == "" || currentVersion == "" {
 		return 0, errors.New("name, code, category, scenario and currentVersion are required")
@@ -1837,13 +1922,14 @@ func (repo *Repository) CreateScale(ctx context.Context, input model.ScaleMutati
 	result, err := repo.db.ExecContext(ctx, `
 		INSERT INTO sys_scale (
 			scale_name, scale_code, category, scenario, age_range, current_version,
+			age_min_months, age_max_months,
 			item_count, domain_count, institution_count, month_usage, data_status, summary,
-			execution_entry, api_package, sort, create_time, update_time, del_flag, version
+			poster_url, execution_entry, api_package, sort, create_time, update_time, del_flag, version
 		)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, NOW(), NOW(), 0, 0)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, '', ?, ?, ?, ?, ?, NOW(), NOW(), 0, 0)
 	`, name, code, category, scenario, ageRange, currentVersion,
-		itemCount, domainCount, strings.TrimSpace(input.Summary),
-		strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), sortValue)
+		ageMinMonths, ageMaxMonths, itemCount, domainCount, strings.TrimSpace(input.Summary),
+		strings.TrimSpace(input.PosterURL), strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), sortValue)
 	if err != nil {
 		if isDuplicateEntryError(err) {
 			return 0, errors.New("量表编码已存在")
@@ -1860,6 +1946,11 @@ func (repo *Repository) UpdateScale(ctx context.Context, input model.ScaleMutati
 	name := strings.TrimSpace(input.Name)
 	category := strings.TrimSpace(input.Category)
 	scenario := strings.TrimSpace(input.Scenario)
+	ageMinMonths, ageMaxMonths := normalizeScaleAgeMonths(input.AgeMinMonths, input.AgeMaxMonths)
+	ageRange := formatScaleAgeRange(ageMinMonths, ageMaxMonths)
+	if ageRange == "" {
+		ageRange = strings.TrimSpace(input.AgeRange)
+	}
 	currentVersion := strings.TrimSpace(input.CurrentVersion)
 	if name == "" || category == "" || scenario == "" || currentVersion == "" {
 		return errors.New("name, category, scenario and currentVersion are required")
@@ -1880,17 +1971,20 @@ func (repo *Repository) UpdateScale(ctx context.Context, input model.ScaleMutati
 		    category = ?,
 		    scenario = ?,
 		    age_range = ?,
+		    age_min_months = ?,
+		    age_max_months = ?,
 		    current_version = ?,
 		    item_count = ?,
 		    domain_count = ?,
 		    summary = ?,
+		    poster_url = ?,
 		    execution_entry = ?,
 		    api_package = ?,
 		    update_time = NOW()
 		WHERE id = ? AND del_flag = 0
-	`, name, category, scenario, strings.TrimSpace(input.AgeRange), currentVersion,
+	`, name, category, scenario, ageRange, ageMinMonths, ageMaxMonths, currentVersion,
 		itemCount, domainCount, strings.TrimSpace(input.Summary),
-		strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), *input.ID)
+		strings.TrimSpace(input.PosterURL), strings.TrimSpace(input.ExecutionEntry), strings.TrimSpace(input.APIPackage), *input.ID)
 	if err != nil {
 		return err
 	}

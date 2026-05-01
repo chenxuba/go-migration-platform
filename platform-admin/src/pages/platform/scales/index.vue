@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { UploadRequestOption } from 'ant-design-vue/es/vc-upload/interface'
 import type { TableColumnsType } from 'ant-design-vue'
 import {
   DeleteOutlined,
@@ -9,8 +10,10 @@ import {
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
+  UploadOutlined,
 } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
+import * as qiniu from 'qiniu-js'
 import { useRouter } from 'vue-router'
 import { listDictValuesApi } from '@/api/platform/dicts'
 import {
@@ -27,11 +30,12 @@ import {
   updateScaleAcknowledgementApi,
   updateScaleReferenceApi,
 } from '@/api/platform/scales'
+import { getQiniuToken } from '@/api/qiniu'
+import { resolveUploadErrorMessage, validateUploadFileByToken } from '@/utils/upload-limit'
 import messageService from '@/utils/messageService'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
 import { PlatformAccessEnum } from '~@/constants/access'
 
-type DetailTab = 'base' | 'auth'
 type ResourceKind = 'references' | 'acknowledgements'
 type LooseScaleRecord = ScaleRecord | Record<string, any>
 type ScaleFormMode = 'create' | 'edit'
@@ -43,13 +47,14 @@ const keyword = ref('')
 const appliedKeyword = ref('')
 const categoryFilter = ref('')
 const scenarioFilter = ref('')
-const activeDetailTab = ref<DetailTab>('base')
-const detailOpen = ref(false)
-const selectedScale = ref<ScaleRecord | null>(null)
+const authManageOpen = ref(false)
+const activeAuthScale = ref<ScaleRecord | null>(null)
 const scaleLoading = ref(false)
 const scaleFormOpen = ref(false)
 const scaleFormMode = ref<ScaleFormMode>('create')
 const scaleSaving = ref(false)
+const posterUploading = ref(false)
+const posterUploadProgress = ref(0)
 const referenceManageOpen = ref(false)
 const thanksManageOpen = ref(false)
 const activeResourceScale = ref<ScaleRecord | null>(null)
@@ -72,11 +77,11 @@ const scaleRecords = ref<ScaleRecord[]>([])
 const columns: TableColumnsType<ScaleRecord> = [
   { title: '量表信息', key: 'scale', width: 300, fixed: 'left' as const },
   { title: '分类 / 场景', key: 'meta', width: 170 },
-  { title: '当前版本', key: 'version', width: 170 },
-  { title: '题库', key: 'data', width: 130, align: 'center' as const },
-  { title: '授权机构', key: 'auth', width: 130, align: 'center' as const },
+  { title: '当前版本', key: 'version', width: 150 },
+  { title: '题库', key: 'data', width: 150 },
+  { title: '授权机构', key: 'auth', width: 150 },
   { title: '最近更新', key: 'updatedAt', width: 160 },
-  { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
+  { title: '操作', key: 'action', width: 190, fixed: 'right' as const },
 ]
 
 const scaleForm = reactive<ScaleMutationPayload>({
@@ -85,10 +90,13 @@ const scaleForm = reactive<ScaleMutationPayload>({
   category: '',
   scenario: '',
   ageRange: '',
+  ageMinMonths: 0,
+  ageMaxMonths: 0,
   currentVersion: '',
   itemCount: 0,
   domainCount: 0,
   summary: '',
+  posterUrl: '',
   executionEntry: '',
   apiPackage: '',
 })
@@ -143,10 +151,9 @@ function asScaleRecord(record: LooseScaleRecord) {
   return record as ScaleRecord
 }
 
-function openScaleDetail(record: LooseScaleRecord, tab: DetailTab = 'base') {
-  selectedScale.value = asScaleRecord(record)
-  activeDetailTab.value = tab
-  detailOpen.value = true
+function openAuthManage(record: LooseScaleRecord) {
+  activeAuthScale.value = asScaleRecord(record)
+  authManageOpen.value = true
 }
 
 function resetScaleForm() {
@@ -156,12 +163,16 @@ function resetScaleForm() {
   scaleForm.category = categoryFormOptions.value[0]?.value || ''
   scaleForm.scenario = scenarioFormOptions.value[0]?.value || ''
   scaleForm.ageRange = ''
+  scaleForm.ageMinMonths = 0
+  scaleForm.ageMaxMonths = 0
   scaleForm.currentVersion = ''
   scaleForm.itemCount = 0
   scaleForm.domainCount = 0
   scaleForm.summary = ''
+  scaleForm.posterUrl = ''
   scaleForm.executionEntry = ''
   scaleForm.apiPackage = ''
+  posterUploadProgress.value = 0
 }
 
 function openCreateScale() {
@@ -179,12 +190,16 @@ function openEditScale(record: LooseScaleRecord) {
   scaleForm.category = scale.category || ''
   scaleForm.scenario = scale.scenario || ''
   scaleForm.ageRange = scale.ageRange || ''
+  scaleForm.ageMinMonths = Number(scale.ageMinMonths || 0)
+  scaleForm.ageMaxMonths = Number(scale.ageMaxMonths || 0)
   scaleForm.currentVersion = scale.currentVersion || ''
   scaleForm.itemCount = Number(scale.itemCount || 0)
   scaleForm.domainCount = Number(scale.domainCount || 0)
   scaleForm.summary = scale.summary || ''
+  scaleForm.posterUrl = scale.posterUrl || ''
   scaleForm.executionEntry = scale.executionEntry || ''
   scaleForm.apiPackage = scale.apiPackage || ''
+  posterUploadProgress.value = 0
   scaleFormOpen.value = true
 }
 
@@ -201,6 +216,10 @@ function validateScaleForm() {
     return '请选择量表分类'
   if (!scaleForm.scenario)
     return '请选择使用场景'
+  if (Number(scaleForm.ageMinMonths) < 0 || Number(scaleForm.ageMaxMonths) < 0)
+    return '适用年龄不能小于0'
+  if (Number(scaleForm.ageMaxMonths) > 0 && Number(scaleForm.ageMinMonths) > Number(scaleForm.ageMaxMonths))
+    return '最小月龄不能大于最大月龄'
   if (!scaleForm.currentVersion.trim())
     return '请输入当前版本'
   if (Number(scaleForm.itemCount) < 0)
@@ -211,20 +230,121 @@ function validateScaleForm() {
 }
 
 function buildScalePayload() {
+  const ageMinMonths = Number(scaleForm.ageMinMonths || 0)
+  const ageMaxMonths = Number(scaleForm.ageMaxMonths || 0)
   return {
     id: scaleForm.id,
     name: scaleForm.name.trim(),
     code: String(scaleForm.code || '').trim(),
     category: scaleForm.category,
     scenario: scaleForm.scenario,
-    ageRange: scaleForm.ageRange.trim(),
+    ageRange: formatAgeRange(ageMinMonths, ageMaxMonths),
+    ageMinMonths,
+    ageMaxMonths,
     currentVersion: scaleForm.currentVersion.trim(),
     itemCount: Number(scaleForm.itemCount || 0),
     domainCount: Number(scaleForm.domainCount || 0),
     summary: String(scaleForm.summary || '').trim(),
+    posterUrl: String(scaleForm.posterUrl || '').trim(),
     executionEntry: String(scaleForm.executionEntry || '').trim(),
     apiPackage: String(scaleForm.apiPackage || '').trim(),
   }
+}
+
+function beforePosterUpload(file: File) {
+  if (!file.type?.startsWith('image/')) {
+    messageService.warning('宣传海报只能上传图片文件')
+    return false
+  }
+  if (file.size / 1024 / 1024 > 8) {
+    messageService.warning('宣传海报大小不能超过 8MB')
+    return false
+  }
+  return true
+}
+
+async function handlePosterUpload(options: UploadRequestOption) {
+  const rawFile = options.file as File
+  if (!rawFile || !beforePosterUpload(rawFile)) {
+    options.onError?.(new Error('invalid file'))
+    return
+  }
+
+  posterUploading.value = true
+  posterUploadProgress.value = 0
+  try {
+    const tokenRes: any = await getQiniuToken()
+    const { token, uuid, buckethostname } = tokenRes.result || {}
+    if (!token || !uuid || !buckethostname)
+      throw new Error(tokenRes?.message || '获取上传凭证失败')
+    validateUploadFileByToken(rawFile, tokenRes.result, '宣传海报')
+
+    const ext = rawFile.name.includes('.') ? rawFile.name.slice(rawFile.name.lastIndexOf('.')) : '.png'
+    const key = `scale/poster/${uuid}${ext}`
+    const observable = qiniu.upload(rawFile, key, token, {
+      fname: rawFile.name,
+      mimeType: rawFile.type,
+    }, {
+      useCdnDomain: true,
+      region: qiniu.region.z0,
+    })
+
+    observable.subscribe({
+      next(result) {
+        posterUploadProgress.value = Math.floor(result.total.percent)
+      },
+      error(error) {
+        console.error('upload scale poster failed', error)
+        messageService.error(resolveUploadErrorMessage(error, '宣传海报上传失败'))
+        posterUploading.value = false
+        posterUploadProgress.value = 0
+        options.onError?.(error)
+      },
+      complete(result) {
+        scaleForm.posterUrl = `${buckethostname}${result.key}`
+        posterUploading.value = false
+        posterUploadProgress.value = 100
+        messageService.success('宣传海报上传成功')
+        options.onSuccess?.(result as any)
+      },
+    })
+  }
+  catch (error: any) {
+    console.error('prepare scale poster upload failed', error)
+    messageService.error(resolveUploadErrorMessage(error, '宣传海报上传失败'))
+    posterUploading.value = false
+    posterUploadProgress.value = 0
+    options.onError?.(error)
+  }
+}
+
+function clearPosterUrl() {
+  scaleForm.posterUrl = ''
+  posterUploadProgress.value = 0
+}
+
+function formatAgeRange(minMonths: number, maxMonths: number) {
+  if (minMonths <= 0 && maxMonths <= 0)
+    return ''
+  if (maxMonths > 0 && minMonths > maxMonths)
+    [minMonths, maxMonths] = [maxMonths, minMonths]
+  if (maxMonths <= 0 || minMonths === maxMonths)
+    return formatAgeLabel(minMonths)
+  if (minMonths <= 0)
+    return `${formatAgeLabel(maxMonths)}以下`
+  return `${formatAgeLabel(minMonths)}-${formatAgeLabel(maxMonths)}`
+}
+
+function formatAgeLabel(months: number) {
+  if (months <= 0)
+    return '0岁'
+  const years = Math.floor(months / 12)
+  const remainMonths = months % 12
+  if (!remainMonths)
+    return `${years}岁`
+  if (!years)
+    return `${remainMonths}个月`
+  return `${years}.${remainMonths}岁`
 }
 
 async function submitScaleForm() {
@@ -459,8 +579,8 @@ async function loadScaleRecords() {
     if (activeResourceScale.value) {
       activeResourceScale.value = res.result.find(item => item.id === activeResourceScale.value?.id) || activeResourceScale.value
     }
-    if (selectedScale.value) {
-      selectedScale.value = res.result.find(item => item.id === selectedScale.value?.id) || selectedScale.value
+    if (activeAuthScale.value) {
+      activeAuthScale.value = res.result.find(item => item.id === activeAuthScale.value?.id) || activeAuthScale.value
     }
   }
   catch (error) {
@@ -577,7 +697,7 @@ onMounted(() => {
         :data-source="filteredScaleRecords"
         :loading="scaleLoading"
         :pagination="false"
-        :scroll="{ x: 1160 }"
+        :scroll="{ x: 1270 }"
         row-key="id"
         size="small"
       >
@@ -630,7 +750,7 @@ onMounted(() => {
           </template>
 
           <template v-else-if="column.key === 'data'">
-            <div class="metric-cell metric-cell--center">
+            <div class="metric-cell">
               <div class="metric-cell__value">
                 {{ record.itemCount }}题
               </div>
@@ -641,7 +761,7 @@ onMounted(() => {
           </template>
 
           <template v-else-if="column.key === 'auth'">
-            <div class="metric-cell metric-cell--center">
+            <div class="metric-cell">
               <div class="metric-cell__value">
                 {{ record.institutionCount }}
               </div>
@@ -664,15 +784,11 @@ onMounted(() => {
 
           <template v-else-if="column.key === 'action'">
             <div class="scale-actions scale-actions--text">
-              <a class="scale-actions__link" @click="openScaleDetail(record, 'base')">
-                详情
-              </a>
-
               <a v-if="hasAccess(PlatformAccessEnum.scaleManageEdit)" class="scale-actions__link" @click="openEditScale(record)">
                 编辑
               </a>
 
-              <a v-if="hasAccess(PlatformAccessEnum.scaleManageAuth)" class="scale-actions__link" @click="openScaleDetail(record, 'auth')">
+              <a v-if="hasAccess(PlatformAccessEnum.scaleManageAuth)" class="scale-actions__link" @click="openAuthManage(record)">
                 授权机构
               </a>
 
@@ -740,8 +856,24 @@ onMounted(() => {
             <a-select v-model:value="scaleForm.scenario" :options="scenarioFormOptions" placeholder="请选择使用场景" />
           </a-form-item>
 
-          <a-form-item label="适用年龄">
-            <a-input v-model:value="scaleForm.ageRange" :maxlength="60" placeholder="例如 2岁6个月 - 6岁" />
+          <a-form-item label="最小月龄 - 最大月龄">
+            <div class="scale-form__range">
+              <a-input-number
+                v-model:value="scaleForm.ageMinMonths"
+                :min="0"
+                :precision="0"
+                class="scale-form__number"
+                placeholder="例如 30"
+              />
+              <span class="scale-form__range-separator">-</span>
+              <a-input-number
+                v-model:value="scaleForm.ageMaxMonths"
+                :min="0"
+                :precision="0"
+                class="scale-form__number"
+                placeholder="例如 72"
+              />
+            </div>
           </a-form-item>
 
           <a-form-item label="当前版本" required>
@@ -758,18 +890,41 @@ onMounted(() => {
         </div>
 
         <a-form-item label="量表说明">
-          <a-textarea v-model:value="scaleForm.summary" :auto-size="{ minRows: 3, maxRows: 5 }" placeholder="用于量表详情展示的简短说明" />
+          <a-input v-model:value="scaleForm.summary" :maxlength="120" placeholder="用于量表详情展示的简短说明" />
         </a-form-item>
 
-        <div class="scale-form__grid">
-          <a-form-item label="执行入口">
-            <a-input v-model:value="scaleForm.executionEntry" :maxlength="160" placeholder="例如 机构端 /teacherCenter/assessment-calendar" />
-          </a-form-item>
+        <a-form-item label="宣传海报">
+          <div class="scale-poster-field">
+            <a-upload
+              :custom-request="handlePosterUpload"
+              :show-upload-list="false"
+              accept="image/*"
+              :disabled="posterUploading"
+            >
+              <div class="scale-poster-card">
+                <img v-if="scaleForm.posterUrl" :src="scaleForm.posterUrl" alt="宣传海报">
+                <div v-else class="scale-poster-card__empty">
+                  <UploadOutlined />
+                  <span>上传海报</span>
+                  <em>点击上传或替换图片</em>
+                </div>
+                <div v-if="posterUploading" class="scale-poster-card__mask">
+                  上传中 {{ posterUploadProgress }}%
+                </div>
+              </div>
+            </a-upload>
 
-          <a-form-item label="接口包">
-            <a-input v-model:value="scaleForm.apiPackage" :maxlength="160" placeholder="例如 /api/v1/assessments/pep3/*" />
-          </a-form-item>
-        </div>
+            <div class="scale-poster-field__hint-row">
+              <span>建议使用竖版图片，大小不超过 8MB。</span>
+              <a-button v-if="scaleForm.posterUrl" size="small" :disabled="posterUploading" @click="clearPosterUrl">
+                <template #icon>
+                  <DeleteOutlined />
+                </template>
+                清除
+              </a-button>
+            </div>
+          </div>
+        </a-form-item>
       </a-form>
 
       <template #footer>
@@ -785,90 +940,41 @@ onMounted(() => {
     </PlatformModalShell>
 
     <PlatformModalShell
-      v-model:open="detailOpen"
-      :title="selectedScale ? `${selectedScale.name} · 量表详情` : '量表详情'"
-      :width="1040"
+      v-model:open="authManageOpen"
+      :title="activeAuthScale ? `${activeAuthScale.name} · 授权机构` : '授权机构'"
+      :width="760"
       :scrollable="true"
-      modal-class="scale-detail-modal"
+      modal-class="scale-auth-modal"
     >
-      <template v-if="selectedScale">
-        <div class="detail-top">
-          <div>
-            <div class="detail-top__title">
-              {{ selectedScale.name }}
+      <template v-if="activeAuthScale">
+        <div class="auth-manage">
+          <div class="auth-manage__head">
+            <div>
+              <div class="auth-manage__title">
+                {{ activeAuthScale.name }}
+              </div>
+              <div class="auth-manage__meta">
+                {{ activeAuthScale.code }} · {{ activeAuthScale.currentVersion }}
+              </div>
             </div>
-            <div class="detail-top__sub">
-              {{ selectedScale.code }} · {{ selectedScale.category }} · {{ selectedScale.scenario }} · {{ selectedScale.ageRange }}
-            </div>
+            <a-tag color="green">
+              {{ activeAuthScale.institutionCount }} 家
+            </a-tag>
           </div>
 
-          <a-tag color="blue">
-            {{ selectedScale.currentVersion }}
-          </a-tag>
+          <a-table
+            :columns="[
+              { title: '机构名称', dataIndex: 'name', key: 'name' },
+              { title: '联系人', dataIndex: 'contact', key: 'contact', width: 160 },
+              { title: '授权状态', dataIndex: 'authState', key: 'authState', width: 120 },
+              { title: '到期时间', dataIndex: 'expireAt', key: 'expireAt', width: 130 },
+            ]"
+            :data-source="activeAuthScale.authInstitutions"
+            :pagination="false"
+            row-key="name"
+            size="small"
+          />
         </div>
-
-        <a-tabs v-model:activeKey="activeDetailTab" class="detail-tabs">
-          <a-tab-pane key="base" tab="基础信息">
-            <div class="detail-section">
-              <div class="detail-section__head">
-                <div class="detail-section__title">
-                  接入概览
-                </div>
-              </div>
-
-              <a-descriptions bordered size="small" :column="2">
-                <a-descriptions-item label="量表说明">
-                  {{ selectedScale.summary }}
-                </a-descriptions-item>
-                <a-descriptions-item label="当前版本">
-                  {{ selectedScale.currentVersion }}
-                </a-descriptions-item>
-                <a-descriptions-item label="题库 / 维度">
-                  {{ selectedScale.itemCount }} 题 / {{ selectedScale.domainCount }} 个维度
-                </a-descriptions-item>
-                <a-descriptions-item label="适用年龄">
-                  {{ selectedScale.ageRange }}
-                </a-descriptions-item>
-                <a-descriptions-item label="执行入口">
-                  {{ selectedScale.executionEntry }}
-                </a-descriptions-item>
-                <a-descriptions-item label="接口包">
-                  {{ selectedScale.apiPackage }}
-                </a-descriptions-item>
-                <a-descriptions-item label="数据状态">
-                  {{ selectedScale.dataStatus }}
-                </a-descriptions-item>
-              </a-descriptions>
-            </div>
-          </a-tab-pane>
-
-          <a-tab-pane v-if="hasAccess(PlatformAccessEnum.scaleManageAuth)" key="auth" tab="机构授权">
-            <div class="detail-section">
-              <div class="detail-section__head">
-                <div class="detail-section__title">
-                  授权机构
-                </div>
-                <a-tag color="green">
-                  {{ selectedScale.institutionCount }} 家
-                </a-tag>
-              </div>
-
-              <a-table
-                :columns="[
-                  { title: '机构名称', dataIndex: 'name', key: 'name' },
-                  { title: '联系人', dataIndex: 'contact', key: 'contact', width: 180 },
-                  { title: '授权状态', dataIndex: 'authState', key: 'authState', width: 120 },
-                  { title: '到期时间', dataIndex: 'expireAt', key: 'expireAt', width: 130 },
-                ]"
-                :data-source="selectedScale.authInstitutions"
-                :pagination="false"
-                row-key="name"
-                size="small"
-              />
-            </div>
-          </a-tab-pane>
-
-        </a-tabs>
       </template>
     </PlatformModalShell>
 
@@ -1351,10 +1457,6 @@ onMounted(() => {
   flex-direction: column;
 }
 
-.metric-cell--center {
-  align-items: center;
-}
-
 .metric-cell__value {
   color: #262626;
   font-size: 13px;
@@ -1373,7 +1475,7 @@ onMounted(() => {
   align-items: center;
   gap: 8px;
   padding-right: 4px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   white-space: nowrap;
 }
 
@@ -1429,8 +1531,100 @@ onMounted(() => {
   gap: 0 16px;
 }
 
+.scale-form__range {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr);
+  gap: 6px;
+  align-items: center;
+}
+
+.scale-form__range-separator {
+  color: #8c8c8c;
+  text-align: center;
+  line-height: 32px;
+}
+
 .scale-form__number {
   width: 100%;
+}
+
+.scale-poster-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+
+  :deep(.ant-upload-wrapper),
+  :deep(.ant-upload) {
+    display: block;
+    width: 100%;
+    line-height: 0;
+  }
+}
+
+.scale-poster-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 220px;
+  overflow: hidden;
+  border: 1px dashed #d9d9d9;
+  border-radius: 8px;
+  background: #fafafa;
+  cursor: pointer;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+  }
+}
+
+.scale-poster-card__empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  color: #8c8c8c;
+  font-size: 13px;
+  line-height: 18px;
+
+  .anticon {
+    color: var(--pro-ant-color-primary, #1677ff);
+    font-size: 20px;
+  }
+
+  em {
+    color: #bfbfbf;
+    font-size: 12px;
+    font-style: normal;
+    line-height: 18px;
+  }
+}
+
+.scale-poster-card__mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 13px;
+  line-height: 18px;
+  background: rgba(0, 0, 0, 0.46);
+}
+
+.scale-poster-field__hint-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 20px;
 }
 
 .scale-modal-footer {
@@ -1439,56 +1633,35 @@ onMounted(() => {
   gap: 8px;
 }
 
-.detail-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-
-.detail-top__title {
-  color: #1f2329;
-  font-size: 18px;
-  font-weight: 700;
-  line-height: 28px;
-}
-
-.detail-top__sub {
-  margin-top: 4px;
-  color: #667085;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.detail-tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 12px;
-}
-
-.detail-section {
+.auth-manage {
   display: flex;
   flex-direction: column;
   gap: 14px;
 }
 
-.detail-section__group {
+.auth-manage__head {
   display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-.detail-section__head {
-  display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid #e6edf7;
+  border-radius: 8px;
+  background: #fbfcfe;
 }
 
-.detail-section__title {
+.auth-manage__title {
   color: #1f2329;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 700;
-  line-height: 22px;
+  line-height: 24px;
+}
+
+.auth-manage__meta {
+  margin-top: 2px;
+  color: #8c8c8c;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .resource-manage {
@@ -1748,6 +1921,14 @@ onMounted(() => {
 
   .scale-form__grid {
     grid-template-columns: 1fr;
+  }
+
+  .scale-poster-field {
+    grid-template-columns: 1fr;
+  }
+
+  .scale-poster-card {
+    height: 180px;
   }
 
   .resource-hero {

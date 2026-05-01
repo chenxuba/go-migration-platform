@@ -81,7 +81,7 @@ const filteredScales = computed(() => {
       return false
     if (statusFilter.value && item.status !== statusFilter.value)
       return false
-    if (ageScope.value !== 'all' && !ageRangeMatches(item.ageRange, ageScope.value))
+    if (ageScope.value !== 'all' && !ageRangeMatches(item.ageMinMonths, item.ageMaxMonths, ageScope.value))
       return false
     if (durationScope.value && !durationMatches(item.durationMinMinutes, item.durationMaxMinutes, durationScope.value))
       return false
@@ -136,18 +136,26 @@ function tagClass(index: number) {
   return ['tag-blue', 'tag-green', 'tag-purple'][index % 3]
 }
 
-function ageRangeMatches(ageRange: string, scope: string) {
+function ageRangeMatches(minMonths: number, maxMonths: number, scope: string) {
+  let min = Number(minMonths || 0)
+  let max = Number(maxMonths || 0)
+  if (min <= 0 && max <= 0)
+    return false
+  if (max <= 0)
+    max = min
+  if (min <= 0)
+    min = max
   if (!scope || scope === 'all')
     return true
   if (scope === '0-2')
-    return /0|1|2/.test(ageRange)
+    return max >= 0 && min <= 24
   if (scope === '2-6')
-    return /2|3|4|5|6/.test(ageRange)
+    return max >= 24 && min <= 72
   if (scope === '6-12')
-    return /6|7|8|9|10|11|12/.test(ageRange)
+    return max > 72 && min <= 144
   if (scope === '12+')
-    return /12|以上/.test(ageRange)
-  return ageRange.includes(scope)
+    return max >= 144
+  return false
 }
 
 function durationMatches(minMinutes: number, maxMinutes: number, scope: string) {
@@ -486,7 +494,7 @@ onMounted(fetchScaleLibrary)
       :body-style="{ maxHeight: 'calc(100vh - 150px)', overflowY: 'auto', padding: '16px' }"
     >
       <div v-if="activeScale" class="scale-intro-preview">
-        <img :src="scaleIntroImage" alt="PEP-3 量表介绍">
+        <img :src="activeScale.posterUrl || scaleIntroImage" alt="量表介绍">
       </div>
     </a-modal>
   </div>

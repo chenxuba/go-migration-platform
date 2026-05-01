@@ -1153,6 +1153,12 @@ func validateScaleMutation(input model.ScaleMutation, requireCode bool) string {
 	if strings.TrimSpace(input.CurrentVersion) == "" {
 		return "currentVersion is required"
 	}
+	if input.AgeMinMonths == nil || input.AgeMaxMonths == nil || *input.AgeMinMonths < 0 || *input.AgeMaxMonths < 0 {
+		return "ageMinMonths and ageMaxMonths are required"
+	}
+	if *input.AgeMaxMonths > 0 && *input.AgeMinMonths > *input.AgeMaxMonths {
+		return "ageMinMonths must be less than or equal to ageMaxMonths"
+	}
 	if input.ItemCount == nil || *input.ItemCount < 0 {
 		return "itemCount is required"
 	}

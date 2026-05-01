@@ -23,6 +23,8 @@ type ScaleLibraryItem struct {
 	Category           string                     `json:"category"`
 	Scenario           string                     `json:"scenario"`
 	AgeRange           string                     `json:"ageRange"`
+	AgeMinMonths       int                        `json:"ageMinMonths"`
+	AgeMaxMonths       int                        `json:"ageMaxMonths"`
 	Duration           string                     `json:"duration"`
 	DurationMinMinutes int                        `json:"durationMinMinutes"`
 	DurationMaxMinutes int                        `json:"durationMaxMinutes"`
@@ -38,6 +40,7 @@ type ScaleLibraryItem struct {
 	StatusText         string                     `json:"statusText"`
 	UpdatedAt          string                     `json:"updatedAt"`
 	Summary            string                     `json:"summary"`
+	PosterURL          string                     `json:"posterUrl"`
 	ExecutionEntry     string                     `json:"executionEntry"`
 	APIPackage         string                     `json:"apiPackage"`
 	References         []ScaleLibraryTextResource `json:"references"`

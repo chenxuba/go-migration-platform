@@ -1,3 +1,35 @@
+SET @has_age_min_months := (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'sys_scale'
+    AND COLUMN_NAME = 'age_min_months'
+);
+SET @ddl_age_min_months := IF(
+  @has_age_min_months = 0,
+  'ALTER TABLE sys_scale ADD COLUMN age_min_months INT NOT NULL DEFAULT 0 AFTER age_range',
+  'SELECT 1'
+);
+PREPARE stmt FROM @ddl_age_min_months;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
+SET @has_age_max_months := (
+  SELECT COUNT(*)
+  FROM information_schema.COLUMNS
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'sys_scale'
+    AND COLUMN_NAME = 'age_max_months'
+);
+SET @ddl_age_max_months := IF(
+  @has_age_max_months = 0,
+  'ALTER TABLE sys_scale ADD COLUMN age_max_months INT NOT NULL DEFAULT 0 AFTER age_min_months',
+  'SELECT 1'
+);
+PREPARE stmt FROM @ddl_age_max_months;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 SET @has_estimated_duration := (
   SELECT COUNT(*)
   FROM information_schema.COLUMNS
@@ -47,7 +79,10 @@ EXECUTE stmt;
 DEALLOCATE PREPARE stmt;
 
 UPDATE sys_scale
-SET estimated_duration = '45-90分钟',
+SET age_range = '2.6岁-6岁',
+    age_min_months = 30,
+    age_max_months = 72,
+    estimated_duration = '45-90分钟',
     duration_min_minutes = 45,
     duration_max_minutes = 90,
     update_time = NOW()

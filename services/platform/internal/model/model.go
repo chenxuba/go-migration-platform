@@ -65,6 +65,8 @@ type ScaleRecord struct {
 	Category           string                `json:"category"`
 	Scenario           string                `json:"scenario"`
 	AgeRange           string                `json:"ageRange"`
+	AgeMinMonths       int                   `json:"ageMinMonths"`
+	AgeMaxMonths       int                   `json:"ageMaxMonths"`
 	Duration           string                `json:"duration"`
 	DurationMinMinutes int                   `json:"durationMinMinutes"`
 	DurationMaxMinutes int                   `json:"durationMaxMinutes"`
@@ -76,6 +78,7 @@ type ScaleRecord struct {
 	DataStatus         string                `json:"dataStatus"`
 	UpdatedAt          string                `json:"updatedAt"`
 	Summary            string                `json:"summary"`
+	PosterURL          string                `json:"posterUrl"`
 	ExecutionEntry     string                `json:"executionEntry"`
 	APIPackage         string                `json:"apiPackage"`
 	References         []ScaleTextResource   `json:"references"`
@@ -90,10 +93,13 @@ type ScaleMutation struct {
 	Category       string `json:"category"`
 	Scenario       string `json:"scenario"`
 	AgeRange       string `json:"ageRange"`
+	AgeMinMonths   *int   `json:"ageMinMonths"`
+	AgeMaxMonths   *int   `json:"ageMaxMonths"`
 	CurrentVersion string `json:"currentVersion"`
 	ItemCount      *int   `json:"itemCount"`
 	DomainCount    *int   `json:"domainCount"`
 	Summary        string `json:"summary"`
+	PosterURL      string `json:"posterUrl"`
 	ExecutionEntry string `json:"executionEntry"`
 	APIPackage     string `json:"apiPackage"`
 }

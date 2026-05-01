@@ -16,6 +16,8 @@ export interface ScaleLibraryItem {
   category: string
   scenario: string
   ageRange: string
+  ageMinMonths: number
+  ageMaxMonths: number
   duration: string
   durationMinMinutes: number
   durationMaxMinutes: number
@@ -31,6 +33,7 @@ export interface ScaleLibraryItem {
   statusText: string
   updatedAt: string
   summary: string
+  posterUrl: string
   executionEntry: string
   apiPackage: string
   references: ScaleLibraryTextResource[]

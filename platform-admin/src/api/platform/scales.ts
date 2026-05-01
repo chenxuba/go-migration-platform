@@ -19,6 +19,8 @@ export interface ScaleRecord {
   category: string
   scenario: string
   ageRange: string
+  ageMinMonths: number
+  ageMaxMonths: number
   duration: string
   durationMinMinutes: number
   durationMaxMinutes: number
@@ -30,6 +32,7 @@ export interface ScaleRecord {
   dataStatus: string
   updatedAt: string
   summary: string
+  posterUrl: string
   executionEntry: string
   apiPackage: string
   references: ScaleTextResourceItem[]
@@ -132,10 +135,13 @@ export interface ScaleMutationPayload {
   category: string
   scenario: string
   ageRange: string
+  ageMinMonths: number
+  ageMaxMonths: number
   currentVersion: string
   itemCount: number
   domainCount: number
   summary?: string
+  posterUrl?: string
   executionEntry?: string
   apiPackage?: string
 }

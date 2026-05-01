@@ -15,11 +15,25 @@ func (repo *Repository) ensureScaleLibrarySchema(ctx context.Context) error {
 	if !exists {
 		return nil
 	}
-	return ensureColumnsOnTable(ctx, repo.db, "sys_scale", map[string]string{
+	if err := ensureColumnsOnTable(ctx, repo.db, "sys_scale", map[string]string{
+		"age_min_months":       "age_min_months INT NOT NULL DEFAULT 0 AFTER age_range",
+		"age_max_months":       "age_max_months INT NOT NULL DEFAULT 0 AFTER age_min_months",
 		"estimated_duration":   "estimated_duration VARCHAR(64) NOT NULL DEFAULT '' AFTER age_range",
 		"duration_min_minutes": "duration_min_minutes INT NOT NULL DEFAULT 0 AFTER estimated_duration",
 		"duration_max_minutes": "duration_max_minutes INT NOT NULL DEFAULT 0 AFTER duration_min_minutes",
-	})
+		"poster_url":           "poster_url VARCHAR(500) DEFAULT NULL AFTER summary",
+	}); err != nil {
+		return err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET age_range = '2.6岁-6岁',
+		    age_min_months = 30,
+		    age_max_months = 72
+		WHERE scale_code = 'PEP3' AND del_flag = 0
+		  AND (IFNULL(age_min_months, 0) = 0 OR IFNULL(age_max_months, 0) = 0)
+	`)
+	return err
 }
 
 func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID int64, query model.ScaleLibraryQuery) ([]model.ScaleLibraryItem, error) {
@@ -50,6 +64,8 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 			s.category,
 			s.scenario,
 			s.age_range,
+			IFNULL(s.age_min_months, 0),
+			IFNULL(s.age_max_months, 0),
 			IFNULL(s.estimated_duration, ''),
 			IFNULL(s.duration_min_minutes, 0),
 			IFNULL(s.duration_max_minutes, 0),
@@ -64,6 +80,7 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 			IFNULL(s.data_status, ''),
 			IFNULL(DATE_FORMAT(s.update_time, '%Y-%m-%d %H:%i:%s'), ''),
 			IFNULL(s.summary, ''),
+			IFNULL(s.poster_url, ''),
 			IFNULL(s.execution_entry, ''),
 			IFNULL(s.api_package, '')
 		FROM sys_scale s
@@ -101,6 +118,8 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 			&item.Category,
 			&item.Scenario,
 			&item.AgeRange,
+			&item.AgeMinMonths,
+			&item.AgeMaxMonths,
 			&item.Duration,
 			&item.DurationMinMinutes,
 			&item.DurationMaxMinutes,
@@ -115,6 +134,7 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 			&item.DataStatus,
 			&item.UpdatedAt,
 			&item.Summary,
+			&item.PosterURL,
 			&item.ExecutionEntry,
 			&item.APIPackage,
 		); err != nil {
@@ -160,7 +180,7 @@ func filterScaleLibraryItems(items []model.ScaleLibraryItem, query model.ScaleLi
 		if status != "" && item.Status != status {
 			continue
 		}
-		if ageScope != "" && !scaleLibraryAgeRangeMatches(item.AgeRange, ageScope) {
+		if ageScope != "" && !scaleLibraryAgeRangeMatches(item.AgeMinMonths, item.AgeMaxMonths, ageScope) {
 			continue
 		}
 		if duration != "" && !scaleLibraryDurationMatches(item.DurationMinMinutes, item.DurationMaxMinutes, duration) {
@@ -171,21 +191,29 @@ func filterScaleLibraryItems(items []model.ScaleLibraryItem, query model.ScaleLi
 	return out
 }
 
-func scaleLibraryAgeRangeMatches(ageRange, ageScope string) bool {
-	ageRange = strings.TrimSpace(ageRange)
+func scaleLibraryAgeRangeMatches(minMonths, maxMonths int, ageScope string) bool {
+	if minMonths <= 0 && maxMonths <= 0 {
+		return false
+	}
+	if maxMonths <= 0 {
+		maxMonths = minMonths
+	}
+	if minMonths <= 0 {
+		minMonths = maxMonths
+	}
 	switch strings.TrimSpace(ageScope) {
 	case "", "all":
 		return true
 	case "0-2":
-		return strings.Contains(ageRange, "0") || strings.Contains(ageRange, "1") || strings.Contains(ageRange, "2")
+		return maxMonths >= 0 && minMonths <= 24
 	case "2-6":
-		return strings.Contains(ageRange, "2") || strings.Contains(ageRange, "3") || strings.Contains(ageRange, "4") || strings.Contains(ageRange, "5") || strings.Contains(ageRange, "6")
+		return maxMonths >= 24 && minMonths <= 72
 	case "6-12":
-		return strings.Contains(ageRange, "6") || strings.Contains(ageRange, "7") || strings.Contains(ageRange, "8") || strings.Contains(ageRange, "9") || strings.Contains(ageRange, "10") || strings.Contains(ageRange, "11") || strings.Contains(ageRange, "12")
+		return maxMonths > 72 && minMonths <= 144
 	case "12+":
-		return strings.Contains(ageRange, "12") || strings.Contains(ageRange, "以上")
+		return maxMonths >= 144
 	default:
-		return strings.Contains(ageRange, ageScope)
+		return false
 	}
 }
 
