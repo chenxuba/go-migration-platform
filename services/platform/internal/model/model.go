@@ -95,6 +95,85 @@ type ScaleMutation struct {
 	APIPackage     string `json:"apiPackage"`
 }
 
+type ScaleQuestionBank struct {
+	ScaleCode    string                    `json:"scaleCode"`
+	ScaleVersion string                    `json:"scaleVersion"`
+	DataStatus   string                    `json:"dataStatus"`
+	ItemCount    int                       `json:"itemCount"`
+	DomainCount  int                       `json:"domainCount"`
+	Domains      []ScaleQuestionBankDomain `json:"domains"`
+	Items        []ScaleQuestionBankItem   `json:"items"`
+	SourceTables []string                  `json:"sourceTables"`
+}
+
+type ScaleQuestionBankDomain struct {
+	ScaleCode            string `json:"scaleCode"`
+	ScaleName            string `json:"scaleName"`
+	Category             string `json:"category"`
+	ItemCount            *int   `json:"itemCount,omitempty"`
+	MaxRawScore          *int   `json:"maxRawScore,omitempty"`
+	ItemNumbers          []int  `json:"itemNumbers,omitempty"`
+	IsDevelopmentSubtest bool   `json:"isDevelopmentSubtest,omitempty"`
+	IsBehaviorSubtest    bool   `json:"isBehaviorSubtest,omitempty"`
+	IsCaregiverReport    bool   `json:"isCaregiverReport,omitempty"`
+	CompositeCode        string `json:"compositeCode,omitempty"`
+}
+
+type ScaleQuestionBankItem struct {
+	ItemNo          int                            `json:"itemNo"`
+	ItemTitle       string                         `json:"itemTitle"`
+	TestItem        string                         `json:"testItem"`
+	Materials       string                         `json:"materials"`
+	Method          string                         `json:"method"`
+	DomainCode      string                         `json:"domainCode"`
+	DomainName      string                         `json:"domainName"`
+	Standard        string                         `json:"standard"`
+	ScoreOptions    []ScaleQuestionBankScoreOption `json:"scoreOptions"`
+	ScoreOptionText string                         `json:"scoreOptionText"`
+	RecordFields    []ScaleQuestionBankRecordField `json:"recordFields"`
+	SourcePDF       string                         `json:"sourcePdf"`
+	SourcePages     []int                          `json:"sourcePages"`
+	OCRStatus       string                         `json:"ocrStatus"`
+	UpdatedAt       string                         `json:"updatedAt"`
+}
+
+type ScaleQuestionBankScoreOption struct {
+	Value       int    `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+type ScaleQuestionBankRecordField struct {
+	Key         string                               `json:"key"`
+	Label       string                               `json:"label"`
+	FieldType   string                               `json:"fieldType"`
+	DisplayType string                               `json:"displayType,omitempty"`
+	Required    bool                                 `json:"required,omitempty"`
+	Placeholder string                               `json:"placeholder,omitempty"`
+	Options     []ScaleQuestionBankRecordFieldOption `json:"options,omitempty"`
+}
+
+type ScaleQuestionBankRecordFieldOption struct {
+	Value string `json:"value"`
+	Label string `json:"label"`
+}
+
+type ScaleQuestionBankItemMutation struct {
+	ScaleCode       string                         `json:"scaleCode"`
+	ScaleVersion    string                         `json:"scaleVersion"`
+	ItemNo          int                            `json:"itemNo"`
+	ItemTitle       string                         `json:"itemTitle"`
+	TestItem        string                         `json:"testItem"`
+	Materials       string                         `json:"materials"`
+	Method          string                         `json:"method"`
+	DomainCode      string                         `json:"domainCode"`
+	DomainName      string                         `json:"domainName"`
+	Standard        string                         `json:"standard"`
+	ScoreOptions    []ScaleQuestionBankScoreOption `json:"scoreOptions"`
+	ScoreOptionText string                         `json:"scoreOptionText"`
+	RecordFields    []ScaleQuestionBankRecordField `json:"recordFields"`
+}
+
 type Notice struct {
 	ID         int64     `json:"id"`
 	Title      string    `json:"title"`

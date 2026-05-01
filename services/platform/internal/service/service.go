@@ -298,6 +298,14 @@ func (svc *Service) ListScales(keyword, category, scenario string) ([]model.Scal
 	return svc.repo.ListScales(context.Background(), keyword, category, scenario)
 }
 
+func (svc *Service) GetScaleQuestionBank(scaleCode, scaleVersion string) (model.ScaleQuestionBank, error) {
+	return svc.repo.GetScaleQuestionBank(context.Background(), scaleCode, scaleVersion)
+}
+
+func (svc *Service) UpdateScaleQuestionBankItem(input model.ScaleQuestionBankItemMutation) error {
+	return svc.repo.UpdateScaleQuestionBankItem(context.Background(), input)
+}
+
 func (svc *Service) CreateScale(input model.ScaleMutation) (int64, error) {
 	return svc.repo.CreateScale(context.Background(), input)
 }

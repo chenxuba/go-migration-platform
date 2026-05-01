@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
 import {
-  BookOutlined,
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
@@ -12,6 +11,7 @@ import {
   SearchOutlined,
 } from '@ant-design/icons-vue'
 import { computed, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import { listDictValuesApi } from '@/api/platform/dicts'
 import {
   createScaleApi,
@@ -29,7 +29,6 @@ import {
 } from '@/api/platform/scales'
 import messageService from '@/utils/messageService'
 import PlatformModalShell from '../shared/platform-modal-shell.vue'
-import { pep3StaticQuestionBankPages } from './pep3-static-question-bank'
 import { PlatformAccessEnum } from '~@/constants/access'
 
 type DetailTab = 'base' | 'auth'
@@ -38,6 +37,7 @@ type LooseScaleRecord = ScaleRecord | Record<string, any>
 type ScaleFormMode = 'create' | 'edit'
 
 const { hasAccess } = useAccess()
+const router = useRouter()
 
 const keyword = ref('')
 const appliedKeyword = ref('')
@@ -52,9 +52,6 @@ const scaleFormMode = ref<ScaleFormMode>('create')
 const scaleSaving = ref(false)
 const referenceManageOpen = ref(false)
 const thanksManageOpen = ref(false)
-const questionBankOpen = ref(false)
-const activeQuestionBankScale = ref<ScaleRecord | null>(null)
-const activeQuestionBankPage = ref<'P1' | 'P3'>('P1')
 const activeResourceScale = ref<ScaleRecord | null>(null)
 const resourceFormKind = ref<ResourceKind | null>(null)
 const resourceFormId = ref<number | null>(null)
@@ -79,16 +76,7 @@ const columns: TableColumnsType<ScaleRecord> = [
   { title: '题库', key: 'data', width: 130, align: 'center' as const },
   { title: '授权机构', key: 'auth', width: 130, align: 'center' as const },
   { title: '最近更新', key: 'updatedAt', width: 160 },
-  { title: '操作', key: 'action', width: 230, fixed: 'right' as const },
-]
-
-const questionBankColumns: TableColumnsType<any> = [
-  { title: '题号', dataIndex: 'itemNo', key: 'itemNo', width: 74, align: 'center' as const },
-  { title: '分量表', dataIndex: 'domainName', key: 'domainName', width: 150 },
-  { title: '测试项目', dataIndex: 'title', key: 'title', width: 220 },
-  { title: '材料', dataIndex: 'materials', key: 'materials', width: 210 },
-  { title: '评分', dataIndex: 'scoring', key: 'scoring' },
-  { title: '来源页', key: 'sourcePages', width: 92, align: 'center' as const },
+  { title: '操作', key: 'action', width: 180, fixed: 'right' as const },
 ]
 
 const scaleForm = reactive<ScaleMutationPayload>({
@@ -139,9 +127,6 @@ const summaryCards = computed(() => {
 const scaleFormTitle = computed(() => scaleFormMode.value === 'create' ? '新增量表' : '编辑量表')
 const categoryFormOptions = computed(() => categoryOptions.value.filter(item => item.value))
 const scenarioFormOptions = computed(() => scenarioOptions.value.filter(item => item.value))
-const currentQuestionBankPage = computed(() => {
-  return pep3StaticQuestionBankPages.find(item => item.key === activeQuestionBankPage.value) || pep3StaticQuestionBankPages[0]
-})
 
 function formatDateOnly(value: string) {
   return value?.slice(0, 10) || '--'
@@ -272,15 +257,16 @@ async function submitScaleForm() {
   }
 }
 
-function openQuestionBank(record: LooseScaleRecord) {
+function openQuestionBankPage(record: LooseScaleRecord) {
   const scale = asScaleRecord(record)
-  if (scale.code !== 'PEP3') {
-    messageService.info('该量表题库布局暂未接入')
-    return
-  }
-  activeQuestionBankScale.value = scale
-  activeQuestionBankPage.value = 'P1'
-  questionBankOpen.value = true
+  router.push({
+    name: 'PlatformScaleQuestionBank',
+    query: {
+      scaleCode: scale.code,
+      scaleVersion: scale.currentVersion,
+      scaleId: String(scale.id),
+    },
+  })
 }
 
 function handleSearch() {
@@ -591,7 +577,7 @@ onMounted(() => {
         :data-source="filteredScaleRecords"
         :loading="scaleLoading"
         :pagination="false"
-        :scroll="{ x: 1250 }"
+        :scroll="{ x: 1160 }"
         row-key="id"
         size="small"
       >
@@ -603,7 +589,15 @@ onMounted(() => {
                   <template #title>
                     {{ record.name }}
                   </template>
-                  <div class="scale-cell__name">
+                  <button
+                    v-if="hasAccess(PlatformAccessEnum.scaleManageQuestionBank)"
+                    type="button"
+                    class="scale-cell__name scale-cell__name-button"
+                    @click="openQuestionBankPage(record)"
+                  >
+                    {{ record.name }}
+                  </button>
+                  <div v-else class="scale-cell__name">
                     {{ record.name }}
                   </div>
                 </a-tooltip>
@@ -676,10 +670,6 @@ onMounted(() => {
 
               <a v-if="hasAccess(PlatformAccessEnum.scaleManageEdit)" class="scale-actions__link" @click="openEditScale(record)">
                 编辑
-              </a>
-
-              <a v-if="hasAccess(PlatformAccessEnum.scaleManageQuestionBank)" class="scale-actions__link" @click="openQuestionBank(record)">
-                题库
               </a>
 
               <a v-if="hasAccess(PlatformAccessEnum.scaleManageAuth)" class="scale-actions__link" @click="openScaleDetail(record, 'auth')">
@@ -790,112 +780,6 @@ onMounted(() => {
           <a-button type="primary" :loading="scaleSaving" @click="submitScaleForm">
             保存
           </a-button>
-        </div>
-      </template>
-    </PlatformModalShell>
-
-    <PlatformModalShell
-      v-model:open="questionBankOpen"
-      :title="activeQuestionBankScale ? `${activeQuestionBankScale.name} · 题库管理` : '题库管理'"
-      :width="1120"
-      :scrollable="true"
-      modal-class="scale-question-bank-modal"
-    >
-      <template v-if="activeQuestionBankScale && currentQuestionBankPage">
-        <div class="question-bank">
-          <div class="question-bank__top">
-            <div class="question-bank__icon">
-              <BookOutlined />
-            </div>
-            <div class="question-bank__info">
-              <div class="question-bank__meta">
-                <span>{{ activeQuestionBankScale.code }}</span>
-                <span>{{ activeQuestionBankScale.currentVersion }}</span>
-                <span>{{ activeQuestionBankScale.itemCount }}题</span>
-              </div>
-              <div class="question-bank__title">
-                PEP-3 静态题库
-              </div>
-            </div>
-          </div>
-
-          <a-tabs v-model:activeKey="activeQuestionBankPage" class="question-bank__tabs">
-            <a-tab-pane v-for="page in pep3StaticQuestionBankPages" :key="page.key" :tab="page.key">
-              <div class="question-bank__summary">
-                <div>
-                  <span>题目范围</span>
-                  <strong>{{ page.itemRange }}</strong>
-                </div>
-                <div>
-                  <span>题目数量</span>
-                  <strong>{{ page.items.length }}</strong>
-                </div>
-                <div>
-                  <span>布局</span>
-                  <strong>{{ page.layout }}</strong>
-                </div>
-              </div>
-
-              <div class="question-bank__page-head">
-                <div>
-                  <div class="question-bank__page-title">
-                    {{ page.title }}
-                  </div>
-                  <div class="question-bank__page-subtitle">
-                    {{ page.subtitle }}
-                  </div>
-                </div>
-              </div>
-
-              <a-table
-                class="question-bank__table"
-                :columns="questionBankColumns"
-                :data-source="page.items"
-                :pagination="false"
-                :scroll="{ x: 980 }"
-                row-key="itemNo"
-                size="small"
-              >
-                <template #bodyCell="{ column, record }">
-                  <template v-if="column.key === 'itemNo'">
-                    <span class="question-bank__item-no">{{ record.itemNo }}</span>
-                  </template>
-                  <template v-else-if="column.key === 'domainName'">
-                    <div class="question-bank__domain">
-                      <span>{{ record.domainCode }}</span>
-                      <em>{{ record.domainName }}</em>
-                    </div>
-                  </template>
-                  <template v-else-if="column.key === 'title'">
-                    <div class="question-bank__item-title">
-                      {{ record.title }}
-                    </div>
-                  </template>
-                  <template v-else-if="column.key === 'scoring'">
-                    <div class="question-bank__scoring">
-                      {{ record.scoring }}
-                    </div>
-                  </template>
-                  <template v-else-if="column.key === 'sourcePages'">
-                    {{ record.sourcePages.join('、') }}
-                  </template>
-                </template>
-
-                <template #expandedRowRender="{ record }">
-                  <div class="question-bank__expanded">
-                    <div>
-                      <span>施测方法</span>
-                      <p>{{ record.method }}</p>
-                    </div>
-                    <div>
-                      <span>材料</span>
-                      <p>{{ record.materials }}</p>
-                    </div>
-                  </div>
-                </template>
-              </a-table>
-            </a-tab-pane>
-          </a-tabs>
         </div>
       </template>
     </PlatformModalShell>
@@ -1415,6 +1299,21 @@ onMounted(() => {
   white-space: nowrap;
 }
 
+.scale-cell__name-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.16s ease;
+}
+
+.scale-cell__name-button:hover {
+  color: #1677ff;
+}
+
 .scale-cell__meta {
   display: flex;
   align-items: center;
@@ -1538,202 +1437,6 @@ onMounted(() => {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-}
-
-.question-bank {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
-
-.question-bank__top {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 16px;
-  border: 1px solid #e6edf7;
-  border-radius: 10px;
-  background: #fbfcfe;
-}
-
-.question-bank__icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  color: #1677ff;
-  background: #eef4ff;
-  font-size: 18px;
-}
-
-.question-bank__info {
-  min-width: 0;
-}
-
-.question-bank__meta {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.question-bank__meta span + span::before {
-  content: '·';
-  margin-right: 8px;
-  color: #c8cdd6;
-}
-
-.question-bank__title {
-  margin-top: 2px;
-  color: #1f2329;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 24px;
-}
-
-.question-bank__tabs :deep(.ant-tabs-nav) {
-  margin-bottom: 12px;
-}
-
-.question-bank__summary {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  overflow: hidden;
-  margin-bottom: 12px;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  background: #fff;
-}
-
-.question-bank__summary > div {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-  min-height: 38px;
-  padding: 8px 14px;
-  border-right: 1px solid #edf0f5;
-}
-
-.question-bank__summary > div:last-child {
-  border-right: 0;
-}
-
-.question-bank__summary span {
-  color: #8c8c8c;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.question-bank__summary strong {
-  color: #1f2329;
-  font-size: 14px;
-  line-height: 22px;
-}
-
-.question-bank__page-head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.question-bank__page-title {
-  color: #1f2329;
-  font-size: 14px;
-  font-weight: 700;
-  line-height: 22px;
-}
-
-.question-bank__page-subtitle {
-  color: #667085;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.question-bank__table :deep(.ant-table-thead > tr > th) {
-  background: #fafafa !important;
-  color: #262626;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.question-bank__table :deep(.ant-table-tbody > tr > td) {
-  vertical-align: top;
-}
-
-.question-bank__item-no {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 28px;
-  height: 22px;
-  border-radius: 999px;
-  background: #f2f5fb;
-  color: #344054;
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.question-bank__domain {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.question-bank__domain span {
-  color: #1677ff;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 18px;
-}
-
-.question-bank__domain em {
-  color: #667085;
-  font-size: 12px;
-  font-style: normal;
-  line-height: 18px;
-}
-
-.question-bank__item-title {
-  color: #262626;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
-}
-
-.question-bank__scoring {
-  color: #475467;
-  font-size: 12px;
-  line-height: 20px;
-}
-
-.question-bank__expanded {
-  display: grid;
-  grid-template-columns: minmax(0, 1.5fr) minmax(180px, 0.7fr);
-  gap: 12px;
-  padding: 10px 12px;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  background: #fbfcfe;
-}
-
-.question-bank__expanded span {
-  color: #667085;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.question-bank__expanded p {
-  margin: 3px 0 0;
-  color: #344054;
-  font-size: 13px;
-  line-height: 20px;
 }
 
 .detail-top {
@@ -2043,19 +1746,8 @@ onMounted(() => {
     flex: 1 1 140px;
   }
 
-  .scale-form__grid,
-  .question-bank__summary,
-  .question-bank__expanded {
+  .scale-form__grid {
     grid-template-columns: 1fr;
-  }
-
-  .question-bank__summary > div {
-    border-right: 0;
-    border-bottom: 1px solid #edf0f5;
-  }
-
-  .question-bank__summary > div:last-child {
-    border-bottom: 0;
   }
 
   .resource-hero {

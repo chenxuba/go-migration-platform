@@ -44,6 +44,82 @@ export function listScalesApi(params?: ScaleListParams) {
   return useGet<ScaleRecord[], ScaleListParams>('/api/v1/platform/scales', params)
 }
 
+export interface ScaleQuestionBankDomain {
+  scaleCode: string
+  scaleName: string
+  category?: string
+  itemCount?: number
+  maxRawScore?: number
+  itemNumbers?: number[]
+  isDevelopmentSubtest?: boolean
+  isBehaviorSubtest?: boolean
+  isCaregiverReport?: boolean
+  compositeCode?: string
+}
+
+export interface ScaleQuestionBankScoreOption {
+  value: number
+  label: string
+  description?: string
+}
+
+export interface ScaleQuestionBankRecordFieldOption {
+  value: string
+  label: string
+}
+
+export interface ScaleQuestionBankRecordField {
+  key: string
+  label: string
+  fieldType: string
+  displayType?: string
+  required?: boolean
+  placeholder?: string
+  options?: ScaleQuestionBankRecordFieldOption[]
+}
+
+export interface ScaleQuestionBankItem {
+  itemNo: number
+  itemTitle: string
+  testItem: string
+  materials: string
+  method: string
+  domainCode: string
+  domainName: string
+  standard: string
+  scoreOptions: ScaleQuestionBankScoreOption[]
+  scoreOptionText: string
+  recordFields: ScaleQuestionBankRecordField[]
+  sourcePdf?: string
+  sourcePages?: number[]
+  ocrStatus?: string
+  updatedAt?: string
+}
+
+export interface ScaleQuestionBank {
+  scaleCode: string
+  scaleVersion: string
+  dataStatus: string
+  itemCount: number
+  domainCount: number
+  domains: ScaleQuestionBankDomain[]
+  items: ScaleQuestionBankItem[]
+  sourceTables: string[]
+}
+
+export interface ScaleQuestionBankParams {
+  scaleCode: string
+  scaleVersion?: string
+}
+
+export function getScaleQuestionBankApi(params: ScaleQuestionBankParams) {
+  return useGet<ScaleQuestionBank, ScaleQuestionBankParams>('/api/v1/platform/scales/question-bank', params, { silentError: true })
+}
+
+export function updateScaleQuestionBankItemApi(data: ScaleQuestionBankItem & { scaleCode: string, scaleVersion: string }) {
+  return usePost<boolean, ScaleQuestionBankItem & { scaleCode: string, scaleVersion: string }>('/api/v1/platform/scales/question-bank/items/update', data, { silentError: true })
+}
+
 export interface ScaleMutationPayload {
   id?: number
   name: string

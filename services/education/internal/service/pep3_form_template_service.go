@@ -53,7 +53,7 @@ func buildPEP3AssessmentFormTemplate() (model.PEP3AssessmentFormTemplateVO, erro
 		BasicFields:      pep3AssessmentBasicFields(),
 		Domains:          pep3AssessmentDomains(data.domains),
 		RawScoreFields:   pep3RawScoreFields(data.domains),
-		ItemGroups:       pep3AssessmentItemGroups(data.formItems),
+		ItemGroups:       pep3AssessmentItemGroups(data.formItems, data.recordFields),
 		CaregiverReport:  pep3CaregiverReportTemplate(),
 		SubmitContract: model.PEP3SubmitContract{
 			ScoreEndpoint:          "/api/v1/assessments/pep3/score",
@@ -151,10 +151,10 @@ func pep3RawScoreFields(domains []pep3score.DomainDefinition) []model.PEP3RawSco
 	return fields
 }
 
-func pep3AssessmentItemGroups(items []pep3FormItemDefinition) []model.PEP3AssessmentItemGroup {
+func pep3AssessmentItemGroups(items []pep3FormItemDefinition, recordFields map[int][]model.PEP3ItemRecordField) []model.PEP3AssessmentItemGroup {
 	groups := make([]model.PEP3AssessmentItemGroup, 0, len(pep3BookletItemRanges()))
 	for _, itemRange := range pep3BookletItemRanges() {
-		groupItems := pep3FormItemsByRange(items, itemRange.StartItemNo, itemRange.EndItemNo)
+		groupItems := pep3FormItemsByRange(items, itemRange.StartItemNo, itemRange.EndItemNo, recordFields)
 		groups = append(groups, model.PEP3AssessmentItemGroup{
 			GroupCode:       fmt.Sprintf("booklet_page_%d", itemRange.BookletPageNo),
 			Title:           fmt.Sprintf("记录册第%d页题目（%d-%d）", itemRange.BookletPageNo, itemRange.StartItemNo, itemRange.EndItemNo),
@@ -169,7 +169,7 @@ func pep3AssessmentItemGroups(items []pep3FormItemDefinition) []model.PEP3Assess
 	return groups
 }
 
-func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int) []model.PEP3AssessmentItem {
+func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int, recordFields map[int][]model.PEP3ItemRecordField) []model.PEP3AssessmentItem {
 	out := make([]model.PEP3AssessmentItem, 0, end-start+1)
 	for _, item := range items {
 		if item.ItemNo < start || item.ItemNo > end {
@@ -185,13 +185,28 @@ func pep3FormItemsByRange(items []pep3FormItemDefinition, start, end int) []mode
 			DomainName:   strings.TrimSpace(strings.ReplaceAll(item.Domain, "\n", " ")),
 			Standard:     strings.TrimSpace(item.Standard),
 			ScoreOptions: pep3ItemScoreOptions(item.ScoreOptions, item.Standard),
-			RecordFields: pep3ItemRecordFields(item.ItemNo),
+			RecordFields: pep3RecordFieldsForItem(recordFields, item.ItemNo),
 			SourcePDF:    strings.TrimSpace(item.SourcePDF),
 			SourcePages:  append([]int(nil), item.SourcePages...),
 			OCRStatus:    strings.TrimSpace(item.OCRStatus),
 		})
 	}
 	return out
+}
+
+func pep3RecordFieldsForItem(recordFields map[int][]model.PEP3ItemRecordField, itemNo int) []model.PEP3ItemRecordField {
+	if len(recordFields) > 0 {
+		if fields, ok := recordFields[itemNo]; ok {
+			out := make([]model.PEP3ItemRecordField, 0, len(fields))
+			for _, field := range fields {
+				copied := field
+				copied.Options = append([]model.PEP3ItemRecordFieldOption(nil), field.Options...)
+				out = append(out, copied)
+			}
+			return out
+		}
+	}
+	return pep3ItemRecordFields(itemNo)
 }
 
 func pep3ItemScoreOptions(rawOptions, standard string) []model.PEP3ScoreOption {

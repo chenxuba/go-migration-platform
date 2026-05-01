@@ -127,6 +127,18 @@ const routes: RouteRecordRaw[] = [
           access: [PlatformAccessEnum.scaleManage],
         },
       },
+      {
+        path: '/platform/scales/question-bank',
+        name: 'PlatformScaleQuestionBank',
+        component: () => import('~/pages/platform/scales/question-bank/index.vue'),
+        meta: {
+          title: '题库管理',
+          tenantRoles: ['platform_admin', 'platform_staff'],
+          access: [PlatformAccessEnum.scaleManageQuestionBank],
+          hideInMenu: true,
+          parentKeys: ['/platform/scales'],
+        },
+      },
     ],
   },
   {

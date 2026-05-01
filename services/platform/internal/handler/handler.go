@@ -64,6 +64,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/dict-values/update", handler.updateDictValue)
 	mux.HandleFunc("/api/v1/platform/dict-values/delete", handler.deleteDictValue)
 	mux.HandleFunc("/api/v1/platform/scales", handler.scales)
+	mux.HandleFunc("/api/v1/platform/scales/question-bank", handler.scaleQuestionBank)
+	mux.HandleFunc("/api/v1/platform/scales/question-bank/items/update", handler.updateScaleQuestionBankItem)
 	mux.HandleFunc("/api/v1/platform/scales/create", handler.createScale)
 	mux.HandleFunc("/api/v1/platform/scales/update", handler.updateScale)
 	mux.HandleFunc("/api/v1/platform/scales/references/create", handler.createScaleReference)
@@ -1019,6 +1021,59 @@ func (handler *Handler) scales(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) scaleQuestionBank(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetScaleQuestionBank(
+		r.URL.Query().Get("scaleCode"),
+		r.URL.Query().Get("scaleVersion"),
+	)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "question bank not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusInternalServerError, "load question bank failed", ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updateScaleQuestionBankItem(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPut && r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var input model.ScaleQuestionBankItemMutation
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(input.ScaleCode) == "" || input.ItemNo <= 0 || strings.TrimSpace(input.ItemTitle) == "" || strings.TrimSpace(input.DomainCode) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "scaleCode, itemNo, itemTitle and domainCode are required", ctx.RequestID)
+		return
+	}
+	if err := handler.service.UpdateScaleQuestionBankItem(input); err != nil {
+		if err == sql.ErrNoRows {
+			httpx.WriteError(w, http.StatusNotFound, "question item not found", ctx.RequestID)
+			return
+		}
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]bool{"success": true}, ctx.RequestID)
 }
 
 func (handler *Handler) createScale(w http.ResponseWriter, r *http.Request) {

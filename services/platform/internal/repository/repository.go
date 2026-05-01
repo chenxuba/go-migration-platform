@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"go-migration-platform/pkg/institutionmenu"
+	"go-migration-platform/pkg/pep3template"
 	"go-migration-platform/pkg/tenantstorage"
 	"go-migration-platform/services/platform/internal/model"
 	"golang.org/x/crypto/bcrypt"
@@ -458,6 +460,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureScaleSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := repo.ensureScaleQuestionBankSchema(context.Background()); err != nil {
+		return nil, err
+	}
 	if err := repo.ensurePlatformDictSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -489,6 +494,9 @@ func New(db *sql.DB) (*Repository, error) {
 		return nil, err
 	}
 	if err := repo.seedScaleCatalog(context.Background()); err != nil {
+		return nil, err
+	}
+	if err := repo.seedPEP3RecordFields(context.Background()); err != nil {
 		return nil, err
 	}
 	if err := repo.seedScaleDictionaries(context.Background()); err != nil {
@@ -616,6 +624,75 @@ func (repo *Repository) ensureScaleSchema(ctx context.Context) error {
 	return nil
 }
 
+func (repo *Repository) ensureScaleQuestionBankSchema(ctx context.Context) error {
+	statements := []string{
+		`CREATE TABLE IF NOT EXISTS assessment_scale_dataset (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_code VARCHAR(64) NOT NULL DEFAULT '',
+			scale_version VARCHAR(64) NOT NULL DEFAULT '',
+			data_status VARCHAR(1000) NOT NULL DEFAULT '',
+			sources_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_scale_dataset (scale_code, scale_version)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS assessment_scale_item (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_code VARCHAR(64) NOT NULL DEFAULT '',
+			scale_version VARCHAR(64) NOT NULL DEFAULT '',
+			item_no INT NOT NULL DEFAULT 0,
+			item_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_scale_item (scale_code, scale_version, item_no),
+			KEY idx_assessment_scale_item_version (scale_code, scale_version, item_no)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS assessment_scale_domain (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_code VARCHAR(64) NOT NULL DEFAULT '',
+			scale_version VARCHAR(64) NOT NULL DEFAULT '',
+			domain_code VARCHAR(64) NOT NULL DEFAULT '',
+			sort_no INT NOT NULL DEFAULT 0,
+			domain_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_scale_domain (scale_code, scale_version, domain_code),
+			KEY idx_assessment_scale_domain_version (scale_code, scale_version, sort_no)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+		`CREATE TABLE IF NOT EXISTS assessment_scale_item_record_field (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_code VARCHAR(64) NOT NULL DEFAULT '',
+			scale_version VARCHAR(64) NOT NULL DEFAULT '',
+			item_no INT NOT NULL DEFAULT 0,
+			field_key VARCHAR(100) NOT NULL DEFAULT '',
+			sort_no INT NOT NULL DEFAULT 0,
+			field_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_scale_item_record_field (scale_code, scale_version, item_no, field_key),
+			KEY idx_assessment_scale_item_record_field_item (scale_code, scale_version, item_no, sort_no)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4`,
+	}
+	for _, statement := range statements {
+		if _, err := repo.db.ExecContext(ctx, statement); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 	scaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
 		Name:             "PEP-3 儿童心理教育评核",
@@ -724,6 +801,49 @@ func (repo *Repository) repairPep3ItemCount(ctx context.Context, scaleID int64) 
 		WHERE id = ? AND scale_code = 'PEP3' AND item_count <> 172 AND del_flag = 0
 	`, scaleID)
 	return err
+}
+
+func (repo *Repository) seedPEP3RecordFields(ctx context.Context) error {
+	scaleVersion, err := repo.resolveScaleVersion(ctx, "PEP3", "")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(scaleVersion) == "" {
+		scaleVersion = "2025-92题版"
+	}
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM assessment_scale_item_record_field
+		WHERE scale_code = 'PEP3' AND scale_version = ? AND del_flag = 0
+	`, scaleVersion).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	for itemNo, fields := range pep3template.AllItemRecordFields() {
+		for idx, field := range fields {
+			if strings.TrimSpace(field.Key) == "" {
+				continue
+			}
+			raw, err := json.Marshal(field)
+			if err != nil {
+				return err
+			}
+			if _, err := repo.db.ExecContext(ctx, `
+				INSERT INTO assessment_scale_item_record_field (
+					scale_code, scale_version, item_no, field_key, sort_no, field_json, create_id, update_id, create_time, update_time, del_flag
+				) VALUES ('PEP3', ?, ?, ?, ?, ?, 0, 0, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					del_flag = 0,
+					update_time = NOW()
+			`, scaleVersion, itemNo, strings.TrimSpace(field.Key), idx+1, string(raw)); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 type scaleSeed struct {
@@ -1065,6 +1185,471 @@ func (repo *Repository) ListScales(ctx context.Context, keyword, category, scena
 		return nil, err
 	}
 	return items, nil
+}
+
+type scaleQuestionBankItemRaw struct {
+	ItemNo       int    `json:"item_no"`
+	ItemTitle    string `json:"item_title"`
+	TestItem     string `json:"test_item"`
+	Materials    string `json:"materials"`
+	Method       string `json:"method"`
+	Domain       string `json:"domain"`
+	DomainCode   string `json:"domain_code"`
+	Standard     string `json:"standard"`
+	ScoreOptions string `json:"score_options"`
+	SourcePDF    string `json:"source_pdf"`
+	SourcePages  []int  `json:"source_pages"`
+	OCRStatus    string `json:"ocr_status"`
+}
+
+type scaleQuestionBankDomainRaw struct {
+	ScaleCode            string `json:"scale_code"`
+	ScaleName            string `json:"scale_name"`
+	Category             string `json:"category"`
+	ItemCount            *int   `json:"item_count"`
+	MaxRawScore          *int   `json:"max_raw_score"`
+	ItemNumbers          []int  `json:"item_numbers"`
+	IsDevelopmentSubtest bool   `json:"is_development_subtest"`
+	IsBehaviorSubtest    bool   `json:"is_behavior_subtest"`
+	IsCaregiverReport    bool   `json:"is_caregiver_report"`
+	CompositeCode        string `json:"composite_code"`
+}
+
+func (repo *Repository) GetScaleQuestionBank(ctx context.Context, scaleCode, scaleVersion string) (model.ScaleQuestionBank, error) {
+	scaleCode = strings.ToUpper(strings.TrimSpace(scaleCode))
+	if scaleCode == "" {
+		scaleCode = "PEP3"
+	}
+	resolvedVersion, err := repo.resolveScaleVersion(ctx, scaleCode, scaleVersion)
+	if err != nil {
+		return model.ScaleQuestionBank{}, err
+	}
+	if resolvedVersion == "" {
+		return model.ScaleQuestionBank{}, sql.ErrNoRows
+	}
+
+	result := model.ScaleQuestionBank{
+		ScaleCode:    scaleCode,
+		ScaleVersion: resolvedVersion,
+		Domains:      []model.ScaleQuestionBankDomain{},
+		Items:        []model.ScaleQuestionBankItem{},
+		SourceTables: []string{"assessment_scale_item", "assessment_scale_domain", "assessment_scale_item_record_field"},
+	}
+
+	_ = repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(data_status, '')
+		FROM assessment_scale_dataset
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+		LIMIT 1
+	`, scaleCode, resolvedVersion).Scan(&result.DataStatus)
+
+	domains, domainNames, err := repo.listScaleQuestionBankDomains(ctx, scaleCode, resolvedVersion)
+	if err != nil {
+		return model.ScaleQuestionBank{}, err
+	}
+	result.Domains = domains
+	result.DomainCount = len(domains)
+
+	recordFields, err := repo.listScaleQuestionBankRecordFields(ctx, scaleCode, resolvedVersion)
+	if err != nil {
+		return model.ScaleQuestionBank{}, err
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, item_json, IFNULL(DATE_FORMAT(update_time, '%Y-%m-%d %H:%i:%s'), '')
+		FROM assessment_scale_item
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+		ORDER BY item_no
+	`, scaleCode, resolvedVersion)
+	if err != nil {
+		return model.ScaleQuestionBank{}, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			itemNo    int
+			rawJSON   string
+			updatedAt string
+		)
+		if err := rows.Scan(&itemNo, &rawJSON, &updatedAt); err != nil {
+			return model.ScaleQuestionBank{}, err
+		}
+		var raw scaleQuestionBankItemRaw
+		if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+			return model.ScaleQuestionBank{}, fmt.Errorf("decode question item %d: %w", itemNo, err)
+		}
+		if raw.ItemNo == 0 {
+			raw.ItemNo = itemNo
+		}
+		domainCode := strings.ToUpper(strings.TrimSpace(raw.DomainCode))
+		domainName := strings.TrimSpace(strings.ReplaceAll(raw.Domain, "\n", " "))
+		if domainName == "" {
+			domainName = domainNames[domainCode]
+		}
+		result.Items = append(result.Items, model.ScaleQuestionBankItem{
+			ItemNo:          raw.ItemNo,
+			ItemTitle:       strings.TrimSpace(firstNonEmptyString(raw.ItemTitle, raw.TestItem)),
+			TestItem:        strings.TrimSpace(firstNonEmptyString(raw.TestItem, raw.ItemTitle)),
+			Materials:       strings.TrimSpace(raw.Materials),
+			Method:          strings.TrimSpace(raw.Method),
+			DomainCode:      domainCode,
+			DomainName:      domainName,
+			Standard:        strings.TrimSpace(raw.Standard),
+			ScoreOptions:    scaleQuestionBankScoreOptions(raw.ScoreOptions, raw.Standard),
+			ScoreOptionText: strings.TrimSpace(raw.ScoreOptions),
+			RecordFields:    append([]model.ScaleQuestionBankRecordField{}, recordFields[raw.ItemNo]...),
+			SourcePDF:       strings.TrimSpace(raw.SourcePDF),
+			SourcePages:     append([]int{}, raw.SourcePages...),
+			OCRStatus:       strings.TrimSpace(raw.OCRStatus),
+			UpdatedAt:       updatedAt,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return model.ScaleQuestionBank{}, err
+	}
+	result.ItemCount = len(result.Items)
+	return result, nil
+}
+
+func (repo *Repository) UpdateScaleQuestionBankItem(ctx context.Context, input model.ScaleQuestionBankItemMutation) error {
+	scaleCode := strings.ToUpper(strings.TrimSpace(input.ScaleCode))
+	if scaleCode == "" {
+		scaleCode = "PEP3"
+	}
+	scaleVersion, err := repo.resolveScaleVersion(ctx, scaleCode, input.ScaleVersion)
+	if err != nil {
+		return err
+	}
+	if scaleVersion == "" || input.ItemNo <= 0 {
+		return errors.New("scaleCode, scaleVersion and itemNo are required")
+	}
+
+	var rawJSON string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT item_json
+		FROM assessment_scale_item
+		WHERE scale_code = ? AND scale_version = ? AND item_no = ? AND del_flag = 0
+		LIMIT 1
+	`, scaleCode, scaleVersion, input.ItemNo).Scan(&rawJSON); err != nil {
+		return err
+	}
+
+	var raw scaleQuestionBankItemRaw
+	if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+		return fmt.Errorf("decode question item %d: %w", input.ItemNo, err)
+	}
+	raw.ItemNo = input.ItemNo
+	raw.ItemTitle = strings.TrimSpace(input.ItemTitle)
+	raw.TestItem = strings.TrimSpace(input.TestItem)
+	raw.Materials = strings.TrimSpace(input.Materials)
+	raw.Method = strings.TrimSpace(input.Method)
+	raw.DomainCode = strings.ToUpper(strings.TrimSpace(input.DomainCode))
+	raw.Domain = strings.TrimSpace(input.DomainName)
+	raw.Standard = strings.TrimSpace(input.Standard)
+	raw.ScoreOptions = normalizeScoreOptionText(input.ScoreOptionText, input.ScoreOptions)
+	if raw.ItemTitle == "" {
+		raw.ItemTitle = raw.TestItem
+	}
+	if raw.TestItem == "" {
+		raw.TestItem = raw.ItemTitle
+	}
+	if raw.ItemTitle == "" || raw.DomainCode == "" {
+		return errors.New("itemTitle and domainCode are required")
+	}
+
+	nextRaw, err := json.Marshal(raw)
+	if err != nil {
+		return err
+	}
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		if err != nil {
+			_ = tx.Rollback()
+		}
+	}()
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE assessment_scale_item
+		SET item_json = ?, update_id = 0, update_time = NOW()
+		WHERE scale_code = ? AND scale_version = ? AND item_no = ? AND del_flag = 0
+	`, string(nextRaw), scaleCode, scaleVersion, input.ItemNo); err != nil {
+		return err
+	}
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE assessment_scale_item_record_field
+		SET del_flag = 1, update_id = 0, update_time = NOW()
+		WHERE scale_code = ? AND scale_version = ? AND item_no = ? AND del_flag = 0
+	`, scaleCode, scaleVersion, input.ItemNo); err != nil {
+		return err
+	}
+	for idx, field := range input.RecordFields {
+		field.Key = strings.TrimSpace(field.Key)
+		field.Label = strings.TrimSpace(field.Label)
+		field.FieldType = strings.TrimSpace(field.FieldType)
+		if field.Key == "" || field.Label == "" || field.FieldType == "" {
+			continue
+		}
+		field.Options = normalizeQuestionBankRecordFieldOptions(field.Options)
+		rawField, marshalErr := json.Marshal(field)
+		if marshalErr != nil {
+			err = marshalErr
+			return err
+		}
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO assessment_scale_item_record_field (
+				scale_code, scale_version, item_no, field_key, sort_no, field_json, create_id, update_id, create_time, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, 0, 0, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+				sort_no = VALUES(sort_no),
+				field_json = VALUES(field_json),
+				update_id = VALUES(update_id),
+				update_time = NOW(),
+				del_flag = 0
+		`, scaleCode, scaleVersion, input.ItemNo, field.Key, idx+1, string(rawField)); err != nil {
+			return err
+		}
+	}
+	if _, err = tx.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET update_time = NOW()
+		WHERE scale_code = ? AND current_version = ? AND del_flag = 0
+	`, scaleCode, scaleVersion); err != nil {
+		return err
+	}
+	err = tx.Commit()
+	return err
+}
+
+func (repo *Repository) resolveScaleVersion(ctx context.Context, scaleCode, scaleVersion string) (string, error) {
+	scaleVersion = strings.TrimSpace(scaleVersion)
+	if scaleVersion != "" {
+		return scaleVersion, nil
+	}
+	var resolved string
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT current_version
+		FROM sys_scale
+		WHERE scale_code = ? AND del_flag = 0
+		ORDER BY id ASC
+		LIMIT 1
+	`, strings.ToUpper(strings.TrimSpace(scaleCode))).Scan(&resolved)
+	if err == sql.ErrNoRows {
+		return "", nil
+	}
+	return strings.TrimSpace(resolved), err
+}
+
+func (repo *Repository) listScaleQuestionBankDomains(ctx context.Context, scaleCode, scaleVersion string) ([]model.ScaleQuestionBankDomain, map[string]string, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT domain_json
+		FROM assessment_scale_domain
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+		ORDER BY sort_no, id
+	`, scaleCode, scaleVersion)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer rows.Close()
+	domains := make([]model.ScaleQuestionBankDomain, 0, 16)
+	names := make(map[string]string)
+	for rows.Next() {
+		var rawJSON string
+		if err := rows.Scan(&rawJSON); err != nil {
+			return nil, nil, err
+		}
+		var raw scaleQuestionBankDomainRaw
+		if err := json.Unmarshal([]byte(rawJSON), &raw); err != nil {
+			return nil, nil, err
+		}
+		code := strings.ToUpper(strings.TrimSpace(raw.ScaleCode))
+		name := strings.TrimSpace(raw.ScaleName)
+		names[code] = name
+		domains = append(domains, model.ScaleQuestionBankDomain{
+			ScaleCode:            code,
+			ScaleName:            name,
+			Category:             strings.TrimSpace(raw.Category),
+			ItemCount:            raw.ItemCount,
+			MaxRawScore:          raw.MaxRawScore,
+			ItemNumbers:          append([]int(nil), raw.ItemNumbers...),
+			IsDevelopmentSubtest: raw.IsDevelopmentSubtest,
+			IsBehaviorSubtest:    raw.IsBehaviorSubtest,
+			IsCaregiverReport:    raw.IsCaregiverReport,
+			CompositeCode:        strings.TrimSpace(raw.CompositeCode),
+		})
+	}
+	return domains, names, rows.Err()
+}
+
+func (repo *Repository) listScaleQuestionBankRecordFields(ctx context.Context, scaleCode, scaleVersion string) (map[int][]model.ScaleQuestionBankRecordField, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, field_key, field_json
+		FROM assessment_scale_item_record_field
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+		ORDER BY item_no, sort_no, id
+	`, scaleCode, scaleVersion)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make(map[int][]model.ScaleQuestionBankRecordField)
+	for rows.Next() {
+		var (
+			itemNo   int
+			fieldKey string
+			rawJSON  string
+		)
+		if err := rows.Scan(&itemNo, &fieldKey, &rawJSON); err != nil {
+			return nil, err
+		}
+		var field model.ScaleQuestionBankRecordField
+		if err := json.Unmarshal([]byte(rawJSON), &field); err != nil {
+			return nil, err
+		}
+		if strings.TrimSpace(field.Key) == "" {
+			field.Key = strings.TrimSpace(fieldKey)
+		}
+		if strings.TrimSpace(field.Key) == "" {
+			continue
+		}
+		field.Options = normalizeQuestionBankRecordFieldOptions(field.Options)
+		out[itemNo] = append(out[itemNo], field)
+	}
+	return out, rows.Err()
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func normalizeScoreOptionText(raw string, options []model.ScaleQuestionBankScoreOption) string {
+	if strings.TrimSpace(raw) != "" {
+		return strings.TrimSpace(raw)
+	}
+	values := make([]string, 0, len(options))
+	seen := make(map[int]bool, len(options))
+	for _, option := range options {
+		if seen[option.Value] {
+			continue
+		}
+		seen[option.Value] = true
+		values = append(values, strconv.Itoa(option.Value))
+	}
+	if len(values) == 0 {
+		return "2/1/0"
+	}
+	return strings.Join(values, "/")
+}
+
+func normalizeQuestionBankRecordFieldOptions(options []model.ScaleQuestionBankRecordFieldOption) []model.ScaleQuestionBankRecordFieldOption {
+	out := make([]model.ScaleQuestionBankRecordFieldOption, 0, len(options))
+	seen := make(map[string]bool, len(options))
+	for _, option := range options {
+		value := strings.TrimSpace(option.Value)
+		label := strings.TrimSpace(option.Label)
+		if value == "" {
+			value = label
+		}
+		if label == "" {
+			label = value
+		}
+		if value == "" || seen[value] {
+			continue
+		}
+		seen[value] = true
+		out = append(out, model.ScaleQuestionBankRecordFieldOption{
+			Value: value,
+			Label: label,
+		})
+	}
+	return out
+}
+
+func scaleQuestionBankScoreOptions(rawOptions, standard string) []model.ScaleQuestionBankScoreOption {
+	criteria := splitScaleQuestionBankStandardByScore(standard)
+	values := parseScaleQuestionBankScoreOptionValues(rawOptions)
+	if len(values) == 0 {
+		values = []int{2, 1, 0}
+	}
+	options := make([]model.ScaleQuestionBankScoreOption, 0, len(values))
+	for _, value := range values {
+		options = append(options, model.ScaleQuestionBankScoreOption{
+			Value:       value,
+			Label:       strconv.Itoa(value) + "分",
+			Description: firstNonEmptyString(criteria[value], scaleQuestionBankFallbackScoreDescription(value)),
+		})
+	}
+	return options
+}
+
+func parseScaleQuestionBankScoreOptionValues(raw string) []int {
+	parts := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == '/' || r == ',' || r == '，' || r == '、' || r == ' '
+	})
+	values := make([]int, 0, len(parts))
+	seen := make(map[int]bool, len(parts))
+	for _, part := range parts {
+		value, err := strconv.Atoi(strings.TrimSpace(part))
+		if err != nil || seen[value] {
+			continue
+		}
+		seen[value] = true
+		values = append(values, value)
+	}
+	return values
+}
+
+func splitScaleQuestionBankStandardByScore(standard string) map[int]string {
+	out := make(map[int]string, 3)
+	scoreLine := regexp.MustCompile(`^\s*([012])\s*[-－]\s*(.*)$`)
+	current := -1
+	for _, line := range strings.Split(standard, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		if match := scoreLine.FindStringSubmatch(trimmed); match != nil {
+			value, _ := strconv.Atoi(match[1])
+			current = value
+			out[current] = appendScaleQuestionBankCriterionText(out[current], match[2])
+			continue
+		}
+		if current >= 0 {
+			out[current] = appendScaleQuestionBankCriterionText(out[current], trimmed)
+		}
+	}
+	return out
+}
+
+func appendScaleQuestionBankCriterionText(existing, next string) string {
+	next = strings.TrimSpace(next)
+	if next == "" {
+		return existing
+	}
+	if existing == "" {
+		return next
+	}
+	return existing + "\n" + next
+}
+
+func scaleQuestionBankFallbackScoreDescription(value int) string {
+	switch value {
+	case 2:
+		return "通过 / 恰当"
+	case 1:
+		return "部分通过 / 轻微"
+	case 0:
+		return "未能通过 / 严重"
+	default:
+		return ""
+	}
 }
 
 func (repo *Repository) CreateScale(ctx context.Context, input model.ScaleMutation) (int64, error) {

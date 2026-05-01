@@ -66,6 +66,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/scales/question-bank',
+    name: 'PlatformScaleQuestionBank',
+    component: () => import('~/pages/platform/scales/question-bank/index.vue'),
+    meta: {
+      title: '题库管理',
+      access: [PlatformAccessEnum.scaleManageQuestionBank],
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+      parentKeys: ['/platform/scales'],
+    },
+  },
+  {
     path: '/platform/dicts',
     name: 'PlatformDicts',
     component: () => import('~/pages/platform/dicts/index.vue'),

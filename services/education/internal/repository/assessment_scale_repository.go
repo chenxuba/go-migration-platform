@@ -27,6 +27,13 @@ type AssessmentScaleDomainEntity struct {
 	Raw        json.RawMessage
 }
 
+type AssessmentScaleItemRecordFieldEntity struct {
+	ItemNo   int
+	FieldKey string
+	SortNo   int
+	Raw      json.RawMessage
+}
+
 type AssessmentScaleNormRecordEntity struct {
 	RecordKey string
 	SortNo    int
@@ -34,10 +41,11 @@ type AssessmentScaleNormRecordEntity struct {
 }
 
 type AssessmentScaleStaticDataEntity struct {
-	Dataset     AssessmentScaleDatasetEntity
-	Items       []AssessmentScaleItemEntity
-	Domains     []AssessmentScaleDomainEntity
-	NormRecords []AssessmentScaleNormRecordEntity
+	Dataset      AssessmentScaleDatasetEntity
+	Items        []AssessmentScaleItemEntity
+	Domains      []AssessmentScaleDomainEntity
+	RecordFields []AssessmentScaleItemRecordFieldEntity
+	NormRecords  []AssessmentScaleNormRecordEntity
 }
 
 func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
@@ -95,6 +103,26 @@ func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
 	`); err != nil {
 		return err
 	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_scale_item_record_field (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			scale_code VARCHAR(64) NOT NULL DEFAULT '',
+			scale_version VARCHAR(64) NOT NULL DEFAULT '',
+			item_no INT NOT NULL DEFAULT 0,
+			field_key VARCHAR(100) NOT NULL DEFAULT '',
+			sort_no INT NOT NULL DEFAULT 0,
+			field_json LONGTEXT NOT NULL,
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_scale_item_record_field (scale_code, scale_version, item_no, field_key),
+			KEY idx_assessment_scale_item_record_field_item (scale_code, scale_version, item_no, sort_no)
+		)
+	`); err != nil {
+		return err
+	}
 	_, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS assessment_scale_norm_record (
 			id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -118,7 +146,7 @@ func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
 func (repo *Repository) HasAssessmentScaleStaticData(ctx context.Context, scaleCode, scaleVersion string) (bool, error) {
 	scaleCode = strings.TrimSpace(scaleCode)
 	scaleVersion = strings.TrimSpace(scaleVersion)
-	var itemCount, domainCount, normCount int
+	var itemCount, domainCount, recordFieldCount, normCount int
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
 		FROM assessment_scale_item
@@ -135,12 +163,19 @@ func (repo *Repository) HasAssessmentScaleStaticData(ctx context.Context, scaleC
 	}
 	if err := repo.db.QueryRowContext(ctx, `
 		SELECT COUNT(*)
+		FROM assessment_scale_item_record_field
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+	`, scaleCode, scaleVersion).Scan(&recordFieldCount); err != nil {
+		return false, err
+	}
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
 		FROM assessment_scale_norm_record
 		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
 	`, scaleCode, scaleVersion).Scan(&normCount); err != nil {
 		return false, err
 	}
-	return itemCount > 0 && domainCount > 0 && normCount > 0, nil
+	return itemCount > 0 && domainCount > 0 && recordFieldCount > 0 && normCount > 0, nil
 }
 
 func (repo *Repository) ReplaceAssessmentScaleStaticData(ctx context.Context, data AssessmentScaleStaticDataEntity, operatorID int64) error {
@@ -175,7 +210,7 @@ func (repo *Repository) ReplaceAssessmentScaleStaticData(ctx context.Context, da
 	`, scaleCode, scaleVersion, strings.TrimSpace(data.Dataset.DataStatus), string(sourcesRaw), operatorID, operatorID); err != nil {
 		return err
 	}
-	for _, table := range []string{"assessment_scale_item", "assessment_scale_domain", "assessment_scale_norm_record"} {
+	for _, table := range []string{"assessment_scale_item", "assessment_scale_domain", "assessment_scale_item_record_field", "assessment_scale_norm_record"} {
 		if _, err = tx.ExecContext(ctx, fmt.Sprintf(`
 			UPDATE %s
 			SET del_flag = 1, update_id = ?, update_time = NOW()
@@ -217,6 +252,25 @@ func (repo *Repository) ReplaceAssessmentScaleStaticData(ctx context.Context, da
 				update_time = NOW(),
 				del_flag = 0
 		`, scaleCode, scaleVersion, domainCode, domain.SortNo, string(domain.Raw), operatorID, operatorID); err != nil {
+			return err
+		}
+	}
+	for _, field := range data.RecordFields {
+		fieldKey := strings.TrimSpace(field.FieldKey)
+		if field.ItemNo <= 0 || fieldKey == "" || len(field.Raw) == 0 {
+			continue
+		}
+		if _, err = tx.ExecContext(ctx, `
+			INSERT INTO assessment_scale_item_record_field (
+				scale_code, scale_version, item_no, field_key, sort_no, field_json, create_id, update_id, create_time, update_time, del_flag
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			ON DUPLICATE KEY UPDATE
+				sort_no = VALUES(sort_no),
+				field_json = VALUES(field_json),
+				update_id = VALUES(update_id),
+				update_time = NOW(),
+				del_flag = 0
+		`, scaleCode, scaleVersion, field.ItemNo, fieldKey, field.SortNo, string(field.Raw), operatorID, operatorID); err != nil {
 			return err
 		}
 	}
@@ -303,6 +357,30 @@ func (repo *Repository) ListAssessmentScaleDomains(ctx context.Context, scaleCod
 		var item AssessmentScaleDomainEntity
 		var raw string
 		if err := rows.Scan(&item.DomainCode, &item.SortNo, &raw); err != nil {
+			return nil, err
+		}
+		item.Raw = json.RawMessage(raw)
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+func (repo *Repository) ListAssessmentScaleItemRecordFields(ctx context.Context, scaleCode, scaleVersion string) ([]AssessmentScaleItemRecordFieldEntity, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT item_no, field_key, sort_no, field_json
+		FROM assessment_scale_item_record_field
+		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
+		ORDER BY item_no, sort_no, id
+	`, strings.TrimSpace(scaleCode), strings.TrimSpace(scaleVersion))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := make([]AssessmentScaleItemRecordFieldEntity, 0)
+	for rows.Next() {
+		var item AssessmentScaleItemRecordFieldEntity
+		var raw string
+		if err := rows.Scan(&item.ItemNo, &item.FieldKey, &item.SortNo, &raw); err != nil {
 			return nil, err
 		}
 		item.Raw = json.RawMessage(raw)
