@@ -261,13 +261,18 @@ function goBack() {
 
 <style scoped lang="less">
 .pep3-workbench-page {
-  min-height: calc(100vh - 96px);
-  margin: 0 -16px -16px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  margin: 0;
   color: #1f2937;
   background: #f3f5f9;
 }
 
 .workbench-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
   display: flex;
   align-items: center;
   min-height: 52px;
@@ -376,6 +381,8 @@ function goBack() {
   display: grid;
   grid-template-columns: 240px minmax(420px, 1fr) 256px;
   gap: 10px;
+  flex: 1;
+  min-height: 0;
   padding: 10px 10px 0;
 }
 

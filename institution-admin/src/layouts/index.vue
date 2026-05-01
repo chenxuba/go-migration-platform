@@ -11,11 +11,13 @@ defineOptions({
   name: 'ProLayout',
 })
 const appStore = useAppStore()
+const route = useRoute()
 const { layoutSetting } = storeToRefs(appStore)
 const userStore = useUserStore()
 const layoutMenu = useLayoutMenu()
 const { t } = useI18nLocale()
 const { selectedKeys, openKeys } = storeToRefs(layoutMenu)
+const isPurePage = computed(() => route.meta?.purePage === true)
 const { isMobile, isPad } = useQueryBreakpoints()
 watch(isPad, (val) => {
   if (val)
@@ -39,66 +41,69 @@ const layoutProps = computed(() =>
 </script>
 
 <template>
-  <BasicLayout
-    :collapsed="layoutSetting.collapsed"
-    :theme="layoutSetting.theme"
-    :menu-data="userStore.menuData"
-    v-bind="layoutProps"
-    :selected-keys="selectedKeys"
-    :open-keys="layoutSetting.layout === 'top' ? [] : openKeys"
-    :copyright="layoutSetting.copyright"
-    :is-mobile="isMobile"
-    :logo="layoutSetting.logo"
-    :title="layoutSetting.title"
-    :accordion-mode="layoutSetting.accordionMode"
-    :left-collapsed="layoutSetting.leftCollapsed"
-    :header-height="layoutSetting.headerHeight"
-    @update:open-keys="layoutMenu.handleOpenKeys"
-    @update:selected-keys="layoutMenu.handleSelectedKeys"
-    @update:collapsed="appStore.toggleCollapsed"
-  >
-    <template #headerActions>
-      <UserAvatar />
-      <span class="mx-3">操作日志</span>
-      <span>帮助中心</span>
-      <!-- <SelectLang /> -->
-      <!-- <GithubLink /> -->
-      <!-- <template v-if="!isMobile">
-        <GiteeLink />
-        <DocLink />
-      </template> -->
-    </template>
-    <template #contentPrefix>
-      <MultiTab v-if="layoutSetting.multiTab" />
-      <InstitutionReadonlyBanner />
-    </template>
-    <template #renderFooterLinks />
-    <a-watermark
-      class="h-full w-full flex flex-col flex-1"
-      :content="layoutSetting.watermark ? layoutSetting.title ?? 'Antdv Pro' : ' ' "
+  <RouteView v-if="isPurePage" />
+  <template v-else>
+    <BasicLayout
+      :collapsed="layoutSetting.collapsed"
+      :theme="layoutSetting.theme"
+      :menu-data="userStore.menuData"
+      v-bind="layoutProps"
+      :selected-keys="selectedKeys"
+      :open-keys="layoutSetting.layout === 'top' ? [] : openKeys"
+      :copyright="layoutSetting.copyright"
+      :is-mobile="isMobile"
+      :logo="layoutSetting.logo"
+      :title="layoutSetting.title"
+      :accordion-mode="layoutSetting.accordionMode"
+      :left-collapsed="layoutSetting.leftCollapsed"
+      :header-height="layoutSetting.headerHeight"
+      @update:open-keys="layoutMenu.handleOpenKeys"
+      @update:selected-keys="layoutMenu.handleSelectedKeys"
+      @update:collapsed="appStore.toggleCollapsed"
     >
-      <RouteView />
-    </a-watermark>
-  </BasicLayout>
-  <SettingDrawer
-    v-model:open="layoutSetting.drawerVisible"
-    :t="t"
-    :theme="layoutSetting.theme"
-    :color-primary="layoutSetting.colorPrimary"
-    :color-weak="layoutSetting.colorWeak"
-    :color-gray="layoutSetting.colorGray"
-    :multi-tab="layoutSetting.multiTab"
-    :multi-tab-fixed="layoutSetting.multiTabFixed"
-    :animation-name-list="animationNameList"
-    :animation-name="layoutSetting.animationName"
-    :keep-alive="layoutSetting.keepAlive"
-    :accordion-mode="layoutSetting.accordionMode"
-    :left-collapsed="layoutSetting.leftCollapsed"
-    :watermark="layoutSetting.watermark"
-    v-bind="layoutProps"
-    :layout-setting="layoutSetting"
-    @setting-change="appStore.changeSettingLayout"
-  />
+      <template #headerActions>
+        <UserAvatar />
+        <span class="mx-3">操作日志</span>
+        <span>帮助中心</span>
+        <!-- <SelectLang /> -->
+        <!-- <GithubLink /> -->
+        <!-- <template v-if="!isMobile">
+          <GiteeLink />
+          <DocLink />
+        </template> -->
+      </template>
+      <template #contentPrefix>
+        <MultiTab v-if="layoutSetting.multiTab" />
+        <InstitutionReadonlyBanner />
+      </template>
+      <template #renderFooterLinks />
+      <a-watermark
+        class="h-full w-full flex flex-col flex-1"
+        :content="layoutSetting.watermark ? layoutSetting.title ?? 'Antdv Pro' : ' ' "
+      >
+        <RouteView />
+      </a-watermark>
+    </BasicLayout>
+    <SettingDrawer
+      v-model:open="layoutSetting.drawerVisible"
+      :t="t"
+      :theme="layoutSetting.theme"
+      :color-primary="layoutSetting.colorPrimary"
+      :color-weak="layoutSetting.colorWeak"
+      :color-gray="layoutSetting.colorGray"
+      :multi-tab="layoutSetting.multiTab"
+      :multi-tab-fixed="layoutSetting.multiTabFixed"
+      :animation-name-list="animationNameList"
+      :animation-name="layoutSetting.animationName"
+      :keep-alive="layoutSetting.keepAlive"
+      :accordion-mode="layoutSetting.accordionMode"
+      :left-collapsed="layoutSetting.leftCollapsed"
+      :watermark="layoutSetting.watermark"
+      v-bind="layoutProps"
+      :layout-setting="layoutSetting"
+      @setting-change="appStore.changeSettingLayout"
+    />
+  </template>
 </template>
 
 <style scoped></style>

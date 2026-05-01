@@ -264,6 +264,7 @@ export default [
           title: '测评工作台',
           access: [AccessEnum.teacher_scale],
           hideInMenu: true,
+          purePage: true,
           parentKeys: ['/teacherCenter/scale-library'],
         },
       },
