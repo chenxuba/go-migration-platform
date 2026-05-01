@@ -1062,7 +1062,7 @@ onMounted(fetchScaleLibrary)
 
 .tag-list span,
 .detail-tags span {
-  padding: 4px 10px;
+  padding: 4px 6px;
   border-radius: 6px;
   font-size: 12px;
   line-height: 18px;
