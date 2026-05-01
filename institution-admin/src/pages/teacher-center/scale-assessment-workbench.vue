@@ -147,33 +147,30 @@ function goBack() {
 
       <section class="question-panel">
         <div class="question-title-row">
-          <h1>第 12 题&nbsp;&nbsp;物件配对</h1>
+          <h1>第 1 题&nbsp;&nbsp;拧开瓶盖</h1>
           <a-tag color="blue">CVP 认知（语言/语前）</a-tag>
         </div>
 
         <article class="instruction-card">
-          <h2><FileTextOutlined />材料</h2>
-          <ul>
-            <li>施测者指令卡</li>
-            <li>4 对配对物：杯子-杯子、鞋子-鞋子、球-球、车-车（或相似实物/图片）</li>
-            <li>记录纸、铅笔</li>
-          </ul>
+          <h2><FileTextOutlined />题目</h2>
+          <p>1、拧开瓶盖</p>
         </article>
 
         <article class="instruction-card">
-          <h2><FileTextOutlined />施测方法</h2>
-          <ol>
-            <li>将 4 对物品分别摆在儿童面前，成两排放置（每排 4 个），同类物品分开放置。</li>
-            <li>说：“把一样的东西放在一起。”如儿童未能正确配对，可重复指令一次。</li>
-            <li>每对物品独立计分，全部完成后记录得分。</li>
-          </ol>
+          <h2><FileTextOutlined />操作标准</h2>
+          <p>测试员将泡泡瓶放在桌子上，并示意儿童打开瓶盖。若儿童无法完成，测试员可进行示范后再让儿童尝试。</p>
+        </article>
+
+        <article class="instruction-card">
+          <h2><FileTextOutlined />指导语</h2>
+          <p>把泡泡瓶盖打开，我们来吹泡泡。</p>
         </article>
 
         <article class="instruction-card">
           <h2><FileTextOutlined />评分标准</h2>
-          <p><b>2 分（通过）：</b> 能正确将 4 对物品全部配对。</p>
-          <p><b>1 分（部分通过）：</b> 能正确配对 1～3 对。</p>
-          <p><b>0 分（未通过）：</b> 不能配对或全部错误。</p>
+          <p><b>2 分（通过）：</b> 能自行拧开瓶盖。</p>
+          <p><b>1 分（部分通过）：</b> 未能拧开瓶盖，但做出所需动作，即把手放在瓶盖上并做出拧动动作。</p>
+          <p><b>0 分（未通过）：</b> 未能拧开瓶盖或做出所需动作。</p>
         </article>
 
         <div class="score-section">
@@ -238,7 +235,7 @@ function goBack() {
         上一题
       </a-button>
       <div class="question-counter">
-        <strong>12</strong>
+        <strong>1</strong>
         <span>/ 172</span>
       </div>
       <a-button size="large" type="primary" class="next-button">
