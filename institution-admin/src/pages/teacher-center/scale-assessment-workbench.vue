@@ -152,8 +152,8 @@ function goBack() {
         </div>
 
         <article class="instruction-card">
-          <h2><FileTextOutlined />题目</h2>
-          <p>1、拧开瓶盖</p>
+          <h2><FileTextOutlined />材料</h2>
+          <p>泡泡瓶</p>
         </article>
 
         <article class="instruction-card">
@@ -559,22 +559,23 @@ function goBack() {
   h2 {
     display: flex;
     align-items: center;
-    gap: 8px;
-    margin: 0 0 6px;
-    color: #111827;
-    font-size: 15px;
-    font-weight: 800;
+    gap: 6px;
+    margin: 0 0 7px;
+    color: #263247;
+    font-size: 14px;
+    font-weight: 700;
 
     .anticon {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      width: 16px;
-      height: 16px;
-      color: #fff;
-      background: #0757e6;
+      width: 14px;
+      height: 14px;
+      color: #155bdc;
+      background: #edf4ff;
+      border: 1px solid #c8dcff;
       border-radius: 4px;
-      font-size: 11px;
+      font-size: 9px;
     }
   }
 
