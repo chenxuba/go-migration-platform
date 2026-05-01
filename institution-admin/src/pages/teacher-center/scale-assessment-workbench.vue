@@ -20,6 +20,8 @@ const route = useRoute()
 const router = useRouter()
 
 const selectedScore = ref(1)
+const previousScore = ref(2)
+const previousScoreDate = '2026-04-18'
 const autoNext = ref(true)
 const caregiverQRCodeDataUrl = ref('')
 
@@ -70,6 +72,7 @@ const scoreOptions = [
   { value: 1, title: '1 分', desc: '部分通过', tone: 'blue', checkColor: '#0757e6' },
   { value: 0, title: '0 分', desc: '未通过', tone: 'red', checkColor: '#d41f1f' },
 ]
+const previousScoreOption = computed(() => scoreOptions.find(item => item.value === previousScore.value))
 
 onMounted(async () => {
   caregiverQRCodeDataUrl.value = await QRCode.toDataURL(`https://pep3.example.com/caregiver-report?child=${encodeURIComponent(studentName.value)}`, {
@@ -187,18 +190,27 @@ function goBack() {
         </article>
 
         <div class="score-section">
-          <h2>评分</h2>
+          <div class="score-section__head">
+            <h2>评分</h2>
+            <div v-if="previousScoreOption" class="previous-score-summary" :class="`score-${previousScoreOption.tone}`">
+              <span>上次测评 {{ previousScoreDate }}</span>
+              <strong>{{ previousScoreOption.title }} · {{ previousScoreOption.desc }}</strong>
+            </div>
+          </div>
           <div class="score-options">
             <button
               v-for="item in scoreOptions"
               :key="item.value"
               type="button"
               class="score-option"
-              :class="[`score-${item.tone}`, { 'is-selected': selectedScore === item.value }]"
+              :class="[`score-${item.tone}`, { 'is-selected': selectedScore === item.value, 'is-previous': previousScore === item.value }]"
               @click="selectedScore = item.value"
             >
               <strong>{{ item.title }}</strong>
               <span>{{ item.desc }}</span>
+              <em v-if="previousScore === item.value" class="score-option__previous-badge">
+                上次 {{ previousScoreDate.slice(5) }}
+              </em>
               <CheckCircleFilled
                 v-if="selectedScore === item.value"
                 class="score-option__check"
@@ -631,9 +643,68 @@ function goBack() {
 }
 
 .score-section {
+  margin-top: 6px;
+
   h2 {
-    margin: 6px 0;
+    margin: 0;
     font-size: 13px;
+  }
+}
+
+.score-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.previous-score-summary {
+  --previous-score-color: #64748b;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  height: 30px;
+  padding: 0 12px;
+  color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #dbe3ed;
+  border-radius: 6px;
+  font-size: 12px;
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
+  white-space: nowrap;
+
+  &::before {
+    width: 6px;
+    height: 6px;
+    background: var(--previous-score-color);
+    border-radius: 50%;
+    content: "";
+  }
+
+  strong {
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  &.score-green {
+    --previous-score-color: #0d9749;
+    background: #f6fff9;
+    border-color: #bde8cf;
+  }
+
+  &.score-blue {
+    --previous-score-color: #0757e6;
+    background: #f7faff;
+    border-color: #c4d7ff;
+  }
+
+  &.score-red {
+    --previous-score-color: #d41f1f;
+    background: #fff8f7;
+    border-color: #f5c5c1;
   }
 }
 
@@ -733,6 +804,29 @@ function goBack() {
       opacity: 0;
     }
   }
+
+  &.is-previous:not(.is-selected) {
+    border-color: #cad5e2;
+    background: #fbfdff;
+  }
+}
+
+.score-option__previous-badge {
+  position: absolute;
+  top: 11px;
+  right: 42px;
+  display: inline-flex;
+  align-items: center;
+  height: 22px;
+  padding: 0 8px;
+  color: var(--score-color);
+  background: #fff;
+  border: 1px solid var(--score-color);
+  border-radius: 6px;
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 20px;
 }
 
 .score-option__check {
