@@ -3,6 +3,7 @@ package service
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -186,6 +187,27 @@ func TestPEP3BookletPDFCaregiverScoreHelpers(t *testing.T) {
 	}
 }
 
+func TestPEP3BookletPDFExportScopes(t *testing.T) {
+	tests := []struct {
+		raw   string
+		code  string
+		pages []int
+	}{
+		{raw: "", code: "all", pages: []int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26}},
+		{raw: "test_score", code: "test_score", pages: []int{1}},
+		{raw: "development_profile", code: "development_profile", pages: []int{19}},
+		{raw: "score_and_profile", code: "score_and_profile", pages: []int{1, 19}},
+		{raw: "scoring_tables", code: "scoring_tables", pages: []int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18}},
+		{raw: "education_plan", code: "education_plan", pages: []int{20, 21, 22, 23, 24, 25, 26}},
+	}
+	for _, tt := range tests {
+		got := normalizePEP3BookletPDFExportScope(tt.raw)
+		if got.Code != tt.code || !reflect.DeepEqual(got.Pages, tt.pages) {
+			t.Fatalf("scope %q = %+v, want code=%s pages=%+v", tt.raw, got, tt.code, tt.pages)
+		}
+	}
+}
+
 func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 	if _, err := resolvePEP3PDFFontPath(); err != nil {
 		t.Skipf("PEP-3 PDF font not available: %v", err)
@@ -248,7 +270,7 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 		},
 		InputJSON:  inputRaw,
 		ResultJSON: resultRaw,
-	}, "测试机构")
+	}, "测试机构", "all")
 	if err != nil {
 		t.Fatalf("buildPEP3BookletPDF returned error: %v", err)
 	}

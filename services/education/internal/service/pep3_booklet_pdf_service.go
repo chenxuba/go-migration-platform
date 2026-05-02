@@ -30,10 +30,11 @@ const (
 )
 
 type pep3BookletPDFRenderer struct {
-	pdf *gopdf.GoPdf
+	pdf     *gopdf.GoPdf
+	pageMap map[int]int
 }
 
-func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64) (string, []byte, error) {
+func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64, exportDimension string) (string, []byte, error) {
 	detail, err := svc.GetPEP3AssessmentRecord(userID, recordID)
 	if err != nil {
 		return "", nil, err
@@ -43,16 +44,17 @@ func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64) (st
 	if err != nil {
 		return "", nil, err
 	}
-	content, err := buildPEP3BookletPDF(detail, institutionName)
+	scope := normalizePEP3BookletPDFExportScope(exportDimension)
+	content, err := buildPEP3BookletPDF(detail, institutionName, scope.Code)
 	if err != nil {
 		return "", nil, err
 	}
 	name := nonEmptyString(detail.StudentName, "未命名儿童")
-	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-PEP3测试员记录册-%s.pdf", name, time.Now().Format("20060102150405")))
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-PEP3测试员记录册-%s-%s.pdf", name, scope.Label, time.Now().Format("20060102150405")))
 	return filename, content, nil
 }
 
-func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName string) ([]byte, error) {
+func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName string, exportDimension string) ([]byte, error) {
 	score, err := decodeSavedPEP3Score(record.ResultJSON)
 	if err != nil {
 		return nil, err
@@ -84,14 +86,17 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
+	scope := normalizePEP3BookletPDFExportScope(exportDimension)
+	pageMap := make(map[int]int, len(scope.Pages))
 
 	var pdf gopdf.GoPdf
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
 		PageSize: gopdf.Rect{W: pep3BookletPDFPageWidth, H: pep3BookletPDFPageHeight},
 	})
-	for pageNo := 1; pageNo <= 26; pageNo++ {
+	for index, pageNo := range scope.Pages {
 		pdf.AddPage()
+		pageMap[pageNo] = index + 1
 		raw, err := pep3RecordBookletTemplateImages.ReadFile(fmt.Sprintf("assets/pep3_record_booklet/page_%02d.jpg", pageNo))
 		if err != nil {
 			return nil, fmt.Errorf("load PEP-3 booklet template page %d: %w", pageNo, err)
@@ -107,7 +112,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err := pdf.AddTTFFont(pep3BookletPDFFontFamily, fontPath); err != nil {
 		return nil, fmt.Errorf("load PEP-3 PDF font: %w", err)
 	}
-	renderer := pep3BookletPDFRenderer{pdf: &pdf}
+	renderer := pep3BookletPDFRenderer{pdf: &pdf, pageMap: pageMap}
 	itemDomainByNo := pep3BookletPDFItemDomainMap(items)
 	renderer.drawCoverPage(record, score, institutionName)
 	renderer.drawDevelopmentBehaviorScorePages(itemScores, itemDomainByNo)
@@ -120,8 +125,52 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	return pdf.GetBytesPdfReturnErr()
 }
 
+type pep3BookletPDFExportScope struct {
+	Code  string
+	Label string
+	Pages []int
+}
+
+func normalizePEP3BookletPDFExportScope(raw string) pep3BookletPDFExportScope {
+	switch strings.TrimSpace(raw) {
+	case "test_score":
+		return pep3BookletPDFExportScope{Code: "test_score", Label: "测验分数", Pages: []int{1}}
+	case "development_profile":
+		return pep3BookletPDFExportScope{Code: "development_profile", Label: "发展表现图", Pages: []int{19}}
+	case "score_and_profile":
+		return pep3BookletPDFExportScope{Code: "score_and_profile", Label: "测验分数与发展表现图", Pages: []int{1, 19}}
+	case "scoring_tables":
+		return pep3BookletPDFExportScope{Code: "scoring_tables", Label: "测验评分表", Pages: pep3BookletPDFPageRange(2, 18)}
+	case "education_plan":
+		return pep3BookletPDFExportScope{Code: "education_plan", Label: "教育计划分析用表", Pages: pep3BookletPDFPageRange(20, 26)}
+	default:
+		return pep3BookletPDFExportScope{Code: "all", Label: "全维度", Pages: pep3BookletPDFPageRange(1, 26)}
+	}
+}
+
+func pep3BookletPDFPageRange(start, end int) []int {
+	if end < start {
+		return nil
+	}
+	pages := make([]int, 0, end-start+1)
+	for pageNo := start; pageNo <= end; pageNo++ {
+		pages = append(pages, pageNo)
+	}
+	return pages
+}
+
+func (r pep3BookletPDFRenderer) setSourcePage(pageNo int) bool {
+	targetPageNo, ok := r.pageMap[pageNo]
+	if !ok {
+		return false
+	}
+	return r.pdf.SetPage(targetPageNo) == nil
+}
+
 func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, institutionName string) {
-	_ = r.pdf.SetPage(1)
+	if !r.setSourcePage(1) {
+		return
+	}
 	r.pdf.SetTextColor(58, 58, 58)
 
 	// 第1部分：儿童资料。格式为 text(x, y, 字号, 值)，x/y 对应底图横线位置。
@@ -312,7 +361,9 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map
 	r.pdf.SetTextColor(58, 58, 58)
 
 	for _, layout := range pep3BookletPDFItemPageLayouts() {
-		_ = r.pdf.SetPage(layout.PageNo)
+		if !r.setSourcePage(layout.PageNo) {
+			continue
+		}
 		for index, point := range layout.ItemCenters {
 			itemNo := layout.StartItemNo + index
 			score, ok := itemScores[itemNo]
@@ -342,7 +393,9 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordValues(itemRecordVa
 		if !ok {
 			continue
 		}
-		_ = r.pdf.SetPage(placement.PageNo)
+		if !r.setSourcePage(placement.PageNo) {
+			continue
+		}
 		if len(placement.OptionRects) > 0 {
 			r.drawDevelopmentBehaviorRecordOptionValue(placement, value)
 			continue
@@ -416,7 +469,9 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRawTotalTable(score PEP3S
 	if len(itemScores) == 0 && len(rawScores) == 0 && len(score.Result.Scales) == 0 {
 		return
 	}
-	_ = r.pdf.SetPage(17)
+	if !r.setSourcePage(17) {
+		return
+	}
 	r.pdf.SetTextColor(58, 58, 58)
 
 	// 第17页：发展及行为副测验原积分总和表，每个副测验列的中心 x 坐标。
@@ -486,7 +541,9 @@ func (r pep3BookletPDFRenderer) drawCaregiverReportScorePage(submission *model.P
 	if submission == nil && len(rawScores) == 0 && len(scales) == 0 {
 		return
 	}
-	_ = r.pdf.SetPage(18)
+	if !r.setSourcePage(18) {
+		return
+	}
 	r.pdf.SetTextColor(58, 58, 58)
 
 	sectionByCode := pep3CaregiverReportScoredSectionMap()
@@ -573,7 +630,9 @@ func pep3BookletPDFCaregiverScoreLayouts() []pep3BookletPDFCaregiverScoreLayout 
 }
 
 func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string, caregiverReport *model.PEP3CaregiverReportSubmission, normRecords []pep3score.NormRecord) {
-	_ = r.pdf.SetPage(19)
+	if !r.setSourcePage(19) {
+		return
+	}
 	r.pdf.SetTextColor(58, 58, 58)
 
 	// 第19页：顶部儿童姓名、评估日期、年龄（月龄）的位置。
@@ -705,7 +764,9 @@ func (r pep3BookletPDFRenderer) drawEducationPlanningPages(items []pep3BookletIt
 		if len(domainItems) == 0 {
 			continue
 		}
-		_ = r.pdf.SetPage(layout.PageNo)
+		if !r.setSourcePage(layout.PageNo) {
+			continue
+		}
 		summary := pep3BookletDomainScoreSummaryFromItems(domainItems, itemScores)
 		for index, item := range domainItems {
 			score, ok := itemScores[item.ItemNo]

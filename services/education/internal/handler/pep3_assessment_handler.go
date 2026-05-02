@@ -536,7 +536,8 @@ func (handler *Handler) pep3AssessmentRecordBookletPDF(w http.ResponseWriter, r 
 		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
 		return
 	}
-	filename, content, err := handler.service.GeneratePEP3AssessmentBookletPDF(claims.UserID, id)
+	exportDimension := strings.TrimSpace(r.URL.Query().Get("dimension"))
+	filename, content, err := handler.service.GeneratePEP3AssessmentBookletPDF(claims.UserID, id, exportDimension)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

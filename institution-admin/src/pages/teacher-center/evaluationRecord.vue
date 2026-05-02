@@ -19,6 +19,55 @@ const dataSource = ref([])
 const scaleCategoryOptions = ref([])
 const currentReport = ref(null)
 const reportModalOpen = ref(false)
+const exportModalOpen = ref(false)
+const exportTargetRecord = ref(null)
+const selectedExportDimension = ref('all')
+
+const exportDimensionOptions = [
+  {
+    value: 'test_score',
+    title: '仅导出测验分数',
+    badge: '01',
+    desc: '导出首页测验分数汇总，适合快速归档总览。',
+    pages: '第 1 页',
+  },
+  {
+    value: 'development_profile',
+    title: '仅导出发展表现图',
+    badge: '02',
+    desc: '只导出发展表现图，用于查看各领域发展曲线。',
+    pages: '第 19 页',
+  },
+  {
+    value: 'score_and_profile',
+    title: '导出测验分数与发展表现图',
+    badge: '03',
+    desc: '包含测验分数汇总和发展表现图，适合简版报告。',
+    pages: '第 1、19 页',
+    recommended: true,
+  },
+  {
+    value: 'scoring_tables',
+    title: '仅导出测验评分表',
+    badge: '04',
+    desc: '导出儿童表现记录、评分统计和照顾者评分表。',
+    pages: '第 2-18 页',
+  },
+  {
+    value: 'education_plan',
+    title: '仅导出教育计划分析用表',
+    badge: '05',
+    desc: '导出教育计划分析相关页，便于教学计划制定。',
+    pages: '第 20-26 页',
+  },
+  {
+    value: 'all',
+    title: '全维度导出',
+    badge: 'ALL',
+    desc: '导出完整测试员记录册，包含所有维度与分析表。',
+    pages: '第 1-26 页',
+  },
+]
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -143,6 +192,23 @@ function formatAge(row) {
   return parts.join('') || '-'
 }
 
+function exportDimensionTitle(value) {
+  return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
+}
+
+function getDownloadFilename(response, fallback) {
+  const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
+  const matched = `${disposition}`.match(/filename\*=UTF-8''([^;]+)/i) || `${disposition}`.match(/filename="?([^";]+)"?/i)
+  if (!matched?.[1])
+    return fallback
+  try {
+    return decodeURIComponent(matched[1])
+  }
+  catch (error) {
+    return matched[1] || fallback
+  }
+}
+
 function reload() {
   pagination.current = 1
   fetchRecords()
@@ -207,16 +273,34 @@ async function viewReport(row) {
   }
 }
 
-async function exportReport(row) {
+function openExportModal(row) {
+  if (!row || exportingId.value)
+    return
+  exportTargetRecord.value = row
+  selectedExportDimension.value = 'all'
+  exportModalOpen.value = true
+}
+
+function closeExportModal() {
+  if (exportingId.value)
+    return
+  exportModalOpen.value = false
+}
+
+async function exportReport(row = exportTargetRecord.value) {
+  if (!row)
+    return
   exportingId.value = row.id
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id)
+    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, selectedExportDimension.value)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    link.download = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${formatDate(row.assessmentDate)}.pdf`
+    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(selectedExportDimension.value)}-${formatDate(row.assessmentDate)}.pdf`
+    link.download = getDownloadFilename(response, fallbackName)
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+    exportModalOpen.value = false
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '导出评估记录失败'))
@@ -323,7 +407,7 @@ onMounted(() => {
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
                   </a-popconfirm>
-                  <a :class="{ disabled: exportingId === record.id }" @click="exportReport(record)">导出</a>
+                  <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
                 </a-space>
               </template>
             </template>
@@ -344,7 +428,7 @@ onMounted(() => {
                 {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
               </div>
             </div>
-            <a-button type="primary" @click="exportReport(currentReport.record)">
+            <a-button type="primary" @click="openExportModal(currentReport.record)">
               导出
             </a-button>
           </div>
@@ -368,6 +452,58 @@ onMounted(() => {
           </div>
         </div>
       </a-spin>
+    </a-modal>
+
+    <a-modal
+      v-model:open="exportModalOpen"
+      width="680px"
+      :centered="true"
+      title="选择导出维度"
+      wrap-class-name="pep3-export-dimension-modal"
+      :mask-closable="!exportingId"
+      :confirm-loading="!!exportingId"
+      ok-text="开始导出"
+      cancel-text="取消"
+      @ok="exportReport()"
+      @cancel="closeExportModal"
+    >
+      <div class="export-dimension">
+        <div class="export-dimension__summary">
+          <div>
+            <div class="export-dimension__name">
+              {{ exportTargetRecord?.studentName || '学员' }}
+            </div>
+            <div class="export-dimension__meta">
+              {{ exportTargetRecord?.assessmentName || '评估记录' }} · {{ formatDate(exportTargetRecord?.assessmentDate) }}
+            </div>
+          </div>
+          <div class="export-dimension__type">
+            PDF
+          </div>
+        </div>
+        <div class="export-dimension__grid">
+          <button
+            v-for="option in exportDimensionOptions"
+            :key="option.value"
+            type="button"
+            class="export-dimension-card"
+            :class="{ 'export-dimension-card--active': selectedExportDimension === option.value }"
+            :aria-pressed="selectedExportDimension === option.value"
+            :disabled="!!exportingId"
+            @click="selectedExportDimension = option.value"
+          >
+            <span class="export-dimension-card__badge">{{ option.badge }}</span>
+            <span class="export-dimension-card__content">
+              <span class="export-dimension-card__title">
+                {{ option.title }}
+                <span v-if="option.recommended" class="export-dimension-card__tag">推荐</span>
+              </span>
+              <span class="export-dimension-card__desc">{{ option.desc }}</span>
+              <span class="export-dimension-card__pages">{{ option.pages }}</span>
+            </span>
+          </button>
+        </div>
+      </div>
     </a-modal>
   </div>
 </template>
@@ -480,5 +616,152 @@ onMounted(() => {
   p {
     margin-bottom: 6px;
   }
+}
+
+.export-dimension {
+  padding-top: 2px;
+}
+
+.export-dimension__summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 16px;
+  margin-bottom: 16px;
+  background: #f7f9fc;
+  border: 1px solid #eef1f6;
+  border-radius: 8px;
+}
+
+.export-dimension__name {
+  color: #1f2937;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 22px;
+}
+
+.export-dimension__meta {
+  margin-top: 3px;
+  color: #7a8494;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.export-dimension__type {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
+  height: 28px;
+  color: var(--pro-ant-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  background: #eef5ff;
+  border: 1px solid #d7e8ff;
+  border-radius: 6px;
+}
+
+.export-dimension__grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.export-dimension-card {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  min-height: 104px;
+  padding: 14px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #edf0f5;
+  border-radius: 8px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+
+  &:hover {
+    border-color: #bfd9ff;
+    box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(24, 144, 255, 0.28);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+  }
+}
+
+.export-dimension-card--active {
+  background: #f7fbff;
+  border-color: var(--pro-ant-color-primary);
+  box-shadow: 0 8px 22px rgba(24, 144, 255, 0.12);
+}
+
+.export-dimension-card__badge {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  color: #53708f;
+  font-size: 12px;
+  font-weight: 700;
+  background: #f2f5f9;
+  border-radius: 8px;
+}
+
+.export-dimension-card--active .export-dimension-card__badge {
+  color: #fff;
+  background: var(--pro-ant-color-primary);
+}
+
+.export-dimension-card__content {
+  min-width: 0;
+}
+
+.export-dimension-card__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #202733;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.export-dimension-card__tag {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  color: var(--pro-ant-color-primary);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 18px;
+  background: #eef5ff;
+  border-radius: 4px;
+}
+
+.export-dimension-card__desc {
+  display: block;
+  margin-top: 6px;
+  color: #687386;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.export-dimension-card__pages {
+  display: block;
+  margin-top: 8px;
+  color: #98a2b3;
+  font-size: 12px;
+  line-height: 18px;
 }
 </style>

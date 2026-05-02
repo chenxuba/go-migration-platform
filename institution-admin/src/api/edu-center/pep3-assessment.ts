@@ -672,10 +672,18 @@ export function getPEP3AssessmentBookletApi(id: number) {
   return useGet<PEP3Booklet>('/api/v1/assessments/pep3/records/booklet', { id })
 }
 
-export function downloadPEP3AssessmentBookletPdfApi(id: number) {
+export type PEP3BookletPdfExportDimension =
+  | 'test_score'
+  | 'development_profile'
+  | 'score_and_profile'
+  | 'scoring_tables'
+  | 'education_plan'
+  | 'all'
+
+export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3BookletPdfExportDimension = 'all') {
   const token = useAuthorization()
   return axios.get('/api/v1/assessments/pep3/records/booklet/pdf', {
-    params: { id },
+    params: { id, dimension },
     responseType: 'blob',
     headers: {
       [STORAGE_AUTHORIZE_KEY]: token.value || '',
