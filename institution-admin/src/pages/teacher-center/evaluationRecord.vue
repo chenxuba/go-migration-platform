@@ -290,17 +290,14 @@ onMounted(() => {
           >
             <template #bodyCell="{ column, record }">
               <template v-if="column.key === 'student'">
-                <div class="student-cell">
-                  <img class="student-avatar" :src="record.studentAvatar" alt="">
-                  <div class="student-info">
-                    <div class="student-name">
-                      {{ record.studentName || '-' }}
-                    </div>
-                    <div class="student-meta">
-                      {{ record.studentGender || '-' }}
-                    </div>
-                  </div>
-                </div>
+                <student-avatar
+                  :id="record.studentId"
+                  :name="record.studentName || '-'"
+                  :gender="record.studentGender || '-'"
+                  :age="formatAge(record)"
+                  :avatar-url="record.studentAvatar"
+                  default-active-key="0"
+                />
               </template>
               <template v-else-if="column.key === 'assessmentName'">
                 <span class="single-line">{{ record.assessmentName || '-' }}</span>
@@ -395,41 +392,9 @@ onMounted(() => {
   }
 }
 
-.student-cell {
-  display: flex;
-  align-items: center;
-  min-width: 0;
-}
-
-.student-avatar {
-  width: 40px;
-  height: 40px;
-  margin-right: 8px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex: 0 0 40px;
-}
-
-.student-info {
-  min-width: 0;
-}
-
-.student-name,
 .single-line {
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.student-name {
-  color: #222;
-}
-
-.student-meta {
-  margin-top: 2px;
-  color: #888;
-  font-size: 12px;
-  line-height: 18px;
   white-space: nowrap;
 }
 

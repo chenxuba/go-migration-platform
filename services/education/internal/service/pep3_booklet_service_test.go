@@ -72,7 +72,7 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	if err != nil {
 		t.Fatalf("buildPEP3Booklet returned error: %v", err)
 	}
-	if booklet.TemplateCode != "PEP3_RECORD_BOOKLET" || len(booklet.Pages) != 16 {
+	if booklet.TemplateCode != "PEP3_RECORD_BOOKLET" || len(booklet.Pages) != 26 {
 		t.Fatalf("unexpected booklet metadata: %+v", booklet)
 	}
 	page2 := booklet.Pages[1]
@@ -96,6 +96,17 @@ func TestBuildPEP3BookletFillsItemGrid(t *testing.T) {
 	if !ok || len(recordFields) != 1 || recordFields[0].Key != "repeated_two_digits" || recordFields[0].FieldType != "checkbox_group" {
 		t.Fatalf("expected item 112 record fields, got: %+v", row112["recordFields"])
 	}
+	page23 := booklet.Pages[22]
+	domainSection := findPEP3BookletSectionForTest(page23.Sections, "domain_fm")
+	if domainSection == nil || domainSection.Table == nil {
+		t.Fatalf("expected FM education planning section on page 23: %+v", page23.Sections)
+	}
+	if len(domainSection.Table.FooterRows) != 2 ||
+		domainSection.Table.FooterRows[0]["score2"] != 2 ||
+		domainSection.Table.FooterRows[0]["score1"] != 0 ||
+		domainSection.Table.FooterRows[1]["rawScore"] != 2 {
+		t.Fatalf("expected FM education planning footer to summarize scores: %+v", domainSection.Table.FooterRows)
+	}
 }
 
 func findPEP3BookletRowForTest(booklet model.PEP3BookletVO, itemNo int) map[string]any {
@@ -114,6 +125,67 @@ func findPEP3BookletRowForTest(booklet model.PEP3BookletVO, itemNo int) map[stri
 	return nil
 }
 
+func findPEP3BookletSectionForTest(sections []model.PEP3TemplateSection, sectionCode string) *model.PEP3TemplateSection {
+	for index := range sections {
+		if sections[index].SectionCode == sectionCode {
+			return &sections[index]
+		}
+	}
+	return nil
+}
+
+func TestPEP3BookletPDFEducationPlanningLayoutsCoverDomains(t *testing.T) {
+	layouts := pep3BookletPDFEducationPlanningLayouts()
+	got := map[string]bool{}
+	for _, layout := range layouts {
+		got[layout.DomainCode] = true
+		if layout.PageNo < 20 || layout.PageNo > 26 {
+			t.Fatalf("unexpected education planning page for %s: %d", layout.DomainCode, layout.PageNo)
+		}
+		if layout.RowBottomY <= layout.RowTopY || layout.FooterTotalY <= layout.FooterScoreY {
+			t.Fatalf("invalid education planning y coordinates for %s: %+v", layout.DomainCode, layout)
+		}
+		for _, scoreValue := range []int{2, 1, 0} {
+			if layout.ScoreCenterXByValue[scoreValue] <= 0 {
+				t.Fatalf("missing score column %d for %s: %+v", scoreValue, layout.DomainCode, layout.ScoreCenterXByValue)
+			}
+		}
+	}
+	for _, domainCode := range pep3BookletDomainOrder() {
+		if !got[domainCode] {
+			t.Fatalf("missing education planning layout for %s", domainCode)
+		}
+	}
+}
+
+func TestPEP3BookletPDFCaregiverScoreHelpers(t *testing.T) {
+	submission := pep3BookletTestCaregiverReportSubmission(t)
+	layouts := pep3BookletPDFCaregiverScoreLayouts()
+	if len(layouts) != 3 {
+		t.Fatalf("expected three caregiver score layouts, got: %+v", layouts)
+	}
+	for _, layout := range layouts {
+		if layout.CenterX <= 0 || layout.RowStartY <= 0 || layout.RowGap <= 0 || layout.RawScoreY <= 0 || layout.ItemCount <= 0 {
+			t.Fatalf("invalid caregiver score layout: %+v", layout)
+		}
+	}
+
+	rawScore, ok := pep3CaregiverReportRawScore(&submission, nil, nil, "PB")
+	if !ok || rawScore != 17 {
+		t.Fatalf("expected PB raw score from submission, got %d ok=%v", rawScore, ok)
+	}
+	sections := pep3CaregiverReportScoredSectionMap()
+	problemSection := sections["problem_behavior"]
+	score, ok := pep3CaregiverReportItemScore(problemSection.Items[1], submission.Answers["problem_behavior"]["speech_delay_or_absent"])
+	if !ok || score != 1 {
+		t.Fatalf("expected scored caregiver item, got %d ok=%v", score, ok)
+	}
+	profileScore, ok := pep3BookletPDFCaregiverProfileScore(&submission, "personal_self_care")
+	if !ok || !profileScore.HasBreakdown || profileScore.PassedScore != 22 || profileScore.PartialScore != 1 || profileScore.TotalScore != 23 {
+		t.Fatalf("expected PSC profile breakdown from caregiver answers, got %+v ok=%v", profileScore, ok)
+	}
+}
+
 func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 	if _, err := resolvePEP3PDFFontPath(); err != nil {
 		t.Skipf("PEP-3 PDF font not available: %v", err)
@@ -127,7 +199,8 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 		})
 	}
 	inputRaw, err := json.Marshal(map[string]any{
-		"itemScoreList": itemScoreList,
+		"itemScoreList":   itemScoreList,
+		"caregiverReport": pep3BookletTestCaregiverReportSubmission(t),
 		"itemRecordValues": map[string]map[string]any{
 			"5":   {"touch_block_reaction": "no_interest"},
 			"6":   {"kaleidoscope_action": []string{"watch", "watch_and_turn"}},
@@ -190,6 +263,45 @@ func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
 	}
 	if len(content) < 1_000_000 || header != "%PDF" {
 		t.Fatalf("expected non-empty PDF bytes, len=%d header=%q", len(content), header)
+	}
+}
+
+func pep3BookletTestCaregiverReportSubmission(t *testing.T) model.PEP3CaregiverReportSubmission {
+	t.Helper()
+	template := pep3CaregiverReportTemplate()
+	answers := map[string]map[string]any{}
+	for _, section := range template.Sections {
+		if !section.Scored {
+			continue
+		}
+		answers[section.SectionCode] = map[string]any{}
+		for _, item := range section.Items {
+			if !item.Scored {
+				continue
+			}
+			answers[section.SectionCode][item.Key] = item.Options[0].Value
+		}
+	}
+	answers["problem_behavior"]["speech_delay_or_absent"] = "mild_moderate"
+	answers["problem_behavior"]["peer_friendship"] = "severe"
+	answers["personal_self_care"]["bathe"] = "score_1"
+	answers["personal_self_care"]["toileting"] = "score_0"
+	answers["adaptive_behavior"]["activity_transition"] = "score_0"
+	answers["adaptive_behavior"]["play_with_children"] = "score_1"
+	rawScores, missing, err := scorePEP3CaregiverReportAnswers(template, answers)
+	if err != nil {
+		t.Fatalf("score caregiver report: %v", err)
+	}
+	if len(missing) > 0 {
+		t.Fatalf("unexpected missing caregiver answers: %+v", missing)
+	}
+	return model.PEP3CaregiverReportSubmission{
+		RespondentName: "家长",
+		Relationship:   "母亲",
+		Answers:        answers,
+		RawScores:      rawScores,
+		RawScoreList:   pep3CaregiverRawScoreListFromMap(rawScores),
+		Source:         "test",
 	}
 }
 

@@ -1,10 +1,14 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
 	"fmt"
+	"image"
+	"image/draw"
+	"image/jpeg"
 	"math"
 	"os"
 	"strconv"
@@ -65,6 +69,10 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
+	caregiverReport, err := decodeSavedPEP3CaregiverReport(record.InputJSON)
+	if err != nil {
+		return nil, err
+	}
 	if len(rawScores) == 0 {
 		rawScores = rawScoresFromPEP3Result(score.Result.Scales)
 	}
@@ -92,6 +100,10 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 		if err != nil {
 			return nil, fmt.Errorf("load PEP-3 booklet template page %d: %w", pageNo, err)
 		}
+		raw, err = sharpenPEP3BookletTemplateImage(raw)
+		if err != nil {
+			return nil, fmt.Errorf("sharpen PEP-3 booklet template page %d: %w", pageNo, err)
+		}
 		holder, err := gopdf.ImageHolderByBytes(raw)
 		if err != nil {
 			return nil, fmt.Errorf("decode PEP-3 booklet template page %d: %w", pageNo, err)
@@ -109,9 +121,62 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	renderer.drawDevelopmentBehaviorScorePages(itemScores, itemDomainByNo)
 	renderer.drawDevelopmentBehaviorRecordValues(itemRecordValues)
 	renderer.drawDevelopmentBehaviorRawTotalTable(score, rawScores, itemScores, itemDomainByNo)
-	renderer.drawDevelopmentProfilePage(record, score, rawScores, itemScores, itemDomainByNo, normRecords)
+	renderer.drawCaregiverReportScorePage(caregiverReport, rawScores, score.Result.Scales)
+	renderer.drawDevelopmentProfilePage(record, score, rawScores, itemScores, itemDomainByNo, caregiverReport, normRecords)
+	renderer.drawEducationPlanningPages(items, itemScores, rawScores, score.Result.Scales)
 
 	return pdf.GetBytesPdfReturnErr()
+}
+
+func sharpenPEP3BookletTemplateImage(raw []byte) ([]byte, error) {
+	img, _, err := image.Decode(bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	bounds := img.Bounds()
+	if bounds.Empty() || bounds.Dx() < 3 || bounds.Dy() < 3 {
+		return raw, nil
+	}
+
+	src := image.NewRGBA(bounds)
+	draw.Draw(src, bounds, img, bounds.Min, draw.Src)
+	dst := image.NewRGBA(bounds)
+	copy(dst.Pix, src.Pix)
+	srcPix := append([]byte(nil), src.Pix...)
+
+	const amount = 0.42
+	centerWeight := 1 + 4*amount
+	for y := bounds.Min.Y + 1; y < bounds.Max.Y-1; y++ {
+		for x := bounds.Min.X + 1; x < bounds.Max.X-1; x++ {
+			offset := src.PixOffset(x, y)
+			left := src.PixOffset(x-1, y)
+			right := src.PixOffset(x+1, y)
+			top := src.PixOffset(x, y-1)
+			bottom := src.PixOffset(x, y+1)
+			for channel := 0; channel < 3; channel++ {
+				value := float64(srcPix[offset+channel])*centerWeight -
+					amount*(float64(srcPix[left+channel])+float64(srcPix[right+channel])+float64(srcPix[top+channel])+float64(srcPix[bottom+channel]))
+				dst.Pix[offset+channel] = clampPEP3BookletPDFByte(value)
+			}
+		}
+	}
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 96}); err != nil {
+		return nil, err
+	}
+	return out.Bytes(), nil
+}
+
+func clampPEP3BookletPDFByte(value float64) byte {
+	switch {
+	case value <= 0:
+		return 0
+	case value >= 255:
+		return 255
+	default:
+		return byte(math.Round(value))
+	}
 }
 
 func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, institutionName string) {
@@ -154,9 +219,9 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 		"SR":  479, // 社交互助
 		"CMB": 496, // 行为特征-非语言
 		"CVB": 515, // 行为特征-语言
-		"PB":  554, // 问题行为
-		"PSC": 573, // 个人自理
-		"AB":  592, // 适应行为
+		"PB":  550, // 问题行为
+		"PSC": 569, // 个人自理
+		"AB":  588, // 适应行为
 	}
 	for _, code := range []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "AE", "SR", "CMB", "CVB", "PB", "PSC", "AB"} {
 		row, ok := scaleRowByCode[code]
@@ -275,6 +340,28 @@ type pep3BookletPDFProfileScore struct {
 	TotalScore   int
 	HasBreakdown bool
 	HasTotal     bool
+}
+
+type pep3BookletPDFEducationPlanningLayout struct {
+	PageNo              int
+	DomainCode          string
+	ImageWidth          float64
+	ImageHeight         float64
+	ScoreCenterXByValue map[int]float64
+	RowTopY             float64
+	RowBottomY          float64
+	FooterScoreY        float64
+	FooterTotalY        float64
+}
+
+type pep3BookletPDFCaregiverScoreLayout struct {
+	SectionCode string
+	ScaleCode   string
+	CenterX     float64
+	RowStartY   float64
+	RowGap      float64
+	RawScoreY   float64
+	ItemCount   int
 }
 
 func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorScorePages(itemScores map[int]int, itemDomainByNo map[int]string) {
@@ -454,7 +541,97 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRawTotalTable(score PEP3S
 	}
 }
 
-func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string, normRecords []pep3score.NormRecord) {
+func (r pep3BookletPDFRenderer) drawCaregiverReportScorePage(submission *model.PEP3CaregiverReportSubmission, rawScores map[string]int, scales map[string]pep3score.ScaleResult) {
+	if submission == nil && len(rawScores) == 0 && len(scales) == 0 {
+		return
+	}
+	_ = r.pdf.SetPage(18)
+	r.pdf.SetTextColor(58, 58, 58)
+
+	sectionByCode := pep3CaregiverReportScoredSectionMap()
+	for _, layout := range pep3BookletPDFCaregiverScoreLayouts() {
+		if submission != nil {
+			section := sectionByCode[layout.SectionCode]
+			answers := submission.Answers[layout.SectionCode]
+			for index, item := range section.Items {
+				if !item.Scored || index >= layout.ItemCount {
+					continue
+				}
+				score, ok := pep3CaregiverReportItemScore(item, answers[item.Key])
+				if !ok {
+					continue
+				}
+				r.center(layout.pdfX(layout.CenterX)-14, layout.itemY(index), 28, 9, strconv.Itoa(score))
+			}
+		}
+		if rawScore, ok := pep3CaregiverReportRawScore(submission, rawScores, scales, layout.ScaleCode); ok {
+			r.center(layout.pdfX(layout.CenterX)-18, layout.pdfY(layout.RawScoreY), 36, 9, strconv.Itoa(rawScore))
+		}
+	}
+}
+
+func pep3CaregiverReportItemScore(item model.PEP3CaregiverReportItem, answer any) (int, bool) {
+	value := strings.TrimSpace(caregiverAnswerString(answer))
+	if value == "" {
+		return 0, false
+	}
+	return caregiverOptionScore(item.Options, value)
+}
+
+func pep3CaregiverReportRawScore(submission *model.PEP3CaregiverReportSubmission, rawScores map[string]int, scales map[string]pep3score.ScaleResult, scaleCode string) (int, bool) {
+	scaleCode = strings.ToUpper(strings.TrimSpace(scaleCode))
+	if submission != nil {
+		if rawScore, ok := submission.RawScores[scaleCode]; ok {
+			return rawScore, true
+		}
+		for _, item := range submission.RawScoreList {
+			if strings.ToUpper(strings.TrimSpace(item.ScaleCode)) == scaleCode {
+				return item.RawScore, true
+			}
+		}
+	}
+	if rawScore, ok := rawScores[scaleCode]; ok {
+		return rawScore, true
+	}
+	if scale, ok := scales[scaleCode]; ok {
+		return scale.RawScore, true
+	}
+	return 0, false
+}
+
+func pep3CaregiverReportScoredSectionMap() map[string]model.PEP3CaregiverReportSection {
+	template := pep3CaregiverReportTemplate()
+	out := make(map[string]model.PEP3CaregiverReportSection)
+	for _, section := range template.Sections {
+		if !section.Scored {
+			continue
+		}
+		out[section.SectionCode] = section
+	}
+	return out
+}
+
+func (layout pep3BookletPDFCaregiverScoreLayout) itemY(index int) float64 {
+	return layout.pdfY(layout.RowStartY + float64(index)*layout.RowGap)
+}
+
+func (layout pep3BookletPDFCaregiverScoreLayout) pdfX(rawX float64) float64 {
+	return rawX * pep3BookletPDFPageWidth / 893
+}
+
+func (layout pep3BookletPDFCaregiverScoreLayout) pdfY(rawY float64) float64 {
+	return rawY * pep3BookletPDFPageHeight / 1170
+}
+
+func pep3BookletPDFCaregiverScoreLayouts() []pep3BookletPDFCaregiverScoreLayout {
+	return []pep3BookletPDFCaregiverScoreLayout{
+		{SectionCode: "problem_behavior", ScaleCode: "PB", CenterX: 298, RowStartY: 223, RowGap: 36, RawScoreY: 765, ItemCount: 10},
+		{SectionCode: "personal_self_care", ScaleCode: "PSC", CenterX: 498, RowStartY: 224, RowGap: 36, RawScoreY: 765, ItemCount: 13},
+		{SectionCode: "adaptive_behavior", ScaleCode: "AB", CenterX: 695, RowStartY: 224, RowGap: 36, RawScoreY: 765, ItemCount: 15},
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string, caregiverReport *model.PEP3CaregiverReportSubmission, normRecords []pep3score.NormRecord) {
 	_ = r.pdf.SetPage(19)
 	r.pdf.SetTextColor(58, 58, 58)
 
@@ -490,17 +667,17 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfilePage(record model.Assessme
 	// 第19页：每个圆圈的独立微调量。正数 x 往右，负数 y 往上。
 	// 所有列都显式写在这里；某列不需要微调时填 0，后面逐个点手工校准就改对应这一行。
 	pointOffsetByScale := map[string]pep3BookletPDFPoint{
-		"CVP": {X: 0.0, Y: 0.0}, // CVP 圆圈微调
-		"EL":  {X: 0.0, Y: 0.0}, // EL 圆圈微调
-		"RL":  {X: 1, Y: 0.0},   // RL 圆圈微调：25 那一列往右一点
-		"FM":  {X: 0.0, Y: -1},  // FM 圆圈微调：34 那个往上一点
-		"GM":  {X: 1, Y: -1},    // GM 圆圈微调：24 那一列往右一点
-		"VMI": {X: 1, Y: -1.8},  // VMI 圆圈微调：12 那一列往上一点
-		"PSC": {X: 0.0, Y: 0.0}, // PSC 圆圈微调
+		"CVP": {X: 0.0, Y: 0.0},  // CVP 圆圈微调
+		"EL":  {X: 0.0, Y: 0.0},  // EL 圆圈微调
+		"RL":  {X: 1, Y: 0.0},    // RL 圆圈微调：25 那一列往右一点
+		"FM":  {X: 0.0, Y: -1},   // FM 圆圈微调：34 那个往上一点
+		"GM":  {X: 1, Y: -1},     // GM 圆圈微调：24 那一列往右一点
+		"VMI": {X: 1, Y: -1.8},   // VMI 圆圈微调：12 那一列往上一点
+		"PSC": {X: 0.0, Y: -1.5}, // PSC 圆圈微调
 	}
 	order := []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"}
 
-	profileScores := pep3BookletPDFProfileScores(score.Result.Scales, rawScores, itemScores, itemDomainByNo)
+	profileScores := pep3BookletPDFProfileScores(score.Result.Scales, rawScores, itemScores, itemDomainByNo, caregiverReport)
 	// 第19页：底部“通过项目分数”和“部份通过项目分数”两个计数框的中心 y 坐标。
 	// 如果底部数字上下不齐，只调这两个 y 值。
 	const (
@@ -572,6 +749,120 @@ func (r pep3BookletPDFRenderer) drawDevelopmentProfileLine(profileScores map[str
 	}
 	for _, point := range points {
 		r.pdf.Oval(point.x-markerRadiusX, point.y-markerRadiusY, point.x+markerRadiusX, point.y+markerRadiusY)
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawEducationPlanningPages(items []pep3BookletItemDefinition, itemScores map[int]int, rawScores map[string]int, scales map[string]pep3score.ScaleResult) {
+	if len(items) == 0 || (len(itemScores) == 0 && len(rawScores) == 0 && len(scales) == 0) {
+		return
+	}
+	itemsByDomain := groupPEP3BookletItemsByDomain(items)
+	r.pdf.SetTextColor(58, 58, 58)
+
+	for _, layout := range pep3BookletPDFEducationPlanningLayouts() {
+		domainItems := itemsByDomain[layout.DomainCode]
+		if len(domainItems) == 0 {
+			continue
+		}
+		_ = r.pdf.SetPage(layout.PageNo)
+		summary := pep3BookletDomainScoreSummaryFromItems(domainItems, itemScores)
+		for index, item := range domainItems {
+			score, ok := itemScores[item.ItemNo]
+			if !ok {
+				continue
+			}
+			rawX, ok := layout.ScoreCenterXByValue[score]
+			if !ok {
+				continue
+			}
+			r.centerBoldInBox(layout.pdfX(rawX), layout.itemCenterY(index, len(domainItems)), 14, 9.5, "√")
+		}
+
+		if summary.Answered > 0 {
+			r.drawEducationPlanningFooter(layout, summary.ScoreCounts[2]*2, summary.ScoreCounts[1], 0, summary.RawSubtotal)
+			continue
+		}
+		if rawScore, ok := pep3BookletDomainRawScore(scales, rawScores, layout.DomainCode); ok {
+			r.centerInBox(layout.pdfX(layout.ScoreCenterXByValue[1]), layout.pdfY(layout.FooterTotalY), 36, 8.5, strconv.Itoa(rawScore))
+		}
+	}
+}
+
+func (r pep3BookletPDFRenderer) drawEducationPlanningFooter(layout pep3BookletPDFEducationPlanningLayout, score2Contribution, score1Contribution, score0Contribution, rawTotal int) {
+	r.centerInBox(layout.pdfX(layout.ScoreCenterXByValue[2]), layout.pdfY(layout.FooterScoreY), 28, 8.5, strconv.Itoa(score2Contribution))
+	r.centerInBox(layout.pdfX(layout.ScoreCenterXByValue[1]), layout.pdfY(layout.FooterScoreY), 28, 8.5, strconv.Itoa(score1Contribution))
+	if score0Contribution != 0 {
+		r.centerInBox(layout.pdfX(layout.ScoreCenterXByValue[0]), layout.pdfY(layout.FooterScoreY), 28, 8.5, strconv.Itoa(score0Contribution))
+	}
+	r.centerInBox(layout.pdfX(layout.ScoreCenterXByValue[1]), layout.pdfY(layout.FooterTotalY), 36, 8.5, strconv.Itoa(rawTotal))
+}
+
+func pep3BookletDomainScoreSummaryFromItems(items []pep3BookletItemDefinition, itemScores map[int]int) pep3BookletPDFDomainScoreSummary {
+	summary := pep3BookletPDFDomainScoreSummary{ScoreCounts: map[int]int{}}
+	for _, item := range items {
+		score, ok := itemScores[item.ItemNo]
+		if !ok || score < 0 || score > 2 {
+			continue
+		}
+		summary.Answered++
+		summary.RawSubtotal += score
+		summary.ScoreCounts[score]++
+	}
+	return summary
+}
+
+func pep3BookletDomainRawScore(scales map[string]pep3score.ScaleResult, rawScores map[string]int, domainCode string) (int, bool) {
+	if scale, ok := scales[domainCode]; ok {
+		return scale.RawScore, true
+	}
+	if rawScore, ok := rawScores[domainCode]; ok {
+		return rawScore, true
+	}
+	return 0, false
+}
+
+func (layout pep3BookletPDFEducationPlanningLayout) itemCenterY(index, itemCount int) float64 {
+	if itemCount <= 0 {
+		return 0
+	}
+	rowHeight := (layout.RowBottomY - layout.RowTopY) / float64(itemCount)
+	return layout.pdfY(layout.RowTopY + (float64(index)+0.5)*rowHeight)
+}
+
+func (layout pep3BookletPDFEducationPlanningLayout) pdfX(rawX float64) float64 {
+	return rawX * pep3BookletPDFPageWidth / layout.ImageWidth
+}
+
+func (layout pep3BookletPDFEducationPlanningLayout) pdfY(rawY float64) float64 {
+	return rawY * pep3BookletPDFPageHeight / layout.ImageHeight
+}
+
+func pep3BookletPDFEducationPlanningLayouts() []pep3BookletPDFEducationPlanningLayout {
+	return []pep3BookletPDFEducationPlanningLayout{
+		pep3BookletPDFEducationPlanningLayoutForDomain(20, "CVP", 893, map[int]float64{2: 610, 1: 695.5, 0: 781}, 161, 1031, 1066.5, 1092),
+		pep3BookletPDFEducationPlanningLayoutForDomain(21, "EL", 894, map[int]float64{2: 621.5, 1: 706.5, 0: 791.5}, 153, 773, 828, 854),
+		pep3BookletPDFEducationPlanningLayoutForDomain(22, "RL", 893, map[int]float64{2: 611.5, 1: 697, 0: 783}, 123, 609, 664.5, 690),
+		pep3BookletPDFEducationPlanningLayoutForDomain(23, "FM", 894, map[int]float64{2: 617.5, 1: 702.5, 0: 788}, 121, 591, 638.5, 664),
+		pep3BookletPDFEducationPlanningLayoutForDomain(24, "GM", 893, map[int]float64{2: 616.5, 1: 702, 0: 787.5}, 124, 508, 563, 588.5),
+		pep3BookletPDFEducationPlanningLayoutForDomain(24, "VMI", 893, map[int]float64{2: 616.5, 1: 702, 0: 787.5}, 710, 966, 1021.5, 1047),
+		pep3BookletPDFEducationPlanningLayoutForDomain(25, "AE", 894, map[int]float64{2: 620.5, 1: 706, 0: 791}, 119, 400, 455.5, 481),
+		pep3BookletPDFEducationPlanningLayoutForDomain(25, "SR", 894, map[int]float64{2: 622.5, 1: 708, 0: 793}, 708, 1014, 1069, 1095),
+		pep3BookletPDFEducationPlanningLayoutForDomain(26, "CMB", 893, map[int]float64{2: 620.5, 1: 706, 0: 791}, 120, 503, 551, 577),
+		pep3BookletPDFEducationPlanningLayoutForDomain(26, "CVB", 893, map[int]float64{2: 672.5, 1: 737, 0: 801.5}, 706, 988, 1036, 1061.5),
+	}
+}
+
+func pep3BookletPDFEducationPlanningLayoutForDomain(pageNo int, domainCode string, imageWidth float64, scoreCenterXByValue map[int]float64, rowTopY, rowBottomY, footerScoreY, footerTotalY float64) pep3BookletPDFEducationPlanningLayout {
+	return pep3BookletPDFEducationPlanningLayout{
+		PageNo:              pageNo,
+		DomainCode:          domainCode,
+		ImageWidth:          imageWidth,
+		ImageHeight:         1170,
+		ScoreCenterXByValue: scoreCenterXByValue,
+		RowTopY:             rowTopY,
+		RowBottomY:          rowBottomY,
+		FooterScoreY:        footerScoreY,
+		FooterTotalY:        footerTotalY,
 	}
 }
 
@@ -661,10 +952,16 @@ func pep3BookletPDFRawScoreTotals(scales map[string]pep3score.ScaleResult, rawSc
 	return out
 }
 
-func pep3BookletPDFProfileScores(scales map[string]pep3score.ScaleResult, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string) map[string]pep3BookletPDFProfileScore {
+func pep3BookletPDFProfileScores(scales map[string]pep3score.ScaleResult, rawScores map[string]int, itemScores map[int]int, itemDomainByNo map[int]string, caregiverReport *model.PEP3CaregiverReportSubmission) map[string]pep3BookletPDFProfileScore {
 	out := make(map[string]pep3BookletPDFProfileScore)
 	itemSummary := pep3BookletPDFAllItemScoreSummary(itemScores, itemDomainByNo)
 	for _, scaleCode := range []string{"CVP", "EL", "RL", "FM", "GM", "VMI", "PSC"} {
+		if scaleCode == "PSC" {
+			if profileScore, ok := pep3BookletPDFCaregiverProfileScore(caregiverReport, "personal_self_care"); ok {
+				out[scaleCode] = profileScore
+				continue
+			}
+		}
 		if summary := itemSummary[scaleCode]; summary.Answered > 0 {
 			passedScore := summary.ScoreCounts[2] * 2
 			partialScore := summary.ScoreCounts[1]
@@ -686,6 +983,45 @@ func pep3BookletPDFProfileScores(scales map[string]pep3score.ScaleResult, rawSco
 		}
 	}
 	return out
+}
+
+func pep3BookletPDFCaregiverProfileScore(submission *model.PEP3CaregiverReportSubmission, sectionCode string) (pep3BookletPDFProfileScore, bool) {
+	if submission == nil {
+		return pep3BookletPDFProfileScore{}, false
+	}
+	section := pep3CaregiverReportScoredSectionMap()[sectionCode]
+	if len(section.Items) == 0 {
+		return pep3BookletPDFProfileScore{}, false
+	}
+	answers := submission.Answers[sectionCode]
+	if len(answers) == 0 {
+		return pep3BookletPDFProfileScore{}, false
+	}
+	summary := pep3BookletPDFDomainScoreSummary{ScoreCounts: map[int]int{}}
+	for _, item := range section.Items {
+		if !item.Scored {
+			continue
+		}
+		score, ok := pep3CaregiverReportItemScore(item, answers[item.Key])
+		if !ok {
+			continue
+		}
+		summary.Answered++
+		summary.RawSubtotal += score
+		summary.ScoreCounts[score]++
+	}
+	if summary.Answered == 0 {
+		return pep3BookletPDFProfileScore{}, false
+	}
+	passedScore := summary.ScoreCounts[2] * 2
+	partialScore := summary.ScoreCounts[1]
+	return pep3BookletPDFProfileScore{
+		PassedScore:  passedScore,
+		PartialScore: partialScore,
+		TotalScore:   passedScore + partialScore,
+		HasBreakdown: true,
+		HasTotal:     true,
+	}, true
 }
 
 func pep3BookletPDFDevelopmentAgeMonths(value *pep3score.NormValue) (float64, bool, bool, bool) {
@@ -1868,6 +2204,24 @@ func (r pep3BookletPDFRenderer) centerInBox(centerX, centerY, width, size float6
 	}
 	r.pdf.SetXY(centerX-textWidth/2, centerY+size*0.35)
 	_ = r.pdf.Text(value)
+}
+
+func (r pep3BookletPDFRenderer) centerBoldInBox(centerX, centerY, width, size float64, value string) {
+	value = cleanPEP3BookletPDFValue(value)
+	if value == "" {
+		return
+	}
+	_ = r.pdf.SetFont(pep3BookletPDFFontFamily, "", size)
+	textWidth, err := r.pdf.MeasureTextWidth(value)
+	if err != nil || textWidth > width {
+		textWidth = 0
+	}
+	baseX := centerX - textWidth/2
+	baseY := centerY + size*0.35
+	for _, offsetX := range []float64{0, 0.35, -0.35} {
+		r.pdf.SetXY(baseX+offsetX, baseY)
+		_ = r.pdf.Text(value)
+	}
 }
 
 // text 用于左对齐填值：x 是文字起点，y 是底图横线位置，size 是字号。

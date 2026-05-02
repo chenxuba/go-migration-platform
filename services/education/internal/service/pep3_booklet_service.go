@@ -135,7 +135,7 @@ func buildPEP3Booklet(record model.AssessmentRecordDetailVO) (model.PEP3BookletV
 	pages[1].Sections = append(pages[1].Sections, buildPEP3BookletCoverSections(record, score)...)
 
 	for _, placement := range pep3BookletDomainPlacements() {
-		page := pages[placement.SourcePDFPageNo]
+		page := pages[placement.BookletPageNo]
 		page.Sections = append(page.Sections, buildPEP3BookletDomainSection(placement, itemsByDomain[placement.DomainCode], itemScores, rawScores, score.Result.Scales))
 	}
 	for _, itemRange := range pep3BookletItemRanges() {
@@ -159,8 +159,8 @@ func pep3BookletJSONPageCount() int {
 		}
 	}
 	for _, placement := range pep3BookletDomainPlacements() {
-		if placement.SourcePDFPageNo > pageCount {
-			pageCount = placement.SourcePDFPageNo
+		if placement.BookletPageNo > pageCount {
+			pageCount = placement.BookletPageNo
 		}
 	}
 	return pageCount
@@ -277,7 +277,7 @@ func buildPEP3BookletDomainSection(placement pep3BookletDomainPlacement, items [
 				{Key: "score", Label: "得分", Width: 80, Align: "center"},
 			},
 			Rows:       pep3BookletDomainRows(items, itemScores),
-			FooterRows: []map[string]any{{"label": placement.DomainCode + " 原始分", "rawScore": rawScores[placement.DomainCode]}},
+			FooterRows: pep3BookletDomainFooterRows(placement.DomainCode, items, itemScores, rawScores, scales),
 		},
 	}
 	return section
@@ -363,6 +363,31 @@ func pep3BookletDomainRows(items []pep3BookletItemDefinition, itemScores map[int
 			row["score"+strconv.Itoa(score)] = true
 		}
 		rows = append(rows, row)
+	}
+	return rows
+}
+
+func pep3BookletDomainFooterRows(domainCode string, items []pep3BookletItemDefinition, itemScores map[int]int, rawScores map[string]int, scales map[string]pep3score.ScaleResult) []map[string]any {
+	rows := make([]map[string]any, 0, 2)
+	summary := pep3BookletDomainScoreSummaryFromItems(items, itemScores)
+	if summary.Answered > 0 {
+		rows = append(rows, map[string]any{
+			"label":  domainCode + " 原始分",
+			"score2": summary.ScoreCounts[2] * 2,
+			"score1": summary.ScoreCounts[1],
+			"score0": 0,
+		})
+	}
+	if rawScore, ok := pep3BookletDomainRawScore(scales, rawScores, domainCode); ok {
+		rows = append(rows, map[string]any{
+			"label":    "原始分总和",
+			"rawScore": rawScore,
+		})
+	} else if summary.Answered > 0 {
+		rows = append(rows, map[string]any{
+			"label":    "原始分总和",
+			"rawScore": summary.RawSubtotal,
+		})
 	}
 	return rows
 }
@@ -558,16 +583,16 @@ func pep3BookletItemRanges() []pep3BookletItemRange {
 
 func pep3BookletDomainPlacements() []pep3BookletDomainPlacement {
 	return []pep3BookletDomainPlacement{
-		{SourcePDFPageNo: 3, BookletPageNo: 26, Layout: "left", DomainCode: "CMB"},
-		{SourcePDFPageNo: 3, BookletPageNo: 26, Layout: "left", DomainCode: "CVB"},
-		{SourcePDFPageNo: 4, BookletPageNo: 25, Layout: "right", DomainCode: "AE"},
-		{SourcePDFPageNo: 4, BookletPageNo: 25, Layout: "right", DomainCode: "SR"},
-		{SourcePDFPageNo: 5, BookletPageNo: 24, Layout: "left", DomainCode: "GM"},
-		{SourcePDFPageNo: 5, BookletPageNo: 24, Layout: "left", DomainCode: "VMI"},
-		{SourcePDFPageNo: 6, BookletPageNo: 23, Layout: "right", DomainCode: "FM"},
-		{SourcePDFPageNo: 7, BookletPageNo: 22, Layout: "left", DomainCode: "RL"},
-		{SourcePDFPageNo: 8, BookletPageNo: 21, Layout: "right", DomainCode: "EL"},
-		{SourcePDFPageNo: 9, BookletPageNo: 20, Layout: "left", DomainCode: "CVP"},
+		{SourcePDFPageNo: 20, BookletPageNo: 20, Layout: "full", DomainCode: "CVP"},
+		{SourcePDFPageNo: 21, BookletPageNo: 21, Layout: "full", DomainCode: "EL"},
+		{SourcePDFPageNo: 22, BookletPageNo: 22, Layout: "full", DomainCode: "RL"},
+		{SourcePDFPageNo: 23, BookletPageNo: 23, Layout: "full", DomainCode: "FM"},
+		{SourcePDFPageNo: 24, BookletPageNo: 24, Layout: "top", DomainCode: "GM"},
+		{SourcePDFPageNo: 24, BookletPageNo: 24, Layout: "bottom", DomainCode: "VMI"},
+		{SourcePDFPageNo: 25, BookletPageNo: 25, Layout: "top", DomainCode: "AE"},
+		{SourcePDFPageNo: 25, BookletPageNo: 25, Layout: "bottom", DomainCode: "SR"},
+		{SourcePDFPageNo: 26, BookletPageNo: 26, Layout: "top", DomainCode: "CMB"},
+		{SourcePDFPageNo: 26, BookletPageNo: 26, Layout: "bottom", DomainCode: "CVB"},
 	}
 }
 
