@@ -27,6 +27,28 @@ function inlineLoadingScript(): PluginOption {
     },
   }
 }
+
+function noCacheOptimizedDeps(): PluginOption {
+  return {
+    name: 'no-cache-optimized-deps',
+    apply: 'serve',
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (req.url?.startsWith('/node_modules/.vite/deps/')) {
+          const setHeader = res.setHeader.bind(res)
+          res.setHeader = (name, value) => {
+            if (String(name).toLowerCase() === 'cache-control')
+              return setHeader(name, 'no-store')
+            return setHeader(name, value)
+          }
+          res.setHeader('Cache-Control', 'no-store')
+        }
+        next()
+      })
+    },
+  }
+}
+
 // https://vitejs.dev/config/
 export default ({ mode }: ConfigEnv): UserConfig => {
   const env = loadEnv(mode, process.cwd())
@@ -59,6 +81,7 @@ export default ({ mode }: ConfigEnv): UserConfig => {
     base: publicBase,
     plugins: [
       inlineLoadingScript(),
+      noCacheOptimizedDeps(),
       ...createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
     ],
     resolve: {
