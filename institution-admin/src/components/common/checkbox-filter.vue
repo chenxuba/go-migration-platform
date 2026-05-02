@@ -257,6 +257,28 @@ const radioTypeOptions = computed(() => {
   })
 })
 
+const noSearchRadioOptions = computed(() => {
+  if (props.category !== 'noSearchRadio' || !props.showSearch)
+    return props.options
+
+  const keyword = searchPeo.value.trim().toLowerCase()
+  if (!keyword)
+    return props.options
+
+  return props.options.filter((option) => {
+    const searchFields = [
+      option?.value,
+      option?.name,
+      option?.label,
+      option?.title,
+    ]
+      .map(item => String(item || '').trim().toLowerCase())
+      .filter(Boolean)
+
+    return searchFields.some(field => field.includes(keyword))
+  })
+})
+
 function filter(inputValue, path) {
   return path.some(option => option.name.toLowerCase().includes(inputValue.toLowerCase()))
 }
@@ -544,6 +566,9 @@ function handleScroll(e) {
           <div v-if="category == 'stu'" class="flex justify-center px-8px">
             <a-input v-model:value="searchPeo" class="mt-1 mb-2 w-100% " :placeholder="placeholder" allow-clear />
           </div>
+          <div v-if="category == 'noSearchRadio' && showSearch" class="flex justify-center px-8px">
+            <a-input v-model:value="searchPeo" class="mt-1 mb-2 w-180px" :placeholder="placeholder" allow-clear />
+          </div>
         </a-menu-item>
         <div v-if="category == 'course'" class="max-h-80 overflow-auto scrollbar">
           <a-spin :spinning="spinning">
@@ -587,14 +612,14 @@ function handleScroll(e) {
           </a-spin>
         </div>
         <div v-if="category == 'noSearchRadio'" class="max-h-80 overflow-auto scrollbar">
-          <a-menu-item v-for="item in options" :key="item.id"
+          <a-menu-item v-for="item in noSearchRadioOptions" :key="item.id"
             :class="checkedValues == item.id ? 'menu-item active' : 'menu-item'" :value="item.id"
             @click="handleRadioChange(item.id)">
             <div class="text-sm text-#666  leading-7">
               {{ item.value ?? item.name }}
             </div>
           </a-menu-item>
-          <div v-if="options.length == 0" class="flex justify-center">
+          <div v-if="noSearchRadioOptions.length == 0" class="flex justify-center">
             <a-empty :image-style="{ width: '80px' }" :image="simpleImage" />
           </div>
         </div>

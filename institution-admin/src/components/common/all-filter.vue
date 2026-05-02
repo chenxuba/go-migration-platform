@@ -6754,8 +6754,8 @@ defineExpose({
                 @on-search="onSearchCourseCategoryFun" @on-dropdown-visible-change="queryCourseCategory" />
 
               <checkbox-filter v-if="filterType === 'scaleCategory'" :ref="(el) => handleRef(el, 'scaleCategory')"
-                v-model:checked-values="scaleCategoryVals" category="noSearchRadio" placeholder="请选择量表分类"
-                :options="scaleCategoryOptions" label="量表分类" type="radio" @radio-change="handleScaleCategoryChange" />
+                v-model:checked-values="scaleCategoryVals" category="noSearchRadio" placeholder="搜索量表分类"
+                :options="scaleCategoryOptions" label="量表分类" show-search type="radio" @radio-change="handleScaleCategoryChange" />
 
               <!-- 学员状态 -->
               <checkbox-filter v-if="filterType === 'studentStatus'" :ref="(el) => handleRef(el, 'studentStatus')"
