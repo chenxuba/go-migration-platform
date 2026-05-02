@@ -21,7 +21,6 @@ const currentReport = ref(null)
 const reportModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
-const selectedExportDimension = ref('all')
 
 const exportDimensionOptions = [
   {
@@ -68,6 +67,8 @@ const exportDimensionOptions = [
     pages: '第 1-26 页',
   },
 ]
+const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
+const selectedExportDimension = ref(defaultExportDimension)
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -196,6 +197,14 @@ function exportDimensionTitle(value) {
   return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
 }
 
+function exportDimensionPages(value) {
+  return exportDimensionOptions.find(item => item.value === value)?.pages || '第 1-26 页'
+}
+
+function exportDimensionDesc(value) {
+  return exportDimensionOptions.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
+}
+
 function getDownloadFilename(response, fallback) {
   const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
   const matched = `${disposition}`.match(/filename\*=UTF-8''([^;]+)/i) || `${disposition}`.match(/filename="?([^";]+)"?/i)
@@ -277,7 +286,7 @@ function openExportModal(row) {
   if (!row || exportingId.value)
     return
   exportTargetRecord.value = row
-  selectedExportDimension.value = 'all'
+  selectedExportDimension.value = defaultExportDimension
   exportModalOpen.value = true
 }
 
@@ -456,20 +465,25 @@ onMounted(() => {
 
     <a-modal
       v-model:open="exportModalOpen"
-      width="680px"
+      width="700px"
       :centered="true"
-      title="选择导出维度"
+      :footer="null"
       wrap-class-name="pep3-export-dimension-modal"
       :mask-closable="!exportingId"
-      :confirm-loading="!!exportingId"
-      ok-text="开始导出"
-      cancel-text="取消"
-      @ok="exportReport()"
       @cancel="closeExportModal"
     >
+      <template #title>
+        <div class="export-modal-title">
+          <span>导出记录册</span>
+          <small>选择本次导出的内容范围</small>
+        </div>
+      </template>
       <div class="export-dimension">
         <div class="export-dimension__summary">
-          <div>
+          <div class="export-dimension__file">
+            PDF
+          </div>
+          <div class="export-dimension__record">
             <div class="export-dimension__name">
               {{ exportTargetRecord?.studentName || '学员' }}
             </div>
@@ -477,31 +491,53 @@ onMounted(() => {
               {{ exportTargetRecord?.assessmentName || '评估记录' }} · {{ formatDate(exportTargetRecord?.assessmentDate) }}
             </div>
           </div>
-          <div class="export-dimension__type">
-            PDF
+          <div class="export-dimension__current">
+            <span>可选范围</span>
+            <strong>{{ exportDimensionOptions.length }} 项</strong>
           </div>
         </div>
-        <div class="export-dimension__grid">
-          <button
-            v-for="option in exportDimensionOptions"
-            :key="option.value"
-            type="button"
-            class="export-dimension-card"
-            :class="{ 'export-dimension-card--active': selectedExportDimension === option.value }"
-            :aria-pressed="selectedExportDimension === option.value"
-            :disabled="!!exportingId"
-            @click="selectedExportDimension = option.value"
-          >
-            <span class="export-dimension-card__badge">{{ option.badge }}</span>
-            <span class="export-dimension-card__content">
-              <span class="export-dimension-card__title">
-                {{ option.title }}
-                <span v-if="option.recommended" class="export-dimension-card__tag">推荐</span>
-              </span>
-              <span class="export-dimension-card__desc">{{ option.desc }}</span>
-              <span class="export-dimension-card__pages">{{ option.pages }}</span>
-            </span>
-          </button>
+        <div class="export-dimension__chooser">
+          <div class="export-dimension__matrix">
+            <button
+              v-for="option in exportDimensionOptions"
+              :key="option.value"
+              type="button"
+              class="export-dimension-chip"
+              :class="{ 'export-dimension-chip--active': selectedExportDimension === option.value }"
+              :aria-pressed="selectedExportDimension === option.value"
+              :title="option.title"
+              :disabled="!!exportingId"
+              @click="selectedExportDimension = option.value"
+            >
+              <span class="export-dimension-chip__dot" />
+              <span class="export-dimension-chip__text">{{ option.title }}</span>
+              <span v-if="option.recommended" class="export-dimension-chip__tag">推荐</span>
+            </button>
+          </div>
+          <div class="export-dimension__detail">
+            <span class="export-dimension__detail-label">导出内容</span>
+            <strong>{{ exportDimensionTitle(selectedExportDimension) }}</strong>
+            <p>{{ exportDimensionDesc(selectedExportDimension) }}</p>
+            <div class="export-dimension__detail-pages">
+              <span>包含页码</span>
+              <em>{{ exportDimensionPages(selectedExportDimension) }}</em>
+            </div>
+          </div>
+        </div>
+        <div class="export-dimension__footer">
+          <div class="export-dimension__selection">
+            <span>将导出</span>
+            <strong>{{ exportDimensionTitle(selectedExportDimension) }}</strong>
+            <em>{{ exportDimensionPages(selectedExportDimension) }}</em>
+          </div>
+          <div class="export-dimension__actions">
+            <a-button :disabled="!!exportingId" @click="closeExportModal">
+              取消
+            </a-button>
+            <a-button type="primary" :loading="!!exportingId" @click="exportReport()">
+              开始导出
+            </a-button>
+          </div>
         </div>
       </div>
     </a-modal>
@@ -618,61 +654,148 @@ onMounted(() => {
   }
 }
 
+.export-modal-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  span {
+    color: #1f2937;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 24px;
+  }
+
+  small {
+    color: #8a94a6;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+}
+
 .export-dimension {
-  padding-top: 2px;
+  padding: 16px 20px 0;
 }
 
 .export-dimension__summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 14px 16px;
-  margin-bottom: 16px;
-  background: #f7f9fc;
-  border: 1px solid #eef1f6;
+  gap: 12px;
+  padding: 12px;
+  margin-bottom: 14px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
   border-radius: 8px;
 }
 
+.export-dimension__file {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  color: var(--pro-ant-color-primary);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0;
+  background: #eef6ff;
+  border: 1px solid #d9eaff;
+  border-radius: 8px;
+}
+
+.export-dimension__record {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .export-dimension__name {
+  overflow: hidden;
   color: #1f2937;
   font-size: 15px;
   font-weight: 600;
   line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .export-dimension__meta {
-  margin-top: 3px;
+  margin-top: 2px;
+  overflow: hidden;
   color: #7a8494;
   font-size: 12px;
   line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.export-dimension__type {
+.export-dimension__current {
+  flex: 0 0 auto;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 46px;
-  height: 28px;
-  color: var(--pro-ant-color-primary);
-  font-size: 13px;
-  font-weight: 700;
-  background: #eef5ff;
-  border: 1px solid #d7e8ff;
-  border-radius: 6px;
+  flex-direction: column;
+  min-width: 138px;
+  padding-left: 14px;
+  border-left: 1px solid #e5eaf2;
+
+  span {
+    color: #9aa4b2;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  strong {
+    overflow: hidden;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
-.export-dimension__grid {
+.export-dimension__chooser {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 12px;
+  align-items: stretch;
+}
+
+.export-dimension__matrix {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
+  max-height: 188px;
+  overflow-y: auto;
+  scrollbar-color: #cfd8e3 transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #cfd8e3;
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #aebacd;
+  }
 }
 
-.export-dimension-card {
+.export-dimension-chip {
   display: flex;
-  gap: 12px;
-  width: 100%;
-  min-height: 104px;
-  padding: 14px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 10px;
   color: inherit;
   font: inherit;
   text-align: left;
@@ -683,12 +806,12 @@ onMounted(() => {
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 
   &:hover {
-    border-color: #bfd9ff;
-    box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+    background: #fbfdff;
+    border-color: #c9ddf7;
   }
 
   &:focus-visible {
-    outline: 2px solid rgba(24, 144, 255, 0.28);
+    outline: 2px solid rgba(24, 144, 255, 0.22);
     outline-offset: 2px;
   }
 
@@ -698,70 +821,229 @@ onMounted(() => {
   }
 }
 
-.export-dimension-card--active {
+.export-dimension-chip--active {
   background: #f7fbff;
-  border-color: var(--pro-ant-color-primary);
-  box-shadow: 0 8px 22px rgba(24, 144, 255, 0.12);
+  border-color: #8dc6ff;
+  box-shadow: 0 3px 10px rgba(24, 144, 255, 0.08);
 }
 
-.export-dimension-card__badge {
+.export-dimension-chip__dot {
   flex: 0 0 auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 38px;
-  height: 38px;
-  color: #53708f;
-  font-size: 12px;
-  font-weight: 700;
-  background: #f2f5f9;
-  border-radius: 8px;
+  width: 8px;
+  height: 8px;
+  background: #cbd5e1;
+  border-radius: 50%;
 }
 
-.export-dimension-card--active .export-dimension-card__badge {
-  color: #fff;
+.export-dimension-chip--active .export-dimension-chip__dot {
   background: var(--pro-ant-color-primary);
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.13);
 }
 
-.export-dimension-card__content {
+.export-dimension-chip__text {
+  flex: 1 1 auto;
   min-width: 0;
-}
-
-.export-dimension-card__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  color: #202733;
-  font-size: 14px;
-  font-weight: 600;
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
   line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.export-dimension-card__tag {
+.export-dimension-chip--active .export-dimension-chip__text {
+  color: #1f2937;
+  font-weight: 600;
+}
+
+.export-dimension-chip__tag {
   flex: 0 0 auto;
   padding: 0 5px;
   color: var(--pro-ant-color-primary);
   font-size: 11px;
   font-weight: 500;
   line-height: 18px;
-  background: #eef5ff;
+  background: #eef6ff;
   border-radius: 4px;
 }
 
-.export-dimension-card__desc {
-  display: block;
-  margin-top: 6px;
-  color: #687386;
+.export-dimension__detail {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: 12px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+}
+
+.export-dimension__detail-label {
+  color: #98a2b3;
   font-size: 12px;
   line-height: 18px;
 }
 
-.export-dimension-card__pages {
-  display: block;
-  margin-top: 8px;
-  color: #98a2b3;
+.export-dimension__detail strong {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.export-dimension__detail p {
+  flex: 1 1 auto;
+  display: -webkit-box;
+  margin: 8px 0 12px;
+  overflow: hidden;
+  color: #687386;
+  font-size: 12px;
+  line-height: 19px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.export-dimension__detail-pages {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-top: 10px;
+  color: #8a94a6;
   font-size: 12px;
   line-height: 18px;
+  border-top: 1px solid #e8edf4;
+
+  em {
+    color: var(--pro-ant-color-primary);
+    font-style: normal;
+    font-weight: 600;
+  }
+}
+
+.export-dimension__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 20px;
+  margin: 16px -20px 0;
+  background: #fbfcfe;
+  border-top: 1px solid #eef1f5;
+}
+
+.export-dimension__selection {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: #7a8494;
+  font-size: 13px;
+  line-height: 22px;
+
+  span {
+    flex: 0 0 auto;
+  }
+
+  strong {
+    min-width: 0;
+    margin-left: 8px;
+    overflow: hidden;
+    color: #1f2937;
+    font-weight: 600;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  em {
+    flex: 0 0 auto;
+    margin-left: 10px;
+    padding-left: 10px;
+    color: #9aa4b2;
+    font-style: normal;
+    border-left: 1px solid #e2e8f0;
+  }
+}
+
+.export-dimension__actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 760px) {
+  .export-dimension__summary,
+  .export-dimension__footer {
+    align-items: flex-start;
+  }
+
+  .export-dimension__current {
+    display: none;
+  }
+
+  .export-dimension__chooser {
+    grid-template-columns: 1fr;
+  }
+
+  .export-dimension__matrix {
+    max-height: 55vh;
+  }
+
+  .export-dimension__footer {
+    flex-direction: column;
+  }
+
+  .export-dimension__selection,
+  .export-dimension__actions {
+    width: 100%;
+  }
+
+  .export-dimension__actions {
+    justify-content: flex-end;
+  }
+}
+</style>
+
+<style lang="less">
+.pep3-export-dimension-modal {
+  .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 10px 32px rgba(15, 23, 42, 0.14);
+  }
+
+  .ant-modal-header {
+    padding: 18px 24px 14px;
+    margin: 0;
+    border-bottom: 1px solid #eef1f5;
+  }
+
+  .ant-modal-title {
+    margin: 0;
+  }
+
+  .ant-modal-close {
+    top: 16px;
+    inset-inline-end: 16px;
+    color: #8a94a6;
+  }
+
+  .ant-modal-body {
+    padding: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .pep3-export-dimension-modal {
+    .ant-modal {
+      width: calc(100vw - 32px) !important;
+      max-width: calc(100vw - 32px);
+    }
+  }
 }
 </style>
