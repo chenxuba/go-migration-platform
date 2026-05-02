@@ -1,14 +1,10 @@
 package service
 
 import (
-	"bytes"
 	"context"
 	"embed"
 	"errors"
 	"fmt"
-	"image"
-	"image/draw"
-	"image/jpeg"
 	"math"
 	"os"
 	"strconv"
@@ -100,10 +96,6 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 		if err != nil {
 			return nil, fmt.Errorf("load PEP-3 booklet template page %d: %w", pageNo, err)
 		}
-		raw, err = sharpenPEP3BookletTemplateImage(raw)
-		if err != nil {
-			return nil, fmt.Errorf("sharpen PEP-3 booklet template page %d: %w", pageNo, err)
-		}
 		holder, err := gopdf.ImageHolderByBytes(raw)
 		if err != nil {
 			return nil, fmt.Errorf("decode PEP-3 booklet template page %d: %w", pageNo, err)
@@ -126,57 +118,6 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	renderer.drawEducationPlanningPages(items, itemScores, rawScores, score.Result.Scales)
 
 	return pdf.GetBytesPdfReturnErr()
-}
-
-func sharpenPEP3BookletTemplateImage(raw []byte) ([]byte, error) {
-	img, _, err := image.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return nil, err
-	}
-	bounds := img.Bounds()
-	if bounds.Empty() || bounds.Dx() < 3 || bounds.Dy() < 3 {
-		return raw, nil
-	}
-
-	src := image.NewRGBA(bounds)
-	draw.Draw(src, bounds, img, bounds.Min, draw.Src)
-	dst := image.NewRGBA(bounds)
-	copy(dst.Pix, src.Pix)
-	srcPix := append([]byte(nil), src.Pix...)
-
-	const amount = 0.42
-	centerWeight := 1 + 4*amount
-	for y := bounds.Min.Y + 1; y < bounds.Max.Y-1; y++ {
-		for x := bounds.Min.X + 1; x < bounds.Max.X-1; x++ {
-			offset := src.PixOffset(x, y)
-			left := src.PixOffset(x-1, y)
-			right := src.PixOffset(x+1, y)
-			top := src.PixOffset(x, y-1)
-			bottom := src.PixOffset(x, y+1)
-			for channel := 0; channel < 3; channel++ {
-				value := float64(srcPix[offset+channel])*centerWeight -
-					amount*(float64(srcPix[left+channel])+float64(srcPix[right+channel])+float64(srcPix[top+channel])+float64(srcPix[bottom+channel]))
-				dst.Pix[offset+channel] = clampPEP3BookletPDFByte(value)
-			}
-		}
-	}
-
-	var out bytes.Buffer
-	if err := jpeg.Encode(&out, dst, &jpeg.Options{Quality: 96}); err != nil {
-		return nil, err
-	}
-	return out.Bytes(), nil
-}
-
-func clampPEP3BookletPDFByte(value float64) byte {
-	switch {
-	case value <= 0:
-		return 0
-	case value >= 255:
-		return 255
-	default:
-		return byte(math.Round(value))
-	}
 }
 
 func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetailVO, score PEP3ScoreResponse, institutionName string) {
