@@ -495,23 +495,23 @@ var institutionMenuSeeds = []institutionMenuSeed{
 				},
 			},
 			{
-				Name:        "交互训练",
-				Code:        "grp:tchIact",
-				Sort:        30,
-				Title:       "交互训练",
-				Description: "交互训练相关权限。",
-				Authorities: []institutionMenuSeedAuthority{
-					{Name: "查看交互训练", Code: "perm:tchIactView", Sort: 10, Weight: 0, Remark: "支持查看交互训练内容。"},
-				},
-			},
-			{
 				Name:        "教案中心",
 				Code:        "grp:tchPln",
-				Sort:        40,
+				Sort:        30,
 				Title:       "教案中心",
 				Description: "教案中心查看权限。",
 				Authorities: []institutionMenuSeedAuthority{
 					{Name: "查看教案中心", Code: "perm:tchPlnView", Sort: 10, Weight: 0, Remark: "支持查看教案中心内容。"},
+				},
+			},
+			{
+				Name:        "交互训练",
+				Code:        "grp:tchIact",
+				Sort:        40,
+				Title:       "交互训练",
+				Description: "交互训练相关权限。",
+				Authorities: []institutionMenuSeedAuthority{
+					{Name: "查看交互训练", Code: "perm:tchIactView", Sort: 10, Weight: 0, Remark: "支持查看交互训练内容。"},
 				},
 			},
 			{

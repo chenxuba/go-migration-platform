@@ -77,9 +77,9 @@ var VisibleRouteCatalog = []RouteCatalogGroup{
 		MatchNames: []string{"教研中心"},
 		Children: []RouteCatalogChild{
 			{Name: "量表库", Code: "page:tchScl", Sort: 10, Introduce: "量表库。", MatchNames: []string{"量表库", "评估量表"}, UseDirectChildren: false},
-			{Name: "交互训练", Code: "page:tchIact", Sort: 20, Introduce: "交互训练。", MatchNames: []string{"交互训练"}, UseDirectChildren: false},
+			{Name: "评估记录", Code: "page:tchRec", Sort: 20, Introduce: "评估记录。", MatchNames: []string{"评估记录"}, UseDirectChildren: false},
 			{Name: "教案中心", Code: "page:tchPln", Sort: 30, Introduce: "教案中心。", MatchNames: []string{"教案中心"}, UseDirectChildren: false},
-			{Name: "评估记录", Code: "page:tchRec", Sort: 40, Introduce: "评估记录。", MatchNames: []string{"评估记录"}, UseDirectChildren: false},
+			{Name: "交互训练", Code: "page:tchIact", Sort: 40, Introduce: "交互训练。", MatchNames: []string{"交互训练"}, UseDirectChildren: false},
 			{Name: "交互记录", Code: "page:tchIactRec", Sort: 50, Introduce: "交互记录。", MatchNames: []string{"交互记录"}, UseDirectChildren: false},
 			{Name: "作业记录", Code: "page:tchHwkRec", Sort: 60, Introduce: "作业记录。", MatchNames: []string{"作业记录"}, UseDirectChildren: false},
 			{Name: "康复小结", Code: "page:tchRcvSum", Sort: 70, Introduce: "康复小结。", MatchNames: []string{"康复小结"}, UseDirectChildren: false},

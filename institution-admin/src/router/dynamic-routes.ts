@@ -269,12 +269,12 @@ export default [
         },
       },
       {
-        path: '/teacherCenter/3',
-        name: 'TeacherCenter2',
-        component: () => import('~/pages/exception/403.vue'),
+        path: '/teacherCenter/evaluationRecord',
+        name: 'EvaluationRecord',
+        component: () => import('~/pages/teacher-center/evaluationRecord.vue'),
         meta: {
-          title: '交互训练',
-          access: [AccessEnum.teacher_interactive],
+          title: '评估记录',
+          access: [AccessEnum.teacher_record],
         },
       },
       {
@@ -287,12 +287,12 @@ export default [
         },
       },
       {
-        path: '/teacherCenter/evaluationRecord',
-        name: 'EvaluationRecord',
-        component: () => import('~/pages/teacher-center/evaluationRecord.vue'),
+        path: '/teacherCenter/3',
+        name: 'TeacherCenter2',
+        component: () => import('~/pages/exception/403.vue'),
         meta: {
-          title: '评估记录',
-          access: [AccessEnum.teacher_record],
+          title: '交互训练',
+          access: [AccessEnum.teacher_interactive],
         },
       },
       {

@@ -320,9 +320,9 @@ export const AccessEnum = {
 
   // 教研中心
   teacher_scale: route('page:tchScl', '教研中心', '量表库'),
-  teacher_interactive: route('page:tchIact', '教研中心', '交互训练'),
-  teacher_plan: route('page:tchPln', '教研中心', '教案中心'),
   teacher_record: route('page:tchRec', '教研中心', '评估记录'),
+  teacher_plan: route('page:tchPln', '教研中心', '教案中心'),
+  teacher_interactive: route('page:tchIact', '教研中心', '交互训练'),
   teacher_interactive_record: route('page:tchIactRec', '教研中心', '交互记录'),
   teacher_homework_record: route('page:tchHwkRec', '教研中心', '作业记录'),
   teacher_recovery_summary: route('page:tchRcvSum', '教研中心', '康复小结'),
