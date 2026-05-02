@@ -709,6 +709,19 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
   })
 }
 
+export function downloadPEP3IEPPlanWordApi(params: { id?: number | string, duration?: number | string } = {}) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/assessments/pep3/records/iep-plan/word', {
+    params,
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function pagePEP3AssessmentRecordsApi(data: PEP3RecordPageRequest) {
   return usePost<PageResult<PEP3AssessmentRecordSummary>>('/api/v1/assessments/pep3/records/page', normalizePEP3PageRequest(data), { silentError: true })
 }

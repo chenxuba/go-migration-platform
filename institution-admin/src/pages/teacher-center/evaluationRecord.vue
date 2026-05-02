@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
 import messageService from '@/utils/messageService'
 import { useTableColumns } from '@/composables/useTableColumns'
+import GenerateIepModal from './components/generate-iep-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
@@ -21,6 +22,8 @@ const currentReport = ref(null)
 const reportModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
+const iepModalOpen = ref(false)
+const iepTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
@@ -144,7 +147,7 @@ const allColumns = ref([
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 170,
+    width: 240,
   },
 ])
 
@@ -383,6 +386,13 @@ function openExportModal(row) {
   exportModalOpen.value = true
 }
 
+function openIepModal(row) {
+  if (!row)
+    return
+  iepTargetRecord.value = row
+  iepModalOpen.value = true
+}
+
 function closeExportModal() {
   if (exportingId.value)
     return
@@ -516,6 +526,7 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
+                  <a @click="openIepModal(record)">生成IEP</a>
                 </a-space>
               </template>
             </template>
@@ -685,6 +696,11 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </a-modal>
+
+    <generate-iep-modal
+      v-model:open="iepModalOpen"
+      :record="iepTargetRecord"
+    />
   </div>
 </template>
 

@@ -72,6 +72,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/pep3/records/report", handler.pep3AssessmentRecordReport)
 	mux.HandleFunc("/api/v1/assessments/pep3/records/booklet", handler.pep3AssessmentRecordBooklet)
 	mux.HandleFunc("/api/v1/assessments/pep3/records/booklet/pdf", handler.pep3AssessmentRecordBookletPDF)
+	mux.HandleFunc("/api/v1/assessments/pep3/records/iep-plan/word", handler.pep3AssessmentRecordIEPPlanWord)
 	mux.HandleFunc("/api/v1/assessments/pep3/records/caregiver-report/invite", handler.invitePEP3CaregiverReportForRecord)
 	mux.HandleFunc("/api/v1/assessments/pep3/records/page", handler.pep3AssessmentRecordsPage)
 	mux.HandleFunc("/api/v1/assessments/pep3/records/delete", handler.deletePEP3AssessmentRecord)

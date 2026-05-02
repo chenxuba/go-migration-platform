@@ -549,6 +549,40 @@ func (handler *Handler) pep3AssessmentRecordBookletPDF(w http.ResponseWriter, r 
 	_, _ = w.Write(content)
 }
 
+func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var recordID int64
+	if rawID := strings.TrimSpace(r.URL.Query().Get("id")); rawID != "" {
+		parsedID, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil || parsedID < 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+			return
+		}
+		recordID = parsedID
+	}
+	durationMonths, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("duration")))
+	fileName, contentType, content, err := handler.service.ExportPEP3IEPPlanWord(claims.UserID, recordID, durationMonths)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
 func (handler *Handler) pep3AssessmentRecordsPage(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
