@@ -5,7 +5,6 @@ import { useTableColumns } from '@/composables/useTableColumns'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
-  getPEP3AssessmentReportApi,
   pagePEP3AssessmentRecordsApi,
 } from '@/api/edu-center/pep3-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
@@ -21,6 +20,10 @@ const currentReport = ref(null)
 const reportModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
+const reportPreviewUrl = ref('')
+const reportPreviewRequestKey = ref(0)
+const reportPdfReady = ref(false)
+let reportPdfReadyTimer = 0
 
 const exportDimensionOptions = [
   {
@@ -69,6 +72,10 @@ const exportDimensionOptions = [
 ]
 const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
 const selectedExportDimension = ref(defaultExportDimension)
+const reportModuleValues = ['test_score', 'development_profile', 'score_and_profile', 'scoring_tables']
+const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleValues.includes(item.value))
+const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
+const activeReportModule = ref(defaultReportModule)
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -205,6 +212,28 @@ function exportDimensionDesc(value) {
   return exportDimensionOptions.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
 }
 
+function reportModuleTitle(value) {
+  return reportModuleOptions.find(item => item.value === value)?.title || reportModuleOptions[0]?.title || '测验分数'
+}
+
+function reportModuleShortTitle(value) {
+  const titleMap = {
+    test_score: '测验分数',
+    development_profile: '发展表现图',
+    score_and_profile: '分数+表现图',
+    scoring_tables: '评分表',
+  }
+  return titleMap[value] || reportModuleTitle(value)
+}
+
+function reportModuleDesc(value) {
+  return reportModuleOptions.find(item => item.value === value)?.desc || ''
+}
+
+function reportModulePages(value) {
+  return reportModuleOptions.find(item => item.value === value)?.pages || ''
+}
+
 function getDownloadFilename(response, fallback) {
   const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
   const matched = `${disposition}`.match(/filename\*=UTF-8''([^;]+)/i) || `${disposition}`.match(/filename="?([^";]+)"?/i)
@@ -268,18 +297,80 @@ function handleTableChange(page) {
 }
 
 async function viewReport(row) {
+  if (!row)
+    return
+  activeReportModule.value = defaultReportModule
+  currentReport.value = {
+    title: 'PEP-3测试员记录册',
+    record: row,
+  }
+  reportModalOpen.value = true
+  loadReportPdfPreview(row, defaultReportModule)
+}
+
+function resetReportPdfReady() {
+  if (reportPdfReadyTimer) {
+    window.clearTimeout(reportPdfReadyTimer)
+    reportPdfReadyTimer = 0
+  }
+  reportPdfReady.value = false
+}
+
+function revokeReportPreviewUrl() {
+  if (!reportPreviewUrl.value)
+    return
+  URL.revokeObjectURL(reportPreviewUrl.value)
+  reportPreviewUrl.value = ''
+  resetReportPdfReady()
+}
+
+async function loadReportPdfPreview(row = currentReport.value?.record, dimension = activeReportModule.value) {
+  if (!row?.id)
+    return
+  const requestKey = reportPreviewRequestKey.value + 1
+  reportPreviewRequestKey.value = requestKey
+  resetReportPdfReady()
   previewLoading.value = true
   try {
-    const res = await getPEP3AssessmentReportApi(row.id)
-    currentReport.value = unwrap(res)
-    reportModalOpen.value = true
+    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+    const nextUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
+    if (requestKey !== reportPreviewRequestKey.value) {
+      URL.revokeObjectURL(nextUrl)
+      return
+    }
+    revokeReportPreviewUrl()
+    reportPreviewUrl.value = nextUrl
   }
   catch (error) {
-    messageService.error(getErrorMessage(error, '获取评估报告失败'))
+    if (requestKey === reportPreviewRequestKey.value)
+      messageService.error(getErrorMessage(error, '加载PDF预览失败'))
   }
   finally {
-    previewLoading.value = false
+    if (requestKey === reportPreviewRequestKey.value)
+      previewLoading.value = false
   }
+}
+
+function selectReportModule(value) {
+  if (activeReportModule.value === value)
+    return
+  activeReportModule.value = value
+  loadReportPdfPreview()
+}
+
+function handleReportPdfFrameLoad() {
+  resetReportPdfReady()
+  reportPdfReadyTimer = window.setTimeout(() => {
+    reportPdfReady.value = true
+    reportPdfReadyTimer = 0
+  }, 180)
+}
+
+function closeReportModal() {
+  reportModalOpen.value = false
+  reportPreviewRequestKey.value += 1
+  previewLoading.value = false
+  revokeReportPreviewUrl()
 }
 
 function openExportModal(row) {
@@ -296,20 +387,21 @@ function closeExportModal() {
   exportModalOpen.value = false
 }
 
-async function exportReport(row = exportTargetRecord.value) {
+async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
   exportingId.value = row.id
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, selectedExportDimension.value)
+    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(selectedExportDimension.value)}-${formatDate(row.assessmentDate)}.pdf`
+    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
-    exportModalOpen.value = false
+    if (exportModalOpen.value)
+      exportModalOpen.value = false
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '导出评估记录失败'))
@@ -339,6 +431,11 @@ async function deleteRecord(row) {
 onMounted(() => {
   fetchScaleCategories()
   fetchRecords()
+})
+
+onBeforeUnmount(() => {
+  revokeReportPreviewUrl()
+  resetReportPdfReady()
 })
 </script>
 
@@ -425,42 +522,81 @@ onMounted(() => {
       </div>
     </div>
 
-    <a-modal v-model:open="reportModalOpen" width="840px" title="评估报告" :footer="null">
-      <a-spin :spinning="previewLoading">
-        <div v-if="currentReport" class="report-preview">
-          <div class="report-head">
-            <div>
-              <div class="report-title">
-                {{ currentReport.title || currentReport.record?.assessmentName || '评估报告' }}
-              </div>
-              <div class="report-subtitle">
-                {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
-              </div>
+    <a-modal
+      v-model:open="reportModalOpen"
+      width="842px"
+      :centered="true"
+      :footer="null"
+      wrap-class-name="pep3-report-modal"
+      @cancel="closeReportModal"
+    >
+      <template #title>
+        <div class="report-modal-title">
+          <span>评估报告</span>
+          <small>按记录册导出维度查看报告内容</small>
+        </div>
+      </template>
+      <div v-if="currentReport" class="report-preview">
+        <div class="report-head">
+          <div class="report-info">
+            <div class="report-title">
+              {{ currentReport.title || currentReport.record?.assessmentName || '评估报告' }}
             </div>
-            <a-button type="primary" @click="openExportModal(currentReport.record)">
-              导出
-            </a-button>
+            <div class="report-subtitle">
+              {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
+            </div>
           </div>
-          <div class="report-section-list">
-            <div v-for="section in currentReport.sections || []" :key="section.sectionCode" class="report-section">
-              <div class="report-section-title">
-                {{ section.title }}
-              </div>
-              <div v-if="section.fields?.length" class="report-fields">
-                <div v-for="field in section.fields" :key="field.key" class="report-field">
-                  <span>{{ field.label }}</span>
-                  <strong>{{ field.value || '-' }}</strong>
-                </div>
-              </div>
-              <div v-if="section.textItems?.length" class="report-text">
-                <p v-for="(text, index) in section.textItems" :key="index">
-                  {{ text }}
-                </p>
-              </div>
-            </div>
+          <a-button
+            type="primary"
+            size="small"
+            class="report-export-btn"
+            :loading="exportingId === currentReport.record?.id"
+            @click="exportReport(currentReport.record, activeReportModule)"
+          >
+            导出
+          </a-button>
+        </div>
+        <div class="report-module-area">
+          <div class="report-module-grid">
+            <button
+              v-for="option in reportModuleOptions"
+              :key="option.value"
+              type="button"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': activeReportModule === option.value }"
+              :title="option.title"
+              @click="selectReportModule(option.value)"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">{{ reportModuleShortTitle(option.value) }}</span>
+              <span v-if="option.recommended" class="report-module-chip__tag">推荐</span>
+            </button>
+          </div>
+          <div class="report-module-summary">
+            <strong>{{ reportModulePages(activeReportModule) }}</strong>
+            <span>{{ reportModuleDesc(activeReportModule) }}</span>
           </div>
         </div>
-      </a-spin>
+
+        <div class="report-module-content">
+          <div class="report-pdf-shell">
+            <iframe
+              v-if="reportPreviewUrl"
+              :key="reportPreviewUrl"
+              class="report-pdf-frame"
+              :class="{ 'report-pdf-frame--ready': reportPdfReady }"
+              :src="`${reportPreviewUrl}#toolbar=0&navpanes=0`"
+              title="PEP-3记录册PDF预览"
+              @load="handleReportPdfFrameLoad"
+            />
+            <div v-if="previewLoading || (reportPreviewUrl && !reportPdfReady)" class="report-pdf-loading">
+              <a-spin size="small" />
+              <span>PDF加载中...</span>
+            </div>
+            <a-empty v-else-if="!previewLoading" description="暂无PDF预览" :image-style="{ width: '80px' }" />
+          </div>
+        </div>
+      </div>
     </a-modal>
 
     <a-modal
@@ -579,79 +715,263 @@ onMounted(() => {
   color: #999;
 }
 
+.report-modal-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+
+  span {
+    color: #1f2937;
+    font-size: 18px;
+    font-weight: 600;
+    line-height: 26px;
+  }
+
+  small {
+    color: #8a94a6;
+    font-size: 12px;
+    font-weight: 400;
+    line-height: 18px;
+  }
+}
+
 .report-preview {
-  max-height: 68vh;
-  overflow-y: auto;
-  padding-right: 4px;
+  padding: 14px 24px 0;
 }
 
 .report-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding-bottom: 16px;
-  border-bottom: 1px solid #f0f0f0;
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.report-info {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  gap: 10px;
+  min-width: 0;
 }
 
 .report-title {
-  color: #222;
-  font-size: 16px;
+  min-width: 0;
+  overflow: hidden;
+  color: #1f2937;
+  font-size: 15px;
   font-weight: 600;
-  line-height: 24px;
+  line-height: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .report-subtitle {
-  margin-top: 4px;
-  color: #888;
+  flex: 0 0 auto;
+  color: #7a8494;
   font-size: 13px;
+  line-height: 20px;
+  white-space: nowrap;
 }
 
-.report-section {
-  padding: 14px 0;
-  border-bottom: 1px solid #f5f5f5;
+.report-export-btn {
+  flex: 0 0 auto;
+  min-width: 56px;
+  height: 28px;
+  padding: 0 12px;
 }
 
-.report-section-title {
-  color: #222;
-  font-weight: 600;
-  line-height: 22px;
-}
-
-.report-fields {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px 18px;
-  margin-top: 10px;
-}
-
-.report-field {
+.report-module-area {
   display: flex;
-  justify-content: space-between;
-  min-width: 0;
-  color: #666;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+}
 
-  span,
-  strong {
+.report-module-grid {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+.report-module-chip {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 7px;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e7edf5;
+  border-radius: 6px;
+  transition: background 0.16s ease, border-color 0.16s ease, box-shadow 0.16s ease;
+
+  &:hover {
+    background: #fbfdff;
+    border-color: #bfd9ff;
+  }
+}
+
+.report-module-chip--active {
+  background: #f7fbff;
+  border-color: #7dbbff;
+  box-shadow: 0 2px 8px rgba(24, 144, 255, 0.08);
+}
+
+.report-module-chip__dot {
+  flex: 0 0 auto;
+  width: 6px;
+  height: 6px;
+  background: #cbd5e1;
+  border-radius: 50%;
+}
+
+.report-module-chip--active .report-module-chip__dot {
+  background: var(--pro-ant-color-primary);
+  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.12);
+}
+
+.report-module-chip__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #334155;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-module-chip--active .report-module-chip__text {
+  color: var(--pro-ant-color-primary);
+  font-weight: 600;
+}
+
+.report-module-chip__tag {
+  flex: 0 0 auto;
+  padding: 0 5px;
+  color: var(--pro-ant-color-primary);
+  font-size: 12px;
+  line-height: 18px;
+  background: #eef6ff;
+  border-radius: 4px;
+}
+
+.report-module-summary {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 0;
+  padding-left: 12px;
+  border-left: 1px solid #e6edf6;
+
+  span {
+    flex: 1 1 auto;
+    min-width: 0;
     overflow: hidden;
+    color: #687386;
+    font-size: 12px;
+    line-height: 18px;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
 
   strong {
-    max-width: 58%;
-    color: #222;
-    font-weight: 500;
+    flex: 0 0 auto;
+    overflow: hidden;
+    color: var(--pro-ant-color-primary);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 }
 
-.report-text {
-  margin-top: 10px;
-  color: #555;
-  line-height: 22px;
+.report-module-content {
+  padding: 16px 0 22px;
+}
 
-  p {
-    margin-bottom: 6px;
+.report-pdf-shell {
+  position: relative;
+  min-height: 620px;
+  overflow: hidden;
+  background: #fff;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+}
+
+.report-pdf-frame {
+  display: block;
+  width: 100%;
+  height: min(72vh, 760px);
+  min-height: 620px;
+  opacity: 0;
+  background: #fff;
+  border: 0;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+  transition: opacity 0.16s ease;
+
+  &::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
   }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #aebccc;
+    background-clip: padding-box;
+    border: 2px solid transparent;
+  }
+}
+
+.report-pdf-frame--ready {
+  opacity: 1;
+}
+
+.report-pdf-loading {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 10px;
+  padding-top: 160px;
+  box-sizing: border-box;
+  color: #7a8494;
+  font-size: 13px;
+  background: #fff;
 }
 
 .export-modal-title {
@@ -976,9 +1296,37 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
+  .report-head,
   .export-dimension__summary,
   .export-dimension__footer {
     align-items: flex-start;
+  }
+
+  .report-head {
+    flex-direction: column;
+  }
+
+  .report-info {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 2px;
+    width: 100%;
+  }
+
+  .report-module-area {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .report-module-grid {
+    width: 100%;
+  }
+
+  .report-module-summary {
+    padding-top: 8px;
+    padding-left: 0;
+    border-top: 1px solid #e6edf6;
+    border-left: 0;
   }
 
   .export-dimension__current {
@@ -1009,6 +1357,64 @@ onMounted(() => {
 </style>
 
 <style lang="less">
+.pep3-report-modal {
+  .ant-modal {
+    max-width: calc(100vw - 48px);
+  }
+
+  .ant-modal-content {
+    padding: 0;
+    overflow: hidden;
+    border-radius: 12px;
+    box-shadow: 0 10px 32px rgba(15, 23, 42, 0.14);
+  }
+
+  .ant-modal-header {
+    padding: 20px 24px 14px;
+    margin: 0;
+    border-bottom: 1px solid #eef1f5;
+  }
+
+  .ant-modal-title {
+    margin: 0;
+  }
+
+  .ant-modal-close {
+    top: 18px;
+    inset-inline-end: 18px;
+    color: #8a94a6;
+  }
+
+  .ant-modal-body {
+    max-height: calc(100vh - 150px);
+    padding: 0;
+    overflow-y: auto;
+    scrollbar-color: #c6d1df transparent;
+    scrollbar-width: thin;
+
+    &::-webkit-scrollbar {
+      width: 10px;
+    }
+
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+      background: #c6d1df;
+      background-clip: padding-box;
+      border: 2px solid transparent;
+      border-radius: 999px;
+    }
+
+    &::-webkit-scrollbar-thumb:hover {
+      background: #aebccc;
+      background-clip: padding-box;
+      border: 2px solid transparent;
+    }
+  }
+}
+
 .pep3-export-dimension-modal {
   .ant-modal-content {
     padding: 0;
@@ -1039,6 +1445,7 @@ onMounted(() => {
 }
 
 @media (max-width: 760px) {
+  .pep3-report-modal,
   .pep3-export-dimension-modal {
     .ant-modal {
       width: calc(100vw - 32px) !important;
