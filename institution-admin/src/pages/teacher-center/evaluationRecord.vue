@@ -593,7 +593,11 @@ onBeforeUnmount(() => {
               <a-spin size="small" />
               <span>PDF加载中...</span>
             </div>
-            <a-empty v-else-if="!previewLoading" description="暂无PDF预览" :image-style="{ width: '80px' }" />
+            <a-empty
+              v-if="!reportPreviewUrl && !previewLoading"
+              description="暂无PDF预览"
+              :image-style="{ width: '80px' }"
+            />
           </div>
         </div>
       </div>
