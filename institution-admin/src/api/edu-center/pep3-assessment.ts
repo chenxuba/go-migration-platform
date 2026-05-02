@@ -115,6 +115,22 @@ export interface PEP3DraftPageRequest {
   queryModel: PEP3AssessmentDraftQueryModel
 }
 
+function normalizePEP3PageRequest<T extends PEP3RecordPageRequest | PEP3DraftPageRequest>(data: T): T {
+  const normalized = {
+    ...data,
+    queryModel: {
+      ...data.queryModel,
+    },
+  } as T
+  const rawStudentId = normalized.queryModel?.studentId
+  if (rawStudentId !== undefined && rawStudentId !== null && rawStudentId !== '') {
+    const studentId = Number(rawStudentId)
+    if (Number.isFinite(studentId) && studentId > 0)
+      normalized.queryModel.studentId = studentId
+  }
+  return normalized
+}
+
 export interface PEP3ScoreOption {
   value: number
   label: string
@@ -637,7 +653,7 @@ export function getPEP3AssessmentDraftDetailApi(id: number) {
 }
 
 export function pagePEP3AssessmentDraftsApi(data: PEP3DraftPageRequest) {
-  return usePost<PageResult<PEP3AssessmentDraftSummary>>('/api/v1/assessments/pep3/drafts/page', data)
+  return usePost<PageResult<PEP3AssessmentDraftSummary>>('/api/v1/assessments/pep3/drafts/page', normalizePEP3PageRequest(data), { silentError: true })
 }
 
 export function invitePEP3CaregiverReportApi(draftId: number) {
@@ -694,7 +710,7 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
 }
 
 export function pagePEP3AssessmentRecordsApi(data: PEP3RecordPageRequest) {
-  return usePost<PageResult<PEP3AssessmentRecordSummary>>('/api/v1/assessments/pep3/records/page', data)
+  return usePost<PageResult<PEP3AssessmentRecordSummary>>('/api/v1/assessments/pep3/records/page', normalizePEP3PageRequest(data), { silentError: true })
 }
 
 export function deletePEP3AssessmentRecordApi(id: number) {

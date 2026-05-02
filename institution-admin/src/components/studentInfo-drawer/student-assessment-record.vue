@@ -1,5 +1,6 @@
 <script setup>
 import dayjs from 'dayjs'
+import { Empty } from 'ant-design-vue'
 import messageService from '@/utils/messageService'
 import {
   deletePEP3AssessmentRecordApi,
@@ -31,6 +32,7 @@ const exportTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
+const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 let reportPdfReadyTimer = 0
 
 const queryModel = reactive({
@@ -589,8 +591,10 @@ onBeforeUnmount(() => {
             </div>
             <a-empty
               v-if="!reportPreviewUrl && !previewLoading"
+              class="report-pdf-empty"
               description="暂无PDF预览"
-              :image-style="{ width: '80px' }"
+              :image="simpleEmptyImage"
+              :image-style="{ height: '48px' }"
             />
           </div>
         </div>
@@ -928,6 +932,28 @@ onBeforeUnmount(() => {
   color: #7a8494;
   font-size: 13px;
   background: #fff;
+}
+
+.report-pdf-empty {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-direction: column;
+  margin: 0;
+  padding-top: 96px;
+  box-sizing: border-box;
+
+  :deep(.ant-empty-image) {
+    margin-bottom: 10px;
+  }
+
+  :deep(.ant-empty-description) {
+    color: #6b7280;
+    font-size: 14px;
+    line-height: 22px;
+  }
 }
 
 .export-dimension {

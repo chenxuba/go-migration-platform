@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"sort"
@@ -343,8 +344,8 @@ func (handler *Handler) pep3AssessmentDraftsPage(w http.ResponseWriter, r *http.
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var query model.AssessmentDraftPageQueryDTO
-	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+	query, err := decodeAssessmentDraftPageQuery(r)
+	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
@@ -558,8 +559,8 @@ func (handler *Handler) pep3AssessmentRecordsPage(w http.ResponseWriter, r *http
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var query model.AssessmentRecordPageQueryDTO
-	if err := json.NewDecoder(r.Body).Decode(&query); err != nil {
+	query, err := decodeAssessmentRecordPageQuery(r)
+	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return
 	}
@@ -596,6 +597,234 @@ func (handler *Handler) deletePEP3AssessmentRecord(w http.ResponseWriter, r *htt
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+type assessmentPageRequestPayload struct {
+	PageIndex int `json:"pageIndex"`
+	PageSize  int `json:"pageSize"`
+	Current   int `json:"current"`
+	Size      int `json:"size"`
+	SkipCount int `json:"skipCount"`
+}
+
+type assessmentRecordPagePayload struct {
+	PageRequestModel    assessmentPageRequestPayload `json:"pageRequestModel"`
+	QueryModel          assessmentRecordQueryPayload `json:"queryModel"`
+	PageIndex           int                          `json:"pageIndex"`
+	PageSize            int                          `json:"pageSize"`
+	Current             int                          `json:"current"`
+	Size                int                          `json:"size"`
+	AssessmentCode      string                       `json:"assessmentCode"`
+	ScaleCategory       string                       `json:"scaleCategory"`
+	StudentID           int64Payload                 `json:"studentId"`
+	SearchKey           string                       `json:"searchKey"`
+	AssessmentDateBegin string                       `json:"assessmentDateBegin"`
+	AssessmentDateEnd   string                       `json:"assessmentDateEnd"`
+}
+
+type assessmentDraftPagePayload struct {
+	PageRequestModel    assessmentPageRequestPayload `json:"pageRequestModel"`
+	QueryModel          assessmentDraftQueryPayload  `json:"queryModel"`
+	PageIndex           int                          `json:"pageIndex"`
+	PageSize            int                          `json:"pageSize"`
+	Current             int                          `json:"current"`
+	Size                int                          `json:"size"`
+	AssessmentCode      string                       `json:"assessmentCode"`
+	StudentID           int64Payload                 `json:"studentId"`
+	SearchKey           string                       `json:"searchKey"`
+	AssessmentDateBegin string                       `json:"assessmentDateBegin"`
+	AssessmentDateEnd   string                       `json:"assessmentDateEnd"`
+	Status              string                       `json:"status"`
+}
+
+type assessmentRecordQueryPayload struct {
+	AssessmentCode      string       `json:"assessmentCode"`
+	ScaleCategory       string       `json:"scaleCategory"`
+	StudentID           int64Payload `json:"studentId"`
+	SearchKey           string       `json:"searchKey"`
+	AssessmentDateBegin string       `json:"assessmentDateBegin"`
+	AssessmentDateEnd   string       `json:"assessmentDateEnd"`
+}
+
+type assessmentDraftQueryPayload struct {
+	AssessmentCode      string       `json:"assessmentCode"`
+	StudentID           int64Payload `json:"studentId"`
+	SearchKey           string       `json:"searchKey"`
+	AssessmentDateBegin string       `json:"assessmentDateBegin"`
+	AssessmentDateEnd   string       `json:"assessmentDateEnd"`
+	Status              string       `json:"status"`
+}
+
+type int64Payload struct {
+	Value int64
+	Valid bool
+}
+
+func (value *int64Payload) UnmarshalJSON(raw []byte) error {
+	text := strings.TrimSpace(string(raw))
+	if text == "" || text == "null" || text == `""` {
+		return nil
+	}
+	if strings.HasPrefix(text, `"`) {
+		var str string
+		if err := json.Unmarshal(raw, &str); err != nil {
+			return err
+		}
+		parsed, err := strconv.ParseInt(strings.TrimSpace(str), 10, 64)
+		if err == nil && parsed > 0 {
+			value.Value = parsed
+			value.Valid = true
+		}
+		return nil
+	}
+	var number float64
+	if err := json.Unmarshal(raw, &number); err != nil {
+		return err
+	}
+	if number > 0 {
+		value.Value = int64(number)
+		value.Valid = true
+	}
+	return nil
+}
+
+func (value int64Payload) ptr() *int64 {
+	if !value.Valid || value.Value <= 0 {
+		return nil
+	}
+	out := value.Value
+	return &out
+}
+
+func decodeAssessmentRecordPageQuery(r *http.Request) (model.AssessmentRecordPageQueryDTO, error) {
+	var query model.AssessmentRecordPageQueryDTO
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return query, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return query, nil
+	}
+	var payload assessmentRecordPagePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return query, err
+	}
+	query.PageRequestModel = payload.PageRequestModel.toPageRequestModel()
+	query.QueryModel = payload.QueryModel.toRecordQueryModel()
+	mergeAssessmentRecordFlatQuery(&query, payload)
+	return query, nil
+}
+
+func decodeAssessmentDraftPageQuery(r *http.Request) (model.AssessmentDraftPageQueryDTO, error) {
+	var query model.AssessmentDraftPageQueryDTO
+	raw, err := io.ReadAll(r.Body)
+	if err != nil {
+		return query, err
+	}
+	if strings.TrimSpace(string(raw)) == "" {
+		return query, nil
+	}
+	var payload assessmentDraftPagePayload
+	if err := json.Unmarshal(raw, &payload); err != nil {
+		return query, err
+	}
+	query.PageRequestModel = payload.PageRequestModel.toPageRequestModel()
+	query.QueryModel = payload.QueryModel.toDraftQueryModel()
+	mergeAssessmentDraftFlatQuery(&query, payload)
+	return query, nil
+}
+
+func (payload assessmentPageRequestPayload) toPageRequestModel() model.PageRequestModel {
+	return model.PageRequestModel{
+		PageIndex: firstPositiveInt(payload.PageIndex, payload.Current),
+		PageSize:  firstPositiveInt(payload.PageSize, payload.Size),
+		SkipCount: payload.SkipCount,
+	}
+}
+
+func (payload assessmentRecordQueryPayload) toRecordQueryModel() model.AssessmentRecordQueryModel {
+	return model.AssessmentRecordQueryModel{
+		AssessmentCode:      strings.TrimSpace(payload.AssessmentCode),
+		ScaleCategory:       strings.TrimSpace(payload.ScaleCategory),
+		StudentID:           payload.StudentID.ptr(),
+		SearchKey:           strings.TrimSpace(payload.SearchKey),
+		AssessmentDateBegin: strings.TrimSpace(payload.AssessmentDateBegin),
+		AssessmentDateEnd:   strings.TrimSpace(payload.AssessmentDateEnd),
+	}
+}
+
+func (payload assessmentDraftQueryPayload) toDraftQueryModel() model.AssessmentDraftQueryModel {
+	return model.AssessmentDraftQueryModel{
+		AssessmentCode:      strings.TrimSpace(payload.AssessmentCode),
+		StudentID:           payload.StudentID.ptr(),
+		SearchKey:           strings.TrimSpace(payload.SearchKey),
+		Status:              strings.TrimSpace(payload.Status),
+		AssessmentDateBegin: strings.TrimSpace(payload.AssessmentDateBegin),
+		AssessmentDateEnd:   strings.TrimSpace(payload.AssessmentDateEnd),
+	}
+}
+
+func mergeAssessmentRecordFlatQuery(query *model.AssessmentRecordPageQueryDTO, flat assessmentRecordPagePayload) {
+	if query.PageRequestModel.PageIndex <= 0 {
+		query.PageRequestModel.PageIndex = firstPositiveInt(flat.PageIndex, flat.Current)
+	}
+	if query.PageRequestModel.PageSize <= 0 {
+		query.PageRequestModel.PageSize = firstPositiveInt(flat.PageSize, flat.Size)
+	}
+	if query.QueryModel.AssessmentCode == "" {
+		query.QueryModel.AssessmentCode = strings.TrimSpace(flat.AssessmentCode)
+	}
+	if query.QueryModel.ScaleCategory == "" {
+		query.QueryModel.ScaleCategory = strings.TrimSpace(flat.ScaleCategory)
+	}
+	if query.QueryModel.StudentID == nil {
+		query.QueryModel.StudentID = flat.StudentID.ptr()
+	}
+	if query.QueryModel.SearchKey == "" {
+		query.QueryModel.SearchKey = strings.TrimSpace(flat.SearchKey)
+	}
+	if query.QueryModel.AssessmentDateBegin == "" {
+		query.QueryModel.AssessmentDateBegin = strings.TrimSpace(flat.AssessmentDateBegin)
+	}
+	if query.QueryModel.AssessmentDateEnd == "" {
+		query.QueryModel.AssessmentDateEnd = strings.TrimSpace(flat.AssessmentDateEnd)
+	}
+}
+
+func mergeAssessmentDraftFlatQuery(query *model.AssessmentDraftPageQueryDTO, flat assessmentDraftPagePayload) {
+	if query.PageRequestModel.PageIndex <= 0 {
+		query.PageRequestModel.PageIndex = firstPositiveInt(flat.PageIndex, flat.Current)
+	}
+	if query.PageRequestModel.PageSize <= 0 {
+		query.PageRequestModel.PageSize = firstPositiveInt(flat.PageSize, flat.Size)
+	}
+	if query.QueryModel.AssessmentCode == "" {
+		query.QueryModel.AssessmentCode = strings.TrimSpace(flat.AssessmentCode)
+	}
+	if query.QueryModel.StudentID == nil {
+		query.QueryModel.StudentID = flat.StudentID.ptr()
+	}
+	if query.QueryModel.SearchKey == "" {
+		query.QueryModel.SearchKey = strings.TrimSpace(flat.SearchKey)
+	}
+	if query.QueryModel.Status == "" {
+		query.QueryModel.Status = strings.TrimSpace(flat.Status)
+	}
+	if query.QueryModel.AssessmentDateBegin == "" {
+		query.QueryModel.AssessmentDateBegin = strings.TrimSpace(flat.AssessmentDateBegin)
+	}
+	if query.QueryModel.AssessmentDateEnd == "" {
+		query.QueryModel.AssessmentDateEnd = strings.TrimSpace(flat.AssessmentDateEnd)
+	}
+}
+
+func firstPositiveInt(values ...int) int {
+	for _, value := range values {
+		if value > 0 {
+			return value
+		}
+	}
+	return 0
 }
 
 func (req pep3AssessmentRecordCreateRequest) toScoreRequest() pep3ScoreRequest {
