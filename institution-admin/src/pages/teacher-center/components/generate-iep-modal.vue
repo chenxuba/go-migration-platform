@@ -2,7 +2,6 @@
 import {
   CloseOutlined,
   DeleteOutlined,
-  DownOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
@@ -1080,10 +1079,23 @@ function confirmRegenerateMonthlyPlan() {
     content: `重新生成会覆盖当前${selectedExecutionMonthLabel.value}计划内容，已导出的Word不受影响。确认要继续吗？`,
     okText: '重新生成',
     cancelText: '保留当前计划',
+    closable: true,
     okButtonProps: { danger: true },
     centered: true,
-    onOk: () => generateMonthlyPlan({ forceRegenerate: true }),
+    onOk() {
+      runAfterConfirmClosed(() => generateMonthlyPlan({ forceRegenerate: true }))
+    },
   })
+}
+
+function runAfterConfirmClosed(callback) {
+  window.setTimeout(() => {
+    callback()
+  }, 0)
+}
+
+function isConfirmDialogDismiss(args) {
+  return args.length > 0
 }
 
 async function generateWeeklyPlan(skipConfirm = false, options = {}) {
@@ -1105,9 +1117,16 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
       content: `是否直接基于${planTitle.value}生成周计划？`,
       okText: '直接生成周计划',
       cancelText: '先生成月度计划',
+      closable: true,
       centered: true,
-      onOk: () => generateWeeklyPlan(true),
-      onCancel: () => generateMonthlyPlan(),
+      onOk() {
+        runAfterConfirmClosed(() => generateWeeklyPlan(true))
+      },
+      onCancel(...args) {
+        if (isConfirmDialogDismiss(args))
+          return
+        runAfterConfirmClosed(() => generateMonthlyPlan())
+      },
     })
     return
   }
@@ -1191,28 +1210,13 @@ function confirmRegenerateWeeklyPlan() {
     content: `重新生成会覆盖当前${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划内容，已导出的Word不受影响。确认要继续吗？`,
     okText: '重新生成',
     cancelText: '保留当前计划',
+    closable: true,
     okButtonProps: { danger: true },
     centered: true,
-    onOk: () => generateWeeklyPlan(true, { forceRegenerate: true }),
+    onOk() {
+      runAfterConfirmClosed(() => generateWeeklyPlan(true, { forceRegenerate: true }))
+    },
   })
-}
-
-function handleExecutionPlanMenuClick({ key }) {
-  if (key === 'monthly') {
-    if (selectedExecutionMonthGenerated.value) {
-      messageService.warning(`${selectedExecutionMonthLabel.value}计划已生成，请进入该月份后点击“重新生成”`)
-      return
-    }
-    generateMonthlyPlan()
-    return
-  }
-  if (key === 'weekly') {
-    if (selectedExecutionWeekGenerated.value) {
-      messageService.warning(`${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划已生成，请进入该周后点击“重新生成”`)
-      return
-    }
-    generateWeeklyPlan()
-  }
 }
 
 function clearSelectedMonthWeeklyPlans() {
@@ -2287,15 +2291,15 @@ async function loadFirstAvailableIepPlan(requestKey) {
 
 async function persistIepPlan(status, options = {}) {
   if (aiGenerating.value || savingDraft.value || confirmingPlan.value)
-    return
+    return false
   if (!props.record?.id) {
     messageService.warning('请先选择评估记录')
-    return
+    return false
   }
   const payloadPlan = planPayloadForSave()
   if (!payloadPlan.rows.length) {
     messageService.warning('请先点击AI生成IEP计划，或填写至少一条计划内容')
-    return
+    return false
   }
   const isConfirming = status === 'confirmed'
   if (isConfirming)
@@ -2321,10 +2325,12 @@ async function persistIepPlan(status, options = {}) {
     messageService.success(options.successMessage || (isConfirming ? (options.closeAfterSave ? 'IEP已确认生成' : '修改已保存') : '草稿已保存'))
     if (options.closeAfterSave)
       forceCloseModal()
+    return true
   }
   catch (error) {
     console.error('save iep plan failed', error)
     messageService.error(error?.response?.data?.message || error?.message || '保存IEP计划失败')
+    return false
   }
   finally {
     if (isConfirming)
@@ -2342,8 +2348,19 @@ function confirmIepPlan() {
   return persistIepPlan('confirmed', { closeAfterSave: true })
 }
 
-function saveConfirmedPlan() {
-  return persistIepPlan('confirmed')
+async function saveEditablePlan() {
+  if (isMonthlyPlanEditable.value || isWeeklyPlanEditable.value) {
+    await saveActiveExecutionPlan()
+    return
+  }
+  if (!isPlanEditable.value)
+    return
+  const status = savedPlanStatus.value === 'confirmed' ? 'confirmed' : 'draft'
+  const success = await persistIepPlan(status, {
+    successMessage: status === 'confirmed' ? '修改已保存' : '草稿已保存',
+  })
+  if (success)
+    finishEditPlan()
 }
 
 function parseAttachmentFilename(headerValue) {
@@ -2686,25 +2703,35 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="iep-preview-toolbar__actions">
-          <a-dropdown :disabled="!planRows.length || navigationDisabled">
-            <a-button size="small" type="primary" :loading="generatingExecutionPlan">
-              生成执行计划
-              <DownOutlined />
-            </a-button>
-            <template #overlay>
-              <a-menu @click="handleExecutionPlanMenuClick">
-                <a-menu-item key="monthly" :disabled="selectedExecutionMonthGenerated">生成{{ selectedExecutionMonthLabel }}计划</a-menu-item>
-                <a-menu-item key="weekly" :disabled="selectedExecutionWeekGenerated">生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划</a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+          <a-button
+            v-if="!selectedExecutionMonthGenerated"
+            size="small"
+            type="primary"
+            :loading="generatingExecutionPlan && executionPlanGeneratingType === 'monthly'"
+            :disabled="!planRows.length || navigationDisabled"
+            @click="() => generateMonthlyPlan()"
+          >
+            生成{{ selectedExecutionMonthLabel }}计划
+          </a-button>
+          <a-button
+            v-if="!selectedExecutionWeekGenerated"
+            size="small"
+            type="primary"
+            :loading="generatingExecutionPlan && executionPlanGeneratingType === 'weekly'"
+            :disabled="!planRows.length || navigationDisabled"
+            @click="() => generateWeeklyPlan()"
+          >
+            生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}计划
+          </a-button>
           <a-button
             v-if="isAnyPlanEditable"
             size="small"
-            :disabled="savingExecutionPlan"
-            @click="finishEditPlan"
+            type="primary"
+            :loading="savingExecutionPlan || savingDraft || confirmingPlan"
+            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan"
+            @click="saveEditablePlan"
           >
-            完成编辑
+            保存修改
           </a-button>
           <a-button
             v-else-if="canEditActivePreview"
@@ -2713,6 +2740,16 @@ onBeforeUnmount(() => {
             @click="startEditPlan"
           >
             编辑计划
+          </a-button>
+          <a-button
+            v-if="isIepPreview && planRows.length"
+            size="small"
+            danger
+            :loading="aiGenerating"
+            :disabled="loadingSavedPlan || generatingExecutionPlan || savingDraft || confirmingPlan || savingExecutionPlan || isAnyPlanEditable"
+            @click="generateAIPlan"
+          >
+            重新生成
           </a-button>
           <a-button
             v-if="executionPlanView === 'monthly' && selectedExecutionMonthGenerated"
@@ -3373,7 +3410,12 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <div v-if="isIepPreview" class="footer-actions">
-          <a-button :loading="aiGenerating" :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan" @click="generateAIPlan">
+          <a-button
+            v-if="!planRows.length"
+            :loading="aiGenerating"
+            :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan"
+            @click="generateAIPlan"
+          >
             {{ aiGenerateButtonText }}
           </a-button>
           <a-button @click="closeModal">
@@ -3387,9 +3429,6 @@ onBeforeUnmount(() => {
           >
             保存草稿
           </a-button>
-          <a-button :disabled="!planRows.length || generatingExecutionPlan || savingExecutionPlan" :loading="exportingWord" @click="exportIepWord">
-            导出
-          </a-button>
           <a-button
             v-if="savedPlanStatus !== 'confirmed'"
             type="primary"
@@ -3399,15 +3438,6 @@ onBeforeUnmount(() => {
           >
             确认生成IEP
           </a-button>
-          <a-button
-            v-else
-            type="primary"
-            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
-            :loading="confirmingPlan"
-            @click="saveConfirmedPlan"
-          >
-            保存修改
-          </a-button>
         </div>
         <div v-else class="footer-actions">
           <a-button :disabled="generatingExecutionPlan" @click="switchPreviewView('iep')">
@@ -3415,32 +3445,6 @@ onBeforeUnmount(() => {
           </a-button>
           <a-button @click="closeModal">
             取消
-          </a-button>
-          <a-button
-            v-if="canEditActivePreview && !isAnyPlanEditable"
-            :disabled="navigationDisabled"
-            @click="startEditPlan"
-          >
-            编辑计划
-          </a-button>
-          <a-button
-            v-if="isAnyPlanEditable"
-            :disabled="savingExecutionPlan"
-            @click="finishEditPlan"
-          >
-            完成编辑
-          </a-button>
-          <a-button :disabled="!canExportActivePreview || generatingExecutionPlan || savingExecutionPlan" :loading="exportingWord" @click="exportExecutionPlanWord">
-            导出
-          </a-button>
-          <a-button
-            v-if="isMonthlyPlanEditable || isWeeklyPlanEditable"
-            type="primary"
-            :loading="savingExecutionPlan"
-            :disabled="generatingExecutionPlan || loadingSavedPlan"
-            @click="saveActiveExecutionPlan"
-          >
-            保存修改
           </a-button>
         </div>
       </footer>
@@ -3776,6 +3780,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 12px;
   align-items: flex-start;
+  justify-content: center;
   box-sizing: border-box;
   height: var(--iep-side-panel-height);
   max-height: var(--iep-side-panel-height);
@@ -4129,7 +4134,7 @@ onBeforeUnmount(() => {
 
 .iep-generating-overlay {
   position: absolute;
-  top: 164px;
+  top: 130px;
   right: 0;
   bottom: 55px;
   left: 0;
