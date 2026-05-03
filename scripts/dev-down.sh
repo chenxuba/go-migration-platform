@@ -8,7 +8,28 @@ cd "${ROOT:A}"
 
 mkdir -p .runlogs
 
-echo "==> 1) 按 .runlogs/*.pid 发送 SIGTERM…"
+echo "==> 1) 停用可能抢占端口的本地 API launchd job…"
+if command -v launchctl >/dev/null 2>&1; then
+  uid=$(id -u)
+  launchd_labels=(
+    go-migration-platform-iam-api
+    go-migration-platform-platform-api
+    go-migration-platform-education-api
+    com.go-migration-platform.iam-api
+    com.go-migration-platform.platform-api
+    com.go-migration-platform.education-api
+  )
+  for label in "${launchd_labels[@]}"; do
+    if launchctl print "gui/${uid}/${label}" >/dev/null 2>&1; then
+      echo "    launchd ${label}"
+      launchctl bootout "gui/${uid}/${label}" >/dev/null 2>&1 || launchctl remove "${label}" >/dev/null 2>&1 || true
+    fi
+  done
+else
+  echo "    未检测到 launchctl，跳过。"
+fi
+
+echo "==> 2) 按 .runlogs/*.pid 发送 SIGTERM…"
 for pidfile in .runlogs/*.pid(N); do
   [[ -f "$pidfile" ]] || continue
   pid=$(tr -d '[:space:]' <"$pidfile" | head -1)
@@ -19,7 +40,7 @@ for pidfile in .runlogs/*.pid(N); do
   rm -f "$pidfile"
 done
 
-echo "==> 2) 按端口 8081 8082 8083 结束监听进程（SIGTERM）…"
+echo "==> 3) 按端口 8081 8082 8083 结束监听进程（SIGTERM）…"
 for port in 8081 8082 8083; do
   pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u)
   for p in ${(f)pids}; do
@@ -30,7 +51,7 @@ done
 
 sleep 1
 
-echo "==> 3) 仍在监听的端口 → SIGKILL…"
+echo "==> 4) 仍在监听的端口 → SIGKILL…"
 for port in 8081 8082 8083; do
   pids=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -t 2>/dev/null | sort -u)
   for p in ${(f)pids}; do

@@ -11,6 +11,23 @@ if [[ ! -x "$GO" ]]; then
 fi
 
 mkdir -p .runlogs
+rm -f .runlogs/iam.pid .runlogs/platform.pid .runlogs/education.pid
+
+ensure_port_free() {
+  local port="$1"
+  local service="$2"
+  if lsof -nP -iTCP:"$port" -sTCP:LISTEN >/dev/null 2>&1; then
+    echo "端口 ${port} 已被占用，无法启动 ${service}。当前监听进程：" >&2
+    lsof -nP -iTCP:"$port" -sTCP:LISTEN >&2 || true
+    echo "请先执行 scripts/dev-down.sh，或手动停止上面的进程。" >&2
+    exit 1
+  fi
+}
+
+echo "==> 检查 8081/8082/8083 是否可用…"
+ensure_port_free 8081 iam-service
+ensure_port_free 8082 platform-service
+ensure_port_free 8083 education-service
 
 echo "[启动 1/3] iam-service → 后台 go run，日志 .runlogs/iam.log"
 nohup "$GO" run ./services/iam/cmd/api > .runlogs/iam.log 2>&1 &
