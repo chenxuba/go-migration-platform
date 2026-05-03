@@ -5,6 +5,8 @@ import (
 	"bytes"
 	"strings"
 	"testing"
+
+	"go-migration-platform/services/education/internal/model"
 )
 
 func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
@@ -77,5 +79,63 @@ func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
 	}
 	if strings.Count(documentXML, "<w:tbl>") != 2 {
 		t.Fatalf("main IEP content should be rendered as a single table before the home plan section")
+	}
+}
+
+func TestBuildPEP3WeeklyPlanWordDocxMergesDateLabels(t *testing.T) {
+	plan := modelPEP3WeeklyPlanForWordTest()
+	docxBytes, err := buildPEP3WeeklyPlanWordDocx(plan)
+	if err != nil {
+		t.Fatalf("buildPEP3WeeklyPlanWordDocx failed: %v", err)
+	}
+
+	reader, err := zip.NewReader(bytes.NewReader(docxBytes), int64(len(docxBytes)))
+	if err != nil {
+		t.Fatalf("open generated docx failed: %v", err)
+	}
+	documentXML := readZipEntryForTest(t, reader, "word/document.xml")
+
+	for _, expected := range []string{
+		`<w:gridCol w:w="1925"/>`,
+		`<w:gridCol w:w="698"/>`,
+		`<w:trHeight w:val="540" w:hRule="atLeast"/>`,
+		`<w:tcW w:w="1396" w:type="dxa"/><w:gridSpan w:val="2"/><w:vAlign w:val="center"/><w:noWrap/>`,
+		`<w:tcW w:w="2792" w:type="dxa"/><w:gridSpan w:val="4"/><w:vAlign w:val="center"/>`,
+		`<w:t>出生年月</w:t>`,
+		`<w:t>训练日期</w:t>`,
+	} {
+		if !strings.Contains(documentXML, expected) {
+			t.Fatalf("generated weekly document.xml missing %q", expected)
+		}
+	}
+
+	birthLabelIndex := strings.Index(documentXML, `<w:t>出生年月</w:t>`)
+	birthDateIndex := strings.Index(documentXML, `<w:t>2023-04-30</w:t>`)
+	trainingLabelIndex := strings.Index(documentXML, `<w:t>训练日期</w:t>`)
+	trainingDateIndex := strings.Index(documentXML, `<w:t>2026-05-01 至 2026-05-06</w:t>`)
+	if birthLabelIndex < 0 || birthDateIndex < 0 || birthDateIndex <= birthLabelIndex {
+		t.Fatalf("birth date value should follow the merged birth date label")
+	}
+	if trainingLabelIndex < 0 || trainingDateIndex < 0 || trainingDateIndex <= trainingLabelIndex {
+		t.Fatalf("training date value should follow the merged training date label")
+	}
+}
+
+func modelPEP3WeeklyPlanForWordTest() model.PEP3WeeklyPlanAIResult {
+	return model.PEP3WeeklyPlanAIResult{
+		Title:        "康复教学周计划日记录卡5月第1周",
+		Student:      model.PEP3IEPPlanStudent{Name: "张一鸣", Gender: "男", BirthDate: "2023-04-30"},
+		TeacherName:  "陈瑞",
+		CourseName:   "康复教学",
+		TrainingDate: "2026-05-01 至 2026-05-06",
+		Preparation:  "彩色珠子、透明塑料杯",
+		WeekDates:    []string{"2026-05-01", "2026-05-02", "2026-05-03", "2026-05-04", "2026-05-05", "2026-05-06"},
+		Rows: []model.PEP3WeeklyPlanRow{
+			{
+				Project:    "大肌肉：扶持下单脚站立",
+				Content:    "治疗师双手扶住儿童腰部，辅助抬起右脚，保持左脚站立。",
+				Completion: []string{"", "", "", "", "", ""},
+			},
+		},
 	}
 }
