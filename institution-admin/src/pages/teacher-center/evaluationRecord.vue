@@ -239,6 +239,10 @@ function reportModulePages(value) {
   return reportModuleOptions.find(item => item.value === value)?.pages || ''
 }
 
+function iepActionText(record) {
+  return record?.iepPlanStatus === 'confirmed' ? '查看IEP' : '生成IEP'
+}
+
 function getDownloadFilename(response, fallback) {
   const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
   const matched = `${disposition}`.match(/filename\*=UTF-8''([^;]+)/i) || `${disposition}`.match(/filename="?([^";]+)"?/i)
@@ -526,7 +530,7 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
-                  <a @click="openIepModal(record)">生成IEP</a>
+                  <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
             </template>
@@ -700,6 +704,8 @@ onBeforeUnmount(() => {
     <generate-iep-modal
       v-model:open="iepModalOpen"
       :record="iepTargetRecord"
+      @saved="fetchRecords"
+      @confirmed="fetchRecords"
     />
   </div>
 </template>

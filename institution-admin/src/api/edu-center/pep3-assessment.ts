@@ -123,7 +123,7 @@ function normalizePEP3PageRequest<T extends PEP3RecordPageRequest | PEP3DraftPag
     },
   } as T
   const rawStudentId = normalized.queryModel?.studentId
-  if (rawStudentId !== undefined && rawStudentId !== null && rawStudentId !== '') {
+  if (rawStudentId !== undefined && rawStudentId !== null && `${rawStudentId}`.trim() !== '') {
     const studentId = Number(rawStudentId)
     if (Number.isFinite(studentId) && studentId > 0)
       normalized.queryModel.studentId = studentId
@@ -483,6 +483,7 @@ export interface PEP3AssessmentRecordSummary {
   examinerName?: string
   dataStatus?: string
   remark?: string
+  iepPlanStatus?: string
   createdTime?: string
   updatedTime?: string
 }
@@ -760,11 +761,43 @@ export interface PEP3IEPPlanAIResult {
   }>
 }
 
+export interface PEP3IEPPlanSavedVO {
+  exists: boolean
+  status?: 'draft' | 'confirmed' | string
+  durationMonths?: number
+  plan?: PEP3IEPPlanAIResult
+  updatedTime?: string
+}
+
 export function generatePEP3IEPPlanAIApi(data: { id?: number | string, durationMonths?: number | string }) {
   return usePost<PEP3IEPPlanAIResult>('/api/v1/assessments/pep3/records/iep-plan/ai', data, {
     loading: false,
     silentError: true,
     timeout: 180000,
+  })
+}
+
+export function getPEP3IEPPlanApi(id: number | string) {
+  return useGet<PEP3IEPPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/detail', { id }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function savePEP3IEPPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  status?: string
+  plan: PEP3IEPPlanAIResult
+}) {
+  return usePost<PEP3IEPPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
   })
 }
 

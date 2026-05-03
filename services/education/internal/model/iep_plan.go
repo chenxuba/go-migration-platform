@@ -11,6 +11,21 @@ type PEP3IEPPlanWordExportRequest struct {
 	Plan           *PEP3IEPPlanAIResult `json:"plan,omitempty"`
 }
 
+type PEP3IEPPlanSaveRequest struct {
+	ID             int64               `json:"id"`
+	DurationMonths int                 `json:"durationMonths,omitempty"`
+	Status         string              `json:"status,omitempty"`
+	Plan           PEP3IEPPlanAIResult `json:"plan"`
+}
+
+type PEP3IEPPlanSavedVO struct {
+	Exists         bool                 `json:"exists"`
+	Status         string               `json:"status,omitempty"`
+	DurationMonths int                  `json:"durationMonths,omitempty"`
+	Plan           *PEP3IEPPlanAIResult `json:"plan,omitempty"`
+	UpdatedTime    string               `json:"updatedTime,omitempty"`
+}
+
 type PEP3IEPPlanAIResult struct {
 	Title   string             `json:"title"`
 	Model   string             `json:"model,omitempty"`

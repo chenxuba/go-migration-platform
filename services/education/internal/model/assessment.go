@@ -54,6 +54,7 @@ type AssessmentRecordSummaryVO struct {
 	ExaminerName   string     `json:"examinerName,omitempty"`
 	DataStatus     string     `json:"dataStatus,omitempty"`
 	Remark         string     `json:"remark,omitempty"`
+	IEPPlanStatus  string     `json:"iepPlanStatus,omitempty"`
 	CreatedTime    *time.Time `json:"createdTime,omitempty"`
 	UpdatedTime    *time.Time `json:"updatedTime,omitempty"`
 }

@@ -406,6 +406,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			WHERE del_flag = 0
 			GROUP BY scale_code
 		) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+		LEFT JOIN assessment_iep_plan aip ON aip.inst_id = ar.inst_id AND aip.record_id = ar.id AND aip.del_flag = 0
 	`
 	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+fromSQL+" WHERE "+whereSQL, args...).Scan(&total); err != nil {
 		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
@@ -416,7 +417,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
 		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
 		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
-		       ar.examiner_id, ar.examiner_name, ar.remark, ar.create_time, ar.update_time
+		       ar.examiner_id, ar.examiner_name, ar.remark, IFNULL(aip.status, ''), ar.create_time, ar.update_time
 		`+fromSQL+`
 		WHERE `+whereSQL+`
 		ORDER BY ar.assessment_date DESC, ar.id DESC
@@ -457,6 +458,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			&item.ExaminerID,
 			&item.ExaminerName,
 			&item.Remark,
+			&item.IEPPlanStatus,
 			&createdAt,
 			&updatedAt,
 		); err != nil {

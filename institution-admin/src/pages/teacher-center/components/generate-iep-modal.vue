@@ -1,9 +1,11 @@
 <script setup>
 import {
   CloseOutlined,
+  DeleteOutlined,
+  PlusOutlined,
 } from '@ant-design/icons-vue'
-import { computed, ref } from 'vue'
-import { downloadPEP3IEPPlanWordApi, generatePEP3IEPPlanAIStreamApi } from '@/api/edu-center/pep3-assessment'
+import { computed, ref, watch } from 'vue'
+import { downloadPEP3IEPPlanWordApi, generatePEP3IEPPlanAIStreamApi, getPEP3IEPPlanApi, savePEP3IEPPlanApi } from '@/api/edu-center/pep3-assessment'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
@@ -18,7 +20,7 @@ const props = defineProps({
   },
 })
 
-const emit = defineEmits(['update:open'])
+const emit = defineEmits(['update:open', 'saved', 'confirmed'])
 const userStore = useUserStore()
 
 const openModal = computed({
@@ -30,10 +32,17 @@ const planDuration = ref('3')
 const activeDomainKey = ref('language')
 const exportingWord = ref(false)
 const aiGenerating = ref(false)
+const loadingSavedPlan = ref(false)
+const savingDraft = ref(false)
+const confirmingPlan = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
 const streamingPlan = ref(null)
 const generatedPlan = ref(null)
+const editablePlan = ref(null)
+const savedPlanStatus = ref('')
+const editingPlan = ref(false)
+const selectedPlanRowIndex = ref(0)
 
 const domains = [
   { key: 'language', name: '语言沟通', icon: '语', longCount: 3, shortCount: 6 },
@@ -399,26 +408,11 @@ const defaultPlanRows = computed(() => {
 
 const planSheet = computed(() => {
   const { start, end } = defaultPlanDateRange.value
-  const activePlan = generatedPlan.value || streamingPlan.value
+  if (editablePlan.value)
+    return editablePlan.value
+  const activePlan = streamingPlan.value || generatedPlan.value
   if (activePlan) {
-    return {
-      title: activePlan.title || planTitle.value,
-      student: {
-        name: activePlan.student?.name || props.record?.studentName || '',
-        gender: activePlan.student?.gender || props.record?.studentGender || '',
-        birthDate: activePlan.student?.birthDate || formatDate(props.record?.birthDate) || '',
-      },
-      meta: {
-        ...(activePlan.meta || {}),
-        planDate: activePlan.meta?.planDate || formatDate(new Date()) || start,
-        participant: currentTeacherName.value,
-        implementer: activePlan.meta?.implementer || currentTeacherName.value,
-        startDate: activePlan.meta?.startDate || start,
-        endDate: activePlan.meta?.endDate || end,
-      },
-      rows: normalizePlanRows(activePlan.rows),
-      model: activePlan.model || (streamingPlan.value ? 'AI生成中' : ''),
-    }
+    return createPlanSheetFromPlan(activePlan, { preserveRows: false, model: activePlan.model || (streamingPlan.value ? 'AI生成中' : '') })
   }
   return {
     title: planTitle.value,
@@ -440,11 +434,33 @@ const planSheet = computed(() => {
 })
 
 const planRows = computed(() => planSheet.value.rows)
+const isPlanEditable = computed(() => editingPlan.value && !!editablePlan.value && !aiGenerating.value && !loadingSavedPlan.value)
+const modalWidth = computed(() => (isPlanEditable.value ? 1220 : 960))
+
+const selectedPlanRow = computed(() => {
+  const rows = planRows.value || []
+  return rows[selectedPlanRowIndex.value] || rows[0] || null
+})
+
+const selectedPlanRowTitle = computed(() => {
+  const row = selectedPlanRow.value
+  if (!row)
+    return '未选择目标'
+  const sameDomainRows = (planRows.value || []).filter(item => item.domain === row.domain)
+  const domainIndex = sameDomainRows.findIndex(item => item === row)
+  return `${row.domain || '综合康复'} / 第${Math.max(1, domainIndex + 1)}条短期目标`
+})
 
 const planStatusLabel = computed(() => {
   if (aiGenerating.value)
     return '生成中'
-  if (generatedPlan.value)
+  if (loadingSavedPlan.value)
+    return '加载中'
+  if (savedPlanStatus.value === 'confirmed')
+    return '已确认'
+  if (savedPlanStatus.value === 'draft')
+    return '草稿'
+  if (editablePlan.value || generatedPlan.value)
     return planSheet.value.model || 'AI草案'
   return '未生成'
 })
@@ -473,6 +489,7 @@ const planDisplayRows = computed(() => {
     }
     return {
       ...row,
+      sourceIndex: index,
       showGroupCell: isFirstInDomain,
       rowSpan,
     }
@@ -487,7 +504,7 @@ const studentMeta = computed(() => {
 })
 
 const hasPlanContent = computed(() => {
-  return aiGenerating.value || !!generatedPlan.value || !!streamingPlan.value || planRows.value.length > 0
+  return aiGenerating.value || !!editablePlan.value || !!generatedPlan.value || !!streamingPlan.value || planRows.value.length > 0
 })
 
 const headerPlanMeta = computed(() => {
@@ -502,8 +519,12 @@ const headerPlanMeta = computed(() => {
 const periodHint = computed(() => {
   if (aiGenerating.value)
     return '正在按周期生成计划行和起止日期'
+  if (savedPlanStatus.value === 'confirmed')
+    return '已确认后仍可编辑并保存修改'
+  if (savedPlanStatus.value === 'draft')
+    return '草稿未确认，列表仍显示生成IEP'
   if (hasPlanContent.value)
-    return '已按周期分配计划行和起止日期'
+    return '已生成，可直接编辑表格'
   return '选择周期后点击AI生成'
 })
 
@@ -798,6 +819,200 @@ function stageDateForGoal(stageRanges = [], goalIndex = 0, goalCount = 1) {
   return stageRanges[rangeIndex]
 }
 
+function unwrapResponse(res) {
+  return res?.data ?? res?.result ?? res
+}
+
+function deepClone(value) {
+  return JSON.parse(JSON.stringify(value || {}))
+}
+
+function createPlanSheetFromPlan(plan = {}, options = {}) {
+  const { start, end } = defaultPlanDateRange.value
+  const rows = options.preserveRows
+    ? sanitizeEditablePlanRows(plan.rows)
+    : normalizePlanRows(plan.rows)
+  return {
+    title: plan.title || planTitle.value,
+    student: {
+      name: plan.student?.name || props.record?.studentName || '',
+      gender: plan.student?.gender || props.record?.studentGender || '',
+      birthDate: plan.student?.birthDate || formatDate(props.record?.birthDate) || '',
+    },
+    meta: {
+      ...(plan.meta || {}),
+      planDate: plan.meta?.planDate || formatDate(new Date()) || start,
+      participant: currentTeacherName.value,
+      implementer: plan.meta?.implementer || currentTeacherName.value,
+      startDate: plan.meta?.startDate || start,
+      endDate: plan.meta?.endDate || end,
+    },
+    rows,
+    model: options.model ?? plan.model ?? '',
+  }
+}
+
+function createEditablePlanFromPlan(plan = {}, preserveRows = true) {
+  return deepClone(createPlanSheetFromPlan(plan, { preserveRows, model: plan.model || 'AI草案' }))
+}
+
+function sanitizeEditablePlanRows(rows = []) {
+  const { start } = defaultPlanDateRange.value
+  const stageRanges = buildStageDateRanges(start, Number(planDuration.value || 6))
+  return (rows || [])
+    .map((row, index) => {
+      const domain = String(row?.domain || '').trim()
+      const longGoal = String(row?.longGoal || '').trim()
+      const shortGoal = String(row?.shortGoal || '').trim()
+      if (!domain && !longGoal && !shortGoal)
+        return null
+      return {
+        domain: domain || '综合康复',
+        longGoal,
+        shortGoal,
+        courseForm: normalizeCourseForm(row?.courseForm) || '个训',
+        startEndDate: String(row?.startEndDate || '').trim() || stageDateForGoal(stageRanges, index, rows.length),
+      }
+    })
+    .filter(Boolean)
+}
+
+function ensureEditablePlan() {
+  if (!editablePlan.value)
+    editablePlan.value = createEditablePlanFromPlan(planSheet.value, true)
+  if (!editablePlan.value.rows)
+    editablePlan.value.rows = []
+  if (!editablePlan.value.meta)
+    editablePlan.value.meta = {}
+  return editablePlan.value
+}
+
+function updatePlanRow(index, patch = {}) {
+  const plan = ensureEditablePlan()
+  if (!plan.rows[index])
+    return
+  plan.rows[index] = {
+    ...plan.rows[index],
+    ...patch,
+  }
+}
+
+function selectPlanRow(index) {
+  if (!isPlanEditable.value)
+    return
+  const rows = planRows.value || []
+  selectedPlanRowIndex.value = Math.max(0, Math.min(index, rows.length - 1))
+}
+
+function updateSelectedPlanRow(patch = {}) {
+  updatePlanRow(selectedPlanRowIndex.value, patch)
+}
+
+function updateSelectedPlanDomain(value) {
+  const row = selectedPlanRow.value
+  if (!row)
+    return
+  updatePlanGroupDomain(row.domain, value)
+}
+
+function updateSelectedPlanLongGoal(value) {
+  const row = selectedPlanRow.value
+  if (!row)
+    return
+  updatePlanGroupLongGoal(row.domain, value)
+}
+
+function updatePlanGroupDomain(oldDomain, value) {
+  const plan = ensureEditablePlan()
+  const nextDomain = String(value || '').trim() || '综合康复'
+  plan.rows = plan.rows.map((row) => {
+    if (row.domain !== oldDomain)
+      return row
+    return { ...row, domain: nextDomain }
+  })
+}
+
+function updatePlanGroupLongGoal(domain, value) {
+  const plan = ensureEditablePlan()
+  plan.rows = plan.rows.map((row) => {
+    if (row.domain !== domain)
+      return row
+    return { ...row, longGoal: value }
+  })
+}
+
+function appendLongGoal(domain) {
+  const plan = ensureEditablePlan()
+  const targetRow = plan.rows.find(row => row.domain === domain) || plan.rows[0]
+  if (!targetRow)
+    return
+  const lines = splitGoalLines(targetRow.longGoal)
+  const nextLine = `${lines.length + 1}. `
+  const nextValue = String(targetRow.longGoal || '').trim()
+    ? `${String(targetRow.longGoal).trim()}\n${nextLine}`
+    : nextLine
+  updatePlanGroupLongGoal(targetRow.domain, nextValue)
+}
+
+function removeLongGoalLine(domain) {
+  const plan = ensureEditablePlan()
+  const targetRow = plan.rows.find(row => row.domain === domain) || plan.rows[0]
+  if (!targetRow)
+    return
+  const lines = splitGoalLines(targetRow.longGoal)
+  if (!lines.length)
+    return
+  lines.pop()
+  const nextValue = lines.length ? lines.map((item, index) => `${index + 1}. ${item}`).join('\n') : ''
+  updatePlanGroupLongGoal(targetRow.domain, nextValue)
+}
+
+function buildBlankShortGoalRow(baseRow = {}) {
+  const rows = planRows.value || []
+  const fallbackRow = rows[0] || {}
+  const { start } = defaultPlanDateRange.value
+  const stageRanges = buildStageDateRanges(start, Number(planDuration.value || 6))
+  return {
+    domain: baseRow.domain || fallbackRow.domain || '综合康复',
+    longGoal: baseRow.longGoal || fallbackRow.longGoal || '',
+    shortGoal: '',
+    courseForm: normalizeCourseForm(baseRow.courseForm || fallbackRow.courseForm) || '个训',
+    startEndDate: baseRow.startEndDate || stageDateForGoal(stageRanges, rows.length, rows.length + 1),
+  }
+}
+
+function addShortGoalAfter(index = -1) {
+  const plan = ensureEditablePlan()
+  const insertIndex = Number.isInteger(index) && index >= 0 ? index + 1 : plan.rows.length
+  const baseRow = plan.rows[Math.max(0, Math.min(index, plan.rows.length - 1))] || plan.rows[plan.rows.length - 1] || {}
+  plan.rows.splice(insertIndex, 0, buildBlankShortGoalRow(baseRow))
+}
+
+function addShortGoalAfterSelected() {
+  const currentIndex = selectedPlanRowIndex.value
+  addShortGoalAfter(currentIndex)
+  selectedPlanRowIndex.value = Math.min(currentIndex + 1, planRows.value.length - 1)
+}
+
+function deleteShortGoal(index) {
+  const plan = ensureEditablePlan()
+  if (index < 0 || index >= plan.rows.length)
+    return
+  plan.rows.splice(index, 1)
+}
+
+function deleteSelectedShortGoal() {
+  const currentIndex = selectedPlanRowIndex.value
+  deleteShortGoal(currentIndex)
+  selectedPlanRowIndex.value = Math.max(0, Math.min(currentIndex, planRows.value.length - 1))
+}
+
+function planPayloadForSave() {
+  const plan = createPlanSheetFromPlan(planSheet.value, { preserveRows: true, model: planSheet.value.model || '' })
+  plan.rows = sanitizeEditablePlanRows(plan.rows)
+  return deepClone(plan)
+}
+
 function formatAge(row = {}) {
   const parts = []
   if (row.ageYears)
@@ -811,6 +1026,128 @@ function formatAge(row = {}) {
 
 function closeModal() {
   openModal.value = false
+}
+
+function startEditPlan() {
+  if (!planRows.value.length || aiGenerating.value || loadingSavedPlan.value)
+    return
+  ensureEditablePlan()
+  selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, planRows.value.length - 1))
+  editingPlan.value = true
+}
+
+function finishEditPlan() {
+  editingPlan.value = false
+}
+
+function resetIepState() {
+  planDuration.value = '3'
+  exportingWord.value = false
+  aiGenerating.value = false
+  loadingSavedPlan.value = false
+  savingDraft.value = false
+  confirmingPlan.value = false
+  aiStreamStatus.value = ''
+  aiStreamText.value = ''
+  streamingPlan.value = null
+  generatedPlan.value = null
+  editablePlan.value = null
+  savedPlanStatus.value = ''
+  editingPlan.value = false
+  selectedPlanRowIndex.value = 0
+}
+
+async function loadSavedIepPlan(requestKey) {
+  if (!props.record?.id)
+    return
+  loadingSavedPlan.value = true
+  try {
+    const response = await getPEP3IEPPlanApi(props.record.id)
+    if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
+      return
+    const data = unwrapResponse(response)
+    if (!data?.exists || !data.plan) {
+      savedPlanStatus.value = ''
+      editablePlan.value = null
+      generatedPlan.value = null
+      return
+    }
+    planDuration.value = String(data.durationMonths || 3)
+    savedPlanStatus.value = data.status || 'draft'
+    generatedPlan.value = data.plan
+    editablePlan.value = createEditablePlanFromPlan(data.plan, true)
+  }
+  catch (error) {
+    if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
+      return
+    console.error('load iep plan failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载IEP计划失败')
+  }
+  finally {
+    if (requestKey === undefined || requestKey === loadPlanRequestKey)
+      loadingSavedPlan.value = false
+  }
+}
+
+async function persistIepPlan(status, options = {}) {
+  if (aiGenerating.value || savingDraft.value || confirmingPlan.value)
+    return
+  if (!props.record?.id) {
+    messageService.warning('请先选择评估记录')
+    return
+  }
+  const payloadPlan = planPayloadForSave()
+  if (!payloadPlan.rows.length) {
+    messageService.warning('请先点击AI生成IEP计划，或填写至少一条计划内容')
+    return
+  }
+  const isConfirming = status === 'confirmed'
+  if (isConfirming)
+    confirmingPlan.value = true
+  else
+    savingDraft.value = true
+  try {
+    const response = await savePEP3IEPPlanApi({
+      id: props.record.id,
+      durationMonths: planDuration.value,
+      status,
+      plan: payloadPlan,
+    })
+    const data = unwrapResponse(response)
+    if (data?.durationMonths)
+      planDuration.value = String(data.durationMonths)
+    savedPlanStatus.value = data?.status || status
+    if (data?.plan) {
+      generatedPlan.value = data.plan
+      editablePlan.value = createEditablePlanFromPlan(data.plan, true)
+    }
+    emit(isConfirming ? 'confirmed' : 'saved', data)
+    messageService.success(isConfirming ? (options.closeAfterSave ? 'IEP已确认生成' : '修改已保存') : '草稿已保存')
+    if (options.closeAfterSave)
+      closeModal()
+  }
+  catch (error) {
+    console.error('save iep plan failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '保存IEP计划失败')
+  }
+  finally {
+    if (isConfirming)
+      confirmingPlan.value = false
+    else
+      savingDraft.value = false
+  }
+}
+
+function saveIepDraft() {
+  return persistIepPlan('draft')
+}
+
+function confirmIepPlan() {
+  return persistIepPlan('confirmed', { closeAfterSave: true })
+}
+
+function saveConfirmedPlan() {
+  return persistIepPlan('confirmed')
 }
 
 function parseAttachmentFilename(headerValue) {
@@ -841,7 +1178,7 @@ async function exportIepWord() {
   if (exportingWord.value)
     return
   if (!planRows.value.length) {
-    messageService.warning('请先点击AI生成IEP计划')
+    messageService.warning('请先生成或填写IEP计划')
     return
   }
   const studentName = props.record?.studentName || '张一鸣'
@@ -850,7 +1187,7 @@ async function exportIepWord() {
     const response = await downloadPEP3IEPPlanWordApi({
       id: props.record?.id,
       duration: planDuration.value,
-      plan: JSON.parse(JSON.stringify(planSheet.value)),
+      plan: planPayloadForSave(),
     })
     triggerDownload(response, `${studentName}-康复个别化教育计划-${planDuration.value}个月.docx`)
     messageService.success('导出成功')
@@ -886,6 +1223,9 @@ async function generateAIPlan() {
   aiStreamText.value = ''
   streamingPlan.value = null
   generatedPlan.value = null
+  editablePlan.value = null
+  savedPlanStatus.value = ''
+  editingPlan.value = false
   try {
     const plan = await generatePEP3IEPPlanAIStreamApi(
       {
@@ -905,6 +1245,7 @@ async function generateAIPlan() {
         },
         onDone(data) {
           generatedPlan.value = data
+          editablePlan.value = createEditablePlanFromPlan(data, true)
           streamingPlan.value = null
           aiStreamStatus.value = '生成完成'
         },
@@ -915,6 +1256,7 @@ async function generateAIPlan() {
       return
     }
     generatedPlan.value = plan
+    editablePlan.value = createEditablePlanFromPlan(plan, true)
     messageService.success('AI生成成功')
   }
   catch (error) {
@@ -927,6 +1269,40 @@ async function generateAIPlan() {
   }
 }
 
+let loadPlanRequestKey = 0
+watch(
+  () => [props.open, props.record?.id],
+  async ([open]) => {
+    loadPlanRequestKey += 1
+    const requestKey = loadPlanRequestKey
+    if (!open) {
+      resetIepState()
+      return
+    }
+    resetIepState()
+    await loadSavedIepPlan(requestKey)
+  },
+  { immediate: true },
+)
+
+watch(planDuration, () => {
+  if (!editablePlan.value)
+    return
+  editablePlan.value.title = planTitle.value
+})
+
+watch(
+  () => planRows.value.length,
+  (length) => {
+    if (!length) {
+      selectedPlanRowIndex.value = 0
+      editingPlan.value = false
+      return
+    }
+    selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, length - 1))
+  },
+)
+
 </script>
 
 <template>
@@ -937,7 +1313,7 @@ async function generateAIPlan() {
     :footer="null"
     :keyboard="false"
     :mask-closable="false"
-    :width="960"
+    :width="modalWidth"
     :body-style="{ padding: 0 }"
     wrap-class-name="generate-iep-modal-wrap"
   >
@@ -983,10 +1359,19 @@ async function generateAIPlan() {
             <div class="a4-page__chrome">
               <span>A4预览</span>
               <strong>{{ planSheet.title }}</strong>
-              <span>{{ planRows.length }}条计划</span>
+              <div class="a4-page__tools">
+                <span>{{ planRows.length }}条计划</span>
+                <template v-if="isPlanEditable">
+                  <span class="a4-page__selected">{{ selectedPlanRowTitle }}</span>
+                  <a-button size="small" type="primary" ghost @click="finishEditPlan">完成编辑</a-button>
+                </template>
+                <a-button v-else size="small" :disabled="!planRows.length || aiGenerating || loadingSavedPlan" @click="startEditPlan">
+                  编辑计划
+                </a-button>
+              </div>
             </div>
             <h1>{{ planSheet.title }}</h1>
-            <table class="plan-sheet-table">
+            <table class="plan-sheet-table" :class="{ 'plan-sheet-table--editing': isPlanEditable }">
               <colgroup>
                 <col class="plan-col-a">
                 <col class="plan-col-b">
@@ -1025,7 +1410,16 @@ async function generateAIPlan() {
                   <th>课程<br>形式</th>
                   <th class="plan-cell-date-head">起止日期</th>
                 </tr>
-                <tr v-for="(row, index) in planDisplayRows" :key="`${row.domain}-${index}`">
+                <tr
+                  v-for="(row, index) in planDisplayRows"
+                  :key="`${row.domain}-${index}`"
+                  class="plan-data-row"
+                  :class="{
+                    'plan-data-row--selectable': isPlanEditable,
+                    'plan-data-row--selected': isPlanEditable && selectedPlanRowIndex === row.sourceIndex,
+                  }"
+                  @click="selectPlanRow(row.sourceIndex)"
+                >
                   <td v-if="row.showGroupCell" :rowspan="row.rowSpan" class="plan-cell-domain">
                     {{ row.domain }}
                   </td>
@@ -1035,7 +1429,7 @@ async function generateAIPlan() {
                   <td colspan="2" class="plan-cell-text">
                     {{ row.shortGoal }}
                   </td>
-                  <td class="plan-cell-center">
+                  <td class="plan-cell-center plan-cell-course">
                     {{ row.courseForm }}
                   </td>
                   <td class="plan-cell-center plan-cell-date">
@@ -1044,8 +1438,8 @@ async function generateAIPlan() {
                 </tr>
                 <tr v-if="!planDisplayRows.length" class="plan-empty-row">
                   <td colspan="8">
-                    <strong>暂无IEP计划内容</strong>
-                    <span>点击“AI生成”后，系统会根据评估结果和近期训练记录实时生成表格。</span>
+                    <strong>{{ loadingSavedPlan ? '正在读取IEP计划' : '暂无IEP计划内容' }}</strong>
+                    <span>{{ loadingSavedPlan ? '正在读取已保存的草稿或确认计划。' : '点击“AI生成”后，系统会根据评估结果和近期训练记录实时生成表格。' }}</span>
                   </td>
                 </tr>
               </tbody>
@@ -1053,27 +1447,161 @@ async function generateAIPlan() {
 
           </section>
         </div>
+        <aside v-if="isPlanEditable" class="iep-edit-panel">
+          <div class="iep-edit-panel__head">
+            <div>
+              <span>当前编辑</span>
+              <strong>{{ selectedPlanRowTitle }}</strong>
+            </div>
+            <a-button size="small" type="text" @click="finishEditPlan">收起</a-button>
+          </div>
+
+          <div v-if="selectedPlanRow" class="iep-edit-form">
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>领域与长期目标</span>
+                <div>
+                  <a-button size="small" type="text" @click="appendLongGoal(selectedPlanRow.domain)">
+                    <template #icon>
+                      <PlusOutlined />
+                    </template>
+                    新增长期目标
+                  </a-button>
+                  <a-popconfirm title="确认删除最后一条长期目标？" ok-text="删除" cancel-text="取消" @confirm="removeLongGoalLine(selectedPlanRow.domain)">
+                    <a-button size="small" type="text" danger>
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+              <label class="iep-edit-field">
+                <span>康复领域</span>
+                <a-input
+                  :value="selectedPlanRow.domain"
+                  placeholder="请输入康复领域"
+                  @update:value="updateSelectedPlanDomain"
+                />
+              </label>
+              <label class="iep-edit-field">
+                <span>长期目标</span>
+                <a-textarea
+                  :value="selectedPlanRow.longGoal"
+                  :auto-size="{ minRows: 5, maxRows: 8 }"
+                  placeholder="支持按 1. 2. 3. 分条填写"
+                  @update:value="updateSelectedPlanLongGoal"
+                />
+              </label>
+            </section>
+
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>短期目标</span>
+                <div>
+                  <a-button size="small" type="text" @click="addShortGoalAfterSelected">
+                    <template #icon>
+                      <PlusOutlined />
+                    </template>
+                    新增短期目标
+                  </a-button>
+                  <a-popconfirm title="确认删除当前短期目标？" ok-text="删除" cancel-text="取消" @confirm="deleteSelectedShortGoal">
+                    <a-button size="small" type="text" danger>
+                      <template #icon>
+                        <DeleteOutlined />
+                      </template>
+                    </a-button>
+                  </a-popconfirm>
+                </div>
+              </div>
+              <label class="iep-edit-field">
+                <span>目标内容</span>
+                <a-textarea
+                  :value="selectedPlanRow.shortGoal"
+                  :auto-size="{ minRows: 4, maxRows: 7 }"
+                  placeholder="请输入当前短期目标"
+                  @update:value="value => updateSelectedPlanRow({ shortGoal: value })"
+                />
+              </label>
+              <div class="iep-edit-grid">
+                <label class="iep-edit-field">
+                  <span>课程形式</span>
+                  <a-segmented
+                    :value="selectedPlanRow.courseForm"
+                    :options="[
+                      { label: '个训', value: '个训' },
+                      { label: '集体课', value: '集体课' },
+                    ]"
+                    @update:value="value => updateSelectedPlanRow({ courseForm: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>起止日期</span>
+                  <a-input
+                    :value="selectedPlanRow.startEndDate"
+                    placeholder="YYYY-MM-DD - YYYY-MM-DD"
+                    @update:value="value => updateSelectedPlanRow({ startEndDate: value })"
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+        </aside>
       </main>
+
+      <div v-if="aiGenerating" class="iep-generating-overlay">
+        <div class="iep-generating-panel">
+          <span class="iep-generating-panel__spinner" />
+          <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
+          <p>{{ aiStreamTail || '正在读取评估测评和儿童训练记录，并生成可编辑的IEP表格。' }}</p>
+          <a-progress
+            :percent="aiProgressPercent"
+            :show-info="true"
+            status="active"
+            size="small"
+          />
+        </div>
+      </div>
 
       <footer class="iep-modal__footer">
         <div class="footer-hint">
-          当前为{{ planDuration }}个月康复教学计划；点击AI生成后会根据评估记录和近期儿童训练记录刷新表格。
+          当前为{{ planDuration }}个月康复教学计划；{{ savedPlanStatus === 'confirmed' ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
         </div>
         <div class="footer-actions">
-          <a-button :loading="aiGenerating" @click="generateAIPlan">
+          <a-button :loading="aiGenerating" :disabled="loadingSavedPlan || savingDraft || confirmingPlan" @click="generateAIPlan">
             AI生成
           </a-button>
           <a-button @click="closeModal">
             取消
           </a-button>
-          <a-button>
+          <a-button
+            v-if="savedPlanStatus !== 'confirmed'"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating"
+            :loading="savingDraft"
+            @click="saveIepDraft"
+          >
             保存草稿
           </a-button>
           <a-button :disabled="!planRows.length" :loading="exportingWord" @click="exportIepWord">
             导出
           </a-button>
-          <a-button type="primary" @click="closeModal">
+          <a-button
+            v-if="savedPlanStatus !== 'confirmed'"
+            type="primary"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating"
+            :loading="confirmingPlan"
+            @click="confirmIepPlan"
+          >
             确认生成IEP
+          </a-button>
+          <a-button
+            v-else
+            type="primary"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating"
+            :loading="confirmingPlan"
+            @click="saveConfirmedPlan"
+          >
+            保存修改
           </a-button>
         </div>
       </footer>
@@ -1084,6 +1612,7 @@ async function generateAIPlan() {
 
 <style lang="less" scoped>
 .iep-modal {
+  position: relative;
   overflow: hidden;
   color: #1f2937;
   background: #fff;
@@ -1319,6 +1848,9 @@ async function generateAIPlan() {
 }
 
 .iep-modal__body {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
   max-height: calc(100vh - 224px);
   padding: 16px;
   overflow: auto;
@@ -1346,9 +1878,191 @@ async function generateAIPlan() {
 }
 
 .a4-workbench {
+  flex: 1 0 860px;
   display: flex;
   justify-content: center;
   min-width: 860px;
+}
+
+.iep-edit-panel {
+  position: sticky;
+  top: 0;
+  flex: 0 0 318px;
+  padding: 14px;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+}
+
+.iep-edit-panel__head {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #edf1f6;
+
+  span {
+    display: block;
+    color: #667085;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  strong {
+    display: block;
+    margin-top: 2px;
+    color: #111827;
+    font-size: 14px;
+    font-weight: 650;
+    line-height: 21px;
+  }
+}
+
+.iep-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+}
+
+.iep-edit-section {
+  padding: 12px;
+  background: #fbfcfe;
+  border: 1px solid #edf1f7;
+  border-radius: 8px;
+}
+
+.iep-edit-section__title {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+
+  > span {
+    color: #111827;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 20px;
+  }
+
+  > div {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+  }
+
+  :deep(.ant-btn) {
+    height: 24px;
+    padding: 0 6px;
+    font-size: 12px;
+  }
+}
+
+.iep-edit-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+
+  &:last-child {
+    margin-bottom: 0;
+  }
+
+  > span {
+    color: #667085;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 18px;
+  }
+
+  :deep(.ant-input),
+  :deep(.ant-input-affix-wrapper),
+  :deep(.ant-segmented) {
+    border-radius: 6px;
+  }
+
+  :deep(textarea.ant-input) {
+    font-size: 13px;
+    line-height: 22px;
+  }
+}
+
+.iep-edit-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+
+  .iep-edit-field {
+    margin-bottom: 0;
+  }
+}
+
+.iep-generating-overlay {
+  position: absolute;
+  top: 130px;
+  right: 0;
+  bottom: 64px;
+  left: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: rgba(238, 241, 245, 0.58);
+  backdrop-filter: blur(1.5px);
+}
+
+.iep-generating-panel {
+  width: min(420px, calc(100vw - 96px));
+  padding: 18px 20px 16px;
+  color: #1f2937;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid rgba(210, 218, 230, 0.95);
+  border-radius: 8px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+
+  strong {
+    display: block;
+    margin: 0 0 6px;
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 22px;
+  }
+
+  p {
+    display: -webkit-box;
+    margin: 0 0 12px;
+    overflow: hidden;
+    color: #5f6b7a;
+    font-size: 12px;
+    line-height: 20px;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+}
+
+.iep-generating-panel__spinner {
+  float: left;
+  width: 18px;
+  height: 18px;
+  margin: 2px 10px 0 0;
+  border: 2px solid #d8e7ff;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: iep-spin 0.85s linear infinite;
+}
+
+@keyframes iep-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .plan-sheet {
@@ -1388,6 +2102,26 @@ async function generateAIPlan() {
     color: #334155;
     font-weight: 650;
   }
+}
+
+.a4-page__tools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-width: 0;
+
+  > span {
+    color: #64748b;
+    white-space: nowrap;
+  }
+}
+
+.a4-page__selected {
+  max-width: 180px;
+  overflow: hidden;
+  color: #1677ff !important;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .plan-sheet-table {
@@ -1464,11 +2198,38 @@ async function generateAIPlan() {
   line-height: 1.35;
 }
 
+.plan-sheet-table--editing td {
+  background: #fff;
+}
+
+.plan-data-row--selectable {
+  cursor: pointer;
+
+  td {
+    transition: background-color 0.16s ease, box-shadow 0.16s ease;
+  }
+
+  &:hover td {
+    background: #f8fbff;
+  }
+}
+
+.plan-data-row--selected td {
+  background: #eef6ff !important;
+  box-shadow: inset 0 1px 0 #91caff, inset 0 -1px 0 #91caff;
+}
+
 .plan-cell-domain {
   color: #0f172a;
   font-weight: 500;
   vertical-align: middle;
   background: #fbfcfe;
+}
+
+.plan-cell-domain,
+.plan-cell-text,
+.plan-cell-center {
+  position: relative;
 }
 
 .plan-cell-text {
@@ -1495,6 +2256,158 @@ async function generateAIPlan() {
 }
 
 .plan-cell-date-head {
+  white-space: nowrap;
+}
+
+.sheet-input,
+.sheet-select,
+.sheet-textarea {
+  width: 100%;
+}
+
+.sheet-input,
+.sheet-textarea {
+  color: #111827 !important;
+  font: inherit;
+  line-height: inherit;
+  background: transparent !important;
+  border-color: transparent !important;
+  border-radius: 4px;
+  box-shadow: none !important;
+  transition: border-color 0.16s ease, background-color 0.16s ease;
+}
+
+.sheet-select :deep(.ant-select-selector),
+.sheet-select :deep(.ant-select-selection-search-input) {
+  box-shadow: none !important;
+}
+
+.sheet-input:hover,
+.sheet-textarea:hover,
+.sheet-input:focus,
+.sheet-textarea:focus,
+.sheet-input:focus-within,
+.sheet-textarea:focus-within {
+  background: #fbfdff !important;
+  border-color: #b7c5d8 !important;
+}
+
+.sheet-input--center {
+  text-align: center;
+}
+
+.sheet-input--date {
+  white-space: nowrap;
+}
+
+.sheet-input {
+  min-height: 26px;
+  padding: 2px 5px;
+}
+
+.sheet-textarea {
+  min-height: 64px;
+  padding: 3px 5px;
+  resize: none;
+}
+
+.plan-cell-editor {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.plan-cell-editor--short {
+  gap: 2px;
+}
+
+.cell-action-row {
+  display: flex;
+  gap: 2px;
+  justify-content: flex-end;
+  min-height: 22px;
+  opacity: 0;
+  transform: translateY(-2px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+
+  :deep(.ant-btn) {
+    height: 22px;
+    padding: 0 5px;
+    color: #536175;
+    font-size: 11px;
+    line-height: 20px;
+    background: #f8fafc;
+    border: 1px solid #e1e7f0;
+    border-radius: 4px;
+  }
+
+  :deep(.ant-btn-dangerous) {
+    color: #d9363e;
+    background: #fffafa;
+    border-color: #f4d1d5;
+  }
+}
+
+.plan-cell-editor:hover .cell-action-row,
+.plan-cell-editor:focus-within .cell-action-row,
+tr:hover .cell-action-row {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.plan-cell-course {
+  padding-right: 3px !important;
+  padding-left: 3px !important;
+}
+
+.sheet-select--course {
+  min-width: 42px;
+
+  :deep(.ant-select-selector) {
+    height: 26px !important;
+    min-height: 26px !important;
+    padding: 0 3px !important;
+    color: #111827;
+    text-align: center;
+    background: transparent !important;
+    border-color: transparent !important;
+    border-radius: 4px !important;
+    box-shadow: none !important;
+  }
+
+  :deep(.ant-select-selection-item) {
+    padding-inline-end: 0 !important;
+    overflow: visible;
+    color: #111827;
+    font-size: 12px;
+    line-height: 24px !important;
+    text-align: center;
+  }
+
+  :deep(.ant-select-arrow) {
+    display: none;
+  }
+
+  &:hover :deep(.ant-select-selector),
+  &.ant-select-focused :deep(.ant-select-selector) {
+    background: #fbfdff !important;
+    border-color: #b7c5d8 !important;
+  }
+}
+
+.date-range-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  gap: 3px;
+  align-items: center;
+}
+
+.date-range-editor > span {
+  color: #64748b;
+  font-size: 11px;
   white-space: nowrap;
 }
 
@@ -1852,6 +2765,8 @@ async function generateAIPlan() {
   flex: 0 0 auto;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .goal-preview {
