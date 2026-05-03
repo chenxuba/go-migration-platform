@@ -3622,9 +3622,12 @@ onBeforeUnmount(() => {
 }
 
 .weekly-col-2,
-.weekly-col-3,
-.weekly-col-4 {
+.weekly-col-3 {
   width: 13.25%;
+}
+
+.weekly-col-4 {
+  width: 18.5%;
 }
 
 .weekly-col-5,
@@ -3633,7 +3636,7 @@ onBeforeUnmount(() => {
 .weekly-col-8,
 .weekly-col-9,
 .weekly-col-10 {
-  width: 7.875%;
+  width: 7%;
 }
 
 .plan-sheet-table__head th {
@@ -3672,6 +3675,10 @@ onBeforeUnmount(() => {
   font-weight: 400;
   background: #fff;
   word-break: keep-all;
+}
+
+.weekly-plan-table .plan-cell-text {
+  vertical-align: middle;
 }
 
 .weekly-plan-table__check {
