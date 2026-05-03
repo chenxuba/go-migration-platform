@@ -29,13 +29,14 @@ type PEP3ExecutionPlanWordExportRequest struct {
 }
 
 type PEP3ExecutionPlanSaveRequest struct {
-	ID               int64                    `json:"id"`
-	DurationMonths   int                      `json:"durationMonths,omitempty"`
-	PlanType         string                   `json:"planType"`
-	TargetMonthIndex int                      `json:"targetMonthIndex,omitempty"`
-	TargetWeekIndex  int                      `json:"targetWeekIndex,omitempty"`
-	MonthlyPlan      *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
-	WeeklyPlan       *PEP3WeeklyPlanAIResult  `json:"weeklyPlan,omitempty"`
+	ID                  int64                    `json:"id"`
+	DurationMonths      int                      `json:"durationMonths,omitempty"`
+	PlanType            string                   `json:"planType"`
+	TargetMonthIndex    int                      `json:"targetMonthIndex,omitempty"`
+	TargetWeekIndex     int                      `json:"targetWeekIndex,omitempty"`
+	MonthlyPlan         *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
+	WeeklyPlan          *PEP3WeeklyPlanAIResult  `json:"weeklyPlan,omitempty"`
+	PreserveWeeklyPlans bool                     `json:"preserveWeeklyPlans,omitempty"`
 }
 
 type PEP3ExecutionPlanSavedVO struct {

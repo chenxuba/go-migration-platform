@@ -62,7 +62,7 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 	}, plan); err != nil {
 		return model.PEP3ExecutionPlanSavedVO{}, err
 	}
-	if planType == pep3ExecutionPlanTypeMonthly {
+	if planType == pep3ExecutionPlanTypeMonthly && !req.PreserveWeeklyPlans {
 		if err := svc.repo.DeletePEP3WeeklyExecutionPlansForMonth(context.Background(), instID, req.ID, durationMonths, targetMonthIndex); err != nil {
 			return model.PEP3ExecutionPlanSavedVO{}, err
 		}

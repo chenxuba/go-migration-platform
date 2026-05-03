@@ -999,6 +999,7 @@ export function savePEP3ExecutionPlanApi(data: {
   targetWeekIndex?: number | string
   monthlyPlan?: PEP3MonthlyPlanAIResult | null
   weeklyPlan?: PEP3WeeklyPlanAIResult | null
+  preserveWeeklyPlans?: boolean
 }) {
   return usePost<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/execution/save', {
     ...data,

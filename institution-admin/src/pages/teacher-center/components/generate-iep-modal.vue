@@ -39,6 +39,7 @@ const executionPlanGeneratingType = ref('')
 const loadingSavedPlan = ref(false)
 const savingDraft = ref(false)
 const confirmingPlan = ref(false)
+const savingExecutionPlan = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
 const streamingPlan = ref(null)
@@ -74,8 +75,11 @@ const weeklyPlan = computed({
     weeklyPlans.value = nextPlans
   },
 })
-const editingPlan = ref(false)
+const editingPlanView = ref('')
 const selectedPlanRowIndex = ref(0)
+const selectedMonthlyRowIndex = ref(0)
+const selectedMonthlyContentIndex = ref(0)
+const selectedWeeklyRowIndex = ref(0)
 const iepModalBodyRef = ref(null)
 const aiStreamAbortController = ref(null)
 const executionPlanStreamAbortController = ref(null)
@@ -91,6 +95,11 @@ const domains = [
   { key: 'fineMotor', name: '精细动作', icon: '精', longCount: 2, shortCount: 4 },
   { key: 'sensory', name: '感统运动', icon: '感', longCount: 2, shortCount: 5 },
   { key: 'selfCare', name: '生活自理', icon: '自', longCount: 1, shortCount: 4 },
+]
+
+const courseFormOptions = [
+  { label: '个训', value: '个训' },
+  { label: '集体课', value: '集体课' },
 ]
 
 const iepData = {
@@ -474,9 +483,6 @@ const planSheet = computed(() => {
 })
 
 const planRows = computed(() => planSheet.value.rows)
-const isIepPreview = computed(() => executionPlanView.value === 'iep')
-const isPlanEditable = computed(() => isIepPreview.value && editingPlan.value && !!editablePlan.value && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value)
-const modalWidth = computed(() => (isPlanEditable.value ? 1220 : 960))
 
 const selectedPlanRow = computed(() => {
   const rows = planRows.value || []
@@ -588,18 +594,6 @@ const planDisplayRows = computed(() => {
   })
 })
 
-const executionMonthOptions = computed(() => {
-  const count = Number(planDuration.value) === 6 ? 6 : 3
-  return Array.from({ length: count }, (_, index) => {
-    const monthIndex = index + 1
-    const generated = !!monthlyPlans.value[String(monthIndex)]
-    return {
-      label: `${executionMonthLabelForIndex(monthIndex)}${generated ? ' 已生成' : ''}`,
-      value: monthIndex,
-    }
-  })
-})
-
 const selectedExecutionMonthLabel = computed(() => executionMonthLabelForIndex(selectedExecutionMonth.value))
 const selectedExecutionMonthRange = computed(() => executionMonthRangeForIndex(selectedExecutionMonth.value))
 const selectedExecutionMonthGenerated = computed(() => !!monthlyPlans.value[String(clampExecutionMonth(selectedExecutionMonth.value))])
@@ -609,6 +603,36 @@ const selectedExecutionWeekLabel = computed(() => `第${selectedExecutionWeekVal
 const selectedExecutionWeekRange = computed(() => executionWeekRangeForIndex(selectedExecutionWeekValue.value))
 const executionWeekStorageKey = computed(() => `${clampExecutionMonth(selectedExecutionMonth.value)}-${selectedExecutionWeekValue.value}`)
 const selectedExecutionWeekGenerated = computed(() => !!weeklyPlans.value[executionWeekStorageKey.value])
+
+const executionNavigatorMonths = computed(() => {
+  const count = Number(planDuration.value) === 6 ? 6 : 3
+  return Array.from({ length: count }, (_, index) => {
+    const monthIndex = index + 1
+    const monthRange = executionMonthRangeForIndex(monthIndex)
+    const monthGenerated = !!monthlyPlans.value[String(monthIndex)]
+    const monthWeekCount = weekCountForRange(monthRange)
+    const weeks = Array.from({ length: monthWeekCount }, (_, weekOffset) => {
+      const weekIndex = weekOffset + 1
+      const weekRange = executionWeekRangeForMonth(monthIndex, weekIndex)
+      const key = `${monthIndex}-${weekIndex}`
+      return {
+        index: weekIndex,
+        label: `第${weekIndex}周`,
+        rangeText: `${formatNavigatorDateRange(weekRange.start, weekRange.end)}`,
+        generated: !!weeklyPlans.value[key],
+      }
+    })
+    return {
+      index: monthIndex,
+      label: executionMonthLabelForIndex(monthIndex),
+      rangeText: formatNavigatorDateRange(monthRange.start, monthRange.end),
+      generated: monthGenerated,
+      active: clampExecutionMonth(selectedExecutionMonth.value) === monthIndex,
+      weeks,
+    }
+  })
+})
+
 const weeklyDisplayDates = computed(() => {
   const dates = Array.isArray(weeklyPlan.value?.weekDates)
     ? weeklyPlan.value.weekDates.slice(0, 6).map(date => formatMonthDayDate(date))
@@ -616,27 +640,6 @@ const weeklyDisplayDates = computed(() => {
   while (dates.length < 6)
     dates.push('')
   return dates
-})
-
-const executionWeekOptions = computed(() => {
-  return Array.from({ length: executionWeekCount.value }, (_, index) => {
-    const weekIndex = index + 1
-    const range = executionWeekRangeForIndex(weekIndex)
-    const generated = !!weeklyPlans.value[`${clampExecutionMonth(selectedExecutionMonth.value)}-${weekIndex}`]
-    return {
-      label: `${selectedExecutionMonthLabel.value}第${weekIndex}周 ${range.start.slice(5)}-${range.end.slice(5)}${generated ? ' 已生成' : ''}`,
-      value: weekIndex,
-    }
-  })
-})
-
-const previewModeOptions = computed(() => {
-  const options = [{ label: 'IEP总计划', value: 'iep' }]
-  if (monthlyPlan.value)
-    options.push({ label: `${selectedExecutionMonthLabel.value}计划`, value: 'monthly' })
-  if (weeklyPlan.value)
-    options.push({ label: `${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}`, value: 'weekly' })
-  return options
 })
 
 const activePreviewTitle = computed(() => {
@@ -665,6 +668,29 @@ const canExportActivePreview = computed(() => {
   return !!planRows.value.length
 })
 
+const editingPreviewView = computed(() => editingPlanView.value === executionPlanView.value ? editingPlanView.value : '')
+const isIepPreview = computed(() => executionPlanView.value === 'iep')
+const isPlanEditable = computed(() => executionPlanView.value === 'iep' && editingPreviewView.value === 'iep' && !!editablePlan.value && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value)
+const isMonthlyPlanEditable = computed(() => executionPlanView.value === 'monthly' && editingPreviewView.value === 'monthly' && !!monthlyPlan.value?.rows?.length && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value)
+const isWeeklyPlanEditable = computed(() => executionPlanView.value === 'weekly' && editingPreviewView.value === 'weekly' && !!weeklyPlan.value?.rows?.length && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value)
+const isAnyPlanEditable = computed(() => isPlanEditable.value || isMonthlyPlanEditable.value || isWeeklyPlanEditable.value)
+const modalWidth = computed(() => (isAnyPlanEditable.value ? 1388 : 1180))
+const navigationDisabled = computed(() => aiGenerating.value || loadingSavedPlan.value || generatingExecutionPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value)
+const canEditActivePreview = computed(() => {
+  if (executionPlanView.value === 'monthly')
+    return !!monthlyPlan.value?.rows?.length
+  if (executionPlanView.value === 'weekly')
+    return !!weeklyPlan.value?.rows?.length
+  return !!planRows.value.length
+})
+const activeEditingLabel = computed(() => {
+  if (executionPlanView.value === 'monthly')
+    return selectedMonthlyEditTitle.value
+  if (executionPlanView.value === 'weekly')
+    return selectedWeeklyEditTitle.value
+  return selectedPlanRowTitle.value
+})
+
 const monthlyDisplayRows = computed(() => {
   const rows = monthlyPlan.value?.rows || []
   const result = []
@@ -677,12 +703,37 @@ const monthlyDisplayRows = computed(() => {
         contentIndex,
         contentRowSpan: items.length,
         showTargetCell: contentIndex === 0,
+        trainingContent: item.content,
         trainingContentText: `${contentIndex + 1}. ${item.content}`,
         trainingStartEndDate: item.startEndDate,
       })
     })
   })
   return result
+})
+
+const selectedMonthlyDisplayRow = computed(() => {
+  const rows = monthlyDisplayRows.value || []
+  return rows.find(row => row.rowIndex === selectedMonthlyRowIndex.value && row.contentIndex === selectedMonthlyContentIndex.value) || rows[0] || null
+})
+
+const selectedMonthlyEditTitle = computed(() => {
+  const row = selectedMonthlyDisplayRow.value
+  if (!row)
+    return `${selectedExecutionMonthLabel.value}计划`
+  return `${row.domain || '综合康复'} / 第${row.contentIndex + 1}项训练内容`
+})
+
+const selectedWeeklyPlanRow = computed(() => {
+  const rows = weeklyPlan.value?.rows || []
+  return rows[selectedWeeklyRowIndex.value] || rows[0] || null
+})
+
+const selectedWeeklyEditTitle = computed(() => {
+  const row = selectedWeeklyPlanRow.value
+  if (!row)
+    return `${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划`
+  return `${row.project || '训练项目'} / 第${Math.max(1, selectedWeeklyRowIndex.value + 1)}项训练`
 })
 
 function normalizeMonthlyTrainingItems(row = {}) {
@@ -692,7 +743,6 @@ function normalizeMonthlyTrainingItems(row = {}) {
       content: String(item?.content || '').trim(),
       startEndDate: String(item?.startEndDate || '').trim(),
     }))
-    .filter(item => item.content)
   if (!items.length)
     items.push({ content: '', startEndDate: '' })
 
@@ -853,7 +903,11 @@ function clampExecutionWeek(value) {
 }
 
 function executionWeekRangeForIndex(weekIndex) {
-  const monthRange = selectedExecutionMonthRange.value
+  return executionWeekRangeForMonth(selectedExecutionMonth.value, weekIndex)
+}
+
+function executionWeekRangeForMonth(monthIndex, weekIndex) {
+  const monthRange = executionMonthRangeForIndex(monthIndex)
   const start = new Date(`${monthRange.start}T00:00:00`)
   const end = new Date(`${monthRange.end}T00:00:00`)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
@@ -866,6 +920,18 @@ function executionWeekRangeForIndex(weekIndex) {
     start: formatLocalDate(weekStart),
     end: formatLocalDate(weekEnd),
   }
+}
+
+function formatNavigatorDateRange(start, end) {
+  const startText = formatMonthDayDate(start)
+  const endText = formatMonthDayDate(end)
+  if (!startText && !endText)
+    return ''
+  if (!startText)
+    return endText
+  if (!endText)
+    return startText
+  return `${startText}-${endText}`
 }
 
 function executionMonthLabelForIndex(monthIndex) {
@@ -1149,31 +1215,6 @@ function handleExecutionPlanMenuClick({ key }) {
   }
 }
 
-function handlePreviewMoreMenuClick({ key }) {
-  if (key === 'edit') {
-    startEditPlan()
-    return
-  }
-  if (key === 'finishEdit') {
-    finishEditPlan()
-    return
-  }
-  if (key === 'regenerateMonthly') {
-    confirmRegenerateMonthlyPlan()
-    return
-  }
-  if (key === 'regenerateWeekly') {
-    confirmRegenerateWeeklyPlan()
-    return
-  }
-  if (key === 'export') {
-    if (isIepPreview.value)
-      exportIepWord()
-    else
-      exportExecutionPlanWord()
-  }
-}
-
 function clearSelectedMonthWeeklyPlans() {
   const monthKey = `${clampExecutionMonth(selectedExecutionMonth.value)}-`
   const nextPlans = { ...weeklyPlans.value }
@@ -1184,36 +1225,41 @@ function clearSelectedMonthWeeklyPlans() {
   weeklyPlans.value = nextPlans
 }
 
-function switchExecutionMonth(value) {
-  selectedExecutionMonth.value = clampExecutionMonth(value)
-  selectedExecutionWeek.value = clampExecutionWeek(selectedExecutionWeek.value)
-  if (executionPlanView.value === 'weekly' && weeklyPlan.value)
-    executionPlanView.value = 'weekly'
-  else if (monthlyPlan.value)
-    executionPlanView.value = 'monthly'
-  else if (executionPlanView.value === 'monthly' || executionPlanView.value === 'weekly')
+function selectExecutionNavigatorItem(type, monthIndex, weekIndex) {
+  if (aiGenerating.value || loadingSavedPlan.value || generatingExecutionPlan.value || savingExecutionPlan.value)
+    return
+  if (type === 'iep') {
+    finishEditPlan()
     executionPlanView.value = 'iep'
-  scrollPlanViewToTop()
-}
-
-function switchExecutionWeek(value) {
-  selectedExecutionWeek.value = clampExecutionWeek(value)
-  if (weeklyPlan.value)
-    executionPlanView.value = 'weekly'
-  else if (executionPlanView.value === 'weekly')
-    executionPlanView.value = monthlyPlan.value ? 'monthly' : 'iep'
+    scrollPlanViewToTop()
+    return
+  }
+  if (typeof monthIndex === 'number')
+    selectedExecutionMonth.value = clampExecutionMonth(monthIndex)
+  selectedExecutionWeek.value = Math.max(1, Math.min(weekCountForRange(executionMonthRangeForIndex(selectedExecutionMonth.value)), selectedExecutionWeek.value))
+  if (type === 'monthly') {
+    finishEditPlan()
+    executionPlanView.value = 'monthly'
+    scrollPlanViewToTop()
+    return
+  }
+  if (typeof weekIndex === 'number')
+    selectedExecutionWeek.value = clampExecutionWeek(weekIndex)
+  finishEditPlan()
+  executionPlanView.value = 'weekly'
   scrollPlanViewToTop()
 }
 
 function switchPreviewView(value) {
   const nextView = ['iep', 'monthly', 'weekly'].includes(value) ? value : 'iep'
+  finishEditPlan()
   executionPlanView.value = nextView
   scrollPlanViewToTop()
 }
 
-async function persistExecutionPlan(planType, plan) {
+async function persistExecutionPlan(planType, plan, options = {}) {
   if (!props.record?.id || !plan)
-    return
+    return false
   try {
     const response = await savePEP3ExecutionPlanApi({
       id: props.record.id,
@@ -1223,12 +1269,17 @@ async function persistExecutionPlan(planType, plan) {
       targetWeekIndex: planType === 'weekly' ? selectedExecutionWeekValue.value : 0,
       monthlyPlan: planType === 'monthly' ? plan : null,
       weeklyPlan: planType === 'weekly' ? plan : null,
+      preserveWeeklyPlans: !!options.preserveWeeklyPlans,
     })
     applySavedExecutionPlansData(unwrapResponse(response))
+    if (options.successMessage)
+      messageService.success(options.successMessage)
+    return true
   }
   catch (error) {
     console.error('save execution plan failed', error)
-    messageService.warning('执行计划已生成，但自动保存失败，请稍后重新生成或导出')
+    messageService[options.manual ? 'error' : 'warning'](options.errorMessage || (options.manual ? '保存执行计划失败' : '执行计划已生成，但自动保存失败，请稍后重新生成或导出'))
+    return false
   }
 }
 
@@ -1743,6 +1794,22 @@ function selectPlanRow(index) {
   selectedPlanRowIndex.value = Math.max(0, Math.min(index, rows.length - 1))
 }
 
+function selectMonthlyPlanRow(rowIndex, contentIndex) {
+  if (!isMonthlyPlanEditable.value)
+    return
+  const rows = monthlyDisplayRows.value || []
+  const target = rows.find(row => row.rowIndex === rowIndex && row.contentIndex === contentIndex) || rows[0]
+  selectedMonthlyRowIndex.value = target?.rowIndex || 0
+  selectedMonthlyContentIndex.value = target?.contentIndex || 0
+}
+
+function selectWeeklyPlanRow(index) {
+  if (!isWeeklyPlanEditable.value)
+    return
+  const rows = weeklyPlan.value?.rows || []
+  selectedWeeklyRowIndex.value = Math.max(0, Math.min(index, rows.length - 1))
+}
+
 function updateSelectedPlanRow(patch = {}) {
   updatePlanRow(selectedPlanRowIndex.value, patch)
 }
@@ -1846,10 +1913,155 @@ function deleteSelectedShortGoal() {
   selectedPlanRowIndex.value = Math.max(0, Math.min(currentIndex, planRows.value.length - 1))
 }
 
+function updateMonthlyPlanStudent(patch = {}) {
+  if (!monthlyPlan.value)
+    return
+  const plan = deepClone(monthlyPlan.value)
+  plan.student = {
+    ...(plan.student || {}),
+    ...patch,
+  }
+  monthlyPlan.value = plan
+}
+
+function updateMonthlyPlanMeta(patch = {}) {
+  if (!monthlyPlan.value)
+    return
+  const plan = deepClone(monthlyPlan.value)
+  plan.meta = {
+    ...(plan.meta || {}),
+    ...patch,
+  }
+  monthlyPlan.value = plan
+}
+
+function updateMonthlyRow(rowIndex, patch = {}) {
+  const plan = deepClone(monthlyPlan.value)
+  if (!plan?.rows?.[rowIndex])
+    return
+  plan.rows[rowIndex] = {
+    ...plan.rows[rowIndex],
+    ...patch,
+  }
+  monthlyPlan.value = plan
+}
+
+function updateMonthlyGroupRows(domain, patch = {}) {
+  const plan = deepClone(monthlyPlan.value)
+  if (!Array.isArray(plan?.rows))
+    return
+  plan.rows = plan.rows.map((row) => {
+    if (row.domain !== domain)
+      return row
+    return {
+      ...row,
+      ...patch,
+    }
+  })
+  monthlyPlan.value = plan
+}
+
+function updateMonthlyTrainingItem(rowIndex, contentIndex, patch = {}) {
+  const plan = deepClone(monthlyPlan.value)
+  const row = plan?.rows?.[rowIndex]
+  if (!row)
+    return
+  if (!Array.isArray(row.trainingItems))
+    row.trainingItems = []
+  while (row.trainingItems.length <= contentIndex)
+    row.trainingItems.push({ content: '', startEndDate: '' })
+  row.trainingItems[contentIndex] = {
+    ...(row.trainingItems[contentIndex] || {}),
+    ...patch,
+  }
+  monthlyPlan.value = plan
+}
+
+function updateWeeklyPlanStudent(patch = {}) {
+  if (!weeklyPlan.value)
+    return
+  const plan = deepClone(weeklyPlan.value)
+  plan.student = {
+    ...(plan.student || {}),
+    ...patch,
+  }
+  weeklyPlan.value = plan
+}
+
+function updateWeeklyPlanField(patch = {}) {
+  if (!weeklyPlan.value)
+    return
+  weeklyPlan.value = {
+    ...deepClone(weeklyPlan.value),
+    ...patch,
+  }
+}
+
+function updateWeeklyRow(rowIndex, patch = {}) {
+  const plan = deepClone(weeklyPlan.value)
+  if (!plan?.rows?.[rowIndex])
+    return
+  plan.rows[rowIndex] = {
+    ...plan.rows[rowIndex],
+    ...patch,
+  }
+  weeklyPlan.value = plan
+}
+
+function updateWeeklyCompletion(rowIndex, dayIndex, value) {
+  const plan = deepClone(weeklyPlan.value)
+  const row = plan?.rows?.[rowIndex]
+  if (!row)
+    return
+  if (!Array.isArray(row.completion))
+    row.completion = []
+  while (row.completion.length <= dayIndex)
+    row.completion.push('')
+  row.completion[dayIndex] = value
+  weeklyPlan.value = plan
+}
+
 function planPayloadForSave() {
   const plan = createPlanSheetFromPlan(planSheet.value, { preserveRows: true, model: planSheet.value.model || '' })
   plan.rows = sanitizeEditablePlanRows(plan.rows)
   return deepClone(plan)
+}
+
+function executionPlanPayloadForSave(planType) {
+  const plan = planType === 'monthly' ? monthlyPlan.value : weeklyPlan.value
+  return deepClone(plan)
+}
+
+async function saveActiveExecutionPlan() {
+  if (savingExecutionPlan.value || aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value)
+    return
+  const isMonthly = executionPlanView.value === 'monthly'
+  const isWeekly = executionPlanView.value === 'weekly'
+  if (isMonthly && !monthlyPlan.value?.rows?.length) {
+    messageService.warning('请先生成月度计划')
+    return
+  }
+  if (isWeekly && !weeklyPlan.value?.rows?.length) {
+    messageService.warning('请先生成周计划')
+    return
+  }
+  if (!isMonthly && !isWeekly)
+    return
+
+  savingExecutionPlan.value = true
+  try {
+    const planType = isMonthly ? 'monthly' : 'weekly'
+    const success = await persistExecutionPlan(planType, executionPlanPayloadForSave(planType), {
+      manual: true,
+      preserveWeeklyPlans: isMonthly,
+      successMessage: isMonthly ? `${selectedExecutionMonthLabel.value}计划修改已保存` : `${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划修改已保存`,
+    })
+    if (success)
+      finishEditPlan()
+  }
+  finally {
+    savingExecutionPlan.value = false
+  }
 }
 
 function formatAge(row = {}) {
@@ -1921,15 +2133,26 @@ function handleBeforeUnload(event) {
 }
 
 function startEditPlan() {
-  if (!planRows.value.length || aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value)
+  if (!canEditActivePreview.value || aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingExecutionPlan.value)
     return
-  ensureEditablePlan()
-  selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, planRows.value.length - 1))
-  editingPlan.value = true
+  if (executionPlanView.value === 'iep') {
+    ensureEditablePlan()
+    selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, planRows.value.length - 1))
+  }
+  else if (executionPlanView.value === 'monthly') {
+    const selected = selectedMonthlyDisplayRow.value || monthlyDisplayRows.value[0]
+    selectedMonthlyRowIndex.value = selected?.rowIndex || 0
+    selectedMonthlyContentIndex.value = selected?.contentIndex || 0
+  }
+  else if (executionPlanView.value === 'weekly') {
+    const rows = weeklyPlan.value?.rows || []
+    selectedWeeklyRowIndex.value = Math.max(0, Math.min(selectedWeeklyRowIndex.value, rows.length - 1))
+  }
+  editingPlanView.value = executionPlanView.value
 }
 
 function finishEditPlan() {
-  editingPlan.value = false
+  editingPlanView.value = ''
 }
 
 function setPlanDurationWithoutLoading(value) {
@@ -1952,8 +2175,11 @@ function clearDisplayedPlanState() {
   selectedExecutionWeek.value = 1
   monthlyPlans.value = {}
   weeklyPlans.value = {}
-  editingPlan.value = false
+  editingPlanView.value = ''
   selectedPlanRowIndex.value = 0
+  selectedMonthlyRowIndex.value = 0
+  selectedMonthlyContentIndex.value = 0
+  selectedWeeklyRowIndex.value = 0
 }
 
 async function scrollPlanViewToTop() {
@@ -2002,6 +2228,7 @@ function resetIepState() {
   loadingSavedPlan.value = false
   savingDraft.value = false
   confirmingPlan.value = false
+  savingExecutionPlan.value = false
   clearDisplayedPlanState()
 }
 
@@ -2259,7 +2486,7 @@ async function generateAIPlan() {
   selectedExecutionWeek.value = 1
   monthlyPlans.value = {}
   weeklyPlans.value = {}
-  editingPlan.value = false
+  editingPlanView.value = ''
   try {
     const plan = await generatePEP3IEPPlanAIStreamApi(
       {
@@ -2357,10 +2584,42 @@ watch(
   (length) => {
     if (!length) {
       selectedPlanRowIndex.value = 0
-      editingPlan.value = false
+      if (editingPlanView.value === 'iep')
+        editingPlanView.value = ''
       return
     }
     selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, length - 1))
+  },
+)
+
+watch(
+  () => monthlyDisplayRows.value.length,
+  (length) => {
+    if (!length) {
+      selectedMonthlyRowIndex.value = 0
+      selectedMonthlyContentIndex.value = 0
+      if (editingPlanView.value === 'monthly')
+        editingPlanView.value = ''
+      return
+    }
+    const current = monthlyDisplayRows.value.find(row => row.rowIndex === selectedMonthlyRowIndex.value && row.contentIndex === selectedMonthlyContentIndex.value)
+    if (!current) {
+      selectedMonthlyRowIndex.value = monthlyDisplayRows.value[0]?.rowIndex || 0
+      selectedMonthlyContentIndex.value = monthlyDisplayRows.value[0]?.contentIndex || 0
+    }
+  },
+)
+
+watch(
+  () => weeklyPlan.value?.rows?.length || 0,
+  (length) => {
+    if (!length) {
+      selectedWeeklyRowIndex.value = 0
+      if (editingPlanView.value === 'weekly')
+        editingPlanView.value = ''
+      return
+    }
+    selectedWeeklyRowIndex.value = Math.max(0, Math.min(selectedWeeklyRowIndex.value, length - 1))
   },
 )
 
@@ -2405,7 +2664,7 @@ onBeforeUnmount(() => {
                   { label: '3个月', value: '3' },
                   { label: '6个月', value: '6' },
                 ]"
-                :disabled="aiGenerating || generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan"
+                :disabled="aiGenerating || generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan"
               />
               <em>{{ periodHint }}</em>
             </div>
@@ -2436,35 +2695,11 @@ onBeforeUnmount(() => {
           <div class="iep-preview-toolbar__meta">
             <span>{{ activePreviewCountText }}</span>
             <span v-if="executionPlanSourceText">{{ executionPlanSourceText }}</span>
-            <span v-if="isPlanEditable" class="iep-preview-toolbar__editing">正在编辑：{{ selectedPlanRowTitle }}</span>
+            <span v-if="isAnyPlanEditable" class="iep-preview-toolbar__editing">正在编辑：{{ activeEditingLabel }}</span>
           </div>
         </div>
-        <div v-if="previewModeOptions.length > 1" class="iep-preview-toolbar__tabs">
-          <a-segmented
-            size="small"
-            :value="executionPlanView"
-            :options="previewModeOptions"
-            @update:value="switchPreviewView"
-          />
-        </div>
         <div class="iep-preview-toolbar__actions">
-          <a-select
-            class="iep-preview-toolbar__month"
-            size="small"
-            :value="selectedExecutionMonth"
-            :options="executionMonthOptions"
-            :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-            @update:value="switchExecutionMonth"
-          />
-          <a-select
-            class="iep-preview-toolbar__week"
-            size="small"
-            :value="selectedExecutionWeek"
-            :options="executionWeekOptions"
-            :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-            @update:value="switchExecutionWeek"
-          />
-          <a-dropdown :disabled="!planRows.length || aiGenerating || loadingSavedPlan || generatingExecutionPlan">
+          <a-dropdown :disabled="!planRows.length || navigationDisabled">
             <a-button size="small" type="primary" :loading="generatingExecutionPlan">
               生成执行计划
               <DownOutlined />
@@ -2476,51 +2711,119 @@ onBeforeUnmount(() => {
               </a-menu>
             </template>
           </a-dropdown>
-          <a-dropdown :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan">
-            <a-button size="small">
-              更多
-              <DownOutlined />
-            </a-button>
-            <template #overlay>
-              <a-menu @click="handlePreviewMoreMenuClick">
-                <a-menu-item v-if="isPlanEditable" key="finishEdit">
-                  完成编辑
-                </a-menu-item>
-                <a-menu-item v-else-if="isIepPreview" key="edit" :disabled="!planRows.length">
-                  编辑计划
-                </a-menu-item>
-                <a-menu-divider v-if="isIepPreview" />
-                <a-menu-item
-                  v-if="executionPlanView === 'monthly' && selectedExecutionMonthGenerated"
-                  key="regenerateMonthly"
-                  danger
-                >
-                  重新生成{{ selectedExecutionMonthLabel }}计划
-                </a-menu-item>
-                <a-menu-item
-                  v-if="executionPlanView === 'weekly' && selectedExecutionWeekGenerated"
-                  key="regenerateWeekly"
-                  danger
-                >
-                  重新生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划
-                </a-menu-item>
-                <a-menu-divider
-                  v-if="isIepPreview || (executionPlanView === 'monthly' && selectedExecutionMonthGenerated) || (executionPlanView === 'weekly' && selectedExecutionWeekGenerated)"
-                />
-                <a-menu-item key="export" :disabled="!canExportActivePreview || exportingWord">
-                  导出Word
-                </a-menu-item>
-              </a-menu>
-            </template>
-          </a-dropdown>
+          <a-button
+            v-if="isAnyPlanEditable"
+            size="small"
+            :disabled="savingExecutionPlan"
+            @click="finishEditPlan"
+          >
+            完成编辑
+          </a-button>
+          <a-button
+            v-else-if="canEditActivePreview"
+            size="small"
+            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
+            @click="startEditPlan"
+          >
+            编辑计划
+          </a-button>
+          <a-button
+            v-if="executionPlanView === 'monthly' && selectedExecutionMonthGenerated"
+            size="small"
+            danger
+            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan || isAnyPlanEditable"
+            @click="confirmRegenerateMonthlyPlan"
+          >
+            重新生成
+          </a-button>
+          <a-button
+            v-if="executionPlanView === 'weekly' && selectedExecutionWeekGenerated"
+            size="small"
+            danger
+            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan || isAnyPlanEditable"
+            @click="confirmRegenerateWeeklyPlan"
+          >
+            重新生成
+          </a-button>
+          <a-button
+            size="small"
+            :disabled="!canExportActivePreview || loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
+            :loading="exportingWord"
+            @click="isIepPreview ? exportIepWord() : exportExecutionPlanWord()"
+          >
+            导出Word
+          </a-button>
         </div>
       </div>
 
       <main ref="iepModalBodyRef" class="iep-modal__body">
+        <aside class="iep-plan-navigator">
+          <button
+            type="button"
+            class="iep-plan-nav-item iep-plan-nav-item--root"
+            :class="{ 'is-active': executionPlanView === 'iep' }"
+            :disabled="navigationDisabled"
+            @click="selectExecutionNavigatorItem('iep')"
+          >
+            <span class="iep-plan-nav-item__status" :class="planRows.length ? 'is-generated' : 'is-empty'" />
+            <span class="iep-plan-nav-item__text">
+              <strong>IEP总计划</strong>
+              <small>{{ planRows.length }}条计划</small>
+            </span>
+          </button>
+          <div v-for="month in executionNavigatorMonths" :key="month.index" class="iep-plan-nav-month">
+            <div class="iep-plan-nav-month__head">
+              <strong>{{ month.label }}</strong>
+              <span>{{ month.rangeText }}</span>
+            </div>
+            <button
+              type="button"
+              class="iep-plan-nav-item"
+              :class="{
+                'is-active': executionPlanView === 'monthly' && selectedExecutionMonth === month.index,
+                'is-selected': month.active,
+              }"
+              :disabled="navigationDisabled"
+              @click="selectExecutionNavigatorItem('monthly', month.index)"
+            >
+              <span class="iep-plan-nav-item__status" :class="month.generated ? 'is-generated' : 'is-empty'" />
+              <span class="iep-plan-nav-item__text">
+                <strong>{{ month.label }}计划</strong>
+                <small>{{ month.generated ? '已生成' : '未生成' }}</small>
+              </span>
+            </button>
+            <button
+              v-for="week in month.weeks"
+              :key="`${month.index}-${week.index}`"
+              type="button"
+              class="iep-plan-nav-item iep-plan-nav-item--week"
+              :class="{
+                'is-active': executionPlanView === 'weekly' && selectedExecutionMonth === month.index && selectedExecutionWeekValue === week.index,
+                'is-selected': month.active && selectedExecutionWeekValue === week.index,
+              }"
+              :disabled="navigationDisabled"
+              @click="selectExecutionNavigatorItem('weekly', month.index, week.index)"
+            >
+              <span class="iep-plan-nav-item__status" :class="week.generated ? 'is-generated' : 'is-empty'" />
+              <span class="iep-plan-nav-item__text">
+                <strong>{{ week.label }}</strong>
+                <small>{{ week.rangeText }} · {{ week.generated ? '已生成' : '未生成' }}</small>
+              </span>
+            </button>
+          </div>
+        </aside>
         <div class="a4-workbench">
           <section class="plan-sheet a4-page">
             <h1>{{ activePreviewTitle }}</h1>
-            <table v-if="executionPlanView === 'monthly' && monthlyPlan" class="plan-sheet-table monthly-plan-table">
+            <div v-if="executionPlanView === 'monthly' && !monthlyPlan" class="plan-empty-sheet">
+              <strong>{{ selectedExecutionMonthLabel }}计划未生成</strong>
+              <span>{{ planTitle }}</span>
+            </div>
+            <table
+              v-else-if="executionPlanView === 'monthly' && monthlyPlan"
+              class="plan-sheet-table monthly-plan-table"
+              :class="{ 'plan-sheet-table--editing': isMonthlyPlanEditable }"
+            >
               <colgroup>
                 <col class="monthly-col-1">
                 <col class="monthly-col-2">
@@ -2564,17 +2867,46 @@ onBeforeUnmount(() => {
                   <th>课程<br>形式</th>
                   <th colspan="2" class="plan-cell-date-head">起止日期</th>
                 </tr>
-                <tr v-for="(row, index) in monthlyDisplayRows" :key="`${row.domain}-${row.rowIndex}-${row.contentIndex}-${index}`">
-                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-domain">{{ row.domain }}</td>
-                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">{{ row.longGoal }}</td>
-                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">{{ row.shortGoal }}</td>
-                  <td colspan="4" class="plan-cell-text">{{ row.trainingContentText }}</td>
-                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">{{ row.courseForm }}</td>
-                  <td colspan="2" class="plan-cell-center plan-cell-date monthly-plan-date-cell">{{ row.trainingStartEndDate }}</td>
+                <tr
+                  v-for="(row, index) in monthlyDisplayRows"
+                  :key="`${row.domain}-${row.rowIndex}-${row.contentIndex}-${index}`"
+                  class="plan-data-row"
+                  :class="{
+                    'plan-data-row--selectable': isMonthlyPlanEditable,
+                    'plan-data-row--selected': isMonthlyPlanEditable && selectedMonthlyRowIndex === row.rowIndex && selectedMonthlyContentIndex === row.contentIndex,
+                  }"
+                  @click="selectMonthlyPlanRow(row.rowIndex, row.contentIndex)"
+                >
+                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-domain">
+                    {{ row.domain }}
+                  </td>
+                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">
+                    {{ row.longGoal }}
+                  </td>
+                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">
+                    {{ row.shortGoal }}
+                  </td>
+                  <td colspan="4" class="plan-cell-text">
+                    {{ row.trainingContentText }}
+                  </td>
+                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">
+                    {{ row.courseForm }}
+                  </td>
+                  <td colspan="2" class="plan-cell-center plan-cell-date monthly-plan-date-cell">
+                    {{ row.trainingStartEndDate }}
+                  </td>
                 </tr>
               </tbody>
             </table>
-            <table v-else-if="executionPlanView === 'weekly' && weeklyPlan" class="plan-sheet-table weekly-plan-table">
+            <div v-else-if="executionPlanView === 'weekly' && !weeklyPlan" class="plan-empty-sheet">
+              <strong>{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划未生成</strong>
+              <span>{{ planTitle }}</span>
+            </div>
+            <table
+              v-else-if="executionPlanView === 'weekly' && weeklyPlan"
+              class="plan-sheet-table weekly-plan-table"
+              :class="{ 'plan-sheet-table--editing': isWeeklyPlanEditable }"
+            >
               <colgroup>
                 <col class="weekly-col-1">
                 <col class="weekly-col-2">
@@ -2616,9 +2948,22 @@ onBeforeUnmount(() => {
                 <tr class="weekly-plan-table__date-head">
                   <th v-for="(date, index) in weeklyDisplayDates" :key="`${date || 'empty'}-${index}`">{{ date }}</th>
                 </tr>
-                <tr v-for="(row, index) in weeklyPlan.rows" :key="`${row.project}-${index}`">
-                  <td class="plan-cell-center">{{ row.project }}</td>
-                  <td colspan="3" class="plan-cell-text">{{ row.content }}</td>
+                <tr
+                  v-for="(row, index) in weeklyPlan.rows"
+                  :key="`${row.project}-${index}`"
+                  class="plan-data-row"
+                  :class="{
+                    'plan-data-row--selectable': isWeeklyPlanEditable,
+                    'plan-data-row--selected': isWeeklyPlanEditable && selectedWeeklyRowIndex === index,
+                  }"
+                  @click="selectWeeklyPlanRow(index)"
+                >
+                  <td class="plan-cell-center">
+                    {{ row.project }}
+                  </td>
+                  <td colspan="3" class="plan-cell-text">
+                    {{ row.content }}
+                  </td>
                   <td v-for="(_, dayIndex) in weeklyDisplayDates" :key="dayIndex" class="weekly-plan-table__check">
                     {{ row.completion?.[dayIndex] || '' }}
                   </td>
@@ -2701,16 +3046,16 @@ onBeforeUnmount(() => {
 
           </section>
         </div>
-        <aside v-if="isPlanEditable" class="iep-edit-panel">
+        <aside v-if="isAnyPlanEditable" class="iep-edit-panel">
           <div class="iep-edit-panel__head">
             <div>
               <span>当前编辑</span>
-              <strong>{{ selectedPlanRowTitle }}</strong>
+              <strong>{{ activeEditingLabel }}</strong>
             </div>
             <a-button size="small" type="text" @click="finishEditPlan">收起</a-button>
           </div>
 
-          <div v-if="selectedPlanRow" class="iep-edit-form">
+          <div v-if="isPlanEditable && selectedPlanRow" class="iep-edit-form">
             <section class="iep-edit-section">
               <div class="iep-edit-section__title">
                 <span>领域与长期目标</span>
@@ -2782,10 +3127,7 @@ onBeforeUnmount(() => {
                   <span>课程形式</span>
                   <a-segmented
                     :value="selectedPlanRow.courseForm"
-                    :options="[
-                      { label: '个训', value: '个训' },
-                      { label: '集体课', value: '集体课' },
-                    ]"
+                    :options="courseFormOptions"
                     @update:value="value => updateSelectedPlanRow({ courseForm: value })"
                   />
                 </label>
@@ -2795,6 +3137,234 @@ onBeforeUnmount(() => {
                     :value="selectedPlanRow.startEndDate"
                     placeholder="YYYY-MM-DD - YYYY-MM-DD"
                     @update:value="value => updateSelectedPlanRow({ startEndDate: value })"
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <div v-else-if="isMonthlyPlanEditable && selectedMonthlyDisplayRow" class="iep-edit-form">
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>基本信息</span>
+              </div>
+              <div class="iep-edit-grid iep-edit-grid--two">
+                <label class="iep-edit-field">
+                  <span>姓名</span>
+                  <a-input
+                    :value="monthlyPlan.student.name"
+                    @update:value="value => updateMonthlyPlanStudent({ name: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>性别</span>
+                  <a-input
+                    :value="monthlyPlan.student.gender"
+                    @update:value="value => updateMonthlyPlanStudent({ gender: value })"
+                  />
+                </label>
+              </div>
+              <label class="iep-edit-field">
+                <span>出生年月</span>
+                <a-input
+                  :value="monthlyPlan.student.birthDate"
+                  @update:value="value => updateMonthlyPlanStudent({ birthDate: value })"
+                />
+              </label>
+              <div class="iep-edit-grid iep-edit-grid--two">
+                <label class="iep-edit-field">
+                  <span>制定日期</span>
+                  <a-input
+                    :value="monthlyPlan.meta.planDate"
+                    @update:value="value => updateMonthlyPlanMeta({ planDate: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>实施者</span>
+                  <a-input
+                    :value="monthlyPlan.meta.implementer"
+                    @update:value="value => updateMonthlyPlanMeta({ implementer: value })"
+                  />
+                </label>
+              </div>
+              <label class="iep-edit-field">
+                <span>计划参与者</span>
+                <a-input
+                  :value="monthlyPlan.meta.participant"
+                  @update:value="value => updateMonthlyPlanMeta({ participant: value })"
+                />
+              </label>
+              <div class="iep-edit-grid iep-edit-grid--two">
+                <label class="iep-edit-field">
+                  <span>开始日期</span>
+                  <a-input
+                    :value="monthlyPlan.meta.startDate"
+                    @update:value="value => updateMonthlyPlanMeta({ startDate: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>结束日期</span>
+                  <a-input
+                    :value="monthlyPlan.meta.endDate"
+                    @update:value="value => updateMonthlyPlanMeta({ endDate: value })"
+                  />
+                </label>
+              </div>
+            </section>
+
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>领域与目标</span>
+              </div>
+              <label class="iep-edit-field">
+                <span>康复领域</span>
+                <a-input
+                  :value="selectedMonthlyDisplayRow.domain"
+                  @update:value="value => updateMonthlyGroupRows(selectedMonthlyDisplayRow.domain, { domain: value })"
+                />
+              </label>
+              <label class="iep-edit-field">
+                <span>长期目标</span>
+                <a-textarea
+                  :value="selectedMonthlyDisplayRow.longGoal"
+                  :auto-size="{ minRows: 5, maxRows: 8 }"
+                  @update:value="value => updateMonthlyGroupRows(selectedMonthlyDisplayRow.domain, { longGoal: value })"
+                />
+              </label>
+              <label class="iep-edit-field">
+                <span>短期目标</span>
+                <a-textarea
+                  :value="selectedMonthlyDisplayRow.shortGoal"
+                  :auto-size="{ minRows: 4, maxRows: 7 }"
+                  @update:value="value => updateMonthlyRow(selectedMonthlyDisplayRow.rowIndex, { shortGoal: value })"
+                />
+              </label>
+            </section>
+
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>训练内容</span>
+              </div>
+              <label class="iep-edit-field">
+                <span>内容</span>
+                <a-textarea
+                  :value="selectedMonthlyDisplayRow.trainingContent"
+                  :auto-size="{ minRows: 4, maxRows: 7 }"
+                  @update:value="value => updateMonthlyTrainingItem(selectedMonthlyDisplayRow.rowIndex, selectedMonthlyDisplayRow.contentIndex, { content: value })"
+                />
+              </label>
+              <div class="iep-edit-grid">
+                <label class="iep-edit-field">
+                  <span>课程形式</span>
+                  <a-segmented
+                    :value="selectedMonthlyDisplayRow.courseForm"
+                    :options="courseFormOptions"
+                    @update:value="value => updateMonthlyGroupRows(selectedMonthlyDisplayRow.domain, { courseForm: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>起止日期</span>
+                  <a-input
+                    :value="selectedMonthlyDisplayRow.trainingStartEndDate"
+                    @update:value="value => updateMonthlyTrainingItem(selectedMonthlyDisplayRow.rowIndex, selectedMonthlyDisplayRow.contentIndex, { startEndDate: value })"
+                  />
+                </label>
+              </div>
+            </section>
+          </div>
+
+          <div v-else-if="isWeeklyPlanEditable && selectedWeeklyPlanRow" class="iep-edit-form">
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>基本信息</span>
+              </div>
+              <div class="iep-edit-grid iep-edit-grid--two">
+                <label class="iep-edit-field">
+                  <span>姓名</span>
+                  <a-input
+                    :value="weeklyPlan.student.name"
+                    @update:value="value => updateWeeklyPlanStudent({ name: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>性别</span>
+                  <a-input
+                    :value="weeklyPlan.student.gender"
+                    @update:value="value => updateWeeklyPlanStudent({ gender: value })"
+                  />
+                </label>
+              </div>
+              <label class="iep-edit-field">
+                <span>出生年月</span>
+                <a-input
+                  :value="weeklyPlan.student.birthDate"
+                  @update:value="value => updateWeeklyPlanStudent({ birthDate: value })"
+                />
+              </label>
+              <div class="iep-edit-grid iep-edit-grid--two">
+                <label class="iep-edit-field">
+                  <span>任教老师</span>
+                  <a-input
+                    :value="weeklyPlan.teacherName"
+                    @update:value="value => updateWeeklyPlanField({ teacherName: value })"
+                  />
+                </label>
+                <label class="iep-edit-field">
+                  <span>课程名称</span>
+                  <a-input
+                    :value="weeklyPlan.courseName"
+                    @update:value="value => updateWeeklyPlanField({ courseName: value })"
+                  />
+                </label>
+              </div>
+              <label class="iep-edit-field">
+                <span>训练日期</span>
+                <a-input
+                  :value="weeklyPlan.trainingDate"
+                  @update:value="value => updateWeeklyPlanField({ trainingDate: value })"
+                />
+              </label>
+              <label class="iep-edit-field">
+                <span>训练前准备</span>
+                <a-textarea
+                  :value="weeklyPlan.preparation"
+                  :auto-size="{ minRows: 3, maxRows: 6 }"
+                  @update:value="value => updateWeeklyPlanField({ preparation: value })"
+                />
+              </label>
+            </section>
+
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>训练项目</span>
+              </div>
+              <label class="iep-edit-field">
+                <span>项目</span>
+                <a-input
+                  :value="selectedWeeklyPlanRow.project"
+                  @update:value="value => updateWeeklyRow(selectedWeeklyRowIndex, { project: value })"
+                />
+              </label>
+              <label class="iep-edit-field">
+                <span>训练内容</span>
+                <a-textarea
+                  :value="selectedWeeklyPlanRow.content"
+                  :auto-size="{ minRows: 4, maxRows: 7 }"
+                  @update:value="value => updateWeeklyRow(selectedWeeklyRowIndex, { content: value })"
+                />
+              </label>
+            </section>
+
+            <section class="iep-edit-section">
+              <div class="iep-edit-section__title">
+                <span>完成情况</span>
+              </div>
+              <div class="weekly-completion-editor">
+                <label v-for="(date, dayIndex) in weeklyDisplayDates" :key="`${date || 'date'}-${dayIndex}`" class="iep-edit-field">
+                  <span>{{ date || `第${dayIndex + 1}天` }}</span>
+                  <a-input
+                    :value="selectedWeeklyPlanRow.completion?.[dayIndex] || ''"
+                    @update:value="value => updateWeeklyCompletion(selectedWeeklyRowIndex, dayIndex, value)"
                   />
                 </label>
               </div>
@@ -2826,11 +3396,11 @@ onBeforeUnmount(() => {
             当前为{{ planTitle }}；{{ isConfirmedPlan ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
           </template>
           <template v-else>
-            当前为{{ activePreviewTitle }}预览；{{ executionPlanSourceText || `依据：${planTitle}` }}。
+            当前为{{ activePreviewTitle }}预览；{{ isAnyPlanEditable ? '编辑后请保存修改。' : (executionPlanSourceText || `依据：${planTitle}`) }}。
           </template>
         </div>
         <div v-if="isIepPreview" class="footer-actions">
-          <a-button :loading="aiGenerating" :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan" @click="generateAIPlan">
+          <a-button :loading="aiGenerating" :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan" @click="generateAIPlan">
             {{ aiGenerateButtonText }}
           </a-button>
           <a-button @click="closeModal">
@@ -2838,19 +3408,19 @@ onBeforeUnmount(() => {
           </a-button>
           <a-button
             v-if="savedPlanStatus !== 'confirmed'"
-            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
             :loading="savingDraft"
             @click="saveIepDraft"
           >
             保存草稿
           </a-button>
-          <a-button :disabled="!planRows.length || generatingExecutionPlan" :loading="exportingWord" @click="exportIepWord">
+          <a-button :disabled="!planRows.length || generatingExecutionPlan || savingExecutionPlan" :loading="exportingWord" @click="exportIepWord">
             导出
           </a-button>
           <a-button
             v-if="savedPlanStatus !== 'confirmed'"
             type="primary"
-            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
             :loading="confirmingPlan"
             @click="confirmIepPlan"
           >
@@ -2859,7 +3429,7 @@ onBeforeUnmount(() => {
           <a-button
             v-else
             type="primary"
-            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan"
+            :disabled="!planRows.length || loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
             :loading="confirmingPlan"
             @click="saveConfirmedPlan"
           >
@@ -2873,8 +3443,31 @@ onBeforeUnmount(() => {
           <a-button @click="closeModal">
             取消
           </a-button>
-          <a-button :disabled="generatingExecutionPlan" :loading="exportingWord" @click="exportExecutionPlanWord">
+          <a-button
+            v-if="canEditActivePreview && !isAnyPlanEditable"
+            :disabled="navigationDisabled"
+            @click="startEditPlan"
+          >
+            编辑计划
+          </a-button>
+          <a-button
+            v-if="isAnyPlanEditable"
+            :disabled="savingExecutionPlan"
+            @click="finishEditPlan"
+          >
+            完成编辑
+          </a-button>
+          <a-button :disabled="!canExportActivePreview || generatingExecutionPlan || savingExecutionPlan" :loading="exportingWord" @click="exportExecutionPlanWord">
             导出
+          </a-button>
+          <a-button
+            v-if="isMonthlyPlanEditable || isWeeklyPlanEditable"
+            type="primary"
+            :loading="savingExecutionPlan"
+            :disabled="generatingExecutionPlan || loadingSavedPlan"
+            @click="saveActiveExecutionPlan"
+          >
+            保存修改
           </a-button>
         </div>
       </footer>
@@ -3038,7 +3631,7 @@ onBeforeUnmount(() => {
 
 .iep-preview-toolbar {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) auto auto;
+  grid-template-columns: minmax(220px, 1fr) auto;
   gap: 14px;
   align-items: center;
   padding: 10px 22px;
@@ -3100,46 +3693,8 @@ onBeforeUnmount(() => {
   color: #1677ff;
 }
 
-.iep-preview-toolbar__tabs {
-  grid-column: 2;
-  display: flex;
-  align-items: center;
-  min-width: 0;
-  justify-self: center;
-
-  :deep(.ant-segmented) {
-    display: flex;
-    align-items: center;
-    height: 30px;
-    max-width: 260px;
-    padding: 2px;
-    line-height: 1;
-  }
-
-  :deep(.ant-segmented-item) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 64px;
-    height: 26px;
-    min-height: 26px;
-    line-height: 1;
-  }
-
-  :deep(.ant-segmented-item-label) {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 26px;
-    min-height: 26px;
-    padding: 0 10px;
-    font-size: 12px;
-    line-height: 1;
-  }
-}
-
 .iep-preview-toolbar__actions {
-  grid-column: 3;
+  grid-column: 2;
   display: flex;
   gap: 6px;
   align-items: center;
@@ -3156,16 +3711,6 @@ onBeforeUnmount(() => {
   :deep(.ant-select-selector) {
     font-size: 12px;
   }
-}
-
-.iep-preview-toolbar__month {
-  width: 102px;
-  flex: 0 0 102px;
-}
-
-.iep-preview-toolbar__week {
-  width: 146px;
-  flex: 0 0 146px;
 }
 
 @keyframes ai-stream-pulse {
@@ -3254,11 +3799,12 @@ onBeforeUnmount(() => {
 
 .iep-modal__body {
   display: flex;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-start;
   max-height: calc(100vh - 286px);
-  padding: 16px;
-  overflow: auto;
+  padding: 12px;
+  overflow-x: hidden;
+  overflow-y: auto;
   position: relative;
   background: #eef1f5;
   scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
@@ -3282,27 +3828,190 @@ onBeforeUnmount(() => {
   background: transparent;
 }
 
-.a4-workbench {
-  flex: 1 0 860px;
+.iep-plan-navigator {
+  position: sticky;
+  top: 0;
   display: flex;
-  justify-content: center;
-  min-width: 860px;
+  box-sizing: border-box;
+  flex: 0 0 206px;
+  flex-direction: column;
+  gap: 8px;
+  max-height: calc(100vh - 318px);
+  padding: 8px;
+  overflow-y: auto;
+  color: #1f2937;
+  background: #fff;
+  border: 1px solid #dce3ee;
+  border-radius: 8px;
+  scrollbar-color: rgba(148, 163, 184, 0.62) transparent;
+  scrollbar-width: thin;
+}
+
+.iep-plan-navigator::-webkit-scrollbar {
+  width: 6px;
+}
+
+.iep-plan-navigator::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.5);
+  border-radius: 999px;
+}
+
+.iep-plan-navigator::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.iep-plan-nav-month {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid #edf1f6;
+}
+
+.iep-plan-nav-month__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 22px;
+  padding: 0 4px;
+
+  strong {
+    color: #111827;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 20px;
+  }
+
+  span {
+    color: #8a98ad;
+    font-size: 11px;
+    line-height: 18px;
+    white-space: nowrap;
+  }
+}
+
+.iep-plan-nav-item {
+  display: grid;
+  grid-template-columns: 10px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  width: 100%;
+  padding: 8px 10px;
+  text-align: left;
+  cursor: pointer;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  box-shadow: none;
+  transition: background-color 0.16s ease, color 0.16s ease;
+
+  &:hover:not(:disabled) {
+    background: #f6f8fb;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+
+  &.is-selected:not(.is-active) {
+    background: transparent;
+  }
+
+  &.is-active {
+    background: #eaf3ff;
+    box-shadow: none;
+  }
+}
+
+.iep-plan-nav-item--root {
+  margin-bottom: 2px;
+}
+
+.iep-plan-nav-item--week {
+  min-height: 34px;
+  margin-left: 10px;
+  width: calc(100% - 10px);
+}
+
+.iep-plan-nav-item__status {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.iep-plan-nav-item.is-active .iep-plan-nav-item__status {
+  width: 8px;
+  height: 8px;
+  background: #1677ff;
+  box-shadow: 0 0 0 3px rgba(22, 119, 255, 0.12);
+}
+
+.iep-plan-nav-item__status.is-generated {
+  background: #1677ff;
+}
+
+.iep-plan-nav-item__status.is-empty {
+  background: #c7d0dd;
+}
+
+.iep-plan-nav-item__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+
+  strong {
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 650;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  small {
+    overflow: hidden;
+    color: #667085;
+    font-size: 11px;
+    line-height: 16px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.iep-plan-nav-item.is-active .iep-plan-nav-item__text strong,
+.iep-plan-nav-item.is-active .iep-plan-nav-item__text small {
+  color: #0b5ed7;
+}
+
+.iep-plan-nav-item.is-active .iep-plan-nav-item__text strong {
+  font-weight: 700;
+}
+
+.a4-workbench {
+  flex: 0 0 auto;
+  display: flex;
+  justify-content: flex-start;
+  width: 210mm;
+  min-width: 210mm;
 }
 
 .iep-edit-panel {
   position: sticky;
   top: 0;
   display: flex;
+  box-sizing: border-box;
   flex-direction: column;
-  flex: 0 0 318px;
+  flex: 0 0 300px;
   max-height: calc(100vh - 260px);
-  padding: 14px;
+  padding: 12px;
   overflow: hidden;
   color: #1f2937;
   background: #fff;
   border: 1px solid #dce3ee;
   border-radius: 8px;
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.12);
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.08);
 }
 
 .iep-edit-panel__head {
@@ -3429,6 +4138,20 @@ onBeforeUnmount(() => {
   }
 }
 
+.iep-edit-grid--two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.weekly-completion-editor {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+
+  .iep-edit-field {
+    margin-bottom: 0;
+  }
+}
+
 .iep-generating-overlay {
   position: absolute;
   top: 164px;
@@ -3527,6 +4250,32 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   border: 1px solid #d9dee8;
   box-shadow: 0 18px 46px rgba(15, 23, 42, 0.16);
+}
+
+.plan-empty-sheet {
+  min-height: 160mm;
+  padding: 32px 16px;
+  color: #667085;
+  text-align: center;
+  background: #fbfcfe;
+  border: 1px dashed #dbe3ee;
+  border-radius: 6px;
+
+  strong {
+    display: block;
+    margin-bottom: 8px;
+    color: #111827;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 24px;
+  }
+
+  span {
+    display: block;
+    font-size: 12px;
+    line-height: 20px;
+    white-space: pre-wrap;
+  }
 }
 
 .plan-sheet-table {
@@ -3687,6 +4436,13 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.plan-sheet-table--editing .plan-cell-domain,
+.plan-sheet-table--editing .plan-cell-text,
+.plan-sheet-table--editing .plan-cell-center,
+.plan-sheet-table--editing .weekly-plan-table__check {
+  vertical-align: middle;
+}
+
 .plan-sheet-table__meta-compact th,
 .plan-sheet-table__meta-compact td {
   height: 38px;
@@ -3697,6 +4453,11 @@ onBeforeUnmount(() => {
 
 .plan-sheet-table--editing td {
   background: #fff;
+}
+
+.plan-sheet-table--editing .sheet-input,
+.plan-sheet-table--editing .sheet-textarea {
+  background: #fff !important;
 }
 
 .plan-data-row--selectable {
