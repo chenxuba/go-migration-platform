@@ -292,7 +292,7 @@ func buildPEP3IEPPlanDocumentXML(plan iepPlanWordExport) string {
 }
 
 func buildIEPMainTable(plan iepPlanWordExport) string {
-	widths := []int{1038, 1472, 625, 877, 1260, 1562, 827, 2419}
+	widths := []int{1038, 1472, 625, 877, 1260, 1562, 927, 2319}
 	rows := plan.Rows
 	if len(rows) == 0 {
 		rows = buildIEPWordRowsFromDomains(plan)
@@ -343,7 +343,7 @@ func buildIEPMainTable(plan iepPlanWordExport) string {
 			builder.WriteString(buildIEPCell(nil, widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "continue"}))
 		}
 		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, VAlign: "center", IndentLeft: 200}))
-		builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
+		builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 		builder.WriteString(buildIEPCell([]string{row.StartEndDate}, widths[7], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 		builder.WriteString(`</w:tr>`)
 	}

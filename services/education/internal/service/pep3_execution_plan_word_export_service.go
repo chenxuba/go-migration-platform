@@ -94,7 +94,7 @@ func buildPEP3WeeklyPlanDocumentXML(plan model.PEP3WeeklyPlanAIResult) string {
 }
 
 func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
-	widths := []int{806, 907, 907, 958, 957, 655, 655, 655, 655, 706, 1109, 1110}
+	widths := []int{806, 907, 907, 958, 957, 655, 655, 655, 655, 826, 1049, 1050}
 	var builder strings.Builder
 	builder.WriteString(buildIEPTableStart(widths))
 	builder.WriteString(buildIEPTableRowStart(560))
@@ -140,7 +140,7 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 			}
 			builder.WriteString(buildIEPCell(splitWordLines(fmt.Sprintf("%d. %s", index+1, item.Content)), sumInts(widths[5], widths[6], widths[7], widths[8]), iepPlanWordCellOptions{GridSpan: 4, VAlign: "center", IndentLeft: 120}))
 			if index == 0 {
-				builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[9], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center"}))
+				builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[9], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 			} else {
 				builder.WriteString(buildIEPCell(nil, widths[9], iepPlanWordCellOptions{VMerge: "continue"}))
 			}

@@ -647,6 +647,16 @@ const activePreviewCountText = computed(() => {
   return `${planRows.value.length}条计划`
 })
 
+const canExportActivePreview = computed(() => {
+  if (generatingExecutionPlan.value)
+    return false
+  if (executionPlanView.value === 'monthly')
+    return !!monthlyPlan.value?.rows?.length
+  if (executionPlanView.value === 'weekly')
+    return !!weeklyPlan.value?.rows?.length
+  return !!planRows.value.length
+})
+
 const monthlyDisplayRows = computed(() => {
   const rows = monthlyPlan.value?.rows || []
   const result = []
@@ -1118,6 +1128,31 @@ function handleExecutionPlanMenuClick({ key }) {
       return
     }
     generateWeeklyPlan()
+  }
+}
+
+function handlePreviewMoreMenuClick({ key }) {
+  if (key === 'edit') {
+    startEditPlan()
+    return
+  }
+  if (key === 'finishEdit') {
+    finishEditPlan()
+    return
+  }
+  if (key === 'regenerateMonthly') {
+    confirmRegenerateMonthlyPlan()
+    return
+  }
+  if (key === 'regenerateWeekly') {
+    confirmRegenerateWeeklyPlan()
+    return
+  }
+  if (key === 'export') {
+    if (isIepPreview.value)
+      exportIepWord()
+    else
+      exportExecutionPlanWord()
   }
 }
 
@@ -2374,79 +2409,98 @@ onBeforeUnmount(() => {
         <span v-if="generationInlineTail" class="ai-stream-bar__text">{{ generationInlineTail }}</span>
       </div>
 
+      <div class="iep-preview-toolbar">
+        <div class="iep-preview-toolbar__info">
+          <div class="iep-preview-toolbar__title">
+            <span>A4预览</span>
+            <strong>{{ activePreviewTitle }}</strong>
+          </div>
+          <div class="iep-preview-toolbar__meta">
+            <span>{{ activePreviewCountText }}</span>
+            <span v-if="executionPlanSourceText">{{ executionPlanSourceText }}</span>
+            <span v-if="isPlanEditable" class="iep-preview-toolbar__editing">正在编辑：{{ selectedPlanRowTitle }}</span>
+          </div>
+        </div>
+        <div v-if="previewModeOptions.length > 1" class="iep-preview-toolbar__tabs">
+          <a-segmented
+            size="small"
+            :value="executionPlanView"
+            :options="previewModeOptions"
+            @update:value="switchPreviewView"
+          />
+        </div>
+        <div class="iep-preview-toolbar__actions">
+          <a-select
+            class="iep-preview-toolbar__month"
+            size="small"
+            :value="selectedExecutionMonth"
+            :options="executionMonthOptions"
+            :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
+            @update:value="switchExecutionMonth"
+          />
+          <a-select
+            class="iep-preview-toolbar__week"
+            size="small"
+            :value="selectedExecutionWeek"
+            :options="executionWeekOptions"
+            :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
+            @update:value="switchExecutionWeek"
+          />
+          <a-dropdown :disabled="!planRows.length || aiGenerating || loadingSavedPlan || generatingExecutionPlan">
+            <a-button size="small" type="primary" :loading="generatingExecutionPlan">
+              生成执行计划
+              <DownOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu @click="handleExecutionPlanMenuClick">
+                <a-menu-item key="monthly" :disabled="selectedExecutionMonthGenerated">生成{{ selectedExecutionMonthLabel }}计划</a-menu-item>
+                <a-menu-item key="weekly" :disabled="selectedExecutionWeekGenerated">生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划</a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+          <a-dropdown :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan">
+            <a-button size="small">
+              更多
+              <DownOutlined />
+            </a-button>
+            <template #overlay>
+              <a-menu @click="handlePreviewMoreMenuClick">
+                <a-menu-item v-if="isPlanEditable" key="finishEdit">
+                  完成编辑
+                </a-menu-item>
+                <a-menu-item v-else-if="isIepPreview" key="edit" :disabled="!planRows.length">
+                  编辑计划
+                </a-menu-item>
+                <a-menu-divider v-if="isIepPreview" />
+                <a-menu-item
+                  v-if="executionPlanView === 'monthly' && selectedExecutionMonthGenerated"
+                  key="regenerateMonthly"
+                  danger
+                >
+                  重新生成{{ selectedExecutionMonthLabel }}计划
+                </a-menu-item>
+                <a-menu-item
+                  v-if="executionPlanView === 'weekly' && selectedExecutionWeekGenerated"
+                  key="regenerateWeekly"
+                  danger
+                >
+                  重新生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划
+                </a-menu-item>
+                <a-menu-divider
+                  v-if="isIepPreview || (executionPlanView === 'monthly' && selectedExecutionMonthGenerated) || (executionPlanView === 'weekly' && selectedExecutionWeekGenerated)"
+                />
+                <a-menu-item key="export" :disabled="!canExportActivePreview || exportingWord">
+                  导出Word
+                </a-menu-item>
+              </a-menu>
+            </template>
+          </a-dropdown>
+        </div>
+      </div>
+
       <main ref="iepModalBodyRef" class="iep-modal__body">
         <div class="a4-workbench">
           <section class="plan-sheet a4-page">
-            <div class="a4-page__chrome">
-              <div class="a4-page__meta">
-                <span>A4预览</span>
-                <strong>{{ activePreviewTitle }}</strong>
-              </div>
-              <div class="a4-page__tools">
-                <a-segmented
-                  v-if="previewModeOptions.length > 1"
-                  size="small"
-                  :value="executionPlanView"
-                  :options="previewModeOptions"
-                  @update:value="switchPreviewView"
-                />
-                <span>{{ activePreviewCountText }}</span>
-                <span v-if="executionPlanSourceText" class="a4-page__source">{{ executionPlanSourceText }}</span>
-                <a-select
-                  class="a4-page__month-select"
-                  size="small"
-                  :value="selectedExecutionMonth"
-                  :options="executionMonthOptions"
-                  :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-                  @update:value="switchExecutionMonth"
-                />
-                <a-select
-                  class="a4-page__week-select"
-                  size="small"
-                  :value="selectedExecutionWeek"
-                  :options="executionWeekOptions"
-                  :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-                  @update:value="switchExecutionWeek"
-                />
-                <a-dropdown :disabled="!planRows.length || aiGenerating || loadingSavedPlan || generatingExecutionPlan">
-                  <a-button size="small" :loading="generatingExecutionPlan">
-                    生成执行计划
-                    <DownOutlined />
-                  </a-button>
-                  <template #overlay>
-                    <a-menu @click="handleExecutionPlanMenuClick">
-                      <a-menu-item key="monthly" :disabled="selectedExecutionMonthGenerated">生成{{ selectedExecutionMonthLabel }}计划</a-menu-item>
-                      <a-menu-item key="weekly" :disabled="selectedExecutionWeekGenerated">生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}周计划</a-menu-item>
-                    </a-menu>
-                  </template>
-                </a-dropdown>
-                <a-button
-                  v-if="executionPlanView === 'monthly' && selectedExecutionMonthGenerated"
-                  size="small"
-                  :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-                  :loading="generatingExecutionPlan && executionPlanGeneratingType === 'monthly'"
-                  @click="confirmRegenerateMonthlyPlan"
-                >
-                  重新生成
-                </a-button>
-                <a-button
-                  v-if="executionPlanView === 'weekly' && selectedExecutionWeekGenerated"
-                  size="small"
-                  :disabled="aiGenerating || loadingSavedPlan || generatingExecutionPlan"
-                  :loading="generatingExecutionPlan && executionPlanGeneratingType === 'weekly'"
-                  @click="confirmRegenerateWeeklyPlan"
-                >
-                  重新生成
-                </a-button>
-                <template v-if="isPlanEditable">
-                  <span class="a4-page__selected">{{ selectedPlanRowTitle }}</span>
-                  <a-button size="small" type="primary" ghost @click="finishEditPlan">完成编辑</a-button>
-                </template>
-                <a-button v-else-if="isIepPreview" size="small" :disabled="!planRows.length || aiGenerating || generatingExecutionPlan || loadingSavedPlan" @click="startEditPlan">
-                  编辑计划
-                </a-button>
-              </div>
-            </div>
             <h1>{{ activePreviewTitle }}</h1>
             <table v-if="executionPlanView === 'monthly' && monthlyPlan" class="plan-sheet-table monthly-plan-table">
               <colgroup>
@@ -2497,7 +2551,7 @@ onBeforeUnmount(() => {
                   <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">{{ row.longGoal }}</td>
                   <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">{{ row.shortGoal }}</td>
                   <td colspan="4" class="plan-cell-text">{{ row.trainingContentText }}</td>
-                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center">{{ row.courseForm }}</td>
+                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">{{ row.courseForm }}</td>
                   <td colspan="2" class="plan-cell-center plan-cell-date">{{ row.trainingStartEndDate }}</td>
                 </tr>
               </tbody>
@@ -2957,6 +3011,138 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
+.iep-preview-toolbar {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) auto auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 22px;
+  background: #fff;
+  border-bottom: 1px solid #edf0f5;
+}
+
+.iep-preview-toolbar__info {
+  grid-column: 1;
+  min-width: 0;
+}
+
+.iep-preview-toolbar__title {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  line-height: 22px;
+
+  > span {
+    flex: 0 0 auto;
+    color: #8a98ad;
+    font-size: 12px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  strong {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 15px;
+    font-weight: 650;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.iep-preview-toolbar__meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  margin-top: 2px;
+  color: #667085;
+  font-size: 12px;
+  line-height: 18px;
+
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.iep-preview-toolbar__editing {
+  color: #1677ff;
+}
+
+.iep-preview-toolbar__tabs {
+  grid-column: 2;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  justify-self: center;
+
+  :deep(.ant-segmented) {
+    display: flex;
+    align-items: center;
+    height: 30px;
+    max-width: 260px;
+    padding: 2px;
+    line-height: 1;
+  }
+
+  :deep(.ant-segmented-item) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 64px;
+    height: 26px;
+    min-height: 26px;
+    line-height: 1;
+  }
+
+  :deep(.ant-segmented-item-label) {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+    line-height: 1;
+  }
+}
+
+.iep-preview-toolbar__actions {
+  grid-column: 3;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  justify-self: end;
+  min-width: 0;
+
+  :deep(.ant-btn) {
+    height: 28px;
+    padding: 0 8px;
+    font-size: 12px;
+    white-space: nowrap;
+  }
+
+  :deep(.ant-select-selector) {
+    font-size: 12px;
+  }
+}
+
+.iep-preview-toolbar__month {
+  width: 102px;
+  flex: 0 0 102px;
+}
+
+.iep-preview-toolbar__week {
+  width: 146px;
+  flex: 0 0 146px;
+}
+
 @keyframes ai-stream-pulse {
   0%,
   100% {
@@ -3045,7 +3231,7 @@ onBeforeUnmount(() => {
   display: flex;
   gap: 16px;
   align-items: flex-start;
-  max-height: calc(100vh - 224px);
+  max-height: calc(100vh - 286px);
   padding: 16px;
   overflow: auto;
   position: relative;
@@ -3220,7 +3406,7 @@ onBeforeUnmount(() => {
 
 .iep-generating-overlay {
   position: absolute;
-  top: 130px;
+  top: 164px;
   right: 0;
   bottom: 55px;
   left: 0;
@@ -3318,108 +3504,6 @@ onBeforeUnmount(() => {
   box-shadow: 0 18px 46px rgba(15, 23, 42, 0.16);
 }
 
-.a4-page__chrome {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  align-items: stretch;
-  justify-content: flex-start;
-  margin: -6mm 0 5mm;
-  color: #64748b;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 11px;
-  line-height: 18px;
-
-  strong {
-    color: #334155;
-    font-weight: 650;
-  }
-}
-
-.a4-page__meta {
-  display: flex;
-  align-items: center;
-  width: 100%;
-  min-width: 0;
-  gap: 10px;
-
-  > span {
-    flex: 0 0 auto;
-    color: #94a3b8;
-    white-space: nowrap;
-  }
-
-  strong {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-}
-
-.a4-page__tools {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  align-items: center;
-  width: 100%;
-  max-width: 100%;
-  min-width: 0;
-
-  > span {
-    line-height: 24px;
-    color: #64748b;
-    white-space: nowrap;
-  }
-
-  :deep(.ant-segmented) {
-    flex: 0 1 auto;
-    max-width: 260px;
-    min-width: 0;
-  }
-
-  :deep(.ant-segmented-item) {
-    min-width: 64px;
-  }
-
-  :deep(.ant-btn) {
-    height: 24px;
-    padding: 0 9px;
-    font-size: 12px;
-  }
-
-  :deep(.ant-select-selector) {
-    font-size: 12px;
-  }
-}
-
-.a4-page__source {
-  max-width: 140px;
-  overflow: hidden;
-  color: #64748b;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.a4-page__month-select {
-  width: 106px;
-  flex: 0 0 106px;
-}
-
-.a4-page__week-select {
-  width: 154px;
-  flex: 0 0 154px;
-}
-
-.a4-page__selected {
-  max-width: 180px;
-  overflow: hidden;
-  color: #1677ff !important;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .plan-sheet-table {
   width: 100%;
   table-layout: fixed;
@@ -3471,11 +3555,11 @@ onBeforeUnmount(() => {
 }
 
 .plan-col-course {
-  width: 8.2%;
+  width: 9.2%;
 }
 
 .plan-col-date {
-  width: 24%;
+  width: 23%;
 }
 
 .monthly-col-1 {
@@ -3500,12 +3584,12 @@ onBeforeUnmount(() => {
 }
 
 .monthly-col-10 {
-  width: 7%;
+  width: 8.2%;
 }
 
 .monthly-col-11,
 .monthly-col-12 {
-  width: 11%;
+  width: 10.4%;
 }
 
 .weekly-col-project {
@@ -3729,6 +3813,7 @@ tr:hover .cell-action-row {
 .plan-cell-course {
   padding-right: 3px !important;
   padding-left: 3px !important;
+  white-space: nowrap !important;
 }
 
 .sheet-select--course {
