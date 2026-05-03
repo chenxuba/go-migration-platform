@@ -609,6 +609,14 @@ const selectedExecutionWeekLabel = computed(() => `第${selectedExecutionWeekVal
 const selectedExecutionWeekRange = computed(() => executionWeekRangeForIndex(selectedExecutionWeekValue.value))
 const executionWeekStorageKey = computed(() => `${clampExecutionMonth(selectedExecutionMonth.value)}-${selectedExecutionWeekValue.value}`)
 const selectedExecutionWeekGenerated = computed(() => !!weeklyPlans.value[executionWeekStorageKey.value])
+const weeklyDisplayDates = computed(() => {
+  const dates = Array.isArray(weeklyPlan.value?.weekDates)
+    ? weeklyPlan.value.weekDates.slice(0, 6).map(date => formatMonthDayDate(date))
+    : []
+  while (dates.length < 6)
+    dates.push('')
+  return dates
+})
 
 const executionWeekOptions = computed(() => {
   return Array.from({ length: executionWeekCount.value }, (_, index) => {
@@ -774,6 +782,16 @@ function formatDate(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime()))
     return value.toISOString().slice(0, 10)
   return String(value).slice(0, 10)
+}
+
+function formatMonthDayDate(value) {
+  const text = formatDate(value)
+  if (!text)
+    return ''
+  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (match)
+    return `${match[2]}.${match[3]}`
+  return text.replace(/-/g, '.')
 }
 
 function addMonths(dateText, months) {
@@ -2558,9 +2576,16 @@ onBeforeUnmount(() => {
             </table>
             <table v-else-if="executionPlanView === 'weekly' && weeklyPlan" class="plan-sheet-table weekly-plan-table">
               <colgroup>
-                <col class="weekly-col-project">
-                <col class="weekly-col-content">
-                <col v-for="(date, index) in weeklyPlan.weekDates" :key="`${date || 'empty'}-${index}`" class="weekly-col-day">
+                <col class="weekly-col-1">
+                <col class="weekly-col-2">
+                <col class="weekly-col-3">
+                <col class="weekly-col-4">
+                <col class="weekly-col-5">
+                <col class="weekly-col-6">
+                <col class="weekly-col-7">
+                <col class="weekly-col-8">
+                <col class="weekly-col-9">
+                <col class="weekly-col-10">
               </colgroup>
               <tbody>
                 <tr>
@@ -2569,32 +2594,32 @@ onBeforeUnmount(() => {
                   <th>性别</th>
                   <td>{{ weeklyPlan.student.gender }}</td>
                   <th colspan="2">出生年月</th>
-                  <td colspan="2">{{ weeklyPlan.student.birthDate }}</td>
+                  <td colspan="4">{{ weeklyPlan.student.birthDate }}</td>
                 </tr>
                 <tr>
                   <th>任教<br>老师</th>
                   <td>{{ weeklyPlan.teacherName }}</td>
                   <th>课程<br>名称</th>
-                  <td colspan="2">{{ weeklyPlan.courseName }}</td>
-                  <th>训练日期</th>
-                  <td colspan="2" class="plan-cell-date">{{ weeklyPlan.trainingDate }}</td>
+                  <td>{{ weeklyPlan.courseName }}</td>
+                  <th colspan="2">训练日期</th>
+                  <td colspan="4" class="plan-cell-date">{{ weeklyPlan.trainingDate }}</td>
                 </tr>
                 <tr>
                   <th>训练前<br>准备</th>
-                  <td colspan="7" class="plan-cell-text">{{ weeklyPlan.preparation }}</td>
+                  <td colspan="9" class="plan-cell-text">{{ weeklyPlan.preparation }}</td>
                 </tr>
                 <tr class="weekly-plan-table__main-head">
                   <th rowspan="2">训练项目</th>
-                  <th rowspan="2">训练内容</th>
+                  <th rowspan="2" colspan="3">训练内容</th>
                   <th colspan="6">完成情况</th>
                 </tr>
                 <tr class="weekly-plan-table__date-head">
-                  <th v-for="(date, index) in weeklyPlan.weekDates" :key="`${date || 'empty'}-${index}`">{{ date }}</th>
+                  <th v-for="(date, index) in weeklyDisplayDates" :key="`${date || 'empty'}-${index}`">{{ date }}</th>
                 </tr>
                 <tr v-for="(row, index) in weeklyPlan.rows" :key="`${row.project}-${index}`">
                   <td class="plan-cell-center">{{ row.project }}</td>
-                  <td class="plan-cell-text">{{ row.content }}</td>
-                  <td v-for="(_, dayIndex) in weeklyPlan.weekDates" :key="dayIndex" class="weekly-plan-table__check">
+                  <td colspan="3" class="plan-cell-text">{{ row.content }}</td>
+                  <td v-for="(_, dayIndex) in weeklyDisplayDates" :key="dayIndex" class="weekly-plan-table__check">
                     {{ row.completion?.[dayIndex] || '' }}
                   </td>
                 </tr>
@@ -3592,16 +3617,23 @@ onBeforeUnmount(() => {
   width: 5.9%;
 }
 
-.weekly-col-project {
+.weekly-col-1 {
   width: 13%;
 }
 
-.weekly-col-content {
-  width: 33%;
+.weekly-col-2,
+.weekly-col-3,
+.weekly-col-4 {
+  width: 13.25%;
 }
 
-.weekly-col-day {
-  width: 9%;
+.weekly-col-5,
+.weekly-col-6,
+.weekly-col-7,
+.weekly-col-8,
+.weekly-col-9,
+.weekly-col-10 {
+  width: 7.875%;
 }
 
 .plan-sheet-table__head th {
@@ -3636,15 +3668,16 @@ onBeforeUnmount(() => {
 .weekly-plan-table__date-head th {
   height: 34px;
   color: #000;
-  font-size: 10.5px;
+  font-size: 12px;
   font-weight: 400;
-  background: #fbfcfe;
+  background: #fff;
   word-break: keep-all;
 }
 
 .weekly-plan-table__check {
   height: 50px;
   background: #fff;
+  white-space: nowrap;
 }
 
 .plan-sheet-table__meta-compact th,
