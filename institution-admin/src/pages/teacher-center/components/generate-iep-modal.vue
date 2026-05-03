@@ -507,6 +507,22 @@ const hasPlanContent = computed(() => {
   return aiGenerating.value || !!editablePlan.value || !!generatedPlan.value || !!streamingPlan.value || planRows.value.length > 0
 })
 
+const isConfirmedPlan = computed(() => {
+  return savedPlanStatus.value === 'confirmed' || props.record?.iepPlanStatus === 'confirmed'
+})
+
+const modalTitleText = computed(() => {
+  if (isConfirmedPlan.value)
+    return '查看IEP训练计划'
+  if (savedPlanStatus.value === 'draft')
+    return '编辑IEP草稿'
+  return '生成IEP训练计划'
+})
+
+const aiGenerateButtonText = computed(() => {
+  return isConfirmedPlan.value && hasPlanContent.value ? '重新生成' : 'AI生成'
+})
+
 const headerPlanMeta = computed(() => {
   if (aiGenerating.value)
     return '正在生成IEP计划'
@@ -519,7 +535,7 @@ const headerPlanMeta = computed(() => {
 const periodHint = computed(() => {
   if (aiGenerating.value)
     return '正在按周期生成计划行和起止日期'
-  if (savedPlanStatus.value === 'confirmed')
+  if (isConfirmedPlan.value)
     return '已确认后仍可编辑并保存修改'
   if (savedPlanStatus.value === 'draft')
     return '草稿未确认，列表仍显示生成IEP'
@@ -1320,7 +1336,7 @@ watch(
     <section class="iep-modal">
       <header class="iep-modal__header">
         <div class="iep-modal__title-block">
-          <h2>生成IEP训练计划</h2>
+          <h2>{{ modalTitleText }}</h2>
           <div class="iep-header-meta">
             <span class="iep-header-meta__student">{{ studentMeta }}</span>
             <span v-if="headerPlanMeta" class="iep-header-meta__plan">{{ headerPlanMeta }}</span>
@@ -1565,11 +1581,11 @@ watch(
 
       <footer class="iep-modal__footer">
         <div class="footer-hint">
-          当前为{{ planDuration }}个月康复教学计划；{{ savedPlanStatus === 'confirmed' ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
+          当前为{{ planDuration }}个月康复教学计划；{{ isConfirmedPlan ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
         </div>
         <div class="footer-actions">
           <a-button :loading="aiGenerating" :disabled="loadingSavedPlan || savingDraft || confirmingPlan" @click="generateAIPlan">
-            AI生成
+            {{ aiGenerateButtonText }}
           </a-button>
           <a-button @click="closeModal">
             取消
@@ -1887,8 +1903,12 @@ watch(
 .iep-edit-panel {
   position: sticky;
   top: 0;
+  display: flex;
+  flex-direction: column;
   flex: 0 0 318px;
+  max-height: calc(100vh - 260px);
   padding: 14px;
+  overflow: hidden;
   color: #1f2937;
   background: #fff;
   border: 1px solid #dce3ee;
@@ -1897,6 +1917,7 @@ watch(
 }
 
 .iep-edit-panel__head {
+  flex: 0 0 auto;
   display: flex;
   gap: 10px;
   align-items: flex-start;
@@ -1926,6 +1947,24 @@ watch(
   flex-direction: column;
   gap: 12px;
   padding-top: 12px;
+  padding-right: 4px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: rgba(148, 163, 184, 0.65) transparent;
+  scrollbar-width: thin;
+}
+
+.iep-edit-form::-webkit-scrollbar {
+  width: 6px;
+}
+
+.iep-edit-form::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.52);
+  border-radius: 999px;
+}
+
+.iep-edit-form::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .iep-edit-section {

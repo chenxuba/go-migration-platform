@@ -205,6 +205,28 @@ function formatAge(row) {
   return parts.join('') || '-'
 }
 
+function formatCurrentAge(row) {
+  const birth = dayjs(row?.birthDate).startOf('day')
+  const today = dayjs().startOf('day')
+  if (!birth.isValid() || birth.isAfter(today))
+    return formatAge(row)
+
+  const years = today.diff(birth, 'year')
+  const afterYears = birth.add(years, 'year')
+  const months = today.diff(afterYears, 'month')
+  const afterMonths = afterYears.add(months, 'month')
+  const days = today.diff(afterMonths, 'day')
+
+  const parts = []
+  if (years)
+    parts.push(`${years}岁`)
+  if (months)
+    parts.push(`${months}月`)
+  if (days || !parts.length)
+    parts.push(`${days}天`)
+  return parts.join('')
+}
+
 function exportDimensionTitle(value) {
   return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
 }
@@ -500,7 +522,7 @@ onBeforeUnmount(() => {
                   :id="record.studentId"
                   :name="record.studentName || '-'"
                   :gender="record.studentGender || '-'"
-                  :age="formatAge(record)"
+                  :age="formatCurrentAge(record)"
                   :avatar-url="record.studentAvatar"
                   default-active-key="0"
                 />
