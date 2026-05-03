@@ -795,10 +795,6 @@ const modalTitleText = computed(() => {
   return '生成IEP训练计划'
 })
 
-const aiGenerateButtonText = computed(() => {
-  return isConfirmedPlan.value && hasPlanContent.value ? '重新生成' : 'AI生成'
-})
-
 const headerPlanMeta = computed(() => {
   if (aiGenerating.value)
     return '正在生成IEP计划'
@@ -1091,6 +1087,21 @@ function confirmRegenerateMonthlyPlan() {
   })
 }
 
+function confirmGenerateMonthlyPlan() {
+  Modal.confirm({
+    title: `生成${selectedExecutionMonthLabel.value}计划`,
+    content: `将基于 pep-3教研IEP库v3.0、当前评估结果、儿童训练记录和当前IEP总计划，生成${selectedExecutionMonthLabel.value}月度计划。确认要继续吗？`,
+    okText: '确认生成',
+    cancelText: '先不生成',
+    okButtonProps: { type: 'primary' },
+    closable: true,
+    centered: true,
+    onOk() {
+      runAfterConfirmClosed(() => generateMonthlyPlan())
+    },
+  })
+}
+
 function confirmRegenerateIepPlan() {
   if (!planRows.value.length) {
     generateAIPlan()
@@ -1102,6 +1113,21 @@ function confirmRegenerateIepPlan() {
     okText: '重新生成',
     cancelText: '保留当前计划',
     okButtonProps: { danger: true },
+    closable: true,
+    centered: true,
+    onOk() {
+      runAfterConfirmClosed(() => generateAIPlan())
+    },
+  })
+}
+
+function confirmGenerateIepPlan() {
+  Modal.confirm({
+    title: 'AI智能生成IEP计划',
+    content: `将基于 pep-3教研IEP库v3.0、当前评估结果和儿童训练记录生成IEP计划。确认要继续吗？`,
+    okText: '确认生成',
+    cancelText: '先不生成',
+    okButtonProps: { type: 'primary' },
     closable: true,
     centered: true,
     onOk() {
@@ -2776,18 +2802,31 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="iep-preview-toolbar__actions">
+          <a-tooltip v-if="isIepPreview && !planRows.length" title="基于 pep-3教研IEP库v3.0">
+            <span class="iep-toolbar-tooltip-target">
+              <a-button
+                size="small"
+                type="primary"
+                :loading="aiGenerating"
+                :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan || isAnyPlanEditable"
+                @click="confirmGenerateIepPlan"
+              >
+                AI智能生成
+              </a-button>
+            </span>
+          </a-tooltip>
           <a-button
-            v-if="!selectedExecutionMonthGenerated"
+            v-if="!isIepPreview && !selectedExecutionMonthGenerated"
             size="small"
             type="primary"
             :loading="generatingExecutionPlan && executionPlanGeneratingType === 'monthly'"
             :disabled="!planRows.length || navigationDisabled"
-            @click="() => generateMonthlyPlan()"
+            @click="confirmGenerateMonthlyPlan"
           >
             生成{{ selectedExecutionMonthLabel }}计划
           </a-button>
           <a-button
-            v-if="!selectedExecutionWeekGenerated"
+            v-if="!isIepPreview && !selectedExecutionWeekGenerated"
             size="small"
             type="primary"
             :loading="generatingExecutionPlan && executionPlanGeneratingType === 'weekly'"
@@ -3143,7 +3182,7 @@ onBeforeUnmount(() => {
                 <tr v-if="!planDisplayRows.length" class="plan-empty-row">
                   <td colspan="8">
                     <strong>{{ loadingSavedPlan ? '正在读取IEP计划' : '暂无IEP计划内容' }}</strong>
-                    <span>{{ loadingSavedPlan ? '正在读取已保存的草稿或确认计划。' : '点击“AI生成”后，系统会根据评估结果和近期训练记录实时生成表格。' }}</span>
+                    <span>{{ loadingSavedPlan ? '正在读取已保存的草稿或确认计划。' : '点击“AI智能生成”后，系统会根据评估结果和近期训练记录实时生成表格。' }}</span>
                   </td>
                 </tr>
               </tbody>
@@ -3499,14 +3538,6 @@ onBeforeUnmount(() => {
           </template>
         </div>
         <div v-if="isIepPreview" class="footer-actions">
-          <a-button
-            v-if="!planRows.length"
-            :loading="aiGenerating"
-            :disabled="generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan"
-            @click="generateAIPlan"
-          >
-            {{ aiGenerateButtonText }}
-          </a-button>
           <a-button @click="closeModal">
             取消
           </a-button>
@@ -3777,6 +3808,10 @@ onBeforeUnmount(() => {
   :deep(.ant-select-selector) {
     font-size: 12px;
   }
+}
+
+.iep-toolbar-tooltip-target {
+  display: inline-flex;
 }
 
 @keyframes ai-stream-pulse {
