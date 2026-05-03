@@ -3772,10 +3772,14 @@ onBeforeUnmount(() => {
 }
 
 .iep-modal__body {
+  --iep-side-panel-height: calc(100vh - 286px);
+
   display: flex;
   gap: 12px;
   align-items: flex-start;
-  max-height: calc(100vh - 286px);
+  box-sizing: border-box;
+  height: var(--iep-side-panel-height);
+  max-height: var(--iep-side-panel-height);
   padding: 12px;
   overflow-x: hidden;
   overflow-y: auto;
@@ -3810,7 +3814,8 @@ onBeforeUnmount(() => {
   flex: 0 0 206px;
   flex-direction: column;
   gap: 8px;
-  max-height: calc(100vh - 318px);
+  height: 100%;
+  max-height: 100%;
   padding: 8px;
   overflow-y: auto;
   color: #1f2937;
@@ -3978,7 +3983,8 @@ onBeforeUnmount(() => {
   box-sizing: border-box;
   flex-direction: column;
   flex: 0 0 300px;
-  max-height: calc(100vh - 260px);
+  height: 100%;
+  max-height: 100%;
   padding: 12px;
   overflow: hidden;
   color: #1f2937;
