@@ -39,6 +39,7 @@ const loadingSavedPlan = ref(false)
 const savingDraft = ref(false)
 const confirmingPlan = ref(false)
 const savingExecutionPlan = ref(false)
+const showPlanLoadingOverlay = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
 const streamingPlan = ref(null)
@@ -86,6 +87,7 @@ let aiGenerationRequestKey = 0
 let executionPlanRequestKey = 0
 let loadPlanRequestKey = 0
 let ignoreNextPlanDurationWatch = false
+let planLoadingOverlayTimer = 0
 
 const domains = [
   { key: 'language', name: '语言沟通', icon: '语', longCount: 3, shortCount: 6 },
@@ -535,6 +537,7 @@ const executionPlanGeneratingLabel = computed(() => {
 })
 
 const generationOverlayActive = computed(() => aiGenerating.value || generatingExecutionPlan.value)
+const planLoadingOverlayActive = computed(() => showPlanLoadingOverlay.value && loadingSavedPlan.value && hasPlanContent.value && !generationOverlayActive.value)
 
 const generationOverlayTitle = computed(() => {
   if (generatingExecutionPlan.value)
@@ -1084,6 +1087,25 @@ function confirmRegenerateMonthlyPlan() {
     centered: true,
     onOk() {
       runAfterConfirmClosed(() => generateMonthlyPlan({ forceRegenerate: true }))
+    },
+  })
+}
+
+function confirmRegenerateIepPlan() {
+  if (!planRows.value.length) {
+    generateAIPlan()
+    return
+  }
+  Modal.confirm({
+    title: '重新生成IEP计划',
+    content: '重新生成会覆盖当前IEP计划内容，已导出的Word不受影响。确认要继续吗？',
+    okText: '重新生成',
+    cancelText: '保留当前计划',
+    okButtonProps: { danger: true },
+    closable: true,
+    centered: true,
+    onOk() {
+      runAfterConfirmClosed(() => generateAIPlan())
     },
   })
 }
@@ -2047,8 +2069,7 @@ async function saveActiveExecutionPlan() {
       preserveWeeklyPlans: isMonthly,
       successMessage: isMonthly ? `${selectedExecutionMonthLabel.value}计划修改已保存` : `${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划修改已保存`,
     })
-    if (success)
-      finishEditPlan()
+    return success
   }
   finally {
     savingExecutionPlan.value = false
@@ -2075,11 +2096,9 @@ function closeModal() {
     return
   }
   if (generatingExecutionPlan.value) {
-    Modal.warning({
-      title: `${executionPlanGeneratingLabel.value}正在生成中`,
-      content: '当前请求已提交到AI接口，关闭弹窗会导致无法接收生成结果。请等待生成完成后再关闭或导出。',
-      okText: '知道了',
-      centered: true,
+    confirmCancelExecutionPlanGeneration(() => {
+      cancelExecutionPlanGeneration()
+      openModal.value = false
     })
     return
   }
@@ -2088,6 +2107,7 @@ function closeModal() {
 
 function forceCloseModal() {
   cancelAIGeneration()
+  cancelExecutionPlanGeneration()
   openModal.value = false
 }
 
@@ -2109,6 +2129,27 @@ function cancelAIGeneration() {
     aiStreamAbortController.value.abort()
   aiStreamAbortController.value = null
   aiGenerating.value = false
+}
+
+function confirmCancelExecutionPlanGeneration(onConfirm) {
+  Modal.confirm({
+    title: `${executionPlanGeneratingLabel.value}正在生成中`,
+    content: '关闭弹窗会取消本次生成，当前生成结果不会保存。确认要取消生成吗？',
+    okText: '取消生成并关闭',
+    cancelText: '继续等待',
+    okButtonProps: { danger: true },
+    centered: true,
+    onOk: onConfirm,
+  })
+}
+
+function cancelExecutionPlanGeneration() {
+  executionPlanRequestKey += 1
+  if (executionPlanStreamAbortController.value && !executionPlanStreamAbortController.value.signal?.aborted)
+    executionPlanStreamAbortController.value.abort()
+  executionPlanStreamAbortController.value = null
+  generatingExecutionPlan.value = false
+  executionPlanGeneratingType.value = ''
 }
 
 function isAbortError(error) {
@@ -2173,6 +2214,24 @@ function clearDisplayedPlanState() {
   selectedWeeklyRowIndex.value = 0
 }
 
+function schedulePlanLoadingOverlay(requestKey) {
+  if (planLoadingOverlayTimer)
+    window.clearTimeout(planLoadingOverlayTimer)
+  showPlanLoadingOverlay.value = false
+  planLoadingOverlayTimer = window.setTimeout(() => {
+    if (requestKey === undefined || requestKey === loadPlanRequestKey)
+      showPlanLoadingOverlay.value = true
+  }, 180)
+}
+
+function hidePlanLoadingOverlay() {
+  if (planLoadingOverlayTimer) {
+    window.clearTimeout(planLoadingOverlayTimer)
+    planLoadingOverlayTimer = 0
+  }
+  showPlanLoadingOverlay.value = false
+}
+
 async function scrollPlanViewToTop() {
   await nextTick()
   const target = iepModalBodyRef.value
@@ -2211,6 +2270,7 @@ function resetIepState() {
   if (executionPlanStreamAbortController.value && !executionPlanStreamAbortController.value.signal?.aborted)
     executionPlanStreamAbortController.value.abort()
   executionPlanStreamAbortController.value = null
+  hidePlanLoadingOverlay()
   setPlanDurationWithoutLoading('3')
   exportingWord.value = false
   aiGenerating.value = false
@@ -2223,33 +2283,44 @@ function resetIepState() {
   clearDisplayedPlanState()
 }
 
-async function loadSavedIepPlan(requestKey, durationMonths = planDuration.value) {
+async function loadSavedIepPlan(requestKey, durationMonths = planDuration.value, options = {}) {
   if (!props.record?.id)
-    return
+    return false
   const durationKey = normalizePlanDurationValue(durationMonths)
   loadingSavedPlan.value = true
-  clearDisplayedPlanState()
-  scrollPlanViewToTop()
+  if (!options.preserveCurrentState) {
+    hidePlanLoadingOverlay()
+    clearDisplayedPlanState()
+    scrollPlanViewToTop()
+  }
+  else {
+    schedulePlanLoadingOverlay(requestKey)
+  }
   try {
     const response = await getPEP3IEPPlanApi(props.record.id, durationKey)
     if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
-      return
+      return false
     if (planDuration.value !== durationKey)
-      return
+      return false
     const data = unwrapResponse(response)
+    clearDisplayedPlanState()
     if (applySavedIepPlanData(data))
       await loadSavedExecutionPlans(durationKey)
     await scrollPlanViewToTop()
+    return true
   }
   catch (error) {
     if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
-      return
+      return false
     console.error('load iep plan failed', error)
     messageService.error(error?.response?.data?.message || error?.message || '加载IEP计划失败')
+    return false
   }
   finally {
-    if (requestKey === undefined || requestKey === loadPlanRequestKey)
+    if (requestKey === undefined || requestKey === loadPlanRequestKey) {
+      hidePlanLoadingOverlay()
       loadingSavedPlan.value = false
+    }
   }
 }
 
@@ -2359,8 +2430,7 @@ async function saveEditablePlan() {
   const success = await persistIepPlan(status, {
     successMessage: status === 'confirmed' ? '修改已保存' : '草稿已保存',
   })
-  if (success)
-    finishEditPlan()
+  return success
 }
 
 function parseAttachmentFilename(headerValue) {
@@ -2580,7 +2650,9 @@ watch(planDuration, async (durationMonths, previousDuration) => {
   }
   loadPlanRequestKey += 1
   const requestKey = loadPlanRequestKey
-  await loadSavedIepPlan(requestKey, durationMonths)
+  const loaded = await loadSavedIepPlan(requestKey, durationMonths, { preserveCurrentState: true })
+  if (!loaded && requestKey === loadPlanRequestKey && planDuration.value === durationMonths)
+    setPlanDurationWithoutLoading(previousDuration || '3')
 })
 
 watch(
@@ -2633,6 +2705,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   cancelAIGeneration()
+  hidePlanLoadingOverlay()
   if (executionPlanStreamAbortController.value && !executionPlanStreamAbortController.value.signal?.aborted)
     executionPlanStreamAbortController.value.abort()
   executionPlanStreamAbortController.value = null
@@ -2668,7 +2741,7 @@ onBeforeUnmount(() => {
                   { label: '3个月', value: '3' },
                   { label: '6个月', value: '6' },
                 ]"
-                :disabled="aiGenerating || generatingExecutionPlan || loadingSavedPlan || savingDraft || confirmingPlan || savingExecutionPlan"
+                :disabled="aiGenerating || generatingExecutionPlan || savingDraft || confirmingPlan || savingExecutionPlan"
               />
               <em>{{ periodHint }}</em>
             </div>
@@ -2734,6 +2807,14 @@ onBeforeUnmount(() => {
             保存修改
           </a-button>
           <a-button
+            v-if="isAnyPlanEditable"
+            size="small"
+            :disabled="savingExecutionPlan || savingDraft || confirmingPlan || aiGenerating || generatingExecutionPlan"
+            @click="finishEditPlan"
+          >
+            退出编辑
+          </a-button>
+          <a-button
             v-else-if="canEditActivePreview"
             size="small"
             :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan || savingExecutionPlan"
@@ -2747,7 +2828,7 @@ onBeforeUnmount(() => {
             danger
             :loading="aiGenerating"
             :disabled="loadingSavedPlan || generatingExecutionPlan || savingDraft || confirmingPlan || savingExecutionPlan || isAnyPlanEditable"
-            @click="generateAIPlan"
+            @click="confirmRegenerateIepPlan"
           >
             重新生成
           </a-button>
@@ -3382,6 +3463,14 @@ onBeforeUnmount(() => {
           </div>
         </aside>
       </main>
+
+      <div v-if="planLoadingOverlayActive" class="iep-loading-overlay">
+        <div class="iep-loading-panel">
+          <span class="iep-loading-panel__spinner" />
+          <strong>正在切换计划周期</strong>
+          <p>{{ headerPlanStatusText }}</p>
+        </div>
+      </div>
 
       <div v-if="generationOverlayActive" class="iep-generating-overlay">
         <div class="iep-generating-panel">
@@ -4148,6 +4237,66 @@ onBeforeUnmount(() => {
   backdrop-filter: blur(1.5px);
 }
 
+.iep-loading-overlay {
+  position: absolute;
+  top: 130px;
+  right: 0;
+  bottom: 55px;
+  left: 0;
+  z-index: 18;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  pointer-events: auto;
+  background: rgba(255, 255, 255, 0.66);
+}
+
+.iep-loading-panel {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  width: min(300px, calc(100vw - 96px));
+  padding: 13px 15px;
+  color: #1f2937;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+
+  strong {
+    color: #111827;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 20px;
+  }
+
+  p {
+    grid-column: 2;
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: #6b7280;
+    font-size: 12px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.iep-loading-panel__spinner {
+  display: block;
+  grid-row: 1 / span 2;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #dbeafe;
+  border-top-color: #1677ff;
+  border-radius: 50%;
+  animation: iep-loading-spin 0.8s linear infinite;
+}
+
 .iep-generating-panel {
   width: min(420px, calc(100vw - 96px));
   padding: 18px 20px 16px;
@@ -4187,6 +4336,12 @@ onBeforeUnmount(() => {
     line-height: 20px;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
+  }
+}
+
+@keyframes iep-loading-spin {
+  to {
+    transform: rotate(360deg);
   }
 }
 
