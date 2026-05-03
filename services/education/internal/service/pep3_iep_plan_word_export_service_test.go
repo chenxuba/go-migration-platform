@@ -24,18 +24,27 @@ func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
 		`<w:pgSz w:w="11906" w:h="16838"/>`,
 		`<w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900"`,
 		`<w:tblW w:w="10080" w:type="dxa"/>`,
-		`<w:gridCol w:w="1000"/>`,
-		`<w:gridCol w:w="2500"/>`,
-		`<w:gridCol w:w="3700"/>`,
+		`<w:gridCol w:w="1038"/>`,
+		`<w:gridCol w:w="1472"/>`,
+		`<w:gridCol w:w="625"/>`,
+		`<w:gridCol w:w="877"/>`,
+		`<w:gridCol w:w="1260"/>`,
+		`<w:gridCol w:w="1562"/>`,
+		`<w:gridCol w:w="827"/>`,
+		`<w:gridCol w:w="2419"/>`,
+		`<w:trHeight w:val="660" w:hRule="atLeast"/>`,
+		`<w:noWrap/>`,
 		`<w:vMerge w:val="restart"/>`,
 		`<w:vMerge/>`,
-		`<w:ind w:left="160"/>`,
+		`<w:ind w:left="200"/>`,
 		`<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>`,
 		`<w:t>姓名</w:t>`,
-		`<w:t>康复领域</w:t>`,
-		`<w:t>课程形式</w:t>`,
+		`<w:t>康复</w:t>`,
+		`<w:t>领域</w:t>`,
+		`<w:t>课程</w:t>`,
+		`<w:t>形式</w:t>`,
 		`<w:t>起止日期</w:t>`,
-		`<w:t>实施起止日期</w:t>`,
+		`<w:t>实施</w:t>`,
 		`<w:br w:type="page"/>`,
 		`1. 用单词表达需求`,
 		`2. 模仿功能词：要、不要`,
@@ -65,5 +74,8 @@ func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
 	homePlanIndex := strings.Index(documentXML, "家庭干预计划")
 	if pageBreakIndex < 0 || homePlanIndex < 0 || !(pageBreakIndex < homePlanIndex) {
 		t.Fatalf("home intervention plan should start after page break")
+	}
+	if strings.Count(documentXML, "<w:tbl>") != 2 {
+		t.Fatalf("main IEP content should be rendered as a single table before the home plan section")
 	}
 }

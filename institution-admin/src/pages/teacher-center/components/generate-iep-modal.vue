@@ -483,8 +483,34 @@ const studentMeta = computed(() => {
   const name = props.record?.studentName || '张一鸣'
   const gender = props.record?.studentGender || '男'
   const age = formatAge(props.record) || '3岁1月'
-  const date = formatDate(props.record?.assessmentDate) || '2026-05-02'
-  return `${name} · ${gender} · ${age} · 依据 ${date} 评估记录生成`
+  return `${name} · ${gender} · ${age}`
+})
+
+const hasPlanContent = computed(() => {
+  return aiGenerating.value || !!generatedPlan.value || !!streamingPlan.value || planRows.value.length > 0
+})
+
+const headerPlanMeta = computed(() => {
+  if (aiGenerating.value)
+    return '正在生成IEP计划'
+  if (!hasPlanContent.value)
+    return ''
+  const date = formatDate(props.record?.assessmentDate)
+  return date ? `评估日期：${date}` : ''
+})
+
+const periodHint = computed(() => {
+  if (aiGenerating.value)
+    return '正在按周期生成计划行和起止日期'
+  if (hasPlanContent.value)
+    return '已按周期分配计划行和起止日期'
+  return '选择周期后点击AI生成'
+})
+
+const headerPlanStatusText = computed(() => {
+  if (!hasPlanContent.value)
+    return '待生成计划'
+  return `${planRows.value.length} 条计划 · ${planStatusLabel.value} · 实时表格`
 })
 
 function formatDate(value) {
@@ -911,15 +937,32 @@ async function generateAIPlan() {
     :footer="null"
     :keyboard="false"
     :mask-closable="false"
-    :width="1040"
+    :width="960"
     :body-style="{ padding: 0 }"
     wrap-class-name="generate-iep-modal-wrap"
   >
     <section class="iep-modal">
       <header class="iep-modal__header">
-        <div>
+        <div class="iep-modal__title-block">
           <h2>生成IEP训练计划</h2>
-          <p>{{ studentMeta }}</p>
+          <div class="iep-header-meta">
+            <span class="iep-header-meta__student">{{ studentMeta }}</span>
+            <span v-if="headerPlanMeta" class="iep-header-meta__plan">{{ headerPlanMeta }}</span>
+            <div class="period-switch">
+              <span>计划周期</span>
+              <a-segmented
+                v-model:value="planDuration"
+                :options="[
+                  { label: '3个月', value: '3' },
+                  { label: '6个月', value: '6' },
+                ]"
+              />
+              <em>{{ periodHint }}</em>
+            </div>
+            <div class="summary-count">
+              {{ headerPlanStatusText }}
+            </div>
+          </div>
         </div>
         <a-button type="text" class="iep-close-btn" @click="closeModal">
           <template #icon>
@@ -928,34 +971,6 @@ async function generateAIPlan() {
         </a-button>
       </header>
 
-      <div class="iep-modal__summary">
-        <div class="summary-tags">
-          <a-tag color="blue">
-            IEP草案
-          </a-tag>
-          <a-tag color="green">
-            可编辑
-          </a-tag>
-          <a-tag color="orange">
-            按领域生成
-          </a-tag>
-        </div>
-        <div class="period-switch">
-          <span>计划周期</span>
-          <a-segmented
-            v-model:value="planDuration"
-            :options="[
-              { label: '3个月', value: '3' },
-              { label: '6个月', value: '6' },
-            ]"
-          />
-          <em>切换后AI会按周期生成计划行和起止日期</em>
-        </div>
-        <div class="summary-count">
-          <strong>{{ planRows.length }}</strong> 条计划 · <strong>{{ planStatusLabel }}</strong> · 实时表格
-        </div>
-      </div>
-
       <div v-if="aiGenerating || aiStreamStatus" class="ai-stream-bar">
         <span class="ai-stream-bar__dot" :class="{ 'is-running': aiGenerating }" />
         <strong>{{ aiStreamStatus || 'AI生成中' }}</strong>
@@ -963,6 +978,21 @@ async function generateAIPlan() {
       </div>
 
       <main class="iep-modal__body">
+        <div v-if="aiGenerating" class="ai-receive-panel">
+          <div class="ai-page-card">
+            <div class="ai-page-card__head">
+              <span class="ai-page-card__pulse" />
+              <div>
+                <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
+                <p>正在根据评估结果和训练记录组织A4表格内容</p>
+              </div>
+            </div>
+            <a-progress :percent="aiProgressPercent" :show-info="false" />
+            <div class="ai-page-card__preview">
+              {{ aiStreamTail || '等待AI返回第一段内容...' }}
+            </div>
+          </div>
+        </div>
         <div class="a4-workbench">
           <section class="plan-sheet a4-page">
             <div class="a4-page__chrome">
@@ -973,10 +1003,12 @@ async function generateAIPlan() {
             <h1>{{ planSheet.title }}</h1>
             <table class="plan-sheet-table">
               <colgroup>
-                <col class="plan-col-domain">
-                <col class="plan-col-long">
-                <col class="plan-col-short-a">
-                <col class="plan-col-short-b">
+                <col class="plan-col-a">
+                <col class="plan-col-b">
+                <col class="plan-col-c">
+                <col class="plan-col-d">
+                <col class="plan-col-e">
+                <col class="plan-col-f">
                 <col class="plan-col-course">
                 <col class="plan-col-date">
               </colgroup>
@@ -987,32 +1019,32 @@ async function generateAIPlan() {
                   <th>性别</th>
                   <td>{{ planSheet.student.gender }}</td>
                   <th>出生年月</th>
-                  <td>{{ planSheet.student.birthDate }}</td>
+                  <td colspan="3">{{ planSheet.student.birthDate }}</td>
                 </tr>
                 <tr>
                   <th>制定日期</th>
-                  <td>{{ planSheet.meta.planDate }}</td>
-                  <th colspan="2">计划参与者</th>
-                  <td colspan="2">{{ planSheet.meta.participant }}</td>
+                  <td colspan="3">{{ planSheet.meta.planDate }}</td>
+                  <th>计划参与者</th>
+                  <td colspan="3">{{ planSheet.meta.participant }}</td>
                 </tr>
-                <tr>
+                <tr class="plan-sheet-table__meta-compact">
                   <th>实施者</th>
-                  <td>{{ planSheet.meta.implementer }}</td>
-                  <th colspan="2">实施起止日期</th>
-                  <td colspan="2">{{ planSheet.meta.startDate }} - {{ planSheet.meta.endDate }}</td>
+                  <td colspan="3">{{ planSheet.meta.implementer }}</td>
+                  <th>实施<br>起止日期</th>
+                  <td colspan="3" class="plan-cell-date">{{ planSheet.meta.startDate }} 至 {{ planSheet.meta.endDate }}</td>
                 </tr>
                 <tr class="plan-sheet-table__head">
-                  <th>康复领域</th>
-                  <th>长期目标</th>
+                  <th>康复<br>领域</th>
+                  <th colspan="3">长期目标</th>
                   <th colspan="2">短期目标</th>
                   <th>课程<br>形式</th>
-                  <th>起止日期</th>
+                  <th class="plan-cell-date-head">起止日期</th>
                 </tr>
                 <tr v-for="(row, index) in planDisplayRows" :key="`${row.domain}-${index}`">
                   <td v-if="row.showGroupCell" :rowspan="row.rowSpan" class="plan-cell-domain">
                     {{ row.domain }}
                   </td>
-                  <td v-if="row.showGroupCell" :rowspan="row.rowSpan" class="plan-cell-text plan-cell-long">
+                  <td v-if="row.showGroupCell" colspan="3" :rowspan="row.rowSpan" class="plan-cell-text plan-cell-long">
                     {{ row.longGoal }}
                   </td>
                   <td colspan="2" class="plan-cell-text">
@@ -1021,12 +1053,12 @@ async function generateAIPlan() {
                   <td class="plan-cell-center">
                     {{ row.courseForm }}
                   </td>
-                  <td class="plan-cell-center">
+                  <td class="plan-cell-center plan-cell-date">
                     {{ row.startEndDate }}
                   </td>
                 </tr>
                 <tr v-if="!planDisplayRows.length" class="plan-empty-row">
-                  <td colspan="6">
+                  <td colspan="8">
                     <strong>暂无IEP计划内容</strong>
                     <span>点击“AI生成”后，系统会根据评估结果和近期训练记录实时生成表格。</span>
                   </td>
@@ -1034,21 +1066,6 @@ async function generateAIPlan() {
               </tbody>
             </table>
 
-            <div v-if="aiGenerating" class="ai-page-mask">
-              <div class="ai-page-card">
-                <div class="ai-page-card__head">
-                  <span class="ai-page-card__pulse" />
-                  <div>
-                    <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
-                    <p>正在根据评估结果和训练记录组织A4表格内容</p>
-                  </div>
-                </div>
-                <a-progress :percent="aiProgressPercent" :show-info="false" />
-                <div class="ai-page-card__preview">
-                  {{ aiStreamTail || '等待AI返回第一段内容...' }}
-                </div>
-              </div>
-            </div>
           </section>
         </div>
       </main>
@@ -1092,7 +1109,8 @@ async function generateAIPlan() {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  padding: 18px 22px 14px;
+  gap: 16px;
+  padding: 18px 22px 12px;
   border-bottom: 1px solid #edf0f5;
 
   h2 {
@@ -1102,13 +1120,36 @@ async function generateAIPlan() {
     font-weight: 650;
     line-height: 30px;
   }
+}
 
-  p {
-    margin: 4px 0 0;
-    color: #5f6b7a;
-    font-size: 13px;
-    line-height: 20px;
-  }
+.iep-modal__title-block {
+  flex: 1;
+  min-width: 0;
+}
+
+.iep-header-meta {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  min-width: 0;
+  color: #5f6b7a;
+  font-size: 13px;
+  line-height: 28px;
+}
+
+.iep-header-meta__student {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: #5f6b7a;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.iep-header-meta__plan {
+  flex: 0 0 auto;
+  color: #5f6b7a;
+  white-space: nowrap;
 }
 
 .iep-close-btn {
@@ -1121,27 +1162,11 @@ async function generateAIPlan() {
   font-size: 18px;
 }
 
-.iep-modal__summary {
-  display: grid;
-  grid-template-columns: 240px minmax(360px, 1fr) minmax(150px, auto);
-  gap: 12px;
-  align-items: center;
-  padding: 12px 18px;
-  background: #fbfcfe;
-  border-bottom: 1px solid #edf0f5;
-}
-
-.summary-tags {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-}
-
 .period-switch {
   display: flex;
-  gap: 10px;
+  flex: 0 0 auto;
+  gap: 8px;
   align-items: center;
-  justify-content: center;
   min-width: 0;
 
   span {
@@ -1158,9 +1183,19 @@ async function generateAIPlan() {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+
+  :deep(.ant-segmented) {
+    padding: 2px;
+  }
+
+  :deep(.ant-segmented-item) {
+    min-height: 28px;
+    line-height: 28px;
+  }
 }
 
 .summary-count {
+  flex: 0 0 auto;
   min-width: 0;
   overflow: hidden;
   color: #4b5563;
@@ -1299,9 +1334,10 @@ async function generateAIPlan() {
 }
 
 .iep-modal__body {
-  max-height: calc(100vh - 302px);
-  padding: 20px;
+  max-height: calc(100vh - 224px);
+  padding: 16px;
   overflow: auto;
+  position: relative;
   background: #eef1f5;
   scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
   scrollbar-width: thin;
@@ -1336,7 +1372,7 @@ async function generateAIPlan() {
   background: #fff;
 
   h1 {
-    margin: 0 0 11mm;
+    margin: 0 0 5mm;
     color: #111827;
     font-size: 22px;
     font-weight: 650;
@@ -1378,10 +1414,10 @@ async function generateAIPlan() {
   th,
   td {
     min-height: 34px;
-    padding: 7px 8px;
+    padding: 9px 8px;
     color: #111827;
     font-size: 12.5px;
-    line-height: 1.55;
+    line-height: 1.68;
     text-align: center;
     white-space: pre-line;
     border: 1px solid #1f2937;
@@ -1394,34 +1430,53 @@ async function generateAIPlan() {
   }
 }
 
-.plan-col-domain {
-  width: 11%;
+.plan-col-a {
+  width: 10.3%;
 }
 
-.plan-col-long {
-  width: 24%;
+.plan-col-b {
+  width: 14.6%;
 }
 
-.plan-col-short-a {
-  width: 18%;
+.plan-col-c {
+  width: 6.2%;
 }
 
-.plan-col-short-b {
-  width: 18%;
+.plan-col-d {
+  width: 8.7%;
+}
+
+.plan-col-e {
+  width: 12.5%;
+}
+
+.plan-col-f {
+  width: 15.5%;
 }
 
 .plan-col-course {
-  width: 11%;
+  width: 8.2%;
 }
 
 .plan-col-date {
-  width: 18%;
+  width: 24%;
 }
 
 .plan-sheet-table__head th {
-  height: 42px;
+  height: 38px;
+  padding-top: 5px;
+  padding-bottom: 5px;
   font-size: 13px;
+  line-height: 1.35;
   background: #eef2f7;
+}
+
+.plan-sheet-table__meta-compact th,
+.plan-sheet-table__meta-compact td {
+  height: 38px;
+  padding-top: 5px;
+  padding-bottom: 5px;
+  line-height: 1.35;
 }
 
 .plan-cell-domain {
@@ -1444,6 +1499,20 @@ async function generateAIPlan() {
   vertical-align: middle;
 }
 
+.plan-cell-date {
+  padding-right: 4px !important;
+  padding-left: 4px !important;
+  font-size: 12px !important;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.35 !important;
+  white-space: nowrap !important;
+  word-break: keep-all;
+}
+
+.plan-cell-date-head {
+  white-space: nowrap;
+}
+
 .plan-empty-row td {
   height: 260px;
   color: #64748b;
@@ -1463,20 +1532,30 @@ async function generateAIPlan() {
   }
 }
 
-.ai-page-mask {
-  position: absolute;
-  inset: 0;
+.ai-receive-panel {
+  position: sticky;
+  top: 0;
+  z-index: 8;
   display: flex;
-  align-items: flex-start;
   justify-content: center;
-  padding-top: 82mm;
-  background: rgba(248, 250, 252, 0.72);
-  backdrop-filter: blur(2px);
+  margin: 0 0 -118px;
+  padding: 8px 0 12px;
+  pointer-events: none;
+
+  &::before {
+    position: absolute;
+    inset: 0;
+    content: "";
+    background: linear-gradient(180deg, rgba(238, 241, 245, 0.96) 0%, rgba(238, 241, 245, 0.74) 68%, rgba(238, 241, 245, 0) 100%);
+  }
 }
 
 .ai-page-card {
+  position: relative;
+  z-index: 1;
   width: 430px;
   padding: 18px 18px 16px;
+  pointer-events: auto;
   background: rgba(255, 255, 255, 0.96);
   border: 1px solid #dbe5f1;
   border-radius: 8px;
