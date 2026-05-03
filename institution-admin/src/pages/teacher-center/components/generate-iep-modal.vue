@@ -2527,19 +2527,19 @@ onBeforeUnmount(() => {
                   <td colspan="5">{{ monthlyPlan.student.birthDate }}</td>
                 </tr>
                 <tr>
-                  <th>制定日期</th>
+                  <th>制定<br>日期</th>
                   <td colspan="2">{{ monthlyPlan.meta.planDate }}</td>
-                  <th colspan="2">计划参与者</th>
-                  <td colspan="7">{{ monthlyPlan.meta.participant }}</td>
+                  <th colspan="4">计划参与者</th>
+                  <td colspan="5">{{ monthlyPlan.meta.participant }}</td>
                 </tr>
                 <tr>
                   <th>实施者</th>
                   <td colspan="2">{{ monthlyPlan.meta.implementer }}</td>
-                  <th colspan="2">实施起止日期</th>
-                  <td colspan="7" class="plan-cell-date">{{ monthlyPlan.meta.startDate }} 至 {{ monthlyPlan.meta.endDate }}</td>
+                  <th colspan="4">实施起止日期</th>
+                  <td colspan="5" class="plan-cell-date">{{ monthlyPlan.meta.startDate }} 至 {{ monthlyPlan.meta.endDate }}</td>
                 </tr>
                 <tr class="plan-sheet-table__head">
-                  <th>康复领域</th>
+                  <th>康复<br>领域</th>
                   <th colspan="2">长期目标</th>
                   <th colspan="2">短期目标</th>
                   <th colspan="4">训练内容</th>
@@ -2552,7 +2552,7 @@ onBeforeUnmount(() => {
                   <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">{{ row.shortGoal }}</td>
                   <td colspan="4" class="plan-cell-text">{{ row.trainingContentText }}</td>
                   <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">{{ row.courseForm }}</td>
-                  <td colspan="2" class="plan-cell-center plan-cell-date">{{ row.trainingStartEndDate }}</td>
+                  <td colspan="2" class="plan-cell-center plan-cell-date monthly-plan-date-cell">{{ row.trainingStartEndDate }}</td>
                 </tr>
               </tbody>
             </table>
@@ -3580,7 +3580,7 @@ onBeforeUnmount(() => {
 .monthly-col-7,
 .monthly-col-8,
 .monthly-col-9 {
-  width: 6.5%;
+  width: 8.75%;
 }
 
 .monthly-col-10 {
@@ -3589,7 +3589,7 @@ onBeforeUnmount(() => {
 
 .monthly-col-11,
 .monthly-col-12 {
-  width: 10.4%;
+  width: 5.9%;
 }
 
 .weekly-col-project {
@@ -3619,7 +3619,12 @@ onBeforeUnmount(() => {
 }
 
 .monthly-plan-table .plan-cell-date {
-  font-size: 11px !important;
+  font-size: 12px !important;
+}
+
+.monthly-plan-table .monthly-plan-date-cell {
+  white-space: normal !important;
+  word-break: normal;
 }
 
 .weekly-plan-table__main-head th {

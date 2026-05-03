@@ -94,7 +94,7 @@ func buildPEP3WeeklyPlanDocumentXML(plan model.PEP3WeeklyPlanAIResult) string {
 }
 
 func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
-	widths := []int{806, 907, 907, 958, 957, 655, 655, 655, 655, 826, 1049, 1050}
+	widths := []int{806, 907, 907, 958, 957, 882, 882, 882, 882, 826, 595, 595}
 	var builder strings.Builder
 	builder.WriteString(buildIEPTableStart(widths))
 	builder.WriteString(buildIEPTableRowStart(560))
@@ -106,19 +106,19 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 	builder.WriteString(buildIEPCell([]string{plan.Student.BirthDate}, sumInts(widths[7], widths[8], widths[9], widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 5, Align: "center", VAlign: "center"}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(560))
-	builder.WriteString(buildIEPCell([]string{"制定日期"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{"制定", "日期"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{plan.Meta.PlanDate}, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"计划参与者"}, sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{plan.Meta.Participant}, sumInts(widths[5], widths[6], widths[7], widths[8], widths[9], widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 7, Align: "center", VAlign: "center"}))
+	builder.WriteString(buildIEPCell([]string{"计划参与者"}, sumInts(widths[3], widths[4], widths[5], widths[6]), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.Meta.Participant}, sumInts(widths[7], widths[8], widths[9], widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 5, Align: "center", VAlign: "center"}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(560))
 	builder.WriteString(buildIEPCell([]string{"实施者"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{plan.Meta.Implementer}, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"实施起止日期"}, sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{plan.Meta.StartDate + " 至 " + plan.Meta.EndDate}, sumInts(widths[5], widths[6], widths[7], widths[8], widths[9], widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 7, Align: "center", VAlign: "center", NoWrap: true}))
+	builder.WriteString(buildIEPCell([]string{"实施起止日期"}, sumInts(widths[3], widths[4], widths[5], widths[6]), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.Meta.StartDate + " 至 " + plan.Meta.EndDate}, sumInts(widths[7], widths[8], widths[9], widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 5, Align: "center", VAlign: "center", NoWrap: true}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(620))
-	builder.WriteString(buildIEPCell([]string{"康复领域"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"康复", "领域"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{"长期目标"}, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{"短期目标"}, sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{"训练内容"}, sumInts(widths[5], widths[6], widths[7], widths[8]), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
@@ -144,7 +144,7 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 			} else {
 				builder.WriteString(buildIEPCell(nil, widths[9], iepPlanWordCellOptions{VMerge: "continue"}))
 			}
-			builder.WriteString(buildIEPCell([]string{item.StartEndDate}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
+			builder.WriteString(buildIEPCell([]string{item.StartEndDate}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", CompactParagraph: true}))
 			builder.WriteString(`</w:tr>`)
 		}
 	}
