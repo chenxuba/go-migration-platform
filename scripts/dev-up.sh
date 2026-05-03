@@ -11,7 +11,6 @@ if [[ ! -x "$GO" ]]; then
 fi
 
 mkdir -p .runlogs
-rm -f .runlogs/iam.pid .runlogs/platform.pid .runlogs/education.pid
 
 ensure_port_free() {
   local port="$1"
@@ -28,6 +27,7 @@ echo "==> 检查 8081/8082/8083 是否可用…"
 ensure_port_free 8081 iam-service
 ensure_port_free 8082 platform-service
 ensure_port_free 8083 education-service
+rm -f .runlogs/iam.pid .runlogs/platform.pid .runlogs/education.pid
 
 echo "[启动 1/3] iam-service → 后台 go run，日志 .runlogs/iam.log"
 nohup "$GO" run ./services/iam/cmd/api > .runlogs/iam.log 2>&1 &
