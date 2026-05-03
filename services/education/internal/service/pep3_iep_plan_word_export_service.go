@@ -256,7 +256,7 @@ func buildPEP3IEPPlanWordExportFromAIResult(result model.PEP3IEPPlanAIResult, du
 
 func iepPlanWordTitle(durationMonths int) string {
 	if durationMonths == 3 {
-		return "康复教学三个月计划"
+		return "康复教学季度计划"
 	}
 	return "康复教学半年计划"
 }
@@ -280,7 +280,7 @@ func buildPEP3IEPPlanDocumentXML(plan iepPlanWordExport) string {
 	builder.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
 	builder.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`)
 	builder.WriteString(`<w:body>`)
-	builder.WriteString(buildIEPTitleParagraph(firstNonEmptyExportValue(plan.Title, "康复教学半年计划")))
+	builder.WriteString(buildIEPTitleParagraph(firstNonEmptyExportValue(plan.Title, "康复教学计划")))
 	builder.WriteString(buildIEPMainTable(plan))
 	if len(plan.HomePlan) > 0 {
 		builder.WriteString(buildIEPPageBreakParagraph())

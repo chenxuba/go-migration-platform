@@ -213,7 +213,7 @@ func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, rehabR
 		},
 		RehabRecords: rehabRecords,
 		OutputRequest: pep3IEPPlanPromptOutput{
-			Title:          "康复教学半年计划",
+			Title:          iepPlanTitle(durationMonths),
 			DurationMonths: durationMonths,
 			RequiredSchema: "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate}, rows[{domain,longGoal,shortGoal,courseForm,startEndDate}]。rows是表格行，不要输出家庭干预计划。每个康复领域至少3行rows；每行shortGoal只能放1条短期目标；同一领域longGoal必须完全相同，写成至少2条编号长期目标并用\\n分隔；courseForm必须根据评估结果和近期训练记录判断，常见值为个训、集体课；startEndDate按自然月份阶段填写，不能每行都写整个计划周期。",
 		},
@@ -380,7 +380,7 @@ func buildDeepSeekIEPPlanRequestBody(payload pep3IEPPlanPromptPayload, stream bo
 				Role: "system",
 				Content: strings.Join([]string{
 					"你是儿童康复机构的IEP计划生成助手。",
-					"根据PEP-3评估结果和近期儿童训练记录，生成可落地的康复教学半年计划。",
+					"根据PEP-3评估结果和近期儿童训练记录，生成可落地的康复教学计划。",
 					"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
 					"表格结构只能是：康复领域、长期目标、短期目标、课程形式、起止日期。",
 					"不要输出家庭干预计划。长期目标和短期目标要具体、可训练、可观察。",
@@ -544,7 +544,7 @@ func normalizePEP3IEPPlanAIResult(result model.PEP3IEPPlanAIResult, record model
 
 func iepPlanTitle(durationMonths int) string {
 	if durationMonths == 3 {
-		return "康复教学三个月计划"
+		return "康复教学季度计划"
 	}
 	return "康复教学半年计划"
 }

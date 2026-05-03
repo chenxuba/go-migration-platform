@@ -36,12 +36,23 @@ func ensurePEP3IEPPlanTables(ctx context.Context, db *sql.DB) error {
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			del_flag TINYINT(1) NOT NULL DEFAULT 0,
-			UNIQUE KEY uk_assessment_iep_plan_record (inst_id, record_id, del_flag),
+			UNIQUE KEY uk_assessment_iep_plan_record_duration (inst_id, record_id, duration_months, del_flag),
 			KEY idx_assessment_iep_plan_status (inst_id, status, update_time),
 			KEY idx_assessment_iep_plan_record_status (inst_id, record_id, status)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensurePEP3IEPPlanDurationUniqueIndex(ctx, db)
+}
+
+func ensurePEP3IEPPlanDurationUniqueIndex(ctx context.Context, db *sql.DB) error {
+	if err := dropTableIndexIfExists(ctx, db, "assessment_iep_plan", "uk_assessment_iep_plan_record"); err != nil {
+		return err
+	}
+	return ensureTableIndexExists(ctx, db, "assessment_iep_plan", "uk_assessment_iep_plan_record_duration",
+		`ALTER TABLE assessment_iep_plan ADD UNIQUE KEY uk_assessment_iep_plan_record_duration (inst_id, record_id, duration_months, del_flag)`)
 }
 
 func (repo *Repository) SavePEP3IEPPlan(ctx context.Context, entity PEP3IEPPlanEntity) error {
@@ -80,18 +91,21 @@ func (repo *Repository) SavePEP3IEPPlan(ctx context.Context, entity PEP3IEPPlanE
 	return err
 }
 
-func (repo *Repository) GetPEP3IEPPlan(ctx context.Context, instID, recordID int64) (PEP3IEPPlanEntity, bool, error) {
+func (repo *Repository) GetPEP3IEPPlan(ctx context.Context, instID, recordID int64, durationMonths int) (PEP3IEPPlanEntity, bool, error) {
 	var (
 		entity      PEP3IEPPlanEntity
 		rawPlan     string
 		updatedTime sql.NullTime
 	)
+	if durationMonths <= 0 {
+		durationMonths = 3
+	}
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT inst_id, record_id, duration_months, status, plan_json, update_time
 		FROM assessment_iep_plan
-		WHERE inst_id = ? AND record_id = ? AND del_flag = 0
+		WHERE inst_id = ? AND record_id = ? AND duration_months = ? AND del_flag = 0
 		LIMIT 1
-	`, instID, recordID).Scan(
+	`, instID, recordID, durationMonths).Scan(
 		&entity.InstID,
 		&entity.RecordID,
 		&entity.DurationMonths,

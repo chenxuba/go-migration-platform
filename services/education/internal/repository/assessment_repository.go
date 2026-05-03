@@ -406,7 +406,19 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			WHERE del_flag = 0
 			GROUP BY scale_code
 		) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
-		LEFT JOIN assessment_iep_plan aip ON aip.inst_id = ar.inst_id AND aip.record_id = ar.id AND aip.del_flag = 0
+		LEFT JOIN (
+			SELECT
+				inst_id,
+				record_id,
+				CASE
+					WHEN SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) > 0 THEN 'confirmed'
+					WHEN COUNT(1) > 0 THEN 'draft'
+					ELSE ''
+				END AS status
+			FROM assessment_iep_plan
+			WHERE del_flag = 0
+			GROUP BY inst_id, record_id
+		) aip ON aip.inst_id = ar.inst_id AND aip.record_id = ar.id
 	`
 	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+fromSQL+" WHERE "+whereSQL, args...).Scan(&total); err != nil {
 		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err

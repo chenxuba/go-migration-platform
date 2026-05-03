@@ -642,12 +642,22 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanDetail(w http.ResponseWriter,
 		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.GetPEP3IEPPlan(claims.UserID, id)
+	durationMonths := parsePEP3IEPPlanDurationQuery(r)
+	result, err := handler.service.GetPEP3IEPPlan(claims.UserID, id, durationMonths)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
 	}
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func parsePEP3IEPPlanDurationQuery(r *http.Request) int {
+	raw := strings.TrimSpace(r.URL.Query().Get("durationMonths"))
+	if raw == "" {
+		raw = strings.TrimSpace(r.URL.Query().Get("duration"))
+	}
+	durationMonths, _ := strconv.Atoi(raw)
+	return durationMonths
 }
 
 func (handler *Handler) pep3AssessmentRecordIEPPlanSave(w http.ResponseWriter, r *http.Request) {

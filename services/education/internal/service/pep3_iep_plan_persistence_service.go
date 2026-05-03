@@ -51,16 +51,17 @@ func (svc *Service) SavePEP3IEPPlan(userID int64, req model.PEP3IEPPlanSaveReque
 	}); err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
-	return svc.GetPEP3IEPPlan(userID, req.ID)
+	return svc.GetPEP3IEPPlan(userID, req.ID, durationMonths)
 }
 
-func (svc *Service) GetPEP3IEPPlan(userID, recordID int64) (model.PEP3IEPPlanSavedVO, error) {
+func (svc *Service) GetPEP3IEPPlan(userID, recordID int64, durationMonths int) (model.PEP3IEPPlanSavedVO, error) {
 	if svc.repo == nil {
 		return model.PEP3IEPPlanSavedVO{}, errors.New("assessment repository is not configured")
 	}
 	if recordID <= 0 {
 		return model.PEP3IEPPlanSavedVO{}, errors.New("invalid assessment record id")
 	}
+	durationMonths = normalizePEP3IEPPlanDuration(durationMonths)
 	instID, err := svc.pep3AssessmentInstID(userID)
 	if err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
@@ -68,12 +69,12 @@ func (svc *Service) GetPEP3IEPPlan(userID, recordID int64) (model.PEP3IEPPlanSav
 	if _, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID); err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
-	entity, exists, err := svc.repo.GetPEP3IEPPlan(context.Background(), instID, recordID)
+	entity, exists, err := svc.repo.GetPEP3IEPPlan(context.Background(), instID, recordID, durationMonths)
 	if err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
 	if !exists {
-		return model.PEP3IEPPlanSavedVO{Exists: false}, nil
+		return model.PEP3IEPPlanSavedVO{Exists: false, DurationMonths: durationMonths}, nil
 	}
 	plan := entity.Plan
 	return model.PEP3IEPPlanSavedVO{

@@ -4,7 +4,8 @@ import {
   DeleteOutlined,
   PlusOutlined,
 } from '@ant-design/icons-vue'
-import { computed, ref, watch } from 'vue'
+import { Modal } from 'ant-design-vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { downloadPEP3IEPPlanWordApi, generatePEP3IEPPlanAIStreamApi, getPEP3IEPPlanApi, savePEP3IEPPlanApi } from '@/api/edu-center/pep3-assessment'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
@@ -43,6 +44,11 @@ const editablePlan = ref(null)
 const savedPlanStatus = ref('')
 const editingPlan = ref(false)
 const selectedPlanRowIndex = ref(0)
+const iepModalBodyRef = ref(null)
+const aiStreamAbortController = ref(null)
+let aiGenerationRequestKey = 0
+let loadPlanRequestKey = 0
+let ignoreNextPlanDurationWatch = false
 
 const domains = [
   { key: 'language', name: '语言沟通', icon: '语', longCount: 3, shortCount: 6 },
@@ -357,7 +363,7 @@ const defaultPlanDateRange = computed(() => {
 })
 
 const planTitle = computed(() => {
-  return planDuration.value === '3' ? '康复教学三个月计划' : '康复教学半年计划'
+  return planDuration.value === '3' ? '康复教学季度计划' : '康复教学半年计划'
 })
 
 const defaultPlanRows = computed(() => {
@@ -508,10 +514,12 @@ const hasPlanContent = computed(() => {
 })
 
 const isConfirmedPlan = computed(() => {
-  return savedPlanStatus.value === 'confirmed' || props.record?.iepPlanStatus === 'confirmed'
+  return savedPlanStatus.value === 'confirmed'
 })
 
 const modalTitleText = computed(() => {
+  if (loadingSavedPlan.value && props.record?.iepPlanStatus === 'confirmed')
+    return '查看IEP训练计划'
   if (isConfirmedPlan.value)
     return '查看IEP训练计划'
   if (savedPlanStatus.value === 'draft')
@@ -536,17 +544,19 @@ const periodHint = computed(() => {
   if (aiGenerating.value)
     return '正在按周期生成计划行和起止日期'
   if (isConfirmedPlan.value)
-    return '已确认后仍可编辑并保存修改'
+    return '当前周期已确认，另一个周期独立保存'
   if (savedPlanStatus.value === 'draft')
-    return '草稿未确认，列表仍显示生成IEP'
+    return '当前周期是草稿，另一个周期独立保存'
   if (hasPlanContent.value)
     return '已生成，可直接编辑表格'
-  return '选择周期后点击AI生成'
+  return '每个周期单独生成和保存'
 })
 
 const headerPlanStatusText = computed(() => {
+  if (loadingSavedPlan.value)
+    return `正在加载${planTitle.value}`
   if (!hasPlanContent.value)
-    return '待生成计划'
+    return `${planTitle.value}未生成`
   return `${planRows.value.length} 条计划 · ${planStatusLabel.value} · 实时表格`
 })
 
@@ -839,6 +849,17 @@ function unwrapResponse(res) {
   return res?.data ?? res?.result ?? res
 }
 
+function normalizePlanDurationValue(value) {
+  return String(value) === '6' ? '6' : '3'
+}
+
+function normalizePlanSheetTitle(title = '') {
+  const text = String(title || '').trim()
+  if (planDuration.value === '3' && (!text || text === '康复教学三个月计划'))
+    return planTitle.value
+  return text || planTitle.value
+}
+
 function deepClone(value) {
   return JSON.parse(JSON.stringify(value || {}))
 }
@@ -849,7 +870,7 @@ function createPlanSheetFromPlan(plan = {}, options = {}) {
     ? sanitizeEditablePlanRows(plan.rows)
     : normalizePlanRows(plan.rows)
   return {
-    title: plan.title || planTitle.value,
+    title: normalizePlanSheetTitle(plan.title),
     student: {
       name: plan.student?.name || props.record?.studentName || '',
       gender: plan.student?.gender || props.record?.studentGender || '',
@@ -1041,7 +1062,51 @@ function formatAge(row = {}) {
 }
 
 function closeModal() {
+  if (aiGenerating.value) {
+    confirmCancelAIGeneration(() => {
+      cancelAIGeneration()
+      openModal.value = false
+    })
+    return
+  }
   openModal.value = false
+}
+
+function forceCloseModal() {
+  cancelAIGeneration()
+  openModal.value = false
+}
+
+function confirmCancelAIGeneration(onConfirm) {
+  Modal.confirm({
+    title: 'AI计划正在生成中',
+    content: '关闭弹窗或离开页面会取消本次生成，当前生成结果不会保存。确认要取消生成吗？',
+    okText: '取消生成并关闭',
+    cancelText: '继续等待',
+    okButtonProps: { danger: true },
+    centered: true,
+    onOk: onConfirm,
+  })
+}
+
+function cancelAIGeneration() {
+  aiGenerationRequestKey += 1
+  if (aiStreamAbortController.value && !aiStreamAbortController.value.signal?.aborted)
+    aiStreamAbortController.value.abort()
+  aiStreamAbortController.value = null
+  aiGenerating.value = false
+}
+
+function isAbortError(error) {
+  return error?.name === 'AbortError' || /aborted|abort|取消/.test(String(error?.message || ''))
+}
+
+function handleBeforeUnload(event) {
+  if (!aiGenerating.value)
+    return
+  event.preventDefault()
+  event.returnValue = ''
+  return ''
 }
 
 function startEditPlan() {
@@ -1056,13 +1121,15 @@ function finishEditPlan() {
   editingPlan.value = false
 }
 
-function resetIepState() {
-  planDuration.value = '3'
-  exportingWord.value = false
-  aiGenerating.value = false
-  loadingSavedPlan.value = false
-  savingDraft.value = false
-  confirmingPlan.value = false
+function setPlanDurationWithoutLoading(value) {
+  const nextValue = normalizePlanDurationValue(value)
+  if (planDuration.value === nextValue)
+    return
+  ignoreNextPlanDurationWatch = true
+  planDuration.value = nextValue
+}
+
+function clearDisplayedPlanState() {
   aiStreamStatus.value = ''
   aiStreamText.value = ''
   streamingPlan.value = null
@@ -1073,25 +1140,103 @@ function resetIepState() {
   selectedPlanRowIndex.value = 0
 }
 
-async function loadSavedIepPlan(requestKey) {
+async function scrollPlanViewToTop() {
+  await nextTick()
+  const target = iepModalBodyRef.value
+  if (!target)
+    return
+  if (typeof target.scrollTo === 'function') {
+    target.scrollTo({ top: 0, left: 0, behavior: 'auto' })
+    return
+  }
+  target.scrollTop = 0
+  target.scrollLeft = 0
+}
+
+function savedIepPlanHasContent(data) {
+  const rows = data?.plan?.rows
+  if (!data?.exists || !data.plan || !Array.isArray(rows))
+    return false
+  return rows.some((row) => {
+    return ['domain', 'longGoal', 'shortGoal', 'courseForm', 'startEndDate']
+      .some(key => String(row?.[key] || '').trim())
+  })
+}
+
+function applySavedIepPlanData(data) {
+  if (!data?.exists || !data.plan || !savedIepPlanHasContent(data)) {
+    savedPlanStatus.value = ''
+    generatedPlan.value = null
+    editablePlan.value = null
+    return false
+  }
+  savedPlanStatus.value = data.status || 'draft'
+  generatedPlan.value = data.plan
+  editablePlan.value = createEditablePlanFromPlan(data.plan, true)
+  return true
+}
+
+function resetIepState() {
+  setPlanDurationWithoutLoading('3')
+  exportingWord.value = false
+  aiGenerating.value = false
+  loadingSavedPlan.value = false
+  savingDraft.value = false
+  confirmingPlan.value = false
+  clearDisplayedPlanState()
+}
+
+async function loadSavedIepPlan(requestKey, durationMonths = planDuration.value) {
+  if (!props.record?.id)
+    return
+  const durationKey = normalizePlanDurationValue(durationMonths)
+  loadingSavedPlan.value = true
+  clearDisplayedPlanState()
+  scrollPlanViewToTop()
+  try {
+    const response = await getPEP3IEPPlanApi(props.record.id, durationKey)
+    if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
+      return
+    if (planDuration.value !== durationKey)
+      return
+    const data = unwrapResponse(response)
+    applySavedIepPlanData(data)
+    await scrollPlanViewToTop()
+  }
+  catch (error) {
+    if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
+      return
+    console.error('load iep plan failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '加载IEP计划失败')
+  }
+  finally {
+    if (requestKey === undefined || requestKey === loadPlanRequestKey)
+      loadingSavedPlan.value = false
+  }
+}
+
+async function loadFirstAvailableIepPlan(requestKey) {
   if (!props.record?.id)
     return
   loadingSavedPlan.value = true
+  clearDisplayedPlanState()
+  scrollPlanViewToTop()
   try {
-    const response = await getPEP3IEPPlanApi(props.record.id)
-    if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
-      return
-    const data = unwrapResponse(response)
-    if (!data?.exists || !data.plan) {
-      savedPlanStatus.value = ''
-      editablePlan.value = null
-      generatedPlan.value = null
+    for (const durationKey of ['3', '6']) {
+      const response = await getPEP3IEPPlanApi(props.record.id, durationKey)
+      if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
+        return
+      const data = unwrapResponse(response)
+      if (!savedIepPlanHasContent(data))
+        continue
+      setPlanDurationWithoutLoading(durationKey)
+      applySavedIepPlanData(data)
+      await scrollPlanViewToTop()
       return
     }
-    planDuration.value = String(data.durationMonths || 3)
-    savedPlanStatus.value = data.status || 'draft'
-    generatedPlan.value = data.plan
-    editablePlan.value = createEditablePlanFromPlan(data.plan, true)
+    setPlanDurationWithoutLoading('3')
+    clearDisplayedPlanState()
+    await scrollPlanViewToTop()
   }
   catch (error) {
     if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
@@ -1130,17 +1275,17 @@ async function persistIepPlan(status, options = {}) {
       plan: payloadPlan,
     })
     const data = unwrapResponse(response)
-    if (data?.durationMonths)
-      planDuration.value = String(data.durationMonths)
+    if (data?.durationMonths && normalizePlanDurationValue(data.durationMonths) !== planDuration.value)
+      setPlanDurationWithoutLoading(data.durationMonths)
     savedPlanStatus.value = data?.status || status
     if (data?.plan) {
       generatedPlan.value = data.plan
       editablePlan.value = createEditablePlanFromPlan(data.plan, true)
     }
     emit(isConfirming ? 'confirmed' : 'saved', data)
-    messageService.success(isConfirming ? (options.closeAfterSave ? 'IEP已确认生成' : '修改已保存') : '草稿已保存')
+    messageService.success(options.successMessage || (isConfirming ? (options.closeAfterSave ? 'IEP已确认生成' : '修改已保存') : '草稿已保存'))
     if (options.closeAfterSave)
-      closeModal()
+      forceCloseModal()
   }
   catch (error) {
     console.error('save iep plan failed', error)
@@ -1205,7 +1350,7 @@ async function exportIepWord() {
       duration: planDuration.value,
       plan: planPayloadForSave(),
     })
-    triggerDownload(response, `${studentName}-康复个别化教育计划-${planDuration.value}个月.docx`)
+    triggerDownload(response, `${studentName}-${planTitle.value}.docx`)
     messageService.success('导出成功')
   }
   catch (error) {
@@ -1234,6 +1379,10 @@ async function generateAIPlan() {
     messageService.warning('请先选择评估记录')
     return
   }
+  const requestKey = aiGenerationRequestKey + 1
+  aiGenerationRequestKey = requestKey
+  const abortController = new AbortController()
+  aiStreamAbortController.value = abortController
   aiGenerating.value = true
   aiStreamStatus.value = '正在准备评估和训练记录'
   aiStreamText.value = ''
@@ -1250,9 +1399,13 @@ async function generateAIPlan() {
       },
       {
         onStatus(message) {
+          if (requestKey !== aiGenerationRequestKey)
+            return
           aiStreamStatus.value = message || '正在生成'
         },
         onDelta(text) {
+          if (requestKey !== aiGenerationRequestKey)
+            return
           aiStreamStatus.value = '正在接收AI生成内容'
           aiStreamText.value += text
           const partialPlan = buildStreamingPlanFromText(aiStreamText.value)
@@ -1260,32 +1413,45 @@ async function generateAIPlan() {
             streamingPlan.value = partialPlan
         },
         onDone(data) {
+          if (requestKey !== aiGenerationRequestKey)
+            return
           generatedPlan.value = data
           editablePlan.value = createEditablePlanFromPlan(data, true)
           streamingPlan.value = null
           aiStreamStatus.value = '生成完成'
         },
       },
+      {
+        signal: abortController.signal,
+      },
     )
+    if (requestKey !== aiGenerationRequestKey)
+      return
     if (!plan) {
       messageService.error('AI生成失败')
       return
     }
     generatedPlan.value = plan
     editablePlan.value = createEditablePlanFromPlan(plan, true)
-    messageService.success('AI生成成功')
+    aiGenerating.value = false
+    aiStreamAbortController.value = null
+    await persistIepPlan('draft', { successMessage: 'AI生成成功，已自动保存草稿' })
   }
   catch (error) {
+    if (requestKey !== aiGenerationRequestKey || isAbortError(error))
+      return
     console.error('generate iep plan failed', error)
     aiStreamStatus.value = '生成失败'
     messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
   }
   finally {
-    aiGenerating.value = false
+    if (requestKey === aiGenerationRequestKey) {
+      aiGenerating.value = false
+      aiStreamAbortController.value = null
+    }
   }
 }
 
-let loadPlanRequestKey = 0
 watch(
   () => [props.open, props.record?.id],
   async ([open]) => {
@@ -1296,15 +1462,25 @@ watch(
       return
     }
     resetIepState()
-    await loadSavedIepPlan(requestKey)
+    await loadFirstAvailableIepPlan(requestKey)
   },
   { immediate: true },
 )
 
-watch(planDuration, () => {
-  if (!editablePlan.value)
+watch(planDuration, async (durationMonths, previousDuration) => {
+  if (ignoreNextPlanDurationWatch) {
+    ignoreNextPlanDurationWatch = false
     return
-  editablePlan.value.title = planTitle.value
+  }
+  if (!props.open)
+    return
+  if (aiGenerating.value) {
+    setPlanDurationWithoutLoading(previousDuration || '3')
+    return
+  }
+  loadPlanRequestKey += 1
+  const requestKey = loadPlanRequestKey
+  await loadSavedIepPlan(requestKey, durationMonths)
 })
 
 watch(
@@ -1318,6 +1494,15 @@ watch(
     selectedPlanRowIndex.value = Math.max(0, Math.min(selectedPlanRowIndex.value, length - 1))
   },
 )
+
+onMounted(() => {
+  window.addEventListener('beforeunload', handleBeforeUnload)
+})
+
+onBeforeUnmount(() => {
+  cancelAIGeneration()
+  window.removeEventListener('beforeunload', handleBeforeUnload)
+})
 
 </script>
 
@@ -1348,6 +1533,7 @@ watch(
                   { label: '3个月', value: '3' },
                   { label: '6个月', value: '6' },
                 ]"
+                :disabled="aiGenerating || loadingSavedPlan || savingDraft || confirmingPlan"
               />
               <em>{{ periodHint }}</em>
             </div>
@@ -1369,7 +1555,7 @@ watch(
         <span v-if="aiStreamTail" class="ai-stream-bar__text">{{ aiStreamTail }}</span>
       </div>
 
-      <main class="iep-modal__body">
+      <main ref="iepModalBodyRef" class="iep-modal__body">
         <div class="a4-workbench">
           <section class="plan-sheet a4-page">
             <div class="a4-page__chrome">
@@ -1569,6 +1755,9 @@ watch(
         <div class="iep-generating-panel">
           <span class="iep-generating-panel__spinner" />
           <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
+          <div class="iep-generating-warning">
+            生成过程中请不要刷新页面或关闭弹窗；如需离开，请先确认取消本次生成。
+          </div>
           <p>{{ aiStreamTail || '正在读取评估测评和儿童训练记录，并生成可编辑的IEP表格。' }}</p>
           <a-progress
             :percent="aiProgressPercent"
@@ -1581,7 +1770,7 @@ watch(
 
       <footer class="iep-modal__footer">
         <div class="footer-hint">
-          当前为{{ planDuration }}个月康复教学计划；{{ isConfirmedPlan ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
+          当前为{{ planTitle }}；{{ isConfirmedPlan ? '已确认计划可继续编辑后保存修改。' : '保存草稿不会改变列表按钮，确认生成后列表显示查看IEP。' }}
         </div>
         <div class="footer-actions">
           <a-button :loading="aiGenerating" :disabled="loadingSavedPlan || savingDraft || confirmingPlan" @click="generateAIPlan">
@@ -2044,7 +2233,7 @@ watch(
   position: absolute;
   top: 130px;
   right: 0;
-  bottom: 64px;
+  bottom: 55px;
   left: 0;
   z-index: 20;
   display: flex;
@@ -2073,6 +2262,17 @@ watch(
     font-size: 15px;
     font-weight: 650;
     line-height: 22px;
+  }
+
+  .iep-generating-warning {
+    margin: 8px 0 10px;
+    padding: 8px 10px;
+    color: #8a4b00;
+    font-size: 12px;
+    line-height: 18px;
+    background: #fff7e6;
+    border: 1px solid #ffd591;
+    border-radius: 6px;
   }
 
   p {

@@ -777,8 +777,11 @@ export function generatePEP3IEPPlanAIApi(data: { id?: number | string, durationM
   })
 }
 
-export function getPEP3IEPPlanApi(id: number | string) {
-  return useGet<PEP3IEPPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/detail', { id }, {
+export function getPEP3IEPPlanApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3IEPPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
     loading: false,
     silentError: true,
   })
@@ -807,9 +810,14 @@ export interface PEP3IEPPlanAIStreamHandlers {
   onDone?: (data: PEP3IEPPlanAIResult) => void
 }
 
+export interface PEP3IEPPlanAIStreamOptions {
+  signal?: AbortSignal
+}
+
 export async function generatePEP3IEPPlanAIStreamApi(
   data: { id?: number | string, durationMonths?: number | string },
   handlers: PEP3IEPPlanAIStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
 ) {
   const token = useAuthorization()
   const headers: Record<string, string> = {
@@ -825,6 +833,7 @@ export async function generatePEP3IEPPlanAIStreamApi(
     method: 'POST',
     headers,
     body: JSON.stringify(data),
+    signal: options.signal,
   })
   if (!response.ok) {
     const text = await response.text()
@@ -881,6 +890,8 @@ export async function generatePEP3IEPPlanAIStreamApi(
   }
   if (buffer.trim())
     handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('AI生成已取消', 'AbortError')
   if (!finalPlan)
     throw new Error('AI生成未返回计划数据')
   return finalPlan
