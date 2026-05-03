@@ -978,21 +978,6 @@ async function generateAIPlan() {
       </div>
 
       <main class="iep-modal__body">
-        <div v-if="aiGenerating" class="ai-receive-panel">
-          <div class="ai-page-card">
-            <div class="ai-page-card__head">
-              <span class="ai-page-card__pulse" />
-              <div>
-                <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
-                <p>正在根据评估结果和训练记录组织A4表格内容</p>
-              </div>
-            </div>
-            <a-progress :percent="aiProgressPercent" :show-info="false" />
-            <div class="ai-page-card__preview">
-              {{ aiStreamTail || '等待AI返回第一段内容...' }}
-            </div>
-          </div>
-        </div>
         <div class="a4-workbench">
           <section class="plan-sheet a4-page">
             <div class="a4-page__chrome">
@@ -1530,83 +1515,6 @@ async function generateAIPlan() {
   span {
     font-size: 12px;
   }
-}
-
-.ai-receive-panel {
-  position: sticky;
-  top: 0;
-  z-index: 8;
-  display: flex;
-  justify-content: center;
-  margin: 0 0 -118px;
-  padding: 8px 0 12px;
-  pointer-events: none;
-
-  &::before {
-    position: absolute;
-    inset: 0;
-    content: "";
-    background: linear-gradient(180deg, rgba(238, 241, 245, 0.96) 0%, rgba(238, 241, 245, 0.74) 68%, rgba(238, 241, 245, 0) 100%);
-  }
-}
-
-.ai-page-card {
-  position: relative;
-  z-index: 1;
-  width: 430px;
-  padding: 18px 18px 16px;
-  pointer-events: auto;
-  background: rgba(255, 255, 255, 0.96);
-  border: 1px solid #dbe5f1;
-  border-radius: 8px;
-  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
-}
-
-.ai-page-card__head {
-  display: flex;
-  gap: 12px;
-  align-items: flex-start;
-  margin-bottom: 12px;
-
-  strong {
-    display: block;
-    color: #0f172a;
-    font-size: 15px;
-    font-weight: 650;
-    line-height: 22px;
-  }
-
-  p {
-    margin: 2px 0 0;
-    color: #64748b;
-    font-size: 12px;
-    line-height: 18px;
-  }
-}
-
-.ai-page-card__pulse {
-  flex: 0 0 auto;
-  width: 10px;
-  height: 10px;
-  margin-top: 6px;
-  background: #1677ff;
-  border-radius: 4px;
-  box-shadow: 0 0 0 6px rgba(22, 119, 255, 0.12);
-  animation: ai-stream-pulse 1s ease-in-out infinite;
-}
-
-.ai-page-card__preview {
-  height: 74px;
-  margin-top: 12px;
-  padding: 10px 12px;
-  overflow: hidden;
-  color: #475569;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  font-size: 11px;
-  line-height: 18px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 6px;
 }
 
 .domain-heading {
