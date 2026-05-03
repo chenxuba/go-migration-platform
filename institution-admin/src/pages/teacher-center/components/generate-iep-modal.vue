@@ -3036,7 +3036,6 @@ onBeforeUnmount(() => {
         <aside v-if="isAnyPlanEditable" class="iep-edit-panel">
           <div class="iep-edit-panel__head">
             <div>
-              <span>当前编辑</span>
               <a-tooltip :title="activeEditingLabel">
                 <strong class="iep-edit-panel__active-title">{{ activeEditingLabel }}</strong>
               </a-tooltip>
@@ -4008,16 +4007,9 @@ onBeforeUnmount(() => {
     width: 100%;
   }
 
-  span {
-    display: block;
-    color: #667085;
-    font-size: 12px;
-    line-height: 18px;
-  }
-
   strong {
     display: block;
-    margin-top: 2px;
+    margin-top: 0;
     color: #111827;
     font-size: 14px;
     font-weight: 650;
