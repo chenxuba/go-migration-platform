@@ -2008,19 +2008,6 @@ function updateWeeklyRow(rowIndex, patch = {}) {
   weeklyPlan.value = plan
 }
 
-function updateWeeklyCompletion(rowIndex, dayIndex, value) {
-  const plan = deepClone(weeklyPlan.value)
-  const row = plan?.rows?.[rowIndex]
-  if (!row)
-    return
-  if (!Array.isArray(row.completion))
-    row.completion = []
-  while (row.completion.length <= dayIndex)
-    row.completion.push('')
-  row.completion[dayIndex] = value
-  weeklyPlan.value = plan
-}
-
 function planPayloadForSave() {
   const plan = createPlanSheetFromPlan(planSheet.value, { preserveRows: true, model: planSheet.value.model || '' })
   plan.rows = sanitizeEditablePlanRows(plan.rows)
@@ -3050,9 +3037,10 @@ onBeforeUnmount(() => {
           <div class="iep-edit-panel__head">
             <div>
               <span>当前编辑</span>
-              <strong>{{ activeEditingLabel }}</strong>
+              <a-tooltip :title="activeEditingLabel">
+                <strong class="iep-edit-panel__active-title">{{ activeEditingLabel }}</strong>
+              </a-tooltip>
             </div>
-            <a-button size="small" type="text" @click="finishEditPlan">收起</a-button>
           </div>
 
           <div v-if="isPlanEditable && selectedPlanRow" class="iep-edit-form">
@@ -3355,20 +3343,6 @@ onBeforeUnmount(() => {
               </label>
             </section>
 
-            <section class="iep-edit-section">
-              <div class="iep-edit-section__title">
-                <span>完成情况</span>
-              </div>
-              <div class="weekly-completion-editor">
-                <label v-for="(date, dayIndex) in weeklyDisplayDates" :key="`${date || 'date'}-${dayIndex}`" class="iep-edit-field">
-                  <span>{{ date || `第${dayIndex + 1}天` }}</span>
-                  <a-input
-                    :value="selectedWeeklyPlanRow.completion?.[dayIndex] || ''"
-                    @update:value="value => updateWeeklyCompletion(selectedWeeklyRowIndex, dayIndex, value)"
-                  />
-                </label>
-              </div>
-            </section>
           </div>
         </aside>
       </main>
@@ -4023,6 +3997,11 @@ onBeforeUnmount(() => {
   padding-bottom: 12px;
   border-bottom: 1px solid #edf1f6;
 
+  > div {
+    min-width: 0;
+    width: 100%;
+  }
+
   span {
     display: block;
     color: #667085;
@@ -4038,6 +4017,14 @@ onBeforeUnmount(() => {
     font-weight: 650;
     line-height: 21px;
   }
+}
+
+.iep-edit-panel__active-title {
+  display: block;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .iep-edit-form {
@@ -4140,16 +4127,6 @@ onBeforeUnmount(() => {
 
 .iep-edit-grid--two {
   grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.weekly-completion-editor {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-
-  .iep-edit-field {
-    margin-bottom: 0;
-  }
 }
 
 .iep-generating-overlay {
