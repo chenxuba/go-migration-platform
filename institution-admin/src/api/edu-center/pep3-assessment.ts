@@ -709,17 +709,148 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
   })
 }
 
-export function downloadPEP3IEPPlanWordApi(params: { id?: number | string, duration?: number | string } = {}) {
+export function downloadPEP3IEPPlanWordApi(params: { id?: number | string, duration?: number | string, plan?: PEP3IEPPlanAIResult } = {}) {
   const token = useAuthorization()
+  const headers = {
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+  }
+  if (params.plan) {
+    return axios.post('/api/v1/assessments/pep3/records/iep-plan/word', {
+      id: Number(params.id || 0),
+      durationMonths: Number(params.duration || 0),
+      plan: params.plan,
+    }, {
+      responseType: 'blob',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+    })
+  }
   return axios.get('/api/v1/assessments/pep3/records/iep-plan/word', {
     params,
     responseType: 'blob',
-    headers: {
-      [STORAGE_AUTHORIZE_KEY]: token.value || '',
-      Authorization: token.value ? `Bearer ${token.value}` : '',
-      'Accept-Language': 'zh-CN',
-    },
+    headers,
   })
+}
+
+export interface PEP3IEPPlanAIResult {
+  title: string
+  model?: string
+  student: {
+    name: string
+    gender: string
+    birthDate: string
+  }
+  meta: {
+    planDate: string
+    participant: string
+    implementer: string
+    startDate: string
+    endDate: string
+  }
+  rows: Array<{
+    domain: string
+    longGoal: string
+    shortGoal: string
+    courseForm: string
+    startEndDate: string
+  }>
+}
+
+export function generatePEP3IEPPlanAIApi(data: { id?: number | string, durationMonths?: number | string }) {
+  return usePost<PEP3IEPPlanAIResult>('/api/v1/assessments/pep3/records/iep-plan/ai', data, {
+    loading: false,
+    silentError: true,
+    timeout: 180000,
+  })
+}
+
+export interface PEP3IEPPlanAIStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: PEP3IEPPlanAIResult) => void
+}
+
+export async function generatePEP3IEPPlanAIStreamApi(
+  data: { id?: number | string, durationMonths?: number | string },
+  handlers: PEP3IEPPlanAIStreamHandlers = {},
+) {
+  const token = useAuthorization()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+  }
+  if (typeof window !== 'undefined')
+    headers['X-Tenant-Domain'] = window.location.hostname.toLowerCase()
+
+  const response = await fetch('/api/v1/assessments/pep3/records/iep-plan/ai/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(data),
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || 'AI生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalPlan: PEP3IEPPlanAIResult | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalPlan = payload.data
+      if (finalPlan)
+        handlers.onDone?.(finalPlan)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || 'AI生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (!finalPlan)
+    throw new Error('AI生成未返回计划数据')
+  return finalPlan
 }
 
 export function pagePEP3AssessmentRecordsApi(data: PEP3RecordPageRequest) {

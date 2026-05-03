@@ -1,15 +1,10 @@
 <script setup>
 import {
   CloseOutlined,
-  CopyOutlined,
-  DeleteOutlined,
-  EditOutlined,
-  EyeOutlined,
-  PlusOutlined,
-  ReloadOutlined,
 } from '@ant-design/icons-vue'
 import { computed, ref } from 'vue'
-import { downloadPEP3IEPPlanWordApi } from '@/api/edu-center/pep3-assessment'
+import { downloadPEP3IEPPlanWordApi, generatePEP3IEPPlanAIStreamApi } from '@/api/edu-center/pep3-assessment'
+import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
 const props = defineProps({
@@ -24,6 +19,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['update:open'])
+const userStore = useUserStore()
 
 const openModal = computed({
   get: () => props.open,
@@ -32,10 +28,12 @@ const openModal = computed({
 
 const planDuration = ref('3')
 const activeDomainKey = ref('language')
-const previewOpen = ref(false)
-const previewGoal = ref(null)
-const previewStage = ref(null)
 const exportingWord = ref(false)
+const aiGenerating = ref(false)
+const aiStreamStatus = ref('')
+const aiStreamText = ref('')
+const streamingPlan = ref(null)
+const generatedPlan = ref(null)
 
 const domains = [
   { key: 'language', name: '语言沟通', icon: '语', longCount: 3, shortCount: 6 },
@@ -338,6 +336,149 @@ const homePlanText = computed(() => {
   return currentDomain.value.homePlan.map((item, index) => `${index + 1}. ${item}`).join('\n')
 })
 
+const currentTeacherName = computed(() => {
+  return String(userStore.nickname || userStore.userInfo?.nickName || props.record?.examinerName || '当前老师').trim()
+})
+
+const defaultPlanDateRange = computed(() => {
+  const baseDate = formatDate(props.record?.assessmentDate) || formatDate(new Date()) || '2026-05-01'
+  const start = firstDayOfMonth(baseDate)
+  const end = lastDayAfterMonths(start, Number(planDuration.value || 6))
+  return { start, end }
+})
+
+const planTitle = computed(() => {
+  return planDuration.value === '3' ? '康复教学三个月计划' : '康复教学半年计划'
+})
+
+const defaultPlanRows = computed(() => {
+  const { start, end } = defaultPlanDateRange.value
+  return [
+    {
+      domain: '语言沟通',
+      longGoal: iepData.language.longGoals.join('\n'),
+      shortGoal: [
+        '用单词或2词短句表达需求、拒绝和帮助。',
+        '回应简单问句并在课堂、家庭场景中泛化。',
+      ].join('\n'),
+      courseForm: '个训',
+      startEndDate: `${start} - ${end}`,
+    },
+    {
+      domain: '社交互动',
+      longGoal: iepData.social.longGoals.join('\n'),
+      shortGoal: [
+        '在成人提示下完成等待、轮替和简单回应。',
+        '小组活动中增加主动发起沟通次数。',
+      ].join('\n'),
+      courseForm: '集体课',
+      startEndDate: `${start} - ${end}`,
+    },
+    {
+      domain: '认知理解',
+      longGoal: iepData.cognition.longGoals.join('\n'),
+      shortGoal: [
+        '完成物品功能、类别配对和简单两步指令。',
+        '在桌面任务和生活任务中稳定理解口头指令。',
+      ].join('\n'),
+      courseForm: '个训',
+      startEndDate: `${start} - ${end}`,
+    },
+    {
+      domain: '生活自理',
+      longGoal: iepData.selfCare.longGoals.join('\n'),
+      shortGoal: [
+        '按步骤完成洗手、穿鞋、整理物品等生活流程。',
+        '减少成人替代，提升主动参与和任务完成度。',
+      ].join('\n'),
+      courseForm: '个训',
+      startEndDate: `${start} - ${end}`,
+    },
+  ]
+})
+
+const planSheet = computed(() => {
+  const { start, end } = defaultPlanDateRange.value
+  const activePlan = generatedPlan.value || streamingPlan.value
+  if (activePlan) {
+    return {
+      title: activePlan.title || planTitle.value,
+      student: {
+        name: activePlan.student?.name || props.record?.studentName || '',
+        gender: activePlan.student?.gender || props.record?.studentGender || '',
+        birthDate: activePlan.student?.birthDate || formatDate(props.record?.birthDate) || '',
+      },
+      meta: {
+        ...(activePlan.meta || {}),
+        planDate: activePlan.meta?.planDate || formatDate(new Date()) || start,
+        participant: currentTeacherName.value,
+        implementer: activePlan.meta?.implementer || currentTeacherName.value,
+        startDate: activePlan.meta?.startDate || start,
+        endDate: activePlan.meta?.endDate || end,
+      },
+      rows: normalizePlanRows(activePlan.rows),
+      model: activePlan.model || (streamingPlan.value ? 'AI生成中' : ''),
+    }
+  }
+  return {
+    title: planTitle.value,
+    student: {
+      name: props.record?.studentName || '',
+      gender: props.record?.studentGender || '',
+      birthDate: formatDate(props.record?.birthDate) || '',
+    },
+    meta: {
+      planDate: formatDate(new Date()) || start,
+      participant: currentTeacherName.value,
+      implementer: currentTeacherName.value,
+      startDate: start,
+      endDate: end,
+    },
+    rows: [],
+    model: '',
+  }
+})
+
+const planRows = computed(() => planSheet.value.rows)
+
+const planStatusLabel = computed(() => {
+  if (aiGenerating.value)
+    return '生成中'
+  if (generatedPlan.value)
+    return planSheet.value.model || 'AI草案'
+  return '未生成'
+})
+
+const aiStreamTail = computed(() => {
+  const text = aiStreamText.value.replace(/\s+/g, ' ').trim()
+  return text.length > 220 ? text.slice(-220) : text
+})
+
+const aiProgressPercent = computed(() => {
+  if (!aiGenerating.value && generatedPlan.value)
+    return 100
+  if (!aiGenerating.value)
+    return 0
+  return Math.min(96, 12 + Math.floor(aiStreamText.value.length / 80))
+})
+
+const planDisplayRows = computed(() => {
+  const rows = planRows.value || []
+  return rows.map((row, index) => {
+    const isFirstInDomain = index === 0 || row.domain !== rows[index - 1]?.domain
+    let rowSpan = 1
+    if (isFirstInDomain) {
+      for (let next = index + 1; next < rows.length && rows[next]?.domain === row.domain; next++)
+        rowSpan++
+    }
+    return {
+      ...row,
+      showGroupCell: isFirstInDomain,
+      rowSpan,
+    }
+  })
+})
+
 const studentMeta = computed(() => {
   const name = props.record?.studentName || '张一鸣'
   const gender = props.record?.studentGender || '男'
@@ -349,7 +490,286 @@ const studentMeta = computed(() => {
 function formatDate(value) {
   if (!value)
     return ''
+  if (value instanceof Date && !Number.isNaN(value.getTime()))
+    return value.toISOString().slice(0, 10)
   return String(value).slice(0, 10)
+}
+
+function addMonths(dateText, months) {
+  const date = new Date(`${dateText}T00:00:00`)
+  if (Number.isNaN(date.getTime()))
+    return ''
+  date.setMonth(date.getMonth() + months)
+  return date.toISOString().slice(0, 10)
+}
+
+function formatLocalDate(date) {
+  const year = date.getFullYear()
+  const month = String(date.getMonth() + 1).padStart(2, '0')
+  const day = String(date.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
+function firstDayOfMonth(dateText) {
+  const date = new Date(`${dateText}T00:00:00`)
+  if (Number.isNaN(date.getTime()))
+    return dateText
+  return formatLocalDate(new Date(date.getFullYear(), date.getMonth(), 1))
+}
+
+function lastDayAfterMonths(dateText, months) {
+  const date = new Date(`${dateText}T00:00:00`)
+  if (Number.isNaN(date.getTime()))
+    return addMonths(dateText, months)
+  return formatLocalDate(new Date(date.getFullYear(), date.getMonth() + months, 0))
+}
+
+function buildStageDateRanges(startDate, durationMonths) {
+  const date = new Date(`${startDate}T00:00:00`)
+  if (Number.isNaN(date.getTime()))
+    return []
+  const stageCount = 3
+  const baseMonths = Math.floor(durationMonths / stageCount)
+  const remainder = durationMonths % stageCount
+  const ranges = []
+  let current = new Date(date.getFullYear(), date.getMonth(), 1)
+  for (let index = 0; index < stageCount; index++) {
+    const months = Math.max(1, baseMonths + (index < remainder ? 1 : 0))
+    const end = new Date(current.getFullYear(), current.getMonth() + months, 0)
+    ranges.push(`${formatLocalDate(current)} - ${formatLocalDate(end)}`)
+    current = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1)
+  }
+  return ranges
+}
+
+function normalizePlanRows(rows = []) {
+  const { start } = defaultPlanDateRange.value
+  const stageRanges = buildStageDateRanges(start, Number(planDuration.value || 6))
+  const groups = []
+  const groupMap = new Map()
+
+  rows.forEach((row) => {
+    const rawDomain = String(row?.domain || '').trim()
+    const rawLongGoal = String(row?.longGoal || '').trim()
+    const rawShortGoal = String(row?.shortGoal || '').trim()
+    if (!rawDomain && !rawLongGoal && !rawShortGoal)
+      return
+    const domain = rawDomain || '综合康复'
+    let group = groupMap.get(domain)
+    if (!group) {
+      group = { domain, longGoals: [], shortGoals: [] }
+      groupMap.set(domain, group)
+      groups.push(group)
+    }
+    appendUniqueGoals(group.longGoals, splitGoalLines(rawLongGoal))
+    splitGoalLines(rawShortGoal).forEach((shortGoal) => {
+      appendUniqueShortGoals(group.shortGoals, {
+        goal: shortGoal,
+        courseForm: normalizeCourseForm(row?.courseForm),
+      })
+    })
+  })
+
+  return groups.flatMap((group) => {
+    const longGoals = ensureLongGoalLines(group.domain, group.longGoals)
+    const shortGoals = ensureShortGoalLines(group.domain, group.shortGoals)
+    const longGoalText = longGoals.map((item, index) => `${index + 1}. ${item}`).join('\n')
+    return shortGoals.map((shortGoal, index) => ({
+      domain: group.domain,
+      longGoal: longGoalText,
+      shortGoal: shortGoal.goal,
+      courseForm: shortGoal.courseForm || inferCourseFormFromText(shortGoal.goal, group.domain) || '个训',
+      startEndDate: stageDateForGoal(stageRanges, index, shortGoals.length),
+    }))
+  })
+}
+
+function splitGoalLines(text = '') {
+  const normalized = String(text)
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/[；;]/g, '\n')
+    .replace(/(^|\s)(?:\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*/g, '\n')
+  return normalized
+    .split('\n')
+    .map(item => item.trim().replace(/^[，,。.；;、]+|[，,。.；;、]+$/g, ''))
+    .filter(Boolean)
+}
+
+function appendUniqueGoals(target, additions = []) {
+  additions.forEach((item) => {
+    if (item && !target.includes(item))
+      target.push(item)
+  })
+}
+
+function appendUniqueShortGoals(target, item) {
+  const goal = String(item?.goal || '').trim()
+  if (!goal || target.some(existing => existing.goal === goal))
+    return
+  target.push({
+    goal,
+    courseForm: normalizeCourseForm(item?.courseForm),
+  })
+}
+
+function ensureLongGoalLines(domain, goals = []) {
+  const result = [...goals]
+  appendUniqueGoals(result, [
+    `提升${domain}相关核心能力，能在适当提示下稳定参与并完成目标任务。`,
+    `将${domain}训练内容泛化到课堂活动、同伴互动和日常生活中，提高主动性、持续性和独立完成度。`,
+  ])
+  return result.slice(0, 2)
+}
+
+function ensureShortGoalLines(domain, goals = []) {
+  const result = [...goals]
+  const fallbacks = [
+    `在教师示范和语言提示下，能参与${domain}相关活动并完成基础目标任务，连续3次课程中达到70%以上。`,
+    `在少量提示下，能将${domain}目标应用到对应训练流程中，连续3次课程中达到75%以上。`,
+    `在自然活动中，能较稳定完成${domain}目标并减少成人辅助，连续3次课程中达到80%以上。`,
+  ]
+  fallbacks.forEach((item) => {
+    if (result.length < 3)
+      appendUniqueShortGoals(result, { goal: item, courseForm: inferCourseFormFromText(item, domain) })
+  })
+  return result
+}
+
+function normalizeCourseForm(value = '') {
+  const text = String(value || '').trim()
+  if (!text)
+    return ''
+  if (/一对一|1对1|1v1|个训|个别/i.test(text))
+    return '个训'
+  if (/集体|小组|团体|融合/.test(text))
+    return '集体课'
+  return text.length <= 8 ? text : ''
+}
+
+function inferCourseFormFromText(...parts) {
+  return normalizeCourseForm(parts.filter(Boolean).join(' '))
+}
+
+function parseJsonStringLiteral(raw = '') {
+  try {
+    return JSON.parse(`"${raw}"`)
+  }
+  catch {
+    return raw.replace(/\\"/g, '"').replace(/\\\\/g, '\\')
+  }
+}
+
+function extractJsonStringField(text, key) {
+  const match = text.match(new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`))
+  return match ? parseJsonStringLiteral(match[1]) : ''
+}
+
+function extractRowsArrayText(text) {
+  const keyIndex = text.indexOf('"rows"')
+  if (keyIndex < 0)
+    return ''
+  const arrayStart = text.indexOf('[', keyIndex)
+  if (arrayStart < 0)
+    return ''
+  return text.slice(arrayStart + 1)
+}
+
+function collectCompleteJsonObjects(text) {
+  const objects = []
+  let start = -1
+  let depth = 0
+  let inString = false
+  let escaped = false
+  for (let index = 0; index < text.length; index++) {
+    const char = text[index]
+    if (inString) {
+      if (escaped)
+        escaped = false
+      else if (char === '\\')
+        escaped = true
+      else if (char === '"')
+        inString = false
+      continue
+    }
+    if (char === '"') {
+      inString = true
+      continue
+    }
+    if (char === '{') {
+      if (depth === 0)
+        start = index
+      depth++
+      continue
+    }
+    if (char === '}' && depth > 0) {
+      depth--
+      if (depth === 0 && start >= 0) {
+        objects.push(text.slice(start, index + 1))
+        start = -1
+      }
+    }
+  }
+  return objects
+}
+
+function buildStreamingPlanFromText(text) {
+  const content = String(text || '').trim()
+  if (!content)
+    return null
+  try {
+    const parsed = JSON.parse(extractCompleteJsonContent(content))
+    return parsed?.rows?.length ? parsed : null
+  }
+  catch {
+  }
+
+  const rows = collectCompleteJsonObjects(extractRowsArrayText(content))
+    .map((item) => {
+      try {
+        return JSON.parse(item)
+      }
+      catch {
+        return null
+      }
+    })
+    .filter(Boolean)
+
+  if (!rows.length)
+    return null
+
+  return {
+    title: extractJsonStringField(content, 'title') || planTitle.value,
+    student: {
+      name: props.record?.studentName || '',
+      gender: props.record?.studentGender || '',
+      birthDate: formatDate(props.record?.birthDate) || '',
+    },
+    meta: {
+      planDate: formatDate(new Date()) || defaultPlanDateRange.value.start,
+      participant: currentTeacherName.value,
+      implementer: currentTeacherName.value,
+      startDate: defaultPlanDateRange.value.start,
+      endDate: defaultPlanDateRange.value.end,
+    },
+    rows,
+    model: 'AI生成中',
+  }
+}
+
+function extractCompleteJsonContent(text) {
+  const start = text.indexOf('{')
+  const end = text.lastIndexOf('}')
+  if (start >= 0 && end > start)
+    return text.slice(start, end + 1)
+  return text
+}
+
+function stageDateForGoal(stageRanges = [], goalIndex = 0, goalCount = 1) {
+  if (!stageRanges.length)
+    return ''
+  const rangeIndex = Math.min(stageRanges.length - 1, Math.floor(goalIndex * stageRanges.length / Math.max(goalCount, 1)))
+  return stageRanges[rangeIndex]
 }
 
 function formatAge(row = {}) {
@@ -394,12 +814,17 @@ function triggerDownload(response, fallbackName) {
 async function exportIepWord() {
   if (exportingWord.value)
     return
+  if (!planRows.value.length) {
+    messageService.warning('请先点击AI生成IEP计划')
+    return
+  }
   const studentName = props.record?.studentName || '张一鸣'
   exportingWord.value = true
   try {
     const response = await downloadPEP3IEPPlanWordApi({
       id: props.record?.id,
       duration: planDuration.value,
+      plan: JSON.parse(JSON.stringify(planSheet.value)),
     })
     triggerDownload(response, `${studentName}-康复个别化教育计划-${planDuration.value}个月.docx`)
     messageService.success('导出成功')
@@ -423,13 +848,59 @@ async function exportIepWord() {
   }
 }
 
-function openGoalPreview(goal, stage) {
-  if (!goal || goal.collapsed)
+async function generateAIPlan() {
+  if (aiGenerating.value)
     return
-  previewGoal.value = goal
-  previewStage.value = stage
-  previewOpen.value = true
+  if (!props.record?.id) {
+    messageService.warning('请先选择评估记录')
+    return
+  }
+  aiGenerating.value = true
+  aiStreamStatus.value = '正在准备评估和训练记录'
+  aiStreamText.value = ''
+  streamingPlan.value = null
+  generatedPlan.value = null
+  try {
+    const plan = await generatePEP3IEPPlanAIStreamApi(
+      {
+        id: Number(props.record.id),
+        durationMonths: Number(planDuration.value),
+      },
+      {
+        onStatus(message) {
+          aiStreamStatus.value = message || '正在生成'
+        },
+        onDelta(text) {
+          aiStreamStatus.value = '正在接收AI生成内容'
+          aiStreamText.value += text
+          const partialPlan = buildStreamingPlanFromText(aiStreamText.value)
+          if (partialPlan)
+            streamingPlan.value = partialPlan
+        },
+        onDone(data) {
+          generatedPlan.value = data
+          streamingPlan.value = null
+          aiStreamStatus.value = '生成完成'
+        },
+      },
+    )
+    if (!plan) {
+      messageService.error('AI生成失败')
+      return
+    }
+    generatedPlan.value = plan
+    messageService.success('AI生成成功')
+  }
+  catch (error) {
+    console.error('generate iep plan failed', error)
+    aiStreamStatus.value = '生成失败'
+    messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
+  }
+  finally {
+    aiGenerating.value = false
+  }
 }
+
 </script>
 
 <template>
@@ -440,7 +911,7 @@ function openGoalPreview(goal, stage) {
     :footer="null"
     :keyboard="false"
     :mask-closable="false"
-    :width="1360"
+    :width="1040"
     :body-style="{ padding: 0 }"
     wrap-class-name="generate-iep-modal-wrap"
   >
@@ -478,197 +949,125 @@ function openGoalPreview(goal, stage) {
               { label: '6个月', value: '6' },
             ]"
           />
-          <em>切换后将重新划分阶段与目标数量</em>
+          <em>切换后AI会按周期生成计划行和起止日期</em>
         </div>
         <div class="summary-count">
-          <strong>6</strong> 个领域 · <strong>{{ totalShortGoalCount }}</strong> 个短期目标 · 家庭干预同步生成
+          <strong>{{ planRows.length }}</strong> 条计划 · <strong>{{ planStatusLabel }}</strong> · 实时表格
         </div>
       </div>
 
-      <nav class="domain-tabs" aria-label="训练领域">
-        <span class="domain-tabs__label">训练领域</span>
-        <div class="domain-tab-list">
-          <button
-            v-for="domain in domains"
-            :key="domain.key"
-            type="button"
-            class="domain-tab"
-            :class="{ 'domain-tab--active': activeDomainKey === domain.key }"
-            @click="activeDomainKey = domain.key"
-          >
-            <strong>{{ domain.name }}</strong>
-            <small>长期{{ domain.longCount }} · 短期{{ domain.shortCount }}</small>
-          </button>
-        </div>
-      </nav>
+      <div v-if="aiGenerating || aiStreamStatus" class="ai-stream-bar">
+        <span class="ai-stream-bar__dot" :class="{ 'is-running': aiGenerating }" />
+        <strong>{{ aiStreamStatus || 'AI生成中' }}</strong>
+        <span v-if="aiStreamTail" class="ai-stream-bar__text">{{ aiStreamTail }}</span>
+      </div>
 
       <main class="iep-modal__body">
-        <div class="domain-heading">
-          <div>
-            <h3>{{ currentDomain.name }}</h3>
-            <a-tag color="blue">
-              {{ planDuration }}个月计划
-            </a-tag>
-          </div>
-          <a-space :size="8">
-            <a-button size="small">
-              <template #icon>
-                <ReloadOutlined />
-              </template>
-              重新生成
-            </a-button>
-            <a-button size="small">
-              <template #icon>
-                <PlusOutlined />
-              </template>
-              新增短期目标
-            </a-button>
-          </a-space>
-        </div>
-
-        <section class="iep-section">
-          <div class="section-title">
-            <span>长期目标（1-3条）</span>
-            <a-button type="link" size="small">
-              <template #icon>
-                <EditOutlined />
-              </template>
-              编辑
-            </a-button>
-          </div>
-          <div class="readonly-field readonly-field--goal">
-            {{ longGoalText }}
-          </div>
-        </section>
-
-        <section class="iep-section short-goals">
-          <div class="section-title">
-            <span>短期目标（按阶段横向排列）</span>
-            <div class="section-actions">
-              <a-button type="link" size="small">
-                展开全部
-              </a-button>
-              <a-button type="link" size="small">
-                批量编辑
-              </a-button>
+        <div class="a4-workbench">
+          <section class="plan-sheet a4-page">
+            <div class="a4-page__chrome">
+              <span>A4预览</span>
+              <strong>{{ planSheet.title }}</strong>
+              <span>{{ planRows.length }}条计划</span>
             </div>
-          </div>
+            <h1>{{ planSheet.title }}</h1>
+            <table class="plan-sheet-table">
+              <colgroup>
+                <col class="plan-col-domain">
+                <col class="plan-col-long">
+                <col class="plan-col-short-a">
+                <col class="plan-col-short-b">
+                <col class="plan-col-course">
+                <col class="plan-col-date">
+              </colgroup>
+              <tbody>
+                <tr>
+                  <th>姓名</th>
+                  <td>{{ planSheet.student.name }}</td>
+                  <th>性别</th>
+                  <td>{{ planSheet.student.gender }}</td>
+                  <th>出生年月</th>
+                  <td>{{ planSheet.student.birthDate }}</td>
+                </tr>
+                <tr>
+                  <th>制定日期</th>
+                  <td>{{ planSheet.meta.planDate }}</td>
+                  <th colspan="2">计划参与者</th>
+                  <td colspan="2">{{ planSheet.meta.participant }}</td>
+                </tr>
+                <tr>
+                  <th>实施者</th>
+                  <td>{{ planSheet.meta.implementer }}</td>
+                  <th colspan="2">实施起止日期</th>
+                  <td colspan="2">{{ planSheet.meta.startDate }} - {{ planSheet.meta.endDate }}</td>
+                </tr>
+                <tr class="plan-sheet-table__head">
+                  <th>康复领域</th>
+                  <th>长期目标</th>
+                  <th colspan="2">短期目标</th>
+                  <th>课程<br>形式</th>
+                  <th>起止日期</th>
+                </tr>
+                <tr v-for="(row, index) in planDisplayRows" :key="`${row.domain}-${index}`">
+                  <td v-if="row.showGroupCell" :rowspan="row.rowSpan" class="plan-cell-domain">
+                    {{ row.domain }}
+                  </td>
+                  <td v-if="row.showGroupCell" :rowspan="row.rowSpan" class="plan-cell-text plan-cell-long">
+                    {{ row.longGoal }}
+                  </td>
+                  <td colspan="2" class="plan-cell-text">
+                    {{ row.shortGoal }}
+                  </td>
+                  <td class="plan-cell-center">
+                    {{ row.courseForm }}
+                  </td>
+                  <td class="plan-cell-center">
+                    {{ row.startEndDate }}
+                  </td>
+                </tr>
+                <tr v-if="!planDisplayRows.length" class="plan-empty-row">
+                  <td colspan="6">
+                    <strong>暂无IEP计划内容</strong>
+                    <span>点击“AI生成”后，系统会根据评估结果和近期训练记录实时生成表格。</span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
 
-          <div class="stage-board">
-            <article
-              v-for="(stage, stageIndex) in stages"
-              :key="`${planDuration}-${stage.month}`"
-              class="stage-column"
-              :class="`stage-column--${stage.tone}`"
-            >
-              <header class="stage-column__header">
-                <div class="stage-badge">
-                  {{ String(stageIndex + 1).padStart(2, '0') }}
-                </div>
-                <div>
-                  <div class="stage-title">
-                    <strong>{{ stage.month }}</strong>
-                    <span>{{ stage.title }}</span>
+            <div v-if="aiGenerating" class="ai-page-mask">
+              <div class="ai-page-card">
+                <div class="ai-page-card__head">
+                  <span class="ai-page-card__pulse" />
+                  <div>
+                    <strong>{{ aiStreamStatus || '正在生成IEP计划' }}</strong>
+                    <p>正在根据评估结果和训练记录组织A4表格内容</p>
                   </div>
-                  <p>{{ stage.note }}</p>
                 </div>
-                <a-tag>{{ stage.tag }}</a-tag>
-              </header>
-
-              <div class="stage-column__goals">
-                <article
-                  v-for="goal in stage.goals"
-                  :key="goal.title"
-                  class="goal-card"
-                  :class="{ 'goal-card--collapsed': goal.collapsed }"
-                >
-                  <template v-if="goal.collapsed">
-                    <div class="goal-card__compact">
-                      <div>
-                        <strong>{{ goal.title }}</strong>
-                        <span>训练内容 3项</span>
-                      </div>
-                      <a-button type="link" size="small">
-                        展开
-                      </a-button>
-                    </div>
-                  </template>
-                  <template v-else>
-                    <div class="goal-card__head">
-                      <strong>{{ goal.title }}</strong>
-                      <a-space :size="4" class="goal-card__actions">
-                        <a-button type="text" size="small" @click="openGoalPreview(goal, stage)">
-                          <template #icon>
-                            <EyeOutlined />
-                          </template>
-                        </a-button>
-                        <a-button type="text" size="small">
-                          <template #icon>
-                            <EditOutlined />
-                          </template>
-                        </a-button>
-                        <a-button type="text" size="small">
-                          <template #icon>
-                            <CopyOutlined />
-                          </template>
-                        </a-button>
-                        <a-button type="text" size="small">
-                          <template #icon>
-                            <DeleteOutlined />
-                          </template>
-                        </a-button>
-                      </a-space>
-                    </div>
-                    <div class="goal-card__content">
-                      <div class="goal-panel goal-panel--content">
-                        <label>训练内容</label>
-                        <div class="training-content-list">
-                          <div
-                            v-for="(item, itemIndex) in goal.content"
-                            :key="item"
-                            class="training-content-item"
-                          >
-                            <span class="training-content-item__index">{{ itemIndex + 1 }}</span>
-                            <span class="training-content-item__text">{{ item }}</span>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </template>
-                </article>
+                <a-progress :percent="aiProgressPercent" :show-info="false" />
+                <div class="ai-page-card__preview">
+                  {{ aiStreamTail || '等待AI返回第一段内容...' }}
+                </div>
               </div>
-            </article>
-          </div>
-        </section>
-
-        <section class="iep-section home-plan">
-          <div class="section-title">
-            <span>家庭干预计划</span>
-            <a-button type="link" size="small">
-              <template #icon>
-                <EditOutlined />
-              </template>
-              编辑
-            </a-button>
-          </div>
-          <div class="readonly-field readonly-field--home">
-            {{ homePlanText }}
-          </div>
-        </section>
+            </div>
+          </section>
+        </div>
       </main>
 
       <footer class="iep-modal__footer">
         <div class="footer-hint">
-          当前为{{ planDuration }}个月IEP草案；{{ planDuration === '3' ? '切换为6个月后横向扩展为6个阶段，可左右滚动查看。' : '当前横向展示6个阶段，可左右滚动查看。' }}
+          当前为{{ planDuration }}个月康复教学计划；点击AI生成后会根据评估记录和近期儿童训练记录刷新表格。
         </div>
         <div class="footer-actions">
+          <a-button :loading="aiGenerating" @click="generateAIPlan">
+            AI生成
+          </a-button>
           <a-button @click="closeModal">
             取消
           </a-button>
           <a-button>
             保存草稿
           </a-button>
-          <a-button :loading="exportingWord" @click="exportIepWord">
+          <a-button :disabled="!planRows.length" :loading="exportingWord" @click="exportIepWord">
             导出
           </a-button>
           <a-button type="primary" @click="closeModal">
@@ -678,31 +1077,6 @@ function openGoalPreview(goal, stage) {
       </footer>
     </section>
 
-    <a-modal
-      v-model:open="previewOpen"
-      :footer="null"
-      width="680px"
-      centered
-      title="短期目标预览"
-      wrap-class-name="iep-goal-preview-modal"
-    >
-      <div v-if="previewGoal" class="goal-preview">
-        <div class="goal-preview__head">
-          <a-tag color="blue">
-            {{ previewStage?.month }}
-          </a-tag>
-          <strong>{{ previewGoal.title }}</strong>
-        </div>
-        <div class="goal-preview__section">
-          <h4>训练内容</h4>
-          <ol>
-            <li v-for="item in previewGoal.content" :key="item">
-              {{ item }}
-            </li>
-          </ol>
-        </div>
-      </div>
-    </a-modal>
   </a-modal>
 </template>
 
@@ -749,10 +1123,10 @@ function openGoalPreview(goal, stage) {
 
 .iep-modal__summary {
   display: grid;
-  grid-template-columns: 280px 1fr auto;
-  gap: 16px;
+  grid-template-columns: 240px minmax(360px, 1fr) minmax(150px, auto);
+  gap: 12px;
   align-items: center;
-  padding: 12px 22px;
+  padding: 12px 18px;
   background: #fbfcfe;
   border-bottom: 1px solid #edf0f5;
 }
@@ -787,13 +1161,67 @@ function openGoalPreview(goal, stage) {
 }
 
 .summary-count {
+  min-width: 0;
+  overflow: hidden;
   color: #4b5563;
   font-size: 12px;
+  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
 
   strong {
     color: #1677ff;
     font-weight: 650;
+  }
+}
+
+.ai-stream-bar {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 10px;
+  align-items: center;
+  padding: 9px 22px;
+  color: #334155;
+  font-size: 12px;
+  line-height: 20px;
+  background: #f8fafc;
+  border-bottom: 1px solid #edf0f5;
+
+  strong {
+    color: #0f172a;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+}
+
+.ai-stream-bar__dot {
+  width: 8px;
+  height: 8px;
+  background: #94a3b8;
+  border-radius: 3px;
+}
+
+.ai-stream-bar__dot.is-running {
+  background: #1677ff;
+  animation: ai-stream-pulse 1s ease-in-out infinite;
+}
+
+.ai-stream-bar__text {
+  min-width: 0;
+  overflow: hidden;
+  color: #475569;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@keyframes ai-stream-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
   }
 }
 
@@ -871,10 +1299,10 @@ function openGoalPreview(goal, stage) {
 }
 
 .iep-modal__body {
-  max-height: calc(100vh - 284px);
-  padding: 14px 22px 16px;
+  max-height: calc(100vh - 302px);
+  padding: 20px;
   overflow: auto;
-  background: #fff;
+  background: #eef1f5;
   scrollbar-color: rgba(148, 163, 184, 0.7) transparent;
   scrollbar-width: thin;
 }
@@ -894,6 +1322,212 @@ function openGoalPreview(goal, stage) {
 .iep-modal__body::-webkit-scrollbar-track,
 .stage-board::-webkit-scrollbar-track {
   background: transparent;
+}
+
+.a4-workbench {
+  display: flex;
+  justify-content: center;
+  min-width: 860px;
+}
+
+.plan-sheet {
+  position: relative;
+  color: #111827;
+  background: #fff;
+
+  h1 {
+    margin: 0 0 11mm;
+    color: #111827;
+    font-size: 22px;
+    font-weight: 650;
+    line-height: 30px;
+    text-align: center;
+  }
+}
+
+.a4-page {
+  width: 210mm;
+  min-height: 297mm;
+  padding: 14mm 13mm 16mm;
+  box-sizing: border-box;
+  border: 1px solid #d9dee8;
+  box-shadow: 0 18px 46px rgba(15, 23, 42, 0.16);
+}
+
+.a4-page__chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: -6mm 0 7mm;
+  color: #64748b;
+  font-size: 11px;
+  line-height: 18px;
+
+  strong {
+    color: #334155;
+    font-weight: 650;
+  }
+}
+
+.plan-sheet-table {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  background: #fff;
+
+  th,
+  td {
+    min-height: 34px;
+    padding: 7px 8px;
+    color: #111827;
+    font-size: 12.5px;
+    line-height: 1.55;
+    text-align: center;
+    white-space: pre-line;
+    border: 1px solid #1f2937;
+  }
+
+  th {
+    color: #0f172a;
+    font-weight: 650;
+    background: #f8fafc;
+  }
+}
+
+.plan-col-domain {
+  width: 11%;
+}
+
+.plan-col-long {
+  width: 24%;
+}
+
+.plan-col-short-a {
+  width: 18%;
+}
+
+.plan-col-short-b {
+  width: 18%;
+}
+
+.plan-col-course {
+  width: 11%;
+}
+
+.plan-col-date {
+  width: 18%;
+}
+
+.plan-sheet-table__head th {
+  height: 42px;
+  font-size: 13px;
+  background: #eef2f7;
+}
+
+.plan-cell-domain {
+  color: #0f172a;
+  font-weight: 500;
+  vertical-align: middle;
+  background: #fbfcfe;
+}
+
+.plan-cell-text {
+  text-align: left !important;
+  vertical-align: top;
+}
+
+.plan-cell-long {
+  vertical-align: middle;
+}
+
+.plan-cell-center {
+  vertical-align: middle;
+}
+
+.plan-empty-row td {
+  height: 260px;
+  color: #64748b;
+  background: #fbfcfe;
+  text-align: center !important;
+
+  strong {
+    display: block;
+    margin-bottom: 6px;
+    color: #0f172a;
+    font-size: 14px;
+    font-weight: 650;
+  }
+
+  span {
+    font-size: 12px;
+  }
+}
+
+.ai-page-mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 82mm;
+  background: rgba(248, 250, 252, 0.72);
+  backdrop-filter: blur(2px);
+}
+
+.ai-page-card {
+  width: 430px;
+  padding: 18px 18px 16px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #dbe5f1;
+  border-radius: 8px;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.16);
+}
+
+.ai-page-card__head {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  margin-bottom: 12px;
+
+  strong {
+    display: block;
+    color: #0f172a;
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 22px;
+  }
+
+  p {
+    margin: 2px 0 0;
+    color: #64748b;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.ai-page-card__pulse {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 10px;
+  margin-top: 6px;
+  background: #1677ff;
+  border-radius: 4px;
+  box-shadow: 0 0 0 6px rgba(22, 119, 255, 0.12);
+  animation: ai-stream-pulse 1s ease-in-out infinite;
+}
+
+.ai-page-card__preview {
+  height: 74px;
+  margin-top: 12px;
+  padding: 10px 12px;
+  overflow: hidden;
+  color: #475569;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  line-height: 18px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
 }
 
 .domain-heading {
@@ -1194,19 +1828,25 @@ function openGoalPreview(goal, stage) {
 
 .iep-modal__footer {
   display: flex;
+  gap: 16px;
   align-items: center;
   justify-content: space-between;
-  padding: 12px 22px;
+  padding: 12px 18px;
   background: #fff;
   border-top: 1px solid #edf0f5;
 }
 
 .footer-hint {
   position: relative;
+  flex: 1;
+  min-width: 0;
   padding-left: 18px;
+  overflow: hidden;
   color: #5f6b7a;
   font-size: 12px;
   line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 
   &::before {
     position: absolute;
@@ -1222,7 +1862,8 @@ function openGoalPreview(goal, stage) {
 
 .footer-actions {
   display: flex;
-  gap: 10px;
+  flex: 0 0 auto;
+  gap: 8px;
   align-items: center;
 }
 

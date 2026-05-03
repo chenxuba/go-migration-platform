@@ -555,12 +555,23 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r
 	if !ok {
 		return
 	}
-	if r.Method != http.MethodGet {
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
 	var recordID int64
-	if rawID := strings.TrimSpace(r.URL.Query().Get("id")); rawID != "" {
+	var durationMonths int
+	var plan *model.PEP3IEPPlanAIResult
+	if r.Method == http.MethodPost {
+		var req model.PEP3IEPPlanWordExportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		recordID = req.ID
+		durationMonths = req.DurationMonths
+		plan = req.Plan
+	} else if rawID := strings.TrimSpace(r.URL.Query().Get("id")); rawID != "" {
 		parsedID, err := strconv.ParseInt(rawID, 10, 64)
 		if err != nil || parsedID < 0 {
 			httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
@@ -568,8 +579,18 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r
 		}
 		recordID = parsedID
 	}
-	durationMonths, _ := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("duration")))
-	fileName, contentType, content, err := handler.service.ExportPEP3IEPPlanWord(claims.UserID, recordID, durationMonths)
+	if r.Method == http.MethodGet {
+		durationMonths, _ = strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("duration")))
+	}
+	var fileName string
+	var contentType string
+	var content []byte
+	var err error
+	if plan != nil {
+		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanWordFromAIResult(claims.UserID, *plan, durationMonths)
+	} else {
+		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanWord(claims.UserID, recordID, durationMonths)
+	}
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -581,6 +602,84 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func (handler *Handler) pep3AssessmentRecordIEPPlanAI(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3IEPPlanGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GeneratePEP3IEPPlanWithAI(claims.UserID, req.ID, req.DurationMonths)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordIEPPlanAIStream(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3IEPPlanGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, http.StatusInternalServerError, "streaming is not supported", ctx.RequestID)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	writeEvent := func(event string, payload any) error {
+		return writePEP3IEPPlanSSE(w, flusher, event, payload)
+	}
+	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在读取评估和训练记录"}); err != nil {
+		return
+	}
+	result, err := handler.service.GeneratePEP3IEPPlanWithAIStream(r.Context(), claims.UserID, req.ID, req.DurationMonths, func(text string) error {
+		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
+	})
+	if err != nil {
+		_ = writeEvent("error", map[string]any{"type": "error", "message": err.Error()})
+		return
+	}
+	_ = writeEvent("done", map[string]any{"type": "done", "data": result})
+}
+
+func writePEP3IEPPlanSSE(w http.ResponseWriter, flusher http.Flusher, event string, payload any) error {
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, data); err != nil {
+		return err
+	}
+	flusher.Flush()
+	return nil
 }
 
 func (handler *Handler) pep3AssessmentRecordsPage(w http.ResponseWriter, r *http.Request) {

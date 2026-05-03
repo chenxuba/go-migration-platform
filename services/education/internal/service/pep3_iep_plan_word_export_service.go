@@ -6,23 +6,28 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"go-migration-platform/services/education/internal/model"
 )
 
 const (
 	iepPlanWordContentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-	iepPlanWordTableWidth  = 8280
+	iepPlanWordTableWidth  = 10080
 )
 
 type iepPlanWordExport struct {
+	Title         string
 	StudentName   string
 	Gender        string
 	BirthDate     string
-	ClassName     string
+	PlanDate      string
+	Participant   string
 	PlannerName   string
 	StartDate     string
 	EndDate       string
 	DurationLabel string
 	Domains       []iepPlanWordDomain
+	Rows          []iepPlanWordRow
 	HomePlan      []string
 }
 
@@ -30,6 +35,14 @@ type iepPlanWordDomain struct {
 	Name       string
 	LongGoals  []string
 	StageGoals []iepPlanWordStage
+}
+
+type iepPlanWordRow struct {
+	Domain       string
+	LongGoal     string
+	ShortGoal    string
+	CourseForm   string
+	StartEndDate string
 }
 
 type iepPlanWordStage struct {
@@ -65,6 +78,23 @@ func (svc *Service) ExportPEP3IEPPlanWord(userID int64, recordID int64, duration
 	}
 
 	fileName := fmt.Sprintf("%s-康复个别化教育计划-%s.docx", sanitizeExportFileName(plan.StudentName), time.Now().Format("20060102150405"))
+	return fileName, iepPlanWordContentType, data, nil
+}
+
+func (svc *Service) ExportPEP3IEPPlanWordFromAIResult(userID int64, planResult model.PEP3IEPPlanAIResult, durationMonths int) (string, string, []byte, error) {
+	if durationMonths != 6 {
+		durationMonths = 3
+	}
+	if _, err := svc.rollCallInstID(userID); err != nil {
+		return "", "", nil, err
+	}
+
+	plan := buildPEP3IEPPlanWordExportFromAIResult(planResult, durationMonths)
+	data, err := buildPEP3IEPPlanWordDocx(plan)
+	if err != nil {
+		return "", "", nil, err
+	}
+	fileName := fmt.Sprintf("%s-康复教学计划-%s.docx", sanitizeExportFileName(plan.StudentName), time.Now().Format("20060102150405"))
 	return fileName, iepPlanWordContentType, data, nil
 }
 
@@ -161,10 +191,12 @@ func buildStaticPEP3IEPPlanWordExport(durationMonths int) iepPlanWordExport {
 	}
 
 	return iepPlanWordExport{
+		Title:         iepPlanWordTitle(durationMonths),
 		StudentName:   "张一鸣",
 		Gender:        "男",
 		BirthDate:     "2023-04-30",
-		ClassName:     "",
+		PlanDate:      time.Now().Format("2006-01-02"),
+		Participant:   "1",
 		PlannerName:   "陈瑞",
 		StartDate:     startDate,
 		EndDate:       endDate,
@@ -178,8 +210,58 @@ func buildStaticPEP3IEPPlanWordExport(durationMonths int) iepPlanWordExport {
 	}
 }
 
+func buildPEP3IEPPlanWordExportFromAIResult(result model.PEP3IEPPlanAIResult, durationMonths int) iepPlanWordExport {
+	startDate := strings.TrimSpace(result.Meta.StartDate)
+	endDate := strings.TrimSpace(result.Meta.EndDate)
+	if startDate == "" || endDate == "" {
+		fallback := buildStaticPEP3IEPPlanWordExport(durationMonths)
+		if startDate == "" {
+			startDate = fallback.StartDate
+		}
+		if endDate == "" {
+			endDate = fallback.EndDate
+		}
+	}
+	rows := make([]iepPlanWordRow, 0, len(result.Rows))
+	for _, row := range result.Rows {
+		domain := strings.TrimSpace(row.Domain)
+		longGoal := strings.TrimSpace(row.LongGoal)
+		shortGoal := strings.TrimSpace(row.ShortGoal)
+		if domain == "" && longGoal == "" && shortGoal == "" {
+			continue
+		}
+		rows = append(rows, iepPlanWordRow{
+			Domain:       firstNonEmptyExportValue(domain, "综合康复"),
+			LongGoal:     longGoal,
+			ShortGoal:    shortGoal,
+			CourseForm:   firstNonEmptyExportValue(strings.TrimSpace(row.CourseForm), "个训"),
+			StartEndDate: firstNonEmptyExportValue(strings.TrimSpace(row.StartEndDate), startDate+" - "+endDate),
+		})
+	}
+	return iepPlanWordExport{
+		Title:         firstNonEmptyExportValue(strings.TrimSpace(result.Title), iepPlanWordTitle(durationMonths)),
+		StudentName:   firstNonEmptyExportValue(strings.TrimSpace(result.Student.Name), "学员"),
+		Gender:        strings.TrimSpace(result.Student.Gender),
+		BirthDate:     strings.TrimSpace(result.Student.BirthDate),
+		PlanDate:      firstNonEmptyExportValue(strings.TrimSpace(result.Meta.PlanDate), time.Now().Format("2006-01-02")),
+		Participant:   firstNonEmptyExportValue(strings.TrimSpace(result.Meta.Participant), "1"),
+		PlannerName:   strings.TrimSpace(result.Meta.Implementer),
+		StartDate:     startDate,
+		EndDate:       endDate,
+		DurationLabel: fmt.Sprintf("%d个月", durationMonths),
+		Rows:          rows,
+	}
+}
+
+func iepPlanWordTitle(durationMonths int) string {
+	if durationMonths == 3 {
+		return "康复教学三个月计划"
+	}
+	return "康复教学半年计划"
+}
+
 func buildPEP3IEPPlanWordDocx(plan iepPlanWordExport) ([]byte, error) {
-	if len(plan.Domains) == 0 {
+	if len(plan.Domains) == 0 && len(plan.Rows) == 0 {
 		return nil, errors.New("暂无可导出的IEP训练计划")
 	}
 
@@ -197,84 +279,106 @@ func buildPEP3IEPPlanDocumentXML(plan iepPlanWordExport) string {
 	builder.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
 	builder.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`)
 	builder.WriteString(`<w:body>`)
-	builder.WriteString(buildIEPTitleParagraph("孤独症康复个别化教育计划（IEP）"))
+	builder.WriteString(buildIEPTitleParagraph(firstNonEmptyExportValue(plan.Title, "康复教学半年计划")))
 	builder.WriteString(buildIEPMetaTable(plan))
 	builder.WriteString(buildIEPPlanTable(plan))
-	builder.WriteString(buildIEPNormalParagraph("注：3—表示能独立完成　2—表示在语言提示下可完成　1—表示在触体帮助下可完成　0—表示不能完成", "left", false))
-	builder.WriteString(buildIEPPageBreakParagraph())
-	builder.WriteString(buildIEPHomePlanTable(plan.HomePlan))
-	builder.WriteString(`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800" w:header="851" w:footer="992" w:gutter="0"/></w:sectPr>`)
+	if len(plan.HomePlan) > 0 {
+		builder.WriteString(buildIEPPageBreakParagraph())
+		builder.WriteString(buildIEPHomePlanTable(plan.HomePlan))
+	}
+	builder.WriteString(`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900" w:header="851" w:footer="992" w:gutter="0"/></w:sectPr>`)
 	builder.WriteString(`</w:body></w:document>`)
 	return builder.String()
 }
 
 func buildIEPMetaTable(plan iepPlanWordExport) string {
-	widths := []int{900, 1380, 940, 1140, 1340, 2580}
+	widths := []int{1050, 1550, 1050, 1450, 1500, 3480}
 	var builder strings.Builder
 	builder.WriteString(buildIEPTableStart(widths))
 	builder.WriteString(`<w:tr>`)
-	builder.WriteString(buildIEPCell([]string{"儿童", "姓名"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"姓名"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{plan.StudentName}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
 	builder.WriteString(buildIEPCell([]string{"性别"}, widths[2], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{plan.Gender}, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"出生日期"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{"出生年月"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{plan.BirthDate}, widths[5], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(`<w:tr>`)
-	builder.WriteString(buildIEPCell([]string{"班别"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{plan.ClassName}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"计划人"}, widths[2], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{plan.PlannerName}, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"实施起", "止日期"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
-	builder.WriteString(buildIEPCell([]string{plan.StartDate + "至" + plan.EndDate}, widths[5], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
+	builder.WriteString(buildIEPCell([]string{"制定日期"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.PlanDate}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
+	builder.WriteString(buildIEPCell([]string{"计划参与者"}, widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.Participant}, widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center"}))
+	builder.WriteString(`</w:tr>`)
+	builder.WriteString(`<w:tr>`)
+	builder.WriteString(buildIEPCell([]string{"实施者"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.PlannerName}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
+	builder.WriteString(buildIEPCell([]string{"实施起止日期"}, widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{plan.StartDate + " - " + plan.EndDate}, widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center"}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(`</w:tbl>`)
 	return builder.String()
 }
 
 func buildIEPPlanTable(plan iepPlanWordExport) string {
-	widths := []int{900, 2320, 3200, 465, 465, 465, 465}
+	widths := []int{1000, 2500, 3700, 1100, 1780}
+	rows := plan.Rows
+	if len(rows) == 0 {
+		rows = buildIEPWordRowsFromDomains(plan)
+	}
 	var builder strings.Builder
 	builder.WriteString(buildIEPTableStart(widths))
 	builder.WriteString(`<w:tr>`)
-	builder.WriteString(buildIEPCell([]string{"康复", "领域"}, widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{"长期目标"}, widths[1], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{"短期目标"}, widths[2], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{"评鉴结果"}, sumInts(widths[3:]...), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(`</w:tr>`)
-	builder.WriteString(`<w:tr>`)
-	builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
-	builder.WriteString(buildIEPCell(nil, widths[1], iepPlanWordCellOptions{VMerge: "continue"}))
-	builder.WriteString(buildIEPCell(nil, widths[2], iepPlanWordCellOptions{VMerge: "continue"}))
-	for _, score := range []string{"3", "2", "1", "0"} {
-		builder.WriteString(buildIEPCell([]string{score}, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
-	}
+	builder.WriteString(buildIEPCell([]string{"康复领域"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"长期目标"}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{"短期目标"}, widths[2], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{"课程形式"}, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
+	builder.WriteString(buildIEPCell([]string{"起止日期"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(`</w:tr>`)
 
-	for index, domain := range plan.Domains {
+	for index, row := range rows {
+		rowSpan := 0
+		if index == 0 || row.Domain != rows[index-1].Domain {
+			for next := index; next < len(rows) && rows[next].Domain == row.Domain; next++ {
+				rowSpan++
+			}
+		}
+		builder.WriteString(`<w:tr>`)
+		if rowSpan > 0 {
+			builder.WriteString(buildIEPCell(domainTextLines(row.Domain), widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+			builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), widths[1], iepPlanWordCellOptions{VMerge: "restart", VAlign: "center", IndentLeft: 160}))
+		} else {
+			builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
+			builder.WriteString(buildIEPCell(nil, widths[1], iepPlanWordCellOptions{VMerge: "continue"}))
+		}
+		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[2], iepPlanWordCellOptions{VAlign: "center", IndentLeft: 160}))
+		builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
+		builder.WriteString(buildIEPCell([]string{row.StartEndDate}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", CompactParagraph: true}))
+		builder.WriteString(`</w:tr>`)
+	}
+	builder.WriteString(`</w:tbl>`)
+	return builder.String()
+}
+
+func buildIEPWordRowsFromDomains(plan iepPlanWordExport) []iepPlanWordRow {
+	rows := make([]iepPlanWordRow, 0)
+	stageRanges := iepPlanWordStageRanges(plan.StartDate, plan.EndDate, 3)
+	for _, domain := range plan.Domains {
 		shortGoals := shortGoalLines(domain.StageGoals)
 		if len(shortGoals) == 0 {
 			shortGoals = []string{""}
 		}
-
-		for goalIndex, shortGoal := range shortGoals {
-			builder.WriteString(`<w:tr>`)
-			if goalIndex == 0 {
-				builder.WriteString(buildIEPCell(domainNameLines(index, domain.Name), widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
-				builder.WriteString(buildIEPCell(numberedLines(domain.LongGoals), widths[1], iepPlanWordCellOptions{VMerge: "restart", VAlign: "center", IndentLeft: 120}))
-			} else {
-				builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
-				builder.WriteString(buildIEPCell(nil, widths[1], iepPlanWordCellOptions{VMerge: "continue"}))
-			}
-			builder.WriteString(buildIEPCell([]string{shortGoal}, widths[2], iepPlanWordCellOptions{VAlign: "center", IndentLeft: 140}))
-			for range []int{0, 1, 2, 3} {
-				builder.WriteString(buildIEPCell(nil, widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-			}
-			builder.WriteString(`</w:tr>`)
+		longGoal := strings.Join(numberedLines(domain.LongGoals), "\n")
+		for index, shortGoal := range shortGoals {
+			rows = append(rows, iepPlanWordRow{
+				Domain:       domain.Name,
+				LongGoal:     longGoal,
+				ShortGoal:    shortGoal,
+				CourseForm:   inferStaticIEPWordCourseForm(domain.Name, shortGoal),
+				StartEndDate: stageDateForWordGoal(stageRanges, index, len(shortGoals)),
+			})
 		}
 	}
-	builder.WriteString(`</w:tbl>`)
-	return builder.String()
+	return rows
 }
 
 func buildIEPHomePlanTable(items []string) string {
@@ -471,6 +575,94 @@ func domainNameLines(index int, name string) []string {
 	lines := []string{fmt.Sprintf("%d.", index+1)}
 	lines = append(lines, verticalCharacterLines(name)...)
 	return lines
+}
+
+func domainTextLines(name string) []string {
+	text := strings.TrimSpace(name)
+	if text == "" {
+		return []string{"综合康复"}
+	}
+	return []string{text}
+}
+
+func splitWordLines(text string) []string {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		return nil
+	}
+	rawLines := strings.Split(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(value), "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		line = strings.TrimSpace(line)
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	return lines
+}
+
+func iepPlanWordStageRanges(startText, endText string, stageCount int) []string {
+	if stageCount <= 0 {
+		stageCount = 3
+	}
+	start, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(startText), time.Local)
+	if err != nil {
+		return nil
+	}
+	end, err := time.ParseInLocation("2006-01-02", strings.TrimSpace(endText), time.Local)
+	if err != nil || end.Before(start) {
+		return nil
+	}
+	totalDays := int(end.Sub(start).Hours()/24) + 1
+	ranges := make([]string, 0, stageCount)
+	current := start
+	for index := 0; index < stageCount; index++ {
+		days := totalDays / stageCount
+		if index < totalDays%stageCount {
+			days++
+		}
+		if days <= 0 {
+			days = 1
+		}
+		stageEnd := current.AddDate(0, 0, days-1)
+		if stageEnd.After(end) {
+			stageEnd = end
+		}
+		ranges = append(ranges, current.Format("2006-01-02")+" - "+stageEnd.Format("2006-01-02"))
+		current = stageEnd.AddDate(0, 0, 1)
+		if current.After(end) {
+			break
+		}
+	}
+	return ranges
+}
+
+func stageDateForWordGoal(stageRanges []string, goalIndex int, goalCount int) string {
+	if len(stageRanges) == 0 {
+		return ""
+	}
+	rangeIndex := goalIndex * len(stageRanges) / maxIEPPlanWordInt(goalCount, 1)
+	if rangeIndex >= len(stageRanges) {
+		rangeIndex = len(stageRanges) - 1
+	}
+	return stageRanges[rangeIndex]
+}
+
+func inferStaticIEPWordCourseForm(domainName, goal string) string {
+	text := domainName + " " + goal
+	switch {
+	case strings.Contains(text, "同伴"), strings.Contains(text, "小组"), strings.Contains(text, "集体"), strings.Contains(text, "融合"):
+		return "集体课"
+	default:
+		return "个训"
+	}
+}
+
+func maxIEPPlanWordInt(a, b int) int {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func verticalCharacterLines(text string) []string {

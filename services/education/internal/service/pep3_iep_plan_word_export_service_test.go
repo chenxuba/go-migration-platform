@@ -22,22 +22,20 @@ func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
 
 	for _, expected := range []string{
 		`<w:pgSz w:w="11906" w:h="16838"/>`,
-		`<w:pgMar w:top="1440" w:right="1800" w:bottom="1440" w:left="1800"`,
-		`<w:tblW w:w="8280" w:type="dxa"/>`,
-		`<w:gridCol w:w="900"/>`,
-		`<w:gridCol w:w="2320"/>`,
-		`<w:gridCol w:w="3200"/>`,
+		`<w:pgMar w:top="900" w:right="900" w:bottom="900" w:left="900"`,
+		`<w:tblW w:w="10080" w:type="dxa"/>`,
+		`<w:gridCol w:w="1000"/>`,
+		`<w:gridCol w:w="2500"/>`,
+		`<w:gridCol w:w="3700"/>`,
 		`<w:vMerge w:val="restart"/>`,
 		`<w:vMerge/>`,
-		`<w:ind w:left="120"/>`,
-		`<w:ind w:left="140"/>`,
+		`<w:ind w:left="160"/>`,
 		`<w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/>`,
-		`<w:t>儿童</w:t>`,
 		`<w:t>姓名</w:t>`,
-		`<w:t>康复</w:t>`,
-		`<w:t>领域</w:t>`,
-		`<w:t>实施起</w:t>`,
-		`<w:t>止日期</w:t>`,
+		`<w:t>康复领域</w:t>`,
+		`<w:t>课程形式</w:t>`,
+		`<w:t>起止日期</w:t>`,
+		`<w:t>实施起止日期</w:t>`,
 		`<w:br w:type="page"/>`,
 		`1. 用单词表达需求`,
 		`2. 模仿功能词：要、不要`,
@@ -60,16 +58,12 @@ func TestBuildPEP3IEPPlanWordDocxShortGoalsAreTableRows(t *testing.T) {
 	if strings.Contains(documentXML, "第1个月 建立表达基础") {
 		t.Fatalf("short-term goal rows should not include stage headers")
 	}
-	if strings.Contains(documentXML, "实施起止日期") {
-		t.Fatalf("implementation date label should be split into two lines")
-	}
 	if strings.Contains(documentXML, "儿童姓名") {
 		t.Fatalf("student name label should be split into two lines")
 	}
-	noteIndex := strings.Index(documentXML, "注：3")
 	pageBreakIndex := strings.Index(documentXML, `<w:br w:type="page"/>`)
 	homePlanIndex := strings.Index(documentXML, "家庭干预计划")
-	if noteIndex < 0 || pageBreakIndex < 0 || homePlanIndex < 0 || !(noteIndex < pageBreakIndex && pageBreakIndex < homePlanIndex) {
-		t.Fatalf("note should be before page break and home intervention plan should start after page break")
+	if pageBreakIndex < 0 || homePlanIndex < 0 || !(pageBreakIndex < homePlanIndex) {
+		t.Fatalf("home intervention plan should start after page break")
 	}
 }
