@@ -127,7 +127,7 @@ func sanitizePEP3IEPPlanRowsForSave(rows []model.PEP3IEPPlanRow, stageRanges []s
 		domain := strings.TrimSpace(row.Domain)
 		longGoal := strings.TrimSpace(row.LongGoal)
 		shortGoal := strings.TrimSpace(row.ShortGoal)
-		if domain == "" && longGoal == "" && shortGoal == "" {
+		if shortGoal == "" {
 			continue
 		}
 		if domain == "" {

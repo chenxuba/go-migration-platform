@@ -901,7 +901,7 @@ function sanitizeEditablePlanRows(rows = []) {
       const domain = String(row?.domain || '').trim()
       const longGoal = String(row?.longGoal || '').trim()
       const shortGoal = String(row?.shortGoal || '').trim()
-      if (!domain && !longGoal && !shortGoal)
+      if (!shortGoal)
         return null
       return {
         domain: domain || '综合康复',
@@ -1157,10 +1157,7 @@ function savedIepPlanHasContent(data) {
   const rows = data?.plan?.rows
   if (!data?.exists || !data.plan || !Array.isArray(rows))
     return false
-  return rows.some((row) => {
-    return ['domain', 'longGoal', 'shortGoal', 'courseForm', 'startEndDate']
-      .some(key => String(row?.[key] || '').trim())
-  })
+  return rows.some(row => String(row?.shortGoal || '').trim())
 }
 
 function applySavedIepPlanData(data) {
