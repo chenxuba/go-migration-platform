@@ -237,6 +237,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensurePEP3IEPPlanTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensurePEP3ExecutionPlanTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensureAssessmentScaleTables(ctx, repo.db); err != nil {
 		return err
 	}

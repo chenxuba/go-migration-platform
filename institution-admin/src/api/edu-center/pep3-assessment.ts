@@ -761,6 +761,48 @@ export interface PEP3IEPPlanAIResult {
   }>
 }
 
+export interface PEP3MonthlyPlanAIResult {
+  title: string
+  model?: string
+  student: PEP3IEPPlanAIResult['student']
+  meta: {
+    planDate: string
+    participant: string
+    implementer: string
+    startDate: string
+    endDate: string
+    monthLabel?: string
+    sourceTitle?: string
+  }
+  rows: Array<{
+    domain: string
+    longGoal: string
+    shortGoal: string
+    trainingItems: Array<{
+      content: string
+      startEndDate: string
+    }>
+    courseForm: string
+  }>
+}
+
+export interface PEP3WeeklyPlanAIResult {
+  title: string
+  model?: string
+  student: PEP3IEPPlanAIResult['student']
+  teacherName: string
+  courseName: string
+  trainingDate: string
+  preparation: string
+  weekDates: string[]
+  rows: Array<{
+    project: string
+    content: string
+    completion?: string[]
+  }>
+  sourceTitle?: string
+}
+
 export interface PEP3IEPPlanSavedVO {
   exists: boolean
   status?: 'draft' | 'confirmed' | string
@@ -769,11 +811,205 @@ export interface PEP3IEPPlanSavedVO {
   updatedTime?: string
 }
 
+export interface PEP3ExecutionPlanSavedVO {
+  exists: boolean
+  durationMonths?: number
+  monthlyPlans?: Array<{
+    targetMonthIndex: number
+    plan: PEP3MonthlyPlanAIResult
+    updatedTime?: string
+  }>
+  weeklyPlans?: Array<{
+    targetMonthIndex: number
+    targetWeekIndex: number
+    plan: PEP3WeeklyPlanAIResult
+    updatedTime?: string
+  }>
+}
+
 export function generatePEP3IEPPlanAIApi(data: { id?: number | string, durationMonths?: number | string }) {
   return usePost<PEP3IEPPlanAIResult>('/api/v1/assessments/pep3/records/iep-plan/ai', data, {
     loading: false,
     silentError: true,
     timeout: 180000,
+  })
+}
+
+export function generatePEP3ExecutionPlanAIApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  planType: 'monthly' | 'weekly'
+  targetMonthIndex?: number | string
+  targetWeekIndex?: number | string
+  sourcePlan: PEP3IEPPlanAIResult
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+}) {
+  return usePost<PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult>('/api/v1/assessments/pep3/records/iep-plan/execution/ai', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    targetMonthIndex: Number(data.targetMonthIndex || 0),
+    targetWeekIndex: Number(data.targetWeekIndex || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 180000,
+  })
+}
+
+export interface PEP3ExecutionPlanAIStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult) => void
+}
+
+export async function generatePEP3ExecutionPlanAIStreamApi(
+  data: {
+    id?: number | string
+    durationMonths?: number | string
+    planType: 'monthly' | 'weekly'
+    targetMonthIndex?: number | string
+    targetWeekIndex?: number | string
+    sourcePlan: PEP3IEPPlanAIResult
+    monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  },
+  handlers: PEP3ExecutionPlanAIStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const token = useAuthorization()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+  }
+  if (typeof window !== 'undefined')
+    headers['X-Tenant-Domain'] = window.location.hostname.toLowerCase()
+
+  const response = await fetch('/api/v1/assessments/pep3/records/iep-plan/execution/ai/stream', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      ...data,
+      id: Number(data.id || 0),
+      durationMonths: Number(data.durationMonths || 0),
+      targetMonthIndex: Number(data.targetMonthIndex || 0),
+      targetWeekIndex: Number(data.targetWeekIndex || 0),
+    }),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || 'AI生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalPlan: PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalPlan = payload.data
+      if (finalPlan)
+        handlers.onDone?.(finalPlan)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || 'AI生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('AI生成已取消', 'AbortError')
+  if (!finalPlan)
+    throw new Error('AI生成未返回计划数据')
+  return finalPlan
+}
+
+export function downloadPEP3ExecutionPlanWordApi(data: {
+  id?: number | string
+  planType: 'monthly' | 'weekly'
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/assessments/pep3/records/iep-plan/execution/word', {
+    ...data,
+    id: Number(data.id || 0),
+  }, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+      'Content-Type': 'application/json',
+    },
+  })
+}
+
+export function getPEP3ExecutionPlansApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/execution/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function savePEP3ExecutionPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  planType: 'monthly' | 'weekly'
+  targetMonthIndex?: number | string
+  targetWeekIndex?: number | string
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+}) {
+  return usePost<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/execution/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    targetMonthIndex: Number(data.targetMonthIndex || 0),
+    targetWeekIndex: Number(data.targetWeekIndex || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
   })
 }
 
