@@ -3,6 +3,7 @@ import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
 import messageService from '@/utils/messageService'
 import GenerateIepModal from '@/pages/teacher-center/components/generate-iep-modal.vue'
+import AssessmentRecordConfigModal from '@/pages/teacher-center/components/assessment-record-config-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
@@ -32,6 +33,8 @@ const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
 const iepModalOpen = ref(false)
 const iepTargetRecord = ref(null)
+const configModalOpen = ref(false)
+const configTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
@@ -141,7 +144,7 @@ const columns = [
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 240,
+    width: 290,
   },
 ]
 
@@ -407,6 +410,13 @@ function openIepModal(row) {
   iepModalOpen.value = true
 }
 
+function openConfigModal(row) {
+  if (!row)
+    return
+  configTargetRecord.value = row
+  configModalOpen.value = true
+}
+
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
@@ -520,6 +530,7 @@ onBeforeUnmount(() => {
               <template v-else-if="column.key === 'action'">
                 <a-space :size="12" class="action-links">
                   <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
+                  <a @click="openConfigModal(record)">配置</a>
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
                   </a-popconfirm>
@@ -663,6 +674,12 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </a-modal>
+
+    <assessment-record-config-modal
+      v-model:open="configModalOpen"
+      :record="configTargetRecord"
+      @saved="fetchRecords"
+    />
 
     <generate-iep-modal
       v-model:open="iepModalOpen"

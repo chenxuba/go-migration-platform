@@ -365,6 +365,26 @@ func (repo *Repository) UpdateAssessmentRecordInputAndResult(ctx context.Context
 	return nil
 }
 
+func (repo *Repository) UpdateAssessmentRecordConfig(ctx context.Context, instID, recordID int64, examinerName string, assessmentDate time.Time) error {
+	updateResult, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_record
+		SET examiner_name = ?,
+		    assessment_date = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		strings.TrimSpace(examinerName),
+		assessmentDate,
+		recordID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	_, _ = updateResult.RowsAffected()
+	return nil
+}
+
 func (repo *Repository) AssessmentRecordHasIEPPlan(ctx context.Context, instID, recordID int64) (bool, error) {
 	var count int
 	if err := repo.db.QueryRowContext(ctx, `
@@ -1387,6 +1407,28 @@ func (repo *Repository) UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
+	return nil
+}
+
+func (repo *Repository) UpdateAssessmentDraftConfigIncludingSubmitted(ctx context.Context, instID, draftID int64, examinerName string, assessmentDate time.Time, operatorID int64) error {
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_draft
+		SET examiner_name = ?,
+		    assessment_date = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`,
+		strings.TrimSpace(examinerName),
+		assessmentDate,
+		operatorID,
+		draftID,
+		instID,
+	)
+	if err != nil {
+		return err
+	}
+	_, _ = result.RowsAffected()
 	return nil
 }
 

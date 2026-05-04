@@ -97,6 +97,12 @@ export interface PEP3RecordUpdateRequest extends PEP3RecordCreateRequest {
   id: number
 }
 
+export interface PEP3RecordConfigUpdateRequest {
+  id: number
+  examinerName: string
+  assessmentDate: PEP3DateString
+}
+
 export interface PEP3AssessmentRecordQueryModel {
   assessmentCode?: string
   scaleCategory?: string
@@ -684,6 +690,10 @@ export function createPEP3AssessmentRecordApi(data: PEP3RecordCreateRequest) {
 
 export function updatePEP3AssessmentRecordApi(data: PEP3RecordUpdateRequest) {
   return usePost<PEP3AssessmentRecordDetail>('/api/v1/assessments/pep3/records/update', data)
+}
+
+export function updatePEP3AssessmentRecordConfigApi(data: PEP3RecordConfigUpdateRequest) {
+  return usePost<PEP3AssessmentRecordDetail>('/api/v1/assessments/pep3/records/config/update', data)
 }
 
 export function getPEP3AssessmentRecordDetailApi(id: number) {

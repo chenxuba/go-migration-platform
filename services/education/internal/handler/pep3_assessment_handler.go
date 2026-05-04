@@ -56,6 +56,12 @@ type pep3AssessmentRecordCreateRequest struct {
 	CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 }
 
+type pep3AssessmentRecordConfigUpdateRequest struct {
+	ID             int64  `json:"id"`
+	ExaminerName   string `json:"examinerName"`
+	AssessmentDate string `json:"assessmentDate"`
+}
+
 type pep3AssessmentDraftSaveRequest struct {
 	ID                  int64                                `json:"id,omitempty"`
 	StudentID           int64                                `json:"studentId,omitempty"`
@@ -494,6 +500,41 @@ func (handler *Handler) updatePEP3AssessmentRecord(w http.ResponseWriter, r *htt
 		ScoreInput:       scoreInput,
 		ItemRecordValues: itemRecordValues,
 		InputSnapshot:    req.normalizedSnapshot(scoreInput.ItemScores, scoreInput.RawScores, itemRecordValues),
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updatePEP3AssessmentRecordConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req pep3AssessmentRecordConfigUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	assessmentDate, err := parsePEP3Date(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdatePEP3AssessmentRecordConfig(claims.UserID, req.ID, service.PEP3AssessmentRecordConfigInput{
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		AssessmentDate: assessmentDate,
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
