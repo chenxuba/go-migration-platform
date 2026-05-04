@@ -89,6 +89,12 @@ const double _minDesignWidth = 1024;
 const double _wideDesignWidth = 1366;
 const double _loginLeftShiftCompact = 24;
 const double _loginLeftShiftWide = 64;
+const double _loginCardWidth = 408;
+const double _loginCardHeight = 522;
+const double _loginCardStageWidth = 846;
+const double _loginCardStageHeight = 540;
+const double _loginKeyboardWidth = 386;
+const double _loginKeyboardHeight = 318;
 const double _homeMainTop = 124;
 const double _homeStartHeight = 334;
 const double _homeStatsHeight = 102;
@@ -100,6 +106,7 @@ const double _homeScheduleHeight =
     _homeMainTop + _homeStartHeight - _homeScheduleTop;
 const double _homeShortcutTop =
     _homeMainTop + _homeStartHeight + _homeMainShortcutGap;
+const String _authTokenStorageKey = 'auth_token';
 
 List<BoxShadow> _softShadow({
   Color color = const Color(0x22000000),
@@ -152,15 +159,39 @@ class PadViewport extends StatelessWidget {
   }
 }
 
-class LoginPage extends StatelessWidget {
+class LoginPage extends StatefulWidget {
   const LoginPage({required this.authClient, super.key});
 
   final AuthClient authClient;
 
   @override
+  State<LoginPage> createState() => _LoginPageState();
+}
+
+class _LoginPageState extends State<LoginPage> {
+  @override
+  void initState() {
+    super.initState();
+    _redirectIfLoggedIn();
+  }
+
+  Future<void> _redirectIfLoggedIn() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    if (!mounted || token.trim().isEmpty) {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/home',
+      (Route<dynamic> route) => false,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
-        body: PadViewport(child: LoginScreen(authClient: authClient)));
+      body: PadViewport(child: LoginScreen(authClient: widget.authClient)),
+    );
   }
 }
 
@@ -169,7 +200,10 @@ class HomePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: PadViewport(child: HomeScreen()));
+    return const PopScope(
+      canPop: false,
+      child: Scaffold(body: PadViewport(child: HomeScreen())),
+    );
   }
 }
 
@@ -254,7 +288,8 @@ class LoginScreen extends StatelessWidget {
               top: 162,
               child: LoginCard(
                 authClient: authClient,
-                onLoginSuccess: () => Navigator.of(context).pushNamed('/home'),
+                onLoginSuccess: () => Navigator.of(context)
+                    .pushNamedAndRemoveUntil('/home', (_) => false),
               ),
             ),
           ],
@@ -367,18 +402,24 @@ class _LoginCardState extends State<LoginCard> {
   static const String _rememberPasswordKey = 'login_remember_password';
   static const String _rememberedUsernameKey = 'login_remember_username';
   static const String _rememberedPasswordKey = 'login_remember_password_value';
-  static const String _sessionTokenKey = 'auth_token';
+  static const String _sessionTokenKey = _authTokenStorageKey;
   static const String _sessionLoginTypeKey = 'auth_login_type';
   static const String _sessionTenantIdKey = 'auth_tenant_id';
   static const String _sessionOrgIdKey = 'auth_org_id';
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
+  final FocusNode _usernameFocusNode = FocusNode();
+  final FocusNode _passwordFocusNode = FocusNode();
 
   bool _rememberPassword = false;
   bool _passwordVisible = false;
   bool _loading = false;
   bool _qrMode = false;
+  bool _customKeyboardVisible = false;
+  bool _keyboardShift = false;
+  _LoginInputTarget _activeInput = _LoginInputTarget.username;
+  Offset _keyboardOffset = const Offset(18, 74);
   String _qrNonce = DateTime.now().millisecondsSinceEpoch.toString();
   String? _errorMessage;
 
@@ -392,6 +433,8 @@ class _LoginCardState extends State<LoginCard> {
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _usernameFocusNode.dispose();
+    _passwordFocusNode.dispose();
     super.dispose();
   }
 
@@ -446,9 +489,98 @@ class _LoginCardState extends State<LoginCard> {
     setState(() => _errorMessage = null);
   }
 
-  void _dismissKeyboard() {
+  void _dismissKeyboard({bool hideCustomKeyboard = true}) {
     FocusManager.instance.primaryFocus?.unfocus();
     SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+    if (hideCustomKeyboard && _customKeyboardVisible && mounted) {
+      setState(() => _customKeyboardVisible = false);
+    }
+  }
+
+  void _openCustomKeyboard(_LoginInputTarget target) {
+    setState(() {
+      _activeInput = target;
+      _customKeyboardVisible = true;
+      _errorMessage = null;
+    });
+    if (target == _LoginInputTarget.username) {
+      _usernameFocusNode.requestFocus();
+    } else {
+      _passwordFocusNode.requestFocus();
+    }
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  }
+
+  void _moveKeyboard(DragUpdateDetails details) {
+    final double nextDx = (_keyboardOffset.dx + details.delta.dx).clamp(
+      0.0,
+      _loginCardStageWidth - _loginKeyboardWidth,
+    );
+    final double nextDy = (_keyboardOffset.dy + details.delta.dy).clamp(
+      0.0,
+      _loginCardStageHeight - _loginKeyboardHeight,
+    );
+    setState(() => _keyboardOffset = Offset(nextDx, nextDy));
+  }
+
+  TextEditingController get _activeController {
+    return _activeInput == _LoginInputTarget.username
+        ? _usernameController
+        : _passwordController;
+  }
+
+  void _insertKeyboardText(String value) {
+    final TextEditingController controller = _activeController;
+    final TextSelection selection = controller.selection;
+    final String text = controller.text;
+    final int start = selection.isValid ? selection.start : text.length;
+    final int end = selection.isValid ? selection.end : text.length;
+    final String nextText = text.replaceRange(start, end, value);
+    controller.value = TextEditingValue(
+      text: nextText,
+      selection: TextSelection.collapsed(offset: start + value.length),
+    );
+    _clearError();
+  }
+
+  void _deleteKeyboardText() {
+    final TextEditingController controller = _activeController;
+    final TextSelection selection = controller.selection;
+    final String text = controller.text;
+    if (text.isEmpty) {
+      return;
+    }
+
+    if (selection.isValid && !selection.isCollapsed) {
+      controller.value = TextEditingValue(
+        text: text.replaceRange(selection.start, selection.end, ''),
+        selection: TextSelection.collapsed(offset: selection.start),
+      );
+      return;
+    }
+
+    final int cursor = selection.isValid ? selection.start : text.length;
+    if (cursor <= 0) {
+      return;
+    }
+    controller.value = TextEditingValue(
+      text: text.replaceRange(cursor - 1, cursor, ''),
+      selection: TextSelection.collapsed(offset: cursor - 1),
+    );
+    _clearError();
+  }
+
+  void _clearActiveInput() {
+    _activeController.clear();
+    _clearError();
+  }
+
+  void _focusNextInput() {
+    if (_activeInput == _LoginInputTarget.username) {
+      _openCustomKeyboard(_LoginInputTarget.password);
+      return;
+    }
+    _submit();
   }
 
   Future<void> _submit() async {
@@ -527,6 +659,7 @@ class _LoginCardState extends State<LoginCard> {
   }
 
   void _showForgotPasswordHint() {
+    _dismissKeyboard();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('请联系机构管理员重置密码')),
     );
@@ -540,9 +673,41 @@ class _LoginCardState extends State<LoginCard> {
 
   @override
   Widget build(BuildContext context) {
+    return SizedBox(
+      width: _loginCardStageWidth,
+      height: _loginCardStageHeight,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned(right: 0, top: 0, child: _buildCard()),
+          if (_customKeyboardVisible && !_qrMode)
+            Positioned(
+              left: _keyboardOffset.dx,
+              top: _keyboardOffset.dy,
+              child: FloatingLoginKeyboard(
+                targetLabel:
+                    _activeInput == _LoginInputTarget.username ? '账号' : '密码',
+                shifted: _keyboardShift,
+                onDragUpdate: _moveKeyboard,
+                onKey: _insertKeyboardText,
+                onBackspace: _deleteKeyboardText,
+                onClear: _clearActiveInput,
+                onShift: () {
+                  setState(() => _keyboardShift = !_keyboardShift);
+                },
+                onNext: _focusNextInput,
+                onClose: () => _dismissKeyboard(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCard() {
     return Container(
-      width: 408,
-      height: 522,
+      width: _loginCardWidth,
+      height: _loginCardHeight,
       padding: const EdgeInsets.fromLTRB(40, 62, 40, 38),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.91),

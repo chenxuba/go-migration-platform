@@ -22,6 +22,24 @@ void main() {
     expect(find.text('上午好，启明成长中心'), findsOneWidget);
     expect(find.text('开始测评'), findsOneWidget);
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
+
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+
+    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.text('机构账号登录'), findsNothing);
+  });
+
+  testWidgets('login page redirects to home when token already exists',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+    await tester.pumpAndSettle();
+
+    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.text('机构账号登录'), findsNothing);
   });
 
   testWidgets('login page switches to qr login and back',
