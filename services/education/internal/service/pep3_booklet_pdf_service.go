@@ -177,6 +177,7 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	r.text(pep3RightPageX(690), 185, 10, record.StudentName)  // 儿童姓名
 	r.text(pep3RightPageX(690), 240, 10, record.ExaminerName) // 测试员姓名
 	r.text(pep3RightPageX(690), 252, 10, record.Remark)       // 备注
+	r.drawCoverGenderMark(record.StudentGender)
 
 	assessmentYear, assessmentMonth, assessmentDay := dateParts(record.AssessmentDate)
 	birthYear, birthMonth, birthDay := dateParts(record.BirthDate)
@@ -259,6 +260,26 @@ func (r pep3BookletPDFRenderer) drawCoverPage(record model.AssessmentRecordDetai
 	}
 
 	r.drawCoverInstitutionMark(institutionName)
+}
+
+func (r pep3BookletPDFRenderer) drawCoverGenderMark(gender string) {
+	normalized := strings.TrimSpace(gender)
+	if normalized == "" || normalized == "-" {
+		return
+	}
+	const (
+		maleCheckCenterX   = 377.0
+		femaleCheckCenterX = 433.5
+		checkCenterY       = 180.6
+		checkWidth         = 15.0
+		checkFontSize      = 12.5
+	)
+	switch {
+	case strings.Contains(normalized, "男"):
+		r.centerBoldInBox(maleCheckCenterX, checkCenterY, checkWidth, checkFontSize, "√")
+	case strings.Contains(normalized, "女"):
+		r.centerBoldInBox(femaleCheckCenterX, checkCenterY, checkWidth, checkFontSize, "√")
+	}
 }
 
 func pep3RightPageX(spreadX float64) float64 {

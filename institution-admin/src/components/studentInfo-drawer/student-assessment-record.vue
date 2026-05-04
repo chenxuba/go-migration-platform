@@ -522,7 +522,9 @@ onBeforeUnmount(() => {
                 {{ formatAge(record) }}
               </template>
               <template v-else-if="column.key === 'examinerName'">
-                {{ record.examinerName || '-' }}
+                <a-tooltip :title="record.examinerName || '-'">
+                  <span class="single-line">{{ record.examinerName || '-' }}</span>
+                </a-tooltip>
               </template>
               <template v-else-if="column.key === 'createdTime'">
                 {{ formatDateTime(record.createdTime) }}

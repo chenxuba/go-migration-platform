@@ -176,7 +176,7 @@ func buildPEP3BookletCoverSections(record model.AssessmentRecordDetailVO, score 
 		BookletPageNo:   1,
 		Fields: []model.PEP3TemplateField{
 			bookletField("studentName", "儿童姓名", record.StudentName, record.StudentName, ""),
-			bookletField("gender", "性别", "", "", "男 / 女"),
+			bookletField("gender", "性别", record.StudentGender, record.StudentGender, "男 / 女"),
 			bookletField("centerClass", "中心/班别", "", "", "由前端或业务资料填充"),
 			bookletField("examinerName", "测试员姓名", record.ExaminerName, record.ExaminerName, ""),
 			bookletField("assessmentDate", "评估日期", formatReportDate(record.AssessmentDate), formatReportDate(record.AssessmentDate), ""),
