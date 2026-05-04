@@ -50,6 +50,11 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   Map<String, _SlotAvailability> _slotAvailability =
       const <String, _SlotAvailability>{};
   String? _creatingSlotKey;
+  OverlayEntry? _scheduleMessageEntry;
+  Timer? _scheduleMessageTimer;
+  bool _scheduleMessageVisible = false;
+  String _scheduleMessageText = '';
+  _ScheduleMessageTone _scheduleMessageTone = _ScheduleMessageTone.info;
   TimetableData _data = TimetableData.fallback();
   List<_PeriodGroupOption> _periodGroups = const <_PeriodGroupOption>[];
   List<_TeacherOption> _teachers = const <_TeacherOption>[];
@@ -63,6 +68,13 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     _applyTimetableData(_data, preserveTeacherSelection: false);
     _loadTimetable();
     _loadScheduleOptions();
+  }
+
+  @override
+  void dispose() {
+    _scheduleMessageTimer?.cancel();
+    _removeScheduleMessage();
+    super.dispose();
   }
 
   ScheduleTargetOption? get _selectedScheduleTarget {
@@ -79,13 +91,61 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
 
   List<String> get _normalizedAssistantIds {
     final String teacherId = _selectedTeacherId.trim();
+    final Set<String> validAssistantIds = _currentGroupAssistantOptions
+        .map((ScheduleStaffOption item) => item.id)
+        .toSet();
     return _selectedAssistantIds
         .map((String id) => id.trim())
-        .where((String id) => id.isNotEmpty && id != teacherId)
+        .where(
+          (String id) =>
+              id.isNotEmpty &&
+              id != teacherId &&
+              validAssistantIds.contains(id),
+        )
         .toList();
   }
 
   String get _selectedClassroomId => _selectedClassroom?.id.trim() ?? '';
+
+  List<ScheduleStaffOption> get _currentGroupAssistantOptions {
+    final String teacherId = _selectedTeacherId.trim();
+    final Map<String, ScheduleStaffOption> staffById =
+        <String, ScheduleStaffOption>{
+      for (final ScheduleStaffOption staff in _assistantOptions)
+        if (staff.id.trim().isNotEmpty) staff.id.trim(): staff,
+    };
+    final List<ScheduleStaffOption> assistants = <ScheduleStaffOption>[];
+    final Set<String> seenIds = <String>{};
+    for (final _TeacherOption teacher in _teachers) {
+      final String id = teacher.id.trim();
+      if (id.isEmpty || id == teacherId || seenIds.contains(id)) {
+        continue;
+      }
+      seenIds.add(id);
+      final ScheduleStaffOption? staff = staffById[id];
+      assistants.add(
+        ScheduleStaffOption(
+          id: id,
+          name: (staff?.name.trim().isNotEmpty == true)
+              ? staff!.name.trim()
+              : teacher.name,
+          subtitle: (staff?.subtitle.trim().isNotEmpty == true)
+              ? staff!.subtitle.trim()
+              : '当前时段组老师',
+        ),
+      );
+    }
+    return assistants;
+  }
+
+  void _pruneSelectedAssistantsToCurrentGroup() {
+    final Set<String> validAssistantIds = _currentGroupAssistantOptions
+        .map((ScheduleStaffOption item) => item.id)
+        .toSet();
+    _selectedAssistantIds = _selectedAssistantIds
+        .where((String id) => validAssistantIds.contains(id.trim()))
+        .toSet();
+  }
 
   Future<String> _readAuthToken() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -147,13 +207,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           _selectedGroupClassTarget,
           groupClassTargets,
         );
-        _selectedAssistantIds = _selectedAssistantIds
-            .where(
-              (String id) => assistantOptions.any((ScheduleStaffOption item) {
-                return item.id == id;
-              }),
-            )
-            .toSet();
+        _pruneSelectedAssistantsToCurrentGroup();
         _selectedClassroom = _preserveSelectedClassroom(
           _selectedClassroom,
           classroomOptions,
@@ -300,6 +354,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     _weekDays = _weekDaysFromData(data);
     _timeSlots = _timeSlotsFromData(data);
     _scheduleRows = _scheduleRowsFromData(data, _weekDays, _timeSlots);
+    _pruneSelectedAssistantsToCurrentGroup();
   }
 
   void _selectPeriodGroup(int index) {
@@ -487,6 +542,13 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
       unawaited(_detectScheduleAvailability());
       return;
     }
+    final bool inCurrentGroup = _currentGroupAssistantOptions.any(
+      (ScheduleStaffOption item) => item.id == id,
+    );
+    if (!inCurrentGroup) {
+      _showScheduleMessage('助教只能选择当前时段组的其他老师');
+      return;
+    }
     setState(() {
       final Set<String> next = Set<String>.from(_selectedAssistantIds);
       if (next.contains(id)) {
@@ -561,7 +623,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     if (mounted) {
       setState(() {
         _availabilityLoading = true;
-        _availabilityMessage = '正在检测本周空闲点';
+        _availabilityMessage = '检测中';
         _slotAvailability = const <String, _SlotAvailability>{};
       });
     }
@@ -623,8 +685,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
         _availabilityLoading = false;
         _slotAvailability = next;
         _availabilityMessage = invalidCount == 0
-            ? '已检测 $validCount 个可排空位'
-            : '已检测 $validCount 个可排空位，$invalidCount 个冲突';
+            ? '可排 $validCount'
+            : '可排 $validCount，冲突 $invalidCount';
       });
     } on TimetableApiException catch (error) {
       if (!mounted || sequence != _availabilitySequence) {
@@ -705,7 +767,10 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           classroomId: classroomId,
         ),
       );
-      _showScheduleMessage('排课成功，已刷新课表');
+      _showScheduleMessage(
+        '排课成功，已刷新课表',
+        tone: _ScheduleMessageTone.success,
+      );
       await _loadTimetable();
     } on TimetableApiException catch (error) {
       _showScheduleMessage(error.message);
@@ -771,19 +836,53 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     );
   }
 
-  void _showScheduleMessage(String message) {
+  void _showScheduleMessage(
+    String message, {
+    _ScheduleMessageTone tone = _ScheduleMessageTone.info,
+  }) {
     if (!mounted || message.trim().isEmpty) {
       return;
     }
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(
-        SnackBar(
-          content: Text(message),
-          behavior: SnackBarBehavior.floating,
-          duration: const Duration(milliseconds: 1800),
-        ),
+    _scheduleMessageTimer?.cancel();
+    _scheduleMessageText = message.trim();
+    _scheduleMessageTone = tone;
+    final OverlayState overlay = Overlay.of(context, rootOverlay: true);
+    if (_scheduleMessageEntry == null) {
+      _scheduleMessageVisible = false;
+      _scheduleMessageEntry = OverlayEntry(
+        builder: (BuildContext context) {
+          return _ScheduleTopMessage(
+            visible: _scheduleMessageVisible,
+            message: _scheduleMessageText,
+            tone: _scheduleMessageTone,
+          );
+        },
       );
+      overlay.insert(_scheduleMessageEntry!);
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || _scheduleMessageEntry == null) {
+          return;
+        }
+        _scheduleMessageVisible = true;
+        _scheduleMessageEntry?.markNeedsBuild();
+      });
+    } else {
+      _scheduleMessageVisible = true;
+      _scheduleMessageEntry!.markNeedsBuild();
+    }
+    _scheduleMessageTimer = Timer(const Duration(milliseconds: 1900), () {
+      _scheduleMessageVisible = false;
+      _scheduleMessageEntry?.markNeedsBuild();
+      _scheduleMessageTimer = Timer(
+        const Duration(milliseconds: 180),
+        _removeScheduleMessage,
+      );
+    });
+  }
+
+  void _removeScheduleMessage() {
+    _scheduleMessageEntry?.remove();
+    _scheduleMessageEntry = null;
   }
 
   @override
@@ -791,6 +890,15 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     final _TeacherOption teacher = _teachers.isEmpty
         ? const _TeacherOption(id: '', name: '当前老师', label: '当前老师')
         : _teachers[_teacherIndex.clamp(0, _teachers.length - 1)];
+    final List<ScheduleStaffOption> currentGroupAssistantOptions =
+        _currentGroupAssistantOptions;
+    final Set<String> currentGroupSelectedAssistantIds = _selectedAssistantIds
+        .where(
+          (String id) => currentGroupAssistantOptions.any(
+            (ScheduleStaffOption item) => item.id == id,
+          ),
+        )
+        .toSet();
     return Scaffold(
       body: _SmartTimetableViewport(
         child: _SmartTimetableScreen(
@@ -805,9 +913,9 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           selectedScheduleTarget: _selectedScheduleTarget,
           oneToOneTargets: _oneToOneTargets,
           groupClassTargets: _groupClassTargets,
-          assistantOptions: _assistantOptions,
+          assistantOptions: currentGroupAssistantOptions,
           classroomOptions: _classroomOptions,
-          selectedAssistantIds: _selectedAssistantIds,
+          selectedAssistantIds: currentGroupSelectedAssistantIds,
           selectedClassroom: _selectedClassroom,
           scheduleOptionsLoading: _scheduleOptionsLoading,
           scheduleOptionsError: _scheduleOptionsError,
@@ -1336,9 +1444,6 @@ class _SmartTimetableScreen extends StatelessWidget {
                       compact: compact,
                       scheduleMode: scheduleMode,
                       selectedScheduleTarget: selectedScheduleTarget,
-                      selectedAssistantIds: selectedAssistantIds,
-                      assistantOptions: assistantOptions,
-                      selectedClassroom: selectedClassroom,
                       schedulePanelOpen: schedulePanelOpen,
                       availabilityLoading: availabilityLoading,
                       availabilityMessage: availabilityMessage,
@@ -1652,9 +1757,6 @@ class _TimetableSubBar extends StatelessWidget {
     required this.compact,
     required this.scheduleMode,
     required this.selectedScheduleTarget,
-    required this.selectedAssistantIds,
-    required this.assistantOptions,
-    required this.selectedClassroom,
     required this.schedulePanelOpen,
     required this.availabilityLoading,
     required this.availabilityMessage,
@@ -1672,9 +1774,6 @@ class _TimetableSubBar extends StatelessWidget {
   final bool compact;
   final _ScheduleMode scheduleMode;
   final ScheduleTargetOption? selectedScheduleTarget;
-  final Set<String> selectedAssistantIds;
-  final List<ScheduleStaffOption> assistantOptions;
-  final ScheduleClassroomOption? selectedClassroom;
   final bool schedulePanelOpen;
   final bool availabilityLoading;
   final String? availabilityMessage;
@@ -1700,9 +1799,6 @@ class _TimetableSubBar extends StatelessWidget {
               compact: compact,
               mode: scheduleMode,
               selectedTarget: selectedScheduleTarget,
-              selectedAssistantIds: selectedAssistantIds,
-              assistantOptions: assistantOptions,
-              selectedClassroom: selectedClassroom,
               panelOpen: schedulePanelOpen,
               availabilityLoading: availabilityLoading,
               availabilityMessage: availabilityMessage,
@@ -2987,9 +3083,6 @@ class _ScheduleComposerBar extends StatelessWidget {
     required this.compact,
     required this.mode,
     required this.selectedTarget,
-    required this.selectedAssistantIds,
-    required this.assistantOptions,
-    required this.selectedClassroom,
     required this.panelOpen,
     required this.availabilityLoading,
     required this.availabilityMessage,
@@ -3002,9 +3095,6 @@ class _ScheduleComposerBar extends StatelessWidget {
   final bool compact;
   final _ScheduleMode mode;
   final ScheduleTargetOption? selectedTarget;
-  final Set<String> selectedAssistantIds;
-  final List<ScheduleStaffOption> assistantOptions;
-  final ScheduleClassroomOption? selectedClassroom;
   final bool panelOpen;
   final bool availabilityLoading;
   final String? availabilityMessage;
@@ -3023,7 +3113,8 @@ class _ScheduleComposerBar extends StatelessWidget {
           onChanged: onModeChanged,
         ),
         SizedBox(width: compact ? 7 : 8),
-        Expanded(
+        SizedBox(
+          width: compact ? 184 : 230,
           child: _ScheduleTargetSelector(
             mode: mode,
             target: selectedTarget,
@@ -3032,50 +3123,23 @@ class _ScheduleComposerBar extends StatelessWidget {
             onClear: onTargetCleared,
           ),
         ),
-        SizedBox(width: compact ? 7 : 8),
-        _ScheduleInfoChip(
-          icon: Icons.group_outlined,
-          label: _assistantSummary(),
-          maxLabelWidth: compact ? 44 : 64,
-          onTap: onPanelToggle,
-        ),
-        SizedBox(width: compact ? 6 : 8),
-        _ScheduleInfoChip(
-          icon: Icons.meeting_room_outlined,
-          label: selectedClassroom?.name ?? '教室',
-          maxLabelWidth: compact ? 44 : 64,
-          onTap: onPanelToggle,
-        ),
-        if (!compact &&
-            (availabilityMessage != null || availabilityLoading)) ...<Widget>[
+        if (!compact) ...<Widget>[
           const SizedBox(width: 8),
-          _AvailabilityStatusPill(
-            loading: availabilityLoading,
-            message: availabilityMessage ?? '正在检测本周空闲点',
-            onTap: onAvailabilityRefresh,
+          SizedBox(
+            width: 168,
+            child: selectedTarget == null &&
+                    availabilityMessage == null &&
+                    !availabilityLoading
+                ? const SizedBox.shrink()
+                : _AvailabilityStatusPill(
+                    loading: availabilityLoading,
+                    message: availabilityMessage ?? '检测中',
+                    onTap: onAvailabilityRefresh,
+                  ),
           ),
         ],
       ],
     );
-  }
-
-  String _assistantSummary() {
-    if (selectedAssistantIds.isEmpty) {
-      return '助教';
-    }
-    final List<String> names = assistantOptions
-        .where((ScheduleStaffOption item) {
-          return selectedAssistantIds.contains(item.id);
-        })
-        .map((ScheduleStaffOption item) => item.name)
-        .toList();
-    if (names.isEmpty) {
-      return '${selectedAssistantIds.length}助教';
-    }
-    if (names.length == 1) {
-      return names.first;
-    }
-    return '${names.first}+${names.length - 1}';
   }
 }
 
@@ -3244,53 +3308,6 @@ class _ScheduleTargetSelector extends StatelessWidget {
   }
 }
 
-class _ScheduleInfoChip extends StatelessWidget {
-  const _ScheduleInfoChip({
-    required this.icon,
-    required this.label,
-    required this.maxLabelWidth,
-    required this.onTap,
-  });
-
-  final IconData icon;
-  final String label;
-  final double maxLabelWidth;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return _ShellBox(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      borderRadius: 11,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(11),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, color: _SmartColors.text, size: 15),
-            const SizedBox(width: 6),
-            ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxLabelWidth),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _SmartColors.text,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
 class _AvailabilityStatusPill extends StatelessWidget {
   const _AvailabilityStatusPill({
     required this.loading,
@@ -3304,8 +3321,8 @@ class _AvailabilityStatusPill extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 190),
+    return SizedBox(
+      width: double.infinity,
       child: InkWell(
         onTap: loading ? null : onTap,
         borderRadius: BorderRadius.circular(999),
@@ -3321,7 +3338,6 @@ class _AvailabilityStatusPill extends StatelessWidget {
             borderRadius: BorderRadius.circular(999),
           ),
           child: Row(
-            mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               if (loading)
                 const SizedBox(
@@ -3339,23 +3355,140 @@ class _AvailabilityStatusPill extends StatelessWidget {
                   size: 15,
                 ),
               const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  message,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color:
-                        loading ? _SmartColors.orangeDeep : _SmartColors.green,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  ),
+              Expanded(
+                child: _AvailabilityStatusText(
+                  loading: loading,
+                  message: message,
                 ),
               ),
             ],
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ScheduleTopMessage extends StatelessWidget {
+  const _ScheduleTopMessage({
+    required this.visible,
+    required this.message,
+    required this.tone,
+  });
+
+  final bool visible;
+  final String message;
+  final _ScheduleMessageTone tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: SafeArea(
+        bottom: false,
+        child: Align(
+          alignment: Alignment.topCenter,
+          child: AnimatedSlide(
+            offset: visible ? Offset.zero : const Offset(0, -.75),
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            child: AnimatedOpacity(
+              opacity: visible ? 1 : 0,
+              duration: const Duration(milliseconds: 160),
+              curve: Curves.easeOutCubic,
+              child: Container(
+                key: const ValueKey<String>('schedule-top-message'),
+                constraints: const BoxConstraints(maxWidth: 430),
+                margin: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.fromLTRB(14, 10, 16, 10),
+                decoration: BoxDecoration(
+                  color: tone.background,
+                  border: Border.all(color: tone.border),
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x1A4A2F22),
+                      blurRadius: 18,
+                      offset: Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Icon(tone.icon, color: tone.foreground, size: 18),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        message,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: tone.textColor,
+                          fontSize: 13,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AvailabilityStatusText extends StatelessWidget {
+  const _AvailabilityStatusText({
+    required this.loading,
+    required this.message,
+  });
+
+  final bool loading;
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    final TextStyle baseStyle = TextStyle(
+      color: loading ? _SmartColors.orangeDeep : _SmartColors.green,
+      fontSize: 11,
+      fontWeight: FontWeight.w900,
+    );
+    if (loading) {
+      return Text(
+        message,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: baseStyle,
+      );
+    }
+
+    final int conflictIndex = message.indexOf('，冲突');
+    if (conflictIndex < 0) {
+      return Text(
+        message,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: baseStyle,
+      );
+    }
+
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: message.substring(0, conflictIndex + 1)),
+          TextSpan(
+            text: message.substring(conflictIndex + 1),
+            style: baseStyle.copyWith(color: _SmartColors.danger),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: baseStyle,
     );
   }
 }
@@ -3720,7 +3853,7 @@ class _ScheduleAssistantColumn extends StatelessWidget {
     return _PanelSection(
       title: '上课助教',
       child: assistants.isEmpty
-          ? const _PanelEmptyText('暂无助教')
+          ? const _PanelEmptyText('当前组暂无其他老师')
           : ListView.separated(
               physics: const BouncingScrollPhysics(),
               itemBuilder: (BuildContext context, int index) {
@@ -3760,7 +3893,7 @@ class _ScheduleClassroomColumn extends StatelessWidget {
           if (index == 0) {
             return _ScheduleCheckItem(
               title: '不指定教室',
-              subtitle: '仅校验老师/学员/助教',
+              subtitle: '不校验教室占用冲突',
               selected: selectedClassroom == null,
               onTap: () => onSelected(null),
             );
@@ -3768,7 +3901,9 @@ class _ScheduleClassroomColumn extends StatelessWidget {
           final ScheduleClassroomOption classroom = classrooms[index - 1];
           return _ScheduleCheckItem(
             title: classroom.name,
-            subtitle: classroom.subtitle,
+            subtitle: classroom.subtitle.trim().isEmpty
+                ? '校验教室占用冲突'
+                : '${classroom.subtitle} · 校验教室占用',
             selected: selectedClassroom?.id == classroom.id,
             onTap: () => onSelected(classroom),
           );
@@ -4117,6 +4252,58 @@ class _DiagonalPainter extends CustomPainter {
 enum _ScheduleMode {
   oneToOne,
   groupClass,
+}
+
+enum _ScheduleMessageTone {
+  info,
+  success,
+}
+
+extension _ScheduleMessageToneView on _ScheduleMessageTone {
+  IconData get icon {
+    switch (this) {
+      case _ScheduleMessageTone.info:
+        return Icons.info_outline_rounded;
+      case _ScheduleMessageTone.success:
+        return Icons.check_circle_outline_rounded;
+    }
+  }
+
+  Color get foreground {
+    switch (this) {
+      case _ScheduleMessageTone.info:
+        return _SmartColors.orangeDeep;
+      case _ScheduleMessageTone.success:
+        return _SmartColors.green;
+    }
+  }
+
+  Color get textColor {
+    switch (this) {
+      case _ScheduleMessageTone.info:
+        return _SmartColors.ink;
+      case _ScheduleMessageTone.success:
+        return const Color(0xFF426D44);
+    }
+  }
+
+  Color get background {
+    switch (this) {
+      case _ScheduleMessageTone.info:
+        return const Color(0xFFFFF8EE);
+      case _ScheduleMessageTone.success:
+        return const Color(0xFFF0FAEF);
+    }
+  }
+
+  Color get border {
+    switch (this) {
+      case _ScheduleMessageTone.info:
+        return const Color(0xFFF0DDC9);
+      case _ScheduleMessageTone.success:
+        return const Color(0xFFCBEACB);
+    }
+  }
 }
 
 class _ScheduleCellSlot {

@@ -234,12 +234,21 @@ void main() {
     await tester
         .tap(find.byKey(const ValueKey<String>('schedule-target-selector')));
     await tester.pumpAndSettle();
+    expect(find.text('黄雨萱老师'), findsOneWidget);
+    expect(find.text('助教A'), findsNothing);
+    expect(find.text('不校验教室占用冲突'), findsOneWidget);
+    expect(find.text('一楼 · 校验教室占用'), findsOneWidget);
+
+    await tester.tap(find.text('A101'));
+    await tester.pumpAndSettle();
+
     await tester.tap(
       find.byKey(const ValueKey<String>('schedule-target-one-to-one-a')),
     );
     await tester.pumpAndSettle();
 
     expect(timetableClient.validateCalls, greaterThan(0));
+    expect(timetableClient.lastValidatedClassroomId, '101');
     expect(find.text('空闲时段(可排)'), findsWidgets);
 
     await tester
@@ -260,6 +269,12 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(timetableClient.createCalls, 1);
+    expect(timetableClient.lastCreatedClassroomId, '101');
+    expect(find.byType(SnackBar), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('schedule-top-message')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('smart timetable blocks invalid availability slots',
@@ -502,6 +517,8 @@ class _FakeTimetableClient implements TimetableClient {
   final bool availabilityValid;
   int validateCalls = 0;
   int createCalls = 0;
+  String lastValidatedClassroomId = '';
+  String lastCreatedClassroomId = '';
 
   @override
   Future<TimetableData> fetchTimetable(
@@ -661,6 +678,7 @@ class _FakeTimetableClient implements TimetableClient {
     required List<ScheduleSlotRequest> slots,
   }) async {
     validateCalls += 1;
+    lastValidatedClassroomId = classroomId;
     return ScheduleValidationResult(
       valid: availabilityValid,
       message: availabilityValid ? '' : '老师冲突',
@@ -690,6 +708,7 @@ class _FakeTimetableClient implements TimetableClient {
     required ScheduleSlotRequest slot,
   }) async {
     createCalls += 1;
+    lastCreatedClassroomId = classroomId;
     return 1;
   }
 }
