@@ -1,6 +1,7 @@
 import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
+import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
 
@@ -46,6 +48,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
     await tester.pumpAndSettle();
@@ -103,6 +106,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
     await tester.pumpAndSettle();
@@ -115,6 +119,8 @@ void main() {
     expect(find.text('时间课表'), findsNothing);
     expect(find.text('按固定时段查看老师一周排课'), findsNothing);
     expect(find.text('陈思语老师'), findsOneWidget);
+    expect(find.text('A组'), findsOneWidget);
+    expect(find.text('C组'), findsOneWidget);
 
     final Rect timeRailRect =
         tester.getRect(find.byKey(const ValueKey<String>('smart-time-rail')));
@@ -161,16 +167,39 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('陈思语老师'));
+    await tester.tap(find.text('陈思语老师').first);
     await tester.pumpAndSettle();
 
     expect(find.text('切换老师课表'), findsOneWidget);
-    expect(find.text('周子涵老师'), findsOneWidget);
+    expect(find.text('周子涵老师'), findsNothing);
+    expect(find.text('黄雨萱老师'), findsOneWidget);
 
-    await tester.tap(find.text('周子涵老师'));
+    await tester.tap(find.text('黄雨萱老师'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('黄雨萱老师'), findsOneWidget);
+    expect(find.text('09:15 - 09:55'), findsOneWidget);
+    expect(find.text('切换老师课表'), findsNothing);
+
+    await tester.tap(find.text('C组'));
     await tester.pumpAndSettle();
 
     expect(find.text('周子涵老师'), findsOneWidget);
+    expect(find.text('08:30 - 09:10'), findsOneWidget);
+    expect(find.text('09:15 - 09:55'), findsNothing);
+
+    await tester.tap(find.text('周子涵老师').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('切换老师课表'), findsOneWidget);
+    expect(find.text('陈思语老师'), findsNothing);
+
+    await tester.tap(find.text('周子涵老师').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('周子涵老师'), findsOneWidget);
+    expect(find.text('08:30 - 09:10'), findsOneWidget);
+    expect(find.text('09:15 - 09:55'), findsNothing);
     expect(find.text('切换老师课表'), findsNothing);
 
     expect(find.byKey(const ValueKey<String>('lesson-0-0')), findsOneWidget);
@@ -195,6 +224,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
 
@@ -219,6 +249,7 @@ void main() {
       AssessmentPadApp(
         authClient: _MultiInstitutionAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
 
@@ -247,6 +278,7 @@ void main() {
       AssessmentPadApp(
         authClient: _PasswordCheckingAuthClient(),
         homeClient: _FakeHomeClient(),
+        timetableClient: _FakeTimetableClient(),
       ),
     );
 
@@ -268,6 +300,7 @@ void main() {
         AssessmentPadApp(
           authClient: _FakeAuthClient(),
           homeClient: _FakeHomeClient(),
+          timetableClient: _FakeTimetableClient(),
         ),
       );
 
@@ -386,6 +419,283 @@ class _FakeHomeClient implements HomeClient {
     );
   }
 }
+
+class _FakeTimetableClient implements TimetableClient {
+  @override
+  Future<TimetableData> fetchTimetable(
+    String token, {
+    required String startDate,
+    required String endDate,
+    String teacherId = '',
+    String periodGroupId = '',
+  }) async {
+    final String selectedGroupId =
+        periodGroupId.trim().isEmpty ? 'group-a' : periodGroupId.trim();
+    final Set<String> groupTeacherIds =
+        selectedGroupId == 'group-c' ? <String>{'2'} : <String>{'1', '3'};
+    final String requestedTeacherId = teacherId.trim();
+    final String selectedTeacherId =
+        groupTeacherIds.contains(requestedTeacherId)
+            ? requestedTeacherId
+            : groupTeacherIds.first;
+    final String selectedTeacherName = switch (selectedTeacherId) {
+      '2' => '周子涵老师',
+      '3' => '黄雨萱老师',
+      _ => '陈思语老师',
+    };
+    return TimetableData(
+      startDate: startDate,
+      endDate: endDate,
+      selectedPeriodGroupId: selectedGroupId,
+      selectedTeacherId: selectedTeacherId,
+      selectedTeacherName: selectedTeacherName,
+      periodGroups: const <TimetablePeriodGroup>[
+        TimetablePeriodGroup(
+          id: 'group-a',
+          name: 'A组',
+          sort: 1,
+          startTime: '09:15',
+          endTime: '19:40',
+          lessonCount: 10,
+          teacherIds: <String>['1', '3'],
+        ),
+        TimetablePeriodGroup(
+          id: 'group-c',
+          name: 'C组',
+          sort: 2,
+          startTime: '08:30',
+          endTime: '18:50',
+          lessonCount: 10,
+          teacherIds: <String>['2'],
+        ),
+      ],
+      teachers: selectedGroupId == 'group-c'
+          ? const <TimetableTeacher>[
+              TimetableTeacher(id: '2', name: '周子涵老师'),
+            ]
+          : const <TimetableTeacher>[
+              TimetableTeacher(id: '1', name: '陈思语老师', current: true),
+              TimetableTeacher(id: '3', name: '黄雨萱老师'),
+            ],
+      days: _fakeTimetableDays(startDate),
+      slots: _fakeTimetableSlotsForGroup(selectedGroupId),
+      items: <TimetableItem>[
+        TimetableItem(
+          id: 'schedule-a',
+          date: startDate,
+          startTime: selectedGroupId == 'group-c' ? '08:30' : '09:15',
+          endTime: selectedGroupId == 'group-c' ? '09:10' : '09:55',
+          lessonName: '感统训练',
+          personName: '陈小雨',
+          classroomName: 'A101',
+          teacherId: selectedTeacherId,
+          teacherName: selectedTeacherName,
+          status: 'unsigned',
+          statusText: '未点名',
+        ),
+        TimetableItem(
+          id: 'schedule-b',
+          date: _offsetDate(startDate, 2),
+          startTime: selectedGroupId == 'group-c' ? '09:20' : '10:05',
+          endTime: selectedGroupId == 'group-c' ? '10:00' : '10:45',
+          lessonName: '语言认知课',
+          personName: '星星班',
+          classroomName: 'B203',
+          teacherId: selectedTeacherId,
+          teacherName: selectedTeacherName,
+          status: 'signed',
+          statusText: '已点名',
+        ),
+      ],
+      summary: const TimetableSummary(
+        total: 2,
+        unsigned: 1,
+        signed: 1,
+      ),
+    );
+  }
+}
+
+List<TimetableDay> _fakeTimetableDays(String startDate) {
+  final DateTime start = DateTime.parse(startDate);
+  return List<TimetableDay>.generate(7, (int index) {
+    final DateTime date = start.add(Duration(days: index));
+    return TimetableDay(
+      date: _fakeDateText(date),
+      label: _fakeWeekdayShort(date.weekday),
+      weekday: _fakeWeekdayFull(date.weekday),
+    );
+  });
+}
+
+String _offsetDate(String startDate, int offset) {
+  return _fakeDateText(DateTime.parse(startDate).add(Duration(days: offset)));
+}
+
+String _fakeDateText(DateTime date) {
+  return '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')}';
+}
+
+String _fakeWeekdayShort(int weekday) {
+  const List<String> labels = <String>[
+    '周一',
+    '周二',
+    '周三',
+    '周四',
+    '周五',
+    '周六',
+    '周日',
+  ];
+  return labels[(weekday - 1).clamp(0, 6)];
+}
+
+String _fakeWeekdayFull(int weekday) {
+  const List<String> labels = <String>[
+    '星期一',
+    '星期二',
+    '星期三',
+    '星期四',
+    '星期五',
+    '星期六',
+    '星期日',
+  ];
+  return labels[(weekday - 1).clamp(0, 6)];
+}
+
+List<TimetableSlot> _fakeTimetableSlotsForGroup(String periodGroupId) {
+  if (periodGroupId == 'group-c') {
+    return _fakeTimetableSlots830;
+  }
+  return _fakeTimetableSlots915;
+}
+
+const List<TimetableSlot> _fakeTimetableSlots915 = <TimetableSlot>[
+  TimetableSlot(
+    title: '第一节',
+    time: '09:15 - 09:55',
+    startTime: '09:15',
+    endTime: '09:55',
+  ),
+  TimetableSlot(
+    title: '第二节',
+    time: '10:05 - 10:45',
+    startTime: '10:05',
+    endTime: '10:45',
+  ),
+  TimetableSlot(
+    title: '第三节',
+    time: '10:55 - 11:35',
+    startTime: '10:55',
+    endTime: '11:35',
+  ),
+  TimetableSlot(
+    title: '第四节',
+    time: '14:00 - 14:40',
+    startTime: '14:00',
+    endTime: '14:40',
+  ),
+  TimetableSlot(
+    title: '第五节',
+    time: '14:50 - 15:30',
+    startTime: '14:50',
+    endTime: '15:30',
+  ),
+  TimetableSlot(
+    title: '第六节',
+    time: '15:40 - 16:20',
+    startTime: '15:40',
+    endTime: '16:20',
+  ),
+  TimetableSlot(
+    title: '第七节',
+    time: '16:30 - 17:10',
+    startTime: '16:30',
+    endTime: '17:10',
+  ),
+  TimetableSlot(
+    title: '第八节',
+    time: '17:20 - 18:00',
+    startTime: '17:20',
+    endTime: '18:00',
+  ),
+  TimetableSlot(
+    title: '第九节',
+    time: '18:10 - 18:50',
+    startTime: '18:10',
+    endTime: '18:50',
+  ),
+  TimetableSlot(
+    title: '第十节',
+    time: '19:00 - 19:40',
+    startTime: '19:00',
+    endTime: '19:40',
+  ),
+];
+
+const List<TimetableSlot> _fakeTimetableSlots830 = <TimetableSlot>[
+  TimetableSlot(
+    title: '第一节',
+    time: '08:30 - 09:10',
+    startTime: '08:30',
+    endTime: '09:10',
+  ),
+  TimetableSlot(
+    title: '第二节',
+    time: '09:20 - 10:00',
+    startTime: '09:20',
+    endTime: '10:00',
+  ),
+  TimetableSlot(
+    title: '第三节',
+    time: '10:10 - 10:50',
+    startTime: '10:10',
+    endTime: '10:50',
+  ),
+  TimetableSlot(
+    title: '第四节',
+    time: '11:00 - 11:40',
+    startTime: '11:00',
+    endTime: '11:40',
+  ),
+  TimetableSlot(
+    title: '第五节',
+    time: '14:00 - 14:40',
+    startTime: '14:00',
+    endTime: '14:40',
+  ),
+  TimetableSlot(
+    title: '第六节',
+    time: '14:50 - 15:30',
+    startTime: '14:50',
+    endTime: '15:30',
+  ),
+  TimetableSlot(
+    title: '第七节',
+    time: '15:40 - 16:20',
+    startTime: '15:40',
+    endTime: '16:20',
+  ),
+  TimetableSlot(
+    title: '第八节',
+    time: '16:30 - 17:10',
+    startTime: '16:30',
+    endTime: '17:10',
+  ),
+  TimetableSlot(
+    title: '第九节',
+    time: '17:20 - 18:00',
+    startTime: '17:20',
+    endTime: '18:00',
+  ),
+  TimetableSlot(
+    title: '第十节',
+    time: '18:10 - 18:50',
+    startTime: '18:10',
+    endTime: '18:50',
+  ),
+];
 
 class _MultiInstitutionAuthClient extends _FakeAuthClient {
   @override

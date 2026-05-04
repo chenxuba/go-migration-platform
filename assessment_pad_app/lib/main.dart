@@ -9,6 +9,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'auth_client.dart';
 import 'home_client.dart';
 import 'smart_timetable_page.dart';
+import 'timetable_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -42,11 +43,13 @@ class AssessmentPadApp extends StatelessWidget {
   const AssessmentPadApp({
     this.authClient = const IamAuthClient(),
     this.homeClient = const ApiHomeClient(),
+    this.timetableClient = const ApiTimetableClient(),
     super.key,
   });
 
   final AuthClient authClient;
   final HomeClient homeClient;
+  final TimetableClient timetableClient;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +86,7 @@ class AssessmentPadApp extends StatelessWidget {
       case '/smart-timetable':
         return MaterialPageRoute<void>(
           settings: settings,
-          builder: (_) => const SmartTimetablePage(),
+          builder: (_) => SmartTimetablePage(timetableClient: timetableClient),
         );
       default:
         return MaterialPageRoute<void>(

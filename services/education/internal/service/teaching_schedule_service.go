@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"sort"
 	"strconv"
 	"strings"
@@ -173,6 +174,512 @@ func (svc *Service) ListTeachingSchedules(userID int64, query model.TeachingSche
 		schedules = filterTeachingSchedulesByConflictTypes(schedules, query.ConflictTypes)
 	}
 	return schedules, nil
+}
+
+func (svc *Service) GetPadTimetable(userID int64, query model.PadTimetableQueryDTO) (model.PadTimetableVO, error) {
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.PadTimetableVO{}, errors.New("no institution context")
+		}
+		return model.PadTimetableVO{}, err
+	}
+
+	startDate, endDate, err := normalizePadTimetableDateRange(query.StartDate, query.EndDate)
+	if err != nil {
+		return model.PadTimetableVO{}, err
+	}
+
+	allTeachers, err := svc.repo.ListInstUsersForScheduleMatrix(ctx, instID)
+	if err != nil {
+		return model.PadTimetableVO{}, err
+	}
+	currentTeacherID, _ := svc.repo.FindInstUserIDByUserID(ctx, userID)
+
+	periodGroups := svc.padTimetableConfiguredGroups(ctx, instID, startDate)
+	preferredGroupTeacherID := currentTeacherID
+	if strings.TrimSpace(query.PeriodGroupUUID) == "" && query.TeacherID > 0 {
+		preferredGroupTeacherID = query.TeacherID
+	}
+	selectedGroupIndex := selectPadTimetablePeriodGroupIndex(periodGroups, query.PeriodGroupUUID, preferredGroupTeacherID)
+	selectedGroupUUID := padTimetableDefaultPeriodGroupID
+	var selectedGroup *smartExportGroup
+	if selectedGroupIndex >= 0 && selectedGroupIndex < len(periodGroups) {
+		selectedGroup = &periodGroups[selectedGroupIndex]
+		selectedGroupUUID = strings.TrimSpace(selectedGroup.ID)
+	}
+	if selectedGroupUUID == "" {
+		selectedGroupUUID = padTimetableDefaultPeriodGroupID
+	}
+
+	teacherIDs := []int64(nil)
+	configuredSlots := []smartExportSlot(nil)
+	if selectedGroup != nil {
+		teacherIDs = uniquePositiveTeacherIDs(selectedGroup.BoundTeacherIDs)
+		configuredSlots = selectedGroup.Slots
+	}
+	teachers := allTeachers
+	if selectedGroup != nil {
+		teachers, err = svc.appendMatrixRosterUsersByIDs(ctx, instID, allTeachers, teacherIDs)
+		if err != nil {
+			return model.PadTimetableVO{}, err
+		}
+		teachers = filterPadTimetableRosterByTeacherIDs(teachers, teacherIDs)
+	}
+	if selectedGroup == nil && currentTeacherID > 0 {
+		teachers, err = svc.appendMatrixRosterUsersByIDs(ctx, instID, teachers, []int64{currentTeacherID})
+		if err != nil {
+			return model.PadTimetableVO{}, err
+		}
+	}
+
+	selectedTeacherID := selectPadTimetableTeacherID(teachers, query.TeacherID, currentTeacherID)
+
+	schedules := []model.TeachingScheduleVO{}
+	if selectedTeacherID > 0 {
+		schedules, err = svc.repo.ListTeachingSchedules(ctx, instID, model.TeachingScheduleListQueryDTO{
+			StartDate:          startDate,
+			EndDate:            endDate,
+			SortDirection:      "asc",
+			ScheduleTeacherIDs: []int64{selectedTeacherID},
+		})
+		if err != nil {
+			return model.PadTimetableVO{}, err
+		}
+		if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+			return model.PadTimetableVO{}, err
+		}
+		if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, model.TeachingScheduleListQueryDTO{
+			StartDate:          startDate,
+			EndDate:            endDate,
+			ScheduleTeacherIDs: []int64{selectedTeacherID},
+		}, schedules); err != nil {
+			return model.PadTimetableVO{}, err
+		}
+	}
+
+	teacherVOs, selectedTeacherName := padTimetableTeachers(teachers, currentTeacherID, selectedTeacherID)
+	return model.PadTimetableVO{
+		StartDate:               startDate,
+		EndDate:                 endDate,
+		SelectedPeriodGroupUUID: selectedGroupUUID,
+		SelectedTeacherID:       selectedTeacherID,
+		SelectedTeacherName:     selectedTeacherName,
+		PeriodGroups:            padTimetablePeriodGroups(periodGroups, allTeachers),
+		Teachers:                teacherVOs,
+		Days:                    padTimetableDays(startDate, endDate),
+		Slots:                   padTimetableSlots(configuredSlots),
+		Items:                   padTimetableItems(schedules),
+		Summary:                 padTimetableSummary(schedules),
+	}, nil
+}
+
+func normalizePadTimetableDateRange(startDate, endDate string) (string, string, error) {
+	loc := padHomeLocation()
+	startDate = strings.TrimSpace(startDate)
+	endDate = strings.TrimSpace(endDate)
+	if startDate == "" {
+		now := time.Now().In(loc)
+		weekday := int(now.Weekday())
+		if weekday == 0 {
+			weekday = 7
+		}
+		startDate = now.AddDate(0, 0, 1-weekday).Format("2006-01-02")
+	}
+	start, err := time.ParseInLocation("2006-01-02", startDate, loc)
+	if err != nil {
+		return "", "", errors.New("startDate 格式须为 YYYY-MM-DD")
+	}
+	if endDate == "" {
+		endDate = start.AddDate(0, 0, 6).Format("2006-01-02")
+	}
+	end, err := time.ParseInLocation("2006-01-02", endDate, loc)
+	if err != nil {
+		return "", "", errors.New("endDate 格式须为 YYYY-MM-DD")
+	}
+	if end.Before(start) {
+		return "", "", errors.New("endDate 不能早于 startDate")
+	}
+	return start.Format("2006-01-02"), end.Format("2006-01-02"), nil
+}
+
+func padTimetableTeachers(roster []model.InstUserScheduleRosterItem, currentID, selectedID int64) ([]model.PadTimetableTeacher, string) {
+	items := make([]model.PadTimetableTeacher, 0, len(roster))
+	selectedName := ""
+	seen := make(map[int64]struct{}, len(roster))
+	for _, teacher := range roster {
+		if teacher.ID <= 0 {
+			continue
+		}
+		if _, ok := seen[teacher.ID]; ok {
+			continue
+		}
+		seen[teacher.ID] = struct{}{}
+		name := strings.TrimSpace(teacher.Name)
+		if name == "" {
+			name = "未命名老师"
+		}
+		if teacher.ID == selectedID {
+			selectedName = name
+		}
+		items = append(items, model.PadTimetableTeacher{
+			ID:      teacher.ID,
+			Name:    name,
+			Current: teacher.ID == currentID,
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].ID == selectedID {
+			return true
+		}
+		if items[j].ID == selectedID {
+			return false
+		}
+		if items[i].Current != items[j].Current {
+			return items[i].Current
+		}
+		return items[i].ID < items[j].ID
+	})
+	if selectedName == "" && len(items) > 0 {
+		selectedName = items[0].Name
+	}
+	return items, selectedName
+}
+
+func padTimetableRosterContains(roster []model.InstUserScheduleRosterItem, teacherID int64) bool {
+	for _, teacher := range roster {
+		if teacher.ID == teacherID {
+			return true
+		}
+	}
+	return false
+}
+
+func padTimetableDays(startDate, endDate string) []model.PadTimetableDay {
+	loc := padHomeLocation()
+	start, err := time.ParseInLocation("2006-01-02", startDate, loc)
+	if err != nil {
+		return nil
+	}
+	end, err := time.ParseInLocation("2006-01-02", endDate, loc)
+	if err != nil {
+		return nil
+	}
+	items := make([]model.PadTimetableDay, 0, 7)
+	for day := start; !day.After(end); day = day.AddDate(0, 0, 1) {
+		items = append(items, model.PadTimetableDay{
+			Date:    day.Format("2006-01-02"),
+			Label:   chineseWeekdayShort(day.Weekday()),
+			Weekday: chineseWeekday(day.Weekday()),
+		})
+	}
+	return items
+}
+
+func chineseWeekdayShort(weekday time.Weekday) string {
+	switch weekday {
+	case time.Monday:
+		return "周一"
+	case time.Tuesday:
+		return "周二"
+	case time.Wednesday:
+		return "周三"
+	case time.Thursday:
+		return "周四"
+	case time.Friday:
+		return "周五"
+	case time.Saturday:
+		return "周六"
+	default:
+		return "周日"
+	}
+}
+
+const padTimetableDefaultPeriodGroupID = "default"
+
+func (svc *Service) padTimetableConfiguredGroups(ctx context.Context, instID int64, startDate string) []smartExportGroup {
+	loc := padHomeLocation()
+	targetDate, err := time.ParseInLocation("2006-01-02", startDate, loc)
+	if err != nil {
+		targetDate = time.Now().In(loc)
+	}
+	cfg, err := svc.repo.GetInstPeriodConfigJSONForDate(ctx, instID, targetDate)
+	if err != nil {
+		return nil
+	}
+	groups := parseSmartExportGroups(cfg)
+	if len(groups) == 0 {
+		return nil
+	}
+	return groups
+}
+
+func selectPadTimetablePeriodGroupIndex(groups []smartExportGroup, requestedUUID string, currentTeacherID int64) int {
+	if len(groups) == 0 {
+		return -1
+	}
+	requestedUUID = strings.TrimSpace(requestedUUID)
+	if requestedUUID != "" && requestedUUID != padTimetableDefaultPeriodGroupID {
+		for index, group := range groups {
+			if strings.TrimSpace(group.ID) == requestedUUID {
+				return index
+			}
+		}
+	}
+	if currentTeacherID > 0 {
+		for index, group := range groups {
+			if containsTeacherID(group.BoundTeacherIDs, currentTeacherID) {
+				return index
+			}
+		}
+	}
+	return 0
+}
+
+func selectPadTimetableTeacherID(roster []model.InstUserScheduleRosterItem, requestedID, currentID int64) int64 {
+	if requestedID > 0 && padTimetableRosterContains(roster, requestedID) {
+		return requestedID
+	}
+	if currentID > 0 && padTimetableRosterContains(roster, currentID) {
+		return currentID
+	}
+	if len(roster) == 0 {
+		return 0
+	}
+	return roster[0].ID
+}
+
+func filterPadTimetableRosterByTeacherIDs(roster []model.InstUserScheduleRosterItem, teacherIDs []int64) []model.InstUserScheduleRosterItem {
+	if len(roster) == 0 || len(teacherIDs) == 0 {
+		return nil
+	}
+	rosterByID := make(map[int64]model.InstUserScheduleRosterItem, len(roster))
+	for _, teacher := range roster {
+		if teacher.ID <= 0 {
+			continue
+		}
+		rosterByID[teacher.ID] = teacher
+	}
+	out := make([]model.InstUserScheduleRosterItem, 0, len(teacherIDs))
+	seen := make(map[int64]struct{}, len(teacherIDs))
+	for _, id := range teacherIDs {
+		if id <= 0 {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		if teacher, ok := rosterByID[id]; ok {
+			out = append(out, teacher)
+		}
+	}
+	return out
+}
+
+func padTimetablePeriodGroups(groups []smartExportGroup, allTeachers []model.InstUserScheduleRosterItem) []model.PadTimetablePeriodGroup {
+	if len(groups) == 0 {
+		return []model.PadTimetablePeriodGroup{{
+			ID:          padTimetableDefaultPeriodGroupID,
+			Name:        "默认时段",
+			Sort:        0,
+			StartTime:   "08:00",
+			EndTime:     "18:20",
+			LessonCount: len(defaultPadTimetableSlots()),
+			TeacherIDs:  padTimetableTeacherIDsFromRoster(allTeachers),
+		}}
+	}
+	items := make([]model.PadTimetablePeriodGroup, 0, len(groups))
+	for index, group := range groups {
+		start, end := padTimetableGroupTimeRange(group.Slots)
+		name := strings.TrimSpace(group.Name)
+		if name == "" {
+			name = fmt.Sprintf("时段%d", index+1)
+		}
+		id := strings.TrimSpace(group.ID)
+		if id == "" {
+			id = fmt.Sprintf("group-%d", index+1)
+		}
+		items = append(items, model.PadTimetablePeriodGroup{
+			ID:          id,
+			Name:        name,
+			Sort:        group.Sort,
+			StartTime:   start,
+			EndTime:     end,
+			LessonCount: len(group.Slots),
+			TeacherIDs:  uniquePositiveTeacherIDs(group.BoundTeacherIDs),
+		})
+	}
+	return items
+}
+
+func padTimetableGroupTimeRange(slots []smartExportSlot) (string, string) {
+	start := ""
+	end := ""
+	for _, slot := range slots {
+		slotStart := strings.TrimSpace(slot.Start)
+		slotEnd := strings.TrimSpace(slot.End)
+		if slotStart == "" || slotEnd == "" {
+			continue
+		}
+		if start == "" || slotStart < start {
+			start = slotStart
+		}
+		if end == "" || slotEnd > end {
+			end = slotEnd
+		}
+	}
+	return start, end
+}
+
+func padTimetableTeacherIDsFromRoster(roster []model.InstUserScheduleRosterItem) []int64 {
+	out := make([]int64, 0, len(roster))
+	seen := make(map[int64]struct{}, len(roster))
+	for _, teacher := range roster {
+		if teacher.ID <= 0 {
+			continue
+		}
+		if _, ok := seen[teacher.ID]; ok {
+			continue
+		}
+		seen[teacher.ID] = struct{}{}
+		out = append(out, teacher.ID)
+	}
+	return out
+}
+
+func padTimetableSlots(configuredSlots []smartExportSlot) []model.PadTimetableSlot {
+	slots := configuredSlots
+	if len(slots) == 0 {
+		slots = defaultPadTimetableSlots()
+	}
+	slots = append([]smartExportSlot(nil), slots...)
+	sort.SliceStable(slots, func(i, j int) bool {
+		if slots[i].Index == slots[j].Index {
+			if slots[i].Start == slots[j].Start {
+				return slots[i].End < slots[j].End
+			}
+			return slots[i].Start < slots[j].Start
+		}
+		return slots[i].Index < slots[j].Index
+	})
+	items := make([]model.PadTimetableSlot, 0, len(slots))
+	for index, item := range slots {
+		start := strings.TrimSpace(item.Start)
+		end := strings.TrimSpace(item.End)
+		if start == "" || end == "" {
+			continue
+		}
+		titleIndex := item.Index
+		if titleIndex <= 0 {
+			titleIndex = index + 1
+		}
+		items = append(items, model.PadTimetableSlot{
+			Title:     fmt.Sprintf("第%d节", titleIndex),
+			Time:      start + " - " + end,
+			StartTime: start,
+			EndTime:   end,
+		})
+	}
+	return items
+}
+
+func defaultPadTimetableSlots() []smartExportSlot {
+	return []smartExportSlot{
+		{Index: 1, Start: "08:00", End: "08:40"},
+		{Index: 2, Start: "08:50", End: "09:30"},
+		{Index: 3, Start: "09:40", End: "10:20"},
+		{Index: 4, Start: "10:30", End: "11:10"},
+		{Index: 5, Start: "11:20", End: "12:00"},
+		{Index: 6, Start: "13:30", End: "14:10"},
+		{Index: 7, Start: "14:20", End: "15:00"},
+		{Index: 8, Start: "15:10", End: "15:50"},
+		{Index: 9, Start: "16:00", End: "16:40"},
+		{Index: 10, Start: "16:50", End: "17:30"},
+		{Index: 11, Start: "17:40", End: "18:20"},
+	}
+}
+
+func padTimetableItems(schedules []model.TeachingScheduleVO) []model.PadTimetableItem {
+	loc := padHomeLocation()
+	items := make([]model.PadTimetableItem, 0, len(schedules))
+	for _, schedule := range schedules {
+		status, statusText := padTimetableScheduleStatus(schedule)
+		items = append(items, model.PadTimetableItem{
+			ID:                schedule.ID,
+			Date:              schedule.LessonDate,
+			StartTime:         schedule.StartAt.In(loc).Format("15:04"),
+			EndTime:           schedule.EndAt.In(loc).Format("15:04"),
+			LessonName:        firstNonEmptyString(strings.TrimSpace(schedule.LessonName), "未命名课程"),
+			TeachingClassName: strings.TrimSpace(schedule.TeachingClassName),
+			StudentName:       strings.TrimSpace(schedule.StudentName),
+			PersonName:        padTimetablePersonName(schedule),
+			ClassroomName:     strings.TrimSpace(schedule.ClassroomName),
+			TeacherID:         strings.TrimSpace(schedule.TeacherID),
+			TeacherName:       strings.TrimSpace(schedule.TeacherName),
+			Status:            status,
+			StatusText:        statusText,
+			Conflict:          schedule.Conflict,
+		})
+	}
+	return items
+}
+
+func padTimetablePersonName(schedule model.TeachingScheduleVO) string {
+	if name := strings.TrimSpace(schedule.StudentName); name != "" {
+		return name
+	}
+	if name := strings.TrimSpace(schedule.TeachingClassName); name != "" {
+		return name
+	}
+	return "未关联学员"
+}
+
+func padTimetableSummary(schedules []model.TeachingScheduleVO) model.PadTimetableSummary {
+	var summary model.PadTimetableSummary
+	summary.Total = len(schedules)
+	for _, schedule := range schedules {
+		if schedule.Conflict {
+			summary.Conflict++
+		}
+		if padTimetableLooksTrial(schedule) {
+			summary.Trial++
+		}
+		switch schedule.CallStatus {
+		case 2:
+			summary.Signed++
+		case 3:
+			summary.Partial++
+		default:
+			summary.Unsigned++
+		}
+	}
+	return summary
+}
+
+func padTimetableScheduleStatus(schedule model.TeachingScheduleVO) (string, string) {
+	if schedule.Conflict {
+		return "conflict", "冲突"
+	}
+	if padTimetableLooksTrial(schedule) {
+		return "trial", "试听"
+	}
+	switch schedule.CallStatus {
+	case 2:
+		return "signed", "已点名"
+	case 3:
+		return "partial", "部分"
+	default:
+		return "unsigned", "未点名"
+	}
+}
+
+func padTimetableLooksTrial(schedule model.TeachingScheduleVO) bool {
+	text := strings.TrimSpace(schedule.LessonName) + " " +
+		strings.TrimSpace(schedule.TeachingClassName) + " " +
+		strings.TrimSpace(schedule.StudentName)
+	return strings.Contains(text, "试听")
 }
 
 func (svc *Service) PageConflictTeachingSchedules(userID int64, query model.TeachingScheduleConflictPageQueryDTO) (model.PageResult[model.TeachingScheduleVO], error) {
