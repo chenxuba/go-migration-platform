@@ -605,7 +605,7 @@ onBeforeUnmount(() => {
                   :gender="record.studentGender || '-'"
                   :age="formatCurrentAge(record)"
                   :avatar-url="record.studentAvatar"
-                  default-active-key="0"
+                  default-active-key="6"
                 />
               </template>
               <template v-else-if="column.key === 'assessmentName'">
