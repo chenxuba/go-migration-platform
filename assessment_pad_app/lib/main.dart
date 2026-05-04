@@ -2,6 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+
+import 'auth_client.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -32,7 +36,12 @@ const SystemUiOverlayStyle _immersiveOverlayStyle = SystemUiOverlayStyle(
 );
 
 class AssessmentPadApp extends StatelessWidget {
-  const AssessmentPadApp({super.key});
+  const AssessmentPadApp({
+    this.authClient = const IamAuthClient(),
+    super.key,
+  });
+
+  final AuthClient authClient;
 
   @override
   Widget build(BuildContext context) {
@@ -51,7 +60,7 @@ class AssessmentPadApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.orange),
       ),
       routes: <String, WidgetBuilder>{
-        '/': (_) => const LoginPage(),
+        '/': (_) => LoginPage(authClient: authClient),
         '/home': (_) => const HomePage(),
       },
     );
@@ -144,11 +153,14 @@ class PadViewport extends StatelessWidget {
 }
 
 class LoginPage extends StatelessWidget {
-  const LoginPage({super.key});
+  const LoginPage({required this.authClient, super.key});
+
+  final AuthClient authClient;
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(body: PadViewport(child: LoginScreen()));
+    return Scaffold(
+        body: PadViewport(child: LoginScreen(authClient: authClient)));
   }
 }
 
@@ -162,7 +174,9 @@ class HomePage extends StatelessWidget {
 }
 
 class LoginScreen extends StatelessWidget {
-  const LoginScreen({super.key});
+  const LoginScreen({required this.authClient, super.key});
+
+  final AuthClient authClient;
 
   @override
   Widget build(BuildContext context) {
@@ -239,7 +253,8 @@ class LoginScreen extends StatelessWidget {
               right: 64,
               top: 162,
               child: LoginCard(
-                onLogin: () => Navigator.of(context).pushNamed('/home'),
+                authClient: authClient,
+                onLoginSuccess: () => Navigator.of(context).pushNamed('/home'),
               ),
             ),
           ],
@@ -334,10 +349,194 @@ class PadExperienceChip extends StatelessWidget {
   }
 }
 
-class LoginCard extends StatelessWidget {
-  const LoginCard({required this.onLogin, super.key});
+class LoginCard extends StatefulWidget {
+  const LoginCard({
+    required this.authClient,
+    required this.onLoginSuccess,
+    super.key,
+  });
 
-  final VoidCallback onLogin;
+  final AuthClient authClient;
+  final VoidCallback onLoginSuccess;
+
+  @override
+  State<LoginCard> createState() => _LoginCardState();
+}
+
+class _LoginCardState extends State<LoginCard> {
+  static const String _rememberPasswordKey = 'login_remember_password';
+  static const String _rememberedUsernameKey = 'login_remember_username';
+  static const String _rememberedPasswordKey = 'login_remember_password_value';
+  static const String _sessionTokenKey = 'auth_token';
+  static const String _sessionLoginTypeKey = 'auth_login_type';
+  static const String _sessionTenantIdKey = 'auth_tenant_id';
+  static const String _sessionOrgIdKey = 'auth_org_id';
+
+  final TextEditingController _usernameController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  bool _rememberPassword = false;
+  bool _passwordVisible = false;
+  bool _loading = false;
+  bool _qrMode = false;
+  String _qrNonce = DateTime.now().millisecondsSinceEpoch.toString();
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _restoreRememberedCredentials();
+  }
+
+  @override
+  void dispose() {
+    _usernameController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _restoreRememberedCredentials() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool remember = prefs.getBool(_rememberPasswordKey) ?? false;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _rememberPassword = remember;
+      if (remember) {
+        _usernameController.text =
+            prefs.getString(_rememberedUsernameKey) ?? '';
+        _passwordController.text =
+            prefs.getString(_rememberedPasswordKey) ?? '';
+      }
+    });
+  }
+
+  Future<void> _persistRememberedCredentials() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_rememberPasswordKey, _rememberPassword);
+    if (_rememberPassword) {
+      await prefs.setString(
+        _rememberedUsernameKey,
+        _usernameController.text.trim(),
+      );
+      await prefs.setString(_rememberedPasswordKey, _passwordController.text);
+      return;
+    }
+    await prefs.remove(_rememberedUsernameKey);
+    await prefs.remove(_rememberedPasswordKey);
+  }
+
+  Future<void> _persistSession(LoginResult result) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(_sessionTokenKey, result.token);
+    await prefs.setString(_sessionLoginTypeKey, result.loginType);
+    await prefs.setString(_sessionTenantIdKey, result.tenantId);
+    if (result.orgId != null) {
+      await prefs.setInt(_sessionOrgIdKey, result.orgId!);
+    } else {
+      await prefs.remove(_sessionOrgIdKey);
+    }
+  }
+
+  void _clearError() {
+    if (_errorMessage == null) {
+      return;
+    }
+    setState(() => _errorMessage = null);
+  }
+
+  void _dismissKeyboard() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    SystemChannels.textInput.invokeMethod<void>('TextInput.hide');
+  }
+
+  Future<void> _submit() async {
+    if (_loading) {
+      return;
+    }
+    _dismissKeyboard();
+    final String username = _usernameController.text.trim();
+    final String password = _passwordController.text;
+    if (username.isEmpty || password.trim().isEmpty) {
+      setState(() => _errorMessage = '请输入账号和密码');
+      return;
+    }
+
+    setState(() {
+      _loading = true;
+      _errorMessage = null;
+    });
+
+    try {
+      final List<InstitutionLoginOption> options =
+          await widget.authClient.listInstitutionOptions(username);
+      InstitutionLoginOption? selectedInstitution;
+      if (options.length > 1) {
+        if (mounted) {
+          setState(() => _loading = false);
+        }
+        selectedInstitution = await _chooseInstitution(options);
+        if (selectedInstitution == null) {
+          return;
+        }
+        if (mounted) {
+          setState(() => _loading = true);
+        }
+      } else if (options.length == 1) {
+        selectedInstitution = options.first;
+      }
+
+      final LoginResult result = await widget.authClient.login(
+        username: username,
+        password: password,
+        institution: selectedInstitution,
+      );
+      await _persistSession(result);
+      await _persistRememberedCredentials();
+      if (!mounted) {
+        return;
+      }
+      _dismissKeyboard();
+      widget.onLoginSuccess();
+    } on AuthException catch (error) {
+      if (mounted) {
+        setState(() => _errorMessage = error.message);
+      }
+    } on Object catch (error) {
+      if (mounted) {
+        setState(() => _errorMessage = '登录失败：$error');
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  Future<InstitutionLoginOption?> _chooseInstitution(
+    List<InstitutionLoginOption> options,
+  ) {
+    _dismissKeyboard();
+    return showDialog<InstitutionLoginOption>(
+      context: context,
+      builder: (BuildContext context) {
+        return InstitutionPickerDialog(options: options);
+      },
+    );
+  }
+
+  void _showForgotPasswordHint() {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('请联系机构管理员重置密码')),
+    );
+  }
+
+  void _refreshQrCode() {
+    setState(() {
+      _qrNonce = DateTime.now().microsecondsSinceEpoch.toString();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -357,64 +556,540 @@ class LoginCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        children: _qrMode ? _buildQrLogin() : _buildAccountLogin(),
+      ),
+    );
+  }
+
+  List<Widget> _buildAccountLogin() {
+    return <Widget>[
+      Row(
         children: <Widget>[
-          const Text(
-            '机构账号登录',
-            style: TextStyle(
-              color: AppColors.ink,
-              fontSize: 27,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 36),
-          const StaticInput(
-            icon: Icons.person_outline_rounded,
-            hint: '手机号 / 账号',
-          ),
-          const SizedBox(height: 18),
-          const StaticInput(
-            icon: Icons.lock_outline_rounded,
-            hint: '密码',
-            suffix: Icons.visibility_off_outlined,
-          ),
-          const SizedBox(height: 22),
-          const RememberAccountRow(),
-          const SizedBox(height: 32),
-          GestureDetector(
-            onTap: onLogin,
-            child: Container(
-              height: 60,
-              decoration: BoxDecoration(
-                gradient: const LinearGradient(
-                  colors: <Color>[Color(0xFFE86E43), Color(0xFFD95B35)],
-                ),
-                borderRadius: BorderRadius.circular(10),
-                boxShadow: _softShadow(
-                  color: const Color(0x28D15E36),
-                  blur: 18,
-                  offset: const Offset(0, 10),
-                ),
-              ),
-              alignment: Alignment.center,
-              child: const Text(
-                '登 录',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 18,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 26),
-          const Center(
+          const Expanded(
             child: Text(
-              '验证码登录',
+              '机构账号登录',
               style: TextStyle(
-                color: AppColors.orange,
-                fontSize: 15,
-                fontWeight: FontWeight.w600,
+                color: AppColors.ink,
+                fontSize: 27,
+                fontWeight: FontWeight.w800,
               ),
+            ),
+          ),
+          LoginModeButton(
+            icon: Icons.qr_code_rounded,
+            label: '二维码登录',
+            onTap: () {
+              _dismissKeyboard();
+              setState(() {
+                _qrMode = true;
+                _errorMessage = null;
+              });
+            },
+          ),
+        ],
+      ),
+      const SizedBox(height: 34),
+      LoginTextField(
+        controller: _usernameController,
+        icon: Icons.person_outline_rounded,
+        hint: '手机号 / 账号',
+        textInputAction: TextInputAction.next,
+        onChanged: (_) => _clearError(),
+      ),
+      const SizedBox(height: 18),
+      LoginTextField(
+        controller: _passwordController,
+        icon: Icons.lock_outline_rounded,
+        hint: '密码',
+        obscureText: !_passwordVisible,
+        textInputAction: TextInputAction.done,
+        onSubmitted: (_) => _submit(),
+        onChanged: (_) => _clearError(),
+        suffix: IconButton(
+          splashRadius: 20,
+          onPressed: () {
+            setState(() => _passwordVisible = !_passwordVisible);
+          },
+          icon: Icon(
+            _passwordVisible
+                ? Icons.visibility_outlined
+                : Icons.visibility_off_outlined,
+            size: 20,
+            color: AppColors.muted,
+          ),
+        ),
+      ),
+      const SizedBox(height: 20),
+      RememberPasswordRow(
+        value: _rememberPassword,
+        onChanged: (bool value) {
+          setState(() => _rememberPassword = value);
+        },
+        onForgotPassword: _showForgotPasswordHint,
+      ),
+      const SizedBox(height: 18),
+      AnimatedSwitcher(
+        duration: const Duration(milliseconds: 160),
+        child: _errorMessage == null
+            ? const SizedBox(key: ValueKey<String>('empty-error'), height: 24)
+            : SizedBox(
+                key: const ValueKey<String>('login-error'),
+                height: 24,
+                child: Text(
+                  _errorMessage!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.orangeDeep,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+      ),
+      const SizedBox(height: 16),
+      LoginPrimaryButton(
+        loading: _loading,
+        label: _loading ? '登录中...' : '登 录',
+        onTap: _submit,
+      ),
+    ];
+  }
+
+  List<Widget> _buildQrLogin() {
+    final String qrData =
+        widget.authClient.buildQrLoginUri(_qrNonce).toString();
+    return <Widget>[
+      Row(
+        children: <Widget>[
+          const Expanded(
+            child: Text(
+              '二维码登录',
+              style: TextStyle(
+                color: AppColors.ink,
+                fontSize: 27,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          LoginModeButton(
+            icon: Icons.person_outline_rounded,
+            label: '账号登录',
+            onTap: () {
+              _dismissKeyboard();
+              setState(() {
+                _qrMode = false;
+                _errorMessage = null;
+              });
+            },
+          ),
+        ],
+      ),
+      const SizedBox(height: 28),
+      Center(
+        child: Container(
+          width: 216,
+          height: 216,
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: AppColors.line, width: 1.2),
+            boxShadow: _softShadow(
+              color: const Color(0x12D46B48),
+              blur: 18,
+              offset: const Offset(0, 10),
+            ),
+          ),
+          child: QrImageView(
+            data: qrData,
+            version: QrVersions.auto,
+            backgroundColor: Colors.white,
+            eyeStyle: const QrEyeStyle(
+              eyeShape: QrEyeShape.square,
+              color: AppColors.ink,
+            ),
+            dataModuleStyle: const QrDataModuleStyle(
+              dataModuleShape: QrDataModuleShape.square,
+              color: AppColors.ink,
+            ),
+          ),
+        ),
+      ),
+      const SizedBox(height: 22),
+      const Center(
+        child: Text(
+          '请使用机构端 App 扫码确认',
+          style: TextStyle(
+            color: AppColors.body,
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ),
+      const Spacer(),
+      GestureDetector(
+        onTap: _refreshQrCode,
+        child: Container(
+          height: 46,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1E8),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: const Color(0xFFFFD3BD), width: 1.2),
+          ),
+          alignment: Alignment.center,
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.refresh_rounded, color: AppColors.orange, size: 20),
+              SizedBox(width: 8),
+              Text(
+                '刷新二维码',
+                style: TextStyle(
+                  color: AppColors.orange,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    ];
+  }
+}
+
+class InstitutionPickerDialog extends StatelessWidget {
+  const InstitutionPickerDialog({required this.options, super.key});
+
+  final List<InstitutionLoginOption> options;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 560,
+        constraints: const BoxConstraints(maxHeight: 500),
+        padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.96),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: Colors.white, width: 1.4),
+          boxShadow: _softShadow(
+            color: const Color(0x24CB8C65),
+            blur: 32,
+            offset: const Offset(0, 18),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFF1E8),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.business_rounded,
+                    color: AppColors.orange,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '选择登录机构',
+                        style: TextStyle(
+                          color: AppColors.ink,
+                          fontSize: 22,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      SizedBox(height: 5),
+                      Text(
+                        '当前账号关联多个机构，请选择本次进入的后台',
+                        style: TextStyle(
+                          color: AppColors.body,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                IconButton(
+                  splashRadius: 20,
+                  onPressed: () => Navigator.of(context).pop(),
+                  icon: const Icon(
+                    Icons.close_rounded,
+                    color: AppColors.muted,
+                    size: 22,
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                itemCount: options.length,
+                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                itemBuilder: (BuildContext context, int index) {
+                  return InstitutionOptionTile(option: options[index]);
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class InstitutionOptionTile extends StatelessWidget {
+  const InstitutionOptionTile({required this.option, super.key});
+
+  final InstitutionLoginOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    final String subtitle = option.nickName.trim().isNotEmpty
+        ? '${option.nickName} · ${option.mobile}'
+        : option.mobile;
+
+    return GestureDetector(
+      onTap: () => Navigator.of(context).pop(option),
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBF6),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: const Color(0xFFF3DACB), width: 1.2),
+        ),
+        child: Row(
+          children: <Widget>[
+            _InstitutionAvatar(option: option),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    option.orgName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Text(
+                    subtitle.trim().isNotEmpty ? subtitle : option.loginName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: AppColors.body,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 9),
+                  Row(
+                    children: <Widget>[
+                      _InstitutionTag(
+                        icon: Icons.verified_user_outlined,
+                        label: option.admin ? '超管' : '员工',
+                        color: AppColors.orangeDeep,
+                        background: const Color(0xFFFFF5EF),
+                        border: const Color(0xFFFFDDCC),
+                      ),
+                      const SizedBox(width: 8),
+                      _InstitutionTag(
+                        icon: _statusIcon(option.institutionStatus),
+                        label: _statusLabel(option.institutionStatus),
+                        color: _statusColor(option.institutionStatus),
+                        background: _statusBackground(option.institutionStatus),
+                        border: _statusBorder(option.institutionStatus),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Container(
+              width: 34,
+              height: 34,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFEFE6),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.arrow_forward_ios_rounded,
+                color: AppColors.orange,
+                size: 15,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  static String _statusLabel(String status) {
+    switch (status) {
+      case 'warning':
+        return '即将到期';
+      case 'disabled':
+        return '已停用';
+      case 'trial_expired':
+        return '试用到期';
+      case 'expired_readonly':
+        return '只读模式';
+      default:
+        return '正常';
+    }
+  }
+
+  static IconData _statusIcon(String status) {
+    switch (status) {
+      case 'warning':
+        return Icons.schedule_rounded;
+      case 'disabled':
+      case 'trial_expired':
+      case 'expired_readonly':
+        return Icons.lock_outline_rounded;
+      default:
+        return Icons.check_circle_outline_rounded;
+    }
+  }
+
+  static Color _statusColor(String status) {
+    switch (status) {
+      case 'warning':
+        return const Color(0xFFC7821E);
+      case 'disabled':
+      case 'trial_expired':
+      case 'expired_readonly':
+        return const Color(0xFF9E6D5D);
+      default:
+        return const Color(0xFF7BA36F);
+    }
+  }
+
+  static Color _statusBackground(String status) {
+    switch (status) {
+      case 'warning':
+        return const Color(0xFFFFFAEA);
+      case 'disabled':
+      case 'trial_expired':
+      case 'expired_readonly':
+        return const Color(0xFFFAF2EE);
+      default:
+        return const Color(0xFFF2F8EE);
+    }
+  }
+
+  static Color _statusBorder(String status) {
+    switch (status) {
+      case 'warning':
+        return const Color(0xFFFFE4A8);
+      case 'disabled':
+      case 'trial_expired':
+      case 'expired_readonly':
+        return const Color(0xFFEBD8CF);
+      default:
+        return const Color(0xFFDDEED6);
+    }
+  }
+}
+
+class _InstitutionAvatar extends StatelessWidget {
+  const _InstitutionAvatar({required this.option});
+
+  final InstitutionLoginOption option;
+
+  @override
+  Widget build(BuildContext context) {
+    final String logo = option.logo.trim();
+    return Container(
+      width: 52,
+      height: 52,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE7D8),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: logo.isEmpty
+          ? const Icon(
+              Icons.apartment_rounded,
+              color: AppColors.orange,
+              size: 28,
+            )
+          : Image.network(
+              logo,
+              fit: BoxFit.cover,
+              errorBuilder: (_, __, ___) => const Icon(
+                Icons.apartment_rounded,
+                color: AppColors.orange,
+                size: 28,
+              ),
+            ),
+    );
+  }
+}
+
+class _InstitutionTag extends StatelessWidget {
+  const _InstitutionTag({
+    required this.icon,
+    required this.label,
+    required this.color,
+    required this.background,
+    required this.border,
+  });
+
+  final IconData icon;
+  final String label;
+  final Color color;
+  final Color background;
+  final Color border;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 23,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: border, width: .8),
+      ),
+      alignment: Alignment.center,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 12, color: color),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              height: 1,
             ),
           ),
         ],
@@ -423,17 +1098,27 @@ class LoginCard extends StatelessWidget {
   }
 }
 
-class StaticInput extends StatelessWidget {
-  const StaticInput({
+class LoginTextField extends StatelessWidget {
+  const LoginTextField({
+    required this.controller,
     required this.icon,
     required this.hint,
     this.suffix,
+    this.obscureText = false,
+    this.textInputAction,
+    this.onChanged,
+    this.onSubmitted,
     super.key,
   });
 
+  final TextEditingController controller;
   final IconData icon;
-  final IconData? suffix;
+  final Widget? suffix;
   final String hint;
+  final bool obscureText;
+  final TextInputAction? textInputAction;
+  final ValueChanged<String>? onChanged;
+  final ValueChanged<String>? onSubmitted;
 
   @override
   Widget build(BuildContext context) {
@@ -450,19 +1135,34 @@ class StaticInput extends StatelessWidget {
           Icon(icon, size: 21, color: AppColors.muted),
           const SizedBox(width: 14),
           Expanded(
-            child: Text(
-              hint,
+            child: TextField(
+              controller: controller,
+              obscureText: obscureText,
+              textInputAction: textInputAction,
+              onChanged: onChanged,
+              onSubmitted: onSubmitted,
+              cursorColor: AppColors.orange,
               style: const TextStyle(
-                color: AppColors.muted,
+                color: AppColors.ink,
                 fontSize: 16,
-                fontWeight: FontWeight.w500,
+                fontWeight: FontWeight.w600,
+              ),
+              decoration: InputDecoration(
+                hintText: hint,
+                border: InputBorder.none,
+                isCollapsed: true,
+                hintStyle: const TextStyle(
+                  color: AppColors.muted,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w500,
+                ),
               ),
             ),
           ),
           if (suffix != null)
             Padding(
-              padding: const EdgeInsets.only(right: 18),
-              child: Icon(suffix, size: 20, color: AppColors.muted),
+              padding: const EdgeInsets.only(right: 8),
+              child: suffix,
             ),
         ],
       ),
@@ -470,32 +1170,163 @@ class StaticInput extends StatelessWidget {
   }
 }
 
-class RememberAccountRow extends StatelessWidget {
-  const RememberAccountRow({super.key});
+class RememberPasswordRow extends StatelessWidget {
+  const RememberPasswordRow({
+    required this.value,
+    required this.onChanged,
+    required this.onForgotPassword,
+    super.key,
+  });
+
+  final bool value;
+  final ValueChanged<bool> onChanged;
+  final VoidCallback onForgotPassword;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        Container(
-          width: 18,
-          height: 18,
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(5),
-            border: Border.all(color: const Color(0xFFE5CBB8), width: 1.3),
+        GestureDetector(
+          onTap: () => onChanged(!value),
+          child: Container(
+            width: 18,
+            height: 18,
+            decoration: BoxDecoration(
+              color: value ? AppColors.orange : Colors.white,
+              borderRadius: BorderRadius.circular(5),
+              border: Border.all(
+                color: value ? AppColors.orange : const Color(0xFFE5CBB8),
+                width: 1.3,
+              ),
+            ),
+            child: value
+                ? const Icon(Icons.check_rounded, color: Colors.white, size: 14)
+                : null,
           ),
         ),
         const SizedBox(width: 9),
-        const Text(
-          '记住账号',
-          style: TextStyle(
-            color: AppColors.body,
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
+        GestureDetector(
+          onTap: () => onChanged(!value),
+          child: const Text(
+            '记住密码',
+            style: TextStyle(
+              color: AppColors.body,
+              fontSize: 14,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ),
+        const Spacer(),
+        GestureDetector(
+          onTap: onForgotPassword,
+          child: const Text(
+            '忘记密码',
+            style: TextStyle(
+              color: AppColors.orange,
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       ],
+    );
+  }
+}
+
+class LoginModeButton extends StatelessWidget {
+  const LoginModeButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 12),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF1E8),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: const Color(0xFFFFD5C0), width: 1),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(icon, size: 16, color: AppColors.orange),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: const TextStyle(
+                color: AppColors.orange,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class LoginPrimaryButton extends StatelessWidget {
+  const LoginPrimaryButton({
+    required this.loading,
+    required this.label,
+    required this.onTap,
+    super.key,
+  });
+
+  final bool loading;
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: loading ? null : onTap,
+      child: Opacity(
+        opacity: loading ? .78 : 1,
+        child: Container(
+          height: 60,
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: <Color>[Color(0xFFE86E43), Color(0xFFD95B35)],
+            ),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: _softShadow(
+              color: const Color(0x28D15E36),
+              blur: 18,
+              offset: const Offset(0, 10),
+            ),
+          ),
+          alignment: Alignment.center,
+          child: loading
+              ? const SizedBox(
+                  width: 22,
+                  height: 22,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2.4,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              : Text(
+                  label,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+        ),
+      ),
     );
   }
 }

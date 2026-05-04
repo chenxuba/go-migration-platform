@@ -31,6 +31,12 @@ var domainMapCache atomic.Value
 
 func Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		applyCORSHeaders(w, r)
+		if r.Method == http.MethodOptions {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+
 		host := normalizeHost(firstNonEmpty(
 			r.Header.Get("X-Tenant-Domain"),
 			r.Header.Get("X-Forwarded-Host"),
@@ -72,6 +78,40 @@ func Middleware(next http.Handler) http.Handler {
 		})
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func applyCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := strings.TrimSpace(r.Header.Get("Origin"))
+	if origin == "" || !isAllowedCORSOrigin(origin) {
+		return
+	}
+
+	header := w.Header()
+	header.Set("Access-Control-Allow-Origin", origin)
+	header.Set("Access-Control-Allow-Credentials", "true")
+	header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Tenant-Domain, X-Tenant-ID, X-Request-ID, Accept-Language")
+	header.Set("Access-Control-Max-Age", "86400")
+	header.Add("Vary", "Origin")
+}
+
+func isAllowedCORSOrigin(origin string) bool {
+	allowed := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if allowed != "" {
+		for _, item := range strings.Split(allowed, ",") {
+			item = strings.TrimSpace(item)
+			if item == "*" || strings.EqualFold(item, origin) {
+				return true
+			}
+		}
+	}
+
+	parsed, err := url.Parse(origin)
+	if err != nil {
+		return false
+	}
+	host := normalizeHost(parsed.Host)
+	return host == "localhost" || host == "127.0.0.1" || host == "::1"
 }
 
 func firstNonEmpty(values ...string) string {
