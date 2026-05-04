@@ -1,0 +1,2472 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SystemChrome.setPreferredOrientations(
+    <DeviceOrientation>[
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ],
+  );
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+  SystemChrome.setSystemUIOverlayStyle(_immersiveOverlayStyle);
+  runApp(const AssessmentPadApp());
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+    SystemChrome.setSystemUIOverlayStyle(_immersiveOverlayStyle);
+  });
+}
+
+const SystemUiOverlayStyle _immersiveOverlayStyle = SystemUiOverlayStyle(
+  statusBarColor: Colors.transparent,
+  statusBarIconBrightness: Brightness.dark,
+  statusBarBrightness: Brightness.light,
+  systemStatusBarContrastEnforced: false,
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarDividerColor: Colors.transparent,
+  systemNavigationBarIconBrightness: Brightness.dark,
+  systemNavigationBarContrastEnforced: false,
+);
+
+class AssessmentPadApp extends StatelessWidget {
+  const AssessmentPadApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '测评云端',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: AppColors.page,
+        fontFamily: 'PingFang SC',
+        fontFamilyFallback: const <String>[
+          'Microsoft YaHei',
+          'Heiti SC',
+          'Arial',
+        ],
+        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.orange),
+      ),
+      routes: <String, WidgetBuilder>{
+        '/': (_) => const LoginPage(),
+        '/home': (_) => const HomePage(),
+      },
+    );
+  }
+}
+
+class AppColors {
+  static const Color page = Color(0xFFFFF7EE);
+  static const Color pageLight = Color(0xFFFFFBF4);
+  static const Color orange = Color(0xFFE96F43);
+  static const Color orangeDeep = Color(0xFFC95735);
+  static const Color orangeSoft = Color(0xFFFFE1CF);
+  static const Color yellow = Color(0xFFF6C45F);
+  static const Color green = Color(0xFF8DB886);
+  static const Color greenSoft = Color(0xFFEAF4E5);
+  static const Color blueGray = Color(0xFFAAB7C3);
+  static const Color ink = Color(0xFF432B22);
+  static const Color body = Color(0xFF7F665A);
+  static const Color muted = Color(0xFFBBA99C);
+  static const Color line = Color(0xFFF0DACB);
+  static const Color card = Color(0xFFFFFEFB);
+}
+
+const double _designHeight = 768;
+const double _minDesignWidth = 1024;
+const double _wideDesignWidth = 1366;
+const double _loginLeftShiftCompact = 24;
+const double _loginLeftShiftWide = 64;
+const double _homeMainTop = 124;
+const double _homeStartHeight = 334;
+const double _homeStatsHeight = 102;
+const double _homeStatsScheduleGap = 16;
+const double _homeMainShortcutGap = 16;
+const double _homeScheduleTop =
+    _homeMainTop + _homeStatsHeight + _homeStatsScheduleGap;
+const double _homeScheduleHeight =
+    _homeMainTop + _homeStartHeight - _homeScheduleTop;
+const double _homeShortcutTop =
+    _homeMainTop + _homeStartHeight + _homeMainShortcutGap;
+
+List<BoxShadow> _softShadow({
+  Color color = const Color(0x22000000),
+  double blur = 28,
+  Offset offset = const Offset(0, 14),
+}) {
+  return <BoxShadow>[
+    BoxShadow(color: color, blurRadius: blur, offset: offset),
+  ];
+}
+
+class PadViewport extends StatelessWidget {
+  const PadViewport({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: _immersiveOverlayStyle,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final Size screenSize = MediaQuery.sizeOf(context);
+          final double viewportWidth = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : screenSize.width;
+          final double viewportHeight = constraints.maxHeight.isFinite
+              ? constraints.maxHeight
+              : screenSize.height;
+          final double aspect = viewportWidth / viewportHeight;
+          final double designWidth =
+              math.max(_minDesignWidth, _designHeight * aspect);
+
+          return ColoredBox(
+            color: AppColors.page,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.contain,
+                child: SizedBox(
+                  width: designWidth,
+                  height: _designHeight,
+                  child: child,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class LoginPage extends StatelessWidget {
+  const LoginPage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: PadViewport(child: LoginScreen()));
+  }
+}
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(body: PadViewport(child: HomeScreen()));
+  }
+}
+
+class LoginScreen extends StatelessWidget {
+  const LoginScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _wideDesignWidth;
+        final double leftShift =
+            width < 1200 ? _loginLeftShiftCompact : _loginLeftShiftWide;
+        return Stack(
+          children: <Widget>[
+            CustomPaint(
+                size: Size(width, _designHeight),
+                painter: LoginBackgroundPainter()),
+            const Positioned(top: 70, right: 70, child: PadExperienceChip()),
+            Positioned(
+              left: 92 + leftShift,
+              top: 170,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
+                      CustomPaint(
+                        size: const Size(72, 56),
+                        painter: CloudCheckPainter(color: AppColors.orange),
+                      ),
+                      const SizedBox(width: 16),
+                      const Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          Text(
+                            '测评云端',
+                            style: TextStyle(
+                              color: AppColors.ink,
+                              fontSize: 40,
+                              fontWeight: FontWeight.w800,
+                              height: 1,
+                            ),
+                          ),
+                          SizedBox(height: 12),
+                          Text(
+                            '机构测评与服务工作台',
+                            style: TextStyle(
+                              color: AppColors.body,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 42),
+                  const Text(
+                    '专业测评，科学赋能成长',
+                    style: TextStyle(
+                      color: AppColors.orange,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w500,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 85 + leftShift,
+              top: 320,
+              child: const LoginIllustration(),
+            ),
+            Positioned(
+              right: 64,
+              top: 162,
+              child: LoginCard(
+                onLogin: () => Navigator.of(context).pushNamed('/home'),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class LoginBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint base = Paint()..color = AppColors.pageLight;
+    canvas.drawRect(Offset.zero & size, base);
+
+    final Path topPanel = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width * .44, 0)
+      ..quadraticBezierTo(size.width * .36, 118, size.width * .16, 170)
+      ..quadraticBezierTo(size.width * .07, 198, 0, 210)
+      ..close();
+    canvas.drawPath(topPanel, Paint()..color = const Color(0xFFFFEBCB));
+
+    final Path leftPanel = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width * .18, 0)
+      ..quadraticBezierTo(size.width * .04, 150, 0, 320)
+      ..close();
+    canvas.drawPath(leftPanel, Paint()..color = const Color(0xFFFFF1D7));
+
+    final Path footer = Path()
+      ..moveTo(0, size.height - 72)
+      ..quadraticBezierTo(150, size.height - 116, 278, size.height - 58)
+      ..quadraticBezierTo(390, size.height - 6, 542, size.height - 40)
+      ..lineTo(size.width, size.height - 92)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(footer, Paint()..color = const Color(0xFFFFF0D9));
+
+    canvas.drawCircle(
+      Offset(size.width - 78, size.height - 72),
+      130,
+      Paint()..color = const Color(0xFFFFE4AE).withOpacity(.46),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class PadExperienceChip extends StatelessWidget {
+  const PadExperienceChip({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.72),
+        borderRadius: BorderRadius.circular(26),
+        boxShadow: _softShadow(color: const Color(0x18C96D34), blur: 18),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 25,
+            height: 25,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFF1DE),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.tablet_mac_rounded,
+              color: AppColors.orange,
+              size: 15,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Text(
+            'Pad 端专属体验',
+            style: TextStyle(
+              color: AppColors.orange,
+              fontSize: 15,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class LoginCard extends StatelessWidget {
+  const LoginCard({required this.onLogin, super.key});
+
+  final VoidCallback onLogin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 408,
+      height: 522,
+      padding: const EdgeInsets.fromLTRB(40, 62, 40, 38),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.91),
+        borderRadius: BorderRadius.circular(28),
+        border: Border.all(color: Colors.white, width: 1.4),
+        boxShadow: _softShadow(
+          color: const Color(0x1FCB8C65),
+          blur: 34,
+          offset: const Offset(0, 18),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            '机构账号登录',
+            style: TextStyle(
+              color: AppColors.ink,
+              fontSize: 27,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 36),
+          const StaticInput(
+            icon: Icons.person_outline_rounded,
+            hint: '手机号 / 账号',
+          ),
+          const SizedBox(height: 18),
+          const StaticInput(
+            icon: Icons.lock_outline_rounded,
+            hint: '密码',
+            suffix: Icons.visibility_off_outlined,
+          ),
+          const SizedBox(height: 22),
+          const RememberAccountRow(),
+          const SizedBox(height: 32),
+          GestureDetector(
+            onTap: onLogin,
+            child: Container(
+              height: 60,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: <Color>[Color(0xFFE86E43), Color(0xFFD95B35)],
+                ),
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: _softShadow(
+                  color: const Color(0x28D15E36),
+                  blur: 18,
+                  offset: const Offset(0, 10),
+                ),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                '登 录',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 26),
+          const Center(
+            child: Text(
+              '验证码登录',
+              style: TextStyle(
+                color: AppColors.orange,
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StaticInput extends StatelessWidget {
+  const StaticInput({
+    required this.icon,
+    required this.hint,
+    this.suffix,
+    super.key,
+  });
+
+  final IconData icon;
+  final IconData? suffix;
+  final String hint;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 58,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.line, width: 1.4),
+      ),
+      child: Row(
+        children: <Widget>[
+          const SizedBox(width: 18),
+          Icon(icon, size: 21, color: AppColors.muted),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Text(
+              hint,
+              style: const TextStyle(
+                color: AppColors.muted,
+                fontSize: 16,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+          if (suffix != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 18),
+              child: Icon(suffix, size: 20, color: AppColors.muted),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class RememberAccountRow extends StatelessWidget {
+  const RememberAccountRow({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: 18,
+          height: 18,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(5),
+            border: Border.all(color: const Color(0xFFE5CBB8), width: 1.3),
+          ),
+        ),
+        const SizedBox(width: 9),
+        const Text(
+          '记住账号',
+          style: TextStyle(
+            color: AppColors.body,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class LoginIllustration extends StatelessWidget {
+  const LoginIllustration({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 435,
+      height: 360,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned(
+            left: -64,
+            bottom: 76,
+            child: CustomPaint(
+              size: const Size(92, 160),
+              painter: LeafClusterPainter(),
+            ),
+          ),
+          Positioned(
+            left: 34,
+            bottom: 28,
+            child: Container(
+              width: 326,
+              height: 58,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7CDA9).withOpacity(.34),
+                borderRadius: BorderRadius.circular(40),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 28,
+            bottom: 72,
+            child: Container(
+              width: 128,
+              height: 128,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE5C9),
+                borderRadius: BorderRadius.circular(70),
+                boxShadow: _softShadow(
+                  color: const Color(0x22D7743B),
+                  blur: 18,
+                  offset: const Offset(0, 12),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 52,
+            bottom: 111,
+            child: CustomPaint(
+              size: const Size(88, 82),
+              painter: PieMarkPainter(),
+            ),
+          ),
+          Positioned(
+            left: 58,
+            bottom: 21,
+            child: Container(
+              width: 244,
+              height: 76,
+              decoration: BoxDecoration(
+                color: const Color(0xFFF8D8BC),
+                borderRadius: BorderRadius.circular(48),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 118,
+            top: 65,
+            child: Transform.rotate(
+              angle: -.01,
+              child: Container(
+                width: 238,
+                height: 184,
+                padding: const EdgeInsets.all(21),
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: <Color>[Color(0xFFFFF0E0), Color(0xFFFFDABB)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.white, width: 4),
+                  boxShadow: _softShadow(
+                    color: const Color(0x2DD9794A),
+                    blur: 24,
+                    offset: const Offset(0, 18),
+                  ),
+                ),
+                child: const EvaluationCardGraphic(),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 292,
+            top: 44,
+            child: Container(
+              width: 102,
+              height: 76,
+              decoration: BoxDecoration(
+                gradient: const LinearGradient(
+                  colors: <Color>[Color(0xFFFFCBB7), Color(0xFFFFE2D2)],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                ),
+                borderRadius: BorderRadius.circular(38),
+                boxShadow: _softShadow(
+                  color: const Color(0x1BD46B48),
+                  blur: 20,
+                  offset: const Offset(0, 12),
+                ),
+              ),
+              child: const Icon(
+                Icons.favorite_rounded,
+                color: Colors.white,
+                size: 34,
+              ),
+            ),
+          ),
+          Positioned(
+            left: 320,
+            bottom: 84,
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: <Widget>[
+                _bar(22, 88, const Color(0xFFFFB35E)),
+                const SizedBox(width: 10),
+                _bar(22, 118, const Color(0xFFE97845)),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 8,
+            bottom: 7,
+            child: Container(
+              width: 104,
+              height: 84,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFE5C7),
+                borderRadius: BorderRadius.circular(54),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -4,
+            bottom: 48,
+            child: Container(
+              width: 82,
+              height: 82,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFBD7B9),
+                borderRadius: BorderRadius.circular(50),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _bar(double width, double height, Color color) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(7),
+        boxShadow: _softShadow(
+          color: color.withOpacity(.23),
+          blur: 16,
+          offset: const Offset(0, 8),
+        ),
+      ),
+    );
+  }
+}
+
+class EvaluationCardGraphic extends StatelessWidget {
+  const EvaluationCardGraphic({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Container(
+              width: 40,
+              height: 40,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE7CB),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.person_rounded,
+                color: Color(0xFFFFA647),
+                size: 25,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _line(46),
+            const SizedBox(height: 13),
+            _line(76),
+            const SizedBox(height: 13),
+            _line(58),
+          ],
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const SizedBox(height: 7),
+              _line(72),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: 104,
+                height: 96,
+                child: CustomPaint(painter: HexRadarPainter()),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static Widget _line(double width) {
+    return Container(
+      width: width,
+      height: 7,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE9A17A).withOpacity(.36),
+        borderRadius: BorderRadius.circular(8),
+      ),
+    );
+  }
+}
+
+class HexRadarPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = Offset(size.width / 2, size.height / 2 + 4);
+    final Paint axisPaint = Paint()
+      ..color = const Color(0xFFF0B27D).withOpacity(.42)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+    for (int ring = 1; ring <= 4; ring++) {
+      final double radius = 14.0 * ring;
+      final Path path = _polygon(center, radius);
+      canvas.drawPath(path, axisPaint);
+    }
+    for (int i = 0; i < 6; i++) {
+      final double angle = -math.pi / 2 + math.pi / 3 * i;
+      canvas.drawLine(
+        center,
+        Offset(
+            center.dx + math.cos(angle) * 58, center.dy + math.sin(angle) * 58),
+        axisPaint,
+      );
+    }
+    final Path value = Path();
+    final List<double> radii = <double>[42, 34, 51, 39, 45, 30];
+    for (int i = 0; i < radii.length; i++) {
+      final double angle = -math.pi / 2 + math.pi / 3 * i;
+      final Offset point = Offset(
+        center.dx + math.cos(angle) * radii[i],
+        center.dy + math.sin(angle) * radii[i],
+      );
+      if (i == 0) {
+        value.moveTo(point.dx, point.dy);
+      } else {
+        value.lineTo(point.dx, point.dy);
+      }
+    }
+    value.close();
+    canvas.drawPath(
+        value, Paint()..color = const Color(0xFFFFBA67).withOpacity(.47));
+    canvas.drawPath(
+      value,
+      Paint()
+        ..color = const Color(0xFFF39C42)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+  }
+
+  Path _polygon(Offset center, double radius) {
+    final Path path = Path();
+    for (int i = 0; i < 6; i++) {
+      final double angle = -math.pi / 2 + math.pi / 3 * i;
+      final Offset point = Offset(
+        center.dx + math.cos(angle) * radius,
+        center.dy + math.sin(angle) * radius,
+      );
+      if (i == 0) {
+        path.moveTo(point.dx, point.dy);
+      } else {
+        path.lineTo(point.dx, point.dy);
+      }
+    }
+    path.close();
+    return path;
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class CloudCheckPainter extends CustomPainter {
+  const CloudCheckPainter({required this.color});
+
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 4.4
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Path cloud = Path()
+      ..moveTo(size.width * .18, size.height * .68)
+      ..cubicTo(size.width * .06, size.height * .66, size.width * .04,
+          size.height * .38, size.width * .24, size.height * .38)
+      ..cubicTo(size.width * .30, size.height * .10, size.width * .70,
+          size.height * .12, size.width * .74, size.height * .42)
+      ..cubicTo(size.width * .92, size.height * .42, size.width * .95,
+          size.height * .66, size.width * .80, size.height * .72);
+    canvas.drawPath(cloud, paint);
+    final Path check = Path()
+      ..moveTo(size.width * .48, size.height * .58)
+      ..lineTo(size.width * .58, size.height * .70)
+      ..lineTo(size.width * .76, size.height * .47);
+    canvas.drawPath(check, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant CloudCheckPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+class LeafClusterPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint stem = Paint()
+      ..color = const Color(0xFF91AE75)
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(size.width * .45, size.height),
+        Offset(size.width * .58, 26), stem);
+    _leaf(canvas, Offset(48, 82), 58, -1.15, const Color(0xFF89A86E));
+    _leaf(canvas, Offset(37, 124), 68, -.84, const Color(0xFFA0BE84));
+    _leaf(canvas, Offset(66, 56), 46, -.18, const Color(0xFF7E9E68));
+  }
+
+  void _leaf(
+      Canvas canvas, Offset center, double length, double angle, Color color) {
+    final Path path = Path();
+    final Offset tip = Offset(center.dx + math.cos(angle) * length,
+        center.dy + math.sin(angle) * length);
+    final Offset c1 = Offset(center.dx - math.sin(angle) * length * .38,
+        center.dy + math.cos(angle) * length * .38);
+    final Offset c2 = Offset(tip.dx - math.sin(angle) * length * .34,
+        tip.dy + math.cos(angle) * length * .34);
+    final Offset c3 = Offset(center.dx + math.sin(angle) * length * .34,
+        center.dy - math.cos(angle) * length * .34);
+    final Offset c4 = Offset(tip.dx + math.sin(angle) * length * .28,
+        tip.dy - math.cos(angle) * length * .28);
+    path
+      ..moveTo(center.dx, center.dy)
+      ..cubicTo(c1.dx, c1.dy, c2.dx, c2.dy, tip.dx, tip.dy)
+      ..cubicTo(c4.dx, c4.dy, c3.dx, c3.dy, center.dx, center.dy)
+      ..close();
+    canvas.drawPath(path, Paint()..color = color.withOpacity(.9));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class PieMarkPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    canvas.drawArc(
+      rect.deflate(2),
+      -math.pi / 2,
+      math.pi * 1.55,
+      true,
+      Paint()..color = const Color(0xFFFFEBD4),
+    );
+    canvas.drawArc(
+      rect.deflate(2),
+      -math.pi / 2,
+      math.pi * .68,
+      true,
+      Paint()..color = AppColors.orange,
+    );
+    canvas.drawArc(
+      rect.deflate(2),
+      math.pi * .18,
+      math.pi * .62,
+      true,
+      Paint()..color = const Color(0xFFF7B15F),
+    );
+    canvas.drawCircle(
+      Offset(size.width / 2, size.height / 2),
+      26,
+      Paint()..color = const Color(0xFFFFF0DF),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class HomeScreen extends StatelessWidget {
+  const HomeScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width = constraints.maxWidth.isFinite
+            ? constraints.maxWidth
+            : _wideDesignWidth;
+        final bool compact = width < 1200;
+        final _HomeMetrics metrics =
+            compact ? _HomeMetrics.compact(width) : _HomeMetrics.wide(width);
+
+        return Stack(
+          children: <Widget>[
+            CustomPaint(
+              size: Size(width, _designHeight),
+              painter: HomeBackgroundPainter(),
+            ),
+            Positioned(
+              left: metrics.margin,
+              top: 38,
+              right: metrics.margin,
+              child: const HomeHeader(),
+            ),
+            Positioned(
+              left: metrics.margin,
+              top: _homeMainTop,
+              child: StartAssessmentCard(width: metrics.startWidth),
+            ),
+            Positioned(
+              left: metrics.rightColumnLeft,
+              top: _homeMainTop,
+              child: HomeStatsRow(
+                width: metrics.scheduleWidth,
+                cardWidth: metrics.statWidth,
+                spacing: metrics.statSpacing,
+              ),
+            ),
+            Positioned(
+              left: metrics.rightColumnLeft,
+              top: _homeScheduleTop,
+              child: ScheduleCard(
+                width: metrics.scheduleWidth,
+                height: _homeScheduleHeight,
+              ),
+            ),
+            Positioned(
+              left: metrics.margin,
+              top: _homeShortcutTop,
+              child: FeatureShortcutRow(
+                cardWidth: metrics.shortcutWidth,
+                spacing: metrics.shortcutSpacing,
+              ),
+            ),
+            Positioned(
+              left: metrics.margin,
+              bottom: 24,
+              child: ProgressOverviewCard(width: metrics.progressWidth),
+            ),
+            Positioned(
+              right: metrics.margin,
+              bottom: 24,
+              child: MorePlansCard(width: metrics.moreWidth),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _HomeMetrics {
+  const _HomeMetrics({
+    required this.margin,
+    required this.startWidth,
+    required this.rightColumnLeft,
+    required this.statWidth,
+    required this.statSpacing,
+    required this.scheduleWidth,
+    required this.shortcutWidth,
+    required this.shortcutSpacing,
+    required this.progressWidth,
+    required this.moreWidth,
+  });
+
+  factory _HomeMetrics.compact(double width) {
+    const double margin = 54;
+    const double startWidth = 336;
+    const double rightLeft = 420;
+    final double available = width - rightLeft - margin;
+    return _HomeMetrics(
+      margin: margin,
+      startWidth: startWidth,
+      rightColumnLeft: rightLeft,
+      statWidth: (available - 36) / 3,
+      statSpacing: 18,
+      scheduleWidth: available,
+      shortcutWidth: (width - margin * 2 - 70) / 6,
+      shortcutSpacing: 14,
+      progressWidth: 612,
+      moreWidth: width - margin * 2 - 612 - 18,
+    );
+  }
+
+  factory _HomeMetrics.wide(double width) {
+    const double margin = 86;
+    const double startWidth = 430;
+    const double rightLeft = 552;
+    final double available = width - rightLeft - margin;
+    return _HomeMetrics(
+      margin: margin,
+      startWidth: startWidth,
+      rightColumnLeft: rightLeft,
+      statWidth: (available - 36) / 3,
+      statSpacing: 18,
+      scheduleWidth: available,
+      shortcutWidth: (width - margin * 2 - 70) / 6,
+      shortcutSpacing: 14,
+      progressWidth: (width - margin * 2 - 24) * .68,
+      moreWidth: (width - margin * 2 - 24) * .32,
+    );
+  }
+
+  final double margin;
+  final double startWidth;
+  final double rightColumnLeft;
+  final double statWidth;
+  final double statSpacing;
+  final double scheduleWidth;
+  final double shortcutWidth;
+  final double shortcutSpacing;
+  final double progressWidth;
+  final double moreWidth;
+}
+
+class HomeBackgroundPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    canvas.drawRect(Offset.zero & size, Paint()..color = AppColors.page);
+
+    final Path top = Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width, 182)
+      ..quadraticBezierTo(size.width * .72, 126, size.width * .48, 148)
+      ..quadraticBezierTo(size.width * .18, 180, 0, 122)
+      ..close();
+    canvas.drawPath(top, Paint()..color = const Color(0xFFFFF4E6));
+
+    final Path lower = Path()
+      ..moveTo(0, size.height - 118)
+      ..quadraticBezierTo(size.width * .23, size.height - 174, size.width * .48,
+          size.height - 118)
+      ..quadraticBezierTo(
+          size.width * .72, size.height - 68, size.width, size.height - 128)
+      ..lineTo(size.width, size.height)
+      ..lineTo(0, size.height)
+      ..close();
+    canvas.drawPath(lower, Paint()..color = const Color(0xFFFFF9F0));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class HomeHeader extends StatelessWidget {
+  const HomeHeader({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        CustomPaint(size: const Size(58, 58), painter: SunPainter()),
+        const SizedBox(width: 16),
+        const Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Text(
+              '上午好，启明成长中心',
+              style: TextStyle(
+                color: AppColors.ink,
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                height: 1,
+              ),
+            ),
+            SizedBox(height: 9),
+            Text(
+              '今天是 2025年5月13日    星期二',
+              style: TextStyle(
+                color: AppColors.body,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+        const Spacer(),
+        const Icon(Icons.search_rounded, size: 31, color: AppColors.ink),
+        const SizedBox(width: 26),
+        Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
+            const Icon(
+              Icons.notifications_none_rounded,
+              size: 31,
+              color: AppColors.ink,
+            ),
+            Positioned(
+              right: -2,
+              top: -6,
+              child: Container(
+                width: 20,
+                height: 20,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFE94C3F),
+                  shape: BoxShape.circle,
+                ),
+                alignment: Alignment.center,
+                child: const Text(
+                  '3',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(width: 26),
+        const PersonAvatar(size: 52),
+      ],
+    );
+  }
+}
+
+class SunPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    final Paint ray = Paint()
+      ..color = const Color(0xFFF6B64E)
+      ..strokeWidth = 3.2
+      ..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 10; i++) {
+      final double angle = math.pi * 2 / 10 * i;
+      final Offset start =
+          center + Offset(math.cos(angle), math.sin(angle)) * 22;
+      final Offset end = center + Offset(math.cos(angle), math.sin(angle)) * 28;
+      canvas.drawLine(start, end, ray);
+    }
+    canvas.drawCircle(center, 14, Paint()..color = const Color(0xFFFFC75B));
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class PersonAvatar extends StatelessWidget {
+  const PersonAvatar({required this.size, super.key});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE1C9),
+        shape: BoxShape.circle,
+        boxShadow: _softShadow(
+          color: const Color(0x18B65C3A),
+          blur: 14,
+          offset: const Offset(0, 7),
+        ),
+      ),
+      child: Stack(
+        alignment: Alignment.center,
+        children: <Widget>[
+          Positioned(
+            top: size * .18,
+            child: Container(
+              width: size * .55,
+              height: size * .46,
+              decoration: const BoxDecoration(
+                color: Color(0xFF74402E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              ),
+            ),
+          ),
+          Positioned(
+            top: size * .27,
+            child: Container(
+              width: size * .45,
+              height: size * .43,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFC9A8),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: size * .05,
+            child: Container(
+              width: size * .58,
+              height: size * .22,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE98A66),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+            ),
+          ),
+          Positioned(
+            top: size * .47,
+            left: size * .35,
+            child: Container(
+                width: 3,
+                height: 3,
+                decoration: const BoxDecoration(
+                    color: AppColors.ink, shape: BoxShape.circle)),
+          ),
+          Positioned(
+            top: size * .47,
+            right: size * .35,
+            child: Container(
+                width: 3,
+                height: 3,
+                decoration: const BoxDecoration(
+                    color: AppColors.ink, shape: BoxShape.circle)),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StartAssessmentCard extends StatelessWidget {
+  const StartAssessmentCard({this.width = 430, super.key});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 334,
+      padding: const EdgeInsets.fromLTRB(30, 34, 30, 28),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: <Color>[Color(0xFFF28A58), Color(0xFFD85C36)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _softShadow(
+          color: const Color(0x30C85C38),
+          blur: 22,
+          offset: const Offset(0, 14),
+        ),
+      ),
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            right: -10,
+            bottom: 26,
+            child: ClipOval(
+              child: Container(
+                width: 140,
+                height: 58,
+                color: const Color(0x22FFFFFF),
+              ),
+            ),
+          ),
+          const Positioned(
+            right: 6,
+            bottom: 46,
+            child: ClipboardPencilIllustration(),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '开始测评',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 33,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+              const SizedBox(height: 17),
+              const Text(
+                '科学评估 · 全面了解 · 助力成长',
+                style: TextStyle(
+                  color: Color(0xFFFFE9DA),
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const Spacer(),
+              _StartButton(
+                icon: Icons.add_rounded,
+                label: '新建测评',
+                filled: true,
+                onTap: () {},
+              ),
+              const SizedBox(height: 16),
+              _StartButton(
+                icon: Icons.play_arrow_rounded,
+                label: '继续测评',
+                filled: false,
+                onTap: () {},
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StartButton extends StatelessWidget {
+  const _StartButton({
+    required this.icon,
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 174,
+        height: 50,
+        decoration: BoxDecoration(
+          color: filled ? Colors.white : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: filled ? null : Border.all(color: Colors.white, width: 1.6),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: <Widget>[
+            Icon(
+              icon,
+              size: 23,
+              color: filled ? AppColors.orangeDeep : Colors.white,
+            ),
+            const SizedBox(width: 9),
+            Text(
+              label,
+              style: TextStyle(
+                color: filled ? AppColors.orangeDeep : Colors.white,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class ClipboardPencilIllustration extends StatelessWidget {
+  const ClipboardPencilIllustration({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 158,
+      height: 168,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Positioned(
+            left: 26,
+            top: 23,
+            child: Transform.rotate(
+              angle: .11,
+              child: Container(
+                width: 94,
+                height: 128,
+                padding: const EdgeInsets.fromLTRB(16, 24, 10, 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFE0C0),
+                  borderRadius: BorderRadius.circular(18),
+                  boxShadow: _softShadow(
+                    color: const Color(0x25A64B25),
+                    blur: 18,
+                    offset: const Offset(0, 12),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _clipLine(45),
+                    const SizedBox(height: 13),
+                    Row(
+                      children: <Widget>[
+                        const Icon(Icons.check_circle_rounded,
+                            size: 18, color: Color(0xFFFFB769)),
+                        const SizedBox(width: 9),
+                        _clipLine(37),
+                      ],
+                    ),
+                    const SizedBox(height: 13),
+                    _clipLine(58),
+                    const SizedBox(height: 11),
+                    _clipLine(42),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 57,
+            top: 9,
+            child: Transform.rotate(
+              angle: .11,
+              child: Container(
+                width: 58,
+                height: 22,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF6B26B),
+                  borderRadius: BorderRadius.circular(7),
+                  border: Border.all(color: const Color(0xFFFFD6AA), width: 2),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 14,
+            bottom: 30,
+            child: Transform.rotate(
+              angle: .64,
+              child: Column(
+                children: <Widget>[
+                  Container(
+                    width: 23,
+                    height: 84,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFBE66),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                  ),
+                  ClipPath(
+                    clipper: TriangleClipper(),
+                    child: Container(
+                      width: 23,
+                      height: 21,
+                      color: const Color(0xFF6B3A2A),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static Widget _clipLine(double width) {
+    return Container(
+      width: width,
+      height: 7,
+      decoration: BoxDecoration(
+        color: const Color(0xFFE59E70).withOpacity(.38),
+        borderRadius: BorderRadius.circular(6),
+      ),
+    );
+  }
+}
+
+class TriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class HomeStatsRow extends StatelessWidget {
+  const HomeStatsRow({
+    required this.width,
+    this.cardWidth = 226,
+    this.spacing = 18,
+    super.key,
+  });
+
+  final double width;
+  final double cardWidth;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: width,
+      height: _homeStatsHeight,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: StatusSummaryCard(
+              label: '今日待测',
+              number: '18',
+              icon: Icons.group_rounded,
+              tint: const Color(0xFFFFE4D3),
+              iconColor: const Color(0xFFE9905E),
+              width: cardWidth,
+            ),
+          ),
+          SizedBox(width: spacing),
+          Expanded(
+            child: StatusSummaryCard(
+              label: '进行中',
+              number: '6',
+              icon: Icons.schedule_rounded,
+              tint: const Color(0xFFFFF0C7),
+              iconColor: const Color(0xFFE4AD42),
+              width: cardWidth,
+            ),
+          ),
+          SizedBox(width: spacing),
+          Expanded(
+            child: StatusSummaryCard(
+              label: '待出报告',
+              number: '12',
+              icon: Icons.description_rounded,
+              tint: const Color(0xFFEAF2E1),
+              iconColor: const Color(0xFF9AB986),
+              width: cardWidth,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class StatusSummaryCard extends StatelessWidget {
+  const StatusSummaryCard({
+    required this.label,
+    required this.number,
+    required this.icon,
+    required this.tint,
+    required this.iconColor,
+    this.width = 226,
+    super.key,
+  });
+
+  final String label;
+  final String number;
+  final IconData icon;
+  final Color tint;
+  final Color iconColor;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 102,
+      padding: const EdgeInsets.fromLTRB(18, 18, 16, 14),
+      decoration: BoxDecoration(
+        color: tint.withOpacity(.82),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: _softShadow(
+          color: const Color(0x13B05F32),
+          blur: 18,
+          offset: const Offset(0, 9),
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: iconColor.withOpacity(.88),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  number,
+                  style: const TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Container(
+            width: 43,
+            height: 43,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.52),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(icon, color: iconColor, size: 26),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ScheduleCard extends StatelessWidget {
+  const ScheduleCard({this.width = 726, this.height = 224, super.key});
+
+  final double width;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.9),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _softShadow(
+          color: const Color(0x13B05F32),
+          blur: 18,
+          offset: const Offset(0, 9),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: const <Widget>[
+              Text(
+                '今日排课',
+                style: TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Spacer(),
+              Text(
+                '查看全部 〉',
+                style: TextStyle(
+                  color: Color(0xFFD79B78),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          const ScheduleRow(
+            color: AppColors.orange,
+            time: '09:00',
+            title: '认知能力评估（小组）',
+            place: '教室A101',
+            state: '进行中',
+            stateColor: Color(0xFFEA7044),
+            stateBg: Color(0xFFFFEEE5),
+          ),
+          const ScheduleRow(
+            color: AppColors.yellow,
+            time: '10:30',
+            title: '情绪与行为评估（个体）',
+            place: '咨询室2',
+            state: '即将开始',
+            stateColor: Color(0xFFE87042),
+            stateBg: Color(0xFFFFEEE5),
+          ),
+          const ScheduleRow(
+            color: AppColors.green,
+            time: '14:00',
+            title: '学习能力综合评估（小组）',
+            place: '教室A102',
+            state: '未开始',
+            stateColor: Color(0xFF9E9A96),
+            stateBg: Color(0xFFF3F0EC),
+          ),
+          const ScheduleRow(
+            color: AppColors.blueGray,
+            time: '15:30',
+            title: '家长沙龙：正向沟通技巧',
+            place: '多功能厅',
+            state: '未开始',
+            stateColor: Color(0xFF9E9A96),
+            stateBg: Color(0xFFF3F0EC),
+            isLast: true,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ScheduleRow extends StatelessWidget {
+  const ScheduleRow({
+    required this.color,
+    required this.time,
+    required this.title,
+    required this.place,
+    required this.state,
+    required this.stateColor,
+    required this.stateBg,
+    this.isLast = false,
+    super.key,
+  });
+
+  final Color color;
+  final String time;
+  final String title;
+  final String place;
+  final String state;
+  final Color stateColor;
+  final Color stateBg;
+  final bool isLast;
+
+  static const double _rowHeight = 34;
+  static const double _dotSize = 11;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _rowHeight,
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 20,
+            height: _rowHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: <Widget>[
+                if (!isLast)
+                  Positioned(
+                    top: _rowHeight / 2,
+                    bottom: -_rowHeight / 2,
+                    child: Container(
+                      width: 2,
+                      decoration: BoxDecoration(
+                        color: color.withOpacity(.34),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                Container(
+                  width: _dotSize,
+                  height: _dotSize,
+                  decoration:
+                      BoxDecoration(color: color, shape: BoxShape.circle),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 10),
+          SizedBox(
+            width: 54,
+            child: Text(
+              time,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: AppColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          SizedBox(
+            width: 88,
+            child: Text(
+              place,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: Color(0xFF95867E),
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Container(
+            width: 63,
+            height: 25,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: stateBg,
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              state,
+              style: TextStyle(
+                color: stateColor,
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class FeatureShortcutRow extends StatelessWidget {
+  const FeatureShortcutRow({
+    this.cardWidth = 187,
+    this.spacing = 14,
+    super.key,
+  });
+
+  final double cardWidth;
+  final double spacing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        ShortcutCard(
+          title: '排课日程',
+          desc1: '课程安排',
+          desc2: '一目了然',
+          icon: Icons.calendar_month_rounded,
+          iconColor: const Color(0xFFE87B52),
+          bg: const Color(0xFFFFF5EA),
+          width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '学员档案',
+          desc1: '成长记录',
+          desc2: '全面管理',
+          icon: Icons.badge_rounded,
+          iconColor: const Color(0xFF74AA79),
+          bg: const Color(0xFFEFF7EC),
+          width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '报告中心',
+          desc1: '测评报告',
+          desc2: '智能生成',
+          icon: Icons.assignment_rounded,
+          iconColor: const Color(0xFFE87952),
+          bg: const Color(0xFFFFF0E6),
+          width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '预约管理',
+          desc1: '预约安排',
+          desc2: '高效有序',
+          icon: Icons.access_time_filled_rounded,
+          iconColor: const Color(0xFFE9774B),
+          bg: const Color(0xFFFFEEF0),
+          width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '机构消息',
+          desc1: '重要通知',
+          desc2: '及时推送',
+          icon: Icons.notifications_active_rounded,
+          iconColor: const Color(0xFFE6A13D),
+          bg: const Color(0xFFFFF6E2),
+          badge: '5',
+          width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '数据概览',
+          desc1: '多维数据',
+          desc2: '清晰趋势',
+          icon: Icons.pie_chart_rounded,
+          iconColor: const Color(0xFF6FA477),
+          bg: const Color(0xFFEAF3E7),
+          width: cardWidth,
+        ),
+      ],
+    );
+  }
+}
+
+class ShortcutCard extends StatelessWidget {
+  const ShortcutCard({
+    required this.title,
+    required this.desc1,
+    required this.desc2,
+    required this.icon,
+    required this.iconColor,
+    required this.bg,
+    this.badge,
+    this.width = 187,
+    super.key,
+  });
+
+  final String title;
+  final String desc1;
+  final String desc2;
+  final IconData icon;
+  final Color iconColor;
+  final Color bg;
+  final String? badge;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 118,
+      padding: const EdgeInsets.fromLTRB(17, 16, 14, 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.88),
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: _softShadow(
+          color: const Color(0x12B05F32),
+          blur: 16,
+          offset: const Offset(0, 8),
+        ),
+      ),
+      child: Stack(
+        children: <Widget>[
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                desc1,
+                style: const TextStyle(
+                  color: AppColors.body,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(
+                desc2,
+                style: const TextStyle(
+                  color: AppColors.body,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: <Widget>[
+                Container(
+                  width: 54,
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: bg,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Icon(icon, color: iconColor, size: 32),
+                ),
+                if (badge != null)
+                  Positioned(
+                    right: -5,
+                    top: -7,
+                    child: Container(
+                      width: 23,
+                      height: 23,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFFE8463A),
+                        shape: BoxShape.circle,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        badge!,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class ProgressOverviewCard extends StatelessWidget {
+  const ProgressOverviewCard({this.width = 820, super.key});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 132,
+      padding: const EdgeInsets.fromLTRB(22, 17, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.9),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _softShadow(
+          color: const Color(0x12B05F32),
+          blur: 16,
+          offset: const Offset(0, 8),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: const <Widget>[
+              Text(
+                '测评进度概览',
+                style: TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              Spacer(),
+              Text(
+                '全部测评 〉',
+                style: TextStyle(
+                  color: Color(0xFFD79B78),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              SizedBox(
+                width: 58,
+                height: 58,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: const <Widget>[
+                    CustomPaint(
+                      size: Size(58, 58),
+                      painter: DonutPainter(progress: .62),
+                    ),
+                    Text(
+                      '62%',
+                      style: TextStyle(
+                        color: AppColors.ink,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const <Widget>[
+                  Text(
+                    '总体完成率',
+                    style: TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  SizedBox(height: 7),
+                  Text(
+                    '较昨日 ↑ 8%',
+                    style: TextStyle(
+                      color: AppColors.orange,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(width: 28),
+              const Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: <Widget>[
+                    ProgressStat(
+                        color: AppColors.blueGray,
+                        label: '未开始',
+                        number: '24',
+                        desc: '占比 24%'),
+                    ProgressStat(
+                        color: AppColors.orange,
+                        label: '进行中',
+                        number: '56',
+                        desc: '占比 56%'),
+                    ProgressStat(
+                        color: AppColors.green,
+                        label: '已完成',
+                        number: '32',
+                        desc: '占比 32%'),
+                    ProgressStat(
+                        color: AppColors.yellow,
+                        label: '已出报告',
+                        number: '28',
+                        desc: '占比 28%'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class DonutPainter extends CustomPainter {
+  const DonutPainter({required this.progress});
+
+  final double progress;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Rect rect = Offset.zero & size;
+    final Paint bg = Paint()
+      ..color = const Color(0xFFEFE9E1)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    final Paint orange = Paint()
+      ..color = AppColors.orange
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    final Paint green = Paint()
+      ..color = AppColors.green
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 9
+      ..strokeCap = StrokeCap.round;
+    canvas.drawArc(rect.deflate(7), 0, math.pi * 2, false, bg);
+    canvas.drawArc(rect.deflate(7), -math.pi / 2, math.pi * 2 * progress * .72,
+        false, orange);
+    canvas.drawArc(rect.deflate(7), -math.pi / 2 + math.pi * 2 * progress * .76,
+        math.pi * 2 * progress * .24, false, green);
+  }
+
+  @override
+  bool shouldRepaint(covariant DonutPainter oldDelegate) =>
+      oldDelegate.progress != progress;
+}
+
+class ProgressStat extends StatelessWidget {
+  const ProgressStat({
+    required this.color,
+    required this.label,
+    required this.number,
+    required this.desc,
+    super.key,
+  });
+
+  final Color color;
+  final String label;
+  final String number;
+  final String desc;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 72,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                  width: 6,
+                  height: 6,
+                  decoration:
+                      BoxDecoration(color: color, shape: BoxShape.circle)),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: AppColors.body,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            number,
+            style: const TextStyle(
+              color: AppColors.ink,
+              fontSize: 18,
+              fontWeight: FontWeight.w800,
+              height: 1,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            desc,
+            style: const TextStyle(
+              color: AppColors.body,
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class MorePlansCard extends StatelessWidget {
+  const MorePlansCard({this.width = 360, super.key});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: 132,
+      padding: const EdgeInsets.fromLTRB(20, 17, 18, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.9),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _softShadow(
+          color: const Color(0x12B05F32),
+          blur: 16,
+          offset: const Offset(0, 8),
+        ),
+      ),
+      child: Stack(
+        children: <Widget>[
+          const Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                '了解更多测评方案',
+                style: TextStyle(
+                  color: AppColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              SizedBox(height: 8),
+              Text(
+                '为不同需求提供专业支持',
+                style: TextStyle(
+                  color: AppColors.body,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            left: 0,
+            bottom: 0,
+            child: Container(
+              width: 91,
+              height: 34,
+              decoration: BoxDecoration(
+                color: AppColors.orangeDeep,
+                borderRadius: BorderRadius.circular(18),
+              ),
+              alignment: Alignment.center,
+              child: const Text(
+                '去探索  〉',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const Positioned(right: 0, bottom: -4, child: AdvisorGraphic()),
+        ],
+      ),
+    );
+  }
+}
+
+class AdvisorGraphic extends StatelessWidget {
+  const AdvisorGraphic({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 126,
+      height: 98,
+      child: Stack(
+        children: <Widget>[
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: 92,
+              height: 22,
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8B18A).withOpacity(.35),
+                borderRadius: BorderRadius.circular(18),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 20,
+            top: 4,
+            child: Container(
+              width: 43,
+              height: 48,
+              decoration: const BoxDecoration(
+                color: Color(0xFF75402E),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 25,
+            top: 15,
+            child: Container(
+              width: 34,
+              height: 35,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFC6A5),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            right: 11,
+            bottom: 7,
+            child: Container(
+              width: 68,
+              height: 43,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFF0E2),
+                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+              ),
+            ),
+          ),
+          Positioned(
+            right: 43,
+            bottom: 8,
+            child: Transform.rotate(
+              angle: -.24,
+              child: Container(
+                width: 54,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFCFE7BF),
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: _softShadow(
+                    color: const Color(0x1683A46F),
+                    blur: 10,
+                    offset: const Offset(0, 5),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            left: 12,
+            bottom: 4,
+            child: CustomPaint(
+                size: const Size(42, 48), painter: SmallLeavesPainter()),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class SmallLeavesPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint stem = Paint()
+      ..color = const Color(0xFF87A969)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(
+        Offset(size.width / 2, size.height), Offset(size.width / 2, 10), stem);
+    _leaf(canvas, Offset(20, 29), const Size(22, 11), -.6);
+    _leaf(canvas, Offset(22, 21), const Size(24, 12), .25);
+    _leaf(canvas, Offset(19, 13), const Size(18, 9), -.45);
+  }
+
+  void _leaf(Canvas canvas, Offset center, Size size, double angle) {
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(angle);
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: Offset.zero, width: size.width, height: size.height),
+      Paint()..color = const Color(0xFF9CBD78),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
