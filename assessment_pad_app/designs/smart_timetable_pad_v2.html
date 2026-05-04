@@ -1,0 +1,753 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pad 智慧课表设计图 V2</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --page: #fff7ee;
+      --surface: #fffdf9;
+      --panel: #ffffff;
+      --ink: #3f2b22;
+      --text: #6f5b50;
+      --muted: #a7958b;
+      --line: #ead7c9;
+      --line-soft: #f4e8df;
+      --orange: #e96f43;
+      --orange-deep: #c95d37;
+      --green: #6f9f70;
+      --blue: #3f82d2;
+      --amber: #d99427;
+      --gray: #98a2ad;
+      --danger: #d94f4f;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", Arial, sans-serif;
+    }
+
+    .canvas {
+      width: 1366px;
+      height: 768px;
+      padding: 24px 32px;
+      background: var(--page);
+    }
+
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 18px;
+    }
+
+    .title-wrap {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      min-width: 280px;
+    }
+
+    .back-btn,
+    .small-btn,
+    .teacher-select,
+    .date-switch,
+    .primary-btn,
+    .filter-btn {
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 249, .92);
+      color: var(--ink);
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .back-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      justify-content: center;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 28px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .subtitle {
+      margin-top: 4px;
+      color: var(--text);
+      font-size: 12px;
+      line-height: 14px;
+      font-weight: 700;
+    }
+
+    .actions {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .date-switch {
+      width: 292px;
+      height: 42px;
+      border-radius: 13px;
+      padding: 0 6px;
+      justify-content: space-between;
+    }
+
+    .range {
+      flex: 1;
+      text-align: center;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .nav-btn {
+      width: 32px;
+      height: 32px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      background: #fff8f2;
+    }
+
+    .small-btn {
+      height: 42px;
+      border-radius: 13px;
+      padding: 0 14px;
+      gap: 7px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .teacher-select {
+      width: 224px;
+      height: 42px;
+      border-radius: 13px;
+      padding: 0 12px;
+      gap: 10px;
+      justify-content: space-between;
+    }
+
+    .teacher-main {
+      min-width: 0;
+      flex: 1;
+    }
+
+    .teacher-label {
+      display: block;
+      color: var(--muted);
+      font-size: 10px;
+      line-height: 12px;
+      font-weight: 700;
+    }
+
+    .teacher-name {
+      display: block;
+      margin-top: 1px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--ink);
+      font-size: 14px;
+      line-height: 16px;
+      font-weight: 900;
+    }
+
+    .primary-btn {
+      height: 42px;
+      border: 0;
+      border-radius: 13px;
+      padding: 0 16px;
+      gap: 7px;
+      background: var(--orange);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .subbar {
+      height: 48px;
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .tabs {
+      height: 42px;
+      padding: 4px;
+      border-radius: 13px;
+      background: rgba(255, 241, 232, .85);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      flex: 0 0 auto;
+    }
+
+    .tab {
+      height: 34px;
+      min-width: 88px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .tab.active {
+      background: #fff;
+      color: var(--orange-deep);
+      box-shadow: 0 4px 10px rgba(194, 107, 62, .08);
+    }
+
+    .meta-line {
+      min-width: 0;
+      flex: 1;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .meta-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--green);
+    }
+
+    .filters {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .filter-btn {
+      height: 34px;
+      border-radius: 11px;
+      padding: 0 12px;
+      gap: 7px;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .summary {
+      height: 38px;
+      margin-top: 8px;
+      padding: 0 2px 0 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .summary-copy {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .accent {
+      width: 4px;
+      height: 16px;
+      border-radius: 999px;
+      background: var(--orange);
+    }
+
+    .strong {
+      color: var(--orange-deep);
+    }
+
+    .legend-list {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 14px;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .legend {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      white-space: nowrap;
+    }
+
+    .legend-mark {
+      width: 16px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .board {
+      height: 540px;
+      margin-top: 4px;
+      display: grid;
+      grid-template-columns: 118px 1fr;
+      column-gap: 10px;
+    }
+
+    .time-rail {
+      height: 540px;
+      background: transparent;
+      border-radius: 14px 0 0 14px;
+      border: 1px solid var(--line-soft);
+      border-right: 0;
+      overflow: hidden;
+      display: grid;
+      grid-template-rows: 44px repeat(8, 62px);
+    }
+
+    .time-head {
+      position: relative;
+      background: #fffdf9;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .time-head::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        135deg,
+        transparent calc(50% - 0.5px),
+        var(--line) 50%,
+        transparent calc(50% + 0.5px)
+      );
+      pointer-events: none;
+    }
+
+    .time-head__label {
+      position: absolute;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+      line-height: 1;
+      letter-spacing: 0;
+    }
+
+    .time-head__label--left {
+      left: 10px;
+      bottom: 8px;
+    }
+
+    .time-head__label--right {
+      right: 10px;
+      top: 8px;
+    }
+
+    .slot {
+      height: 62px;
+      padding: 8px 4px 0 10px;
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(255, 253, 249, .72);
+    }
+
+    .slot:last-child {
+      border-bottom: 1px solid var(--line);
+    }
+
+    .slot-title {
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 17px;
+      font-weight: 900;
+    }
+
+    .slot-time {
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 14px;
+      font-weight: 800;
+    }
+
+    .grid {
+      height: 540px;
+      border-radius: 14px;
+      overflow: hidden;
+      background: rgba(255, 255, 255, .8);
+      border: 1px solid rgba(234, 215, 201, .9);
+      border-left: 0;
+    }
+
+    table {
+      width: 100%;
+      height: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    thead th {
+      height: 44px;
+      background: #fffdf9;
+      border-bottom: 1px solid var(--line);
+      border-right: 1px solid var(--line-soft);
+      text-align: center;
+      padding: 6px 4px;
+    }
+
+    thead th:last-child,
+    tbody td:last-child {
+      border-right: 0;
+    }
+
+    .day {
+      color: var(--ink);
+      font-size: 13px;
+      line-height: 16px;
+      font-weight: 900;
+    }
+
+    .date {
+      margin-top: 2px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 13px;
+      font-weight: 800;
+    }
+
+    th.today {
+      background: #fff4eb;
+    }
+
+    th.today .day,
+    th.today .date {
+      color: var(--orange-deep);
+    }
+
+    .today-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 16px;
+      min-width: 32px;
+      margin-left: 5px;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: #ffe1d1;
+      color: var(--orange-deep);
+      font-size: 10px;
+      font-weight: 900;
+      vertical-align: 1px;
+    }
+
+    tbody td {
+      height: 62px;
+      padding: 6px;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 1px solid var(--line-soft);
+      background: rgba(255, 255, 255, .72);
+      vertical-align: top;
+    }
+
+    tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    td.today-cell {
+      background: #fff9f4;
+    }
+
+    .lesson {
+      --status: var(--blue);
+      height: 50px;
+      border-radius: 9px;
+      padding: 7px 9px 6px;
+      border: 0;
+      background: #eaf3ff;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .lesson.signed {
+      --status: var(--gray);
+      background: #f1f3f6;
+    }
+
+    .lesson.trial {
+      --status: var(--green);
+      background: #edf8ec;
+    }
+
+    .lesson.partial {
+      --status: var(--amber);
+      background: #fff1d8;
+    }
+
+    .lesson.danger::after {
+      content: "";
+      position: absolute;
+      right: 7px;
+      top: 7px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--danger);
+    }
+
+    .lesson-title {
+      padding-right: 10px;
+      color: var(--ink);
+      font-size: 12px;
+      line-height: 15px;
+      font-weight: 900;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .lesson-bottom {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .person {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text);
+      font-size: 10px;
+      line-height: 13px;
+      font-weight: 800;
+    }
+
+    .status {
+      height: 18px;
+      padding: 0;
+      border-radius: 5px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--status);
+      font-size: 10px;
+      line-height: 18px;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .status::before {
+      content: none;
+    }
+
+    .empty {
+      height: 50px;
+      border-radius: 9px;
+    }
+
+    svg {
+      width: 18px;
+      height: 18px;
+      fill: none;
+      stroke: currentColor;
+      stroke-width: 2.2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      flex: 0 0 auto;
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas">
+    <section class="topbar">
+      <div class="title-wrap">
+        <div class="back-btn"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg></div>
+        <div>
+          <h1>智慧课表</h1>
+          <div class="subtitle">按固定时段查看老师一周排课</div>
+        </div>
+      </div>
+
+      <div class="actions">
+        <div class="date-switch">
+          <span class="nav-btn"><svg viewBox="0 0 24 24"><path d="M15 18l-6-6 6-6" /></svg></span>
+          <span class="range">2026.05.04 - 05.10</span>
+          <span class="nav-btn"><svg viewBox="0 0 24 24"><path d="M9 6l6 6-6 6" /></svg></span>
+        </div>
+        <div class="small-btn"><svg viewBox="0 0 24 24"><path d="M8 7h8M8 12h8M8 17h5" /></svg>今天</div>
+        <div class="teacher-select">
+          <svg viewBox="0 0 24 24"><path d="M20 21a8 8 0 0 0-16 0" /><circle cx="12" cy="7" r="4" /></svg>
+          <span class="teacher-main">
+            <span class="teacher-label">当前老师</span>
+            <span class="teacher-name">陈思语老师</span>
+          </span>
+          <svg viewBox="0 0 24 24"><path d="M6 9l6 6 6-6" /></svg>
+        </div>
+        <div class="primary-btn"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14" /></svg>新增排课</div>
+      </div>
+    </section>
+
+    <section class="subbar">
+      <div class="tabs">
+        <span class="tab active">智慧课表</span>
+        <span class="tab">时间课表</span>
+      </div>
+      <div class="meta-line"><span class="meta-dot"></span><span>陈思语老师 · 本周 18 节 · 未点名 7 节 · 冲突 1 节</span></div>
+      <div class="filters">
+        <span class="filter-btn"><svg viewBox="0 0 24 24"><path d="M4 6h16M7 12h10M10 18h4" /></svg>全部课程</span>
+        <span class="filter-btn"><svg viewBox="0 0 24 24"><path d="M4 5h16v14H4z" /><path d="M8 9h8M8 13h5" /></svg>全部状态</span>
+      </div>
+    </section>
+
+    <section class="summary">
+      <div class="summary-copy"><span class="accent"></span><span>共 <span class="strong">18</span> 个日程，未点名 <span class="strong">7</span> 个，冲突 <span class="strong">1</span> 个</span></div>
+      <div class="legend-list">
+        <span class="legend" style="color: var(--blue);"><span class="legend-mark"></span>未点名</span>
+        <span class="legend" style="color: var(--gray);"><span class="legend-mark"></span>已点名</span>
+        <span class="legend" style="color: var(--amber);"><span class="legend-mark"></span>部分点名</span>
+        <span class="legend" style="color: var(--green);"><span class="legend-mark"></span>试听</span>
+        <span class="legend" style="color: var(--danger);"><span class="legend-mark"></span>冲突</span>
+      </div>
+    </section>
+
+    <section class="board">
+      <aside class="time-rail">
+        <div class="time-head">
+          <span class="time-head__label time-head__label--left">时段</span>
+          <span class="time-head__label time-head__label--right">日期</span>
+        </div>
+        <div class="slot"><div class="slot-title">第一节</div><div class="slot-time">08:30 - 09:10</div></div>
+        <div class="slot"><div class="slot-title">第二节</div><div class="slot-time">09:20 - 10:00</div></div>
+        <div class="slot"><div class="slot-title">第三节</div><div class="slot-time">10:10 - 10:50</div></div>
+        <div class="slot"><div class="slot-title">第四节</div><div class="slot-time">11:00 - 11:40</div></div>
+        <div class="slot"><div class="slot-title">第五节</div><div class="slot-time">14:00 - 14:40</div></div>
+        <div class="slot"><div class="slot-title">第六节</div><div class="slot-time">14:50 - 15:30</div></div>
+        <div class="slot"><div class="slot-title">第七节</div><div class="slot-time">15:40 - 16:20</div></div>
+        <div class="slot"><div class="slot-title">第八节</div><div class="slot-time">16:30 - 17:10</div></div>
+      </aside>
+
+      <div class="grid">
+        <table>
+          <thead>
+            <tr>
+              <th class="today"><div class="day">周一<span class="today-pill">今天</span></div><div class="date">05/04</div></th>
+              <th><div class="day">周二</div><div class="date">05/05</div></th>
+              <th><div class="day">周三</div><div class="date">05/06</div></th>
+              <th><div class="day">周四</div><div class="date">05/07</div></th>
+              <th><div class="day">周五</div><div class="date">05/08</div></th>
+              <th><div class="day">周六</div><div class="date">05/09</div></th>
+              <th><div class="day">周日</div><div class="date">05/10</div></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="today-cell"><div class="lesson"><div class="lesson-title">感统训练</div><div class="lesson-bottom"><span class="person">陈小雨 · A101</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">语言认知课</div><div class="lesson-bottom"><span class="person">星星班 · B203</span><span class="status">未点名</span></div></div></td>
+              <td><div class="lesson signed"><div class="lesson-title">精细动作</div><div class="lesson-bottom"><span class="person">刘子墨 · A102</span><span class="status">已点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson trial"><div class="lesson-title">试听评估</div><div class="lesson-bottom"><span class="person">王一诺 · 咨询室</span><span class="status">试听</span></div></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="lesson partial"><div class="lesson-title">社交小组课</div><div class="lesson-bottom"><span class="person">彩虹班 · B201</span><span class="status">部分</span></div></div></td>
+              <td><div class="lesson"><div class="lesson-title">孤独症筛查</div><div class="lesson-bottom"><span class="person">赵晨曦 · 评估室</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson signed"><div class="lesson-title">个训课</div><div class="lesson-bottom"><span class="person">孙浩宇 · A105</span><span class="status">已点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">音乐互动</div><div class="lesson-bottom"><span class="person">苗苗班 · B205</span><span class="status">未点名</span></div></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="lesson danger"><div class="lesson-title">语言表达</div><div class="lesson-bottom"><span class="person">许安安 · A103</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson signed"><div class="lesson-title">感统训练</div><div class="lesson-bottom"><span class="person">周沐阳 · A101</span><span class="status">已点名</span></div></div></td>
+              <td><div class="lesson trial"><div class="lesson-title">新生试听</div><div class="lesson-bottom"><span class="person">李悦 · 咨询室</span><span class="status">试听</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">认知训练</div><div class="lesson-bottom"><span class="person">唐心怡 · A106</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">生活自理课</div><div class="lesson-bottom"><span class="person">成长班 · B204</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">情绪管理</div><div class="lesson-bottom"><span class="person">马子涵 · A107</span><span class="status">未点名</span></div></div></td>
+              <td><div class="lesson partial"><div class="lesson-title">社交游戏</div><div class="lesson-bottom"><span class="person">彩虹班 · B201</span><span class="status">部分</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="lesson signed"><div class="lesson-title">感统训练</div><div class="lesson-bottom"><span class="person">郭乐乐 · A101</span><span class="status">已点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">口肌训练</div><div class="lesson-bottom"><span class="person">高一航 · A108</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">融合小组</div><div class="lesson-bottom"><span class="person">阳光班 · B202</span><span class="status">未点名</span></div></div></td>
+              <td><div class="lesson trial"><div class="lesson-title">试听课</div><div class="lesson-bottom"><span class="person">韩佳宁 · A109</span><span class="status">试听</span></div></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="empty"></div></td>
+              <td><div class="lesson signed"><div class="lesson-title">语言认知</div><div class="lesson-bottom"><span class="person">沈辰 · A103</span><span class="status">已点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson partial"><div class="lesson-title">亲子指导</div><div class="lesson-bottom"><span class="person">家庭课 · 咨询室</span><span class="status">部分</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">精细动作</div><div class="lesson-bottom"><span class="person">林可可 · A102</span><span class="status">未点名</span></div></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="lesson"><div class="lesson-title">感统小组</div><div class="lesson-bottom"><span class="person">星星班 · B203</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">评估反馈</div><div class="lesson-bottom"><span class="person">家长沟通 · 会议室</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson signed"><div class="lesson-title">运动协调</div><div class="lesson-bottom"><span class="person">潘予辰 · A104</span><span class="status">已点名</span></div></div></td>
+              <td><div class="lesson"><div class="lesson-title">语言表达</div><div class="lesson-bottom"><span class="person">张元元 · A103</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+            <tr>
+              <td class="today-cell"><div class="empty"></div></td>
+              <td><div class="lesson trial"><div class="lesson-title">试听沟通</div><div class="lesson-bottom"><span class="person">秦生 · 咨询室</span><span class="status">试听</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="lesson"><div class="lesson-title">融合小组</div><div class="lesson-bottom"><span class="person">阳光班 · B202</span><span class="status">未点名</span></div></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="empty"></div></td>
+              <td><div class="empty"></div></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</body>
+</html>

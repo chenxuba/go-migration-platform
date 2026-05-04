@@ -397,6 +397,104 @@ func (repo *Repository) AssessmentRecordHasIEPPlan(ctx context.Context, instID, 
 	return count > 0, nil
 }
 
+func (repo *Repository) GetPadHomeAssessmentStats(ctx context.Context, instID int64, assessmentCode string, _ time.Time) (model.PadHomeAssessmentStats, error) {
+	assessmentCode = strings.TrimSpace(assessmentCode)
+	stats := model.PadHomeAssessmentStats{}
+
+	assessmentCodeFilter := ""
+	coverageArgs := []any{}
+	if assessmentCode != "" {
+		assessmentCodeFilter = " AND ar.assessment_code = ?"
+		coverageArgs = append(coverageArgs, assessmentCode)
+	}
+	coverageArgs = append(coverageArgs, instID, model.InstStudentStatusEnrolled)
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(1),
+			COALESCE(SUM(CASE WHEN EXISTS (
+				SELECT 1
+				FROM assessment_record ar
+				WHERE ar.inst_id = s.inst_id
+				  AND ar.student_id = s.id
+				  AND ar.del_flag = 0`+assessmentCodeFilter+`
+			) THEN 1 ELSE 0 END), 0)
+		FROM inst_student s
+		WHERE s.inst_id = ?
+		  AND s.del_flag = 0
+		  AND s.student_status = ?
+	`, coverageArgs...).Scan(&stats.EnrolledStudents, &stats.AssessedStudents); err != nil {
+		return model.PadHomeAssessmentStats{}, err
+	}
+	stats.UnassessedStudents = stats.EnrolledStudents - stats.AssessedStudents
+	if stats.UnassessedStudents < 0 {
+		stats.UnassessedStudents = 0
+	}
+
+	draftWhere := []string{
+		"ad.inst_id = ?",
+		"ad.del_flag = 0",
+		"ad.status <> 'submitted'",
+		"ad.submitted_record_id = 0",
+		"s.student_status = ?",
+	}
+	draftArgs := []any{instID, model.InstStudentStatusEnrolled}
+	if assessmentCode != "" {
+		draftWhere = append(draftWhere, "ad.assessment_code = ?")
+		draftArgs = append(draftArgs, assessmentCode)
+	}
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM (
+			SELECT ad.student_id, ad.assessment_code, MAX(ad.id) AS draft_id
+			FROM assessment_draft ad
+			JOIN inst_student s ON s.id = ad.student_id AND s.inst_id = ad.inst_id AND s.del_flag = 0
+			WHERE `+strings.Join(draftWhere, " AND ")+`
+			GROUP BY ad.student_id, ad.assessment_code
+		) active_draft
+	`, draftArgs...).Scan(&stats.InProgressDrafts); err != nil {
+		return model.PadHomeAssessmentStats{}, err
+	}
+
+	recordWhere := []string{"ar.inst_id = ?", "ar.del_flag = 0", "s.student_status = ?"}
+	recordArgs := []any{instID, model.InstStudentStatusEnrolled}
+	if assessmentCode != "" {
+		recordWhere = append(recordWhere, "ar.assessment_code = ?")
+		recordArgs = append(recordArgs, assessmentCode)
+	}
+	planSQL := `
+		SELECT
+			inst_id,
+			record_id,
+			COUNT(1) AS plan_count,
+			SUM(CASE WHEN status = 'confirmed' THEN 1 ELSE 0 END) AS confirmed_count
+		FROM assessment_iep_plan
+		WHERE inst_id = ? AND del_flag = 0
+		GROUP BY inst_id, record_id
+	`
+	queryArgs := append([]any{instID}, recordArgs...)
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			COUNT(1),
+			COALESCE(SUM(CASE WHEN IFNULL(aip.plan_count, 0) = 0 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN IFNULL(aip.plan_count, 0) > 0 AND IFNULL(aip.confirmed_count, 0) = 0 THEN 1 ELSE 0 END), 0),
+			COALESCE(SUM(CASE WHEN IFNULL(aip.confirmed_count, 0) > 0 THEN 1 ELSE 0 END), 0)
+		FROM assessment_record ar
+		JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
+		LEFT JOIN (`+planSQL+`) aip ON aip.inst_id = ar.inst_id AND aip.record_id = ar.id
+		WHERE `+strings.Join(recordWhere, " AND "),
+		queryArgs...,
+	).Scan(&stats.CompletedRecords, &stats.PendingIEP, &stats.DraftIEP, &stats.GeneratedIEP); err != nil {
+		return model.PadHomeAssessmentStats{}, err
+	}
+
+	stats.Total = stats.EnrolledStudents
+	if stats.Total > 0 {
+		stats.CoverageRate = float64(stats.AssessedStudents) / float64(stats.Total)
+	}
+	stats.CompletionRate = stats.CoverageRate
+	return stats, nil
+}
+
 func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
 	current, size = normalizeAssessmentPage(current, size)
 	where := []string{"ar.inst_id = ?", "ar.del_flag = 0"}

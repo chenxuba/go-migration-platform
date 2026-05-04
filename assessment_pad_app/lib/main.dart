@@ -7,6 +7,8 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'auth_client.dart';
+import 'home_client.dart';
+import 'smart_timetable_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -39,10 +41,12 @@ const SystemUiOverlayStyle _immersiveOverlayStyle = SystemUiOverlayStyle(
 class AssessmentPadApp extends StatelessWidget {
   const AssessmentPadApp({
     this.authClient = const IamAuthClient(),
+    this.homeClient = const ApiHomeClient(),
     super.key,
   });
 
   final AuthClient authClient;
+  final HomeClient homeClient;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +66,8 @@ class AssessmentPadApp extends StatelessWidget {
       ),
       routes: <String, WidgetBuilder>{
         '/': (_) => LoginPage(authClient: authClient),
-        '/home': (_) => const HomePage(),
+        '/home': (_) => HomePage(homeClient: homeClient),
+        '/smart-timetable': (_) => const SmartTimetablePage(),
       },
     );
   }
@@ -109,6 +114,9 @@ const double _homeScheduleHeight =
 const double _homeShortcutTop =
     _homeMainTop + _homeStartHeight + _homeMainShortcutGap;
 const String _authTokenStorageKey = 'auth_token';
+const String _authLoginTypeStorageKey = 'auth_login_type';
+const String _authTenantIdStorageKey = 'auth_tenant_id';
+const String _authOrgIdStorageKey = 'auth_org_id';
 
 List<BoxShadow> _softShadow({
   Color color = const Color(0x22000000),
@@ -211,13 +219,16 @@ class _LoginPageState extends State<LoginPage> {
 }
 
 class HomePage extends StatelessWidget {
-  const HomePage({super.key});
+  const HomePage({required this.homeClient, super.key});
+
+  final HomeClient homeClient;
 
   @override
   Widget build(BuildContext context) {
-    return const PopScope(
+    return PopScope(
       canPop: false,
-      child: Scaffold(body: PadViewport(child: HomeScreen())),
+      child: Scaffold(
+          body: PadViewport(child: HomeScreen(homeClient: homeClient))),
     );
   }
 }
@@ -418,9 +429,9 @@ class _LoginCardState extends State<LoginCard> {
   static const String _rememberedUsernameKey = 'login_remember_username';
   static const String _rememberedPasswordKey = 'login_remember_password_value';
   static const String _sessionTokenKey = _authTokenStorageKey;
-  static const String _sessionLoginTypeKey = 'auth_login_type';
-  static const String _sessionTenantIdKey = 'auth_tenant_id';
-  static const String _sessionOrgIdKey = 'auth_org_id';
+  static const String _sessionLoginTypeKey = _authLoginTypeStorageKey;
+  static const String _sessionTenantIdKey = _authTenantIdStorageKey;
+  static const String _sessionOrgIdKey = _authOrgIdStorageKey;
 
   final TextEditingController _usernameController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
@@ -2390,8 +2401,90 @@ class PieMarkPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class HomeScreen extends StatelessWidget {
-  const HomeScreen({super.key});
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({required this.homeClient, super.key});
+
+  final HomeClient homeClient;
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  HomeSummary _summary = HomeSummary.fallback();
+  HomeSession _session = HomeSession.fallback;
+  bool _loading = true;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHomeData();
+  }
+
+  Future<void> _loadHomeData() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    if (token.trim().isEmpty) {
+      await _logout();
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _loading = true;
+        _errorMessage = null;
+      });
+    }
+    try {
+      final List<Object> result = await Future.wait<Object>(<Future<Object>>[
+        widget.homeClient.fetchCurrentSession(token),
+        widget.homeClient.fetchSummary(token),
+      ]);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _session = result[0] as HomeSession;
+        _summary = result[1] as HomeSummary;
+        _loading = false;
+      });
+    } on HomeApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      if (error.unauthorized) {
+        await _logout();
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorMessage = '首页数据加载失败：$error';
+      });
+    }
+  }
+
+  Future<void> _logout() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.remove(_authTokenStorageKey);
+    await prefs.remove(_authLoginTypeStorageKey);
+    await prefs.remove(_authTenantIdStorageKey);
+    await prefs.remove(_authOrgIdStorageKey);
+    if (!mounted) {
+      return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil(
+      '/',
+      (Route<dynamic> route) => false,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2414,7 +2507,16 @@ class HomeScreen extends StatelessWidget {
               left: metrics.margin,
               top: 38,
               right: metrics.margin,
-              child: const HomeHeader(),
+              child: HomeHeader(
+                session: _session,
+                weather: _summary.weather,
+                date: _summary.date,
+                weekday: _summary.weekday,
+                loading: _loading,
+                errorMessage: _errorMessage,
+                onRefresh: _loadHomeData,
+                onLogout: _logout,
+              ),
             ),
             Positioned(
               left: metrics.margin,
@@ -2428,6 +2530,7 @@ class HomeScreen extends StatelessWidget {
                 width: metrics.scheduleWidth,
                 cardWidth: metrics.statWidth,
                 spacing: metrics.statSpacing,
+                stats: _summary.assessmentStats,
               ),
             ),
             Positioned(
@@ -2436,6 +2539,8 @@ class HomeScreen extends StatelessWidget {
               child: ScheduleCard(
                 width: metrics.scheduleWidth,
                 height: _homeScheduleHeight,
+                items: _summary.schedule,
+                loading: _loading,
               ),
             ),
             Positioned(
@@ -2444,12 +2549,17 @@ class HomeScreen extends StatelessWidget {
               child: FeatureShortcutRow(
                 cardWidth: metrics.shortcutWidth,
                 spacing: metrics.shortcutSpacing,
+                onTimetableTap: () =>
+                    Navigator.of(context).pushNamed('/smart-timetable'),
               ),
             ),
             Positioned(
               left: metrics.margin,
               bottom: 24,
-              child: ProgressOverviewCard(width: metrics.progressWidth),
+              child: ProgressOverviewCard(
+                width: metrics.progressWidth,
+                stats: _summary.assessmentStats,
+              ),
             ),
             Positioned(
               right: metrics.margin,
@@ -2558,30 +2668,49 @@ class HomeBackgroundPainter extends CustomPainter {
 }
 
 class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key});
+  const HomeHeader({
+    required this.session,
+    required this.weather,
+    required this.date,
+    required this.weekday,
+    required this.loading,
+    required this.errorMessage,
+    required this.onRefresh,
+    required this.onLogout,
+    super.key,
+  });
+
+  final HomeSession session;
+  final HomeWeather weather;
+  final String date;
+  final String weekday;
+  final bool loading;
+  final String? errorMessage;
+  final VoidCallback onRefresh;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
     return Row(
       children: <Widget>[
-        CustomPaint(size: const Size(58, 58), painter: SunPainter()),
+        WeatherIcon(weather: weather, size: 58),
         const SizedBox(width: 16),
-        const Column(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Text(
-              '上午好，启明成长中心',
-              style: TextStyle(
+              _homeHeaderTitle(session),
+              style: const TextStyle(
                 color: AppColors.ink,
                 fontSize: 24,
                 fontWeight: FontWeight.w800,
                 height: 1,
               ),
             ),
-            SizedBox(height: 9),
+            const SizedBox(height: 9),
             Text(
-              '今天是 2025年5月13日    星期二',
-              style: TextStyle(
+              _homeHeaderSubtitle(date, weekday, weather),
+              style: const TextStyle(
                 color: AppColors.body,
                 fontSize: 13,
                 fontWeight: FontWeight.w500,
@@ -2590,6 +2719,18 @@ class HomeHeader extends StatelessWidget {
           ],
         ),
         const Spacer(),
+        if (errorMessage != null)
+          HomeLoadStatus(message: errorMessage!, onRefresh: onRefresh)
+        else if (loading)
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: AppColors.orange,
+            ),
+          ),
+        if (loading || errorMessage != null) const SizedBox(width: 24),
         const Icon(Icons.search_rounded, size: 31, color: AppColors.ink),
         const SizedBox(width: 26),
         Stack(
@@ -2624,10 +2765,170 @@ class HomeHeader extends StatelessWidget {
           ],
         ),
         const SizedBox(width: 26),
-        const PersonAvatar(size: 52),
+        AvatarMenuButton(
+          session: session,
+          onLogout: onLogout,
+        ),
       ],
     );
   }
+}
+
+class HomeLoadStatus extends StatelessWidget {
+  const HomeLoadStatus({
+    required this.message,
+    required this.onRefresh,
+    super.key,
+  });
+
+  final String message;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onRefresh,
+      borderRadius: BorderRadius.circular(16),
+      child: Container(
+        constraints: const BoxConstraints(maxWidth: 260),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.78),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: AppColors.line),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.refresh_rounded,
+              size: 16,
+              color: AppColors.orange,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                message,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: AppColors.body,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class WeatherIcon extends StatelessWidget {
+  const WeatherIcon({
+    required this.weather,
+    this.size = 58,
+    super.key,
+  });
+
+  final HomeWeather weather;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    final String condition = weather.condition.trim().toLowerCase();
+    final CustomPainter painter = switch (condition) {
+      'rain' => RainWeatherPainter(),
+      'overcast' || 'cloudy' => CloudWeatherPainter(),
+      'partly_cloudy' => PartlyCloudyWeatherPainter(),
+      _ => SunPainter(),
+    };
+    return CustomPaint(size: Size(size, size), painter: painter);
+  }
+}
+
+String _homeOrganizationName(HomeSession session) {
+  final String orgName = session.orgName.trim();
+  if (orgName.isNotEmpty) {
+    return orgName;
+  }
+  final String nickName = session.nickName.trim();
+  if (nickName.isNotEmpty) {
+    return nickName;
+  }
+  return '';
+}
+
+String _homeHeaderTitle(HomeSession session) {
+  final String greeting = _homeGreeting();
+  final String organization = _homeOrganizationName(session);
+  if (organization.isEmpty) {
+    return greeting;
+  }
+  return '$greeting，$organization';
+}
+
+String _homeGreeting() {
+  final int hour = DateTime.now().hour;
+  if (hour < 12) {
+    return '上午好';
+  }
+  if (hour < 18) {
+    return '下午好';
+  }
+  return '晚上好';
+}
+
+String _homeHeaderSubtitle(
+  String date,
+  String weekday,
+  HomeWeather weather,
+) {
+  final String dateText = _formatChineseDate(date);
+  final String weekdayText = weekday.trim().isEmpty ? _weekdayLabel() : weekday;
+  final String weatherText = _weatherBrief(weather);
+  if (weatherText.isEmpty) {
+    return '今天是 $dateText    $weekdayText';
+  }
+  return '今天是 $dateText    $weekdayText    $weatherText';
+}
+
+String _formatChineseDate(String rawDate) {
+  final DateTime? parsed = DateTime.tryParse(rawDate.trim());
+  final DateTime date = parsed ?? DateTime.now();
+  return '${date.year}年${date.month}月${date.day}日';
+}
+
+String _weekdayLabel() {
+  switch (DateTime.now().weekday) {
+    case DateTime.monday:
+      return '星期一';
+    case DateTime.tuesday:
+      return '星期二';
+    case DateTime.wednesday:
+      return '星期三';
+    case DateTime.thursday:
+      return '星期四';
+    case DateTime.friday:
+      return '星期五';
+    case DateTime.saturday:
+      return '星期六';
+    default:
+      return '星期日';
+  }
+}
+
+String _weatherBrief(HomeWeather weather) {
+  final String display = weather.displayName.trim();
+  if (display.isEmpty) {
+    return '';
+  }
+  if (weather.temperature == 0 && weather.source.trim().isEmpty) {
+    return display;
+  }
+  final int temperature = weather.temperature.round();
+  return '$display $temperature°C';
 }
 
 class SunPainter extends CustomPainter {
@@ -2652,13 +2953,200 @@ class SunPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
-class PersonAvatar extends StatelessWidget {
-  const PersonAvatar({required this.size, super.key});
+class CloudWeatherPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Paint cloud = Paint()..color = const Color(0xFFAAB7C3);
+    final Paint shadow = Paint()..color = const Color(0xFFDCE5EB);
+    final Rect base = Rect.fromLTWH(
+      size.width * .18,
+      size.height * .46,
+      size.width * .64,
+      size.height * .26,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(base.translate(1, 3), const Radius.circular(20)),
+      shadow,
+    );
+    canvas.drawCircle(
+        Offset(size.width * .35, size.height * .47), size.width * .18, cloud);
+    canvas.drawCircle(
+        Offset(size.width * .53, size.height * .40), size.width * .22, cloud);
+    canvas.drawCircle(
+        Offset(size.width * .67, size.height * .50), size.width * .15, cloud);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(base, const Radius.circular(20)),
+      cloud,
+    );
+  }
 
-  final double size;
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class PartlyCloudyWeatherPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset sunCenter = Offset(size.width * .38, size.height * .36);
+    final Paint ray = Paint()
+      ..color = const Color(0xFFF6B64E)
+      ..strokeWidth = 2.6
+      ..strokeCap = StrokeCap.round;
+    for (int i = 0; i < 8; i++) {
+      final double angle = math.pi * 2 / 8 * i;
+      final Offset start =
+          sunCenter + Offset(math.cos(angle), math.sin(angle)) * 14;
+      final Offset end =
+          sunCenter + Offset(math.cos(angle), math.sin(angle)) * 20;
+      canvas.drawLine(start, end, ray);
+    }
+    canvas.drawCircle(
+      sunCenter,
+      size.width * .18,
+      Paint()..color = const Color(0xFFFFC75B),
+    );
+    CloudWeatherPainter().paint(canvas, size);
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class RainWeatherPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    CloudWeatherPainter().paint(canvas, size);
+    final Paint drop = Paint()
+      ..color = const Color(0xFF6FA9D6)
+      ..strokeWidth = 3
+      ..strokeCap = StrokeCap.round;
+    for (final Offset start in <Offset>[
+      Offset(size.width * .33, size.height * .73),
+      Offset(size.width * .50, size.height * .77),
+      Offset(size.width * .66, size.height * .73),
+    ]) {
+      canvas.drawLine(
+        start,
+        start.translate(-size.width * .04, size.height * .11),
+        drop,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+enum _AvatarAction { logout }
+
+class AvatarMenuButton extends StatelessWidget {
+  const AvatarMenuButton({
+    required this.session,
+    required this.onLogout,
+    super.key,
+  });
+
+  final HomeSession session;
+  final VoidCallback onLogout;
 
   @override
   Widget build(BuildContext context) {
+    return PopupMenuButton<_AvatarAction>(
+      offset: const Offset(0, 58),
+      elevation: 10,
+      color: Colors.white,
+      surfaceTintColor: Colors.transparent,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      onSelected: (_AvatarAction action) {
+        switch (action) {
+          case _AvatarAction.logout:
+            onLogout();
+        }
+      },
+      itemBuilder: (BuildContext context) {
+        return <PopupMenuEntry<_AvatarAction>>[
+          PopupMenuItem<_AvatarAction>(
+            enabled: false,
+            padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+            child: SizedBox(
+              width: 190,
+              child: Row(
+                children: <Widget>[
+                  PersonAvatar(size: 34, imageUrl: session.avatar),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          session.nickName.trim().isEmpty
+                              ? '当前账号'
+                              : session.nickName.trim(),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          _homeOrganizationName(session),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppColors.body,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const PopupMenuDivider(height: 1),
+          const PopupMenuItem<_AvatarAction>(
+            value: _AvatarAction.logout,
+            padding: EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.logout_rounded,
+                  size: 18,
+                  color: AppColors.orange,
+                ),
+                SizedBox(width: 9),
+                Text(
+                  '退出登录',
+                  style: TextStyle(
+                    color: AppColors.ink,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ];
+      },
+      child: PersonAvatar(size: 52, imageUrl: session.avatar),
+    );
+  }
+}
+
+class PersonAvatar extends StatelessWidget {
+  const PersonAvatar({required this.size, this.imageUrl = '', super.key});
+
+  final double size;
+  final String imageUrl;
+
+  @override
+  Widget build(BuildContext context) {
+    final String avatarUrl = imageUrl.trim();
     return Container(
       width: size,
       height: size,
@@ -2671,62 +3159,83 @@ class PersonAvatar extends StatelessWidget {
           offset: const Offset(0, 7),
         ),
       ),
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          Positioned(
-            top: size * .18,
-            child: Container(
-              width: size * .55,
-              height: size * .46,
-              decoration: const BoxDecoration(
-                color: Color(0xFF74402E),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-              ),
+      clipBehavior: Clip.antiAlias,
+      child: avatarUrl.isNotEmpty
+          ? Image.network(
+              avatarUrl,
+              fit: BoxFit.cover,
+              errorBuilder:
+                  (BuildContext context, Object error, StackTrace? stackTrace) {
+                return _FallbackAvatarGraphic(size: size);
+              },
+            )
+          : _FallbackAvatarGraphic(size: size),
+    );
+  }
+}
+
+class _FallbackAvatarGraphic extends StatelessWidget {
+  const _FallbackAvatarGraphic({required this.size});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      alignment: Alignment.center,
+      children: <Widget>[
+        Positioned(
+          top: size * .18,
+          child: Container(
+            width: size * .55,
+            height: size * .46,
+            decoration: const BoxDecoration(
+              color: Color(0xFF74402E),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
             ),
           ),
-          Positioned(
-            top: size * .27,
-            child: Container(
-              width: size * .45,
-              height: size * .43,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFC9A8),
-                shape: BoxShape.circle,
-              ),
+        ),
+        Positioned(
+          top: size * .27,
+          child: Container(
+            width: size * .45,
+            height: size * .43,
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFC9A8),
+              shape: BoxShape.circle,
             ),
           ),
-          Positioned(
-            bottom: size * .05,
-            child: Container(
-              width: size * .58,
-              height: size * .22,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE98A66),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-              ),
+        ),
+        Positioned(
+          bottom: size * .05,
+          child: Container(
+            width: size * .58,
+            height: size * .22,
+            decoration: const BoxDecoration(
+              color: Color(0xFFE98A66),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
           ),
-          Positioned(
-            top: size * .47,
-            left: size * .35,
-            child: Container(
-                width: 3,
-                height: 3,
-                decoration: const BoxDecoration(
-                    color: AppColors.ink, shape: BoxShape.circle)),
-          ),
-          Positioned(
-            top: size * .47,
-            right: size * .35,
-            child: Container(
-                width: 3,
-                height: 3,
-                decoration: const BoxDecoration(
-                    color: AppColors.ink, shape: BoxShape.circle)),
-          ),
-        ],
-      ),
+        ),
+        Positioned(
+          top: size * .47,
+          left: size * .35,
+          child: Container(
+              width: 3,
+              height: 3,
+              decoration: const BoxDecoration(
+                  color: AppColors.ink, shape: BoxShape.circle)),
+        ),
+        Positioned(
+          top: size * .47,
+          right: size * .35,
+          child: Container(
+              width: 3,
+              height: 3,
+              decoration: const BoxDecoration(
+                  color: AppColors.ink, shape: BoxShape.circle)),
+        ),
+      ],
     );
   }
 }
@@ -2993,12 +3502,14 @@ class TriangleClipper extends CustomClipper<Path> {
 class HomeStatsRow extends StatelessWidget {
   const HomeStatsRow({
     required this.width,
+    required this.stats,
     this.cardWidth = 226,
     this.spacing = 18,
     super.key,
   });
 
   final double width;
+  final HomeAssessmentStats stats;
   final double cardWidth;
   final double spacing;
 
@@ -3011,8 +3522,8 @@ class HomeStatsRow extends StatelessWidget {
         children: <Widget>[
           Expanded(
             child: StatusSummaryCard(
-              label: '今日待测',
-              number: '18',
+              label: '在读学员',
+              number: '${stats.enrolledStudents}',
               icon: Icons.group_rounded,
               tint: const Color(0xFFFFE4D3),
               iconColor: const Color(0xFFE9905E),
@@ -3022,9 +3533,9 @@ class HomeStatsRow extends StatelessWidget {
           SizedBox(width: spacing),
           Expanded(
             child: StatusSummaryCard(
-              label: '进行中',
-              number: '6',
-              icon: Icons.schedule_rounded,
+              label: '评估进行中',
+              number: '${stats.inProgressDrafts}',
+              icon: Icons.edit_note_rounded,
               tint: const Color(0xFFFFF0C7),
               iconColor: const Color(0xFFE4AD42),
               width: cardWidth,
@@ -3033,9 +3544,9 @@ class HomeStatsRow extends StatelessWidget {
           SizedBox(width: spacing),
           Expanded(
             child: StatusSummaryCard(
-              label: '待出报告',
-              number: '12',
-              icon: Icons.description_rounded,
+              label: '待生成IEP',
+              number: '${stats.pendingIep}',
+              icon: Icons.edit_document,
               tint: const Color(0xFFEAF2E1),
               iconColor: const Color(0xFF9AB986),
               width: cardWidth,
@@ -3123,8 +3634,16 @@ class StatusSummaryCard extends StatelessWidget {
 }
 
 class ScheduleCard extends StatelessWidget {
-  const ScheduleCard({this.width = 726, this.height = 224, super.key});
+  const ScheduleCard({
+    required this.items,
+    this.loading = false,
+    this.width = 726,
+    this.height = 224,
+    super.key,
+  });
 
+  final List<HomeScheduleItem> items;
+  final bool loading;
   final double width;
   final double height;
 
@@ -3167,46 +3686,191 @@ class ScheduleCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          const ScheduleRow(
-            color: AppColors.orange,
-            time: '09:00',
-            title: '认知能力评估（小组）',
-            place: '教室A101',
-            state: '进行中',
-            stateColor: Color(0xFFEA7044),
-            stateBg: Color(0xFFFFEEE5),
+          if (loading && items.isEmpty)
+            const ScheduleSkeletonList()
+          else if (items.isEmpty)
+            const Expanded(child: ScheduleEmptyState())
+          else
+            ...items.asMap().entries.map(
+                  (MapEntry<int, HomeScheduleItem> entry) => ScheduleRow(
+                    color: _scheduleDotColor(entry.key),
+                    time: entry.value.time,
+                    title: entry.value.title,
+                    place: entry.value.place,
+                    state: entry.value.state,
+                    stateColor: _scheduleStateColor(entry.value.state),
+                    stateBg: _scheduleStateBg(entry.value.state),
+                    isLast: entry.key == items.length - 1,
+                  ),
+                ),
+        ],
+      ),
+    );
+  }
+}
+
+class ScheduleSkeletonList extends StatelessWidget {
+  const ScheduleSkeletonList({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: List<Widget>.generate(
+        4,
+        (int index) => ScheduleSkeletonRow(
+          key: ValueKey<String>('schedule-skeleton-$index'),
+          isLast: index == 3,
+        ),
+      ),
+    );
+  }
+}
+
+class ScheduleSkeletonRow extends StatelessWidget {
+  const ScheduleSkeletonRow({
+    this.isLast = false,
+    super.key,
+  });
+
+  final bool isLast;
+
+  static const double _rowHeight = 34;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: _rowHeight,
+      child: Row(
+        children: <Widget>[
+          SizedBox(
+            width: 20,
+            height: _rowHeight,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: <Widget>[
+                if (!isLast)
+                  Positioned(
+                    top: _rowHeight / 2,
+                    bottom: -_rowHeight / 2,
+                    child: Container(
+                      width: 2,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFEFE9E1),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ),
+                const _SkeletonBlock(width: 11, height: 11, radius: 99),
+              ],
+            ),
           ),
-          const ScheduleRow(
-            color: AppColors.yellow,
-            time: '10:30',
-            title: '情绪与行为评估（个体）',
-            place: '咨询室2',
-            state: '即将开始',
-            stateColor: Color(0xFFE87042),
-            stateBg: Color(0xFFFFEEE5),
+          const SizedBox(width: 10),
+          const _SkeletonBlock(width: 48, height: 13, radius: 5),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: FractionallySizedBox(
+                widthFactor: .78,
+                child: _SkeletonBlock(height: 14, radius: 6),
+              ),
+            ),
           ),
-          const ScheduleRow(
+          const SizedBox(width: 14),
+          const _SkeletonBlock(width: 74, height: 13, radius: 5),
+          const SizedBox(width: 14),
+          const _SkeletonBlock(width: 63, height: 25, radius: 8),
+        ],
+      ),
+    );
+  }
+}
+
+class _SkeletonBlock extends StatelessWidget {
+  const _SkeletonBlock({
+    this.width,
+    required this.height,
+    required this.radius,
+  });
+
+  final double? width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF0E9E2),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+  }
+}
+
+class ScheduleEmptyState extends StatelessWidget {
+  const ScheduleEmptyState({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: const <Widget>[
+          Icon(
+            Icons.event_available_rounded,
+            size: 23,
             color: AppColors.green,
-            time: '14:00',
-            title: '学习能力综合评估（小组）',
-            place: '教室A102',
-            state: '未开始',
-            stateColor: Color(0xFF9E9A96),
-            stateBg: Color(0xFFF3F0EC),
           ),
-          const ScheduleRow(
-            color: AppColors.blueGray,
-            time: '15:30',
-            title: '家长沙龙：正向沟通技巧',
-            place: '多功能厅',
-            state: '未开始',
-            stateColor: Color(0xFF9E9A96),
-            stateBg: Color(0xFFF3F0EC),
-            isLast: true,
+          SizedBox(width: 8),
+          Text(
+            '今日暂无排课',
+            style: TextStyle(
+              color: AppColors.body,
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
     );
+  }
+}
+
+Color _scheduleDotColor(int index) {
+  const List<Color> colors = <Color>[
+    AppColors.orange,
+    AppColors.yellow,
+    AppColors.green,
+    AppColors.blueGray,
+  ];
+  return colors[index % colors.length];
+}
+
+Color _scheduleStateColor(String state) {
+  switch (state) {
+    case '进行中':
+    case '即将开始':
+      return const Color(0xFFE87042);
+    case '已点名':
+      return const Color(0xFF6FA477);
+    default:
+      return const Color(0xFF9E9A96);
+  }
+}
+
+Color _scheduleStateBg(String state) {
+  switch (state) {
+    case '进行中':
+    case '即将开始':
+      return const Color(0xFFFFEEE5);
+    case '已点名':
+      return const Color(0xFFEAF3E7);
+    default:
+      return const Color(0xFFF3F0EC);
   }
 }
 
@@ -3331,11 +3995,13 @@ class FeatureShortcutRow extends StatelessWidget {
   const FeatureShortcutRow({
     this.cardWidth = 187,
     this.spacing = 14,
+    this.onTimetableTap,
     super.key,
   });
 
   final double cardWidth;
   final double spacing;
+  final VoidCallback? onTimetableTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3349,6 +4015,7 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFFE87B52),
           bg: const Color(0xFFFFF5EA),
           width: cardWidth,
+          onTap: onTimetableTap,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
@@ -3362,8 +4029,8 @@ class FeatureShortcutRow extends StatelessWidget {
         ),
         SizedBox(width: spacing),
         ShortcutCard(
-          title: '报告中心',
-          desc1: '测评报告',
+          title: 'IEP中心',
+          desc1: '个训计划',
           desc2: '智能生成',
           icon: Icons.assignment_rounded,
           iconColor: const Color(0xFFE87952),
@@ -3416,6 +4083,7 @@ class ShortcutCard extends StatelessWidget {
     required this.bg,
     this.badge,
     this.width = 187,
+    this.onTap,
     super.key,
   });
 
@@ -3427,108 +4095,128 @@ class ShortcutCard extends StatelessWidget {
   final Color bg;
   final String? badge;
   final double width;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 118,
-      padding: const EdgeInsets.fromLTRB(17, 16, 14, 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.88),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: _softShadow(
-          color: const Color(0x12B05F32),
-          blur: 16,
-          offset: const Offset(0, 8),
-        ),
-      ),
-      child: Stack(
-        children: <Widget>[
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+    final BorderRadius borderRadius = BorderRadius.circular(16);
+    return Material(
+      color: Colors.white.withOpacity(.88),
+      borderRadius: borderRadius,
+      elevation: 0,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: borderRadius,
+        child: Container(
+          width: width,
+          height: 118,
+          padding: const EdgeInsets.fromLTRB(17, 16, 14, 12),
+          decoration: BoxDecoration(
+            borderRadius: borderRadius,
+            boxShadow: _softShadow(
+              color: const Color(0x12B05F32),
+              blur: 16,
+              offset: const Offset(0, 8),
+            ),
+          ),
+          child: Stack(
             children: <Widget>[
-              Text(
-                title,
-                style: const TextStyle(
-                  color: AppColors.ink,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w800,
-                ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: AppColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    desc1,
+                    style: const TextStyle(
+                      color: AppColors.body,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    desc2,
+                    style: const TextStyle(
+                      color: AppColors.body,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 8),
-              Text(
-                desc1,
-                style: const TextStyle(
-                  color: AppColors.body,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-              const SizedBox(height: 3),
-              Text(
-                desc2,
-                style: const TextStyle(
-                  color: AppColors.body,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w600,
+              Positioned(
+                right: 0,
+                bottom: 0,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Container(
+                      width: 54,
+                      height: 54,
+                      decoration: BoxDecoration(
+                        color: bg,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: Icon(icon, color: iconColor, size: 32),
+                    ),
+                    if (badge != null)
+                      Positioned(
+                        right: -5,
+                        top: -7,
+                        child: Container(
+                          width: 23,
+                          height: 23,
+                          decoration: const BoxDecoration(
+                            color: Color(0xFFE8463A),
+                            shape: BoxShape.circle,
+                          ),
+                          alignment: Alignment.center,
+                          child: Text(
+                            badge!,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
               ),
             ],
           ),
-          Positioned(
-            right: 0,
-            bottom: 0,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: <Widget>[
-                Container(
-                  width: 54,
-                  height: 54,
-                  decoration: BoxDecoration(
-                    color: bg,
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Icon(icon, color: iconColor, size: 32),
-                ),
-                if (badge != null)
-                  Positioned(
-                    right: -5,
-                    top: -7,
-                    child: Container(
-                      width: 23,
-                      height: 23,
-                      decoration: const BoxDecoration(
-                        color: Color(0xFFE8463A),
-                        shape: BoxShape.circle,
-                      ),
-                      alignment: Alignment.center,
-                      child: Text(
-                        badge!,
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class ProgressOverviewCard extends StatelessWidget {
-  const ProgressOverviewCard({this.width = 820, super.key});
+  const ProgressOverviewCard({
+    required this.stats,
+    this.width = 820,
+    super.key,
+  });
 
+  final HomeAssessmentStats stats;
   final double width;
 
   @override
   Widget build(BuildContext context) {
+    final int total = stats.total <= 0 ? 1 : stats.total;
+    final int recordTotal =
+        stats.completedRecords <= 0 ? 1 : stats.completedRecords;
+    final double progress = stats.coverageRate.clamp(0.0, 1.0).toDouble();
+    final int progressText = (progress * 100).round();
     return Container(
       width: width,
       height: 132,
@@ -3547,7 +4235,7 @@ class ProgressOverviewCard extends StatelessWidget {
           Row(
             children: const <Widget>[
               Text(
-                '测评进度概览',
+                '在读学员测评覆盖率',
                 style: TextStyle(
                   color: AppColors.ink,
                   fontSize: 16,
@@ -3556,7 +4244,7 @@ class ProgressOverviewCard extends StatelessWidget {
               ),
               Spacer(),
               Text(
-                '全部测评 〉',
+                '学员测评 〉',
                 style: TextStyle(
                   color: Color(0xFFD79B78),
                   fontSize: 12,
@@ -3573,14 +4261,14 @@ class ProgressOverviewCard extends StatelessWidget {
                 height: 58,
                 child: Stack(
                   alignment: Alignment.center,
-                  children: const <Widget>[
+                  children: <Widget>[
                     CustomPaint(
-                      size: Size(58, 58),
-                      painter: DonutPainter(progress: .62),
+                      size: const Size(58, 58),
+                      painter: DonutPainter(progress: progress),
                     ),
                     Text(
-                      '62%',
-                      style: TextStyle(
+                      '$progressText%',
+                      style: const TextStyle(
                         color: AppColors.ink,
                         fontSize: 15,
                         fontWeight: FontWeight.w800,
@@ -3592,19 +4280,19 @@ class ProgressOverviewCard extends StatelessWidget {
               const SizedBox(width: 16),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                children: const <Widget>[
-                  Text(
-                    '总体完成率',
+                children: <Widget>[
+                  const Text(
+                    '测评覆盖率',
                     style: TextStyle(
                       color: AppColors.ink,
                       fontSize: 13,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  SizedBox(height: 7),
+                  const SizedBox(height: 7),
                   Text(
-                    '较昨日 ↑ 8%',
-                    style: TextStyle(
+                    '已测评 ${stats.assessedStudents}/${stats.enrolledStudents}',
+                    style: const TextStyle(
                       color: AppColors.orange,
                       fontSize: 12,
                       fontWeight: FontWeight.w700,
@@ -3613,30 +4301,41 @@ class ProgressOverviewCard extends StatelessWidget {
                 ],
               ),
               const SizedBox(width: 28),
-              const Expanded(
+              Expanded(
                 child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: <Widget>[
-                    ProgressStat(
-                        color: AppColors.blueGray,
-                        label: '未开始',
-                        number: '24',
-                        desc: '占比 24%'),
-                    ProgressStat(
-                        color: AppColors.orange,
-                        label: '进行中',
-                        number: '56',
-                        desc: '占比 56%'),
-                    ProgressStat(
-                        color: AppColors.green,
-                        label: '已完成',
-                        number: '32',
-                        desc: '占比 32%'),
-                    ProgressStat(
-                        color: AppColors.yellow,
-                        label: '已出报告',
-                        number: '28',
-                        desc: '占比 28%'),
+                    Expanded(
+                      child: ProgressStat(
+                          color: AppColors.blueGray,
+                          label: '未测评',
+                          number: '${stats.unassessedStudents}',
+                          desc:
+                              '占比 ${_percent(stats.unassessedStudents, total)}%'),
+                    ),
+                    Expanded(
+                      child: ProgressStat(
+                          color: AppColors.orange,
+                          label: '已测评',
+                          number: '${stats.assessedStudents}',
+                          desc:
+                              '占比 ${_percent(stats.assessedStudents, total)}%'),
+                    ),
+                    Expanded(
+                      child: ProgressStat(
+                          color: AppColors.green,
+                          label: '待生成IEP',
+                          number: '${stats.pendingIep}',
+                          desc:
+                              '占记录 ${_percent(stats.pendingIep, recordTotal)}%'),
+                    ),
+                    Expanded(
+                      child: ProgressStat(
+                          color: AppColors.yellow,
+                          label: '已出IEP',
+                          number: '${stats.generatedIep}',
+                          desc:
+                              '占记录 ${_percent(stats.generatedIep, recordTotal)}%'),
+                    ),
                   ],
                 ),
               ),
@@ -3646,6 +4345,13 @@ class ProgressOverviewCard extends StatelessWidget {
       ),
     );
   }
+}
+
+int _percent(int value, int total) {
+  if (total <= 0) {
+    return 0;
+  }
+  return (value / total * 100).round();
 }
 
 class DonutPainter extends CustomPainter {
@@ -3666,16 +4372,9 @@ class DonutPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 9
       ..strokeCap = StrokeCap.round;
-    final Paint green = Paint()
-      ..color = AppColors.green
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 9
-      ..strokeCap = StrokeCap.round;
     canvas.drawArc(rect.deflate(7), 0, math.pi * 2, false, bg);
-    canvas.drawArc(rect.deflate(7), -math.pi / 2, math.pi * 2 * progress * .72,
-        false, orange);
-    canvas.drawArc(rect.deflate(7), -math.pi / 2 + math.pi * 2 * progress * .76,
-        math.pi * 2 * progress * .24, false, green);
+    canvas.drawArc(
+        rect.deflate(7), -math.pi / 2, math.pi * 2 * progress, false, orange);
   }
 
   @override
@@ -3700,7 +4399,7 @@ class ProgressStat extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 72,
+      width: double.infinity,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -3712,12 +4411,16 @@ class ProgressStat extends StatelessWidget {
                   decoration:
                       BoxDecoration(color: color, shape: BoxShape.circle)),
               const SizedBox(width: 6),
-              Text(
-                label,
-                style: const TextStyle(
-                  color: AppColors.body,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: AppColors.body,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
               ),
             ],
@@ -3735,6 +4438,8 @@ class ProgressStat extends StatelessWidget {
           const SizedBox(height: 5),
           Text(
             desc,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: AppColors.body,
               fontSize: 10,

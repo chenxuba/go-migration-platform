@@ -1,4 +1,5 @@
 import 'package:assessment_pad_app/auth_client.dart';
+import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -9,7 +10,12 @@ void main() {
   testWidgets('login page opens the home dashboard after real login callback',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
+    );
 
     expect(find.text('测评云端'), findsOneWidget);
     expect(find.text('机构账号登录'), findsOneWidget);
@@ -20,14 +26,14 @@ void main() {
     await tester.tap(find.text('登 录'));
     await tester.pumpAndSettle();
 
-    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('开始测评'), findsOneWidget);
     expect(find.byIcon(Icons.search_rounded), findsOneWidget);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
 
-    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
   });
 
@@ -36,17 +42,130 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'auth_token': 'existing-token',
     });
-    await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
+    );
     await tester.pumpAndSettle();
 
-    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
+  });
+
+  testWidgets('home header fallback does not show a fake institution',
+      (WidgetTester tester) async {
+    final HomeSummary summary = HomeSummary.fallback();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: HomeHeader(
+            session: HomeSession.fallback,
+            weather: summary.weather,
+            date: summary.date,
+            weekday: summary.weekday,
+            loading: false,
+            errorMessage: null,
+            onRefresh: () {},
+            onLogout: () {},
+          ),
+        ),
+      ),
+    );
+
+    expect(find.textContaining('启明成长中心'), findsNothing);
+  });
+
+  testWidgets('schedule card shows four skeleton rows while loading',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: ScheduleCard(
+            items: <HomeScheduleItem>[],
+            loading: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.byType(ScheduleSkeletonRow), findsNWidgets(4));
+    expect(find.text('今日暂无排课'), findsNothing);
+  });
+
+  testWidgets('home shortcut opens smart timetable page',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('排课日程'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('智慧课表'), findsWidgets);
+    expect(find.text('按固定时段查看老师一周排课'), findsOneWidget);
+    expect(find.text('陈思语老师'), findsOneWidget);
+
+    final Rect timeRailRect =
+        tester.getRect(find.byKey(const ValueKey<String>('smart-time-rail')));
+    final Rect scheduleGridRect = tester
+        .getRect(find.byKey(const ValueKey<String>('smart-schedule-grid')));
+    final Rect boardRect = tester
+        .getRect(find.byKey(const ValueKey<String>('smart-timetable-board')));
+    expect((boardRect.left - timeRailRect.left).abs(), lessThan(.5));
+    expect((boardRect.right - scheduleGridRect.right).abs(), lessThan(.5));
+    expect((timeRailRect.top - scheduleGridRect.top).abs(), lessThan(.5));
+    expect((timeRailRect.bottom - scheduleGridRect.bottom).abs(), lessThan(.5));
+    expect((timeRailRect.right - scheduleGridRect.left).abs(), lessThan(.5));
+    expect(
+      (timeRailRect.height - scheduleGridRect.height).abs(),
+      lessThan(.5),
+    );
+
+    await tester.tap(find.text('陈思语老师'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('切换老师课表'), findsOneWidget);
+    expect(find.text('周子涵老师'), findsOneWidget);
+
+    await tester.tap(find.text('周子涵老师'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('周子涵老师'), findsOneWidget);
+    expect(find.text('切换老师课表'), findsNothing);
+
+    expect(find.byKey(const ValueKey<String>('lesson-0-0')), findsOneWidget);
+    final Offset source =
+        tester.getCenter(find.byKey(const ValueKey<String>('lesson-0-0')));
+    final Offset target = tester
+        .getCenter(find.byKey(const ValueKey<String>('schedule-cell-0-1')));
+    final TestGesture gesture = await tester.startGesture(source);
+    await tester.pump();
+    await gesture.moveTo(target);
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsOneWidget);
   });
 
   testWidgets('login page switches to qr login and back',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
-    await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
+    );
 
     await tester.tap(find.text('二维码登录'));
     await tester.pumpAndSettle();
@@ -66,7 +185,10 @@ void main() {
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(
-      AssessmentPadApp(authClient: _MultiInstitutionAuthClient()),
+      AssessmentPadApp(
+        authClient: _MultiInstitutionAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
     );
 
     await _enterWithCustomKeyboard(tester, 0, 'chenrui');
@@ -84,14 +206,17 @@ void main() {
     await tester.tap(find.text('南山训练中心'));
     await tester.pumpAndSettle();
 
-    expect(find.text('上午好，启明成长中心'), findsOneWidget);
+    expect(find.textContaining('启明成长中心'), findsOneWidget);
   });
 
   testWidgets('wrong password does not open institution picker',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(
-      AssessmentPadApp(authClient: _PasswordCheckingAuthClient()),
+      AssessmentPadApp(
+        authClient: _PasswordCheckingAuthClient(),
+        homeClient: _FakeHomeClient(),
+      ),
     );
 
     await _enterWithCustomKeyboard(tester, 0, 'chenrui');
@@ -108,7 +233,12 @@ void main() {
     debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
     try {
       SharedPreferences.setMockInitialValues(<String, Object>{});
-      await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+      await tester.pumpWidget(
+        AssessmentPadApp(
+          authClient: _FakeAuthClient(),
+          homeClient: _FakeHomeClient(),
+        ),
+      );
 
       await tester.tap(find.byType(TextField).first);
       await tester.pumpAndSettle();
@@ -173,6 +303,56 @@ class _FakeAuthClient implements AuthClient {
         },
       ),
     ].first;
+  }
+}
+
+class _FakeHomeClient implements HomeClient {
+  @override
+  Future<HomeSession> fetchCurrentSession(String token) async {
+    return const HomeSession(
+      nickName: '陈老师',
+      orgName: '启明成长中心',
+    );
+  }
+
+  @override
+  Future<HomeSummary> fetchSummary(String token) async {
+    return const HomeSummary(
+      date: '2026-05-04',
+      weekday: '星期一',
+      assessmentStats: HomeAssessmentStats(
+        enrolledStudents: 80,
+        assessedStudents: 32,
+        inProgressDrafts: 2,
+        unassessedStudents: 48,
+        completedRecords: 40,
+        pendingIep: 12,
+        draftIep: 4,
+        generatedIep: 28,
+        total: 80,
+        coverageRate: 0.4,
+      ),
+      schedule: <HomeScheduleItem>[
+        HomeScheduleItem(
+          time: '09:00',
+          title: '认知能力评估 · 小组课',
+          place: '教室A101',
+          state: '进行中',
+        ),
+        HomeScheduleItem(
+          time: '10:30',
+          title: '情绪与行为评估 · 个训',
+          place: '咨询室2',
+          state: '即将开始',
+        ),
+      ],
+      weather: HomeWeather(
+        city: '深圳',
+        condition: 'sunny',
+        displayName: '晴',
+        temperature: 26,
+      ),
+    );
   }
 }
 
