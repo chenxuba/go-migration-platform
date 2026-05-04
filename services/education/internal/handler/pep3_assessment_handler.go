@@ -39,19 +39,21 @@ type pep3RawScoreRequest struct {
 }
 
 type pep3AssessmentRecordCreateRequest struct {
-	StudentID           int64                        `json:"studentId,omitempty"`
-	StudentName         string                       `json:"studentName,omitempty"`
-	ExaminerName        string                       `json:"examinerName,omitempty"`
-	Remark              string                       `json:"remark,omitempty"`
-	BirthDate           string                       `json:"birthDate"`
-	AssessmentDate      string                       `json:"assessmentDate"`
-	ItemScores          map[int]int                  `json:"itemScores,omitempty"`
-	ItemScoreList       []pep3ItemScoreRequest       `json:"itemScoreList,omitempty"`
-	RawScores           map[string]int               `json:"rawScores,omitempty"`
-	RawScoreList        []pep3RawScoreRequest        `json:"rawScoreList,omitempty"`
-	ItemRecordValues    map[int]map[string]any       `json:"itemRecordValues,omitempty"`
-	ItemRecordValueList []pep3ItemRecordValueRequest `json:"itemRecordValueList,omitempty"`
-	AllowMissingItems   bool                         `json:"allowMissingItems,omitempty"`
+	ID                  int64                                `json:"id,omitempty"`
+	StudentID           int64                                `json:"studentId,omitempty"`
+	StudentName         string                               `json:"studentName,omitempty"`
+	ExaminerName        string                               `json:"examinerName,omitempty"`
+	Remark              string                               `json:"remark,omitempty"`
+	BirthDate           string                               `json:"birthDate"`
+	AssessmentDate      string                               `json:"assessmentDate"`
+	ItemScores          map[int]int                          `json:"itemScores,omitempty"`
+	ItemScoreList       []pep3ItemScoreRequest               `json:"itemScoreList,omitempty"`
+	RawScores           map[string]int                       `json:"rawScores,omitempty"`
+	RawScoreList        []pep3RawScoreRequest                `json:"rawScoreList,omitempty"`
+	ItemRecordValues    map[int]map[string]any               `json:"itemRecordValues,omitempty"`
+	ItemRecordValueList []pep3ItemRecordValueRequest         `json:"itemRecordValueList,omitempty"`
+	AllowMissingItems   bool                                 `json:"allowMissingItems,omitempty"`
+	CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 }
 
 type pep3AssessmentDraftSaveRequest struct {
@@ -439,12 +441,59 @@ func (handler *Handler) createPEP3AssessmentRecord(w http.ResponseWriter, r *htt
 		return
 	}
 	result, err := handler.service.CreatePEP3AssessmentRecord(claims.UserID, service.PEP3AssessmentRecordSaveInput{
-		StudentID:     req.StudentID,
-		StudentName:   strings.TrimSpace(req.StudentName),
-		ExaminerName:  strings.TrimSpace(req.ExaminerName),
-		Remark:        strings.TrimSpace(req.Remark),
-		ScoreInput:    scoreInput,
-		InputSnapshot: req.normalizedSnapshot(scoreInput.ItemScores, scoreInput.RawScores, itemRecordValues),
+		StudentID:        req.StudentID,
+		StudentName:      strings.TrimSpace(req.StudentName),
+		ExaminerName:     strings.TrimSpace(req.ExaminerName),
+		Remark:           strings.TrimSpace(req.Remark),
+		ScoreInput:       scoreInput,
+		ItemRecordValues: itemRecordValues,
+		InputSnapshot:    req.normalizedSnapshot(scoreInput.ItemScores, scoreInput.RawScores, itemRecordValues),
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updatePEP3AssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req pep3AssessmentRecordCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	scoreReq := req.toScoreRequest()
+	scoreInput, err := scoreReq.toAssessmentInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	itemRecordValues, err := normalizePEP3ItemRecordValues(req.ItemRecordValues, req.ItemRecordValueList)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdatePEP3AssessmentRecord(claims.UserID, req.ID, service.PEP3AssessmentRecordSaveInput{
+		StudentID:        req.StudentID,
+		StudentName:      strings.TrimSpace(req.StudentName),
+		ExaminerName:     strings.TrimSpace(req.ExaminerName),
+		Remark:           strings.TrimSpace(req.Remark),
+		ScoreInput:       scoreInput,
+		ItemRecordValues: itemRecordValues,
+		InputSnapshot:    req.normalizedSnapshot(scoreInput.ItemScores, scoreInput.RawScores, itemRecordValues),
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
@@ -1252,20 +1301,23 @@ func (req pep3AssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]
 
 func (req pep3AssessmentRecordCreateRequest) normalizedSnapshot(itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any) any {
 	return struct {
-		StudentID           int64                        `json:"studentId,omitempty"`
-		StudentName         string                       `json:"studentName,omitempty"`
-		ExaminerName        string                       `json:"examinerName,omitempty"`
-		Remark              string                       `json:"remark,omitempty"`
-		BirthDate           string                       `json:"birthDate"`
-		AssessmentDate      string                       `json:"assessmentDate"`
-		ItemScores          map[int]int                  `json:"itemScores,omitempty"`
-		ItemScoreList       []pep3ItemScoreRequest       `json:"itemScoreList,omitempty"`
-		RawScores           map[string]int               `json:"rawScores,omitempty"`
-		RawScoreList        []pep3RawScoreRequest        `json:"rawScoreList,omitempty"`
-		ItemRecordValues    map[int]map[string]any       `json:"itemRecordValues,omitempty"`
-		ItemRecordValueList []pep3ItemRecordValueRequest `json:"itemRecordValueList,omitempty"`
-		AllowMissingItems   bool                         `json:"allowMissingItems,omitempty"`
+		ID                  int64                                `json:"id,omitempty"`
+		StudentID           int64                                `json:"studentId,omitempty"`
+		StudentName         string                               `json:"studentName,omitempty"`
+		ExaminerName        string                               `json:"examinerName,omitempty"`
+		Remark              string                               `json:"remark,omitempty"`
+		BirthDate           string                               `json:"birthDate"`
+		AssessmentDate      string                               `json:"assessmentDate"`
+		ItemScores          map[int]int                          `json:"itemScores,omitempty"`
+		ItemScoreList       []pep3ItemScoreRequest               `json:"itemScoreList,omitempty"`
+		RawScores           map[string]int                       `json:"rawScores,omitempty"`
+		RawScoreList        []pep3RawScoreRequest                `json:"rawScoreList,omitempty"`
+		ItemRecordValues    map[int]map[string]any               `json:"itemRecordValues,omitempty"`
+		ItemRecordValueList []pep3ItemRecordValueRequest         `json:"itemRecordValueList,omitempty"`
+		AllowMissingItems   bool                                 `json:"allowMissingItems,omitempty"`
+		CaregiverReport     *model.PEP3CaregiverReportSubmission `json:"caregiverReport,omitempty"`
 	}{
+		ID:                  req.ID,
 		StudentID:           req.StudentID,
 		StudentName:         strings.TrimSpace(req.StudentName),
 		ExaminerName:        strings.TrimSpace(req.ExaminerName),
@@ -1279,6 +1331,7 @@ func (req pep3AssessmentRecordCreateRequest) normalizedSnapshot(itemScores map[i
 		ItemRecordValues:    itemRecordValues,
 		ItemRecordValueList: itemRecordValueListFromMap(itemRecordValues),
 		AllowMissingItems:   req.AllowMissingItems,
+		CaregiverReport:     req.CaregiverReport,
 	}
 }
 

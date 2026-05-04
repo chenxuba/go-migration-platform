@@ -24,11 +24,13 @@ import {
   getPEP3AssessmentFormTemplateSummaryApi,
   getPEP3AssessmentRecordDetailApi,
   invitePEP3CaregiverReportApi,
+  invitePEP3CaregiverReportForRecordApi,
   pagePEP3AssessmentDraftsApi,
   pagePEP3AssessmentRecordsApi,
   savePEP3AssessmentDraftApi,
   savePEP3AssessmentDraftItemApi,
   submitPEP3AssessmentDraftApi,
+  updatePEP3AssessmentRecordApi,
   type PEP3AssessmentDraftDetail,
   type PEP3AssessmentDraftSummary,
   type PEP3AssessmentFormTemplateSummary,
@@ -64,6 +66,12 @@ const templateLoading = ref(false)
 const currentItemLoading = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
+const editingRecordId = ref(numberFromQuery('recordId') || 0)
+const recordMode = computed(() => {
+  const raw = route.query.recordMode
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return String(value || '').trim().toLowerCase()
+})
 const template = ref<PEP3AssessmentFormTemplateSummary>()
 const itemCache = reactive<Record<number, PEP3AssessmentItem>>({})
 const draft = ref<PEP3AssessmentDraftDetail>()
@@ -117,7 +125,7 @@ const editor = reactive<{
 })
 
 const studentName = computed(() => editor.studentName || textFromQuery('childName') || '-')
-const studentAge = computed(() => textFromQuery('childAge') || '-')
+const studentAge = computed(() => assessmentAgeText(editor.birthDate, editor.assessmentDate) || textFromQuery('childAge') || '-')
 const scaleTitle = computed(() => {
   const name = textFromQuery('scaleName')
   if (name && /pep[-\s]?3/i.test(name))
@@ -172,6 +180,9 @@ const previousScoreOption = computed(() => {
     return undefined
   return currentScoreOptions.value.find(item => item.value === previousScore.value)
 })
+const isRecordReuseMode = computed(() => editingRecordId.value > 0 && recordMode.value === 'reuse')
+const isSubmittedRecordMode = computed(() => editingRecordId.value > 0)
+const isRecordEditMode = computed(() => editingRecordId.value > 0 && !isRecordReuseMode.value)
 const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
   const statuses = Object.values(draftItemSaveStatus.value)
   if (statuses.some(status => status === 'queued' || status === 'saving'))
@@ -179,11 +190,22 @@ const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
   return autoSaveLastSavedAt.value ? 'saved' : 'idle'
 })
 const autoSaveText = computed(() => {
+  if (isRecordReuseMode.value)
+    return '复用测评中，提交后生成新记录'
+  if (isRecordEditMode.value)
+    return '正式记录编辑中，修改后请重新提交'
   if (autoSaveState.value === 'saving')
     return '自动保存中...'
   if (autoSaveState.value === 'saved')
     return `已自动保存为草稿 ${autoSaveLastSavedAt.value}`
   return ''
+})
+const submitActionText = computed(() => {
+  if (isRecordReuseMode.value)
+    return '提交新记录'
+  if (isRecordEditMode.value)
+    return '重新提交'
+  return '提交记录'
 })
 const currentDisplayIndex = computed(() => totalItemCount.value ? currentIndex.value + 1 : 0)
 const hasPreviousItem = computed(() => currentIndex.value > 0)
@@ -276,6 +298,26 @@ function formatDateTime(value?: string) {
     return '-'
   const date = dayjs(text)
   return date.isValid() ? date.format('YYYY-MM-DD HH:mm') : text
+}
+
+function assessmentAgeText(birthDate?: string, assessmentDate?: string) {
+  const birth = dayjs(birthDate).startOf('day')
+  const target = dayjs(assessmentDate).startOf('day')
+  if (!birth.isValid() || !target.isValid() || birth.isAfter(target))
+    return ''
+  const years = target.diff(birth, 'year')
+  const afterYears = birth.add(years, 'year')
+  const months = target.diff(afterYears, 'month')
+  const afterMonths = afterYears.add(months, 'month')
+  const days = target.diff(afterMonths, 'day')
+  const parts: string[] = []
+  if (years)
+    parts.push(`${years}岁`)
+  if (months)
+    parts.push(`${months}月`)
+  if (days || !parts.length)
+    parts.push(`${days}天`)
+  return parts.join('')
 }
 
 function normalizeText(value?: string, fallback = '-') {
@@ -383,6 +425,10 @@ function toggleGroup(key: string) {
 
 async function initializeWorkbench() {
   await fetchTemplate()
+  if (isSubmittedRecordMode.value) {
+    await fetchRecordForEdit(editingRecordId.value)
+    return
+  }
   if (editor.id) {
     await fetchDraftDetail(editor.id)
     await hydrateStudentBirthDate()
@@ -409,6 +455,35 @@ async function startNewAssessment() {
     const detail = await saveDraft(true)
     if (detail?.id)
       await refreshCaregiverInvite(true)
+  }
+}
+
+async function fetchRecordForEdit(recordId: number) {
+  if (!recordId)
+    return
+  try {
+    const res = await getPEP3AssessmentRecordDetailApi(recordId)
+    const detail = unwrap<PEP3AssessmentRecordDetail>(res)
+    editor.id = undefined
+    editor.studentId = detail.studentId || editor.studentId
+    editor.studentName = detail.studentName || editor.studentName
+    editor.examinerName = detail.examinerName || editor.examinerName
+    editor.birthDate = normalizeDateText(detail.birthDate) || editor.birthDate
+    const reuseAssessmentDate = dayjs().format('YYYY-MM-DD')
+    editor.assessmentDate = isRecordReuseMode.value ? reuseAssessmentDate : normalizeDateText(detail.assessmentDate) || editor.assessmentDate
+    editor.remark = detail.remark || ''
+    applyDraftInput(normalizeInputSnapshot(detail.input), { keepAssessmentDate: isRecordReuseMode.value })
+    if (isRecordReuseMode.value)
+      editor.assessmentDate = reuseAssessmentDate
+    await fetchPreviousAssessment()
+    if (!currentItemNo.value && allItems.value[0])
+      currentItemNo.value = allItems.value[0].itemNo
+    await refreshCaregiverInvite(true)
+    messageService.info(isRecordReuseMode.value ? '当前正在复用已提交的测评，提交后会生成新的正式记录' : '当前正在编辑已提交的测评记录，修改后请重新提交')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '获取测评记录失败'))
+    void router.push('/teacherCenter/evaluationRecord')
   }
 }
 
@@ -543,16 +618,20 @@ async function fetchPreviousAssessment() {
     return
   try {
     const res = await pagePEP3AssessmentRecordsApi({
-      pageRequestModel: { pageIndex: 1, pageSize: 1 },
+      pageRequestModel: { pageIndex: 1, pageSize: isSubmittedRecordMode.value ? 20 : 5 },
       queryModel: {
         assessmentCode: 'PEP3',
         studentId: editor.studentId,
+        assessmentDateEnd: normalizeDateText(editor.assessmentDate),
       },
     })
     const data = unwrap<any>(res)
-    const latest = (data?.items || [])[0]
-    if (!latest?.id)
+    const latest = (data?.items || []).find((item: any) => Number(item.id) !== editingRecordId.value)
+    if (!latest?.id) {
+      previousScoreDate.value = ''
+      applyPreviousInput(undefined)
       return
+    }
     previousScoreDate.value = formatDate(latest.assessmentDate)
     const detailRes = await getPEP3AssessmentRecordDetailApi(Number(latest.id))
     const detail = unwrap<PEP3AssessmentRecordDetail>(detailRes)
@@ -577,14 +656,15 @@ function normalizeInputSnapshot(input: any): PEP3DraftSaveRequest | undefined {
   return input as PEP3DraftSaveRequest
 }
 
-function applyDraftInput(input?: PEP3DraftSaveRequest) {
+function applyDraftInput(input?: PEP3DraftSaveRequest, options: { keepAssessmentDate?: boolean } = {}) {
   if (!input)
     return
   editor.studentId = input.studentId || editor.studentId
   editor.studentName = input.studentName || editor.studentName
   editor.examinerName = input.examinerName || editor.examinerName
   editor.birthDate = normalizeDateText(input.birthDate) || editor.birthDate
-  editor.assessmentDate = normalizeDateText(input.assessmentDate) || editor.assessmentDate
+  if (!options.keepAssessmentDate)
+    editor.assessmentDate = normalizeDateText(input.assessmentDate) || editor.assessmentDate
   editor.remark = input.remark || ''
   editor.allowMissingItems = input.allowMissingItems ?? true
   editor.itemScores = {}
@@ -661,6 +741,24 @@ function buildPayload(): PEP3DraftSaveRequest {
   }
 }
 
+function buildRecordPayload() {
+  const payload = buildPayload()
+  return {
+    id: editingRecordId.value,
+    studentId: payload.studentId,
+    studentName: payload.studentName,
+    examinerName: payload.examinerName,
+    birthDate: payload.birthDate || '',
+    assessmentDate: payload.assessmentDate || '',
+    remark: payload.remark,
+    allowMissingItems: false,
+    itemScoreList: payload.itemScoreList,
+    rawScoreList: payload.rawScoreList,
+    itemRecordValueList: payload.itemRecordValueList,
+    caregiverReport: payload.caregiverReport,
+  }
+}
+
 function validateDraftHeader(silent = false) {
   if (!editor.studentId || studentName.value === '-') {
     if (!silent)
@@ -695,6 +793,10 @@ async function saveDraft(silent = false) {
 }
 
 async function submitDraft() {
+  if (isRecordEditMode.value) {
+    await submitRecordEdit()
+    return
+  }
   flushDraftItemSaves()
   submitting.value = true
   try {
@@ -718,12 +820,37 @@ async function submitDraft() {
     }
     const res = await submitPEP3AssessmentDraftApi(detail.id)
     const result = unwrap<any>(res)
-    messageService.success('已生成正式测评记录')
+    messageService.success(isRecordReuseMode.value ? '已基于复用测评生成新的正式记录' : '已生成正式测评记录')
     if (result?.recordId)
       await router.push('/teacherCenter/evaluationRecord')
   }
   catch (error: any) {
     messageService.error(getErrorMessage(error, '提交正式记录失败'))
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
+async function submitRecordEdit() {
+  submitting.value = true
+  try {
+    if (!editor.birthDate || !editor.assessmentDate) {
+      messageService.warning('请补全出生日期和测评日期后再提交')
+      return
+    }
+    if (!isAllQuestionsAnswered()) {
+      messageService.warning(incompleteItemsMessage())
+      return
+    }
+    const res = await updatePEP3AssessmentRecordApi(buildRecordPayload())
+    const result = unwrap<PEP3AssessmentRecordDetail>(res)
+    messageService.success('已重新提交，并生成新的评估报告')
+    if (result?.id)
+      await router.push('/teacherCenter/evaluationRecord')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '重新提交评估记录失败'))
   }
   finally {
     submitting.value = false
@@ -811,6 +938,8 @@ function clearDraftItemSaveTimers() {
 
 function queueDraftItemSave(itemNo: number) {
   if (itemNo <= 0)
+    return
+  if (isRecordEditMode.value)
     return
   draftItemSaveSeq.set(itemNo, (draftItemSaveSeq.get(itemNo) || 0) + 1)
   const existingTimer = draftItemSaveTimers.get(itemNo)
@@ -972,10 +1101,11 @@ function isEmptyRecordValue(value: unknown) {
 async function refreshCaregiverInvite(silent = false) {
   caregiverInviteLoading.value = true
   try {
-    const canSave = await ensureDraftForItemSave()
-    if (!canSave || !editor.id)
+    const res = isRecordEditMode.value
+      ? await invitePEP3CaregiverReportForRecordApi(editingRecordId.value)
+      : await inviteDraftCaregiverReport()
+    if (!res)
       return
-    const res = await invitePEP3CaregiverReportApi(editor.id)
     caregiverInvite.value = unwrap<PEP3CaregiverReportInvite>(res)
     await generateCaregiverQRCode(caregiverInvite.value)
     if (!silent)
@@ -988,6 +1118,13 @@ async function refreshCaregiverInvite(silent = false) {
   finally {
     caregiverInviteLoading.value = false
   }
+}
+
+async function inviteDraftCaregiverReport() {
+  const canSave = await ensureDraftForItemSave()
+  if (!canSave || !editor.id)
+    return undefined
+  return invitePEP3CaregiverReportApi(editor.id)
 }
 
 async function generateCaregiverQRCode(invite?: PEP3CaregiverReportInvite) {
@@ -1046,6 +1183,10 @@ function jumpToMissingItem() {
 }
 
 function goBack() {
+  if (isSubmittedRecordMode.value) {
+    void router.push('/teacherCenter/evaluationRecord')
+    return
+  }
   void router.push('/teacherCenter/scale-library')
 }
 </script>
@@ -1073,7 +1214,7 @@ function goBack() {
         >
           {{ autoSaveText }}
         </span>
-        <a-button size="large" class="outline-action" :loading="saving" @click="saveDraft(false)">
+        <a-button v-if="!isRecordEditMode" size="large" class="outline-action" :loading="saving" @click="saveDraft(false)">
           <template #icon>
             <SaveOutlined />
           </template>
@@ -1083,7 +1224,7 @@ function goBack() {
           <template #icon>
             <FileDoneOutlined />
           </template>
-          提交记录
+          {{ submitActionText }}
         </a-button>
       </div>
     </header>
@@ -1266,7 +1407,8 @@ function goBack() {
           <h2>照护者报告</h2>
           <div class="caregiver-qrcode">
             <img v-if="caregiverQRCodeDataUrl" :src="caregiverQRCodeDataUrl" alt="照护者报告填写二维码">
-            <a-spin v-else />
+            <a-spin v-else-if="caregiverInviteLoading" />
+            <div v-else class="caregiver-qrcode-empty">暂无二维码</div>
             <p>家长扫码填写照护者报告</p>
           </div>
           <div class="caregiver-actions">
@@ -2216,6 +2358,19 @@ function goBack() {
     padding: 6px;
     background: #fff;
     border: 1px solid #e2e8f0;
+    border-radius: 8px;
+  }
+
+  .caregiver-qrcode-empty {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 132px;
+    height: 132px;
+    color: #98a2b3;
+    font-size: 13px;
+    background: #f8fafc;
+    border: 1px dashed #d0d5dd;
     border-radius: 8px;
   }
 

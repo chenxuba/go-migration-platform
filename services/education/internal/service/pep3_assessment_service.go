@@ -42,12 +42,13 @@ type PEP3ScoreResponse struct {
 }
 
 type PEP3AssessmentRecordSaveInput struct {
-	StudentID     int64
-	StudentName   string
-	ExaminerName  string
-	Remark        string
-	ScoreInput    pep3score.AssessmentInput
-	InputSnapshot any
+	StudentID        int64
+	StudentName      string
+	ExaminerName     string
+	Remark           string
+	ScoreInput       pep3score.AssessmentInput
+	ItemRecordValues map[int]map[string]any
+	InputSnapshot    any
 }
 
 var (
@@ -126,6 +127,85 @@ func (svc *Service) CreatePEP3AssessmentRecord(userID int64, input PEP3Assessmen
 		return model.AssessmentRecordDetailVO{}, err
 	}
 	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+}
+
+func (svc *Service) UpdatePEP3AssessmentRecord(userID, recordID int64, input PEP3AssessmentRecordSaveInput) (model.AssessmentRecordDetailVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentRecordDetailVO{}, errors.New("no institution context")
+		}
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentRecordDetailVO{}, errors.New("assessment record not found")
+		}
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != pep3ScaleCode {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment record is not PEP-3")
+	}
+	hasIEPPlan, err := svc.repo.AssessmentRecordHasIEPPlan(context.Background(), instID, recordID)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if hasIEPPlan {
+		return model.AssessmentRecordDetailVO{}, errors.New("该测评已生成IEP，请使用复用测评生成新记录")
+	}
+	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	scoreResult, err := svc.ScorePEP3(input.ScoreInput)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if err := svc.repo.UpdateAssessmentRecordInputAndResult(context.Background(), instID, recordID, input.InputSnapshot, scoreResult, scoreResult.ScaleVersion, scoreResult.Result.Age.Years, scoreResult.Result.Age.Months, scoreResult.Result.Age.Days, scoreResult.Result.Age.TotalMonthsForNorm, scoreResult.DataStatus); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if err := svc.syncPEP3SubmittedDraftAfterRecordUpdate(userID, instID, recordID, input); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+}
+
+func (svc *Service) syncPEP3SubmittedDraftAfterRecordUpdate(userID, instID, recordID int64, input PEP3AssessmentRecordSaveInput) error {
+	draft, err := svc.repo.GetAssessmentDraftBySubmittedRecordID(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	examinerID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	progress, err := buildPEP3AssessmentDraftProgress(&input.ScoreInput.BirthDate, &input.ScoreInput.AssessmentDate, input.ScoreInput.ItemScores, input.ScoreInput.RawScores, false)
+	if err != nil {
+		return err
+	}
+	if err := svc.repo.UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
+		context.Background(),
+		instID,
+		draft.ID,
+		input.InputSnapshot,
+		progress,
+		progress.AnsweredItemCount,
+		progress.RawScoreCount,
+		"submitted",
+		examinerID,
+	); err != nil {
+		return err
+	}
+	return svc.repo.SyncAssessmentDraftDetails(context.Background(), instID, draft.ID, input.ScoreInput.ItemScores, input.ScoreInput.RawScores, input.ItemRecordValues, examinerID)
 }
 
 func (svc *Service) GetPEP3AssessmentRecord(userID, recordID int64) (model.AssessmentRecordDetailVO, error) {

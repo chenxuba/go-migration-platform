@@ -90,6 +90,11 @@ export interface PEP3RecordCreateRequest extends PEP3ScoreRequest {
   remark?: string
   itemRecordValues?: Record<number, Record<string, unknown>>
   itemRecordValueList?: PEP3ItemRecordValueInput[]
+  caregiverReport?: PEP3CaregiverReportSubmission
+}
+
+export interface PEP3RecordUpdateRequest extends PEP3RecordCreateRequest {
+  id: number
 }
 
 export interface PEP3AssessmentRecordQueryModel {
@@ -675,6 +680,10 @@ export function deletePEP3AssessmentDraftApi(id: number) {
 
 export function createPEP3AssessmentRecordApi(data: PEP3RecordCreateRequest) {
   return usePost<PEP3AssessmentRecordDetail>('/api/v1/assessments/pep3/records/create', data)
+}
+
+export function updatePEP3AssessmentRecordApi(data: PEP3RecordUpdateRequest) {
+  return usePost<PEP3AssessmentRecordDetail>('/api/v1/assessments/pep3/records/update', data)
 }
 
 export function getPEP3AssessmentRecordDetailApi(id: number) {

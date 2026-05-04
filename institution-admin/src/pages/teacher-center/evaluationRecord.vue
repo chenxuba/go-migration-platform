@@ -1,6 +1,6 @@
 <script setup>
 import dayjs from 'dayjs'
-import { Empty } from 'ant-design-vue'
+import { Empty, Modal } from 'ant-design-vue'
 import messageService from '@/utils/messageService'
 import { useTableColumns } from '@/composables/useTableColumns'
 import GenerateIepModal from './components/generate-iep-modal.vue'
@@ -28,6 +28,7 @@ const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
+const router = useRouter()
 let reportPdfReadyTimer = 0
 
 const exportDimensionOptions = [
@@ -265,6 +266,54 @@ function iepActionText(record) {
   return record?.iepPlanStatus === 'confirmed' ? '查看IEP' : '生成IEP'
 }
 
+function hasIepPlan(record) {
+  return !!String(record?.iepPlanStatus || '').trim()
+}
+
+function assessmentRecordActionText(record) {
+  return hasIepPlan(record) ? '复用测评' : '编辑'
+}
+
+function assessmentRecordActionTip(record) {
+  return hasIepPlan(record)
+    ? '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
+    : ''
+}
+
+function assessmentRecordConfirmTitle(record) {
+  return hasIepPlan(record) ? '确认复用测评？' : '确认编辑测评？'
+}
+
+function assessmentRecordConfirmContent(record) {
+  if (hasIepPlan(record))
+    return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
+  return '修改并重新提交后会覆盖当前评估记录和报告数据，请确认后继续。'
+}
+
+function confirmAssessmentRecordAction(record = currentReport.value?.record) {
+  if (!record?.id)
+    return
+  Modal.confirm({
+    title: assessmentRecordConfirmTitle(record),
+    content: assessmentRecordConfirmContent(record),
+    okText: hasIepPlan(record) ? '确认复用' : '确认编辑',
+    cancelText: '取消',
+    onOk: () => editAssessmentRecord(record),
+  })
+}
+
+function confirmReportExport(row = currentReport.value?.record, dimension = activeReportModule.value) {
+  if (!row?.id || exportingId.value)
+    return
+  Modal.confirm({
+    title: '确认导出评估报告？',
+    content: `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`,
+    okText: '确认导出',
+    cancelText: '取消',
+    onOk: () => exportReport(row, dimension),
+  })
+}
+
 function getDownloadFilename(response, fallback) {
   const disposition = response?.headers?.['content-disposition'] || response?.headers?.['Content-Disposition'] || ''
   const matched = `${disposition}`.match(/filename\*=UTF-8''([^;]+)/i) || `${disposition}`.match(/filename="?([^";]+)"?/i)
@@ -419,6 +468,28 @@ function openIepModal(row) {
   iepModalOpen.value = true
 }
 
+function editAssessmentRecord(row = currentReport.value?.record) {
+  if (!row?.id)
+    return
+  const recordMode = hasIepPlan(row) ? 'reuse' : 'edit'
+  closeReportModal()
+  void router.push({
+    path: '/teacherCenter/scale-assessment-workbench',
+    query: {
+      recordId: row.id,
+      recordMode,
+      scaleName: row.assessmentName || 'PEP-3',
+      scaleCode: row.assessmentCode || 'PEP3',
+      childId: row.studentId,
+      childName: row.studentName,
+      childAge: formatAge(row),
+      childBirthDate: formatDate(row.birthDate),
+      assessmentDate: formatDate(row.assessmentDate),
+      examinerName: row.examinerName,
+    },
+  })
+}
+
 function closeExportModal() {
   if (exportingId.value)
     return
@@ -546,7 +617,7 @@ onBeforeUnmount(() => {
                 {{ formatDateTime(record.createdTime) }}
               </template>
               <template v-else-if="column.key === 'action'">
-                <a-space :size="12" class="action-links">
+                <a-space :size="8" class="action-links">
                   <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
@@ -585,15 +656,27 @@ onBeforeUnmount(() => {
               {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
             </div>
           </div>
-          <a-button
-            type="primary"
-            size="small"
-            class="report-export-btn"
-            :loading="exportingId === currentReport.record?.id"
-            @click="exportReport(currentReport.record, activeReportModule)"
-          >
-            导出
-          </a-button>
+          <div class="report-head__actions">
+            <a-button
+              type="primary"
+              size="small"
+              class="report-export-btn"
+              :loading="exportingId === currentReport.record?.id"
+              @click="confirmReportExport(currentReport.record, activeReportModule)"
+            >
+              导出
+            </a-button>
+            <a-tooltip :title="assessmentRecordActionTip(currentReport.record)" placement="top">
+              <a-button
+                size="small"
+                class="report-edit-btn"
+                :disabled="exportingId === currentReport.record?.id"
+                @click="confirmAssessmentRecordAction(currentReport.record)"
+              >
+                {{ assessmentRecordActionText(currentReport.record) }}
+              </a-button>
+            </a-tooltip>
+          </div>
         </div>
         <div class="report-module-area">
           <div class="report-module-grid">
@@ -827,8 +910,20 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.report-export-btn {
+.report-head__actions {
+  display: flex;
   flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.report-export-btn {
+  min-width: 56px;
+  height: 28px;
+  padding: 0 12px;
+}
+
+.report-edit-btn {
   min-width: 56px;
   height: 28px;
   padding: 0 12px;

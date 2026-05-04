@@ -365,6 +365,18 @@ func (repo *Repository) UpdateAssessmentRecordInputAndResult(ctx context.Context
 	return nil
 }
 
+func (repo *Repository) AssessmentRecordHasIEPPlan(ctx context.Context, instID, recordID int64) (bool, error) {
+	var count int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT COUNT(1)
+		FROM assessment_iep_plan
+		WHERE inst_id = ? AND record_id = ? AND del_flag = 0
+	`, instID, recordID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
 func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
 	current, size = normalizeAssessmentPage(current, size)
 	where := []string{"ar.inst_id = ?", "ar.del_flag = 0"}
