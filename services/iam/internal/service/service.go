@@ -247,7 +247,33 @@ func (svc *Service) ListInstitutionLoginOptions(req model.InstitutionLoginOption
 	if identifier == "" {
 		return []model.InstitutionLoginOption{}, errors.New("登录账号不能为空")
 	}
-	return svc.repo.ListInstitutionLoginOptions(context.Background(), identifier)
+	options, err := svc.repo.ListInstitutionLoginOptions(context.Background(), identifier)
+	if err != nil {
+		return nil, err
+	}
+	password := strings.TrimSpace(req.Password)
+	if password == "" || len(options) == 0 {
+		return options, nil
+	}
+
+	matchedOptions := make([]model.InstitutionLoginOption, 0, len(options))
+	for _, option := range options {
+		userID := option.UserID
+		user, findErr := svc.repo.FindInstitutionLoginUser(context.Background(), identifier, option.InstID, &userID)
+		if findErr != nil {
+			if errors.Is(findErr, sql.ErrNoRows) {
+				continue
+			}
+			return nil, findErr
+		}
+		if bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)) == nil {
+			matchedOptions = append(matchedOptions, option)
+		}
+	}
+	if len(matchedOptions) == 0 {
+		return []model.InstitutionLoginOption{}, errors.New("登录失败,用户名或密码错误")
+	}
+	return matchedOptions, nil
 }
 
 func firstNonEmpty(values ...string) string {

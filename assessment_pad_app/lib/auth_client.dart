@@ -102,7 +102,9 @@ class InstitutionLoginOption {
 
 abstract interface class AuthClient {
   Future<List<InstitutionLoginOption>> listInstitutionOptions(
-      String identifier);
+    String identifier, {
+    String password = '',
+  });
 
   Future<LoginResult> login({
     required String username,
@@ -130,15 +132,17 @@ class IamAuthClient implements AuthClient {
 
   @override
   Future<List<InstitutionLoginOption>> listInstitutionOptions(
-    String identifier,
-  ) async {
-    final Object? data = await _postJson(
-      institutionsPath,
-      <String, Object>{
-        'identifier': identifier,
-        'loginType': 2,
-      },
-    );
+    String identifier, {
+    String password = '',
+  }) async {
+    final Map<String, Object> payload = <String, Object>{
+      'identifier': identifier,
+      'loginType': 2,
+    };
+    if (password.trim().isNotEmpty) {
+      payload['password'] = password;
+    }
+    final Object? data = await _postJson(institutionsPath, payload);
     if (data is! List) {
       return <InstitutionLoginOption>[];
     }

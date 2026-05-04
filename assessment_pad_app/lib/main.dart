@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
@@ -91,10 +92,11 @@ const double _loginLeftShiftCompact = 24;
 const double _loginLeftShiftWide = 64;
 const double _loginCardWidth = 408;
 const double _loginCardHeight = 522;
-const double _loginCardStageWidth = 846;
-const double _loginCardStageHeight = 540;
-const double _loginKeyboardWidth = 386;
-const double _loginKeyboardHeight = 318;
+const double _loginCardRight = 64;
+const double _loginCardTop = 162;
+const double _loginKeyboardWidth = 540;
+const double _loginKeyboardHeight = 408;
+const double _loginKeyboardKeyHeight = 54;
 const double _homeMainTop = 124;
 const double _homeStartHeight = 334;
 const double _homeStatsHeight = 102;
@@ -116,6 +118,19 @@ List<BoxShadow> _softShadow({
   return <BoxShadow>[
     BoxShadow(color: color, blurRadius: blur, offset: offset),
   ];
+}
+
+bool get _usesCustomLoginKeyboard {
+  switch (defaultTargetPlatform) {
+    case TargetPlatform.android:
+    case TargetPlatform.iOS:
+      return true;
+    case TargetPlatform.fuchsia:
+    case TargetPlatform.linux:
+    case TargetPlatform.macOS:
+    case TargetPlatform.windows:
+      return false;
+  }
 }
 
 class PadViewport extends StatelessWidget {
@@ -283,9 +298,7 @@ class LoginScreen extends StatelessWidget {
               top: 320,
               child: const LoginIllustration(),
             ),
-            Positioned(
-              right: 64,
-              top: 162,
+            Positioned.fill(
               child: LoginCard(
                 authClient: authClient,
                 onLoginSuccess: () => Navigator.of(context)
@@ -384,6 +397,8 @@ class PadExperienceChip extends StatelessWidget {
   }
 }
 
+enum _LoginInputTarget { username, password }
+
 class LoginCard extends StatefulWidget {
   const LoginCard({
     required this.authClient,
@@ -418,8 +433,9 @@ class _LoginCardState extends State<LoginCard> {
   bool _qrMode = false;
   bool _customKeyboardVisible = false;
   bool _keyboardShift = false;
+  bool _keyboardWasMoved = false;
   _LoginInputTarget _activeInput = _LoginInputTarget.username;
-  Offset _keyboardOffset = const Offset(18, 74);
+  Offset _keyboardOffset = const Offset(360, 198);
   String _qrNonce = DateTime.now().millisecondsSinceEpoch.toString();
   String? _errorMessage;
 
@@ -498,9 +514,29 @@ class _LoginCardState extends State<LoginCard> {
   }
 
   void _openCustomKeyboard(_LoginInputTarget target) {
+    if (!_usesCustomLoginKeyboard) {
+      setState(() {
+        _activeInput = target;
+        _customKeyboardVisible = false;
+        _errorMessage = null;
+      });
+      if (target == _LoginInputTarget.username) {
+        _usernameFocusNode.requestFocus();
+      } else {
+        _passwordFocusNode.requestFocus();
+      }
+      return;
+    }
+
+    final Size stageSize = _keyboardStageSize();
     setState(() {
       _activeInput = target;
       _customKeyboardVisible = true;
+      if (!_keyboardWasMoved) {
+        _keyboardOffset = _defaultKeyboardOffset(stageSize);
+      } else {
+        _keyboardOffset = _clampKeyboardOffset(_keyboardOffset, stageSize);
+      }
       _errorMessage = null;
     });
     if (target == _LoginInputTarget.username) {
@@ -512,15 +548,35 @@ class _LoginCardState extends State<LoginCard> {
   }
 
   void _moveKeyboard(DragUpdateDetails details) {
-    final double nextDx = (_keyboardOffset.dx + details.delta.dx).clamp(
-      0.0,
-      _loginCardStageWidth - _loginKeyboardWidth,
+    final Offset nextOffset = _clampKeyboardOffset(
+      _keyboardOffset + details.delta,
+      _keyboardStageSize(),
     );
-    final double nextDy = (_keyboardOffset.dy + details.delta.dy).clamp(
-      0.0,
-      _loginCardStageHeight - _loginKeyboardHeight,
+    setState(() {
+      _keyboardWasMoved = true;
+      _keyboardOffset = nextOffset;
+    });
+  }
+
+  Size _keyboardStageSize() {
+    return context.size ?? const Size(_wideDesignWidth, _designHeight);
+  }
+
+  Offset _defaultKeyboardOffset(Size stageSize) {
+    final double cardLeft = stageSize.width - _loginCardRight - _loginCardWidth;
+    return _clampKeyboardOffset(
+      Offset(cardLeft - _loginKeyboardWidth - 36, _loginCardTop + 34),
+      stageSize,
     );
-    setState(() => _keyboardOffset = Offset(nextDx, nextDy));
+  }
+
+  Offset _clampKeyboardOffset(Offset offset, Size stageSize) {
+    final double maxDx = math.max(0, stageSize.width - _loginKeyboardWidth);
+    final double maxDy = math.max(0, stageSize.height - _loginKeyboardHeight);
+    return Offset(
+      offset.dx.clamp(0.0, maxDx),
+      offset.dy.clamp(0.0, maxDy),
+    );
   }
 
   TextEditingController get _activeController {
@@ -602,7 +658,10 @@ class _LoginCardState extends State<LoginCard> {
 
     try {
       final List<InstitutionLoginOption> options =
-          await widget.authClient.listInstitutionOptions(username);
+          await widget.authClient.listInstitutionOptions(
+        username,
+        password: password,
+      );
       InstitutionLoginOption? selectedInstitution;
       if (options.length > 1) {
         if (mounted) {
@@ -673,34 +732,38 @@ class _LoginCardState extends State<LoginCard> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: _loginCardStageWidth,
-      height: _loginCardStageHeight,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: <Widget>[
-          Positioned(right: 0, top: 0, child: _buildCard()),
-          if (_customKeyboardVisible && !_qrMode)
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return Stack(
+          clipBehavior: Clip.none,
+          children: <Widget>[
             Positioned(
-              left: _keyboardOffset.dx,
-              top: _keyboardOffset.dy,
-              child: FloatingLoginKeyboard(
-                targetLabel:
-                    _activeInput == _LoginInputTarget.username ? '账号' : '密码',
-                shifted: _keyboardShift,
-                onDragUpdate: _moveKeyboard,
-                onKey: _insertKeyboardText,
-                onBackspace: _deleteKeyboardText,
-                onClear: _clearActiveInput,
-                onShift: () {
-                  setState(() => _keyboardShift = !_keyboardShift);
-                },
-                onNext: _focusNextInput,
-                onClose: () => _dismissKeyboard(),
-              ),
+              right: _loginCardRight,
+              top: _loginCardTop,
+              child: _buildCard(),
             ),
-        ],
-      ),
+            if (_customKeyboardVisible && !_qrMode)
+              Positioned(
+                left: _keyboardOffset.dx,
+                top: _keyboardOffset.dy,
+                child: FloatingLoginKeyboard(
+                  targetLabel:
+                      _activeInput == _LoginInputTarget.username ? '账号' : '密码',
+                  shifted: _keyboardShift,
+                  onDragUpdate: _moveKeyboard,
+                  onKey: _insertKeyboardText,
+                  onBackspace: _deleteKeyboardText,
+                  onClear: _clearActiveInput,
+                  onShift: () {
+                    setState(() => _keyboardShift = !_keyboardShift);
+                  },
+                  onNext: _focusNextInput,
+                  onClose: () => _dismissKeyboard(),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
 
@@ -727,6 +790,7 @@ class _LoginCardState extends State<LoginCard> {
   }
 
   List<Widget> _buildAccountLogin() {
+    final bool useCustomKeyboard = _usesCustomLoginKeyboard;
     return <Widget>[
       Row(
         children: <Widget>[
@@ -756,16 +820,32 @@ class _LoginCardState extends State<LoginCard> {
       const SizedBox(height: 34),
       LoginTextField(
         controller: _usernameController,
+        focusNode: _usernameFocusNode,
         icon: Icons.person_outline_rounded,
         hint: '手机号 / 账号',
+        useCustomKeyboard: useCustomKeyboard,
+        active: useCustomKeyboard &&
+            _activeInput == _LoginInputTarget.username &&
+            _customKeyboardVisible,
+        onTap: useCustomKeyboard
+            ? () => _openCustomKeyboard(_LoginInputTarget.username)
+            : null,
         textInputAction: TextInputAction.next,
         onChanged: (_) => _clearError(),
       ),
       const SizedBox(height: 18),
       LoginTextField(
         controller: _passwordController,
+        focusNode: _passwordFocusNode,
         icon: Icons.lock_outline_rounded,
         hint: '密码',
+        useCustomKeyboard: useCustomKeyboard,
+        active: useCustomKeyboard &&
+            _activeInput == _LoginInputTarget.password &&
+            _customKeyboardVisible,
+        onTap: useCustomKeyboard
+            ? () => _openCustomKeyboard(_LoginInputTarget.password)
+            : null,
         obscureText: !_passwordVisible,
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => _submit(),
@@ -1263,25 +1343,407 @@ class _InstitutionTag extends StatelessWidget {
   }
 }
 
+class FloatingLoginKeyboard extends StatelessWidget {
+  const FloatingLoginKeyboard({
+    required this.targetLabel,
+    required this.shifted,
+    required this.onDragUpdate,
+    required this.onKey,
+    required this.onBackspace,
+    required this.onClear,
+    required this.onShift,
+    required this.onNext,
+    required this.onClose,
+    super.key,
+  });
+
+  final String targetLabel;
+  final bool shifted;
+  final GestureDragUpdateCallback onDragUpdate;
+  final ValueChanged<String> onKey;
+  final VoidCallback onBackspace;
+  final VoidCallback onClear;
+  final VoidCallback onShift;
+  final VoidCallback onNext;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: _loginKeyboardWidth,
+      height: _loginKeyboardHeight,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.96),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: Colors.white, width: 1.2),
+        boxShadow: _softShadow(
+          color: const Color(0x24CB8C65),
+          blur: 26,
+          offset: const Offset(0, 14),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onPanUpdate: onDragUpdate,
+            child: SizedBox(
+              height: 38,
+              child: Row(
+                children: <Widget>[
+                  const Icon(
+                    Icons.drag_indicator_rounded,
+                    color: AppColors.muted,
+                    size: 21,
+                  ),
+                  const SizedBox(width: 6),
+                  Container(
+                    height: 24,
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E8),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    alignment: Alignment.center,
+                    child: Text(
+                      targetLabel,
+                      style: const TextStyle(
+                        color: AppColors.orange,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    splashRadius: 18,
+                    padding: EdgeInsets.zero,
+                    onPressed: onClose,
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      color: AppColors.muted,
+                      size: 21,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          _keyRow(_digitKeys),
+          const SizedBox(height: 9),
+          _keyRow(_letterKeys('qwertyuiop')),
+          const SizedBox(height: 9),
+          _keyRow(_letterKeys('asdfghjkl')),
+          const SizedBox(height: 9),
+          _keyRow(<Widget>[
+            _KeyboardButton(
+              id: 'shift',
+              flex: 2,
+              active: shifted,
+              icon: Icons.keyboard_capslock_rounded,
+              onTap: onShift,
+            ),
+            ..._letterKeys('zxcvbnm'),
+            _KeyboardButton(
+              id: 'backspace',
+              flex: 2,
+              icon: Icons.backspace_outlined,
+              onTap: onBackspace,
+            ),
+          ]),
+          const SizedBox(height: 9),
+          _keyRow(<Widget>[
+            _textKey('@'),
+            _textKey('.'),
+            _textKey('_'),
+            _textKey('-'),
+            _KeyboardButton(
+              id: 'space',
+              flex: 3,
+              label: '空格',
+              onTap: () => onKey(' '),
+            ),
+            _KeyboardButton(
+              id: 'clear',
+              flex: 2,
+              label: '清空',
+              muted: true,
+              onTap: onClear,
+            ),
+            _KeyboardButton(
+              id: 'next',
+              flex: 3,
+              label: targetLabel == '账号' ? '下一项' : '登录',
+              primary: true,
+              onTap: onNext,
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> get _digitKeys {
+    return '1234567890'.split('').map(_textKey).toList();
+  }
+
+  List<Widget> _letterKeys(String values) {
+    return values.split('').map((String value) {
+      final String label = shifted ? value.toUpperCase() : value;
+      return _KeyboardButton(
+        id: value,
+        label: label,
+        onTap: () => onKey(label),
+      );
+    }).toList();
+  }
+
+  Widget _textKey(String value) {
+    return _KeyboardButton(
+      id: value,
+      label: value,
+      onTap: () => onKey(value),
+    );
+  }
+
+  Widget _keyRow(List<Widget> children) {
+    return Row(
+      children: <Widget>[
+        for (int index = 0; index < children.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 8),
+          children[index],
+        ],
+      ],
+    );
+  }
+}
+
+class _KeyboardButton extends StatefulWidget {
+  const _KeyboardButton({
+    required this.id,
+    required this.onTap,
+    this.label,
+    this.icon,
+    this.flex = 1,
+    this.primary = false,
+    this.active = false,
+    this.muted = false,
+  });
+
+  final String id;
+  final String? label;
+  final IconData? icon;
+  final int flex;
+  final bool primary;
+  final bool active;
+  final bool muted;
+  final VoidCallback onTap;
+
+  @override
+  State<_KeyboardButton> createState() => _KeyboardButtonState();
+}
+
+class _KeyboardButtonState extends State<_KeyboardButton> {
+  bool _pressed = false;
+  bool _showBubble = false;
+
+  void _handleTapDown(TapDownDetails _) {
+    HapticFeedback.selectionClick();
+    setState(() {
+      _pressed = true;
+      _showBubble = true;
+    });
+  }
+
+  void _hidePressBubbleSoon() {
+    setState(() => _pressed = false);
+    Future<void>.delayed(const Duration(milliseconds: 130), () {
+      if (mounted) {
+        setState(() => _showBubble = false);
+      }
+    });
+  }
+
+  String get _bubbleLabel {
+    if (widget.label != null && widget.label!.trim().isNotEmpty) {
+      return widget.label!;
+    }
+    switch (widget.id) {
+      case 'shift':
+        return '大写';
+      case 'backspace':
+        return '删除';
+      default:
+        return widget.id;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background = widget.primary
+        ? AppColors.orange
+        : widget.active
+            ? const Color(0xFFFFE5D6)
+            : widget.muted
+                ? const Color(0xFFF6EFEA)
+                : const Color(0xFFFFFAF5);
+    final Color foreground = widget.primary
+        ? Colors.white
+        : widget.active
+            ? AppColors.orangeDeep
+            : widget.muted
+                ? AppColors.body
+                : AppColors.ink;
+    final Color pressedBackground = widget.primary
+        ? AppColors.orangeDeep
+        : widget.active
+            ? const Color(0xFFFFD6C2)
+            : const Color(0xFFFFE8DA);
+    final Color keyBackground = _pressed ? pressedBackground : background;
+    final Color keyBorder =
+        _pressed ? AppColors.orange : const Color(0xFFF0DACB);
+
+    return Expanded(
+      flex: widget.flex,
+      child: GestureDetector(
+        key: ValueKey<String>('login-key-${widget.id}'),
+        onTapDown: _handleTapDown,
+        onTapUp: (_) => _hidePressBubbleSoon(),
+        onTapCancel: () {
+          if (mounted) {
+            setState(() {
+              _pressed = false;
+              _showBubble = false;
+            });
+          }
+        },
+        onTap: widget.onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: <Widget>[
+            AnimatedScale(
+              scale: _pressed ? .96 : 1,
+              duration: const Duration(milliseconds: 70),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 70),
+                curve: Curves.easeOut,
+                height: _loginKeyboardKeyHeight,
+                decoration: BoxDecoration(
+                  color: keyBackground,
+                  borderRadius: BorderRadius.circular(13),
+                  border: widget.primary
+                      ? null
+                      : Border.all(color: keyBorder, width: _pressed ? 1.4 : 1),
+                  boxShadow: widget.primary || _pressed
+                      ? _softShadow(
+                          color: _pressed
+                              ? const Color(0x2FD15E36)
+                              : const Color(0x20D15E36),
+                          blur: _pressed ? 16 : 12,
+                          offset: Offset(0, _pressed ? 5 : 7),
+                        )
+                      : null,
+                ),
+                alignment: Alignment.center,
+                child: widget.icon == null
+                    ? Text(
+                        widget.label ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.clip,
+                        style: TextStyle(
+                          color: foreground,
+                          fontSize:
+                              widget.label != null && widget.label!.length > 2
+                                  ? 15
+                                  : 19,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      )
+                    : Icon(widget.icon, color: foreground, size: 22),
+              ),
+            ),
+            if (_showBubble)
+              Positioned(
+                bottom: _loginKeyboardKeyHeight + 8,
+                child: IgnorePointer(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Container(
+                        height: 46,
+                        constraints: const BoxConstraints(minWidth: 46),
+                        padding: const EdgeInsets.symmetric(horizontal: 15),
+                        decoration: BoxDecoration(
+                          color: AppColors.orange,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: _softShadow(
+                            color: const Color(0x24D15E36),
+                            blur: 14,
+                            offset: const Offset(0, 8),
+                          ),
+                        ),
+                        alignment: Alignment.center,
+                        child: Text(
+                          _bubbleLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 20,
+                            fontWeight: FontWeight.w900,
+                            height: 1,
+                          ),
+                        ),
+                      ),
+                      ClipPath(
+                        clipper: TriangleClipper(),
+                        child: Container(
+                          width: 16,
+                          height: 9,
+                          color: AppColors.orange,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class LoginTextField extends StatelessWidget {
   const LoginTextField({
     required this.controller,
+    required this.focusNode,
     required this.icon,
     required this.hint,
+    required this.active,
+    required this.useCustomKeyboard,
     this.suffix,
     this.obscureText = false,
     this.textInputAction,
+    this.onTap,
     this.onChanged,
     this.onSubmitted,
     super.key,
   });
 
   final TextEditingController controller;
+  final FocusNode focusNode;
   final IconData icon;
   final Widget? suffix;
   final String hint;
+  final bool active;
+  final bool useCustomKeyboard;
   final bool obscureText;
   final TextInputAction? textInputAction;
+  final VoidCallback? onTap;
   final ValueChanged<String>? onChanged;
   final ValueChanged<String>? onSubmitted;
 
@@ -1292,7 +1754,10 @@ class LoginTextField extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.line, width: 1.4),
+        border: Border.all(
+          color: active ? AppColors.orange : AppColors.line,
+          width: active ? 1.8 : 1.4,
+        ),
       ),
       child: Row(
         children: <Widget>[
@@ -1302,8 +1767,15 @@ class LoginTextField extends StatelessWidget {
           Expanded(
             child: TextField(
               controller: controller,
+              focusNode: focusNode,
               obscureText: obscureText,
+              readOnly: useCustomKeyboard,
+              showCursor: useCustomKeyboard ? active : null,
+              keyboardType:
+                  useCustomKeyboard ? TextInputType.none : TextInputType.text,
+              enableInteractiveSelection: !useCustomKeyboard,
               textInputAction: textInputAction,
+              onTap: onTap,
               onChanged: onChanged,
               onSubmitted: onSubmitted,
               cursorColor: AppColors.orange,

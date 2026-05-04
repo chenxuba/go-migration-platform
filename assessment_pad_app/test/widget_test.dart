@@ -1,5 +1,6 @@
 import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/main.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -14,8 +15,8 @@ void main() {
     expect(find.text('机构账号登录'), findsOneWidget);
     expect(find.text('验证码登录'), findsNothing);
 
-    await tester.enterText(find.byType(TextField).at(0), 'chenrui');
-    await tester.enterText(find.byType(TextField).at(1), '123456');
+    await _enterWithCustomKeyboard(tester, 0, 'chenrui');
+    await _enterWithCustomKeyboard(tester, 1, '123456');
     await tester.tap(find.text('登 录'));
     await tester.pumpAndSettle();
 
@@ -68,8 +69,8 @@ void main() {
       AssessmentPadApp(authClient: _MultiInstitutionAuthClient()),
     );
 
-    await tester.enterText(find.byType(TextField).at(0), 'chenrui');
-    await tester.enterText(find.byType(TextField).at(1), '123456');
+    await _enterWithCustomKeyboard(tester, 0, 'chenrui');
+    await _enterWithCustomKeyboard(tester, 1, '123456');
     await tester.tap(find.text('登 录'));
     await tester.pumpAndSettle();
 
@@ -85,6 +86,57 @@ void main() {
 
     expect(find.text('上午好，启明成长中心'), findsOneWidget);
   });
+
+  testWidgets('wrong password does not open institution picker',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{});
+    await tester.pumpWidget(
+      AssessmentPadApp(authClient: _PasswordCheckingAuthClient()),
+    );
+
+    await _enterWithCustomKeyboard(tester, 0, 'chenrui');
+    await _enterWithCustomKeyboard(tester, 1, 'wrong123');
+    await tester.tap(find.text('登 录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('登录失败,用户名或密码错误'), findsOneWidget);
+    expect(find.text('选择登录机构'), findsNothing);
+  });
+
+  testWidgets('desktop login fields use native input without custom keyboard',
+      (WidgetTester tester) async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.macOS;
+    try {
+      SharedPreferences.setMockInitialValues(<String, Object>{});
+      await tester.pumpWidget(AssessmentPadApp(authClient: _FakeAuthClient()));
+
+      await tester.tap(find.byType(TextField).first);
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey<String>('login-key-1')), findsNothing);
+
+      await tester.enterText(find.byType(TextField).first, 'chenrui');
+      await tester.pumpAndSettle();
+
+      expect(find.text('chenrui'), findsOneWidget);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+  });
+}
+
+Future<void> _enterWithCustomKeyboard(
+  WidgetTester tester,
+  int fieldIndex,
+  String value,
+) async {
+  await tester.tap(find.byType(TextField).at(fieldIndex));
+  await tester.pumpAndSettle();
+
+  for (final String character in value.split('')) {
+    await tester.tap(find.byKey(ValueKey<String>('login-key-$character')));
+    await tester.pump(const Duration(milliseconds: 20));
+  }
 }
 
 class _FakeAuthClient implements AuthClient {
@@ -95,8 +147,9 @@ class _FakeAuthClient implements AuthClient {
 
   @override
   Future<List<InstitutionLoginOption>> listInstitutionOptions(
-    String identifier,
-  ) async {
+    String identifier, {
+    String password = '',
+  }) async {
     return <InstitutionLoginOption>[];
   }
 
@@ -126,8 +179,9 @@ class _FakeAuthClient implements AuthClient {
 class _MultiInstitutionAuthClient extends _FakeAuthClient {
   @override
   Future<List<InstitutionLoginOption>> listInstitutionOptions(
-    String identifier,
-  ) async {
+    String identifier, {
+    String password = '',
+  }) async {
     return const <InstitutionLoginOption>[
       InstitutionLoginOption(
         userId: 1,
@@ -152,5 +206,18 @@ class _MultiInstitutionAuthClient extends _FakeAuthClient {
         institutionStatus: 'warning',
       ),
     ];
+  }
+}
+
+class _PasswordCheckingAuthClient extends _MultiInstitutionAuthClient {
+  @override
+  Future<List<InstitutionLoginOption>> listInstitutionOptions(
+    String identifier, {
+    String password = '',
+  }) async {
+    if (password != '123456') {
+      throw const AuthException('登录失败,用户名或密码错误');
+    }
+    return super.listInstitutionOptions(identifier, password: password);
   }
 }

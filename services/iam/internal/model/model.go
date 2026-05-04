@@ -12,6 +12,7 @@ type LoginRequest struct {
 
 type InstitutionLoginOptionsRequest struct {
 	Identifier string `json:"identifier"`
+	Password   string `json:"password,omitempty"`
 	LoginType  int    `json:"loginType"`
 }
 
