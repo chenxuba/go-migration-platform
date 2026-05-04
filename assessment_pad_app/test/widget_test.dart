@@ -110,8 +110,10 @@ void main() {
     await tester.tap(find.text('排课日程'));
     await tester.pumpAndSettle();
 
-    expect(find.text('智慧课表'), findsWidgets);
-    expect(find.text('按固定时段查看老师一周排课'), findsOneWidget);
+    expect(find.text('排课日程'), findsWidgets);
+    expect(find.text('智慧课表'), findsNothing);
+    expect(find.text('时间课表'), findsNothing);
+    expect(find.text('按固定时段查看老师一周排课'), findsNothing);
     expect(find.text('陈思语老师'), findsOneWidget);
 
     final Rect timeRailRect =
@@ -129,6 +131,35 @@ void main() {
       (timeRailRect.height - scheduleGridRect.height).abs(),
       lessThan(.5),
     );
+
+    final Finder scrollBody =
+        find.byKey(const ValueKey<String>('smart-timetable-scroll-body'));
+    final Rect stickyHeaderBefore = tester
+        .getRect(find.byKey(const ValueKey<String>('smart-timetable-header')));
+    final Rect weekHeaderBefore =
+        tester.getRect(find.byKey(const ValueKey<String>('smart-week-header')));
+    final Rect firstCellBefore =
+        tester.getRect(find.byKey(const ValueKey<String>('schedule-cell-0-0')));
+
+    await tester.drag(scrollBody, const Offset(0, -150));
+    await tester.pumpAndSettle();
+
+    final Rect stickyHeaderAfter = tester
+        .getRect(find.byKey(const ValueKey<String>('smart-timetable-header')));
+    final Rect weekHeaderAfter =
+        tester.getRect(find.byKey(const ValueKey<String>('smart-week-header')));
+    final Rect firstCellAfter =
+        tester.getRect(find.byKey(const ValueKey<String>('schedule-cell-0-0')));
+    expect(stickyHeaderAfter.top, stickyHeaderBefore.top);
+    expect(weekHeaderAfter.top, weekHeaderBefore.top);
+    expect(firstCellAfter.top, lessThan(firstCellBefore.top));
+    expect(find.text('排课日程'), findsWidgets);
+    expect(find.text('陈思语老师'), findsOneWidget);
+
+    await tester.ensureVisible(
+      find.byKey(const ValueKey<String>('schedule-cell-0-0')),
+    );
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('陈思语老师'));
     await tester.pumpAndSettle();

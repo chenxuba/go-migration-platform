@@ -297,7 +297,7 @@ class _TimetableTopBar extends StatelessWidget {
       child: Row(
         children: <Widget>[
           SizedBox(
-            width: compact ? 240 : 280,
+            width: compact ? 188 : 210,
             child: Row(
               children: <Widget>[
                 _IconShell(
@@ -307,31 +307,18 @@ class _TimetableTopBar extends StatelessWidget {
                 ),
                 const SizedBox(width: 14),
                 const Expanded(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Text(
-                        '智慧课表',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _SmartColors.ink,
-                          fontSize: 24,
-                          height: 1.05,
-                          fontWeight: FontWeight.w900,
-                        ),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: Text(
+                      '排课日程',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _SmartColors.ink,
+                        fontSize: 25,
+                        height: 1.05,
+                        fontWeight: FontWeight.w900,
                       ),
-                      SizedBox(height: 5),
-                      Text(
-                        '按固定时段查看老师一周排课',
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _SmartColors.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
                 ),
               ],
@@ -343,7 +330,7 @@ class _TimetableTopBar extends StatelessWidget {
               mainAxisAlignment: MainAxisAlignment.end,
               children: <Widget>[
                 _DateSwitch(
-                  width: compact ? 238 : 292,
+                  width: compact ? 302 : 352,
                   dateRange: dateRange,
                   onPrev: onPrevWeek,
                   onNext: onNextWeek,
@@ -387,8 +374,7 @@ class _TimetableSubBar extends StatelessWidget {
       height: 48,
       child: Row(
         children: <Widget>[
-          const _SegmentTabs(),
-          SizedBox(width: compact ? 10 : 16),
+          SizedBox(width: compact ? 6 : 12),
           Expanded(
             child: Row(
               children: <Widget>[
@@ -499,28 +485,68 @@ class _TimetableBoard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double leftWidth = compact ? 112 : 118;
-    final double boardHeight = _headerHeight + _rowHeight * _timeSlots.length;
+    final int rowCount = math.max(_timeSlots.length, rows.length);
+    final List<List<_LessonCell?>> displayRows =
+        List<List<_LessonCell?>>.generate(rowCount, (int rowIndex) {
+      final List<_LessonCell?> source =
+          rowIndex < rows.length ? rows[rowIndex] : const <_LessonCell?>[];
+      return List<_LessonCell?>.generate(
+        _weekDays.length,
+        (int column) => column < source.length ? source[column] : null,
+      );
+    });
+
     return Align(
       alignment: Alignment.topCenter,
-      child: SizedBox(
-        height: boardHeight,
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(14),
-          child: Container(
-            key: const ValueKey<String>('smart-timetable-board'),
-            foregroundDecoration: BoxDecoration(
-              border: Border.all(color: _SmartColors.line),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                SizedBox(width: leftWidth, child: const _TimeRail()),
-                Expanded(
-                  child: _ScheduleGrid(rows: rows, onLessonMove: onLessonMove),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          key: const ValueKey<String>('smart-timetable-board'),
+          color: Colors.white,
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: _SmartColors.line),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            children: <Widget>[
+              SizedBox(
+                key: const ValueKey<String>('smart-timetable-header'),
+                height: _headerHeight,
+                child: Row(
+                  children: <Widget>[
+                    SizedBox(
+                      width: leftWidth,
+                      child: const _DiagonalHeaderCell(),
+                    ),
+                    const Expanded(
+                      child: _WeekHeaderRow(
+                        key: ValueKey<String>('smart-week-header'),
+                      ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  key: const ValueKey<String>('smart-timetable-scroll-body'),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: leftWidth,
+                        child: _TimeRail(rowCount: rowCount),
+                      ),
+                      Expanded(
+                        child: _ScheduleGrid(
+                          rows: displayRows,
+                          onLessonMove: onLessonMove,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -529,7 +555,9 @@ class _TimetableBoard extends StatelessWidget {
 }
 
 class _TimeRail extends StatelessWidget {
-  const _TimeRail();
+  const _TimeRail({required this.rowCount});
+
+  final int rowCount;
 
   @override
   Widget build(BuildContext context) {
@@ -538,13 +566,22 @@ class _TimeRail extends StatelessWidget {
       color: _SmartColors.slot,
       child: Column(
         children: <Widget>[
-          const _DiagonalHeaderCell(),
-          for (final _TimeSlot slot in _timeSlots)
-            _TimeSlotCell(slot: slot, isLast: slot == _timeSlots.last),
+          for (int index = 0; index < rowCount; index += 1)
+            _TimeSlotCell(
+              slot: _timeSlotForIndex(index),
+              isLast: index == rowCount - 1,
+            ),
         ],
       ),
     );
   }
+}
+
+_TimeSlot _timeSlotForIndex(int index) {
+  if (index < _timeSlots.length) {
+    return _timeSlots[index];
+  }
+  return _TimeSlot(title: '第${index + 1}节', time: '');
 }
 
 class _DiagonalHeaderCell extends StatelessWidget {
@@ -656,7 +693,6 @@ class _ScheduleGrid extends StatelessWidget {
       color: Colors.white,
       child: Column(
         children: <Widget>[
-          const _WeekHeaderRow(),
           for (int row = 0; row < rows.length; row += 1)
             _ScheduleGridRow(
               rowIndex: row,
@@ -671,7 +707,7 @@ class _ScheduleGrid extends StatelessWidget {
 }
 
 class _WeekHeaderRow extends StatelessWidget {
-  const _WeekHeaderRow();
+  const _WeekHeaderRow({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -1228,7 +1264,10 @@ class _DateSwitch extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 6),
       child: Row(
         children: <Widget>[
-          _MiniNavButton(icon: Icons.chevron_left_rounded, onTap: onPrev),
+          _MiniNavButton(
+            label: '上一周',
+            onTap: onPrev,
+          ),
           Expanded(
             child: Text(
               dateRange,
@@ -1241,7 +1280,10 @@ class _DateSwitch extends StatelessWidget {
               ),
             ),
           ),
-          _MiniNavButton(icon: Icons.chevron_right_rounded, onTap: onNext),
+          _MiniNavButton(
+            label: '下一周',
+            onTap: onNext,
+          ),
         ],
       ),
     );
@@ -1249,9 +1291,12 @@ class _DateSwitch extends StatelessWidget {
 }
 
 class _MiniNavButton extends StatelessWidget {
-  const _MiniNavButton({required this.icon, required this.onTap});
+  const _MiniNavButton({
+    required this.label,
+    required this.onTap,
+  });
 
-  final IconData icon;
+  final String label;
   final VoidCallback onTap;
 
   @override
@@ -1260,13 +1305,25 @@ class _MiniNavButton extends StatelessWidget {
       onTap: onTap,
       borderRadius: BorderRadius.circular(10),
       child: Container(
-        width: 32,
+        width: 74,
         height: 32,
+        alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: const Color(0xFFFFF8F2),
+          color: const Color(0xFFFFF0E5),
+          border: Border.all(color: const Color(0xFFF3D5C4)),
           borderRadius: BorderRadius.circular(10),
         ),
-        child: Icon(icon, color: _SmartColors.text, size: 21),
+        child: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.clip,
+          style: const TextStyle(
+            color: _SmartColors.orangeDeep,
+            fontSize: 12,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
       ),
     );
   }
@@ -1341,65 +1398,6 @@ class _PrimaryButton extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _SegmentTabs extends StatelessWidget {
-  const _SegmentTabs();
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 42,
-      padding: const EdgeInsets.all(4),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E8).withOpacity(.85),
-        borderRadius: BorderRadius.circular(13),
-      ),
-      child: Row(
-        children: <Widget>[
-          _SegmentTab(label: '智慧课表', selected: true),
-          const _SegmentTab(label: '时间课表'),
-        ],
-      ),
-    );
-  }
-}
-
-class _SegmentTab extends StatelessWidget {
-  const _SegmentTab({required this.label, this.selected = false});
-
-  final String label;
-  final bool selected;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 88,
-      height: 34,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: selected ? Colors.white : Colors.transparent,
-        borderRadius: BorderRadius.circular(10),
-        boxShadow: selected
-            ? const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x14C26B3E),
-                  blurRadius: 10,
-                  offset: Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: selected ? _SmartColors.orangeDeep : _SmartColors.text,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
       ),
     );
   }
@@ -1688,6 +1686,8 @@ const List<_TimeSlot> _timeSlots = <_TimeSlot>[
   _TimeSlot(title: '第六节', time: '14:50 - 15:30'),
   _TimeSlot(title: '第七节', time: '15:40 - 16:20'),
   _TimeSlot(title: '第八节', time: '16:30 - 17:10'),
+  _TimeSlot(title: '第九节', time: '17:20 - 18:00'),
+  _TimeSlot(title: '第十节', time: '18:10 - 18:50'),
 ];
 
 const List<List<_LessonCell?>> _initialScheduleRows = <List<_LessonCell?>>[
@@ -1875,5 +1875,47 @@ const List<List<_LessonCell?>> _initialScheduleRows = <List<_LessonCell?>>[
     null,
     null,
     null,
+  ],
+  <_LessonCell?>[
+    _LessonCell(
+      title: '课后巩固',
+      person: '星星班 · B203',
+      status: _LessonStatus.unsigned,
+    ),
+    null,
+    null,
+    _LessonCell(
+      title: '家校沟通',
+      person: '家长群 · 线上',
+      status: _LessonStatus.signed,
+    ),
+    null,
+    _LessonCell(
+      title: '精细小组',
+      person: '王一诺 · A102',
+      status: _LessonStatus.partial,
+    ),
+    null,
+  ],
+  <_LessonCell?>[
+    null,
+    _LessonCell(
+      title: '个训补课',
+      person: '赵晨曦 · A105',
+      status: _LessonStatus.unsigned,
+    ),
+    _LessonCell(
+      title: '口肌放松',
+      person: '高一航 · A108',
+      status: _LessonStatus.signed,
+    ),
+    null,
+    null,
+    null,
+    _LessonCell(
+      title: '课程复盘',
+      person: '教师组 · 会议室',
+      status: _LessonStatus.signed,
+    ),
   ],
 ];

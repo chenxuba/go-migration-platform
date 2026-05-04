@@ -64,12 +64,33 @@ class AssessmentPadApp extends StatelessWidget {
         ],
         colorScheme: ColorScheme.fromSeed(seedColor: AppColors.orange),
       ),
-      routes: <String, WidgetBuilder>{
-        '/': (_) => LoginPage(authClient: authClient),
-        '/home': (_) => HomePage(homeClient: homeClient),
-        '/smart-timetable': (_) => const SmartTimetablePage(),
-      },
+      onGenerateRoute: _buildRoute,
     );
+  }
+
+  Route<dynamic> _buildRoute(RouteSettings settings) {
+    switch (settings.name) {
+      case '/':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => LoginPage(authClient: authClient),
+        );
+      case '/home':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => HomePage(homeClient: homeClient),
+        );
+      case '/smart-timetable':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => const SmartTimetablePage(),
+        );
+      default:
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (_) => LoginPage(authClient: authClient),
+        );
+    }
   }
 }
 
