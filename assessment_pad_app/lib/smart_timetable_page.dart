@@ -52,8 +52,6 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   Map<String, _SlotAvailability> _dragSlotAvailability =
       const <String, _SlotAvailability>{};
   Set<String> _dragCheckingSlotKeys = const <String>{};
-  final Map<String, Future<_SlotAvailability>> _dragValidationFutures =
-      <String, Future<_SlotAvailability>>{};
   int _dragValidationSequence = 0;
   bool _dragValidationActive = false;
   String? _creatingSlotKey;
@@ -500,25 +498,44 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
       _showScheduleMessage('目标时段无效，不能调课');
       return;
     }
-    final String token = await _readAuthToken();
-    if (token.trim().isEmpty) {
-      _showScheduleMessage('登录已失效，请重新登录');
+    final _SlotAvailability? localAvailability =
+        _localDragValidation(sourceLesson, targetSlot);
+    final _SlotAvailability? cachedAvailability =
+        _dragSlotAvailability[targetSlot.key];
+    final _SlotAvailability? availability =
+        localAvailability ?? cachedAvailability;
+    if (availability == null) {
+      _showScheduleMessage(
+        _dragCheckingSlotKeys.contains(targetSlot.key)
+            ? '正在检测调课空点，请稍后'
+            : '请先等待调课空点检测完成',
+      );
       return;
     }
-    final _SlotAvailability availability = await _ensureDragTargetValidation(
-      sourceLesson,
-      targetSlot,
-      token,
-    );
     if (!availability.valid) {
       _showScheduleMessage(availability.message);
       return;
     }
 
+    final List<List<_LessonCell?>> previousRows =
+        _cloneScheduleRows(_scheduleRows);
     setState(() {
       _movingScheduleId = sourceLesson.id;
+      final List<List<_LessonCell?>> nextRows =
+          _cloneScheduleRows(_scheduleRows);
+      nextRows[source.row][source.column] = null;
+      nextRows[targetRow][targetColumn] = sourceLesson;
+      _scheduleRows = nextRows;
+      _dragValidationActive = false;
+      _dragCheckingSlotKeys = const <String>{};
     });
     try {
+      final String token = await _readAuthToken();
+      if (token.trim().isEmpty) {
+        _showScheduleMessage('登录已失效，请重新登录');
+        _rollbackOptimisticLessonMove(previousRows);
+        return;
+      }
       await widget.timetableClient.updateScheduleSlot(
         token,
         scheduleId: sourceLesson.id,
@@ -541,8 +558,10 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
       await _loadTimetable();
     } on TimetableApiException catch (error) {
       _showScheduleMessage(error.message);
+      _rollbackOptimisticLessonMove(previousRows);
     } on Object catch (error) {
       _showScheduleMessage('调课失败：$error');
+      _rollbackOptimisticLessonMove(previousRows);
     } finally {
       if (mounted) {
         setState(() {
@@ -550,6 +569,15 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
         });
       }
     }
+  }
+
+  void _rollbackOptimisticLessonMove(List<List<_LessonCell?>> previousRows) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _scheduleRows = previousRows;
+    });
   }
 
   void _startLessonDrag(_LessonDragData source) {
@@ -625,71 +653,6 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     }
   }
 
-  Future<_SlotAvailability> _ensureDragTargetValidation(
-    _LessonCell sourceLesson,
-    _ScheduleCellSlot targetSlot,
-    String token,
-  ) {
-    final _SlotAvailability? cached = _dragSlotAvailability[targetSlot.key];
-    if (cached != null) {
-      return Future<_SlotAvailability>.value(cached);
-    }
-    final _SlotAvailability? localResult =
-        _localDragValidation(sourceLesson, targetSlot);
-    if (localResult != null) {
-      _setDragAvailability(targetSlot.key, localResult);
-      return Future<_SlotAvailability>.value(localResult);
-    }
-
-    final String requestKey =
-        _dragValidationRequestKey(sourceLesson, targetSlot);
-    final Future<_SlotAvailability>? pending =
-        _dragValidationFutures[requestKey];
-    if (pending != null) {
-      return pending;
-    }
-    if (mounted) {
-      setState(() {
-        _dragCheckingSlotKeys = <String>{
-          ..._dragCheckingSlotKeys,
-          targetSlot.key,
-        };
-      });
-    }
-    final Future<_SlotAvailability> future =
-        _fetchDragTargetValidation(sourceLesson, targetSlot, token);
-    _dragValidationFutures[requestKey] = future;
-    future.then(
-      (_SlotAvailability result) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          _dragSlotAvailability = <String, _SlotAvailability>{
-            ..._dragSlotAvailability,
-            targetSlot.key: result,
-          };
-          final Set<String> next = <String>{..._dragCheckingSlotKeys}
-            ..remove(targetSlot.key);
-          _dragCheckingSlotKeys = next;
-        });
-      },
-      onError: (_) {
-        if (!mounted) {
-          return;
-        }
-        setState(() {
-          final Set<String> next = <String>{..._dragCheckingSlotKeys}
-            ..remove(targetSlot.key);
-          _dragCheckingSlotKeys = next;
-        });
-      },
-    ).whenComplete(() {
-      _dragValidationFutures.remove(requestKey);
-    });
-    return future;
-  }
-
   Future<Map<String, _SlotAvailability>> _fetchDragTargetsValidation(
     _LessonCell sourceLesson,
     List<_ScheduleCellSlot> targetSlots,
@@ -762,58 +725,6 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     }
   }
 
-  Future<_SlotAvailability> _fetchDragTargetValidation(
-    _LessonCell sourceLesson,
-    _ScheduleCellSlot targetSlot,
-    String token,
-  ) async {
-    try {
-      final ScheduleValidationResult result =
-          await widget.timetableClient.validateScheduleSlots(
-        token,
-        type: sourceLesson.scheduleTargetType!,
-        targetId: sourceLesson.teachingClassId,
-        teacherId: _selectedTeacherId,
-        assistantIds: sourceLesson.assistantIds ?? const <String>[],
-        classroomId: sourceLesson.classroomId ?? '',
-        slots: <ScheduleSlotRequest>[
-          ScheduleSlotRequest(
-            teacherId: _selectedTeacherId,
-            lessonDate: targetSlot.date,
-            startTime: targetSlot.startTime,
-            endTime: targetSlot.endTime,
-            assistantIds: sourceLesson.assistantIds ?? const <String>[],
-            classroomId: sourceLesson.classroomId ?? '',
-          ),
-        ],
-        excludeIds: <String>[sourceLesson.id],
-      );
-      final ScheduleValidationItem? item =
-          result.items.isNotEmpty ? result.items.first : null;
-      final bool valid = item?.valid ?? result.valid;
-      final String message = valid
-          ? '可调课'
-          : ((item?.message ?? result.message).trim().isEmpty
-              ? '当前空点不可调课'
-              : (item?.message ?? result.message).trim());
-      return _SlotAvailability(
-        valid: valid,
-        message: message,
-        conflictTypes: item?.conflictTypes ?? const <String>[],
-      );
-    } on TimetableApiException catch (error) {
-      return _SlotAvailability(
-        valid: false,
-        message: error.message,
-      );
-    } on Object catch (error) {
-      return _SlotAvailability(
-        valid: false,
-        message: '检测调课空点失败：$error',
-      );
-    }
-  }
-
   _SlotAvailability? _localDragValidation(
     _LessonCell sourceLesson,
     _ScheduleCellSlot targetSlot,
@@ -836,18 +747,6 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     return null;
   }
 
-  void _setDragAvailability(String key, _SlotAvailability value) {
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _dragSlotAvailability = <String, _SlotAvailability>{
-        ..._dragSlotAvailability,
-        key: value,
-      };
-    });
-  }
-
   _LessonCell? _lessonAt(int row, int column) {
     if (row < 0 ||
         column < 0 ||
@@ -858,21 +757,10 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     return _scheduleRows[row][column];
   }
 
-  String _dragValidationRequestKey(
-    _LessonCell sourceLesson,
-    _ScheduleCellSlot targetSlot,
-  ) {
-    return <String>[
-      sourceLesson.id,
-      sourceLesson.teachingClassId,
-      '${sourceLesson.classType}',
-      _selectedTeacherId,
-      targetSlot.date,
-      targetSlot.startTime,
-      targetSlot.endTime,
-      (sourceLesson.assistantIds ?? const <String>[]).join(','),
-      sourceLesson.classroomId ?? '',
-    ].join('|');
+  List<List<_LessonCell?>> _cloneScheduleRows(List<List<_LessonCell?>> rows) {
+    return rows
+        .map((List<_LessonCell?> row) => List<_LessonCell?>.of(row))
+        .toList();
   }
 
   bool _isPastIsoDate(String isoDate) {
@@ -897,6 +785,15 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
         _groupClassTargets.isEmpty) {
       unawaited(_loadScheduleOptions());
     }
+  }
+
+  void _handlePrimaryScheduleTap() {
+    if (!_schedulePanelOpen) {
+      return;
+    }
+    setState(() {
+      _schedulePanelOpen = false;
+    });
   }
 
   void _closeSchedulePanel() {
@@ -1376,6 +1273,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           onScheduleOptionsRefresh: _loadScheduleOptions,
           onAvailabilityRefresh: _detectScheduleAvailability,
           onRefresh: _loadTimetable,
+          onPrimaryScheduleTap: _handlePrimaryScheduleTap,
           onLessonMove: _moveLesson,
           onLessonDragStarted: _startLessonDrag,
           onLessonDragEnded: _endLessonDrag,
@@ -1786,6 +1684,7 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.onScheduleOptionsRefresh,
     required this.onAvailabilityRefresh,
     required this.onRefresh,
+    required this.onPrimaryScheduleTap,
     required this.onLessonMove,
     required this.onLessonDragStarted,
     required this.onLessonDragEnded,
@@ -1840,6 +1739,7 @@ class _SmartTimetableScreen extends StatelessWidget {
   final VoidCallback onScheduleOptionsRefresh;
   final VoidCallback onAvailabilityRefresh;
   final VoidCallback onRefresh;
+  final VoidCallback onPrimaryScheduleTap;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
   final ValueChanged<_LessonDragData> onLessonDragStarted;
@@ -1879,7 +1779,7 @@ class _SmartTimetableScreen extends StatelessWidget {
                       onNextWeek: onNextWeek,
                       onToday: onToday,
                       onTeacherToggle: onTeacherToggle,
-                      onSchedulePanelToggle: onSchedulePanelToggle,
+                      onPrimaryScheduleTap: onPrimaryScheduleTap,
                     ),
                     const SizedBox(height: 10),
                     _TimetableSubBar(
@@ -1995,7 +1895,7 @@ class _TimetableTopBar extends StatelessWidget {
     required this.onNextWeek,
     required this.onToday,
     required this.onTeacherToggle,
-    required this.onSchedulePanelToggle,
+    required this.onPrimaryScheduleTap,
   });
 
   final bool compact;
@@ -2009,7 +1909,7 @@ class _TimetableTopBar extends StatelessWidget {
   final VoidCallback onNextWeek;
   final VoidCallback onToday;
   final VoidCallback onTeacherToggle;
-  final VoidCallback onSchedulePanelToggle;
+  final VoidCallback onPrimaryScheduleTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2075,7 +1975,7 @@ class _TimetableTopBar extends StatelessWidget {
                 const SizedBox(width: 10),
                 _PrimaryButton(
                   width: primaryWidth,
-                  onTap: onSchedulePanelToggle,
+                  onTap: onPrimaryScheduleTap,
                 ),
               ],
             ),

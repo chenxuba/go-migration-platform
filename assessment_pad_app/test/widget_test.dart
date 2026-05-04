@@ -124,6 +124,11 @@ void main() {
     expect(find.text('A组'), findsOneWidget);
     expect(find.text('C组'), findsOneWidget);
 
+    await tester.tap(find.text('新增排课'));
+    await tester.pumpAndSettle();
+    expect(find.text('选择 1v1 后立即检测本周空闲点'), findsNothing);
+    expect(find.text('选择班课后立即检测本周空闲点'), findsNothing);
+
     final Rect timeRailRect =
         tester.getRect(find.byKey(const ValueKey<String>('smart-time-rail')));
     final Rect scheduleGridRect = tester
