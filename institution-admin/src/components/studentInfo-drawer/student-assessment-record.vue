@@ -144,7 +144,7 @@ const columns = [
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 290,
+    width: 240,
   },
 ]
 
@@ -530,7 +530,7 @@ onBeforeUnmount(() => {
                 {{ formatDateTime(record.createdTime) }}
               </template>
               <template v-else-if="column.key === 'action'">
-                <a-space :size="12" class="action-links">
+                <a-space :size="8" class="action-links">
                   <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
                   <a @click="openConfigModal(record)">配置</a>
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
@@ -731,9 +731,12 @@ onBeforeUnmount(() => {
   a {
     color: var(--pro-ant-color-primary);
     cursor: pointer;
+    font-size: 14px;
+    font-weight: 400 !important;
+    line-height: 22px;
 
     &.disabled {
-      color: #b8c2d0;
+      color: #999;
       pointer-events: none;
     }
   }

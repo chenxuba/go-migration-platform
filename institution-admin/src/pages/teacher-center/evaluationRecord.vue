@@ -107,7 +107,7 @@ const allColumns = ref([
     dataIndex: 'student',
     key: 'student',
     fixed: 'left',
-    width: 210,
+    width: 180,
     required: true,
   },
   {
@@ -151,7 +151,7 @@ const allColumns = ref([
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 280,
+    width: 240,
   },
 ])
 
