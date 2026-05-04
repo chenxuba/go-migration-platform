@@ -7,6 +7,8 @@ import { debounce } from 'lodash-es'
 import DeleteConfirmModal from './DeleteConfirmModal.vue'
 import AssignSalesModal from './assign-sales-modal.vue'
 import CreateStudent from './create-student.vue'
+import RechargeAccountDetailDrawer from './recharge-account-detail-drawer.vue'
+import OrderDetailDrawer from './order-detail-drawer.vue'
 import RegisterForCourses from '@/components/studentInfo-drawer/register-for-courses.vue'
 import StudentClassRecord from '@/components/studentInfo-drawer/student-class-record.vue'
 import OrderRecord from '@/components/studentInfo-drawer/order-record.vue'
@@ -18,6 +20,7 @@ import { getOneToOneListApi } from '@/api/edu-center/one-to-one'
 import { useStudentFields } from '@/composables/useStudentFields'
 import { batchAssignSalespersonApi, batchAssignSupervisorApi, batchDeleteIntendedStudentApi, batchTransferToPublicPoolApi, getIntentStudentDetailApi, listStudentChangeInfoApi, updateIntendedStudentApi, updateStatusApi } from '@/api/enroll-center/intention-student'
 import { getInstConfigModuleApi, getStudentPhoneNumberApi } from '@/api/common/config'
+import { getRechargeAccountItemPageApi } from '@/api/finance-center/recharge-account'
 import { useStudentStore } from '@/stores/student'
 import { useUserStore } from '@/stores/user'
 import messageService from '~@/utils/messageService'
@@ -56,6 +59,11 @@ function seeAllData() {
 const formRef = ref(null)
 const openDeleteModal = ref(false)
 const openDropStudentModal = ref(false)
+const openRechargeAccountDetailDrawer = ref(false)
+const rechargeAccountDetailLoading = ref(false)
+const rechargeAccountDetailPayload = ref({})
+const openRechargeLinkedOrderDrawer = ref(false)
+const rechargeLinkedOrderId = ref('')
 
 function handleDelete() {
   // console.log('handleDelete')
@@ -587,6 +595,74 @@ const rechargeAccountBalanceTotal = computed(() => {
   return Number(studentDetail.value?.rechargeAccountBalanceTotal || 0)
 })
 
+function getErrorMessage(error, fallback) {
+  return error?.response?.data?.message || error?.message || fallback
+}
+
+function selectRechargeAccountForStudent(accounts, targetStudentId) {
+  const list = Array.isArray(accounts) ? accounts : []
+  const targetId = String(targetStudentId || '')
+  return list.find((account) => {
+    return (account?.rechargeAccountStudents || []).some(student => String(student?.studentId || '') === targetId && student?.isMainStudent)
+  }) || list.find((account) => {
+    return (account?.rechargeAccountStudents || []).some(student => String(student?.studentId || '') === targetId)
+  }) || list[0]
+}
+
+async function handleOpenRechargeAccountDetail() {
+  const currentStudentId = String(studentId.value || '').trim()
+  if (!currentStudentId) {
+    messageService.warning('暂无学员信息')
+    return
+  }
+  rechargeAccountDetailLoading.value = true
+  try {
+    const res = await getRechargeAccountItemPageApi({
+      queryModel: {
+        studentId: currentStudentId,
+        showZeroBalanceAccount: true,
+      },
+      pageRequestModel: {
+        needTotal: true,
+        pageSize: 50,
+        pageIndex: 1,
+        skipCount: 0,
+      },
+      sortModel: {
+        orderByUpdatedTime: 0,
+      },
+    })
+    const result = res?.result || res?.data || {}
+    const account = selectRechargeAccountForStudent(result.list, currentStudentId)
+    if (!account?.rechargeAccountId) {
+      messageService.warning('暂无储值账户')
+      return
+    }
+    rechargeAccountDetailPayload.value = { ...account }
+    openRechargeAccountDetailDrawer.value = true
+  }
+  catch (error) {
+    console.error('获取储值账户详情失败:', error)
+    messageService.error(getErrorMessage(error, '获取储值账户详情失败'))
+  }
+  finally {
+    rechargeAccountDetailLoading.value = false
+  }
+}
+
+async function handleRechargeAccountUpdated() {
+  await getIntentStudentDetail(false)
+}
+
+function handleOpenLinkedOrderFromRecharge(orderId) {
+  const id = String(orderId || '').trim()
+  if (!id)
+    return
+  openRechargeAccountDetailDrawer.value = false
+  rechargeLinkedOrderId.value = id
+  openRechargeLinkedOrderDrawer.value = true
+}
+
 function formatMoney(value) {
   return Number(value || 0).toFixed(2)
 }
@@ -848,8 +924,13 @@ async function handlePhoneToggle() {
             <div class="acount flex-center lg:mb-0 mx-12px">
               <img src="~@/assets/images/bag.svg" alt="">
               <span class="price mx-1 text-15px text-#000000e0">{{ formatMoney(rechargeAccountBalanceTotal) }}</span>
-              <span class="text-#06f cursor-pointer text-3.5">储值
-                <RightOutlined class="text-3" />
+              <span
+                class="text-#06f cursor-pointer text-3.5"
+                :class="{ 'opacity-60 pointer-events-none': rechargeAccountDetailLoading }"
+                @click="handleOpenRechargeAccountDetail"
+              >储值
+                <a-spin v-if="rechargeAccountDetailLoading" size="small" class="ml-1" />
+                <RightOutlined v-else class="text-3" />
               </span>
             </div>
             <span class="hidden lg:flex w-0.25 h-3.5 bg-#ccc mr-2.5 mx-2.5" />
@@ -1174,6 +1255,16 @@ async function handlePhoneToggle() {
         </a-space>
       </div>
     </a-modal>
+    <RechargeAccountDetailDrawer
+      v-model:open="openRechargeAccountDetailDrawer"
+      :account="rechargeAccountDetailPayload"
+      @updated="handleRechargeAccountUpdated"
+      @open-linked-order-detail="handleOpenLinkedOrderFromRecharge"
+    />
+    <OrderDetailDrawer
+      v-model:open="openRechargeLinkedOrderDrawer"
+      :order-id="rechargeLinkedOrderId"
+    />
   </div>
 </template>
 
