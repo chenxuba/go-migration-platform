@@ -9,6 +9,38 @@ const String defaultPadTimetablePath = String.fromEnvironment(
   'PAD_TIMETABLE_PATH',
   defaultValue: '/api/v1/pad/timetable',
 );
+const String defaultOneToOneSelectionPath = String.fromEnvironment(
+  'ONE_TO_ONE_SELECTION_PATH',
+  defaultValue: '/api/v1/one-to-ones/selection-page',
+);
+const String defaultGroupClassSelectionPath = String.fromEnvironment(
+  'GROUP_CLASS_SELECTION_PATH',
+  defaultValue: '/api/v1/group-classes/selection-page',
+);
+const String defaultScheduleAssistantPath = String.fromEnvironment(
+  'SCHEDULE_ASSISTANT_PATH',
+  defaultValue: '/api/v1/inst-users/page',
+);
+const String defaultScheduleClassroomPath = String.fromEnvironment(
+  'SCHEDULE_CLASSROOM_PATH',
+  defaultValue: '/api/v1/classrooms',
+);
+const String defaultOneToOneValidatePath = String.fromEnvironment(
+  'ONE_TO_ONE_VALIDATE_PATH',
+  defaultValue: '/api/v1/teaching-schedules/one-to-one/validate',
+);
+const String defaultGroupClassValidatePath = String.fromEnvironment(
+  'GROUP_CLASS_VALIDATE_PATH',
+  defaultValue: '/api/v1/teaching-schedules/group-class/validate',
+);
+const String defaultOneToOneCreatePath = String.fromEnvironment(
+  'ONE_TO_ONE_CREATE_PATH',
+  defaultValue: '/api/v1/teaching-schedules/one-to-one/create',
+);
+const String defaultGroupClassCreatePath = String.fromEnvironment(
+  'GROUP_CLASS_CREATE_PATH',
+  defaultValue: '/api/v1/teaching-schedules/group-class/create',
+);
 
 class TimetableApiException implements Exception {
   const TimetableApiException(this.message, {this.unauthorized = false});
@@ -356,6 +388,201 @@ class TimetableSummary {
   final int conflict;
 }
 
+enum ScheduleTargetType {
+  oneToOne,
+  groupClass,
+}
+
+class ScheduleTargetOption {
+  const ScheduleTargetOption({
+    required this.id,
+    required this.title,
+    this.subtitle = '',
+    this.lessonName = '',
+    this.studentName = '',
+    this.disabled = false,
+  });
+
+  factory ScheduleTargetOption.oneToOneFromJson(Map<String, dynamic> json) {
+    final String studentName = '${json['studentName'] ?? ''}'.trim();
+    final String lessonName = '${json['lessonName'] ?? ''}'.trim();
+    final String name = '${json['name'] ?? ''}'.trim();
+    final bool statusDisabled =
+        json.containsKey('status') && _intFrom(json['status']) != 1;
+    final bool studentStatusDisabled = json.containsKey('classStudentStatus') &&
+        _intFrom(json['classStudentStatus']) != 1;
+    return ScheduleTargetOption(
+      id: '${json['id'] ?? ''}',
+      title: studentName.isNotEmpty
+          ? studentName
+          : (name.isNotEmpty ? name : '未命名1v1'),
+      subtitle: lessonName.isEmpty ? name : lessonName,
+      lessonName: lessonName,
+      studentName: studentName,
+      disabled: statusDisabled || studentStatusDisabled,
+    );
+  }
+
+  factory ScheduleTargetOption.groupClassFromJson(Map<String, dynamic> json) {
+    final String name = '${json['name'] ?? ''}'.trim();
+    final String lessonName = '${json['lessonName'] ?? ''}'.trim();
+    final int studentCount = _intFrom(json['studentCount']);
+    return ScheduleTargetOption(
+      id: '${json['id'] ?? ''}',
+      title: name.isEmpty ? '未命名班课' : name,
+      subtitle: lessonName.isEmpty
+          ? '$studentCount人'
+          : '$lessonName · $studentCount人',
+      lessonName: lessonName,
+      disabled: json.containsKey('status') && _intFrom(json['status']) != 1,
+    );
+  }
+
+  final String id;
+  final String title;
+  final String subtitle;
+  final String lessonName;
+  final String studentName;
+  final bool disabled;
+}
+
+class ScheduleStaffOption {
+  const ScheduleStaffOption({
+    required this.id,
+    required this.name,
+    this.subtitle = '',
+  });
+
+  factory ScheduleStaffOption.fromJson(Map<String, dynamic> json) {
+    final String roleName = '${json['roleName'] ?? ''}'.trim();
+    final String departNames = '${json['departNames'] ?? ''}'.trim();
+    return ScheduleStaffOption(
+      id: '${json['id'] ?? ''}',
+      name: '${json['nickName'] ?? ''}'.trim().isEmpty
+          ? '未命名员工'
+          : '${json['nickName'] ?? ''}'.trim(),
+      subtitle: roleName.isNotEmpty ? roleName : departNames,
+    );
+  }
+
+  final String id;
+  final String name;
+  final String subtitle;
+}
+
+class ScheduleClassroomOption {
+  const ScheduleClassroomOption({
+    required this.id,
+    required this.name,
+    this.subtitle = '',
+  });
+
+  factory ScheduleClassroomOption.fromJson(Map<String, dynamic> json) {
+    return ScheduleClassroomOption(
+      id: '${json['id'] ?? json['uuid'] ?? ''}',
+      name: '${json['name'] ?? ''}'.trim().isEmpty
+          ? '未命名教室'
+          : '${json['name'] ?? ''}'.trim(),
+      subtitle: '${json['address'] ?? ''}'.trim(),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String subtitle;
+}
+
+class ScheduleSlotRequest {
+  const ScheduleSlotRequest({
+    required this.teacherId,
+    required this.lessonDate,
+    required this.startTime,
+    required this.endTime,
+    this.assistantIds = const <String>[],
+    this.classroomId = '',
+  });
+
+  Map<String, dynamic> toJson() {
+    final Map<String, dynamic> json = <String, dynamic>{
+      'teacherId': teacherId,
+      'lessonDate': lessonDate,
+      'startTime': startTime,
+      'endTime': endTime,
+    };
+    if (assistantIds.isNotEmpty) {
+      json['assistantIds'] = assistantIds;
+    }
+    if (classroomId.trim().isNotEmpty) {
+      json['classroomId'] = classroomId.trim();
+    }
+    return json;
+  }
+
+  final String teacherId;
+  final String lessonDate;
+  final String startTime;
+  final String endTime;
+  final List<String> assistantIds;
+  final String classroomId;
+}
+
+class ScheduleValidationResult {
+  const ScheduleValidationResult({
+    required this.valid,
+    this.message = '',
+    this.items = const <ScheduleValidationItem>[],
+  });
+
+  factory ScheduleValidationResult.fromJson(Map<String, dynamic> json) {
+    return ScheduleValidationResult(
+      valid: json['valid'] != false,
+      message: '${json['message'] ?? ''}',
+      items: _listFrom(json['items']).map((Map<String, dynamic> item) {
+        return ScheduleValidationItem.fromJson(item);
+      }).toList(),
+    );
+  }
+
+  final bool valid;
+  final String message;
+  final List<ScheduleValidationItem> items;
+}
+
+class ScheduleValidationItem {
+  const ScheduleValidationItem({
+    required this.teacherId,
+    required this.lessonDate,
+    required this.startTime,
+    required this.endTime,
+    required this.valid,
+    this.message = '',
+    this.conflictTypes = const <String>[],
+  });
+
+  factory ScheduleValidationItem.fromJson(Map<String, dynamic> json) {
+    return ScheduleValidationItem(
+      teacherId: '${json['teacherId'] ?? ''}',
+      lessonDate: '${json['lessonDate'] ?? ''}',
+      startTime: '${json['startTime'] ?? ''}',
+      endTime: '${json['endTime'] ?? ''}',
+      valid: json['valid'] != false,
+      message: '${json['message'] ?? ''}',
+      conflictTypes: _rawListFrom(json['conflictTypes'])
+          .map((Object? item) => '${item ?? ''}'.trim())
+          .where((String item) => item.isNotEmpty)
+          .toList(),
+    );
+  }
+
+  final String teacherId;
+  final String lessonDate;
+  final String startTime;
+  final String endTime;
+  final bool valid;
+  final String message;
+  final List<String> conflictTypes;
+}
+
 abstract interface class TimetableClient {
   Future<TimetableData> fetchTimetable(
     String token, {
@@ -364,16 +591,72 @@ abstract interface class TimetableClient {
     String teacherId = '',
     String periodGroupId = '',
   });
+
+  Future<List<ScheduleTargetOption>> fetchOneToOneTargets(
+    String token, {
+    String keyword = '',
+  });
+
+  Future<List<ScheduleTargetOption>> fetchGroupClassTargets(
+    String token, {
+    String keyword = '',
+  });
+
+  Future<List<ScheduleStaffOption>> fetchScheduleAssistants(
+    String token, {
+    String keyword = '',
+  });
+
+  Future<List<ScheduleClassroomOption>> fetchScheduleClassrooms(
+    String token, {
+    String keyword = '',
+  });
+
+  Future<ScheduleValidationResult> validateScheduleSlots(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required List<ScheduleSlotRequest> slots,
+  });
+
+  Future<int> createSchedule(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required ScheduleSlotRequest slot,
+  });
 }
 
 class ApiTimetableClient implements TimetableClient {
   const ApiTimetableClient({
     this.educationBaseUrl = defaultEducationApiBaseUrl,
     this.timetablePath = defaultPadTimetablePath,
+    this.oneToOneSelectionPath = defaultOneToOneSelectionPath,
+    this.groupClassSelectionPath = defaultGroupClassSelectionPath,
+    this.scheduleAssistantPath = defaultScheduleAssistantPath,
+    this.scheduleClassroomPath = defaultScheduleClassroomPath,
+    this.oneToOneValidatePath = defaultOneToOneValidatePath,
+    this.groupClassValidatePath = defaultGroupClassValidatePath,
+    this.oneToOneCreatePath = defaultOneToOneCreatePath,
+    this.groupClassCreatePath = defaultGroupClassCreatePath,
   });
 
   final String educationBaseUrl;
   final String timetablePath;
+  final String oneToOneSelectionPath;
+  final String groupClassSelectionPath;
+  final String scheduleAssistantPath;
+  final String scheduleClassroomPath;
+  final String oneToOneValidatePath;
+  final String groupClassValidatePath;
+  final String oneToOneCreatePath;
+  final String groupClassCreatePath;
 
   @override
   Future<TimetableData> fetchTimetable(
@@ -401,6 +684,177 @@ class ApiTimetableClient implements TimetableClient {
       throw const TimetableApiException('排课日程接口返回格式不正确');
     }
     return TimetableData.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<List<ScheduleTargetOption>> fetchOneToOneTargets(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, oneToOneSelectionPath),
+      token,
+      <String, dynamic>{
+        'queryModel': <String, dynamic>{
+          'searchKey': keyword.trim(),
+          'status': <int>[1],
+        },
+        'pageRequestModel': <String, dynamic>{
+          'needTotal': false,
+          'pageSize': 40,
+          'pageIndex': 1,
+        },
+      },
+    );
+    return _listPayload(data)
+        .map((Map<String, dynamic> item) {
+          return ScheduleTargetOption.oneToOneFromJson(item);
+        })
+        .where((ScheduleTargetOption item) => item.id.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<ScheduleTargetOption>> fetchGroupClassTargets(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, groupClassSelectionPath),
+      token,
+      <String, dynamic>{
+        'queryModel': <String, dynamic>{
+          'className': keyword.trim(),
+          'status': <int>[1],
+        },
+        'pageRequestModel': <String, dynamic>{
+          'needTotal': false,
+          'pageSize': 40,
+          'pageIndex': 1,
+        },
+      },
+    );
+    return _listPayload(data)
+        .map((Map<String, dynamic> item) {
+          return ScheduleTargetOption.groupClassFromJson(item);
+        })
+        .where((ScheduleTargetOption item) => item.id.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<ScheduleStaffOption>> fetchScheduleAssistants(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, scheduleAssistantPath),
+      token,
+      <String, dynamic>{
+        'queryModel': <String, dynamic>{
+          'searchKey': keyword.trim(),
+          'isTeacher': true,
+          'status': true,
+        },
+        'pageRequestModel': <String, dynamic>{
+          'needTotal': false,
+          'pageSize': 40,
+          'pageIndex': 1,
+        },
+      },
+    );
+    return _listPayload(data)
+        .map((Map<String, dynamic> item) => ScheduleStaffOption.fromJson(item))
+        .where((ScheduleStaffOption item) => item.id.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<ScheduleClassroomOption>> fetchScheduleClassrooms(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _getJson(
+      _uri(educationBaseUrl, scheduleClassroomPath).replace(
+        queryParameters: <String, String>{
+          'enabledOnly': 'true',
+          if (keyword.trim().isNotEmpty) 'searchKey': keyword.trim(),
+        },
+      ),
+      token,
+    );
+    return _listPayload(data)
+        .map(
+          (Map<String, dynamic> item) => ScheduleClassroomOption.fromJson(item),
+        )
+        .where((ScheduleClassroomOption item) => item.id.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<ScheduleValidationResult> validateScheduleSlots(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required List<ScheduleSlotRequest> slots,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(
+        educationBaseUrl,
+        type == ScheduleTargetType.oneToOne
+            ? oneToOneValidatePath
+            : groupClassValidatePath,
+      ),
+      token,
+      _schedulePayload(
+        type: type,
+        targetId: targetId,
+        teacherId: teacherId,
+        assistantIds: assistantIds,
+        classroomId: classroomId,
+        slots: slots,
+      ),
+    );
+    if (data is! Map) {
+      throw const TimetableApiException('空闲点检测接口返回格式不正确');
+    }
+    return ScheduleValidationResult.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<int> createSchedule(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required ScheduleSlotRequest slot,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(
+        educationBaseUrl,
+        type == ScheduleTargetType.oneToOne
+            ? oneToOneCreatePath
+            : groupClassCreatePath,
+      ),
+      token,
+      _schedulePayload(
+        type: type,
+        targetId: targetId,
+        teacherId: teacherId,
+        assistantIds: assistantIds,
+        classroomId: classroomId,
+        slots: <ScheduleSlotRequest>[slot],
+      ),
+    );
+    if (data is Map) {
+      return _intFrom(data['count']);
+    }
+    return 0;
   }
 
   Future<Object?> _getJson(Uri uri, String token) async {
@@ -442,6 +896,85 @@ class ApiTimetableClient implements TimetableClient {
     }
     return decoded;
   }
+
+  Future<Object?> _postJson(
+    Uri uri,
+    String token,
+    Map<String, dynamic> body,
+  ) async {
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            uri,
+            headers: <String, String>{
+              'Accept': 'application/json',
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 12));
+    } on TimeoutException {
+      throw const TimetableApiException('排课接口响应超时，请检查网络');
+    } on Object catch (error) {
+      throw TimetableApiException('无法连接排课接口：$error');
+    }
+
+    final Object? decoded = _decodeResponse(response.body);
+    if (response.statusCode == 401) {
+      throw TimetableApiException(
+        _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw TimetableApiException(_messageFromPayload(decoded) ?? '排课接口请求失败');
+    }
+    if (decoded is Map) {
+      final Map<String, dynamic> envelope = Map<String, dynamic>.from(decoded);
+      if (envelope['success'] == false) {
+        throw TimetableApiException(
+          _messageFromPayload(envelope) ?? '排课接口请求失败',
+        );
+      }
+      if (envelope.containsKey('code') && _intFrom(envelope['code']) != 0) {
+        final int code = _intFrom(envelope['code']);
+        if (code != 200) {
+          throw TimetableApiException(
+            _messageFromPayload(envelope) ?? '排课接口请求失败',
+          );
+        }
+      }
+      if (envelope.containsKey('data')) {
+        return envelope['data'];
+      }
+    }
+    return decoded;
+  }
+}
+
+Map<String, dynamic> _schedulePayload({
+  required ScheduleTargetType type,
+  required String targetId,
+  required String teacherId,
+  required List<String> assistantIds,
+  required String classroomId,
+  required List<ScheduleSlotRequest> slots,
+}) {
+  final String targetKey =
+      type == ScheduleTargetType.oneToOne ? 'oneToOneId' : 'groupClassId';
+  final Map<String, dynamic> payload = <String, dynamic>{
+    targetKey: targetId.trim(),
+    'teacherId': teacherId.trim(),
+    'assistantIds': assistantIds,
+    'schedules':
+        slots.map((ScheduleSlotRequest slot) => slot.toJson()).toList(),
+  };
+  if (classroomId.trim().isNotEmpty) {
+    payload['classroomId'] = classroomId.trim();
+  }
+  return payload;
 }
 
 Uri _uri(String baseUrl, String path) {
@@ -480,6 +1013,16 @@ List<Map<String, dynamic>> _listFrom(Object? raw) {
         .whereType<Map>()
         .map((Map item) => Map<String, dynamic>.from(item))
         .toList();
+  }
+  return <Map<String, dynamic>>[];
+}
+
+List<Map<String, dynamic>> _listPayload(Object? raw) {
+  if (raw is List) {
+    return _listFrom(raw);
+  }
+  if (raw is Map) {
+    return _listFrom(Map<String, dynamic>.from(raw)['list']);
   }
   return <Map<String, dynamic>>[];
 }

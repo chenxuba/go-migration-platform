@@ -1,6 +1,7 @@
 import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
+import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -217,6 +218,81 @@ void main() {
     expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsOneWidget);
   });
 
+  testWidgets('smart timetable detects availability after target selection',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('schedule-target-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-target-one-to-one-a')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.validateCalls, greaterThan(0));
+    expect(find.text('空闲时段(可排)'), findsWidgets);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('schedule-target-clear')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('空闲时段(可排)'), findsNothing);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('schedule-target-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-target-one-to-one-a')),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('empty-slot-0-1')));
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.createCalls, 1);
+  });
+
+  testWidgets('smart timetable blocks invalid availability slots',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient(
+      availabilityValid: false,
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('schedule-target-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-target-one-to-one-a')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('老师冲突'), findsWidgets);
+
+    await tester.tap(find.byKey(const ValueKey<String>('empty-slot-0-1')));
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.createCalls, 0);
+  });
+
   testWidgets('login page switches to qr login and back',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{});
@@ -421,6 +497,12 @@ class _FakeHomeClient implements HomeClient {
 }
 
 class _FakeTimetableClient implements TimetableClient {
+  _FakeTimetableClient({this.availabilityValid = true});
+
+  final bool availabilityValid;
+  int validateCalls = 0;
+  int createCalls = 0;
+
   @override
   Future<TimetableData> fetchTimetable(
     String token, {
@@ -513,6 +595,102 @@ class _FakeTimetableClient implements TimetableClient {
         signed: 1,
       ),
     );
+  }
+
+  @override
+  Future<List<ScheduleTargetOption>> fetchOneToOneTargets(
+    String token, {
+    String keyword = '',
+  }) async {
+    return const <ScheduleTargetOption>[
+      ScheduleTargetOption(
+        id: 'one-to-one-a',
+        title: '张一鸣',
+        subtitle: '个训课',
+        lessonName: '个训课',
+        studentName: '张一鸣',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleTargetOption>> fetchGroupClassTargets(
+    String token, {
+    String keyword = '',
+  }) async {
+    return const <ScheduleTargetOption>[
+      ScheduleTargetOption(
+        id: 'group-class-a',
+        title: '星星班',
+        subtitle: '语言认知课 · 5人',
+        lessonName: '语言认知课',
+      ),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleStaffOption>> fetchScheduleAssistants(
+    String token, {
+    String keyword = '',
+  }) async {
+    return const <ScheduleStaffOption>[
+      ScheduleStaffOption(id: '4', name: '助教A', subtitle: '康复老师'),
+      ScheduleStaffOption(id: '5', name: '助教B', subtitle: '康复老师'),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleClassroomOption>> fetchScheduleClassrooms(
+    String token, {
+    String keyword = '',
+  }) async {
+    return const <ScheduleClassroomOption>[
+      ScheduleClassroomOption(id: '101', name: 'A101', subtitle: '一楼'),
+      ScheduleClassroomOption(id: '203', name: 'B203', subtitle: '二楼'),
+    ];
+  }
+
+  @override
+  Future<ScheduleValidationResult> validateScheduleSlots(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required List<ScheduleSlotRequest> slots,
+  }) async {
+    validateCalls += 1;
+    return ScheduleValidationResult(
+      valid: availabilityValid,
+      message: availabilityValid ? '' : '老师冲突',
+      items: slots.map((ScheduleSlotRequest slot) {
+        return ScheduleValidationItem(
+          teacherId: slot.teacherId,
+          lessonDate: slot.lessonDate,
+          startTime: slot.startTime,
+          endTime: slot.endTime,
+          valid: availabilityValid,
+          message: availabilityValid ? '空闲时段可排' : '老师冲突',
+          conflictTypes:
+              availabilityValid ? const <String>[] : const <String>['老师'],
+        );
+      }).toList(),
+    );
+  }
+
+  @override
+  Future<int> createSchedule(
+    String token, {
+    required ScheduleTargetType type,
+    required String targetId,
+    required String teacherId,
+    required List<String> assistantIds,
+    required String classroomId,
+    required ScheduleSlotRequest slot,
+  }) async {
+    createCalls += 1;
+    return 1;
   }
 }
 

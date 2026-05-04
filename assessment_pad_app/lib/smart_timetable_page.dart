@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -23,11 +24,32 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   int _teacherIndex = 0;
   int _weekOffset = 0;
   int _loadSequence = 0;
+  int _scheduleOptionsSequence = 0;
+  int _availabilitySequence = 0;
   bool _teacherDropdownOpen = false;
+  bool _schedulePanelOpen = false;
+  bool _scheduleOptionsLoading = false;
+  bool _availabilityLoading = false;
   bool _loading = true;
   String? _errorMessage;
+  String? _scheduleOptionsError;
+  String? _availabilityMessage;
   String _selectedPeriodGroupId = '';
   String _selectedTeacherId = '';
+  _ScheduleMode _scheduleMode = _ScheduleMode.oneToOne;
+  ScheduleTargetOption? _selectedOneToOneTarget;
+  ScheduleTargetOption? _selectedGroupClassTarget;
+  ScheduleClassroomOption? _selectedClassroom;
+  List<ScheduleTargetOption> _oneToOneTargets = const <ScheduleTargetOption>[];
+  List<ScheduleTargetOption> _groupClassTargets =
+      const <ScheduleTargetOption>[];
+  List<ScheduleStaffOption> _assistantOptions = const <ScheduleStaffOption>[];
+  List<ScheduleClassroomOption> _classroomOptions =
+      const <ScheduleClassroomOption>[];
+  Set<String> _selectedAssistantIds = <String>{};
+  Map<String, _SlotAvailability> _slotAvailability =
+      const <String, _SlotAvailability>{};
+  String? _creatingSlotKey;
   TimetableData _data = TimetableData.fallback();
   List<_PeriodGroupOption> _periodGroups = const <_PeriodGroupOption>[];
   List<_TeacherOption> _teachers = const <_TeacherOption>[];
@@ -40,13 +62,160 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     super.initState();
     _applyTimetableData(_data, preserveTeacherSelection: false);
     _loadTimetable();
+    _loadScheduleOptions();
+  }
+
+  ScheduleTargetOption? get _selectedScheduleTarget {
+    return _scheduleMode == _ScheduleMode.oneToOne
+        ? _selectedOneToOneTarget
+        : _selectedGroupClassTarget;
+  }
+
+  ScheduleTargetType get _scheduleTargetType {
+    return _scheduleMode == _ScheduleMode.oneToOne
+        ? ScheduleTargetType.oneToOne
+        : ScheduleTargetType.groupClass;
+  }
+
+  List<String> get _normalizedAssistantIds {
+    final String teacherId = _selectedTeacherId.trim();
+    return _selectedAssistantIds
+        .map((String id) => id.trim())
+        .where((String id) => id.isNotEmpty && id != teacherId)
+        .toList();
+  }
+
+  String get _selectedClassroomId => _selectedClassroom?.id.trim() ?? '';
+
+  Future<String> _readAuthToken() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_timetableAuthTokenStorageKey) ?? '';
+  }
+
+  void _resetAvailabilityFields({bool cancelPending = true}) {
+    if (cancelPending) {
+      _availabilitySequence += 1;
+    }
+    _availabilityLoading = false;
+    _availabilityMessage = null;
+    _slotAvailability = const <String, _SlotAvailability>{};
+    _creatingSlotKey = null;
+  }
+
+  Future<void> _loadScheduleOptions() async {
+    final int sequence = ++_scheduleOptionsSequence;
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      return;
+    }
+    if (mounted) {
+      setState(() {
+        _scheduleOptionsLoading = true;
+        _scheduleOptionsError = null;
+      });
+    }
+    try {
+      final List<dynamic> results = await Future.wait<dynamic>(
+        <Future<dynamic>>[
+          widget.timetableClient.fetchOneToOneTargets(token),
+          widget.timetableClient.fetchGroupClassTargets(token),
+          widget.timetableClient.fetchScheduleAssistants(token),
+          widget.timetableClient.fetchScheduleClassrooms(token),
+        ],
+      );
+      if (!mounted || sequence != _scheduleOptionsSequence) {
+        return;
+      }
+      final List<ScheduleTargetOption> oneToOneTargets =
+          List<ScheduleTargetOption>.from(results[0] as List<dynamic>);
+      final List<ScheduleTargetOption> groupClassTargets =
+          List<ScheduleTargetOption>.from(results[1] as List<dynamic>);
+      final List<ScheduleStaffOption> assistantOptions =
+          List<ScheduleStaffOption>.from(results[2] as List<dynamic>);
+      final List<ScheduleClassroomOption> classroomOptions =
+          List<ScheduleClassroomOption>.from(results[3] as List<dynamic>);
+      setState(() {
+        _oneToOneTargets = oneToOneTargets;
+        _groupClassTargets = groupClassTargets;
+        _assistantOptions = assistantOptions;
+        _classroomOptions = classroomOptions;
+        _selectedOneToOneTarget = _preserveSelectedTarget(
+          _selectedOneToOneTarget,
+          oneToOneTargets,
+        );
+        _selectedGroupClassTarget = _preserveSelectedTarget(
+          _selectedGroupClassTarget,
+          groupClassTargets,
+        );
+        _selectedAssistantIds = _selectedAssistantIds
+            .where(
+              (String id) => assistantOptions.any((ScheduleStaffOption item) {
+                return item.id == id;
+              }),
+            )
+            .toSet();
+        _selectedClassroom = _preserveSelectedClassroom(
+          _selectedClassroom,
+          classroomOptions,
+        );
+        _scheduleOptionsLoading = false;
+      });
+      if (_selectedScheduleTarget != null) {
+        unawaited(_detectScheduleAvailability());
+      }
+    } on TimetableApiException catch (error) {
+      if (!mounted || sequence != _scheduleOptionsSequence) {
+        return;
+      }
+      setState(() {
+        _scheduleOptionsLoading = false;
+        _scheduleOptionsError = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || sequence != _scheduleOptionsSequence) {
+        return;
+      }
+      setState(() {
+        _scheduleOptionsLoading = false;
+        _scheduleOptionsError = '排课选项加载失败：$error';
+      });
+    }
+  }
+
+  ScheduleTargetOption? _preserveSelectedTarget(
+    ScheduleTargetOption? current,
+    List<ScheduleTargetOption> options,
+  ) {
+    if (current == null) {
+      return null;
+    }
+    for (final ScheduleTargetOption option in options) {
+      if (option.id == current.id) {
+        return option;
+      }
+    }
+    return null;
+  }
+
+  ScheduleClassroomOption? _preserveSelectedClassroom(
+    ScheduleClassroomOption? current,
+    List<ScheduleClassroomOption> options,
+  ) {
+    if (current == null) {
+      return null;
+    }
+    for (final ScheduleClassroomOption option in options) {
+      if (option.id == current.id) {
+        return option;
+      }
+    }
+    return null;
   }
 
   Future<void> _loadTimetable(
       {String? teacherId, String? periodGroupId}) async {
     final int sequence = ++_loadSequence;
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String token = prefs.getString(_timetableAuthTokenStorageKey) ?? '';
+    final String token = await _readAuthToken();
     if (token.trim().isEmpty) {
       if (!mounted || sequence != _loadSequence) {
         return;
@@ -82,6 +251,9 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
         _applyTimetableData(data);
         _loading = false;
       });
+      if (_selectedScheduleTarget != null) {
+        unawaited(_detectScheduleAvailability());
+      }
     } on TimetableApiException catch (error) {
       if (!mounted || sequence != _loadSequence) {
         return;
@@ -146,6 +318,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
       _teacherDropdownOpen = false;
       _loading = true;
       _errorMessage = null;
+      _resetAvailabilityFields();
     });
     _loadTimetable(teacherId: '', periodGroupId: group.id);
   }
@@ -164,6 +337,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(teacher);
       _applyTimetableData(_data);
+      _resetAvailabilityFields();
     });
     _loadTimetable(teacherId: teacherId, periodGroupId: _selectedPeriodGroupId);
   }
@@ -180,6 +354,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
             : _teachers[_teacherIndex.clamp(0, _teachers.length - 1)],
       );
       _applyTimetableData(_data);
+      _resetAvailabilityFields();
     });
     _loadTimetable();
   }
@@ -196,6 +371,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
             : _teachers[_teacherIndex.clamp(0, _teachers.length - 1)],
       );
       _applyTimetableData(_data);
+      _resetAvailabilityFields();
     });
     _loadTimetable();
   }
@@ -233,6 +409,383 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     });
   }
 
+  void _toggleSchedulePanel() {
+    setState(() {
+      _schedulePanelOpen = !_schedulePanelOpen;
+      _teacherDropdownOpen = false;
+    });
+    if (_schedulePanelOpen &&
+        !_scheduleOptionsLoading &&
+        _oneToOneTargets.isEmpty &&
+        _groupClassTargets.isEmpty) {
+      unawaited(_loadScheduleOptions());
+    }
+  }
+
+  void _closeSchedulePanel() {
+    if (!_schedulePanelOpen) {
+      return;
+    }
+    setState(() {
+      _schedulePanelOpen = false;
+    });
+  }
+
+  void _setScheduleMode(_ScheduleMode mode) {
+    if (mode == _scheduleMode) {
+      return;
+    }
+    setState(() {
+      _scheduleMode = mode;
+      _resetAvailabilityFields();
+    });
+    if (_selectedScheduleTarget != null) {
+      unawaited(_detectScheduleAvailability());
+    }
+  }
+
+  void _selectScheduleTarget(ScheduleTargetOption option) {
+    if (option.disabled) {
+      _showScheduleMessage('该排课对象当前状态不可排');
+      return;
+    }
+    setState(() {
+      if (_scheduleMode == _ScheduleMode.oneToOne) {
+        _selectedOneToOneTarget = option;
+      } else {
+        _selectedGroupClassTarget = option;
+      }
+      _schedulePanelOpen = false;
+      _resetAvailabilityFields();
+    });
+    unawaited(_detectScheduleAvailability());
+  }
+
+  void _clearScheduleTarget() {
+    setState(() {
+      if (_scheduleMode == _ScheduleMode.oneToOne) {
+        _selectedOneToOneTarget = null;
+      } else {
+        _selectedGroupClassTarget = null;
+      }
+      _schedulePanelOpen = false;
+      _resetAvailabilityFields();
+    });
+  }
+
+  void _toggleAssistant(ScheduleStaffOption assistant) {
+    final String id = assistant.id.trim();
+    if (id.isEmpty) {
+      return;
+    }
+    if (id == _selectedTeacherId.trim()) {
+      _showScheduleMessage('主教与助教不能为同一人，已自动忽略');
+      setState(() {
+        _selectedAssistantIds.remove(id);
+        _resetAvailabilityFields();
+      });
+      unawaited(_detectScheduleAvailability());
+      return;
+    }
+    setState(() {
+      final Set<String> next = Set<String>.from(_selectedAssistantIds);
+      if (next.contains(id)) {
+        next.remove(id);
+      } else {
+        next.add(id);
+      }
+      _selectedAssistantIds = next;
+      _resetAvailabilityFields();
+    });
+    unawaited(_detectScheduleAvailability());
+  }
+
+  void _selectClassroom(ScheduleClassroomOption? classroom) {
+    setState(() {
+      _selectedClassroom = classroom;
+      _resetAvailabilityFields();
+    });
+    unawaited(_detectScheduleAvailability());
+  }
+
+  Future<void> _detectScheduleAvailability() async {
+    final int sequence = ++_availabilitySequence;
+    final ScheduleTargetOption? target = _selectedScheduleTarget;
+    final String teacherId = _selectedTeacherId.trim();
+    if (target == null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resetAvailabilityFields(cancelPending: false);
+      });
+      return;
+    }
+    if (teacherId.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _availabilityLoading = false;
+        _availabilityMessage = '当前课表没有可用老师';
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+      return;
+    }
+    final List<_ScheduleCellSlot> cells = _emptyScheduleSlotsForCurrentWeek();
+    if (cells.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _availabilityLoading = false;
+        _availabilityMessage = '本周暂无空闲时段';
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+      return;
+    }
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      if (!mounted || sequence != _availabilitySequence) {
+        return;
+      }
+      setState(() {
+        _availabilityLoading = false;
+        _availabilityMessage = '登录已失效，请重新登录';
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+      return;
+    }
+    final List<String> assistantIds = _normalizedAssistantIds;
+    final String classroomId = _selectedClassroomId;
+    if (mounted) {
+      setState(() {
+        _availabilityLoading = true;
+        _availabilityMessage = '正在检测本周空闲点';
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+    }
+    try {
+      final ScheduleValidationResult result =
+          await widget.timetableClient.validateScheduleSlots(
+        token,
+        type: _scheduleTargetType,
+        targetId: target.id,
+        teacherId: teacherId,
+        assistantIds: assistantIds,
+        classroomId: classroomId,
+        slots: cells.map((_ScheduleCellSlot cell) {
+          return ScheduleSlotRequest(
+            teacherId: teacherId,
+            lessonDate: cell.date,
+            startTime: cell.startTime,
+            endTime: cell.endTime,
+            assistantIds: assistantIds,
+            classroomId: classroomId,
+          );
+        }).toList(),
+      );
+      if (!mounted || sequence != _availabilitySequence) {
+        return;
+      }
+      final Map<String, ScheduleValidationItem> itemByKey =
+          <String, ScheduleValidationItem>{};
+      for (final ScheduleValidationItem item in result.items) {
+        itemByKey[_availabilityKey(
+          item.teacherId.trim().isEmpty ? teacherId : item.teacherId,
+          item.lessonDate,
+          item.startTime,
+          item.endTime,
+        )] = item;
+      }
+      final bool hasItemResult = result.items.isNotEmpty;
+      final Map<String, _SlotAvailability> next = <String, _SlotAvailability>{};
+      for (final _ScheduleCellSlot cell in cells) {
+        final ScheduleValidationItem? item = itemByKey[cell.key];
+        final bool valid = hasItemResult ? (item?.valid ?? true) : result.valid;
+        final List<String> conflictTypes =
+            item?.conflictTypes ?? const <String>[];
+        final String message = item?.message.trim().isNotEmpty == true
+            ? item!.message
+            : valid
+                ? '空闲时段可排'
+                : (result.message.trim().isEmpty ? '该时间段不可排课' : result.message);
+        next[cell.key] = _SlotAvailability(
+          valid: valid,
+          message: message,
+          conflictTypes: conflictTypes,
+        );
+      }
+      final int validCount =
+          next.values.where((_SlotAvailability item) => item.valid).length;
+      final int invalidCount = next.length - validCount;
+      setState(() {
+        _availabilityLoading = false;
+        _slotAvailability = next;
+        _availabilityMessage = invalidCount == 0
+            ? '已检测 $validCount 个可排空位'
+            : '已检测 $validCount 个可排空位，$invalidCount 个冲突';
+      });
+    } on TimetableApiException catch (error) {
+      if (!mounted || sequence != _availabilitySequence) {
+        return;
+      }
+      setState(() {
+        _availabilityLoading = false;
+        _availabilityMessage = error.message;
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+    } on Object catch (error) {
+      if (!mounted || sequence != _availabilitySequence) {
+        return;
+      }
+      setState(() {
+        _availabilityLoading = false;
+        _availabilityMessage = '空闲点检测失败：$error';
+        _slotAvailability = const <String, _SlotAvailability>{};
+      });
+    }
+  }
+
+  Future<void> _handleEmptySlotTap(int row, int column) async {
+    final _ScheduleCellSlot? cell = _scheduleCellSlotAt(row, column);
+    if (cell == null) {
+      return;
+    }
+    final ScheduleTargetOption? target = _selectedScheduleTarget;
+    if (target == null) {
+      setState(() {
+        _schedulePanelOpen = true;
+        _teacherDropdownOpen = false;
+      });
+      _showScheduleMessage('请先选择要排课的1v1或班课');
+      return;
+    }
+    if (_availabilityLoading) {
+      _showScheduleMessage('正在检测本周空闲点，请稍后');
+      return;
+    }
+    final _SlotAvailability? availability = _slotAvailability[cell.key];
+    if (availability == null) {
+      _showScheduleMessage('请先等待空闲点检测完成');
+      unawaited(_detectScheduleAvailability());
+      return;
+    }
+    if (!availability.valid) {
+      _showScheduleMessage(availability.message);
+      return;
+    }
+    if (_creatingSlotKey != null) {
+      return;
+    }
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      _showScheduleMessage('登录已失效，请重新登录');
+      return;
+    }
+    final List<String> assistantIds = _normalizedAssistantIds;
+    final String classroomId = _selectedClassroomId;
+    setState(() {
+      _creatingSlotKey = cell.key;
+    });
+    try {
+      await widget.timetableClient.createSchedule(
+        token,
+        type: _scheduleTargetType,
+        targetId: target.id,
+        teacherId: _selectedTeacherId,
+        assistantIds: assistantIds,
+        classroomId: classroomId,
+        slot: ScheduleSlotRequest(
+          teacherId: _selectedTeacherId,
+          lessonDate: cell.date,
+          startTime: cell.startTime,
+          endTime: cell.endTime,
+          assistantIds: assistantIds,
+          classroomId: classroomId,
+        ),
+      );
+      _showScheduleMessage('排课成功，已刷新课表');
+      await _loadTimetable();
+    } on TimetableApiException catch (error) {
+      _showScheduleMessage(error.message);
+      unawaited(_detectScheduleAvailability());
+    } on Object catch (error) {
+      _showScheduleMessage('创建排课失败：$error');
+      unawaited(_detectScheduleAvailability());
+    } finally {
+      if (mounted) {
+        setState(() {
+          _creatingSlotKey = null;
+        });
+      }
+    }
+  }
+
+  List<_ScheduleCellSlot> _emptyScheduleSlotsForCurrentWeek() {
+    final List<_ScheduleCellSlot> cells = <_ScheduleCellSlot>[];
+    for (int row = 0; row < _timeSlots.length; row += 1) {
+      for (int column = 0; column < _weekDays.length; column += 1) {
+        if (row < _scheduleRows.length &&
+            column < _scheduleRows[row].length &&
+            _scheduleRows[row][column] != null) {
+          continue;
+        }
+        final _ScheduleCellSlot? cell = _scheduleCellSlotAt(row, column);
+        if (cell != null) {
+          cells.add(cell);
+        }
+      }
+    }
+    return cells;
+  }
+
+  _ScheduleCellSlot? _scheduleCellSlotAt(int row, int column) {
+    if (row < 0 ||
+        column < 0 ||
+        row >= _timeSlots.length ||
+        column >= _weekDays.length) {
+      return null;
+    }
+    final _TimeSlot slot = _timeSlots[row];
+    final _WeekDay day = _weekDays[column];
+    final String teacherId = _selectedTeacherId.trim();
+    if (teacherId.isEmpty ||
+        day.isoDate.trim().isEmpty ||
+        slot.startTime.trim().isEmpty ||
+        slot.endTime.trim().isEmpty) {
+      return null;
+    }
+    return _ScheduleCellSlot(
+      row: row,
+      column: column,
+      key: _availabilityKey(
+        teacherId,
+        day.isoDate,
+        slot.startTime,
+        slot.endTime,
+      ),
+      date: day.isoDate,
+      startTime: slot.startTime,
+      endTime: slot.endTime,
+    );
+  }
+
+  void _showScheduleMessage(String message) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(message),
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(milliseconds: 1800),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final _TeacherOption teacher = _teachers.isEmpty
@@ -247,6 +800,21 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           teachers: _teachers,
           teacherIndex: _teacherIndex,
           teacherDropdownOpen: _teacherDropdownOpen,
+          schedulePanelOpen: _schedulePanelOpen,
+          scheduleMode: _scheduleMode,
+          selectedScheduleTarget: _selectedScheduleTarget,
+          oneToOneTargets: _oneToOneTargets,
+          groupClassTargets: _groupClassTargets,
+          assistantOptions: _assistantOptions,
+          classroomOptions: _classroomOptions,
+          selectedAssistantIds: _selectedAssistantIds,
+          selectedClassroom: _selectedClassroom,
+          scheduleOptionsLoading: _scheduleOptionsLoading,
+          scheduleOptionsError: _scheduleOptionsError,
+          availabilityLoading: _availabilityLoading,
+          availabilityMessage: _availabilityMessage,
+          slotAvailability: _slotAvailability,
+          creatingSlotKey: _creatingSlotKey,
           scheduleRows: _scheduleRows,
           weekDays: _weekDays,
           timeSlots: _timeSlots,
@@ -258,14 +826,25 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           onNextWeek: () => _changeWeek(1),
           onToday: _backToCurrentWeek,
           onPeriodGroupSelected: _selectPeriodGroup,
-          onTeacherToggle: () => setState(
-            () => _teacherDropdownOpen = !_teacherDropdownOpen,
-          ),
+          onTeacherToggle: () => setState(() {
+            _teacherDropdownOpen = !_teacherDropdownOpen;
+            _schedulePanelOpen = false;
+          }),
           onTeacherSelected: _selectTeacher,
           onTeacherDropdownClose: () =>
               setState(() => _teacherDropdownOpen = false),
+          onSchedulePanelToggle: _toggleSchedulePanel,
+          onSchedulePanelClose: _closeSchedulePanel,
+          onScheduleModeChanged: _setScheduleMode,
+          onScheduleTargetSelected: _selectScheduleTarget,
+          onScheduleTargetCleared: _clearScheduleTarget,
+          onAssistantToggled: _toggleAssistant,
+          onClassroomSelected: _selectClassroom,
+          onScheduleOptionsRefresh: _loadScheduleOptions,
+          onAvailabilityRefresh: _detectScheduleAvailability,
           onRefresh: _loadTimetable,
           onLessonMove: _moveLesson,
+          onEmptySlotTap: _handleEmptySlotTap,
         ),
       ),
     );
@@ -375,6 +954,7 @@ List<_WeekDay> _weekDaysFromData(TimetableData data) {
               ? _weekdayShortLabel(day.date)
               : day.label,
           date: _monthDayLabel(day.date),
+          isoDate: day.date,
           isToday: _isTodayDate(day.date),
         ),
       )
@@ -389,6 +969,7 @@ List<_WeekDay> _weekDaysFromData(TimetableData data) {
       label: _weekdayShortByNumber(date.weekday),
       date:
           '${date.month.toString().padLeft(2, '0')}/${date.day.toString().padLeft(2, '0')}',
+      isoDate: _formatApiDate(date),
       isToday: _isSameDay(date, DateTime.now()),
     );
   });
@@ -484,6 +1065,16 @@ _LessonStatus _lessonStatusFromApi(String status) {
 
 String _slotKey(String startTime, String endTime) {
   return '${startTime.trim()}-${endTime.trim()}';
+}
+
+String _availabilityKey(
+  String teacherId,
+  String lessonDate,
+  String startTime,
+  String endTime,
+) {
+  return '${teacherId.trim()}|${lessonDate.trim()}|'
+      '${startTime.trim()}|${endTime.trim()}';
 }
 
 String _monthDayLabel(String rawDate) {
@@ -613,6 +1204,21 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.teachers,
     required this.teacherIndex,
     required this.teacherDropdownOpen,
+    required this.schedulePanelOpen,
+    required this.scheduleMode,
+    required this.selectedScheduleTarget,
+    required this.oneToOneTargets,
+    required this.groupClassTargets,
+    required this.assistantOptions,
+    required this.classroomOptions,
+    required this.selectedAssistantIds,
+    required this.selectedClassroom,
+    required this.scheduleOptionsLoading,
+    required this.scheduleOptionsError,
+    required this.availabilityLoading,
+    required this.availabilityMessage,
+    required this.slotAvailability,
+    required this.creatingSlotKey,
     required this.scheduleRows,
     required this.weekDays,
     required this.timeSlots,
@@ -627,8 +1233,18 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.onTeacherToggle,
     required this.onTeacherSelected,
     required this.onTeacherDropdownClose,
+    required this.onSchedulePanelToggle,
+    required this.onSchedulePanelClose,
+    required this.onScheduleModeChanged,
+    required this.onScheduleTargetSelected,
+    required this.onScheduleTargetCleared,
+    required this.onAssistantToggled,
+    required this.onClassroomSelected,
+    required this.onScheduleOptionsRefresh,
+    required this.onAvailabilityRefresh,
     required this.onRefresh,
     required this.onLessonMove,
+    required this.onEmptySlotTap,
   });
 
   final _TeacherOption teacher;
@@ -637,6 +1253,21 @@ class _SmartTimetableScreen extends StatelessWidget {
   final List<_TeacherOption> teachers;
   final int teacherIndex;
   final bool teacherDropdownOpen;
+  final bool schedulePanelOpen;
+  final _ScheduleMode scheduleMode;
+  final ScheduleTargetOption? selectedScheduleTarget;
+  final List<ScheduleTargetOption> oneToOneTargets;
+  final List<ScheduleTargetOption> groupClassTargets;
+  final List<ScheduleStaffOption> assistantOptions;
+  final List<ScheduleClassroomOption> classroomOptions;
+  final Set<String> selectedAssistantIds;
+  final ScheduleClassroomOption? selectedClassroom;
+  final bool scheduleOptionsLoading;
+  final String? scheduleOptionsError;
+  final bool availabilityLoading;
+  final String? availabilityMessage;
+  final Map<String, _SlotAvailability> slotAvailability;
+  final String? creatingSlotKey;
   final List<List<_LessonCell?>> scheduleRows;
   final List<_WeekDay> weekDays;
   final List<_TimeSlot> timeSlots;
@@ -651,9 +1282,19 @@ class _SmartTimetableScreen extends StatelessWidget {
   final VoidCallback onTeacherToggle;
   final ValueChanged<int> onTeacherSelected;
   final VoidCallback onTeacherDropdownClose;
+  final VoidCallback onSchedulePanelToggle;
+  final VoidCallback onSchedulePanelClose;
+  final ValueChanged<_ScheduleMode> onScheduleModeChanged;
+  final ValueChanged<ScheduleTargetOption> onScheduleTargetSelected;
+  final VoidCallback onScheduleTargetCleared;
+  final ValueChanged<ScheduleStaffOption> onAssistantToggled;
+  final ValueChanged<ScheduleClassroomOption?> onClassroomSelected;
+  final VoidCallback onScheduleOptionsRefresh;
+  final VoidCallback onAvailabilityRefresh;
   final VoidCallback onRefresh;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final void Function(int row, int column) onEmptySlotTap;
 
   @override
   Widget build(BuildContext context) {
@@ -688,13 +1329,26 @@ class _SmartTimetableScreen extends StatelessWidget {
                       onNextWeek: onNextWeek,
                       onToday: onToday,
                       onTeacherToggle: onTeacherToggle,
+                      onSchedulePanelToggle: onSchedulePanelToggle,
                     ),
                     const SizedBox(height: 10),
                     _TimetableSubBar(
                       compact: compact,
+                      scheduleMode: scheduleMode,
+                      selectedScheduleTarget: selectedScheduleTarget,
+                      selectedAssistantIds: selectedAssistantIds,
+                      assistantOptions: assistantOptions,
+                      selectedClassroom: selectedClassroom,
+                      schedulePanelOpen: schedulePanelOpen,
+                      availabilityLoading: availabilityLoading,
+                      availabilityMessage: availabilityMessage,
                       periodGroups: periodGroups,
                       periodGroupIndex: periodGroupIndex,
                       errorMessage: errorMessage,
+                      onSchedulePanelToggle: onSchedulePanelToggle,
+                      onScheduleModeChanged: onScheduleModeChanged,
+                      onScheduleTargetCleared: onScheduleTargetCleared,
+                      onAvailabilityRefresh: onAvailabilityRefresh,
                       onPeriodGroupSelected: onPeriodGroupSelected,
                       onRefresh: onRefresh,
                     ),
@@ -707,7 +1361,13 @@ class _SmartTimetableScreen extends StatelessWidget {
                         rows: scheduleRows,
                         weekDays: weekDays,
                         timeSlots: timeSlots,
+                        selectedTeacherId: teacher.id,
+                        scheduleTargetSelected: selectedScheduleTarget != null,
+                        availabilityLoading: availabilityLoading,
+                        slotAvailability: slotAvailability,
+                        creatingSlotKey: creatingSlotKey,
                         onLessonMove: onLessonMove,
+                        onEmptySlotTap: onEmptySlotTap,
                       ),
                     ),
                   ],
@@ -728,6 +1388,37 @@ class _SmartTimetableScreen extends StatelessWidget {
                     teachers: teachers,
                     selectedIndex: teacherIndex,
                     onSelected: onTeacherSelected,
+                  ),
+                ),
+              ],
+              if (schedulePanelOpen) ...<Widget>[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: onSchedulePanelClose,
+                  ),
+                ),
+                Positioned(
+                  top: 134,
+                  left: pagePadding,
+                  width: compact ? 690 : 780,
+                  child: _SchedulePickerPanel(
+                    mode: scheduleMode,
+                    oneToOneTargets: oneToOneTargets,
+                    groupClassTargets: groupClassTargets,
+                    assistantOptions: assistantOptions,
+                    classroomOptions: classroomOptions,
+                    selectedTarget: selectedScheduleTarget,
+                    selectedAssistantIds: selectedAssistantIds,
+                    selectedClassroom: selectedClassroom,
+                    loading: scheduleOptionsLoading,
+                    errorMessage: scheduleOptionsError,
+                    onModeChanged: onScheduleModeChanged,
+                    onTargetSelected: onScheduleTargetSelected,
+                    onAssistantToggled: onAssistantToggled,
+                    onClassroomSelected: onClassroomSelected,
+                    onRefresh: onScheduleOptionsRefresh,
+                    onClose: onSchedulePanelClose,
                   ),
                 ),
               ],
@@ -752,6 +1443,7 @@ class _TimetableTopBar extends StatelessWidget {
     required this.onNextWeek,
     required this.onToday,
     required this.onTeacherToggle,
+    required this.onSchedulePanelToggle,
   });
 
   final bool compact;
@@ -765,6 +1457,7 @@ class _TimetableTopBar extends StatelessWidget {
   final VoidCallback onNextWeek;
   final VoidCallback onToday;
   final VoidCallback onTeacherToggle;
+  final VoidCallback onSchedulePanelToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -828,7 +1521,10 @@ class _TimetableTopBar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(width: 10),
-                _PrimaryButton(width: primaryWidth),
+                _PrimaryButton(
+                  width: primaryWidth,
+                  onTap: onSchedulePanelToggle,
+                ),
               ],
             ),
           ),
@@ -954,17 +1650,41 @@ class _PeriodGroupTab extends StatelessWidget {
 class _TimetableSubBar extends StatelessWidget {
   const _TimetableSubBar({
     required this.compact,
+    required this.scheduleMode,
+    required this.selectedScheduleTarget,
+    required this.selectedAssistantIds,
+    required this.assistantOptions,
+    required this.selectedClassroom,
+    required this.schedulePanelOpen,
+    required this.availabilityLoading,
+    required this.availabilityMessage,
     required this.periodGroups,
     required this.periodGroupIndex,
     required this.errorMessage,
+    required this.onSchedulePanelToggle,
+    required this.onScheduleModeChanged,
+    required this.onScheduleTargetCleared,
+    required this.onAvailabilityRefresh,
     required this.onPeriodGroupSelected,
     required this.onRefresh,
   });
 
   final bool compact;
+  final _ScheduleMode scheduleMode;
+  final ScheduleTargetOption? selectedScheduleTarget;
+  final Set<String> selectedAssistantIds;
+  final List<ScheduleStaffOption> assistantOptions;
+  final ScheduleClassroomOption? selectedClassroom;
+  final bool schedulePanelOpen;
+  final bool availabilityLoading;
+  final String? availabilityMessage;
   final List<_PeriodGroupOption> periodGroups;
   final int periodGroupIndex;
   final String? errorMessage;
+  final VoidCallback onSchedulePanelToggle;
+  final ValueChanged<_ScheduleMode> onScheduleModeChanged;
+  final VoidCallback onScheduleTargetCleared;
+  final VoidCallback onAvailabilityRefresh;
   final ValueChanged<int> onPeriodGroupSelected;
   final VoidCallback onRefresh;
 
@@ -975,7 +1695,23 @@ class _TimetableSubBar extends StatelessWidget {
       height: 44,
       child: Row(
         children: <Widget>[
-          const Spacer(),
+          Expanded(
+            child: _ScheduleComposerBar(
+              compact: compact,
+              mode: scheduleMode,
+              selectedTarget: selectedScheduleTarget,
+              selectedAssistantIds: selectedAssistantIds,
+              assistantOptions: assistantOptions,
+              selectedClassroom: selectedClassroom,
+              panelOpen: schedulePanelOpen,
+              availabilityLoading: availabilityLoading,
+              availabilityMessage: availabilityMessage,
+              onPanelToggle: onSchedulePanelToggle,
+              onModeChanged: onScheduleModeChanged,
+              onTargetCleared: onScheduleTargetCleared,
+              onAvailabilityRefresh: onAvailabilityRefresh,
+            ),
+          ),
           SizedBox(width: compact ? 8 : 10),
           SizedBox(
             width: periodGroupWidth,
@@ -1067,15 +1803,27 @@ class _TimetableBoard extends StatelessWidget {
     required this.rows,
     required this.weekDays,
     required this.timeSlots,
+    required this.selectedTeacherId,
+    required this.scheduleTargetSelected,
+    required this.availabilityLoading,
+    required this.slotAvailability,
+    required this.creatingSlotKey,
     required this.onLessonMove,
+    required this.onEmptySlotTap,
   });
 
   final bool compact;
   final List<List<_LessonCell?>> rows;
   final List<_WeekDay> weekDays;
   final List<_TimeSlot> timeSlots;
+  final String selectedTeacherId;
+  final bool scheduleTargetSelected;
+  final bool availabilityLoading;
+  final Map<String, _SlotAvailability> slotAvailability;
+  final String? creatingSlotKey;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final void Function(int row, int column) onEmptySlotTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1138,7 +1886,15 @@ class _TimetableBoard extends StatelessWidget {
                       Expanded(
                         child: _ScheduleGrid(
                           rows: displayRows,
+                          weekDays: weekDays,
+                          timeSlots: timeSlots,
+                          selectedTeacherId: selectedTeacherId,
+                          scheduleTargetSelected: scheduleTargetSelected,
+                          availabilityLoading: availabilityLoading,
+                          slotAvailability: slotAvailability,
+                          creatingSlotKey: creatingSlotKey,
                           onLessonMove: onLessonMove,
+                          onEmptySlotTap: onEmptySlotTap,
                         ),
                       ),
                     ],
@@ -1285,11 +2041,30 @@ class _TimeSlotCell extends StatelessWidget {
 }
 
 class _ScheduleGrid extends StatelessWidget {
-  const _ScheduleGrid({required this.rows, required this.onLessonMove});
+  const _ScheduleGrid({
+    required this.rows,
+    required this.weekDays,
+    required this.timeSlots,
+    required this.selectedTeacherId,
+    required this.scheduleTargetSelected,
+    required this.availabilityLoading,
+    required this.slotAvailability,
+    required this.creatingSlotKey,
+    required this.onLessonMove,
+    required this.onEmptySlotTap,
+  });
 
   final List<List<_LessonCell?>> rows;
+  final List<_WeekDay> weekDays;
+  final List<_TimeSlot> timeSlots;
+  final String selectedTeacherId;
+  final bool scheduleTargetSelected;
+  final bool availabilityLoading;
+  final Map<String, _SlotAvailability> slotAvailability;
+  final String? creatingSlotKey;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final void Function(int row, int column) onEmptySlotTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1302,8 +2077,16 @@ class _ScheduleGrid extends StatelessWidget {
             _ScheduleGridRow(
               rowIndex: row,
               row: rows[row],
+              weekDays: weekDays,
+              timeSlot: row < timeSlots.length ? timeSlots[row] : null,
+              selectedTeacherId: selectedTeacherId,
+              scheduleTargetSelected: scheduleTargetSelected,
+              availabilityLoading: availabilityLoading,
+              slotAvailability: slotAvailability,
+              creatingSlotKey: creatingSlotKey,
               isLastRow: row == rows.length - 1,
               onLessonMove: onLessonMove,
+              onEmptySlotTap: onEmptySlotTap,
             ),
         ],
       ),
@@ -1413,15 +2196,31 @@ class _ScheduleGridRow extends StatelessWidget {
   const _ScheduleGridRow({
     required this.rowIndex,
     required this.row,
+    required this.weekDays,
+    required this.timeSlot,
+    required this.selectedTeacherId,
+    required this.scheduleTargetSelected,
+    required this.availabilityLoading,
+    required this.slotAvailability,
+    required this.creatingSlotKey,
     required this.isLastRow,
     required this.onLessonMove,
+    required this.onEmptySlotTap,
   });
 
   final int rowIndex;
   final List<_LessonCell?> row;
+  final List<_WeekDay> weekDays;
+  final _TimeSlot? timeSlot;
+  final String selectedTeacherId;
+  final bool scheduleTargetSelected;
+  final bool availabilityLoading;
+  final Map<String, _SlotAvailability> slotAvailability;
+  final String? creatingSlotKey;
   final bool isLastRow;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final void Function(int row, int column) onEmptySlotTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1431,18 +2230,45 @@ class _ScheduleGridRow extends StatelessWidget {
         children: <Widget>[
           for (int column = 0; column < row.length; column += 1)
             Expanded(
-              child: _ScheduleGridCell(
-                lesson: row[column],
-                rowIndex: rowIndex,
-                columnIndex: column,
-                isToday: column == 0,
-                isLastColumn: column == row.length - 1,
-                isLastRow: isLastRow,
-                onLessonMove: onLessonMove,
+              child: Builder(
+                builder: (BuildContext context) {
+                  final String availabilityKey =
+                      _availabilityKeyForGridCell(column);
+                  return _ScheduleGridCell(
+                    lesson: row[column],
+                    rowIndex: rowIndex,
+                    columnIndex: column,
+                    availability: slotAvailability[availabilityKey],
+                    scheduleTargetSelected: scheduleTargetSelected,
+                    availabilityLoading: availabilityLoading,
+                    creating: creatingSlotKey == availabilityKey,
+                    isToday: column < weekDays.length
+                        ? weekDays[column].isToday
+                        : false,
+                    isLastColumn: column == row.length - 1,
+                    isLastRow: isLastRow,
+                    onLessonMove: onLessonMove,
+                    onEmptySlotTap: onEmptySlotTap,
+                  );
+                },
               ),
             ),
         ],
       ),
+    );
+  }
+
+  String _availabilityKeyForGridCell(int column) {
+    if (timeSlot == null ||
+        column >= weekDays.length ||
+        selectedTeacherId.trim().isEmpty) {
+      return '';
+    }
+    return _availabilityKey(
+      selectedTeacherId,
+      weekDays[column].isoDate,
+      timeSlot!.startTime,
+      timeSlot!.endTime,
     );
   }
 }
@@ -1452,20 +2278,30 @@ class _ScheduleGridCell extends StatelessWidget {
     required this.lesson,
     required this.rowIndex,
     required this.columnIndex,
+    required this.availability,
+    required this.scheduleTargetSelected,
+    required this.availabilityLoading,
+    required this.creating,
     required this.isToday,
     required this.isLastColumn,
     required this.isLastRow,
     required this.onLessonMove,
+    required this.onEmptySlotTap,
   });
 
   final _LessonCell? lesson;
   final int rowIndex;
   final int columnIndex;
+  final _SlotAvailability? availability;
+  final bool scheduleTargetSelected;
+  final bool availabilityLoading;
+  final bool creating;
   final bool isToday;
   final bool isLastColumn;
   final bool isLastRow;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final void Function(int row, int column) onEmptySlotTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1516,7 +2352,15 @@ class _ScheduleGridCell extends StatelessWidget {
                   ),
                 ),
               if (lesson == null)
-                const SizedBox.expand()
+                _EmptyScheduleSlot(
+                  rowIndex: rowIndex,
+                  columnIndex: columnIndex,
+                  availability: availability,
+                  scheduleTargetSelected: scheduleTargetSelected,
+                  checking: availabilityLoading && availability == null,
+                  creating: creating,
+                  onTap: () => onEmptySlotTap(rowIndex, columnIndex),
+                )
               else
                 _DraggableLessonBlock(
                   lesson: lesson!,
@@ -1527,6 +2371,116 @@ class _ScheduleGridCell extends StatelessWidget {
         );
       },
     );
+  }
+}
+
+class _EmptyScheduleSlot extends StatelessWidget {
+  const _EmptyScheduleSlot({
+    required this.rowIndex,
+    required this.columnIndex,
+    required this.availability,
+    required this.scheduleTargetSelected,
+    required this.checking,
+    required this.creating,
+    required this.onTap,
+  });
+
+  final int rowIndex;
+  final int columnIndex;
+  final _SlotAvailability? availability;
+  final bool scheduleTargetSelected;
+  final bool checking;
+  final bool creating;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!scheduleTargetSelected) {
+      return const SizedBox.expand();
+    }
+    final _SlotAvailability? state = availability;
+    final bool valid = state?.valid == true;
+    final bool invalid = state?.valid == false;
+    final Color background = creating
+        ? const Color(0xFFFFF1E8)
+        : valid
+            ? const Color(0xFFEAF8EC)
+            : invalid
+                ? const Color(0xFFFFECEC)
+                : const Color(0xFFFFF8EE);
+    final Color border = valid
+        ? const Color(0xFFCDEDD1)
+        : invalid
+            ? const Color(0xFFF3B7B7)
+            : const Color(0xFFF0DDC9);
+    final Color foreground = valid
+        ? const Color(0xFF4B9A61)
+        : invalid
+            ? _SmartColors.danger
+            : _SmartColors.orangeDeep;
+    final String label = creating
+        ? '排课中'
+        : valid
+            ? '空闲时段(可排)'
+            : invalid
+                ? _invalidLabel(state!)
+                : checking
+                    ? '检测中'
+                    : '待检测';
+
+    return Material(
+      key: ValueKey<String>('empty-slot-$rowIndex-$columnIndex'),
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: background,
+            border: Border.all(color: border),
+            borderRadius: BorderRadius.circular(9),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (creating || checking) ...<Widget>[
+                SizedBox(
+                  width: 11,
+                  height: 11,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.5,
+                    color: foreground,
+                  ),
+                ),
+                const SizedBox(width: 6),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: foreground,
+                    fontSize: valid ? 12 : 11,
+                    height: 1,
+                    fontWeight: valid ? FontWeight.w800 : FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _invalidLabel(_SlotAvailability state) {
+    if (state.conflictTypes.isEmpty) {
+      return '冲突(不可排)';
+    }
+    return '${state.conflictTypes.join('/')}冲突';
   }
 }
 
@@ -1991,33 +2945,969 @@ class _ToolbarButton extends StatelessWidget {
 }
 
 class _PrimaryButton extends StatelessWidget {
-  const _PrimaryButton({required this.width});
+  const _PrimaryButton({required this.width, required this.onTap});
 
   final double width;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _SmartColors.orange,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: SizedBox(
+          width: width,
+          height: 42,
+          child: const Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Icon(Icons.add_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 5),
+              Text(
+                '新增排课',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleComposerBar extends StatelessWidget {
+  const _ScheduleComposerBar({
+    required this.compact,
+    required this.mode,
+    required this.selectedTarget,
+    required this.selectedAssistantIds,
+    required this.assistantOptions,
+    required this.selectedClassroom,
+    required this.panelOpen,
+    required this.availabilityLoading,
+    required this.availabilityMessage,
+    required this.onPanelToggle,
+    required this.onModeChanged,
+    required this.onTargetCleared,
+    required this.onAvailabilityRefresh,
+  });
+
+  final bool compact;
+  final _ScheduleMode mode;
+  final ScheduleTargetOption? selectedTarget;
+  final Set<String> selectedAssistantIds;
+  final List<ScheduleStaffOption> assistantOptions;
+  final ScheduleClassroomOption? selectedClassroom;
+  final bool panelOpen;
+  final bool availabilityLoading;
+  final String? availabilityMessage;
+  final VoidCallback onPanelToggle;
+  final ValueChanged<_ScheduleMode> onModeChanged;
+  final VoidCallback onTargetCleared;
+  final VoidCallback onAvailabilityRefresh;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        _ScheduleModeSwitch(
+          width: compact ? 96 : 104,
+          mode: mode,
+          onChanged: onModeChanged,
+        ),
+        SizedBox(width: compact ? 7 : 8),
+        Expanded(
+          child: _ScheduleTargetSelector(
+            mode: mode,
+            target: selectedTarget,
+            open: panelOpen,
+            onTap: onPanelToggle,
+            onClear: onTargetCleared,
+          ),
+        ),
+        SizedBox(width: compact ? 7 : 8),
+        _ScheduleInfoChip(
+          icon: Icons.group_outlined,
+          label: _assistantSummary(),
+          maxLabelWidth: compact ? 44 : 64,
+          onTap: onPanelToggle,
+        ),
+        SizedBox(width: compact ? 6 : 8),
+        _ScheduleInfoChip(
+          icon: Icons.meeting_room_outlined,
+          label: selectedClassroom?.name ?? '教室',
+          maxLabelWidth: compact ? 44 : 64,
+          onTap: onPanelToggle,
+        ),
+        if (!compact &&
+            (availabilityMessage != null || availabilityLoading)) ...<Widget>[
+          const SizedBox(width: 8),
+          _AvailabilityStatusPill(
+            loading: availabilityLoading,
+            message: availabilityMessage ?? '正在检测本周空闲点',
+            onTap: onAvailabilityRefresh,
+          ),
+        ],
+      ],
+    );
+  }
+
+  String _assistantSummary() {
+    if (selectedAssistantIds.isEmpty) {
+      return '助教';
+    }
+    final List<String> names = assistantOptions
+        .where((ScheduleStaffOption item) {
+          return selectedAssistantIds.contains(item.id);
+        })
+        .map((ScheduleStaffOption item) => item.name)
+        .toList();
+    if (names.isEmpty) {
+      return '${selectedAssistantIds.length}助教';
+    }
+    if (names.length == 1) {
+      return names.first;
+    }
+    return '${names.first}+${names.length - 1}';
+  }
+}
+
+class _ScheduleModeSwitch extends StatelessWidget {
+  const _ScheduleModeSwitch({
+    required this.width,
+    required this.mode,
+    required this.onChanged,
+  });
+
+  final double width;
+  final _ScheduleMode mode;
+  final ValueChanged<_ScheduleMode> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ShellBox(
+      width: width,
+      height: 34,
+      padding: const EdgeInsets.all(3),
+      borderRadius: 11,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _ScheduleModeItem(
+              label: '1v1',
+              selected: mode == _ScheduleMode.oneToOne,
+              onTap: () => onChanged(_ScheduleMode.oneToOne),
+            ),
+          ),
+          Expanded(
+            child: _ScheduleModeItem(
+              label: '班课',
+              selected: mode == _ScheduleMode.groupClass,
+              onTap: () => onChanged(_ScheduleMode.groupClass),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleModeItem extends StatelessWidget {
+  const _ScheduleModeItem({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(8),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: selected ? _SmartColors.orange : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: selected ? Colors.white : _SmartColors.text,
+            fontSize: 12,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleTargetSelector extends StatelessWidget {
+  const _ScheduleTargetSelector({
+    required this.mode,
+    required this.target,
+    required this.open,
+    required this.onTap,
+    required this.onClear,
+  });
+
+  final _ScheduleMode mode;
+  final ScheduleTargetOption? target;
+  final bool open;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: const ValueKey<String>('schedule-target-selector'),
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: _ShellBox(
+        height: 34,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        borderRadius: 11,
+        child: Row(
+          children: <Widget>[
+            Icon(
+              mode == _ScheduleMode.oneToOne
+                  ? Icons.person_add_alt_1_rounded
+                  : Icons.groups_2_outlined,
+              color: _SmartColors.text,
+              size: 16,
+            ),
+            const SizedBox(width: 7),
+            Expanded(
+              child: Text(
+                target?.title ??
+                    (mode == _ScheduleMode.oneToOne ? '选择1v1' : '选择班课'),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color:
+                      target == null ? _SmartColors.muted : _SmartColors.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            if (target != null) ...<Widget>[
+              const SizedBox(width: 4),
+              InkWell(
+                key: const ValueKey<String>('schedule-target-clear'),
+                onTap: onClear,
+                borderRadius: BorderRadius.circular(8),
+                child: Container(
+                  width: 22,
+                  height: 22,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF7EE),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(
+                    Icons.close_rounded,
+                    color: _SmartColors.muted,
+                    size: 15,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+            ],
+            AnimatedRotation(
+              turns: open ? .5 : 0,
+              duration: const Duration(milliseconds: 160),
+              child: const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: _SmartColors.text,
+                size: 18,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleInfoChip extends StatelessWidget {
+  const _ScheduleInfoChip({
+    required this.icon,
+    required this.label,
+    required this.maxLabelWidth,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final double maxLabelWidth;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ShellBox(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      borderRadius: 11,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, color: _SmartColors.text, size: 15),
+            const SizedBox(width: 6),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxLabelWidth),
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _SmartColors.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvailabilityStatusPill extends StatelessWidget {
+  const _AvailabilityStatusPill({
+    required this.loading,
+    required this.message,
+    required this.onTap,
+  });
+
+  final bool loading;
+  final String message;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: 190),
+      child: InkWell(
+        onTap: loading ? null : onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: loading ? const Color(0xFFFFF8EE) : const Color(0xFFEAF8E9),
+            border: Border.all(
+              color:
+                  loading ? const Color(0xFFF0DDC9) : const Color(0xFFC9EACB),
+            ),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (loading)
+                const SizedBox(
+                  width: 13,
+                  height: 13,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 1.6,
+                    color: _SmartColors.orangeDeep,
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.verified_outlined,
+                  color: _SmartColors.green,
+                  size: 15,
+                ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  message,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color:
+                        loading ? _SmartColors.orangeDeep : _SmartColors.green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SchedulePickerPanel extends StatelessWidget {
+  const _SchedulePickerPanel({
+    required this.mode,
+    required this.oneToOneTargets,
+    required this.groupClassTargets,
+    required this.assistantOptions,
+    required this.classroomOptions,
+    required this.selectedTarget,
+    required this.selectedAssistantIds,
+    required this.selectedClassroom,
+    required this.loading,
+    required this.errorMessage,
+    required this.onModeChanged,
+    required this.onTargetSelected,
+    required this.onAssistantToggled,
+    required this.onClassroomSelected,
+    required this.onRefresh,
+    required this.onClose,
+  });
+
+  final _ScheduleMode mode;
+  final List<ScheduleTargetOption> oneToOneTargets;
+  final List<ScheduleTargetOption> groupClassTargets;
+  final List<ScheduleStaffOption> assistantOptions;
+  final List<ScheduleClassroomOption> classroomOptions;
+  final ScheduleTargetOption? selectedTarget;
+  final Set<String> selectedAssistantIds;
+  final ScheduleClassroomOption? selectedClassroom;
+  final bool loading;
+  final String? errorMessage;
+  final ValueChanged<_ScheduleMode> onModeChanged;
+  final ValueChanged<ScheduleTargetOption> onTargetSelected;
+  final ValueChanged<ScheduleStaffOption> onAssistantToggled;
+  final ValueChanged<ScheduleClassroomOption?> onClassroomSelected;
+  final VoidCallback onRefresh;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ScheduleTargetOption> targets =
+        mode == _ScheduleMode.oneToOne ? oneToOneTargets : groupClassTargets;
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        height: 334,
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+        decoration: BoxDecoration(
+          color: _SmartColors.card,
+          border: Border.all(color: _SmartColors.line),
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x1AB05F32),
+              blurRadius: 24,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                _ScheduleModeSwitch(
+                  width: 108,
+                  mode: mode,
+                  onChanged: onModeChanged,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    mode == _ScheduleMode.oneToOne
+                        ? '选择 1v1 后立即检测本周空闲点'
+                        : '选择班课后立即检测本周空闲点',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _SmartColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                if (loading)
+                  const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 1.8,
+                      color: _SmartColors.orangeDeep,
+                    ),
+                  )
+                else
+                  _PanelIconButton(
+                    icon: Icons.refresh_rounded,
+                    onTap: onRefresh,
+                  ),
+                const SizedBox(width: 6),
+                _PanelIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: onClose,
+                ),
+              ],
+            ),
+            if (errorMessage != null) ...<Widget>[
+              const SizedBox(height: 8),
+              _PanelErrorBar(message: errorMessage!, onTap: onRefresh),
+            ],
+            const SizedBox(height: 10),
+            Expanded(
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    flex: 11,
+                    child: _ScheduleTargetColumn(
+                      title: mode == _ScheduleMode.oneToOne ? '排课对象' : '排课班级',
+                      emptyText:
+                          mode == _ScheduleMode.oneToOne ? '暂无可排1v1' : '暂无可排班课',
+                      targets: targets,
+                      selectedTarget: selectedTarget,
+                      onSelected: onTargetSelected,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 8,
+                    child: _ScheduleAssistantColumn(
+                      assistants: assistantOptions,
+                      selectedIds: selectedAssistantIds,
+                      onToggled: onAssistantToggled,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    flex: 8,
+                    child: _ScheduleClassroomColumn(
+                      classrooms: classroomOptions,
+                      selectedClassroom: selectedClassroom,
+                      onSelected: onClassroomSelected,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PanelIconButton extends StatelessWidget {
+  const _PanelIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(9),
+      child: Container(
+        width: 30,
+        height: 30,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF7EE),
+          border: Border.all(color: _SmartColors.lineSoft),
+          borderRadius: BorderRadius.circular(9),
+        ),
+        child: Icon(icon, color: _SmartColors.text, size: 17),
+      ),
+    );
+  }
+}
+
+class _PanelErrorBar extends StatelessWidget {
+  const _PanelErrorBar({required this.message, required this.onTap});
+
+  final String message;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(10),
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEFEA),
+          border: Border.all(color: const Color(0xFFF4C8BB)),
+          borderRadius: BorderRadius.circular(10),
+        ),
+        child: Row(
+          children: <Widget>[
+            const Icon(
+              Icons.info_outline_rounded,
+              color: _SmartColors.orangeDeep,
+              size: 15,
+            ),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                message,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _SmartColors.orangeDeep,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleTargetColumn extends StatelessWidget {
+  const _ScheduleTargetColumn({
+    required this.title,
+    required this.emptyText,
+    required this.targets,
+    required this.selectedTarget,
+    required this.onSelected,
+  });
+
+  final String title;
+  final String emptyText;
+  final List<ScheduleTargetOption> targets;
+  final ScheduleTargetOption? selectedTarget;
+  final ValueChanged<ScheduleTargetOption> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PanelSection(
+      title: title,
+      child: targets.isEmpty
+          ? _PanelEmptyText(emptyText)
+          : ListView.separated(
+              physics: const BouncingScrollPhysics(),
+              itemBuilder: (BuildContext context, int index) {
+                final ScheduleTargetOption target = targets[index];
+                return _ScheduleTargetPanelItem(
+                  target: target,
+                  selected: selectedTarget?.id == target.id,
+                  onTap: () => onSelected(target),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
+              itemCount: targets.length,
+            ),
+    );
+  }
+}
+
+class _ScheduleTargetPanelItem extends StatelessWidget {
+  const _ScheduleTargetPanelItem({
+    required this.target,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final ScheduleTargetOption target;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      key: ValueKey<String>('schedule-target-${target.id}'),
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: const BoxConstraints(minHeight: 48),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF1E8) : Colors.white,
+          border: Border.all(
+            color: selected ? _SmartColors.orange : _SmartColors.lineSoft,
+          ),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              width: 26,
+              height: 26,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: selected ? _SmartColors.orange : const Color(0xFFFFF7EE),
+                borderRadius: BorderRadius.circular(9),
+              ),
+              child: Icon(
+                selected ? Icons.check_rounded : Icons.menu_book_outlined,
+                color: selected ? Colors.white : _SmartColors.text,
+                size: 15,
+              ),
+            ),
+            const SizedBox(width: 9),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: <Widget>[
+                  Text(
+                    target.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: target.disabled
+                          ? _SmartColors.muted
+                          : _SmartColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (target.subtitle.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 3),
+                    Text(
+                      target.subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _SmartColors.muted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleAssistantColumn extends StatelessWidget {
+  const _ScheduleAssistantColumn({
+    required this.assistants,
+    required this.selectedIds,
+    required this.onToggled,
+  });
+
+  final List<ScheduleStaffOption> assistants;
+  final Set<String> selectedIds;
+  final ValueChanged<ScheduleStaffOption> onToggled;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PanelSection(
+      title: '上课助教',
+      child: assistants.isEmpty
+          ? const _PanelEmptyText('暂无助教')
+          : ListView.separated(
+              physics: const BouncingScrollPhysics(),
+              itemBuilder: (BuildContext context, int index) {
+                final ScheduleStaffOption assistant = assistants[index];
+                return _ScheduleCheckItem(
+                  title: assistant.name,
+                  subtitle: assistant.subtitle,
+                  selected: selectedIds.contains(assistant.id),
+                  onTap: () => onToggled(assistant),
+                );
+              },
+              separatorBuilder: (_, __) => const SizedBox(height: 7),
+              itemCount: assistants.length,
+            ),
+    );
+  }
+}
+
+class _ScheduleClassroomColumn extends StatelessWidget {
+  const _ScheduleClassroomColumn({
+    required this.classrooms,
+    required this.selectedClassroom,
+    required this.onSelected,
+  });
+
+  final List<ScheduleClassroomOption> classrooms;
+  final ScheduleClassroomOption? selectedClassroom;
+  final ValueChanged<ScheduleClassroomOption?> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    return _PanelSection(
+      title: '上课教室',
+      child: ListView.separated(
+        physics: const BouncingScrollPhysics(),
+        itemBuilder: (BuildContext context, int index) {
+          if (index == 0) {
+            return _ScheduleCheckItem(
+              title: '不指定教室',
+              subtitle: '仅校验老师/学员/助教',
+              selected: selectedClassroom == null,
+              onTap: () => onSelected(null),
+            );
+          }
+          final ScheduleClassroomOption classroom = classrooms[index - 1];
+          return _ScheduleCheckItem(
+            title: classroom.name,
+            subtitle: classroom.subtitle,
+            selected: selectedClassroom?.id == classroom.id,
+            onTap: () => onSelected(classroom),
+          );
+        },
+        separatorBuilder: (_, __) => const SizedBox(height: 7),
+        itemCount: classrooms.length + 1,
+      ),
+    );
+  }
+}
+
+class _ScheduleCheckItem extends StatelessWidget {
+  const _ScheduleCheckItem({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(11),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        constraints: const BoxConstraints(minHeight: 44),
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFF1E8) : Colors.white,
+          border: Border.all(
+            color: selected ? _SmartColors.orange : _SmartColors.lineSoft,
+          ),
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Row(
+          children: <Widget>[
+            Icon(
+              selected
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              color: selected ? _SmartColors.orange : _SmartColors.muted,
+              size: 17,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _SmartColors.ink,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  if (subtitle.trim().isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 2),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _SmartColors.muted,
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PanelSection extends StatelessWidget {
+  const _PanelSection({required this.title, required this.child});
+
+  final String title;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
-      height: 42,
+      padding: const EdgeInsets.fromLTRB(9, 9, 9, 8),
       decoration: BoxDecoration(
-        color: _SmartColors.orange,
+        color: const Color(0xFFFFFBF7),
+        border: Border.all(color: _SmartColors.lineSoft),
         borderRadius: BorderRadius.circular(13),
       ),
-      child: const Row(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Icon(Icons.add_rounded, color: Colors.white, size: 18),
-          SizedBox(width: 5),
-          Text(
-            '新增排课',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+          Padding(
+            padding: const EdgeInsets.only(left: 2, bottom: 8),
+            child: Text(
+              title,
+              style: const TextStyle(
+                color: _SmartColors.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
+          Expanded(child: child),
         ],
+      ),
+    );
+  }
+}
+
+class _PanelEmptyText extends StatelessWidget {
+  const _PanelEmptyText(this.text);
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: _SmartColors.muted,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -2224,6 +4114,41 @@ class _DiagonalPainter extends CustomPainter {
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
+enum _ScheduleMode {
+  oneToOne,
+  groupClass,
+}
+
+class _ScheduleCellSlot {
+  const _ScheduleCellSlot({
+    required this.row,
+    required this.column,
+    required this.key,
+    required this.date,
+    required this.startTime,
+    required this.endTime,
+  });
+
+  final int row;
+  final int column;
+  final String key;
+  final String date;
+  final String startTime;
+  final String endTime;
+}
+
+class _SlotAvailability {
+  const _SlotAvailability({
+    required this.valid,
+    required this.message,
+    this.conflictTypes = const <String>[],
+  });
+
+  final bool valid;
+  final String message;
+  final List<String> conflictTypes;
+}
+
 class _PeriodGroupOption {
   const _PeriodGroupOption({
     required this.id,
@@ -2252,11 +4177,13 @@ class _WeekDay {
   const _WeekDay({
     required this.label,
     required this.date,
+    required this.isoDate,
     this.isToday = false,
   });
 
   final String label;
   final String date;
+  final String isoDate;
   final bool isToday;
 }
 
