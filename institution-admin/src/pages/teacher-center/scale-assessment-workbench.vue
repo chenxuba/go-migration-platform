@@ -15,7 +15,7 @@ import {
 } from '@ant-design/icons-vue'
 import QRCode from 'qrcode'
 import dayjs from 'dayjs'
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { Modal } from 'ant-design-vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
@@ -86,6 +86,7 @@ const draftItemSaveTimers = new Map<number, number>()
 const draftItemSaveSeq = new Map<number, number>()
 const draftItemSaveInFlight = new Set<number>()
 const autoSaveLastSavedAt = ref('')
+const pageSidebarRef = ref<HTMLElement | null>(null)
 let draftCreationPromise: Promise<PEP3AssessmentDraftDetail | undefined> | undefined
 
 const editor = reactive<{
@@ -214,12 +215,14 @@ watch(allItems, (items) => {
   if (!items.some(item => item.itemNo === currentItemNo.value))
     currentItemNo.value = items[0].itemNo
   expandCurrentGroup()
+  void keepActiveQuestionVisible()
 }, { immediate: true })
 
 watch(currentItemNo, () => {
   guidanceVideoOpen.value = false
   materialPreviewOpen.value = false
   expandCurrentGroup()
+  void keepActiveQuestionVisible()
   void fetchItemDetail(currentItemNo.value)
 })
 
@@ -349,6 +352,27 @@ function expandCurrentGroup() {
   const key = groupKey(group)
   if (!expandedGroupKeys.value.includes(key))
     expandedGroupKeys.value = [key]
+}
+
+async function keepActiveQuestionVisible() {
+  await nextTick()
+  const container = pageSidebarRef.value
+  if (!container || !currentItemNo.value)
+    return
+  const activeItem = container.querySelector<HTMLElement>(`[data-question-no="${currentItemNo.value}"]`)
+  if (!activeItem)
+    return
+
+  const stickyHeaderOffset = 42
+  const viewportHeight = Math.max(0, container.clientHeight - stickyHeaderOffset)
+  const activeCenter = activeItem.offsetTop + activeItem.offsetHeight / 2
+  const targetTop = activeCenter - stickyHeaderOffset - viewportHeight / 2
+  const maxTop = Math.max(0, container.scrollHeight - container.clientHeight)
+
+  container.scrollTo({
+    top: Math.max(0, Math.min(maxTop, targetTop)),
+    behavior: 'auto',
+  })
 }
 
 function toggleGroup(key: string) {
@@ -1065,7 +1089,7 @@ function goBack() {
     </header>
 
     <main class="workbench-main">
-      <aside class="page-sidebar">
+      <aside ref="pageSidebarRef" class="page-sidebar">
         <div class="sidebar-title">
           <span>记录册页面</span>
           <SlidersOutlined />
@@ -1093,6 +1117,7 @@ function goBack() {
               type="button"
               class="question-item"
               :class="`is-${item.status}`"
+              :data-question-no="item.no"
               @click="goToItem(item.no)"
             >
               <span>第 {{ item.no }} 题</span>
