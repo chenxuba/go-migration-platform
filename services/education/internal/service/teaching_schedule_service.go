@@ -608,6 +608,9 @@ func padTimetableItems(schedules []model.TeachingScheduleVO) []model.PadTimetabl
 		status, statusText := padTimetableScheduleStatus(schedule)
 		items = append(items, model.PadTimetableItem{
 			ID:                schedule.ID,
+			BatchNo:           schedule.BatchNo,
+			ClassType:         schedule.ClassType,
+			TeachingClassID:   strings.TrimSpace(schedule.TeachingClassID),
 			Date:              schedule.LessonDate,
 			StartTime:         schedule.StartAt.In(loc).Format("15:04"),
 			EndTime:           schedule.EndAt.In(loc).Format("15:04"),
@@ -618,6 +621,8 @@ func padTimetableItems(schedules []model.TeachingScheduleVO) []model.PadTimetabl
 			ClassroomName:     strings.TrimSpace(schedule.ClassroomName),
 			TeacherID:         strings.TrimSpace(schedule.TeacherID),
 			TeacherName:       strings.TrimSpace(schedule.TeacherName),
+			AssistantIDs:      schedule.AssistantIDs,
+			ClassroomID:       strings.TrimSpace(schedule.ClassroomID),
 			Status:            status,
 			StatusText:        statusText,
 			Conflict:          schedule.Conflict,

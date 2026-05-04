@@ -49,7 +49,15 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   Set<String> _selectedAssistantIds = <String>{};
   Map<String, _SlotAvailability> _slotAvailability =
       const <String, _SlotAvailability>{};
+  Map<String, _SlotAvailability> _dragSlotAvailability =
+      const <String, _SlotAvailability>{};
+  Set<String> _dragCheckingSlotKeys = const <String>{};
+  final Map<String, Future<_SlotAvailability>> _dragValidationFutures =
+      <String, Future<_SlotAvailability>>{};
+  int _dragValidationSequence = 0;
+  bool _dragValidationActive = false;
   String? _creatingSlotKey;
+  String? _movingScheduleId;
   OverlayEntry? _scheduleMessageEntry;
   Timer? _scheduleMessageTimer;
   bool _scheduleMessageVisible = false;
@@ -449,19 +457,433 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   }
 
   void _moveLesson(_LessonDragData source, int targetRow, int targetColumn) {
+    unawaited(_moveLessonToSlot(source, targetRow, targetColumn));
+  }
+
+  Future<void> _moveLessonToSlot(
+    _LessonDragData source,
+    int targetRow,
+    int targetColumn,
+  ) async {
+    if (_movingScheduleId != null) {
+      return;
+    }
     if (source.row == targetRow && source.column == targetColumn) {
       return;
     }
+    if (source.row < 0 ||
+        source.column < 0 ||
+        source.row >= _scheduleRows.length ||
+        source.column >= _scheduleRows[source.row].length ||
+        targetRow < 0 ||
+        targetColumn < 0 ||
+        targetRow >= _scheduleRows.length ||
+        targetColumn >= _scheduleRows[targetRow].length) {
+      return;
+    }
+
+    final _LessonCell? sourceLesson = _scheduleRows[source.row][source.column];
+    if (sourceLesson == null) {
+      return;
+    }
+    if (sourceLesson.id.trim().isEmpty) {
+      _showScheduleMessage('缺少日程ID，无法调课');
+      return;
+    }
+    if (_scheduleRows[targetRow][targetColumn] != null) {
+      _showScheduleMessage('目标时段已有课程，不能调课');
+      return;
+    }
+    final _ScheduleCellSlot? targetSlot =
+        _scheduleCellSlotAt(targetRow, targetColumn);
+    if (targetSlot == null) {
+      _showScheduleMessage('目标时段无效，不能调课');
+      return;
+    }
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      _showScheduleMessage('登录已失效，请重新登录');
+      return;
+    }
+    final _SlotAvailability availability = await _ensureDragTargetValidation(
+      sourceLesson,
+      targetSlot,
+      token,
+    );
+    if (!availability.valid) {
+      _showScheduleMessage(availability.message);
+      return;
+    }
+
     setState(() {
-      final _LessonCell? sourceLesson =
-          _scheduleRows[source.row][source.column];
-      if (sourceLesson == null) {
+      _movingScheduleId = sourceLesson.id;
+    });
+    try {
+      await widget.timetableClient.updateScheduleSlot(
+        token,
+        scheduleId: sourceLesson.id,
+        teacherId: _selectedTeacherId,
+        assistantIds: sourceLesson.assistantIds,
+        classroomId: sourceLesson.classroomId,
+        slot: ScheduleSlotRequest(
+          teacherId: _selectedTeacherId,
+          lessonDate: targetSlot.date,
+          startTime: targetSlot.startTime,
+          endTime: targetSlot.endTime,
+          assistantIds: sourceLesson.assistantIds ?? const <String>[],
+          classroomId: sourceLesson.classroomId ?? '',
+        ),
+      );
+      _showScheduleMessage(
+        '调课成功，已刷新课表',
+        tone: _ScheduleMessageTone.success,
+      );
+      await _loadTimetable();
+    } on TimetableApiException catch (error) {
+      _showScheduleMessage(error.message);
+    } on Object catch (error) {
+      _showScheduleMessage('调课失败：$error');
+    } finally {
+      if (mounted) {
+        setState(() {
+          _movingScheduleId = null;
+        });
+      }
+    }
+  }
+
+  void _startLessonDrag(_LessonDragData source) {
+    setState(() {
+      _dragValidationActive = true;
+      _dragSlotAvailability = const <String, _SlotAvailability>{};
+      _dragCheckingSlotKeys = const <String>{};
+    });
+    unawaited(_primeDragSlotAvailability(source));
+  }
+
+  void _endLessonDrag() {
+    setState(() {
+      _dragValidationActive = false;
+      _dragCheckingSlotKeys = const <String>{};
+    });
+  }
+
+  Future<void> _primeDragSlotAvailability(_LessonDragData source) async {
+    final int sequence = ++_dragValidationSequence;
+    final _LessonCell? sourceLesson = _lessonAt(source.row, source.column);
+    if (sourceLesson == null) {
+      return;
+    }
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      return;
+    }
+    final List<_ScheduleCellSlot> cells = _emptyScheduleSlotsForCurrentWeek();
+    final Map<String, _SlotAvailability> localResults =
+        <String, _SlotAvailability>{};
+    final List<_ScheduleCellSlot> remoteCells = <_ScheduleCellSlot>[];
+    for (final _ScheduleCellSlot cell in cells) {
+      final _SlotAvailability? local = _localDragValidation(sourceLesson, cell);
+      if (local != null) {
+        localResults[cell.key] = local;
+      } else {
+        remoteCells.add(cell);
+      }
+    }
+    if (!mounted || sequence != _dragValidationSequence) {
+      return;
+    }
+    setState(() {
+      _dragValidationActive = true;
+      _dragSlotAvailability = localResults;
+      _dragCheckingSlotKeys =
+          remoteCells.map((_ScheduleCellSlot cell) => cell.key).toSet();
+    });
+    if (remoteCells.isEmpty) {
+      return;
+    }
+    try {
+      final Map<String, _SlotAvailability> remoteResults =
+          await _fetchDragTargetsValidation(sourceLesson, remoteCells, token);
+      if (!mounted || sequence != _dragValidationSequence) {
         return;
       }
-      final _LessonCell? targetLesson = _scheduleRows[targetRow][targetColumn];
-      _scheduleRows[targetRow][targetColumn] = sourceLesson;
-      _scheduleRows[source.row][source.column] = targetLesson;
+      setState(() {
+        _dragSlotAvailability = <String, _SlotAvailability>{
+          ...localResults,
+          ...remoteResults,
+        };
+        _dragCheckingSlotKeys = const <String>{};
+      });
+    } on Object {
+      if (!mounted || sequence != _dragValidationSequence) {
+        return;
+      }
+      setState(() {
+        _dragCheckingSlotKeys = const <String>{};
+      });
+    }
+  }
+
+  Future<_SlotAvailability> _ensureDragTargetValidation(
+    _LessonCell sourceLesson,
+    _ScheduleCellSlot targetSlot,
+    String token,
+  ) {
+    final _SlotAvailability? cached = _dragSlotAvailability[targetSlot.key];
+    if (cached != null) {
+      return Future<_SlotAvailability>.value(cached);
+    }
+    final _SlotAvailability? localResult =
+        _localDragValidation(sourceLesson, targetSlot);
+    if (localResult != null) {
+      _setDragAvailability(targetSlot.key, localResult);
+      return Future<_SlotAvailability>.value(localResult);
+    }
+
+    final String requestKey =
+        _dragValidationRequestKey(sourceLesson, targetSlot);
+    final Future<_SlotAvailability>? pending =
+        _dragValidationFutures[requestKey];
+    if (pending != null) {
+      return pending;
+    }
+    if (mounted) {
+      setState(() {
+        _dragCheckingSlotKeys = <String>{
+          ..._dragCheckingSlotKeys,
+          targetSlot.key,
+        };
+      });
+    }
+    final Future<_SlotAvailability> future =
+        _fetchDragTargetValidation(sourceLesson, targetSlot, token);
+    _dragValidationFutures[requestKey] = future;
+    future.then(
+      (_SlotAvailability result) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _dragSlotAvailability = <String, _SlotAvailability>{
+            ..._dragSlotAvailability,
+            targetSlot.key: result,
+          };
+          final Set<String> next = <String>{..._dragCheckingSlotKeys}
+            ..remove(targetSlot.key);
+          _dragCheckingSlotKeys = next;
+        });
+      },
+      onError: (_) {
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          final Set<String> next = <String>{..._dragCheckingSlotKeys}
+            ..remove(targetSlot.key);
+          _dragCheckingSlotKeys = next;
+        });
+      },
+    ).whenComplete(() {
+      _dragValidationFutures.remove(requestKey);
     });
+    return future;
+  }
+
+  Future<Map<String, _SlotAvailability>> _fetchDragTargetsValidation(
+    _LessonCell sourceLesson,
+    List<_ScheduleCellSlot> targetSlots,
+    String token,
+  ) async {
+    if (targetSlots.isEmpty) {
+      return const <String, _SlotAvailability>{};
+    }
+    try {
+      final ScheduleValidationResult result =
+          await widget.timetableClient.validateScheduleSlots(
+        token,
+        type: sourceLesson.scheduleTargetType!,
+        targetId: sourceLesson.teachingClassId,
+        teacherId: _selectedTeacherId,
+        assistantIds: sourceLesson.assistantIds ?? const <String>[],
+        classroomId: sourceLesson.classroomId ?? '',
+        slots: targetSlots.map((_ScheduleCellSlot targetSlot) {
+          return ScheduleSlotRequest(
+            teacherId: _selectedTeacherId,
+            lessonDate: targetSlot.date,
+            startTime: targetSlot.startTime,
+            endTime: targetSlot.endTime,
+            assistantIds: sourceLesson.assistantIds ?? const <String>[],
+            classroomId: sourceLesson.classroomId ?? '',
+          );
+        }).toList(),
+        excludeIds: <String>[sourceLesson.id],
+      );
+      final Map<String, ScheduleValidationItem> itemByKey =
+          <String, ScheduleValidationItem>{};
+      for (final ScheduleValidationItem item in result.items) {
+        itemByKey[_availabilityKey(
+          item.teacherId.trim().isEmpty ? _selectedTeacherId : item.teacherId,
+          item.lessonDate,
+          item.startTime,
+          item.endTime,
+        )] = item;
+      }
+      final bool hasItemResult = result.items.isNotEmpty;
+      final Map<String, _SlotAvailability> next = <String, _SlotAvailability>{};
+      for (final _ScheduleCellSlot cell in targetSlots) {
+        final ScheduleValidationItem? item = itemByKey[cell.key];
+        final bool valid = hasItemResult ? (item?.valid ?? true) : result.valid;
+        final String message = item?.message.trim().isNotEmpty == true
+            ? item!.message
+            : valid
+                ? '可调课'
+                : (result.message.trim().isEmpty ? '当前空点不可调课' : result.message);
+        next[cell.key] = _SlotAvailability(
+          valid: valid,
+          message: message,
+          conflictTypes: item?.conflictTypes ?? const <String>[],
+        );
+      }
+      return next;
+    } on TimetableApiException catch (error) {
+      return <String, _SlotAvailability>{
+        for (final _ScheduleCellSlot cell in targetSlots)
+          cell.key: _SlotAvailability(valid: false, message: error.message),
+      };
+    } on Object catch (error) {
+      return <String, _SlotAvailability>{
+        for (final _ScheduleCellSlot cell in targetSlots)
+          cell.key: _SlotAvailability(
+            valid: false,
+            message: '检测调课空点失败：$error',
+          ),
+      };
+    }
+  }
+
+  Future<_SlotAvailability> _fetchDragTargetValidation(
+    _LessonCell sourceLesson,
+    _ScheduleCellSlot targetSlot,
+    String token,
+  ) async {
+    try {
+      final ScheduleValidationResult result =
+          await widget.timetableClient.validateScheduleSlots(
+        token,
+        type: sourceLesson.scheduleTargetType!,
+        targetId: sourceLesson.teachingClassId,
+        teacherId: _selectedTeacherId,
+        assistantIds: sourceLesson.assistantIds ?? const <String>[],
+        classroomId: sourceLesson.classroomId ?? '',
+        slots: <ScheduleSlotRequest>[
+          ScheduleSlotRequest(
+            teacherId: _selectedTeacherId,
+            lessonDate: targetSlot.date,
+            startTime: targetSlot.startTime,
+            endTime: targetSlot.endTime,
+            assistantIds: sourceLesson.assistantIds ?? const <String>[],
+            classroomId: sourceLesson.classroomId ?? '',
+          ),
+        ],
+        excludeIds: <String>[sourceLesson.id],
+      );
+      final ScheduleValidationItem? item =
+          result.items.isNotEmpty ? result.items.first : null;
+      final bool valid = item?.valid ?? result.valid;
+      final String message = valid
+          ? '可调课'
+          : ((item?.message ?? result.message).trim().isEmpty
+              ? '当前空点不可调课'
+              : (item?.message ?? result.message).trim());
+      return _SlotAvailability(
+        valid: valid,
+        message: message,
+        conflictTypes: item?.conflictTypes ?? const <String>[],
+      );
+    } on TimetableApiException catch (error) {
+      return _SlotAvailability(
+        valid: false,
+        message: error.message,
+      );
+    } on Object catch (error) {
+      return _SlotAvailability(
+        valid: false,
+        message: '检测调课空点失败：$error',
+      );
+    }
+  }
+
+  _SlotAvailability? _localDragValidation(
+    _LessonCell sourceLesson,
+    _ScheduleCellSlot targetSlot,
+  ) {
+    if (sourceLesson.id.trim().isEmpty) {
+      return const _SlotAvailability(valid: false, message: '缺少日程ID，无法调课');
+    }
+    if (sourceLesson.teachingClassId.trim().isEmpty ||
+        sourceLesson.scheduleTargetType == null) {
+      return const _SlotAvailability(valid: false, message: '当前课程信息不完整，无法检测');
+    }
+    if (_isPastIsoDate(targetSlot.date)) {
+      return const _SlotAvailability(valid: false, message: '不允许调课到过去日期');
+    }
+    final _LessonCell? targetLesson =
+        _lessonAt(targetSlot.row, targetSlot.column);
+    if (targetLesson != null) {
+      return const _SlotAvailability(valid: false, message: '目标时段已有课程，不能调课');
+    }
+    return null;
+  }
+
+  void _setDragAvailability(String key, _SlotAvailability value) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _dragSlotAvailability = <String, _SlotAvailability>{
+        ..._dragSlotAvailability,
+        key: value,
+      };
+    });
+  }
+
+  _LessonCell? _lessonAt(int row, int column) {
+    if (row < 0 ||
+        column < 0 ||
+        row >= _scheduleRows.length ||
+        column >= _scheduleRows[row].length) {
+      return null;
+    }
+    return _scheduleRows[row][column];
+  }
+
+  String _dragValidationRequestKey(
+    _LessonCell sourceLesson,
+    _ScheduleCellSlot targetSlot,
+  ) {
+    return <String>[
+      sourceLesson.id,
+      sourceLesson.teachingClassId,
+      '${sourceLesson.classType}',
+      _selectedTeacherId,
+      targetSlot.date,
+      targetSlot.startTime,
+      targetSlot.endTime,
+      (sourceLesson.assistantIds ?? const <String>[]).join(','),
+      sourceLesson.classroomId ?? '',
+    ].join('|');
+  }
+
+  bool _isPastIsoDate(String isoDate) {
+    final DateTime? parsed = DateTime.tryParse(isoDate);
+    if (parsed == null) {
+      return false;
+    }
+    final DateTime target = DateTime(parsed.year, parsed.month, parsed.day);
+    final DateTime now = DateTime.now();
+    final DateTime today = DateTime(now.year, now.month, now.day);
+    return target.isBefore(today);
   }
 
   void _toggleSchedulePanel() {
@@ -922,6 +1344,9 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           availabilityLoading: _availabilityLoading,
           availabilityMessage: _availabilityMessage,
           slotAvailability: _slotAvailability,
+          dragSlotAvailability: _dragSlotAvailability,
+          dragCheckingSlotKeys: _dragCheckingSlotKeys,
+          dragValidationActive: _dragValidationActive,
           creatingSlotKey: _creatingSlotKey,
           scheduleRows: _scheduleRows,
           weekDays: _weekDays,
@@ -952,6 +1377,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           onAvailabilityRefresh: _detectScheduleAvailability,
           onRefresh: _loadTimetable,
           onLessonMove: _moveLesson,
+          onLessonDragStarted: _startLessonDrag,
+          onLessonDragEnded: _endLessonDrag,
           onEmptySlotTap: _handleEmptySlotTap,
         ),
       ),
@@ -1128,9 +1555,14 @@ List<List<_LessonCell?>> _scheduleRowsFromData(
       continue;
     }
     rows[row][column] = _LessonCell(
+      id: item.id,
+      classType: item.classType,
+      teachingClassId: item.teachingClassId,
       title: item.lessonName.trim().isEmpty ? '未命名课程' : item.lessonName.trim(),
       person: _lessonPersonText(item),
       status: _lessonStatusFromApi(item.status),
+      assistantIds: item.assistantIds,
+      classroomId: item.classroomId,
       conflict: item.conflict,
     );
   }
@@ -1326,6 +1758,9 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.availabilityLoading,
     required this.availabilityMessage,
     required this.slotAvailability,
+    required this.dragSlotAvailability,
+    required this.dragCheckingSlotKeys,
+    required this.dragValidationActive,
     required this.creatingSlotKey,
     required this.scheduleRows,
     required this.weekDays,
@@ -1352,6 +1787,8 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.onAvailabilityRefresh,
     required this.onRefresh,
     required this.onLessonMove,
+    required this.onLessonDragStarted,
+    required this.onLessonDragEnded,
     required this.onEmptySlotTap,
   });
 
@@ -1375,6 +1812,9 @@ class _SmartTimetableScreen extends StatelessWidget {
   final bool availabilityLoading;
   final String? availabilityMessage;
   final Map<String, _SlotAvailability> slotAvailability;
+  final Map<String, _SlotAvailability> dragSlotAvailability;
+  final Set<String> dragCheckingSlotKeys;
+  final bool dragValidationActive;
   final String? creatingSlotKey;
   final List<List<_LessonCell?>> scheduleRows;
   final List<_WeekDay> weekDays;
@@ -1402,6 +1842,8 @@ class _SmartTimetableScreen extends StatelessWidget {
   final VoidCallback onRefresh;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final ValueChanged<_LessonDragData> onLessonDragStarted;
+  final VoidCallback onLessonDragEnded;
   final void Function(int row, int column) onEmptySlotTap;
 
   @override
@@ -1470,8 +1912,13 @@ class _SmartTimetableScreen extends StatelessWidget {
                         scheduleTargetSelected: selectedScheduleTarget != null,
                         availabilityLoading: availabilityLoading,
                         slotAvailability: slotAvailability,
+                        dragSlotAvailability: dragSlotAvailability,
+                        dragCheckingSlotKeys: dragCheckingSlotKeys,
+                        dragValidationActive: dragValidationActive,
                         creatingSlotKey: creatingSlotKey,
                         onLessonMove: onLessonMove,
+                        onLessonDragStarted: onLessonDragStarted,
+                        onLessonDragEnded: onLessonDragEnded,
                         onEmptySlotTap: onEmptySlotTap,
                       ),
                     ),
@@ -1903,8 +2350,13 @@ class _TimetableBoard extends StatelessWidget {
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
     required this.slotAvailability,
+    required this.dragSlotAvailability,
+    required this.dragCheckingSlotKeys,
+    required this.dragValidationActive,
     required this.creatingSlotKey,
     required this.onLessonMove,
+    required this.onLessonDragStarted,
+    required this.onLessonDragEnded,
     required this.onEmptySlotTap,
   });
 
@@ -1916,9 +2368,14 @@ class _TimetableBoard extends StatelessWidget {
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
   final Map<String, _SlotAvailability> slotAvailability;
+  final Map<String, _SlotAvailability> dragSlotAvailability;
+  final Set<String> dragCheckingSlotKeys;
+  final bool dragValidationActive;
   final String? creatingSlotKey;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final ValueChanged<_LessonDragData> onLessonDragStarted;
+  final VoidCallback onLessonDragEnded;
   final void Function(int row, int column) onEmptySlotTap;
 
   @override
@@ -1988,8 +2445,13 @@ class _TimetableBoard extends StatelessWidget {
                           scheduleTargetSelected: scheduleTargetSelected,
                           availabilityLoading: availabilityLoading,
                           slotAvailability: slotAvailability,
+                          dragSlotAvailability: dragSlotAvailability,
+                          dragCheckingSlotKeys: dragCheckingSlotKeys,
+                          dragValidationActive: dragValidationActive,
                           creatingSlotKey: creatingSlotKey,
                           onLessonMove: onLessonMove,
+                          onLessonDragStarted: onLessonDragStarted,
+                          onLessonDragEnded: onLessonDragEnded,
                           onEmptySlotTap: onEmptySlotTap,
                         ),
                       ),
@@ -2145,8 +2607,13 @@ class _ScheduleGrid extends StatelessWidget {
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
     required this.slotAvailability,
+    required this.dragSlotAvailability,
+    required this.dragCheckingSlotKeys,
+    required this.dragValidationActive,
     required this.creatingSlotKey,
     required this.onLessonMove,
+    required this.onLessonDragStarted,
+    required this.onLessonDragEnded,
     required this.onEmptySlotTap,
   });
 
@@ -2157,9 +2624,14 @@ class _ScheduleGrid extends StatelessWidget {
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
   final Map<String, _SlotAvailability> slotAvailability;
+  final Map<String, _SlotAvailability> dragSlotAvailability;
+  final Set<String> dragCheckingSlotKeys;
+  final bool dragValidationActive;
   final String? creatingSlotKey;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final ValueChanged<_LessonDragData> onLessonDragStarted;
+  final VoidCallback onLessonDragEnded;
   final void Function(int row, int column) onEmptySlotTap;
 
   @override
@@ -2179,9 +2651,14 @@ class _ScheduleGrid extends StatelessWidget {
               scheduleTargetSelected: scheduleTargetSelected,
               availabilityLoading: availabilityLoading,
               slotAvailability: slotAvailability,
+              dragSlotAvailability: dragSlotAvailability,
+              dragCheckingSlotKeys: dragCheckingSlotKeys,
+              dragValidationActive: dragValidationActive,
               creatingSlotKey: creatingSlotKey,
               isLastRow: row == rows.length - 1,
               onLessonMove: onLessonMove,
+              onLessonDragStarted: onLessonDragStarted,
+              onLessonDragEnded: onLessonDragEnded,
               onEmptySlotTap: onEmptySlotTap,
             ),
         ],
@@ -2298,9 +2775,14 @@ class _ScheduleGridRow extends StatelessWidget {
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
     required this.slotAvailability,
+    required this.dragSlotAvailability,
+    required this.dragCheckingSlotKeys,
+    required this.dragValidationActive,
     required this.creatingSlotKey,
     required this.isLastRow,
     required this.onLessonMove,
+    required this.onLessonDragStarted,
+    required this.onLessonDragEnded,
     required this.onEmptySlotTap,
   });
 
@@ -2312,10 +2794,15 @@ class _ScheduleGridRow extends StatelessWidget {
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
   final Map<String, _SlotAvailability> slotAvailability;
+  final Map<String, _SlotAvailability> dragSlotAvailability;
+  final Set<String> dragCheckingSlotKeys;
+  final bool dragValidationActive;
   final String? creatingSlotKey;
   final bool isLastRow;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final ValueChanged<_LessonDragData> onLessonDragStarted;
+  final VoidCallback onLessonDragEnded;
   final void Function(int row, int column) onEmptySlotTap;
 
   @override
@@ -2335,6 +2822,10 @@ class _ScheduleGridRow extends StatelessWidget {
                     rowIndex: rowIndex,
                     columnIndex: column,
                     availability: slotAvailability[availabilityKey],
+                    dragAvailability: dragSlotAvailability[availabilityKey],
+                    dragChecking:
+                        dragCheckingSlotKeys.contains(availabilityKey),
+                    dragValidationActive: dragValidationActive,
                     scheduleTargetSelected: scheduleTargetSelected,
                     availabilityLoading: availabilityLoading,
                     creating: creatingSlotKey == availabilityKey,
@@ -2344,6 +2835,8 @@ class _ScheduleGridRow extends StatelessWidget {
                     isLastColumn: column == row.length - 1,
                     isLastRow: isLastRow,
                     onLessonMove: onLessonMove,
+                    onLessonDragStarted: onLessonDragStarted,
+                    onLessonDragEnded: onLessonDragEnded,
                     onEmptySlotTap: onEmptySlotTap,
                   );
                 },
@@ -2375,6 +2868,9 @@ class _ScheduleGridCell extends StatelessWidget {
     required this.rowIndex,
     required this.columnIndex,
     required this.availability,
+    required this.dragAvailability,
+    required this.dragChecking,
+    required this.dragValidationActive,
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
     required this.creating,
@@ -2382,6 +2878,8 @@ class _ScheduleGridCell extends StatelessWidget {
     required this.isLastColumn,
     required this.isLastRow,
     required this.onLessonMove,
+    required this.onLessonDragStarted,
+    required this.onLessonDragEnded,
     required this.onEmptySlotTap,
   });
 
@@ -2389,6 +2887,9 @@ class _ScheduleGridCell extends StatelessWidget {
   final int rowIndex;
   final int columnIndex;
   final _SlotAvailability? availability;
+  final _SlotAvailability? dragAvailability;
+  final bool dragChecking;
+  final bool dragValidationActive;
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
   final bool creating;
@@ -2397,6 +2898,8 @@ class _ScheduleGridCell extends StatelessWidget {
   final bool isLastRow;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
+  final ValueChanged<_LessonDragData> onLessonDragStarted;
+  final VoidCallback onLessonDragEnded;
   final void Function(int row, int column) onEmptySlotTap;
 
   @override
@@ -2452,6 +2955,9 @@ class _ScheduleGridCell extends StatelessWidget {
                   rowIndex: rowIndex,
                   columnIndex: columnIndex,
                   availability: availability,
+                  dragAvailability: dragAvailability,
+                  dragChecking: dragChecking,
+                  dragValidationActive: dragValidationActive,
                   scheduleTargetSelected: scheduleTargetSelected,
                   checking: availabilityLoading && availability == null,
                   creating: creating,
@@ -2461,6 +2967,8 @@ class _ScheduleGridCell extends StatelessWidget {
                 _DraggableLessonBlock(
                   lesson: lesson!,
                   source: _LessonDragData(row: rowIndex, column: columnIndex),
+                  onDragStarted: onLessonDragStarted,
+                  onDragEnded: onLessonDragEnded,
                 ),
             ],
           ),
@@ -2475,6 +2983,9 @@ class _EmptyScheduleSlot extends StatelessWidget {
     required this.rowIndex,
     required this.columnIndex,
     required this.availability,
+    required this.dragAvailability,
+    required this.dragChecking,
+    required this.dragValidationActive,
     required this.scheduleTargetSelected,
     required this.checking,
     required this.creating,
@@ -2484,6 +2995,9 @@ class _EmptyScheduleSlot extends StatelessWidget {
   final int rowIndex;
   final int columnIndex;
   final _SlotAvailability? availability;
+  final _SlotAvailability? dragAvailability;
+  final bool dragChecking;
+  final bool dragValidationActive;
   final bool scheduleTargetSelected;
   final bool checking;
   final bool creating;
@@ -2491,10 +3005,14 @@ class _EmptyScheduleSlot extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!scheduleTargetSelected) {
+    final bool showingDragState = dragValidationActive;
+    if (!scheduleTargetSelected && !showingDragState) {
       return const SizedBox.expand();
     }
-    final _SlotAvailability? state = availability;
+    final _SlotAvailability? state =
+        showingDragState ? dragAvailability : availability;
+    final bool checkingNow =
+        showingDragState ? dragChecking && state == null : checking;
     final bool valid = state?.valid == true;
     final bool invalid = state?.valid == false;
     final Color background = creating
@@ -2517,10 +3035,10 @@ class _EmptyScheduleSlot extends StatelessWidget {
     final String label = creating
         ? '排课中'
         : valid
-            ? '空闲时段(可排)'
+            ? (showingDragState ? '可调课' : '空闲时段(可排)')
             : invalid
-                ? _invalidLabel(state!)
-                : checking
+                ? _invalidLabel(state!, drag: showingDragState)
+                : checkingNow
                     ? '检测中'
                     : '待检测';
 
@@ -2541,7 +3059,7 @@ class _EmptyScheduleSlot extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              if (creating || checking) ...<Widget>[
+              if (creating || checkingNow) ...<Widget>[
                 SizedBox(
                   width: 11,
                   height: 11,
@@ -2572,7 +3090,13 @@ class _EmptyScheduleSlot extends StatelessWidget {
     );
   }
 
-  String _invalidLabel(_SlotAvailability state) {
+  String _invalidLabel(_SlotAvailability state, {required bool drag}) {
+    if (drag) {
+      if (state.conflictTypes.isEmpty) {
+        return '不可调';
+      }
+      return '${state.conflictTypes.join('/')}冲突';
+    }
     if (state.conflictTypes.isEmpty) {
       return '冲突(不可排)';
     }
@@ -2580,54 +3104,173 @@ class _EmptyScheduleSlot extends StatelessWidget {
   }
 }
 
-class _DraggableLessonBlock extends StatelessWidget {
-  const _DraggableLessonBlock({required this.lesson, required this.source});
+class _DraggableLessonBlock extends StatefulWidget {
+  const _DraggableLessonBlock({
+    required this.lesson,
+    required this.source,
+    required this.onDragStarted,
+    required this.onDragEnded,
+  });
 
   final _LessonCell lesson;
   final _LessonDragData source;
+  final ValueChanged<_LessonDragData> onDragStarted;
+  final VoidCallback onDragEnded;
+
+  @override
+  State<_DraggableLessonBlock> createState() => _DraggableLessonBlockState();
+}
+
+class _DraggableLessonBlockState extends State<_DraggableLessonBlock> {
+  Timer? _armingTimer;
+  bool _arming = false;
+  bool _dragging = false;
+  Offset? _downPosition;
+
+  @override
+  void dispose() {
+    _armingTimer?.cancel();
+    super.dispose();
+  }
+
+  void _handlePointerDown(PointerDownEvent event) {
+    _armingTimer?.cancel();
+    _downPosition = event.position;
+    _armingTimer = Timer(const Duration(milliseconds: 150), () {
+      if (!mounted || _dragging) {
+        return;
+      }
+      setState(() {
+        _arming = true;
+      });
+      unawaited(HapticFeedback.selectionClick());
+    });
+  }
+
+  void _handlePointerMove(PointerMoveEvent event) {
+    final Offset? down = _downPosition;
+    if (down == null || _dragging) {
+      return;
+    }
+    if ((event.position - down).distance > 12) {
+      _clearArming();
+    }
+  }
+
+  void _clearArming() {
+    _armingTimer?.cancel();
+    _armingTimer = null;
+    _downPosition = null;
+    if (_arming && mounted) {
+      setState(() {
+        _arming = false;
+      });
+    }
+  }
+
+  void _handleDragStarted() {
+    _armingTimer?.cancel();
+    _downPosition = null;
+    if (mounted) {
+      setState(() {
+        _arming = false;
+        _dragging = true;
+      });
+    }
+    widget.onDragStarted(widget.source);
+    unawaited(HapticFeedback.mediumImpact());
+  }
+
+  void _handleDragEnded() {
+    if (mounted) {
+      setState(() {
+        _arming = false;
+        _dragging = false;
+      });
+    }
+    widget.onDragEnded();
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Draggable<_LessonDragData>(
-      key: ValueKey<String>('lesson-${source.row}-${source.column}'),
-      data: source,
-      feedback: Material(
-        color: Colors.transparent,
-        child: SizedBox(
-          width: 156,
-          height: 50,
-          child: _LessonBlock(lesson, elevated: true),
+    final Widget child = _LessonBlock(
+      widget.lesson,
+      elevated: _arming || _dragging,
+      armed: _arming,
+    );
+    return Listener(
+      onPointerDown: _handlePointerDown,
+      onPointerMove: _handlePointerMove,
+      onPointerUp: (_) => _clearArming(),
+      onPointerCancel: (_) => _clearArming(),
+      child: LongPressDraggable<_LessonDragData>(
+        key: ValueKey<String>(
+          'lesson-${widget.source.row}-${widget.source.column}',
         ),
+        data: widget.source,
+        delay: const Duration(milliseconds: 300),
+        hapticFeedbackOnStart: true,
+        maxSimultaneousDrags: 1,
+        dragAnchorStrategy: pointerDragAnchorStrategy,
+        feedback: Material(
+          color: Colors.transparent,
+          child: Transform.translate(
+            offset: const Offset(-78, -25),
+            child: SizedBox(
+              width: 156,
+              height: 50,
+              child:
+                  _LessonBlock(widget.lesson, elevated: true, dragging: true),
+            ),
+          ),
+        ),
+        childWhenDragging: Opacity(
+          opacity: .28,
+          child: _LessonBlock(widget.lesson),
+        ),
+        onDragStarted: _handleDragStarted,
+        onDragCompleted: _handleDragEnded,
+        onDraggableCanceled: (_, __) => _handleDragEnded(),
+        onDragEnd: (_) => _handleDragEnded(),
+        child: child,
       ),
-      childWhenDragging: Opacity(
-        opacity: .32,
-        child: _LessonBlock(lesson),
-      ),
-      child: _LessonBlock(lesson),
     );
   }
 }
 
 class _LessonBlock extends StatelessWidget {
-  const _LessonBlock(this.lesson, {this.elevated = false});
+  const _LessonBlock(
+    this.lesson, {
+    this.elevated = false,
+    this.armed = false,
+    this.dragging = false,
+  });
 
   final _LessonCell lesson;
   final bool elevated;
+  final bool armed;
+  final bool dragging;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 140),
       height: 50,
       padding: const EdgeInsets.fromLTRB(9, 7, 9, 6),
       decoration: BoxDecoration(
         color: lesson.status.background,
+        border: Border.all(
+          color:
+              armed || dragging ? _SmartColors.orangeDeep : Colors.transparent,
+          width: armed || dragging ? 1.4 : 1,
+        ),
         borderRadius: BorderRadius.circular(9),
         boxShadow: elevated
             ? const <BoxShadow>[
                 BoxShadow(
-                  color: Color(0x26000000),
-                  blurRadius: 18,
-                  offset: Offset(0, 10),
+                  color: Color(0x33B05F32),
+                  blurRadius: 16,
+                  offset: Offset(0, 8),
                 ),
               ]
             : null,
@@ -4390,16 +5033,36 @@ class _TimeSlot {
 
 class _LessonCell {
   const _LessonCell({
+    required this.id,
+    required this.classType,
+    required this.teachingClassId,
     required this.title,
     required this.person,
     required this.status,
+    required this.assistantIds,
+    required this.classroomId,
     this.conflict = false,
   });
 
+  final String id;
+  final int classType;
+  final String teachingClassId;
   final String title;
   final String person;
   final _LessonStatus status;
+  final List<String>? assistantIds;
+  final String? classroomId;
   final bool conflict;
+
+  ScheduleTargetType? get scheduleTargetType {
+    if (classType == 2) {
+      return ScheduleTargetType.oneToOne;
+    }
+    if (classType == 1) {
+      return ScheduleTargetType.groupClass;
+    }
+    return null;
+  }
 }
 
 class _LessonDragData {

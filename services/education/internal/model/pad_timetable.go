@@ -51,20 +51,25 @@ type PadTimetableSlot struct {
 }
 
 type PadTimetableItem struct {
-	ID                string `json:"id"`
-	Date              string `json:"date"`
-	StartTime         string `json:"startTime"`
-	EndTime           string `json:"endTime"`
-	LessonName        string `json:"lessonName"`
-	TeachingClassName string `json:"teachingClassName,omitempty"`
-	StudentName       string `json:"studentName,omitempty"`
-	PersonName        string `json:"personName"`
-	ClassroomName     string `json:"classroomName,omitempty"`
-	TeacherID         string `json:"teacherId"`
-	TeacherName       string `json:"teacherName"`
-	Status            string `json:"status"`
-	StatusText        string `json:"statusText"`
-	Conflict          bool   `json:"conflict"`
+	ID                string   `json:"id"`
+	BatchNo           string   `json:"batchNo,omitempty"`
+	ClassType         int      `json:"classType"`
+	TeachingClassID   string   `json:"teachingClassId"`
+	Date              string   `json:"date"`
+	StartTime         string   `json:"startTime"`
+	EndTime           string   `json:"endTime"`
+	LessonName        string   `json:"lessonName"`
+	TeachingClassName string   `json:"teachingClassName,omitempty"`
+	StudentName       string   `json:"studentName,omitempty"`
+	PersonName        string   `json:"personName"`
+	ClassroomName     string   `json:"classroomName,omitempty"`
+	TeacherID         string   `json:"teacherId"`
+	TeacherName       string   `json:"teacherName"`
+	AssistantIDs      []string `json:"assistantIds,omitempty"`
+	ClassroomID       string   `json:"classroomId,omitempty"`
+	Status            string   `json:"status"`
+	StatusText        string   `json:"statusText"`
+	Conflict          bool     `json:"conflict"`
 }
 
 type PadTimetableSummary struct {

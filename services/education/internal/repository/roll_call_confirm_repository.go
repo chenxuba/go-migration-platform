@@ -858,13 +858,11 @@ func (repo *Repository) loadRollCallConfirmStudentProfileMap(ctx context.Context
 			IFNULL(s.mobile, ''),
 			IFNULL(s.avatar_url, ''),
 			IFNULL(s.student_status, 0),
-			IFNULL(s.advisor_id, 0),
-			IFNULL(advisor.nick_name, ''),
-			IFNULL(s.student_manager_id, 0),
-			IFNULL(manager.nick_name, '')
+			0,
+			'',
+			0,
+			''
 		FROM inst_student s
-		LEFT JOIN inst_user advisor ON advisor.id = s.advisor_id AND advisor.del_flag = 0
-		LEFT JOIN inst_user manager ON manager.id = s.student_manager_id AND manager.del_flag = 0
 		WHERE s.inst_id = ?
 		  AND s.del_flag = 0
 		  AND s.id IN (`+sqlPlaceholders(len(studentIDs))+`)

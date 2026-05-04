@@ -41,6 +41,14 @@ const String defaultGroupClassCreatePath = String.fromEnvironment(
   'GROUP_CLASS_CREATE_PATH',
   defaultValue: '/api/v1/teaching-schedules/group-class/create',
 );
+const String defaultScheduleDetailPath = String.fromEnvironment(
+  'SCHEDULE_DETAIL_PATH',
+  defaultValue: '/api/v1/teaching-schedules/detail',
+);
+const String defaultScheduleBatchUpdatePath = String.fromEnvironment(
+  'SCHEDULE_BATCH_UPDATE_PATH',
+  defaultValue: '/api/v1/teaching-schedules/batch-update',
+);
 
 class TimetableApiException implements Exception {
   const TimetableApiException(this.message, {this.unauthorized = false});
@@ -317,16 +325,24 @@ class TimetableItem {
     required this.classroomName,
     required this.status,
     required this.statusText,
+    this.classType = 0,
+    this.teachingClassId = '',
     this.teachingClassName = '',
     this.studentName = '',
     this.teacherId = '',
     this.teacherName = '',
+    this.batchNo = '',
+    this.assistantIds,
+    this.classroomId,
     this.conflict = false,
   });
 
   factory TimetableItem.fromJson(Map<String, dynamic> json) {
     return TimetableItem(
       id: '${json['id'] ?? ''}',
+      batchNo: '${json['batchNo'] ?? ''}',
+      classType: _intFrom(json['classType']),
+      teachingClassId: '${json['teachingClassId'] ?? ''}',
       date: '${json['date'] ?? ''}',
       startTime: '${json['startTime'] ?? ''}',
       endTime: '${json['endTime'] ?? ''}',
@@ -337,6 +353,12 @@ class TimetableItem {
       classroomName: '${json['classroomName'] ?? ''}',
       teacherId: '${json['teacherId'] ?? ''}',
       teacherName: '${json['teacherName'] ?? ''}',
+      assistantIds: json.containsKey('assistantIds')
+          ? _stringListFrom(json['assistantIds'])
+          : null,
+      classroomId: json.containsKey('classroomId')
+          ? '${json['classroomId'] ?? ''}'
+          : null,
       status: '${json['status'] ?? ''}',
       statusText: '${json['statusText'] ?? ''}',
       conflict: json['conflict'] == true,
@@ -344,6 +366,9 @@ class TimetableItem {
   }
 
   final String id;
+  final String batchNo;
+  final int classType;
+  final String teachingClassId;
   final String date;
   final String startTime;
   final String endTime;
@@ -354,6 +379,8 @@ class TimetableItem {
   final String classroomName;
   final String teacherId;
   final String teacherName;
+  final List<String>? assistantIds;
+  final String? classroomId;
   final String status;
   final String statusText;
   final bool conflict;
@@ -620,6 +647,7 @@ abstract interface class TimetableClient {
     required List<String> assistantIds,
     required String classroomId,
     required List<ScheduleSlotRequest> slots,
+    List<String> excludeIds = const <String>[],
   });
 
   Future<int> createSchedule(
@@ -629,6 +657,15 @@ abstract interface class TimetableClient {
     required String teacherId,
     required List<String> assistantIds,
     required String classroomId,
+    required ScheduleSlotRequest slot,
+  });
+
+  Future<void> updateScheduleSlot(
+    String token, {
+    required String scheduleId,
+    required String teacherId,
+    required List<String>? assistantIds,
+    required String? classroomId,
     required ScheduleSlotRequest slot,
   });
 }
@@ -645,6 +682,8 @@ class ApiTimetableClient implements TimetableClient {
     this.groupClassValidatePath = defaultGroupClassValidatePath,
     this.oneToOneCreatePath = defaultOneToOneCreatePath,
     this.groupClassCreatePath = defaultGroupClassCreatePath,
+    this.scheduleDetailPath = defaultScheduleDetailPath,
+    this.scheduleBatchUpdatePath = defaultScheduleBatchUpdatePath,
   });
 
   final String educationBaseUrl;
@@ -657,6 +696,8 @@ class ApiTimetableClient implements TimetableClient {
   final String groupClassValidatePath;
   final String oneToOneCreatePath;
   final String groupClassCreatePath;
+  final String scheduleDetailPath;
+  final String scheduleBatchUpdatePath;
 
   @override
   Future<TimetableData> fetchTimetable(
@@ -800,6 +841,7 @@ class ApiTimetableClient implements TimetableClient {
     required List<String> assistantIds,
     required String classroomId,
     required List<ScheduleSlotRequest> slots,
+    List<String> excludeIds = const <String>[],
   }) async {
     final Object? data = await _postJson(
       _uri(
@@ -816,6 +858,7 @@ class ApiTimetableClient implements TimetableClient {
         assistantIds: assistantIds,
         classroomId: classroomId,
         slots: slots,
+        excludeIds: excludeIds,
       ),
     );
     if (data is! Map) {
@@ -855,6 +898,58 @@ class ApiTimetableClient implements TimetableClient {
       return _intFrom(data['count']);
     }
     return 0;
+  }
+
+  @override
+  Future<void> updateScheduleSlot(
+    String token, {
+    required String scheduleId,
+    required String teacherId,
+    required List<String>? assistantIds,
+    required String? classroomId,
+    required ScheduleSlotRequest slot,
+  }) async {
+    List<String>? resolvedAssistantIds = assistantIds;
+    String? resolvedClassroomId = classroomId;
+    if (resolvedAssistantIds == null || resolvedClassroomId == null) {
+      final _ScheduleUpdateContext context =
+          await _fetchScheduleUpdateContext(token, scheduleId);
+      resolvedAssistantIds ??= context.assistantIds;
+      resolvedClassroomId ??= context.classroomId;
+    }
+    final List<String> finalAssistantIds = resolvedAssistantIds;
+    final String finalClassroomId = resolvedClassroomId;
+
+    final Map<String, dynamic> payload = <String, dynamic>{
+      'ids': <String>[scheduleId.trim()],
+      'teacherId': teacherId.trim(),
+      'assistantIds': finalAssistantIds,
+      'lessonDate': slot.lessonDate,
+      'startTime': slot.startTime,
+      'endTime': slot.endTime,
+      'allowStudentConflict': false,
+    };
+    if (finalClassroomId.trim().isNotEmpty) {
+      payload['classroomId'] = finalClassroomId.trim();
+    }
+    await _postJson(
+        _uri(educationBaseUrl, scheduleBatchUpdatePath), token, payload);
+  }
+
+  Future<_ScheduleUpdateContext> _fetchScheduleUpdateContext(
+    String token,
+    String scheduleId,
+  ) async {
+    final Object? data = await _getJson(
+      _uri(educationBaseUrl, scheduleDetailPath).replace(
+        queryParameters: <String, String>{'id': scheduleId.trim()},
+      ),
+      token,
+    );
+    if (data is! Map) {
+      return const _ScheduleUpdateContext();
+    }
+    return _ScheduleUpdateContext.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<Object?> _getJson(Uri uri, String token) async {
@@ -954,6 +1049,23 @@ class ApiTimetableClient implements TimetableClient {
   }
 }
 
+class _ScheduleUpdateContext {
+  const _ScheduleUpdateContext({
+    this.assistantIds = const <String>[],
+    this.classroomId = '',
+  });
+
+  factory _ScheduleUpdateContext.fromJson(Map<String, dynamic> json) {
+    return _ScheduleUpdateContext(
+      assistantIds: _stringListFrom(json['assistantIds']),
+      classroomId: '${json['classroomId'] ?? ''}',
+    );
+  }
+
+  final List<String> assistantIds;
+  final String classroomId;
+}
+
 Map<String, dynamic> _schedulePayload({
   required ScheduleTargetType type,
   required String targetId,
@@ -961,6 +1073,7 @@ Map<String, dynamic> _schedulePayload({
   required List<String> assistantIds,
   required String classroomId,
   required List<ScheduleSlotRequest> slots,
+  List<String> excludeIds = const <String>[],
 }) {
   final String targetKey =
       type == ScheduleTargetType.oneToOne ? 'oneToOneId' : 'groupClassId';
@@ -973,6 +1086,12 @@ Map<String, dynamic> _schedulePayload({
   };
   if (classroomId.trim().isNotEmpty) {
     payload['classroomId'] = classroomId.trim();
+  }
+  if (excludeIds.isNotEmpty) {
+    payload['excludeIds'] = excludeIds
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
   }
   return payload;
 }
@@ -1032,6 +1151,23 @@ List<Object?> _rawListFrom(Object? raw) {
     return raw;
   }
   return const <Object?>[];
+}
+
+List<String> _stringListFrom(Object? raw) {
+  if (raw is List) {
+    return raw
+        .map((Object? item) => '${item ?? ''}'.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+  }
+  if (raw is String) {
+    return raw
+        .split(',')
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+  }
+  return const <String>[];
 }
 
 Map<String, dynamic> _mapFrom(Object? raw) {

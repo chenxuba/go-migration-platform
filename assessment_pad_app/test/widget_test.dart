@@ -100,6 +100,7 @@ void main() {
 
   testWidgets('home shortcut opens smart timetable page',
       (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
     SharedPreferences.setMockInitialValues(<String, Object>{
       'auth_token': 'existing-token',
     });
@@ -107,7 +108,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
-        timetableClient: _FakeTimetableClient(),
+        timetableClient: timetableClient,
       ),
     );
     await tester.pumpAndSettle();
@@ -208,13 +209,32 @@ void main() {
         tester.getCenter(find.byKey(const ValueKey<String>('lesson-0-0')));
     final Offset target = tester
         .getCenter(find.byKey(const ValueKey<String>('schedule-cell-0-1')));
+
+    final TestGesture earlyGesture = await tester.startGesture(source);
+    await tester.pump(const Duration(milliseconds: 150));
+    await earlyGesture.moveTo(target);
+    await tester.pump();
+    await earlyGesture.up();
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.updateCalls, 0);
+    expect(find.byKey(const ValueKey<String>('lesson-0-0')), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsNothing);
+
     final TestGesture gesture = await tester.startGesture(source);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.pumpAndSettle();
+    expect(find.text('可调课'), findsWidgets);
+    await gesture.moveTo(target);
     await tester.pump();
     await gesture.moveTo(target);
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
 
+    expect(timetableClient.updateCalls, 1);
+    expect(timetableClient.lastUpdatedScheduleId, 'schedule-a');
+    expect(timetableClient.lastUpdatedClassroomId, '101');
     expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsOneWidget);
   });
 
@@ -517,8 +537,14 @@ class _FakeTimetableClient implements TimetableClient {
   final bool availabilityValid;
   int validateCalls = 0;
   int createCalls = 0;
+  int updateCalls = 0;
   String lastValidatedClassroomId = '';
   String lastCreatedClassroomId = '';
+  String lastUpdatedScheduleId = '';
+  String lastUpdatedClassroomId = '';
+  String? _scheduleADate;
+  String? _scheduleAStartTime;
+  String? _scheduleAEndTime;
 
   @override
   Future<TimetableData> fetchTimetable(
@@ -581,19 +607,27 @@ class _FakeTimetableClient implements TimetableClient {
       items: <TimetableItem>[
         TimetableItem(
           id: 'schedule-a',
-          date: startDate,
-          startTime: selectedGroupId == 'group-c' ? '08:30' : '09:15',
-          endTime: selectedGroupId == 'group-c' ? '09:10' : '09:55',
+          classType: 2,
+          teachingClassId: 'one-to-one-a',
+          date: _scheduleADate ?? startDate,
+          startTime: _scheduleAStartTime ??
+              (selectedGroupId == 'group-c' ? '08:30' : '09:15'),
+          endTime: _scheduleAEndTime ??
+              (selectedGroupId == 'group-c' ? '09:10' : '09:55'),
           lessonName: '感统训练',
           personName: '陈小雨',
           classroomName: 'A101',
           teacherId: selectedTeacherId,
           teacherName: selectedTeacherName,
+          assistantIds: const <String>['3'],
+          classroomId: '101',
           status: 'unsigned',
           statusText: '未点名',
         ),
         TimetableItem(
           id: 'schedule-b',
+          classType: 1,
+          teachingClassId: 'group-class-a',
           date: _offsetDate(startDate, 2),
           startTime: selectedGroupId == 'group-c' ? '09:20' : '10:05',
           endTime: selectedGroupId == 'group-c' ? '10:00' : '10:45',
@@ -602,6 +636,8 @@ class _FakeTimetableClient implements TimetableClient {
           classroomName: 'B203',
           teacherId: selectedTeacherId,
           teacherName: selectedTeacherName,
+          assistantIds: const <String>[],
+          classroomId: '203',
           status: 'signed',
           statusText: '已点名',
         ),
@@ -676,6 +712,7 @@ class _FakeTimetableClient implements TimetableClient {
     required List<String> assistantIds,
     required String classroomId,
     required List<ScheduleSlotRequest> slots,
+    List<String> excludeIds = const <String>[],
   }) async {
     validateCalls += 1;
     lastValidatedClassroomId = classroomId;
@@ -710,6 +747,25 @@ class _FakeTimetableClient implements TimetableClient {
     createCalls += 1;
     lastCreatedClassroomId = classroomId;
     return 1;
+  }
+
+  @override
+  Future<void> updateScheduleSlot(
+    String token, {
+    required String scheduleId,
+    required String teacherId,
+    required List<String>? assistantIds,
+    required String? classroomId,
+    required ScheduleSlotRequest slot,
+  }) async {
+    updateCalls += 1;
+    lastUpdatedScheduleId = scheduleId;
+    lastUpdatedClassroomId = classroomId ?? '';
+    if (scheduleId == 'schedule-a') {
+      _scheduleADate = slot.lessonDate;
+      _scheduleAStartTime = slot.startTime;
+      _scheduleAEndTime = slot.endTime;
+    }
   }
 }
 
