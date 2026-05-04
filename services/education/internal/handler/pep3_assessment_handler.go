@@ -677,7 +677,7 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r
 	var content []byte
 	var err error
 	if plan != nil {
-		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanWordFromAIResult(claims.UserID, *plan, durationMonths)
+		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanWordFromAIResult(claims.UserID, recordID, *plan, durationMonths)
 	} else {
 		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanWord(claims.UserID, recordID, durationMonths)
 	}

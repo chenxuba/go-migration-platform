@@ -66,7 +66,8 @@ func (svc *Service) GetPEP3IEPPlan(userID, recordID int64, durationMonths int) (
 	if err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
-	if _, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID); err != nil {
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
 	entity, exists, err := svc.repo.GetPEP3IEPPlan(context.Background(), instID, recordID, durationMonths)
@@ -77,6 +78,7 @@ func (svc *Service) GetPEP3IEPPlan(userID, recordID int64, durationMonths int) (
 		return model.PEP3IEPPlanSavedVO{Exists: false, DurationMonths: durationMonths}, nil
 	}
 	plan := entity.Plan
+	plan = syncPEP3IEPPlanDateForDisplay(plan, record)
 	return model.PEP3IEPPlanSavedVO{
 		Exists:         true,
 		Status:         entity.Status,
@@ -109,9 +111,7 @@ func normalizePEP3IEPPlanForSave(plan model.PEP3IEPPlanAIResult, record model.As
 	plan.Student.Name = firstNonEmptyExportValue(record.StudentName, plan.Student.Name)
 	plan.Student.Gender = firstNonEmptyExportValue(record.StudentGender, plan.Student.Gender)
 	plan.Student.BirthDate = firstNonEmptyExportValue(formatIEPPlanDate(record.BirthDate), plan.Student.BirthDate)
-	if strings.TrimSpace(plan.Meta.PlanDate) == "" {
-		plan.Meta.PlanDate = time.Now().Format("2006-01-02")
-	}
+	plan = syncPEP3IEPPlanDateForDisplay(plan, record)
 	plan.Meta.Participant = firstNonEmptyExportValue(currentTeacherName, record.ExaminerName, plan.Meta.Participant)
 	plan.Meta.Implementer = firstNonEmptyExportValue(plan.Meta.Implementer, currentTeacherName, record.ExaminerName)
 	defaultStartDate, defaultEndDate := iepPlanWholeMonthDateRange(record, durationMonths)

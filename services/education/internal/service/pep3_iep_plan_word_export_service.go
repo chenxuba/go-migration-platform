@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strconv"
@@ -82,12 +83,20 @@ func (svc *Service) ExportPEP3IEPPlanWord(userID int64, recordID int64, duration
 	return fileName, iepPlanWordContentType, data, nil
 }
 
-func (svc *Service) ExportPEP3IEPPlanWordFromAIResult(userID int64, planResult model.PEP3IEPPlanAIResult, durationMonths int) (string, string, []byte, error) {
+func (svc *Service) ExportPEP3IEPPlanWordFromAIResult(userID int64, recordID int64, planResult model.PEP3IEPPlanAIResult, durationMonths int) (string, string, []byte, error) {
 	if durationMonths != 6 {
 		durationMonths = 3
 	}
-	if _, err := svc.rollCallInstID(userID); err != nil {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
 		return "", "", nil, err
+	}
+	if recordID > 0 {
+		record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+		if err != nil {
+			return "", "", nil, err
+		}
+		planResult = syncPEP3IEPPlanDateForDisplay(planResult, record)
 	}
 
 	plan := buildPEP3IEPPlanWordExportFromAIResult(planResult, durationMonths)

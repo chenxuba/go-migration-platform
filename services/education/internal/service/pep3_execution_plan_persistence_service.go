@@ -33,7 +33,8 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 	if err != nil {
 		return model.PEP3ExecutionPlanSavedVO{}, err
 	}
-	if _, err := svc.repo.GetAssessmentRecord(context.Background(), instID, req.ID); err != nil {
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, req.ID)
+	if err != nil {
 		return model.PEP3ExecutionPlanSavedVO{}, err
 	}
 
@@ -43,7 +44,8 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 		if req.MonthlyPlan == nil || len(req.MonthlyPlan.Rows) == 0 {
 			return model.PEP3ExecutionPlanSavedVO{}, errors.New("暂无可保存的月度计划")
 		}
-		plan = *req.MonthlyPlan
+		monthlyPlan := syncPEP3MonthlyPlanDateForDisplay(*req.MonthlyPlan, record)
+		plan = monthlyPlan
 	case pep3ExecutionPlanTypeWeekly:
 		if req.WeeklyPlan == nil || len(req.WeeklyPlan.Rows) == 0 {
 			return model.PEP3ExecutionPlanSavedVO{}, errors.New("暂无可保存的周计划")
@@ -82,7 +84,8 @@ func (svc *Service) GetPEP3ExecutionPlans(userID, recordID int64, durationMonths
 	if err != nil {
 		return model.PEP3ExecutionPlanSavedVO{}, err
 	}
-	if _, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID); err != nil {
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
 		return model.PEP3ExecutionPlanSavedVO{}, err
 	}
 	entities, err := svc.repo.ListPEP3ExecutionPlans(context.Background(), instID, recordID, durationMonths)
@@ -102,6 +105,7 @@ func (svc *Service) GetPEP3ExecutionPlans(userID, recordID int64, durationMonths
 			if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
 				return model.PEP3ExecutionPlanSavedVO{}, err
 			}
+			plan = syncPEP3MonthlyPlanDateForDisplay(plan, record)
 			result.MonthlyPlans = append(result.MonthlyPlans, model.PEP3MonthlyExecutionPlanSaved{
 				TargetMonthIndex: entity.TargetMonthIndex,
 				Plan:             plan,

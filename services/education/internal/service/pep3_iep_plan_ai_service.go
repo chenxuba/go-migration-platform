@@ -528,9 +528,7 @@ func normalizePEP3IEPPlanAIResult(result model.PEP3IEPPlanAIResult, record model
 	if strings.TrimSpace(result.Student.BirthDate) == "" {
 		result.Student.BirthDate = formatIEPPlanDate(record.BirthDate)
 	}
-	if strings.TrimSpace(result.Meta.PlanDate) == "" {
-		result.Meta.PlanDate = time.Now().Format("2006-01-02")
-	}
+	result = syncPEP3IEPPlanDateForDisplay(result, record)
 	result.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(currentTeacherName), strings.TrimSpace(result.Meta.Participant), strings.TrimSpace(record.ExaminerName))
 	if strings.TrimSpace(result.Meta.Implementer) == "" {
 		result.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))

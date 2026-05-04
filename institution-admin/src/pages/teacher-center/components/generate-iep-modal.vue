@@ -399,8 +399,12 @@ const currentTeacherName = computed(() => {
   return String(userStore.nickname || userStore.userInfo?.nickName || props.record?.examinerName || '当前老师').trim()
 })
 
+const assessmentPlanDate = computed(() => {
+  return formatDate(props.record?.assessmentDate) || formatDate(new Date())
+})
+
 const defaultPlanDateRange = computed(() => {
-  const baseDate = formatDate(props.record?.assessmentDate) || formatDate(new Date()) || '2026-05-01'
+  const baseDate = assessmentPlanDate.value || '2026-05-01'
   const start = firstDayOfMonth(baseDate)
   const end = lastDayAfterMonths(start, Number(planDuration.value || 6))
   return { start, end }
@@ -472,7 +476,7 @@ const planSheet = computed(() => {
       birthDate: formatDate(props.record?.birthDate) || '',
     },
     meta: {
-      planDate: formatDate(new Date()) || start,
+      planDate: assessmentPlanDate.value || start,
       participant: currentTeacherName.value,
       implementer: currentTeacherName.value,
       startDate: start,
@@ -1342,7 +1346,7 @@ function applySavedExecutionPlansData(data) {
   const weeklyItems = data?.weeklyPlans || []
   monthlyItems.forEach((item) => {
     if (item?.targetMonthIndex && item.plan)
-      nextMonthlyPlans[String(clampExecutionMonth(item.targetMonthIndex))] = item.plan
+      nextMonthlyPlans[String(clampExecutionMonth(item.targetMonthIndex))] = applyAssessmentPlanDateToMonthlyPlan(item.plan)
   })
   weeklyItems.forEach((item) => {
     if (item?.targetMonthIndex && item?.targetWeekIndex && item.plan)
@@ -1569,7 +1573,7 @@ function buildStreamingPlanFromText(text) {
       birthDate: formatDate(props.record?.birthDate) || '',
     },
     meta: {
-      planDate: formatDate(new Date()) || defaultPlanDateRange.value.start,
+      planDate: assessmentPlanDate.value || defaultPlanDateRange.value.start,
       participant: currentTeacherName.value,
       implementer: currentTeacherName.value,
       startDate: defaultPlanDateRange.value.start,
@@ -1624,7 +1628,7 @@ function buildStreamingMonthlyPlanFromText(text) {
       birthDate: formatDate(props.record?.birthDate) || '',
     },
     meta: {
-      planDate: formatDate(new Date()) || defaultPlanDateRange.value.start,
+      planDate: assessmentPlanDate.value || defaultPlanDateRange.value.start,
       participant: currentTeacherName.value,
       implementer: currentTeacherName.value,
       startDate: selectedExecutionMonthRange.value.start,
@@ -1649,7 +1653,7 @@ function normalizeStreamingMonthlyPlanPreview(plan = {}) {
     },
     meta: {
       ...(plan.meta || {}),
-      planDate: plan.meta?.planDate || formatDate(new Date()) || range.start,
+      planDate: assessmentPlanDate.value || plan.meta?.planDate || range.start,
       participant: plan.meta?.participant || currentTeacherName.value,
       implementer: plan.meta?.implementer || currentTeacherName.value,
       startDate: plan.meta?.startDate || range.start,
@@ -1783,7 +1787,7 @@ function createPlanSheetFromPlan(plan = {}, options = {}) {
     },
     meta: {
       ...(plan.meta || {}),
-      planDate: plan.meta?.planDate || formatDate(new Date()) || start,
+      planDate: assessmentPlanDate.value || plan.meta?.planDate || start,
       participant: currentTeacherName.value,
       implementer: plan.meta?.implementer || currentTeacherName.value,
       startDate: plan.meta?.startDate || start,
@@ -1796,6 +1800,15 @@ function createPlanSheetFromPlan(plan = {}, options = {}) {
 
 function createEditablePlanFromPlan(plan = {}, preserveRows = true) {
   return deepClone(createPlanSheetFromPlan(plan, { preserveRows, model: plan.model || 'AI草案' }))
+}
+
+function applyAssessmentPlanDateToMonthlyPlan(plan = {}) {
+  const nextPlan = deepClone(plan)
+  nextPlan.meta = {
+    ...(nextPlan.meta || {}),
+    planDate: assessmentPlanDate.value || nextPlan.meta?.planDate || defaultPlanDateRange.value.start,
+  }
+  return nextPlan
 }
 
 function sanitizeEditablePlanRows(rows = []) {
@@ -2068,6 +2081,8 @@ function planPayloadForSave() {
 
 function executionPlanPayloadForSave(planType) {
   const plan = planType === 'monthly' ? monthlyPlan.value : weeklyPlan.value
+  if (planType === 'monthly')
+    return applyAssessmentPlanDateToMonthlyPlan(plan)
   return deepClone(plan)
 }
 
