@@ -107,12 +107,12 @@ while (( waited < 120 )); do
     rest="${spec#*:}"
     p="${rest%%:*}"
     pidfile="${rest#*:}"
-    if status="$(service_status "$service" "$p" "$pidfile")"; then
+    if svc_status="$(service_status "$service" "$p" "$pidfile")"; then
       rc=0
     else
       rc=$?
     fi
-    line+=" ${status}"
+    line+=" ${svc_status}"
     if (( rc == 0 )); then
       n=$((n + 1))
     elif (( rc == 2 )); then
@@ -126,10 +126,10 @@ while (( waited < 120 )); do
       rest="${spec#*:}"
       p="${rest%%:*}"
       pidfile="${rest#*:}"
-      if status="$(service_status "$service" "$p" "$pidfile")"; then
+      if svc_status="$(service_status "$service" "$p" "$pidfile")"; then
         :
       fi
-      echo "  ${status}"
+      echo "  ${svc_status}"
       if lsof -iTCP:"$p" -sTCP:LISTEN >/dev/null 2>&1; then
         lsof -nP -iTCP:"$p" -sTCP:LISTEN
       fi
@@ -157,7 +157,7 @@ for spec in "${service_specs[@]}"; do
   rest="${spec#*:}"
   p="${rest%%:*}"
   pidfile="${rest#*:}"
-  if status="$(service_status "$service" "$p" "$pidfile")"; then
+  if svc_status="$(service_status "$service" "$p" "$pidfile")"; then
     ready_count=$((ready_count + 1))
   fi
 done
@@ -173,7 +173,7 @@ for spec in "${service_specs[@]}"; do
   rest="${spec#*:}"
   p="${rest%%:*}"
   pidfile="${rest#*:}"
-  if status="$(service_status "$service" "$p" "$pidfile")"; then
+  if svc_status="$(service_status "$service" "$p" "$pidfile")"; then
     rc=0
   else
     rc=$?
