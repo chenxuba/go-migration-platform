@@ -323,19 +323,17 @@ onBeforeUnmount(() => {
           </a-form-item>
 
           <a-form-item label="评估日期" required>
-            <div class="config-date-row">
-              <a-date-picker
-                v-model:value="form.assessmentDate"
-                class="config-date-picker"
-                :allow-clear="false"
-                placeholder="请选择评估日期"
-              />
-              <a-button type="link" :disabled="!original.assessmentDate" @click="restoreOriginalAssessmentDate">
-                恢复原评估日期
-              </a-button>
-            </div>
+            <a-date-picker
+              v-model:value="form.assessmentDate"
+              class="config-date-picker"
+              :allow-clear="false"
+              placeholder="请选择评估日期"
+            />
             <div class="config-original-line">
               <span>原评估日期：{{ original.assessmentDate || '-' }}</span>
+              <a-button type="link" size="small" :disabled="!original.assessmentDate" @click="restoreOriginalAssessmentDate">
+                恢复原评估日期
+              </a-button>
             </div>
           </a-form-item>
         </a-form>
@@ -373,15 +371,8 @@ onBeforeUnmount(() => {
   margin-bottom: 16px;
 }
 
-.config-date-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
 .config-date-picker {
-  flex: 1 1 auto;
-  min-width: 0;
+  width: 100%;
 }
 
 .config-original-line {
