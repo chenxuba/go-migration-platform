@@ -2,6 +2,7 @@
 import dayjs from 'dayjs'
 import { Empty } from 'ant-design-vue'
 import messageService from '@/utils/messageService'
+import GenerateIepModal from '@/pages/teacher-center/components/generate-iep-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
@@ -29,6 +30,8 @@ const currentReport = ref(null)
 const reportModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
+const iepModalOpen = ref(false)
+const iepTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
@@ -138,7 +141,7 @@ const columns = [
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 170,
+    width: 240,
   },
 ]
 
@@ -225,6 +228,10 @@ function reportModuleDesc(value) {
 
 function reportModulePages(value) {
   return reportModuleOptions.find(item => item.value === value)?.pages || ''
+}
+
+function iepActionText(record) {
+  return record?.iepPlanStatus === 'confirmed' ? '查看IEP' : '生成IEP'
 }
 
 function getDownloadFilename(response, fallback) {
@@ -393,6 +400,13 @@ function closeExportModal() {
   exportModalOpen.value = false
 }
 
+function openIepModal(row) {
+  if (!row)
+    return
+  iepTargetRecord.value = row
+  iepModalOpen.value = true
+}
+
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
@@ -510,6 +524,7 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === record.id }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
+                  <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
             </template>
@@ -648,6 +663,13 @@ onBeforeUnmount(() => {
         </div>
       </div>
     </a-modal>
+
+    <generate-iep-modal
+      v-model:open="iepModalOpen"
+      :record="iepTargetRecord"
+      @saved="fetchRecords"
+      @confirmed="fetchRecords"
+    />
   </div>
 </template>
 
