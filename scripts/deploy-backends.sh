@@ -304,15 +304,11 @@ install_unit_if_missing() {
   bin="$(backend_bin "$name")"
   unit_path="/etc/systemd/system/$unit"
 
-  if [[ -f "$unit_path" ]]; then
-    return
-  fi
-
   log "install systemd unit: $unit"
   cat > "$unit_path" <<UNIT
 [Unit]
 Description=$desc
-After=network.target mysql.service nats-server.service meilisearch.service
+After=network.target mysql95.service nats-server.service meilisearch.service
 Wants=nats-server.service meilisearch.service
 
 [Service]

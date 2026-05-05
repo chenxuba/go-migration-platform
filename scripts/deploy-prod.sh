@@ -220,6 +220,10 @@ copy_configs() {
   if [[ -f "$ROOT_DIR/configs/tenants.json" ]]; then
     cp "$ROOT_DIR/configs/tenants.json" "$PACKAGE_DIR/configs/tenants.json"
   fi
+  if compgen -G "$ROOT_DIR/docs/pep3*.json" >/dev/null; then
+    mkdir -p "$PACKAGE_DIR/docs"
+    cp "$ROOT_DIR"/docs/pep3*.json "$PACKAGE_DIR/docs/"
+  fi
 }
 
 write_remote_script() {
@@ -246,15 +250,11 @@ install_unit_if_missing() {
   local bin="$3"
   local unit_path="/etc/systemd/system/$unit"
 
-  if [[ -f "$unit_path" ]]; then
-    return
-  fi
-
   log "install systemd unit: $unit"
   cat > "$unit_path" <<UNIT
 [Unit]
 Description=$desc
-After=network.target mysql.service nats-server.service meilisearch.service
+After=network.target mysql95.service nats-server.service meilisearch.service
 Wants=nats-server.service meilisearch.service
 
 [Service]
