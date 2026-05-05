@@ -1002,6 +1002,45 @@ void main() {
     expect(find.textContaining('旋开瓶盖'), findsWidgets);
   });
 
+  testWidgets('PEP3 header shows complete age without ellipsis',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '3岁11个月',
+              birthDate: '',
+              assessmentDate: '2026-05-05',
+            ),
+            client: _FakePep3AssessmentClient(),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('年龄：3岁11个月', findRichText: true), findsOneWidget);
+    expect(
+      find.textContaining('年龄：3岁11...', findRichText: true),
+      findsNothing,
+    );
+  });
+
   testWidgets('PEP3 draft dialog converts UTC updated time to local time',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1434,6 +1473,61 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('PEP3 score dock stays fixed while instructions scroll',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: _FakePep3AssessmentClient(longInstructions: true),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder instructionScroll = find.byKey(
+      const ValueKey<String>('pep3-question-instruction-scroll'),
+    );
+    final Finder scoreDock = find.byKey(
+      const ValueKey<String>('pep3-question-score-dock'),
+    );
+    final double scoreDockTop = tester.getTopLeft(scoreDock).dy;
+
+    await tester.drag(instructionScroll, const Offset(0, -420));
+    await tester.pumpAndSettle();
+
+    expect(scoreDock, findsOneWidget);
+    expect(tester.getTopLeft(scoreDock).dy, closeTo(scoreDockTop, .1));
+    expect(
+      find.descendant(of: scoreDock, matching: find.text('评分')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: scoreDock, matching: find.text('2 分')),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('PEP3 submit validation uses custom message',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1844,6 +1938,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     this.draftUpdatedTime = '2026-05-05T14:01:00',
     this.includeRecordField = false,
     this.includeTextRecordField = false,
+    this.longInstructions = false,
     this.summaryFetchDelay = Duration.zero,
     this.itemFetchDelay = Duration.zero,
   });
@@ -1853,6 +1948,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   final String draftUpdatedTime;
   final bool includeRecordField;
   final bool includeTextRecordField;
+  final bool longInstructions;
   final Duration summaryFetchDelay;
   final Duration itemFetchDelay;
   int saveDraftCalls = 0;
@@ -1919,6 +2015,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     if (itemFetchDelay > Duration.zero) {
       await Future<void>.delayed(itemFetchDelay);
     }
+    final String repeatedInstruction = List<String>.filled(
+      14,
+      '观察儿童是否可以按标准完成任务，记录启动提示、动作过程、完成质量和需要辅助的环节。',
+    ).join(' ');
     return Pep3AssessmentItem(
       itemNo: itemNo,
       itemTitle: itemNo == 1 ? '（1） 旋开瓶盖' : '（2） 叠积木',
@@ -1927,10 +2027,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
       domainName: '小肌肉',
       materials: itemNo == 1 ? '肥皂泡液' : '积木',
       materialImages: const <String>[],
-      method: '观察儿童是否可以按标准完成任务。',
-      guidance: '请你试试看。',
+      method: longInstructions ? repeatedInstruction : '观察儿童是否可以按标准完成任务。',
+      guidance: longInstructions ? repeatedInstruction : '请你试试看。',
       guidanceVideo: '',
-      standard: '',
+      standard: longInstructions ? repeatedInstruction : '',
       scoreOptions: _scoreOptions,
       recordFields: includeTextRecordField
           ? const <Pep3RecordField>[

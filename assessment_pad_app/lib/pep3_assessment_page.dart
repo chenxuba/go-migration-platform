@@ -1476,23 +1476,26 @@ class _HeaderMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _Pep3Colors.line)),
       ),
-      child: Text.rich(
-        TextSpan(
-          children: <InlineSpan>[
-            TextSpan(text: '$label：'),
-            TextSpan(
-              text: value,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ],
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _Pep3Colors.text,
-          fontSize: 13,
-          height: 1,
-          fontWeight: FontWeight.w700,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: '$label：'),
+              TextSpan(
+                text: value,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          maxLines: 1,
+          style: const TextStyle(
+            color: _Pep3Colors.text,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -1858,103 +1861,85 @@ class _Pep3QuestionPanel extends StatelessWidget {
               summary: resolvedSummary,
               scoreOptions: scoreOptions,
             )
-          : ListView(
-              controller: controller,
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-              physics: const BouncingScrollPhysics(),
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '第 ${resolvedSummary?.itemNo ?? resolved.itemNo} 题  ${resolvedSummary?.displayTitle ?? resolved.displayTitle}',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _Pep3Colors.ink,
-                          fontSize: 23,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _DomainChip(
-                      code: resolved.domainCode.isNotEmpty
-                          ? resolved.domainCode
-                          : resolvedSummary?.domainCode ?? '',
-                      name: resolved.domainName.isNotEmpty
-                          ? resolved.domainName
-                          : resolvedSummary?.domainName ?? '',
-                    ),
-                    if (saving || saved) ...<Widget>[
-                      const SizedBox(width: 8),
-                      _SaveBadge(saving: saving),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 16),
-                _InstructionCard(
-                  title: '材料',
-                  icon: Icons.article_outlined,
-                  body: _normalizeText(resolved.materials),
-                ),
-                _InstructionCard(
-                  title: '操作标准',
-                  icon: Icons.assignment_outlined,
-                  body: _normalizeText(resolved.method),
-                ),
-                _InstructionCard(
-                  title: '指导语',
-                  icon: Icons.record_voice_over_outlined,
-                  body: _normalizeText(resolved.guidance),
-                ),
-                _InstructionCard(
-                  title: '评分标准',
-                  icon: Icons.fact_check_outlined,
-                  body: _scoreStandardText(resolved, scoreOptions),
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  children: <Widget>[
-                    const Text(
-                      '评分',
-                      style: TextStyle(
-                        color: _Pep3Colors.ink,
-                        fontSize: 15,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const Spacer(),
-                    if (previousScore != null &&
-                        previousAssessmentDate.trim().isNotEmpty)
-                      _PreviousScoreSummary(
-                        score: previousScore!,
-                        date: previousAssessmentDate,
-                      ),
-                  ],
-                ),
-                const SizedBox(height: 10),
-                Row(
-                  children: <Widget>[
-                    for (int i = 0; i < scoreOptions.length; i++) ...<Widget>[
+          : Padding(
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: <Widget>[
                       Expanded(
-                        child: _ScoreOptionCard(
-                          option: scoreOptions[i],
-                          selected: selectedScore == scoreOptions[i].value,
-                          previous: previousScore == scoreOptions[i].value &&
-                              previousAssessmentDate.trim().isNotEmpty,
-                          previousDate: previousAssessmentDate,
-                          onTap: () => onScore(scoreOptions[i].value),
+                        child: Text(
+                          '第 ${resolvedSummary?.itemNo ?? resolved.itemNo} 题  ${resolvedSummary?.displayTitle ?? resolved.displayTitle}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _Pep3Colors.ink,
+                            fontSize: 23,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
                       ),
-                      if (i != scoreOptions.length - 1)
-                        const SizedBox(width: 14),
+                      const SizedBox(width: 10),
+                      _DomainChip(
+                        code: resolved.domainCode.isNotEmpty
+                            ? resolved.domainCode
+                            : resolvedSummary?.domainCode ?? '',
+                        name: resolved.domainName.isNotEmpty
+                            ? resolved.domainName
+                            : resolvedSummary?.domainName ?? '',
+                      ),
+                      if (saving || saved) ...<Widget>[
+                        const SizedBox(width: 8),
+                        _SaveBadge(saving: saving),
+                      ],
                     ],
-                  ],
-                ),
-              ],
+                  ),
+                  const SizedBox(height: 16),
+                  Expanded(
+                    child: ListView(
+                      key: const ValueKey<String>(
+                        'pep3-question-instruction-scroll',
+                      ),
+                      controller: controller,
+                      padding: EdgeInsets.zero,
+                      physics: const BouncingScrollPhysics(),
+                      children: <Widget>[
+                        _InstructionCard(
+                          title: '材料',
+                          icon: Icons.article_outlined,
+                          body: _normalizeText(resolved.materials),
+                        ),
+                        _InstructionCard(
+                          title: '操作标准',
+                          icon: Icons.assignment_outlined,
+                          body: _normalizeText(resolved.method),
+                        ),
+                        _InstructionCard(
+                          title: '指导语',
+                          icon: Icons.record_voice_over_outlined,
+                          body: _normalizeText(resolved.guidance),
+                        ),
+                        _InstructionCard(
+                          title: '评分标准',
+                          icon: Icons.fact_check_outlined,
+                          body: _scoreStandardText(resolved, scoreOptions),
+                        ),
+                        const SizedBox(height: 2),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  _ScoreDock(
+                    scoreOptions: scoreOptions,
+                    selectedScore: selectedScore,
+                    previousScore: previousScore,
+                    previousAssessmentDate: previousAssessmentDate,
+                    onScore: onScore,
+                  ),
+                ],
+              ),
             ),
     );
   }
@@ -1971,38 +1956,131 @@ class _QuestionLoadingView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-      physics: const NeverScrollableScrollPhysics(),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  '第 ${summary?.itemNo ?? 0} 题  ${summary?.displayTitle ?? ''}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _Pep3Colors.ink,
+                    fontSize: 23,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              _DomainChip(
+                code: summary?.domainCode ?? '',
+                name: summary?.domainName ?? '',
+              ),
+            ],
+          ),
+          const SizedBox(height: 16),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              children: const <Widget>[
+                _QuestionLoadingCard(title: '材料', height: 72),
+                _QuestionLoadingCard(title: '操作标准', height: 86),
+                _QuestionLoadingCard(title: '指导语', height: 86),
+                _QuestionLoadingCard(title: '评分标准', height: 86),
+                SizedBox(height: 2),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _ScoreLoadingDock(scoreOptions: scoreOptions),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreDock extends StatelessWidget {
+  const _ScoreDock({
+    required this.scoreOptions,
+    required this.selectedScore,
+    required this.previousScore,
+    required this.previousAssessmentDate,
+    required this.onScore,
+  });
+
+  final List<Pep3ScoreOption> scoreOptions;
+  final int? selectedScore;
+  final int? previousScore;
+  final String previousAssessmentDate;
+  final ValueChanged<int> onScore;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool hasPrevious =
+        previousScore != null && previousAssessmentDate.trim().isNotEmpty;
+    return Column(
+      key: const ValueKey<String>('pep3-question-score-dock'),
+      mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         Row(
           children: <Widget>[
-            Expanded(
-              child: Text(
-                '第 ${summary?.itemNo ?? 0} 题  ${summary?.displayTitle ?? ''}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _Pep3Colors.ink,
-                  fontSize: 23,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                ),
+            const Text(
+              '评分',
+              style: TextStyle(
+                color: _Pep3Colors.ink,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
               ),
             ),
-            const SizedBox(width: 10),
-            _DomainChip(
-              code: summary?.domainCode ?? '',
-              name: summary?.domainName ?? '',
-            ),
+            const Spacer(),
+            if (hasPrevious)
+              _PreviousScoreSummary(
+                score: previousScore!,
+                date: previousAssessmentDate,
+              ),
           ],
         ),
-        const SizedBox(height: 16),
-        const _QuestionLoadingCard(title: '材料', height: 72),
-        const _QuestionLoadingCard(title: '操作标准', height: 86),
-        const _QuestionLoadingCard(title: '指导语', height: 86),
-        const _QuestionLoadingCard(title: '评分标准', height: 86),
-        const SizedBox(height: 3),
+        const SizedBox(height: 10),
+        Row(
+          children: <Widget>[
+            for (int i = 0; i < scoreOptions.length; i++) ...<Widget>[
+              Expanded(
+                child: _ScoreOptionCard(
+                  option: scoreOptions[i],
+                  selected: selectedScore == scoreOptions[i].value,
+                  previous:
+                      hasPrevious && previousScore == scoreOptions[i].value,
+                  previousDate: previousAssessmentDate,
+                  onTap: () => onScore(scoreOptions[i].value),
+                ),
+              ),
+              if (i != scoreOptions.length - 1) const SizedBox(width: 14),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ScoreLoadingDock extends StatelessWidget {
+  const _ScoreLoadingDock({required this.scoreOptions});
+
+  final List<Pep3ScoreOption> scoreOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    final int optionCount = math.max(scoreOptions.length, 3);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
         Row(
           children: <Widget>[
             const Text(
@@ -2052,9 +2130,9 @@ class _QuestionLoadingView extends StatelessWidget {
         const SizedBox(height: 10),
         Row(
           children: <Widget>[
-            for (int i = 0; i < scoreOptions.length; i++) ...<Widget>[
+            for (int i = 0; i < optionCount; i++) ...<Widget>[
               const Expanded(child: _ScoreLoadingCard()),
-              if (i != scoreOptions.length - 1) const SizedBox(width: 14),
+              if (i != optionCount - 1) const SizedBox(width: 14),
             ],
           ],
         ),
@@ -3566,35 +3644,45 @@ class _HeaderLoadingMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _Pep3Colors.line)),
       ),
-      child: Row(
-        children: <Widget>[
-          Text(
-            '$label：',
-            maxLines: 1,
-            style: const TextStyle(
-              color: _Pep3Colors.text,
-              fontSize: 13,
-              height: 1,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          if (resolved.isEmpty)
-            const Expanded(child: _LoadingLine(widthFactor: .72, height: 12))
-          else
-            Expanded(
-              child: Text(
-                resolved,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: resolved.isEmpty
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    '$label：',
+                    maxLines: 1,
+                    style: const TextStyle(
+                      color: _Pep3Colors.text,
+                      fontSize: 13,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(width: 5),
+                  const _LoadingLine(width: 40, height: 12),
+                ],
+              )
+            : Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(text: '$label：'),
+                    TextSpan(
+                      text: resolved,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ],
+                ),
                 maxLines: 1,
-                overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _Pep3Colors.text,
                   fontSize: 13,
                   height: 1,
-                  fontWeight: FontWeight.w900,
+                  fontWeight: FontWeight.w700,
                 ),
               ),
-            ),
-        ],
       ),
     );
   }
@@ -3696,41 +3784,52 @@ class _Pep3QuestionSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _RailCard(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
-        physics: const NeverScrollableScrollPhysics(),
-        children: const <Widget>[
-          Row(
-            children: <Widget>[
-              _LoadingLine(width: 340, height: 28),
-              Spacer(),
-              _SkeletonPill(width: 176, height: 34, radius: 10),
-            ],
-          ),
-          SizedBox(height: 16),
-          _QuestionLoadingCard(title: '材料', height: 72),
-          _QuestionLoadingCard(title: '操作标准', height: 86),
-          _QuestionLoadingCard(title: '指导语', height: 86),
-          _QuestionLoadingCard(title: '评分标准', height: 86),
-          SizedBox(height: 5),
-          Row(
-            children: <Widget>[
-              _LoadingLine(width: 40, height: 16),
-              Spacer(),
-              _SkeletonPill(width: 188, height: 30, radius: 9),
-            ],
-          ),
-          SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(child: _ScoreLoadingCard()),
-              SizedBox(width: 14),
-              Expanded(child: _ScoreLoadingCard()),
-              SizedBox(width: 14),
-              Expanded(child: _ScoreLoadingCard()),
-            ],
-          ),
-        ],
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Row(
+              children: <Widget>[
+                Expanded(child: _LoadingLine(widthFactor: .72, height: 28)),
+                SizedBox(width: 12),
+                _SkeletonPill(width: 154, height: 34, radius: 10),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                physics: const NeverScrollableScrollPhysics(),
+                children: const <Widget>[
+                  _QuestionLoadingCard(title: '材料', height: 72),
+                  _QuestionLoadingCard(title: '操作标准', height: 86),
+                  _QuestionLoadingCard(title: '指导语', height: 86),
+                  _QuestionLoadingCard(title: '评分标准', height: 86),
+                  SizedBox(height: 2),
+                ],
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Row(
+              children: <Widget>[
+                _LoadingLine(width: 40, height: 16),
+                Spacer(),
+                _SkeletonPill(width: 188, height: 30, radius: 9),
+              ],
+            ),
+            const SizedBox(height: 10),
+            const Row(
+              children: <Widget>[
+                Expanded(child: _ScoreLoadingCard()),
+                SizedBox(width: 14),
+                Expanded(child: _ScoreLoadingCard()),
+                SizedBox(width: 14),
+                Expanded(child: _ScoreLoadingCard()),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
