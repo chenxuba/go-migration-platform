@@ -44,6 +44,7 @@ class _AssessmentScaleCategoryScreenState
   String _selectedCategory = '';
   bool _categoryLoading = true;
   bool _scalesLoading = true;
+  bool _scalesInitialized = false;
   bool _draftsLoading = true;
   bool _studentsLoading = false;
   int _draftCount = 0;
@@ -87,6 +88,7 @@ class _AssessmentScaleCategoryScreenState
       setState(() {
         _categoryLoading = true;
         _scalesLoading = true;
+        _scalesInitialized = false;
         _draftsLoading = true;
         _categoryErrorMessage = null;
         _scaleErrorMessage = null;
@@ -101,6 +103,7 @@ class _AssessmentScaleCategoryScreenState
       setState(() {
         _categoryLoading = false;
         _scalesLoading = false;
+        _scalesInitialized = true;
         _draftsLoading = false;
         _categoryErrorMessage = '请先登录后再查看量表分类';
         _scaleErrorMessage = '请先登录后再查看量表';
@@ -136,6 +139,7 @@ class _AssessmentScaleCategoryScreenState
       setState(() {
         _categoryLoading = false;
         _scalesLoading = false;
+        _scalesInitialized = true;
         _categoryErrorMessage = error.message;
         _scaleErrorMessage = error.message;
       });
@@ -146,6 +150,7 @@ class _AssessmentScaleCategoryScreenState
       setState(() {
         _categoryLoading = false;
         _scalesLoading = false;
+        _scalesInitialized = true;
         _categoryErrorMessage = '分类加载失败：$error';
         _scaleErrorMessage = '量表加载失败：$error';
       });
@@ -167,6 +172,7 @@ class _AssessmentScaleCategoryScreenState
       }
       setState(() {
         _scalesLoading = false;
+        _scalesInitialized = true;
         _scaleErrorMessage = '请先登录后再查看量表';
       });
       return;
@@ -192,6 +198,7 @@ class _AssessmentScaleCategoryScreenState
           _categories = mergedCategories;
         }
         _scalesLoading = false;
+        _scalesInitialized = true;
         _scaleErrorMessage = null;
       });
     } on AssessmentScaleApiException catch (error) {
@@ -200,6 +207,7 @@ class _AssessmentScaleCategoryScreenState
       }
       setState(() {
         _scalesLoading = false;
+        _scalesInitialized = true;
         _scaleErrorMessage = error.message;
       });
     } on Object catch (error) {
@@ -208,6 +216,7 @@ class _AssessmentScaleCategoryScreenState
       }
       setState(() {
         _scalesLoading = false;
+        _scalesInitialized = true;
         _scaleErrorMessage = '量表加载失败：$error';
       });
     }
@@ -413,7 +422,8 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('已选择 ${student.displayName} · ${scale.name}')),
+      SnackBar(
+          content: Text('已选择 ${_studentEchoLabel(student)} · ${scale.name}')),
     );
   }
 
@@ -526,6 +536,8 @@ class _AssessmentScaleCategoryScreenState
                               scales: _scales,
                               summary: _summary,
                               loading: _scalesLoading,
+                              initialLoading:
+                                  _scalesLoading && !_scalesInitialized,
                               errorMessage: _scaleErrorMessage,
                               hasSelectedStudent: _selectedStudent != null,
                               onChooseScale: _chooseScale,
@@ -1508,12 +1520,8 @@ class _StudentChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final AssessmentStudentCandidate? selected = student;
     final bool hasStudent = selected != null;
-    final String label = hasStudent
-        ? <String>[
-            selected.displayName,
-            if (selected.age.trim().isNotEmpty) selected.age.trim(),
-          ].join(' · ')
-        : '未选择学员';
+    final String label =
+        selected == null ? '未选择学员' : _studentEchoLabel(selected);
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1558,6 +1566,11 @@ class _StudentChip extends StatelessWidget {
       ),
     );
   }
+}
+
+String _studentEchoLabel(AssessmentStudentCandidate student) {
+  final String age = student.age.trim().isNotEmpty ? student.age.trim() : '未知';
+  return '${student.displayName} * $age';
 }
 
 class _StudentDialog extends StatefulWidget {
@@ -1763,7 +1776,7 @@ class _StudentDialogState extends State<_StudentDialog> {
       children: <Widget>[
         Expanded(
           child: Text(
-            pending == null ? '已选择：未选择' : '已选择：${pending.displayName}',
+            pending == null ? '已选择：未选择' : '已选择：${_studentEchoLabel(pending)}',
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
@@ -2485,6 +2498,78 @@ class _ScaleGridSkeleton extends StatelessWidget {
   }
 }
 
+class _ScaleInlineLoading extends StatelessWidget {
+  const _ScaleInlineLoading();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(child: _ScaleLoadingPill());
+  }
+}
+
+class _ScaleLoadingOverlay extends StatelessWidget {
+  const _ScaleLoadingOverlay();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Color(0x33FFF7EE),
+      child: Align(
+        alignment: Alignment.topRight,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 8, right: 8),
+          child: _ScaleLoadingPill(),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScaleLoadingPill extends StatelessWidget {
+  const _ScaleLoadingPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 13),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.92),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ScaleColors.lineSoft),
+        boxShadow: _scaleShadow(
+          color: const Color(0x10B05F32),
+          blur: 10,
+          offset: const Offset(0, 4),
+        ),
+      ),
+      child: const Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          SizedBox(
+            width: 14,
+            height: 14,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: _ScaleColors.orange,
+            ),
+          ),
+          SizedBox(width: 8),
+          Text(
+            '正在加载量表',
+            style: TextStyle(
+              color: _ScaleColors.text,
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _ScaleErrorState extends StatelessWidget {
   const _ScaleErrorState({required this.message, required this.onRetry});
 
@@ -2777,6 +2862,7 @@ class _ScaleMainContent extends StatelessWidget {
     required this.scales,
     required this.summary,
     required this.loading,
+    required this.initialLoading,
     required this.errorMessage,
     required this.hasSelectedStudent,
     required this.onChooseScale,
@@ -2789,6 +2875,7 @@ class _ScaleMainContent extends StatelessWidget {
   final List<AssessmentScaleItem> scales;
   final AssessmentScaleLibrarySummary summary;
   final bool loading;
+  final bool initialLoading;
   final String? errorMessage;
   final bool hasSelectedStudent;
   final ValueChanged<AssessmentScaleItem> onChooseScale;
@@ -2826,7 +2913,7 @@ class _ScaleMainContent extends StatelessWidget {
                   onRetry: onRetry,
                 ),
               )
-            else if (loading)
+            else if (initialLoading)
               Expanded(
                 child: _ScaleGridSkeleton(
                   columns: columns,
@@ -2834,34 +2921,47 @@ class _ScaleMainContent extends StatelessWidget {
                 ),
               )
             else if (scales.isEmpty)
-              Expanded(child: _ScaleSearchEmpty(searchQuery: searchQuery))
+              Expanded(
+                child: loading
+                    ? const _ScaleInlineLoading()
+                    : _ScaleSearchEmpty(searchQuery: searchQuery),
+              )
             else
               Expanded(
-                child: GridView.builder(
-                  padding: EdgeInsets.zero,
-                  physics: const BouncingScrollPhysics(),
-                  itemCount: scales.length,
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: columns,
-                    crossAxisSpacing: gap,
-                    mainAxisSpacing: gap,
-                    mainAxisExtent: cardHeight,
-                  ),
-                  itemBuilder: (BuildContext context, int index) {
-                    return _ScaleCard(
-                      data: scales[index],
-                      enabled: hasSelectedStudent && scales[index].available,
-                      onChoose: () {
-                        if (hasSelectedStudent) {
-                          onChooseScale(scales[index]);
-                          return;
-                        }
-                        onRequireStudent();
+                child: Stack(
+                  children: <Widget>[
+                    GridView.builder(
+                      padding: EdgeInsets.zero,
+                      physics: const BouncingScrollPhysics(),
+                      itemCount: scales.length,
+                      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                        crossAxisCount: columns,
+                        crossAxisSpacing: gap,
+                        mainAxisSpacing: gap,
+                        mainAxisExtent: cardHeight,
+                      ),
+                      itemBuilder: (BuildContext context, int index) {
+                        return _ScaleCard(
+                          data: scales[index],
+                          enabled:
+                              hasSelectedStudent && scales[index].available,
+                          onChoose: () {
+                            if (hasSelectedStudent) {
+                              onChooseScale(scales[index]);
+                              return;
+                            }
+                            onRequireStudent();
+                          },
+                          canRequestStudent:
+                              !hasSelectedStudent && scales[index].available,
+                        );
                       },
-                      canRequestStudent:
-                          !hasSelectedStudent && scales[index].available,
-                    );
-                  },
+                    ),
+                    if (loading)
+                      const Positioned.fill(
+                        child: AbsorbPointer(child: _ScaleLoadingOverlay()),
+                      ),
+                  ],
                 ),
               ),
           ],

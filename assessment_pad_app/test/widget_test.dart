@@ -544,6 +544,40 @@ void main() {
     expect(find.text('开始测评前，请先选择本次测评对象。'), findsOneWidget);
     expect(find.text('确认选择'), findsOneWidget);
   });
+
+  testWidgets('selected student echoes unknown age when age is empty',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('王安全'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('王安全 * 未知'), findsOneWidget);
+  });
 }
 
 Future<void> _enterWithCustomKeyboard(
@@ -797,7 +831,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     int pageSize = 20,
   }) async {
     return const AssessmentStudentCandidatePage(
-      total: 1,
+      total: 2,
       current: 1,
       size: 20,
       items: <AssessmentStudentCandidate>[
@@ -810,6 +844,17 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
           age: '5岁2个月',
           birthDate: '2021-03-01',
           contactPhone: '妈妈 136****0001',
+          latestAssessment: '未测评',
+        ),
+        AssessmentStudentCandidate(
+          id: 4,
+          shortName: '王',
+          name: '王安全',
+          avatarUrl: '',
+          gender: '男',
+          age: '',
+          birthDate: '',
+          contactPhone: '爸爸 136****0002',
           latestAssessment: '未测评',
         ),
       ],
