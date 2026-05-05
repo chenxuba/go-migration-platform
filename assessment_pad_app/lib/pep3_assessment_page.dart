@@ -964,12 +964,12 @@ class _DraftResumeDialog extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             const Padding(
-              padding: EdgeInsets.fromLTRB(30, 26, 30, 24),
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 20),
               child: Text(
                 '发现未完成草稿',
                 style: TextStyle(
                   color: _Pep3Colors.ink,
-                  fontSize: 24,
+                  fontSize: 20,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -985,8 +985,8 @@ class _DraftResumeDialog extends StatelessWidget {
                     '当前儿童存在一份未提交的 PEP-3 测评草稿。',
                     style: TextStyle(
                       color: _Pep3Colors.ink,
-                      fontSize: 17,
-                      height: 1.35,
+                      fontSize: 15,
+                      height: 1.2,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
@@ -1067,7 +1067,7 @@ class _DraftResumeMeta extends StatelessWidget {
       ),
       style: const TextStyle(
         color: _Pep3Colors.text,
-        fontSize: 15,
+        fontSize: 14,
         height: 1.2,
         fontWeight: FontWeight.w800,
       ),
@@ -1108,7 +1108,7 @@ class _DialogActionButton extends StatelessWidget {
               label,
               style: TextStyle(
                 color: filled ? Colors.white : _Pep3Colors.ink,
-                fontSize: 15,
+                fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
             ),
