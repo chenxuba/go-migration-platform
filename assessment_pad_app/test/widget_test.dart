@@ -21,7 +21,7 @@ void main() {
       ),
     );
 
-    expect(find.text('测评云端'), findsOneWidget);
+    expect(find.text('评估助手'), findsOneWidget);
     expect(find.text('机构账号登录'), findsOneWidget);
     expect(find.text('验证码登录'), findsNothing);
 

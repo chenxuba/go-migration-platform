@@ -328,6 +328,7 @@ Future<_HomeLocation?> _resolveCurrentHomeLocation() async {
 
     final Position position = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.low,
+      forceAndroidLocationManager: true,
       timeLimit: const Duration(seconds: 3),
     ).timeout(const Duration(seconds: 4));
     if (position.latitude == 0 && position.longitude == 0) {

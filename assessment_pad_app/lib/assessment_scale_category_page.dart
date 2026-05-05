@@ -1824,13 +1824,31 @@ class _ScaleCoverPainter extends CustomPainter {
   void _drawTalk(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
-    _drawChild(canvas, Offset(w * .34, h * .49),
-        shirt: const Color(0xFF8FB279));
-    _drawChild(canvas, Offset(w * .65, h * .5), shirt: const Color(0xFFE5A552));
-    _drawSpeechBubble(
-        canvas, Offset(w * .34, h * .2), Colors.white, const Color(0xFF6F9F70));
-    _drawSpeechBubble(canvas, Offset(w * .68, h * .26), Colors.white,
-        const Color(0xFF6F9F70));
+    final Paint bridge = Paint()
+      ..color = Colors.white.withOpacity(.42)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(w * .35, h * .78)
+        ..cubicTo(w * .43, h * .7, w * .57, h * .7, w * .65, h * .78),
+      bridge,
+    );
+    _drawChild(canvas, Offset(w * .34, h * .6), shirt: const Color(0xFF8FB279));
+    _drawChild(canvas, Offset(w * .66, h * .6), shirt: const Color(0xFFE5A552));
+    _drawCompactSpeechBubble(
+      canvas,
+      Offset(w * .27, h * .18),
+      const Color(0xFFFFFFFF),
+      const Color(0xFF6F9F70),
+    );
+    _drawCompactSpeechBubble(
+      canvas,
+      Offset(w * .73, h * .18),
+      const Color(0xFFFFFFFF),
+      const Color(0xFF6F9F70),
+    );
   }
 
   void _drawScreen(Canvas canvas, Size size) {
@@ -2048,6 +2066,27 @@ class _ScaleCoverPainter extends CustomPainter {
       canvas.drawCircle(
         Offset(center.dx + dx, center.dy),
         5,
+        Paint()..color = dotColor.withOpacity(.72),
+      );
+    }
+  }
+
+  void _drawCompactSpeechBubble(
+    Canvas canvas,
+    Offset center,
+    Color fill,
+    Color dotColor,
+  ) {
+    final Paint bubblePaint = Paint()..color = fill.withOpacity(.9);
+    final RRect bubble = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: center, width: 72, height: 40),
+      const Radius.circular(18),
+    );
+    canvas.drawRRect(bubble, bubblePaint);
+    for (final double dx in <double>[-13, 0, 13]) {
+      canvas.drawCircle(
+        Offset(center.dx + dx, center.dy),
+        4.2,
         Paint()..color = dotColor.withOpacity(.72),
       );
     }

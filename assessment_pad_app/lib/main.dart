@@ -55,7 +55,7 @@ class AssessmentPadApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: '测评云端',
+      title: '评估助手',
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         useMaterial3: true,
@@ -314,7 +314,7 @@ class LoginScreen extends StatelessWidget {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: <Widget>[
                           Text(
-                            '测评云端',
+                            '评估助手',
                             style: TextStyle(
                               color: AppColors.ink,
                               fontSize: 40,
@@ -4088,23 +4088,22 @@ class FeatureShortcutRow extends StatelessWidget {
         ),
         SizedBox(width: spacing),
         ShortcutCard(
-          title: '预约管理',
-          desc1: '预约安排',
-          desc2: '高效有序',
-          icon: Icons.access_time_filled_rounded,
-          iconColor: const Color(0xFFE9774B),
-          bg: const Color(0xFFFFEEF0),
+          title: '督导管理',
+          desc1: '专业督导',
+          desc2: '闭环跟进',
+          icon: Icons.supervisor_account_rounded,
+          iconColor: const Color(0xFF8C6DD8),
+          bg: const Color(0xFFF1EDFF),
           width: cardWidth,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
-          title: '机构消息',
-          desc1: '重要通知',
-          desc2: '及时推送',
-          icon: Icons.notifications_active_rounded,
-          iconColor: const Color(0xFFE6A13D),
-          bg: const Color(0xFFFFF6E2),
-          badge: '5',
+          title: '训练中心',
+          desc1: '训练动态',
+          desc2: '即时掌握',
+          icon: Icons.sports_esports_rounded,
+          iconColor: const Color(0xFF4D9C8E),
+          bg: const Color(0xFFE8F7F3),
           width: cardWidth,
         ),
         SizedBox(width: spacing),
