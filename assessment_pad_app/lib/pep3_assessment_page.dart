@@ -969,7 +969,7 @@ class _DraftResumeDialog extends StatelessWidget {
                 '发现未完成草稿',
                 style: TextStyle(
                   color: _Pep3Colors.ink,
-                  fontSize: 20,
+                  fontSize: 19,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -3230,11 +3230,12 @@ String _formatDateTime(String value) {
     }
     return text;
   }
-  return '${parsed.year.toString().padLeft(4, '0')}-'
-      '${parsed.month.toString().padLeft(2, '0')}-'
-      '${parsed.day.toString().padLeft(2, '0')} '
-      '${parsed.hour.toString().padLeft(2, '0')}:'
-      '${parsed.minute.toString().padLeft(2, '0')}';
+  final DateTime local = parsed.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
 
 String _compactDateLabel(String value) {

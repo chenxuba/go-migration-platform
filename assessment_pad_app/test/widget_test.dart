@@ -670,6 +670,56 @@ void main() {
     expect(find.text('继续测评'), findsOneWidget);
   });
 
+  testWidgets('PEP3 draft dialog converts UTC updated time to local time',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    const String utcUpdatedTime = '2026-05-05T12:08:00Z';
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: _FakePep3AssessmentClient(
+              hasDraft: true,
+              draftUpdatedTime: utcUpdatedTime,
+            ),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final String expectedUpdatedTime =
+        _fakeMinuteText(DateTime.parse(utcUpdatedTime).toLocal());
+    expect(
+      find.textContaining(
+        '更新时间：$expectedUpdatedTime',
+        findRichText: true,
+      ),
+      findsOneWidget,
+    );
+    if (!expectedUpdatedTime.endsWith('12:08')) {
+      expect(find.textContaining('12:08', findRichText: true), findsNothing);
+    }
+  });
+
   testWidgets('PEP3 restart creates draft and caregiver QR immediately',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1181,10 +1231,12 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   _FakePep3AssessmentClient({
     this.hasDraft = false,
     this.hasPreviousRecord = false,
+    this.draftUpdatedTime = '2026-05-05T14:01:00',
   });
 
   final bool hasDraft;
   final bool hasPreviousRecord;
+  final String draftUpdatedTime;
   int saveDraftCalls = 0;
   int inviteCalls = 0;
 
@@ -1268,7 +1320,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     bool latestOnly = true,
   }) async {
     if (hasDraft) {
-      return const Pep3DraftPage(
+      return Pep3DraftPage(
         items: <Pep3DraftSummary>[
           Pep3DraftSummary(
             id: 11,
@@ -1279,8 +1331,8 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
             examinerName: '陈老师',
             answeredItemCount: 1,
             completionPercent: .5,
-            updatedTime: '2026-05-05T14:01:00',
-            progress: Pep3DraftProgress(
+            updatedTime: draftUpdatedTime,
+            progress: const Pep3DraftProgress(
               itemCount: 2,
               answeredItemCount: 1,
               missingItemCount: 1,
@@ -1697,6 +1749,14 @@ String _fakeDateText(DateTime date) {
   return '${date.year.toString().padLeft(4, '0')}-'
       '${date.month.toString().padLeft(2, '0')}-'
       '${date.day.toString().padLeft(2, '0')}';
+}
+
+String _fakeMinuteText(DateTime date) {
+  return '${date.year.toString().padLeft(4, '0')}-'
+      '${date.month.toString().padLeft(2, '0')}-'
+      '${date.day.toString().padLeft(2, '0')} '
+      '${date.hour.toString().padLeft(2, '0')}:'
+      '${date.minute.toString().padLeft(2, '0')}';
 }
 
 String _fakeWeekdayShort(int weekday) {
