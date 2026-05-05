@@ -24,6 +24,14 @@ const String defaultAssessmentStudentCandidatesPath = String.fromEnvironment(
   defaultValue: '/api/v1/assessments/scales/student-candidates',
 );
 
+class AssessmentStudentStatuses {
+  const AssessmentStudentStatuses._();
+
+  static const int intention = 0;
+  static const int enrolled = 1;
+  static const int history = 2;
+}
+
 class AssessmentScaleApiException implements Exception {
   const AssessmentScaleApiException(this.message, {this.unauthorized = false});
 
@@ -385,6 +393,8 @@ class AssessmentStudentCandidate {
     required this.birthDate,
     required this.contactPhone,
     required this.latestAssessment,
+    this.studentStatus = AssessmentStudentStatuses.enrolled,
+    this.studentStatusText = '',
   });
 
   factory AssessmentStudentCandidate.fromJson(Map<String, dynamic> json) {
@@ -398,6 +408,10 @@ class AssessmentStudentCandidate {
       birthDate: '${json['birthDate'] ?? ''}',
       contactPhone: '${json['contactPhone'] ?? ''}',
       latestAssessment: '${json['latestAssessment'] ?? ''}',
+      studentStatus: json.containsKey('studentStatus')
+          ? _intFrom(json['studentStatus'])
+          : AssessmentStudentStatuses.enrolled,
+      studentStatusText: '${json['studentStatusText'] ?? ''}',
     );
   }
 
@@ -410,6 +424,8 @@ class AssessmentStudentCandidate {
   final String birthDate;
   final String contactPhone;
   final String latestAssessment;
+  final int studentStatus;
+  final String studentStatusText;
 
   String get displayName => name.trim().isNotEmpty ? name.trim() : '未命名学员';
 
@@ -445,6 +461,7 @@ abstract interface class AssessmentScaleClient {
     String token, {
     String scaleCode = '',
     String keyword = '',
+    int studentStatus = AssessmentStudentStatuses.enrolled,
     int pageIndex = 1,
     int pageSize = 20,
   });
@@ -529,6 +546,7 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     String token, {
     String scaleCode = '',
     String keyword = '',
+    int studentStatus = AssessmentStudentStatuses.enrolled,
     int pageIndex = 1,
     int pageSize = 20,
   }) async {
@@ -542,6 +560,7 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     if (keyword.trim().isNotEmpty) {
       query['keyword'] = keyword.trim();
     }
+    query['studentStatus'] = '$studentStatus';
     final Object? data = await _getJson(
       _uri(educationBaseUrl, studentCandidatesPath).replace(
         queryParameters: query,

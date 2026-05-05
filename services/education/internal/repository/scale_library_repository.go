@@ -228,6 +228,13 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 		size = 100
 	}
 	offset := (current - 1) * size
+	studentStatus := model.InstStudentStatusEnrolled
+	if query.StudentStatus != nil {
+		studentStatus = *query.StudentStatus
+	}
+	if !scaleLibraryStudentStatusAllowed(studentStatus) {
+		studentStatus = model.InstStudentStatusEnrolled
+	}
 
 	scaleCode := strings.TrimSpace(query.ScaleCode)
 	latestFilters := []string{"inst_id = ?", "del_flag = 0"}
@@ -255,7 +262,7 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 		"s.inst_id = ?",
 		"s.student_status = ?",
 	}
-	whereArgs := []any{instID, model.InstStudentStatusEnrolled}
+	whereArgs := []any{instID, studentStatus}
 	if keyword := strings.TrimSpace(query.Keyword); keyword != "" {
 		like := "%" + keyword + "%"
 		filters = append(filters, "(s.stu_name LIKE ? OR s.mobile LIKE ?)")
@@ -270,14 +277,15 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 	}
 
 	rows, err := repo.db.QueryContext(ctx, `
-		SELECT
-			s.id,
-			IFNULL(s.stu_name, ''),
-			IFNULL(s.avatar_url, ''),
-			IFNULL(s.stu_sex, 0),
-			IFNULL(s.mobile, ''),
-			IFNULL(s.phone_relationship, 0),
-			s.birthday,
+			SELECT
+				s.id,
+				IFNULL(s.stu_name, ''),
+				IFNULL(s.avatar_url, ''),
+				IFNULL(s.stu_sex, 0),
+				IFNULL(s.student_status, 0),
+				IFNULL(s.mobile, ''),
+				IFNULL(s.phone_relationship, 0),
+				s.birthday,
 			IFNULL(DATE_FORMAT(latest.latest_assessment, '%Y-%m-%d'), '')
 		`+fromSQL+`
 		WHERE `+whereSQL+`
@@ -301,6 +309,7 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 			name              string
 			avatarURL         string
 			sex               int
+			studentStatus     int
 			mobile            string
 			phoneRelationship int
 			birthday          sql.NullTime
@@ -311,6 +320,7 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 			&name,
 			&avatarURL,
 			&sex,
+			&studentStatus,
 			&mobile,
 			&phoneRelationship,
 			&birthday,
@@ -322,6 +332,8 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 		item.ShortName = scaleLibraryStudentShortName(name)
 		item.AvatarURL = scaleLibraryStudentAvatarURL(avatarURL, sex)
 		item.Gender = scaleLibraryStudentGenderText(sex)
+		item.StudentStatus = studentStatus
+		item.StudentStatusText = scaleLibraryStudentStatusText(studentStatus)
 		if birthday.Valid {
 			item.Age = scaleLibraryStudentAgeText(birthday.Time, now)
 			item.BirthDate = birthday.Time.Format("2006-01-02")
@@ -437,6 +449,30 @@ func scaleLibraryStudentAvatarURL(avatarURL string, sex int) string {
 		return defaultFemaleAvatar
 	default:
 		return defaultUnknownAvatar
+	}
+}
+
+func scaleLibraryStudentStatusAllowed(status int) bool {
+	switch status {
+	case model.InstStudentStatusIntent,
+		model.InstStudentStatusEnrolled,
+		model.InstStudentStatusHistory:
+		return true
+	default:
+		return false
+	}
+}
+
+func scaleLibraryStudentStatusText(status int) string {
+	switch status {
+	case model.InstStudentStatusIntent:
+		return "意向学员"
+	case model.InstStudentStatusEnrolled:
+		return "在读学员"
+	case model.InstStudentStatusHistory:
+		return "历史学员"
+	default:
+		return ""
 	}
 }
 

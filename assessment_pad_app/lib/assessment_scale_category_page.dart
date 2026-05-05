@@ -39,6 +39,8 @@ class _AssessmentScaleCategoryScreenState
   List<AssessmentDraftSummary> _drafts = <AssessmentDraftSummary>[];
   List<AssessmentStudentCandidate> _studentCandidates =
       <AssessmentStudentCandidate>[];
+  final Map<int, List<AssessmentStudentCandidate>> _studentCandidatesByStatus =
+      <int, List<AssessmentStudentCandidate>>{};
   AssessmentStudentCandidate? _selectedStudent;
   AssessmentScaleLibrarySummary _summary =
       const AssessmentScaleLibrarySummary();
@@ -50,6 +52,7 @@ class _AssessmentScaleCategoryScreenState
   bool _studentsLoading = false;
   int _draftCount = 0;
   int _scaleLoadSerial = 0;
+  int _studentCandidateStatus = AssessmentStudentStatuses.enrolled;
   String? _categoryErrorMessage;
   String? _scaleErrorMessage;
   String? _draftErrorMessage;
@@ -340,8 +343,12 @@ class _AssessmentScaleCategoryScreenState
   Future<void> _openStudentSheet([
     AssessmentScaleItem? scaleToOpenAfterConfirm,
   ]) async {
-    if (_studentCandidates.isEmpty && !_studentsLoading) {
-      await _loadStudentCandidates();
+    final int initialStatus =
+        _studentStatusForTab(_selectedStudent?.studentStatus);
+    _studentCandidateStatus = initialStatus;
+    if (!_studentCandidatesByStatus.containsKey(initialStatus) &&
+        !_studentsLoading) {
+      await _loadStudentCandidates(initialStatus);
     }
     if (!mounted) {
       return;
@@ -349,31 +356,42 @@ class _AssessmentScaleCategoryScreenState
     _showStudentSheet(scaleToOpenAfterConfirm);
   }
 
-  Future<void> _loadStudentCandidates() async {
+  Future<List<AssessmentStudentCandidate>> _loadStudentCandidatesForDialog(
+    int status,
+  ) async {
+    final int normalizedStatus = _studentStatusForTab(status);
+    final AssessmentStudentCandidatePage page =
+        await _fetchStudentCandidates(normalizedStatus);
     if (mounted) {
       setState(() {
+        _studentCandidatesByStatus[normalizedStatus] = page.items;
+        if (_studentCandidateStatus == normalizedStatus) {
+          _studentCandidates = page.items;
+        }
+      });
+    }
+    return page.items;
+  }
+
+  Future<void> _loadStudentCandidates([
+    int status = AssessmentStudentStatuses.enrolled,
+  ]) async {
+    final int normalizedStatus = _studentStatusForTab(status);
+    if (mounted) {
+      setState(() {
+        _studentCandidateStatus = normalizedStatus;
         _studentsLoading = true;
         _studentErrorMessage = null;
       });
     }
-    final String token = await _readToken();
-    if (token.trim().isEmpty) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _studentsLoading = false;
-        _studentErrorMessage = '请先登录后再选择学员';
-      });
-      return;
-    }
     try {
       final AssessmentStudentCandidatePage page =
-          await widget.scaleClient.fetchStudentCandidates(token);
+          await _fetchStudentCandidates(normalizedStatus);
       if (!mounted) {
         return;
       }
       setState(() {
+        _studentCandidatesByStatus[normalizedStatus] = page.items;
         _studentCandidates = page.items;
         _studentsLoading = false;
         _studentErrorMessage = null;
@@ -397,6 +415,20 @@ class _AssessmentScaleCategoryScreenState
     }
   }
 
+  Future<AssessmentStudentCandidatePage> _fetchStudentCandidates(
+    int status,
+  ) async {
+    final String token = await _readToken();
+    if (token.trim().isEmpty) {
+      throw const AssessmentScaleApiException('请先登录后再选择学员');
+    }
+    return widget.scaleClient.fetchStudentCandidates(
+      token,
+      studentStatus: _studentStatusForTab(status),
+      pageSize: 100,
+    );
+  }
+
   void _showStudentSheet([
     AssessmentScaleItem? scaleToOpenAfterConfirm,
   ]) {
@@ -407,13 +439,11 @@ class _AssessmentScaleCategoryScreenState
         return _StudentDialog(
           students: _studentCandidates,
           selectedStudent: _selectedStudent,
+          initialStatus: _studentCandidateStatus,
           loading: _studentsLoading,
           errorMessage: _studentErrorMessage,
           confirmLabel: scaleToOpenAfterConfirm == null ? '确认选择' : '确认选择并进入测评',
-          onRetry: () {
-            Navigator.of(dialogContext).pop();
-            _openStudentSheet(scaleToOpenAfterConfirm);
-          },
+          onLoadStudents: _loadStudentCandidatesForDialog,
           onConfirm: (AssessmentStudentCandidate student) {
             setState(() => _selectedStudent = student);
             Navigator.of(dialogContext).pop();
@@ -1629,6 +1659,131 @@ String _studentEchoLabel(AssessmentStudentCandidate student) {
   return '${student.displayName} * $age';
 }
 
+const List<_StudentStatusTabOption> _studentStatusTabOptions =
+    <_StudentStatusTabOption>[
+  _StudentStatusTabOption(
+    status: AssessmentStudentStatuses.enrolled,
+    label: '在读学员',
+  ),
+  _StudentStatusTabOption(
+    status: AssessmentStudentStatuses.intention,
+    label: '意向学员',
+  ),
+];
+
+int _studentStatusForTab(int? status) {
+  for (final _StudentStatusTabOption option in _studentStatusTabOptions) {
+    if (option.status == status) {
+      return option.status;
+    }
+  }
+  return AssessmentStudentStatuses.enrolled;
+}
+
+String _studentStatusLabel(int status) {
+  for (final _StudentStatusTabOption option in _studentStatusTabOptions) {
+    if (option.status == status) {
+      return option.label;
+    }
+  }
+  return '学员';
+}
+
+class _StudentStatusTabOption {
+  const _StudentStatusTabOption({
+    required this.status,
+    required this.label,
+  });
+
+  final int status;
+  final String label;
+}
+
+class _StudentStatusTabs extends StatelessWidget {
+  const _StudentStatusTabs({
+    required this.activeStatus,
+    required this.onStatusTap,
+  });
+
+  final int activeStatus;
+  final ValueChanged<int> onStatusTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF5ED),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (final _StudentStatusTabOption option in _studentStatusTabOptions)
+            _StudentStatusTabButton(
+              option: option,
+              selected: option.status == activeStatus,
+              onTap: () => onStatusTap(option.status),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentStatusTabButton extends StatelessWidget {
+  const _StudentStatusTabButton({
+    required this.option,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _StudentStatusTabOption option;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: ValueKey<String>('student-status-tab-${option.status}'),
+        borderRadius: BorderRadius.circular(11),
+        onTap: selected ? null : onTap,
+        child: Ink(
+          width: 96,
+          height: 32,
+          decoration: BoxDecoration(
+            color: selected ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(11),
+            boxShadow: selected
+                ? _scaleShadow(
+                    color: const Color(0x12B05F32),
+                    blur: 10,
+                    offset: const Offset(0, 4),
+                  )
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              option.label,
+              maxLines: 1,
+              style: TextStyle(
+                color: selected ? _ScaleColors.orangeDeep : _ScaleColors.muted,
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 bool _isPep3Scale(AssessmentScaleItem scale) {
   return _isPep3Text(
     <String>[
@@ -1666,32 +1821,65 @@ class _StudentDialog extends StatefulWidget {
   const _StudentDialog({
     required this.students,
     required this.selectedStudent,
+    required this.initialStatus,
     required this.loading,
     required this.errorMessage,
     required this.confirmLabel,
-    required this.onRetry,
+    required this.onLoadStudents,
     required this.onConfirm,
   });
 
   final List<AssessmentStudentCandidate> students;
   final AssessmentStudentCandidate? selectedStudent;
+  final int initialStatus;
   final bool loading;
   final String? errorMessage;
   final String confirmLabel;
-  final VoidCallback onRetry;
+  final Future<List<AssessmentStudentCandidate>> Function(int status)
+      onLoadStudents;
   final ValueChanged<AssessmentStudentCandidate> onConfirm;
 
   @override
   State<_StudentDialog> createState() => _StudentDialogState();
 }
 
+class _StudentDialogMetrics {
+  const _StudentDialogMetrics._();
+
+  static const double contentHeight = 300;
+}
+
 class _StudentDialogState extends State<_StudentDialog> {
+  final ScrollController _studentScrollController = ScrollController();
+  final Map<int, List<AssessmentStudentCandidate>> _studentsByStatus =
+      <int, List<AssessmentStudentCandidate>>{};
+  final Map<int, AssessmentStudentCandidate> _pendingByStatus =
+      <int, AssessmentStudentCandidate>{};
   AssessmentStudentCandidate? _pendingStudent;
+  late int _activeStatus;
+  late List<AssessmentStudentCandidate> _students;
+  late bool _loading;
+  String? _errorMessage;
 
   @override
   void initState() {
     super.initState();
-    _pendingStudent = widget.selectedStudent;
+    _activeStatus = _studentStatusForTab(widget.initialStatus);
+    _students = widget.students;
+    _loading = widget.loading;
+    _errorMessage = widget.errorMessage;
+    _studentsByStatus[_activeStatus] = widget.students;
+    final AssessmentStudentCandidate? selected = widget.selectedStudent;
+    if (selected != null) {
+      _pendingByStatus[_studentStatusForTab(selected.studentStatus)] = selected;
+    }
+    _pendingStudent = _pendingByStatus[_activeStatus];
+  }
+
+  @override
+  void dispose() {
+    _studentScrollController.dispose();
+    super.dispose();
   }
 
   @override
@@ -1758,6 +1946,12 @@ class _StudentDialogState extends State<_StudentDialog> {
                       ],
                     ),
                   ),
+                  const SizedBox(width: 18),
+                  _StudentStatusTabs(
+                    activeStatus: _activeStatus,
+                    onStatusTap: _switchStudentStatus,
+                  ),
+                  const SizedBox(width: 18),
                   _SearchKeyboardAction(
                     label: '关闭',
                     icon: Icons.close_rounded,
@@ -1777,9 +1971,9 @@ class _StudentDialogState extends State<_StudentDialog> {
   }
 
   Widget _buildContent() {
-    if (widget.loading) {
+    if (_loading) {
       return const SizedBox(
-        height: 260,
+        height: _StudentDialogMetrics.contentHeight,
         child: Center(
           child: CircularProgressIndicator(
             strokeWidth: 3,
@@ -1788,15 +1982,15 @@ class _StudentDialogState extends State<_StudentDialog> {
         ),
       );
     }
-    if (widget.errorMessage != null) {
+    if (_errorMessage != null) {
       return SizedBox(
-        height: 260,
+        height: _StudentDialogMetrics.contentHeight,
         child: Center(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Text(
-                widget.errorMessage!,
+                _errorMessage!,
                 maxLines: 2,
                 textAlign: TextAlign.center,
                 overflow: TextOverflow.ellipsis,
@@ -1808,19 +2002,19 @@ class _StudentDialogState extends State<_StudentDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              _MiniActionButton(label: '重试', onTap: widget.onRetry),
+              _MiniActionButton(label: '重试', onTap: _reloadActiveStatus),
             ],
           ),
         ),
       );
     }
-    if (widget.students.isEmpty) {
-      return const SizedBox(
-        height: 260,
+    if (_students.isEmpty) {
+      return SizedBox(
+        height: _StudentDialogMetrics.contentHeight,
         child: Center(
           child: Text(
-            '暂无可选择学员',
-            style: TextStyle(
+            '暂无${_studentStatusLabel(_activeStatus)}',
+            style: const TextStyle(
               color: _ScaleColors.muted,
               fontSize: 15,
               fontWeight: FontWeight.w800,
@@ -1829,36 +2023,166 @@ class _StudentDialogState extends State<_StudentDialog> {
         ),
       );
     }
+    final List<_StudentLetterGroup> groups =
+        _buildStudentLetterGroups(_students);
+    final Set<String> activeLetters = Set<String>.unmodifiable(
+      groups.map((_StudentLetterGroup group) => group.letter),
+    );
+
     return Container(
-      height: 300,
+      height: _StudentDialogMetrics.contentHeight,
       decoration: BoxDecoration(
         color: const Color(0xFFFFFAF5),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _ScaleColors.lineSoft),
       ),
-      child: Column(
+      child: Row(
         children: <Widget>[
-          const _StudentDialogHeaderRow(),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-              physics: const BouncingScrollPhysics(),
-              itemCount: widget.students.length,
-              separatorBuilder: (_, __) => const SizedBox(height: 8),
-              itemBuilder: (BuildContext context, int index) {
-                final AssessmentStudentCandidate student =
-                    widget.students[index];
-                return _StudentDialogItem(
-                  student: student,
-                  selected: _pendingStudent?.id == student.id,
-                  onTap: () => setState(() => _pendingStudent = student),
-                );
-              },
+            child: Column(
+              children: <Widget>[
+                const _StudentDialogHeaderRow(),
+                Expanded(
+                  child: ListView.builder(
+                    controller: _studentScrollController,
+                    padding: const EdgeInsets.fromLTRB(12, 0, 8, 12),
+                    physics: const BouncingScrollPhysics(),
+                    itemCount: groups.length,
+                    itemBuilder: (BuildContext context, int groupIndex) {
+                      final _StudentLetterGroup group = groups[groupIndex];
+                      return _StudentDialogGroup(
+                        group: group,
+                        selectedStudentId: _pendingStudent?.id,
+                        onStudentTap: (AssessmentStudentCandidate student) =>
+                            _selectStudent(student),
+                      );
+                    },
+                  ),
+                ),
+              ],
             ),
+          ),
+          _StudentAlphabetIndex(
+            activeLetters: activeLetters,
+            onLetterTap: _scrollToStudentLetter,
           ),
         ],
       ),
     );
+  }
+
+  void _scrollToStudentLetter(String letter) {
+    if (!_studentScrollController.hasClients) {
+      return;
+    }
+    final List<_StudentLetterGroup> groups =
+        _buildStudentLetterGroups(_students);
+    double offset = 0;
+    bool found = false;
+    for (final _StudentLetterGroup group in groups) {
+      if (group.letter == letter) {
+        found = true;
+        break;
+      }
+      offset += _StudentDialogGroup.headerHeight +
+          group.students.length * _StudentDialogGroup.itemHeight;
+    }
+    if (!found) {
+      return;
+    }
+    final double target = math.min(
+      offset,
+      _studentScrollController.position.maxScrollExtent,
+    );
+    _studentScrollController.animateTo(
+      target,
+      duration: const Duration(milliseconds: 240),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
+  Future<void> _switchStudentStatus(int status) async {
+    final int normalizedStatus = _studentStatusForTab(status);
+    if (normalizedStatus == _activeStatus) {
+      return;
+    }
+    _rememberPendingStudent();
+    if (_studentScrollController.hasClients) {
+      _studentScrollController.jumpTo(0);
+    }
+    final List<AssessmentStudentCandidate>? cached =
+        _studentsByStatus[normalizedStatus];
+    setState(() {
+      _activeStatus = normalizedStatus;
+      _pendingStudent = _pendingByStatus[normalizedStatus];
+      _errorMessage = null;
+      if (cached != null) {
+        _students = cached;
+        _loading = false;
+      } else {
+        _students = <AssessmentStudentCandidate>[];
+        _loading = true;
+      }
+    });
+    if (cached == null) {
+      await _loadStatus(normalizedStatus);
+    }
+  }
+
+  Future<void> _reloadActiveStatus() => _loadStatus(_activeStatus);
+
+  Future<void> _loadStatus(int status) async {
+    final int normalizedStatus = _studentStatusForTab(status);
+    setState(() {
+      _activeStatus = normalizedStatus;
+      _loading = true;
+      _errorMessage = null;
+    });
+    try {
+      final List<AssessmentStudentCandidate> students =
+          await widget.onLoadStudents(normalizedStatus);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentsByStatus[normalizedStatus] = students;
+        if (_activeStatus == normalizedStatus) {
+          _students = students;
+          _loading = false;
+          _errorMessage = null;
+        }
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _loading = false;
+        _errorMessage = '学员加载失败：$error';
+      });
+    }
+  }
+
+  void _rememberPendingStudent() {
+    final AssessmentStudentCandidate? pending = _pendingStudent;
+    if (pending != null) {
+      _pendingByStatus[_activeStatus] = pending;
+    }
+  }
+
+  void _selectStudent(AssessmentStudentCandidate student) {
+    setState(() {
+      _pendingStudent = student;
+      _pendingByStatus[_activeStatus] = student;
+    });
   }
 
   Widget _buildFooter(BuildContext context) {
@@ -1905,9 +2229,9 @@ class _StudentDialogHeaderRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: const Row(
         children: <Widget>[
-          Expanded(flex: 3, child: _StudentDialogHeaderText('儿童姓名')),
+          Expanded(flex: 2, child: _StudentDialogHeaderText('儿童姓名')),
           Expanded(child: _StudentDialogHeaderText('性别')),
-          Expanded(child: _StudentDialogHeaderText('年龄')),
+          Expanded(flex: 2, child: _StudentDialogHeaderText('年龄')),
           Expanded(flex: 2, child: _StudentDialogHeaderText('联系方式')),
           Expanded(flex: 2, child: _StudentDialogHeaderText('最近测评')),
           SizedBox(width: 34),
@@ -1933,6 +2257,160 @@ class _StudentDialogHeaderText extends StatelessWidget {
         fontSize: 12,
         height: 1,
         fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _StudentLetterGroup {
+  const _StudentLetterGroup({
+    required this.letter,
+    required this.students,
+  });
+
+  final String letter;
+  final List<AssessmentStudentCandidate> students;
+}
+
+class _StudentDialogGroup extends StatelessWidget {
+  const _StudentDialogGroup({
+    required this.group,
+    required this.selectedStudentId,
+    required this.onStudentTap,
+  });
+
+  final _StudentLetterGroup group;
+  final int? selectedStudentId;
+  final ValueChanged<AssessmentStudentCandidate> onStudentTap;
+  static const double headerHeight = 26;
+  static const double itemHeight = 64;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _StudentLetterHeader(letter: group.letter),
+        for (final AssessmentStudentCandidate student in group.students) ...[
+          _StudentDialogItem(
+            student: student,
+            selected: selectedStudentId == student.id,
+            onTap: () => onStudentTap(student),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _StudentLetterHeader extends StatelessWidget {
+  const _StudentLetterHeader({required this.letter});
+
+  final String letter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 26,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: Row(
+        children: <Widget>[
+          Text(
+            letter,
+            style: const TextStyle(
+              color: _ScaleColors.orangeDeep,
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 7),
+          const Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: _ScaleColors.lineSoft,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentAlphabetIndex extends StatelessWidget {
+  const _StudentAlphabetIndex({
+    required this.activeLetters,
+    required this.onLetterTap,
+  });
+
+  final Set<String> activeLetters;
+  final ValueChanged<String> onLetterTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 28,
+      margin: const EdgeInsets.fromLTRB(0, 8, 8, 8),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.72),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: ListView(
+          key: const ValueKey<String>('student-letter-index-scroll'),
+          padding: const EdgeInsets.symmetric(vertical: 7),
+          physics: const BouncingScrollPhysics(),
+          children: <Widget>[
+            for (final String letter in _studentIndexLetters)
+              _StudentAlphabetIndexLetter(
+                letter: letter,
+                active: activeLetters.contains(letter),
+                onTap: () => onLetterTap(letter),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentAlphabetIndexLetter extends StatelessWidget {
+  const _StudentAlphabetIndexLetter({
+    required this.letter,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String letter;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = active ? _ScaleColors.orangeDeep : _ScaleColors.muted;
+    return GestureDetector(
+      key: ValueKey<String>('student-letter-index-$letter'),
+      behavior: HitTestBehavior.opaque,
+      onTap: active ? onTap : null,
+      child: SizedBox(
+        height: 18,
+        child: Center(
+          child: Text(
+            letter,
+            maxLines: 1,
+            style: TextStyle(
+              color: active ? color : color.withOpacity(.36),
+              fontSize: 9,
+              height: 1,
+              fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1970,7 +2448,7 @@ class _StudentDialogItem extends StatelessWidget {
           child: Row(
             children: <Widget>[
               Expanded(
-                flex: 3,
+                flex: 2,
                 child: Row(
                   children: <Widget>[
                     Container(
@@ -2003,7 +2481,7 @@ class _StudentDialogItem extends StatelessWidget {
                 ),
               ),
               Expanded(child: _StudentDialogCell(student.gender)),
-              Expanded(child: _StudentDialogCell(student.age)),
+              Expanded(flex: 2, child: _StudentDialogCell(student.age)),
               Expanded(
                   flex: 2, child: _StudentDialogCell(student.contactPhone)),
               Expanded(
@@ -2047,6 +2525,296 @@ class _StudentDialogCell extends StatelessWidget {
     );
   }
 }
+
+const List<String> _studentIndexLetters = <String>[
+  'A',
+  'B',
+  'C',
+  'D',
+  'E',
+  'F',
+  'G',
+  'H',
+  'I',
+  'J',
+  'K',
+  'L',
+  'M',
+  'N',
+  'O',
+  'P',
+  'Q',
+  'R',
+  'S',
+  'T',
+  'U',
+  'V',
+  'W',
+  'X',
+  'Y',
+  'Z',
+  '#',
+];
+
+List<_StudentLetterGroup> _buildStudentLetterGroups(
+  List<AssessmentStudentCandidate> students,
+) {
+  final Map<String, List<AssessmentStudentCandidate>> grouped =
+      <String, List<AssessmentStudentCandidate>>{};
+  for (final AssessmentStudentCandidate student in students) {
+    final String letter = _studentInitialLetter(student);
+    grouped.putIfAbsent(letter, () => <AssessmentStudentCandidate>[]).add(
+          student,
+        );
+  }
+  final List<_StudentLetterGroup> groups = <_StudentLetterGroup>[];
+  for (final String letter in _studentIndexLetters) {
+    final List<AssessmentStudentCandidate>? letterStudents = grouped[letter];
+    if (letterStudents == null || letterStudents.isEmpty) {
+      continue;
+    }
+    letterStudents.sort(
+      (AssessmentStudentCandidate left, AssessmentStudentCandidate right) =>
+          left.displayName.compareTo(right.displayName),
+    );
+    groups.add(
+      _StudentLetterGroup(
+        letter: letter,
+        students: List<AssessmentStudentCandidate>.unmodifiable(letterStudents),
+      ),
+    );
+  }
+  return groups;
+}
+
+String _studentInitialLetter(AssessmentStudentCandidate student) {
+  final String source = student.name.trim().isNotEmpty
+      ? student.name.trim()
+      : student.shortName.trim();
+  if (source.isEmpty) {
+    return '#';
+  }
+  final String firstChar = String.fromCharCode(source.runes.first);
+  final String upper = firstChar.toUpperCase();
+  final int codeUnit = upper.codeUnitAt(0);
+  if (codeUnit >= 65 && codeUnit <= 90) {
+    return upper;
+  }
+  return _commonChineseInitialLetters[firstChar] ?? '#';
+}
+
+const Map<String, String> _commonChineseInitialLetters = <String, String>{
+  '安': 'A',
+  '敖': 'A',
+  '白': 'B',
+  '包': 'B',
+  '鲍': 'B',
+  '柏': 'B',
+  '毕': 'B',
+  '边': 'B',
+  '卞': 'B',
+  '卜': 'B',
+  '蔡': 'C',
+  '曹': 'C',
+  '岑': 'C',
+  '柴': 'C',
+  '常': 'C',
+  '陈': 'C',
+  '成': 'C',
+  '程': 'C',
+  '池': 'C',
+  '褚': 'C',
+  '崔': 'C',
+  '戴': 'D',
+  '邓': 'D',
+  '狄': 'D',
+  '丁': 'D',
+  '董': 'D',
+  '窦': 'D',
+  '杜': 'D',
+  '段': 'D',
+  '鄂': 'E',
+  '范': 'F',
+  '方': 'F',
+  '房': 'F',
+  '费': 'F',
+  '冯': 'F',
+  '符': 'F',
+  '傅': 'F',
+  '甘': 'G',
+  '高': 'G',
+  '葛': 'G',
+  '龚': 'G',
+  '古': 'G',
+  '谷': 'G',
+  '顾': 'G',
+  '关': 'G',
+  '管': 'G',
+  '郭': 'G',
+  '桂': 'G',
+  '韩': 'H',
+  '郝': 'H',
+  '何': 'H',
+  '贺': 'H',
+  '洪': 'H',
+  '侯': 'H',
+  '胡': 'H',
+  '花': 'H',
+  '华': 'H',
+  '黄': 'H',
+  '霍': 'H',
+  '纪': 'J',
+  '吉': 'J',
+  '贾': 'J',
+  '姜': 'J',
+  '蒋': 'J',
+  '江': 'J',
+  '焦': 'J',
+  '金': 'J',
+  '景': 'J',
+  '靳': 'J',
+  '康': 'K',
+  '柯': 'K',
+  '孔': 'K',
+  '寇': 'K',
+  '匡': 'K',
+  '赖': 'L',
+  '蓝': 'L',
+  '郎': 'L',
+  '劳': 'L',
+  '雷': 'L',
+  '黎': 'L',
+  '李': 'L',
+  '连': 'L',
+  '梁': 'L',
+  '廖': 'L',
+  '林': 'L',
+  '刘': 'L',
+  '柳': 'L',
+  '龙': 'L',
+  '卢': 'L',
+  '鲁': 'L',
+  '陆': 'L',
+  '吕': 'L',
+  '罗': 'L',
+  '马': 'M',
+  '毛': 'M',
+  '梅': 'M',
+  '孟': 'M',
+  '苗': 'M',
+  '闵': 'M',
+  '莫': 'M',
+  '牟': 'M',
+  '穆': 'M',
+  '倪': 'N',
+  '聂': 'N',
+  '宁': 'N',
+  '牛': 'N',
+  '农': 'N',
+  '欧': 'O',
+  '区': 'O',
+  '潘': 'P',
+  '庞': 'P',
+  '裴': 'P',
+  '彭': 'P',
+  '皮': 'P',
+  '平': 'P',
+  '蒲': 'P',
+  '朴': 'P',
+  '齐': 'Q',
+  '祁': 'Q',
+  '钱': 'Q',
+  '强': 'Q',
+  '乔': 'Q',
+  '秦': 'Q',
+  '邱': 'Q',
+  '裘': 'Q',
+  '仇': 'Q',
+  '屈': 'Q',
+  '曲': 'Q',
+  '全': 'Q',
+  '饶': 'R',
+  '任': 'R',
+  '荣': 'R',
+  '阮': 'R',
+  '单': 'S',
+  '邵': 'S',
+  '申': 'S',
+  '沈': 'S',
+  '盛': 'S',
+  '施': 'S',
+  '石': 'S',
+  '史': 'S',
+  '宋': 'S',
+  '苏': 'S',
+  '孙': 'S',
+  '谭': 'T',
+  '唐': 'T',
+  '陶': 'T',
+  '田': 'T',
+  '童': 'T',
+  '涂': 'T',
+  '屠': 'T',
+  '万': 'W',
+  '汪': 'W',
+  '王': 'W',
+  '危': 'W',
+  '韦': 'W',
+  '卫': 'W',
+  '魏': 'W',
+  '温': 'W',
+  '文': 'W',
+  '翁': 'W',
+  '吴': 'W',
+  '武': 'W',
+  '奚': 'X',
+  '席': 'X',
+  '夏': 'X',
+  '萧': 'X',
+  '肖': 'X',
+  '谢': 'X',
+  '辛': 'X',
+  '邢': 'X',
+  '熊': 'X',
+  '徐': 'X',
+  '许': 'X',
+  '薛': 'X',
+  '解': 'X',
+  '小': 'X',
+  '严': 'Y',
+  '阎': 'Y',
+  '颜': 'Y',
+  '杨': 'Y',
+  '姚': 'Y',
+  '叶': 'Y',
+  '易': 'Y',
+  '殷': 'Y',
+  '尹': 'Y',
+  '游': 'Y',
+  '尤': 'Y',
+  '于': 'Y',
+  '余': 'Y',
+  '俞': 'Y',
+  '喻': 'Y',
+  '袁': 'Y',
+  '岳': 'Y',
+  '云': 'Y',
+  '翟': 'Z',
+  '查': 'Z',
+  '曾': 'Z',
+  '张': 'Z',
+  '章': 'Z',
+  '赵': 'Z',
+  '郑': 'Z',
+  '钟': 'Z',
+  '周': 'Z',
+  '朱': 'Z',
+  '庄': 'Z',
+  '卓': 'Z',
+  '宗': 'Z',
+  '邹': 'Z',
+  '左': 'Z',
+};
 
 class _DialogActionButton extends StatelessWidget {
   const _DialogActionButton({

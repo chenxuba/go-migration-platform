@@ -636,6 +636,202 @@ void main() {
     expect(find.text('确认选择并进入测评'), findsOneWidget);
   });
 
+  testWidgets('student selector jumps by alphabet index',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 11,
+                  shortName: '陈',
+                  name: '陈小北',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '4岁',
+                  birthDate: '',
+                  contactPhone: '妈妈 136****0011',
+                  latestAssessment: '未测评',
+                ),
+                AssessmentStudentCandidate(
+                  id: 12,
+                  shortName: '李',
+                  name: '李开心',
+                  avatarUrl: '',
+                  gender: '女',
+                  age: '5岁',
+                  birthDate: '',
+                  contactPhone: '爸爸 136****0012',
+                  latestAssessment: '未测评',
+                ),
+                AssessmentStudentCandidate(
+                  id: 13,
+                  shortName: '马',
+                  name: '马一诺',
+                  avatarUrl: '',
+                  gender: '女',
+                  age: '3岁',
+                  birthDate: '',
+                  contactPhone: '妈妈 136****0013',
+                  latestAssessment: '未测评',
+                ),
+                AssessmentStudentCandidate(
+                  id: 14,
+                  shortName: '王',
+                  name: '王安全',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '',
+                  birthDate: '',
+                  contactPhone: '爸爸 136****0014',
+                  latestAssessment: '未测评',
+                ),
+                AssessmentStudentCandidate(
+                  id: 15,
+                  shortName: '张',
+                  name: '张一鸣',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '5岁2个月',
+                  birthDate: '',
+                  contactPhone: '妈妈 136****0015',
+                  latestAssessment: '未测评',
+                ),
+                AssessmentStudentCandidate(
+                  id: 16,
+                  shortName: '赵',
+                  name: '赵可欣',
+                  avatarUrl: '',
+                  gender: '女',
+                  age: '6岁',
+                  birthDate: '',
+                  contactPhone: '爸爸 136****0016',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('赵可欣'), findsNothing);
+
+    await tester.drag(
+      find.byKey(const ValueKey<String>('student-letter-index-scroll')),
+      const Offset(0, -240),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey<String>('student-letter-index-Z')),
+        findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('student-letter-index-Z')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('赵可欣'), findsOneWidget);
+  });
+
+  testWidgets('student selector switches enrolled and intention tabs',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeAssessmentScaleClient scaleClient = _FakeAssessmentScaleClient(
+      studentCandidatesByStatus: const <int, List<AssessmentStudentCandidate>>{
+        AssessmentStudentStatuses.enrolled: <AssessmentStudentCandidate>[
+          AssessmentStudentCandidate(
+            id: 21,
+            shortName: '张',
+            name: '张一鸣',
+            avatarUrl: '',
+            gender: '男',
+            age: '5岁2个月',
+            birthDate: '',
+            contactPhone: '妈妈 136****0021',
+            latestAssessment: '未测评',
+            studentStatus: AssessmentStudentStatuses.enrolled,
+            studentStatusText: '在读学员',
+          ),
+        ],
+        AssessmentStudentStatuses.intention: <AssessmentStudentCandidate>[
+          AssessmentStudentCandidate(
+            id: 22,
+            shortName: '李',
+            name: '李小满',
+            avatarUrl: '',
+            gender: '女',
+            age: '4岁',
+            birthDate: '',
+            contactPhone: '妈妈 136****0022',
+            latestAssessment: '未测评',
+            studentStatus: AssessmentStudentStatuses.intention,
+            studentStatusText: '意向学员',
+          ),
+        ],
+      },
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: scaleClient,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('在读学员'), findsOneWidget);
+    expect(find.text('意向学员'), findsOneWidget);
+    expect(find.text('张一鸣'), findsOneWidget);
+    expect(find.text('李小满'), findsNothing);
+    expect(scaleClient.requestedStudentStatuses,
+        contains(AssessmentStudentStatuses.enrolled));
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>(
+          'student-status-tab-${AssessmentStudentStatuses.intention}',
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('李小满'), findsOneWidget);
+    expect(find.text('张一鸣'), findsNothing);
+    expect(scaleClient.requestedStudentStatuses,
+        contains(AssessmentStudentStatuses.intention));
+  });
+
   testWidgets('selected student echoes unknown age when age is empty',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1431,10 +1627,20 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
   _FakeAssessmentScaleClient({
     this.categoriesDelay = Duration.zero,
     this.libraryDelay = Duration.zero,
-  });
+    List<AssessmentStudentCandidate>? studentCandidates,
+    Map<int, List<AssessmentStudentCandidate>>? studentCandidatesByStatus,
+  })  : studentCandidates = studentCandidates ?? _defaultStudentCandidates,
+        studentCandidatesByStatus = studentCandidatesByStatus ??
+            <int, List<AssessmentStudentCandidate>>{
+              AssessmentStudentStatuses.enrolled:
+                  studentCandidates ?? _defaultStudentCandidates,
+            };
 
   final Duration categoriesDelay;
   final Duration libraryDelay;
+  final List<AssessmentStudentCandidate> studentCandidates;
+  final Map<int, List<AssessmentStudentCandidate>> studentCandidatesByStatus;
+  final List<int> requestedStudentStatuses = <int>[];
 
   static const List<AssessmentScaleItem> _items = <AssessmentScaleItem>[
     AssessmentScaleItem(
@@ -1588,40 +1794,48 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     String token, {
     String scaleCode = '',
     String keyword = '',
+    int studentStatus = AssessmentStudentStatuses.enrolled,
     int pageIndex = 1,
     int pageSize = 20,
   }) async {
-    return const AssessmentStudentCandidatePage(
-      total: 2,
+    requestedStudentStatuses.add(studentStatus);
+    final List<AssessmentStudentCandidate> items =
+        studentCandidatesByStatus[studentStatus] ??
+            <AssessmentStudentCandidate>[];
+    return AssessmentStudentCandidatePage(
+      total: items.length,
       current: 1,
-      size: 20,
-      items: <AssessmentStudentCandidate>[
-        AssessmentStudentCandidate(
-          id: 3,
-          shortName: '张',
-          name: '张一鸣',
-          avatarUrl: '',
-          gender: '男',
-          age: '5岁2个月',
-          birthDate: '2021-03-01',
-          contactPhone: '妈妈 136****0001',
-          latestAssessment: '未测评',
-        ),
-        AssessmentStudentCandidate(
-          id: 4,
-          shortName: '王',
-          name: '王安全',
-          avatarUrl: '',
-          gender: '男',
-          age: '',
-          birthDate: '',
-          contactPhone: '爸爸 136****0002',
-          latestAssessment: '未测评',
-        ),
-      ],
+      size: pageSize,
+      items: items,
     );
   }
 }
+
+const List<AssessmentStudentCandidate> _defaultStudentCandidates =
+    <AssessmentStudentCandidate>[
+  AssessmentStudentCandidate(
+    id: 3,
+    shortName: '张',
+    name: '张一鸣',
+    avatarUrl: '',
+    gender: '男',
+    age: '5岁2个月',
+    birthDate: '2021-03-01',
+    contactPhone: '妈妈 136****0001',
+    latestAssessment: '未测评',
+  ),
+  AssessmentStudentCandidate(
+    id: 4,
+    shortName: '王',
+    name: '王安全',
+    avatarUrl: '',
+    gender: '男',
+    age: '',
+    birthDate: '',
+    contactPhone: '爸爸 136****0002',
+    latestAssessment: '未测评',
+  ),
+];
 
 class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   _FakePep3AssessmentClient({

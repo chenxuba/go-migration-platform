@@ -1103,7 +1103,7 @@ class InstitutionPickerDialog extends StatelessWidget {
       child: Container(
         width: 560,
         constraints: const BoxConstraints(maxHeight: 500),
-        padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
+        padding: const EdgeInsets.fromLTRB(26, 12, 26, 24),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(.96),
           borderRadius: BorderRadius.circular(24),
@@ -1142,16 +1142,16 @@ class InstitutionPickerDialog extends StatelessWidget {
                         '选择登录机构',
                         style: TextStyle(
                           color: AppColors.ink,
-                          fontSize: 22,
+                          fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      SizedBox(height: 5),
+                      SizedBox(height: 1),
                       Text(
                         '当前账号关联多个机构，请选择本次进入的后台',
                         style: TextStyle(
                           color: AppColors.body,
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),

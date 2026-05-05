@@ -74,20 +74,23 @@ type ScaleLibraryVO struct {
 }
 
 type ScaleAssessmentStudentCandidateQuery struct {
-	ScaleCode string `json:"scaleCode,omitempty"`
-	Keyword   string `json:"keyword,omitempty"`
-	PageIndex int    `json:"pageIndex,omitempty"`
-	PageSize  int    `json:"pageSize,omitempty"`
+	ScaleCode     string `json:"scaleCode,omitempty"`
+	Keyword       string `json:"keyword,omitempty"`
+	StudentStatus *int   `json:"studentStatus,omitempty"`
+	PageIndex     int    `json:"pageIndex,omitempty"`
+	PageSize      int    `json:"pageSize,omitempty"`
 }
 
 type ScaleAssessmentStudentCandidate struct {
-	ID               int64  `json:"id"`
-	ShortName        string `json:"shortName"`
-	Name             string `json:"name"`
-	AvatarURL        string `json:"avatarUrl"`
-	Gender           string `json:"gender"`
-	Age              string `json:"age"`
-	BirthDate        string `json:"birthDate,omitempty"`
-	ContactPhone     string `json:"contactPhone"`
-	LatestAssessment string `json:"latestAssessment"`
+	ID                int64  `json:"id"`
+	ShortName         string `json:"shortName"`
+	Name              string `json:"name"`
+	AvatarURL         string `json:"avatarUrl"`
+	Gender            string `json:"gender"`
+	Age               string `json:"age"`
+	BirthDate         string `json:"birthDate,omitempty"`
+	ContactPhone      string `json:"contactPhone"`
+	LatestAssessment  string `json:"latestAssessment"`
+	StudentStatus     int    `json:"studentStatus"`
+	StudentStatusText string `json:"studentStatusText"`
 }

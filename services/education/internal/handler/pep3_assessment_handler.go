@@ -195,11 +195,18 @@ func (handler *Handler) scaleAssessmentStudentCandidates(w http.ResponseWriter, 
 	query := r.URL.Query()
 	pageIndex, _ := strconv.Atoi(query.Get("pageIndex"))
 	pageSize, _ := strconv.Atoi(query.Get("pageSize"))
+	var studentStatus *int
+	if rawStatus := strings.TrimSpace(query.Get("studentStatus")); rawStatus != "" {
+		if parsedStatus, err := strconv.Atoi(rawStatus); err == nil {
+			studentStatus = &parsedStatus
+		}
+	}
 	result, err := handler.service.ListScaleAssessmentStudentCandidates(claims.UserID, model.ScaleAssessmentStudentCandidateQuery{
-		ScaleCode: query.Get("scaleCode"),
-		Keyword:   query.Get("keyword"),
-		PageIndex: pageIndex,
-		PageSize:  pageSize,
+		ScaleCode:     query.Get("scaleCode"),
+		Keyword:       query.Get("keyword"),
+		StudentStatus: studentStatus,
+		PageIndex:     pageIndex,
+		PageSize:      pageSize,
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
