@@ -15,8 +15,8 @@ class AssessmentScaleCategoryScreen extends StatelessWidget {
             constraints.maxWidth.isFinite ? constraints.maxWidth : 1366;
         final bool compact = width < 1180;
         final double margin = compact ? 24 : 32;
-        final double leftWidth = compact ? 198 : 214;
-        final double contentGap = compact ? 28 : 40;
+        final double leftWidth = compact ? 214 : 232;
+        final double contentGap = compact ? 12 : 22;
 
         return ColoredBox(
           color: _ScaleColors.page,
@@ -63,8 +63,6 @@ class _ScaleColors {
   static const Color lineSoft = Color(0xFFF4E8DF);
   static const Color orange = Color(0xFFE96F43);
   static const Color orangeDeep = Color(0xFFC95D37);
-  static const Color blue = Color(0xFF3F82D2);
-  static const Color blueSoft = Color(0xFFEAF3FF);
 }
 
 List<BoxShadow> _scaleShadow({
@@ -307,13 +305,13 @@ class _ScaleCategorySidebar extends StatelessWidget {
 
   static const List<_CategoryItemData> _items = <_CategoryItemData>[
     _CategoryItemData('发展筛查', 12, Color(0xFFE96F43)),
-    _CategoryItemData('语言沟通', 16, Color(0xFF3F82D2), active: true),
-    _CategoryItemData('社交情绪', 14, Color(0xFF6F9F70)),
+    _CategoryItemData('语言与沟通能力', 16, Color(0xFF3F82D2), active: true),
+    _CategoryItemData('社交情绪评估', 14, Color(0xFF6F9F70)),
     _CategoryItemData('感觉统合', 11, Color(0xFFD99427)),
-    _CategoryItemData('动作发展', 10, Color(0xFF63A999)),
-    _CategoryItemData('生活自理', 9, Color(0xFFD96A7F)),
+    _CategoryItemData('动作与精细运动', 10, Color(0xFF63A999)),
+    _CategoryItemData('生活自理能力', 9, Color(0xFFD96A7F)),
     _CategoryItemData('适应行为', 8, Color(0xFF6F9F70)),
-    _CategoryItemData('IEP 目标', 6, Color(0xFF7F77C8)),
+    _CategoryItemData('IEP 目标库', 6, Color(0xFF7F77C8)),
   ];
 
   @override
@@ -421,6 +419,7 @@ class _CategoryItem extends StatelessWidget {
               ),
             ),
           ),
+          const SizedBox(width: 12),
           Text(
             '${data.count}',
             style: TextStyle(
@@ -468,8 +467,8 @@ class _DraftCard extends StatelessWidget {
           ),
           SizedBox(height: 9),
           Text(
-            '未完成测评可直接恢复',
-            maxLines: 1,
+            '未完成的测评可直接恢复，支持断点续测！',
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
               color: _ScaleColors.text,
@@ -480,7 +479,7 @@ class _DraftCard extends StatelessWidget {
           ),
           Spacer(),
           Text(
-            '3 条草稿',
+            '当前共3条草稿',
             style: TextStyle(
               color: _ScaleColors.orange,
               fontSize: 14,
@@ -498,45 +497,33 @@ class _ScaleMainContent extends StatelessWidget {
 
   static const List<_ScaleCardData> _scales = <_ScaleCardData>[
     _ScaleCardData(
-      title: '语言理解',
-      code: 'PEP-3',
+      title: 'PEP-3语言理解',
       tags: <String>['56题', '25分钟', '2-7岁'],
-      badge: 'PEP-3',
       type: _CoverType.book,
     ),
     _ScaleCardData(
-      title: '口语互动',
-      code: '常用',
+      title: '口语发起与互动',
       tags: <String>['42题', '18分钟', '3-8岁'],
-      badge: '常用',
       type: _CoverType.talk,
     ),
     _ScaleCardData(
-      title: '语言筛查',
-      code: '初筛',
+      title: '语言发展筛查表',
       tags: <String>['32题', '15分钟', '12-48月'],
-      badge: '初筛',
       type: _CoverType.screen,
     ),
     _ScaleCardData(
-      title: '表达沟通',
-      code: '常用',
+      title: '表达沟通量表',
       tags: <String>['38题', '22分钟', '学龄前'],
-      badge: '常用',
       type: _CoverType.express,
     ),
     _ScaleCardData(
-      title: '社交沟通',
-      code: '常用',
+      title: '社交沟通观察表',
       tags: <String>['44题', '20分钟', '3-10岁'],
-      badge: '常用',
       type: _CoverType.social,
     ),
     _ScaleCardData(
-      title: '综合复评',
-      code: '复评',
+      title: '综合语言复评卡',
       tags: <String>['48题', '30分钟', '4-8岁'],
-      badge: '复评',
       type: _CoverType.review,
     ),
   ];
@@ -582,23 +569,29 @@ class _ScaleToolbar extends StatelessWidget {
       height: 58,
       child: Row(
         children: <Widget>[
-          const Text(
-            '语言沟通量表',
-            style: TextStyle(
-              color: _ScaleColors.ink,
-              fontSize: 27,
-              height: 1,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(width: 17),
-          const Text(
-            '16 个可用，5 个常用',
-            style: TextStyle(
-              color: _ScaleColors.muted,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
-            ),
+          const Row(
+            crossAxisAlignment: CrossAxisAlignment.baseline,
+            textBaseline: TextBaseline.alphabetic,
+            children: <Widget>[
+              Text(
+                '语言沟通量表',
+                style: TextStyle(
+                  color: _ScaleColors.ink,
+                  fontSize: 27,
+                  height: 1.2,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(width: 17),
+              Text(
+                '16 个可用，5 个常用',
+                style: TextStyle(
+                  color: _ScaleColors.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
           ),
           const Spacer(),
           Container(
@@ -659,16 +652,12 @@ class _Segment extends StatelessWidget {
 class _ScaleCardData {
   const _ScaleCardData({
     required this.title,
-    required this.code,
     required this.tags,
-    required this.badge,
     required this.type,
   });
 
   final String title;
-  final String code;
   final List<String> tags;
-  final String badge;
   final _CoverType type;
 }
 
@@ -709,13 +698,12 @@ class _ScaleCard extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _ScaleColors.ink,
-                    fontSize: 22,
+                    fontSize: 20,
                     height: 1,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
-              _ScaleBadge(label: data.badge),
             ],
           ),
           const SizedBox(height: 12),
@@ -730,35 +718,6 @@ class _ScaleCard extends StatelessWidget {
             ],
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _ScaleBadge extends StatelessWidget {
-  const _ScaleBadge({required this.label});
-
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    final bool blue = label == '初筛' || label == '复评';
-    return Container(
-      height: 26,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: blue ? _ScaleColors.blueSoft : const Color(0xFFFFF0E7),
-        borderRadius: BorderRadius.circular(999),
-      ),
-      child: Text(
-        label,
-        maxLines: 1,
-        style: TextStyle(
-          color: blue ? _ScaleColors.blue : _ScaleColors.orangeDeep,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
       ),
     );
   }
