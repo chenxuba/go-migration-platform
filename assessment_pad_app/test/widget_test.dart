@@ -516,6 +516,57 @@ void main() {
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
 
+  testWidgets('scale search clear icon keeps custom keyboard open',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('scale-search-display-text')));
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('scale-search-key-PEP-3')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    Text searchText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('scale-search-display-text')),
+    );
+    expect(searchText.data, 'PEP-3');
+    expect(find.byKey(const ValueKey<String>('scale-search-keyboard')),
+        findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('scale-search-clear')));
+    await tester.pumpAndSettle();
+
+    searchText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('scale-search-display-text')),
+    );
+    expect(searchText.data, '搜索量表名称 / 编码');
+    expect(find.byKey(const ValueKey<String>('scale-search-keyboard')),
+        findsOneWidget);
+  });
+
   testWidgets('scale category page shows structured skeleton while loading',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -582,7 +633,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('开始测评前，请先选择本次测评对象。'), findsOneWidget);
-    expect(find.text('确认选择'), findsOneWidget);
+    expect(find.text('确认选择并进入测评'), findsOneWidget);
   });
 
   testWidgets('selected student echoes unknown age when age is empty',
@@ -609,7 +660,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('开始测评').at(1));
+    await tester.tap(find.text('未选择学员'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('王安全'));
     await tester.pumpAndSettle();
@@ -644,12 +695,6 @@ void main() {
 
     await tester.tap(find.text('新建测评'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('开始测评').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('张一鸣'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('确认选择'));
-    await tester.pumpAndSettle();
     final Finder pep3Card = find.ancestor(
       of: find.text('PEP-3语言理解评核量表'),
       matching: find.byWidgetPredicate(
@@ -659,6 +704,10 @@ void main() {
     expect(pep3Card, findsOneWidget);
     final Rect cardRect = tester.getRect(pep3Card);
     await tester.tapAt(Offset(cardRect.center.dx, cardRect.bottom - 31));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('张一鸣'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择并进入测评'));
     await tester.pumpAndSettle();
 
     expect(find.text('PEP-3 测评工作台'), findsOneWidget);

@@ -337,14 +337,16 @@ class _AssessmentScaleCategoryScreenState
     );
   }
 
-  Future<void> _openStudentSheet() async {
+  Future<void> _openStudentSheet([
+    AssessmentScaleItem? scaleToOpenAfterConfirm,
+  ]) async {
     if (_studentCandidates.isEmpty && !_studentsLoading) {
       await _loadStudentCandidates();
     }
     if (!mounted) {
       return;
     }
-    _showStudentSheet();
+    _showStudentSheet(scaleToOpenAfterConfirm);
   }
 
   Future<void> _loadStudentCandidates() async {
@@ -395,7 +397,9 @@ class _AssessmentScaleCategoryScreenState
     }
   }
 
-  void _showStudentSheet() {
+  void _showStudentSheet([
+    AssessmentScaleItem? scaleToOpenAfterConfirm,
+  ]) {
     showDialog<void>(
       context: context,
       barrierColor: Colors.black.withOpacity(.18),
@@ -405,13 +409,22 @@ class _AssessmentScaleCategoryScreenState
           selectedStudent: _selectedStudent,
           loading: _studentsLoading,
           errorMessage: _studentErrorMessage,
+          confirmLabel: scaleToOpenAfterConfirm == null ? '确认选择' : '确认选择并进入测评',
           onRetry: () {
             Navigator.of(dialogContext).pop();
-            _openStudentSheet();
+            _openStudentSheet(scaleToOpenAfterConfirm);
           },
           onConfirm: (AssessmentStudentCandidate student) {
             setState(() => _selectedStudent = student);
             Navigator.of(dialogContext).pop();
+            final AssessmentScaleItem? nextScale = scaleToOpenAfterConfirm;
+            if (nextScale != null) {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) {
+                  _chooseScale(nextScale);
+                }
+              });
+            }
           },
         );
       },
@@ -525,6 +538,7 @@ class _AssessmentScaleCategoryScreenState
         final double margin = compact ? 24 : 32;
         final double leftWidth = compact ? 214 : 232;
         final double contentGap = compact ? 12 : 22;
+        const double searchKeyboardTop = 88;
 
         return ColoredBox(
           color: _ScaleColors.page,
@@ -593,6 +607,7 @@ class _AssessmentScaleCategoryScreenState
               ),
               if (_searchKeyboardVisible)
                 Positioned.fill(
+                  top: searchKeyboardTop,
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
                     onTap: _finishSearchKeyboard,
@@ -601,7 +616,7 @@ class _AssessmentScaleCategoryScreenState
               if (_searchKeyboardVisible)
                 Positioned(
                   right: margin,
-                  top: 88,
+                  top: searchKeyboardTop,
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {},
@@ -851,6 +866,7 @@ class _SearchBox extends StatelessWidget {
               if (hasValue) ...<Widget>[
                 const SizedBox(width: 8),
                 GestureDetector(
+                  key: const ValueKey<String>('scale-search-clear'),
                   behavior: HitTestBehavior.opaque,
                   onTap: onClear,
                   child: const Icon(
@@ -1652,6 +1668,7 @@ class _StudentDialog extends StatefulWidget {
     required this.selectedStudent,
     required this.loading,
     required this.errorMessage,
+    required this.confirmLabel,
     required this.onRetry,
     required this.onConfirm,
   });
@@ -1660,6 +1677,7 @@ class _StudentDialog extends StatefulWidget {
   final AssessmentStudentCandidate? selectedStudent;
   final bool loading;
   final String? errorMessage;
+  final String confirmLabel;
   final VoidCallback onRetry;
   final ValueChanged<AssessmentStudentCandidate> onConfirm;
 
@@ -1867,7 +1885,7 @@ class _StudentDialogState extends State<_StudentDialog> {
         ),
         const SizedBox(width: 12),
         _DialogActionButton(
-          label: '确认选择',
+          label: widget.confirmLabel,
           primary: true,
           enabled: pending != null,
           onTap: pending == null ? null : () => widget.onConfirm(pending),
@@ -2056,13 +2074,14 @@ class _DialogActionButton extends StatelessWidget {
         : active
             ? _ScaleColors.text
             : _ScaleColors.muted;
+    final double width = label.length > 5 ? 168 : 116;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: active ? onTap : null,
         borderRadius: BorderRadius.circular(12),
         child: Ink(
-          width: 116,
+          width: width,
           height: 42,
           decoration: BoxDecoration(
             color: background,
@@ -3291,7 +3310,7 @@ class _ScaleMainContent extends StatelessWidget {
   final String? errorMessage;
   final bool hasSelectedStudent;
   final ValueChanged<AssessmentScaleItem> onChooseScale;
-  final VoidCallback onRequireStudent;
+  final ValueChanged<AssessmentScaleItem> onRequireStudent;
   final VoidCallback onRetry;
 
   @override
@@ -3362,7 +3381,7 @@ class _ScaleMainContent extends StatelessWidget {
                               onChooseScale(scales[index]);
                               return;
                             }
-                            onRequireStudent();
+                            onRequireStudent(scales[index]);
                           },
                           canRequestStudent:
                               !hasSelectedStudent && scales[index].available,
