@@ -1,0 +1,1336 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pad 开始测评设计图</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    :root {
+      --page: #fff7ee;
+      --surface: #fffdf9;
+      --ink: #3f2b22;
+      --text: #6f5b50;
+      --muted: #a7958b;
+      --line: #ead7c9;
+      --line-soft: #f4e8df;
+      --orange: #e96f43;
+      --orange-deep: #c95d37;
+      --green: #6f9f70;
+      --blue: #3f82d2;
+      --amber: #d99427;
+      --teal: #63a999;
+      --rose: #d96a7f;
+      --violet: #7f77c8;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", Arial, sans-serif;
+    }
+
+    .stage {
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 1366px;
+      height: 768px;
+      transform-origin: 0 0;
+    }
+
+    .canvas {
+      width: 1366px;
+      height: 768px;
+      padding: 26px 32px;
+      background: var(--page);
+    }
+
+    .topbar {
+      height: 58px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .back-btn,
+    .search,
+    .student,
+    .filter,
+    .category-nav,
+    .category-brief,
+    .scale-card,
+    .draft-card {
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 249, .94);
+      box-shadow: 0 12px 24px rgba(194, 107, 62, .08);
+    }
+
+    .back-btn {
+      width: 44px;
+      height: 44px;
+      border-radius: 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 28px;
+      line-height: 1;
+      font-weight: 600;
+      flex: 0 0 auto;
+    }
+
+    .title {
+      min-width: 260px;
+    }
+
+    h1 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 28px;
+      line-height: 32px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .title p {
+      margin: 4px 0 0;
+      color: var(--text);
+      font-size: 14px;
+      line-height: 18px;
+      font-weight: 700;
+    }
+
+    .actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .search {
+      width: 324px;
+      height: 44px;
+      border-radius: 14px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 700;
+      box-shadow: none;
+    }
+
+    .student,
+    .filter {
+      height: 44px;
+      border-radius: 14px;
+      padding: 0 14px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 800;
+      box-shadow: none;
+    }
+
+    .student.pending {
+      color: var(--muted);
+    }
+
+    .avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--green);
+      color: #fff;
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .student.pending .avatar {
+      background: #f0dfd2;
+      color: var(--text);
+    }
+
+    .filter::before {
+      content: "";
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--orange);
+    }
+
+    .layout {
+      height: 658px;
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: 214px 1fr;
+      gap: 18px;
+    }
+
+    .left {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      gap: 14px;
+    }
+
+    .category-nav {
+      flex: 1;
+      min-height: 0;
+      border-radius: 20px;
+      padding: 16px 12px;
+    }
+
+    .side-title {
+      margin: 0 4px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--ink);
+      font-size: 17px;
+      font-weight: 900;
+    }
+
+    .side-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }
+
+    .category-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .category-item {
+      height: 50px;
+      border-radius: 14px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+    }
+
+    .category-item.active {
+      background: #fff1e8;
+      color: var(--orange-deep);
+    }
+
+    .category-mark {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background: var(--orange);
+      flex: 0 0 auto;
+    }
+
+    .category-item:nth-child(2) .category-mark { background: var(--blue); }
+    .category-item:nth-child(3) .category-mark { background: var(--green); }
+    .category-item:nth-child(4) .category-mark { background: var(--amber); }
+    .category-item:nth-child(5) .category-mark { background: var(--teal); }
+    .category-item:nth-child(6) .category-mark { background: var(--rose); }
+    .category-item:nth-child(7) .category-mark { background: var(--green); }
+    .category-item:nth-child(8) .category-mark { background: var(--violet); }
+
+    .category-name {
+      min-width: 0;
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .category-count {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .category-item.active .category-count {
+      color: var(--orange-deep);
+    }
+
+    .draft-card {
+      height: 118px;
+      border-radius: 20px;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      background: linear-gradient(180deg, #fffdf9 0%, #fff2e8 100%);
+    }
+
+    .draft-card b {
+      color: var(--ink);
+      font-size: 18px;
+      line-height: 22px;
+      font-weight: 900;
+    }
+
+    .draft-card span {
+      color: var(--text);
+      font-size: 13px;
+      line-height: 18px;
+      font-weight: 700;
+    }
+
+    .draft-card strong {
+      color: var(--orange-deep);
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .right {
+      min-width: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .toolbar {
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0 2px;
+    }
+
+    .toolbar strong {
+      color: var(--ink);
+      font-size: 24px;
+      font-weight: 900;
+    }
+
+    .toolbar small {
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .segmented {
+      margin-left: auto;
+      height: 42px;
+      padding: 4px;
+      border-radius: 14px;
+      background: rgba(255, 241, 232, .88);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .segment {
+      height: 34px;
+      min-width: 92px;
+      padding: 0 14px;
+      border-radius: 11px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 900;
+    }
+
+    .segment.active {
+      background: #fff;
+      color: var(--orange-deep);
+      box-shadow: 0 4px 10px rgba(194, 107, 62, .08);
+    }
+
+    .scale-grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+      flex: 1;
+      min-height: 0;
+    }
+
+    .scale-card {
+      height: 284px;
+      min-width: 0;
+      border-radius: 22px;
+      padding: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      overflow: hidden;
+    }
+
+    .scale-card.selected {
+      border-color: rgba(233, 111, 67, .34);
+      box-shadow: 0 16px 30px rgba(233, 111, 67, .15);
+    }
+
+    .cover {
+      width: 100%;
+      height: 178px;
+      border-radius: 20px;
+      padding: 14px;
+      position: relative;
+      overflow: hidden;
+      color: var(--cover-main);
+      isolation: isolate;
+      border: 1px solid rgba(255, 255, 255, .56);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+    }
+
+    .cover::before,
+    .cover::after {
+      content: "";
+      position: absolute;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, .62);
+      z-index: -1;
+    }
+
+    .cover::before {
+      width: 150px;
+      height: 150px;
+      right: -60px;
+      top: -48px;
+    }
+
+    .cover::after {
+      width: 96px;
+      height: 96px;
+      left: -40px;
+      bottom: -42px;
+      background: rgba(255, 255, 255, .42);
+    }
+
+    .cover.pep {
+      --cover-main: #e96f43;
+      --cover-soft: #ffe4d4;
+      --cover-pale: #fff5ec;
+      background: linear-gradient(180deg, #fff7f0 0%, #ffd9c4 100%);
+    }
+
+    .cover.speech {
+      --cover-main: #63a999;
+      --cover-soft: #d7f0e5;
+      --cover-pale: #f2fbf6;
+      background: linear-gradient(180deg, #f2fbf6 0%, #cde9dc 100%);
+    }
+
+    .cover.screen {
+      --cover-main: #3f82d2;
+      --cover-soft: #dceeff;
+      --cover-pale: #f3f8ff;
+      background: linear-gradient(180deg, #f3f8ff 0%, #c9e2ff 100%);
+    }
+
+    .cover.express {
+      --cover-main: #d99427;
+      --cover-soft: #ffe9bc;
+      --cover-pale: #fff9ec;
+      background: linear-gradient(180deg, #fff9ec 0%, #ffe1a3 100%);
+    }
+
+    .cover.social {
+      --cover-main: #7f77c8;
+      --cover-soft: #e8e5ff;
+      --cover-pale: #f7f5ff;
+      background: linear-gradient(180deg, #f7f5ff 0%, #dcd7fb 100%);
+    }
+
+    .cover.review {
+      --cover-main: #d96a7f;
+      --cover-soft: #ffe0e4;
+      --cover-pale: #fff5f6;
+      background: linear-gradient(180deg, #fff5f6 0%, #ffcfd8 100%);
+    }
+
+    .cover-code {
+      min-width: 58px;
+      height: 30px;
+      padding: 0 9px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255, 255, 255, .78);
+      color: var(--cover-main);
+      font-size: 12px;
+      font-weight: 900;
+      letter-spacing: .4px;
+    }
+
+    .cover-badge {
+      display: none;
+    }
+
+    .cover-art {
+      position: absolute;
+      left: 50%;
+      top: 44px;
+      width: 164px;
+      height: 92px;
+      transform: translateX(-50%);
+      color: var(--cover-main);
+    }
+
+    .cover-art .soft {
+      fill: var(--cover-soft);
+    }
+
+    .cover-art .pale {
+      fill: var(--cover-pale);
+    }
+
+    .cover-art .main {
+      fill: var(--cover-main);
+    }
+
+    .cover-art .line {
+      fill: none;
+      stroke: var(--cover-main);
+      stroke-width: 5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .cover-art .white {
+      fill: rgba(255, 255, 255, .82);
+    }
+
+    .cover-name {
+      position: absolute;
+      left: 14px;
+      right: 14px;
+      bottom: 13px;
+      color: var(--cover-main);
+      font-size: 22px;
+      line-height: 25px;
+      font-weight: 900;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+
+    .cover-sub {
+      display: none;
+    }
+
+    .card-body {
+      min-width: 0;
+      padding: 0 3px 2px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      flex: 1;
+    }
+
+    .card-body h3 {
+      margin: 0;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 21px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .card-line {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .card-desc {
+      display: none;
+    }
+
+    .tag {
+      height: 24px;
+      padding: 0 8px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      background: #fff7f0;
+      color: var(--text);
+      border: 1px solid var(--line-soft);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .card-footer {
+      margin-top: auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .choose {
+      height: 32px;
+      padding: 0 13px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff3ea;
+      color: var(--orange-deep);
+      border: 1px solid rgba(233, 111, 67, .18);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+    }
+
+    .selected .choose {
+      background: var(--orange);
+      color: #fff;
+      border-color: var(--orange);
+    }
+
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      background: rgba(63, 43, 34, .22);
+      z-index: 20;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .student-modal {
+      position: relative;
+      width: 760px;
+      border-radius: 12px;
+      background: #fff;
+      box-shadow: 0 28px 60px rgba(91, 53, 30, .22);
+      overflow: hidden;
+      padding: 24px;
+    }
+
+    .modal-header {
+      margin-bottom: 16px;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      color: #111827;
+      font-size: 22px;
+      line-height: 30px;
+      font-weight: 800;
+    }
+
+    .modal-header p {
+      margin: 6px 0 0;
+      color: #667085;
+      font-size: 14px;
+      line-height: 22px;
+      font-weight: 700;
+    }
+
+    .modal-close {
+      position: absolute;
+      right: 18px;
+      top: 18px;
+      width: 36px;
+      height: 36px;
+      border-radius: 10px;
+      border: 0;
+      background: transparent;
+      color: #8c8c8c;
+      font-size: 22px;
+      line-height: 1;
+      font-weight: 700;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    .modal-close:hover {
+      background: #f7f7f7;
+      color: #595959;
+    }
+
+    .child-filter-bar {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 84px 84px;
+      gap: 12px;
+      margin-bottom: 14px;
+    }
+
+    .child-search {
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #d9d9d9;
+      background: #fff;
+      padding: 0 12px 0 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      color: #98a2b3;
+      font-size: 14px;
+      line-height: 22px;
+      font-weight: 700;
+    }
+
+    .search-icon {
+      width: 12px;
+      height: 12px;
+      border: 2px solid #98a2b3;
+      border-radius: 50%;
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .search-icon::after {
+      content: "";
+      position: absolute;
+      right: -6px;
+      bottom: -3px;
+      width: 7px;
+      height: 2px;
+      border-radius: 2px;
+      background: #98a2b3;
+      transform: rotate(45deg);
+      transform-origin: left center;
+    }
+
+    .child-filter-btn {
+      height: 40px;
+      border-radius: 8px;
+      border: 1px solid #d9d9d9;
+      background: #fff;
+      color: #344054;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .child-filter-btn.primary {
+      border-color: #2f6bff;
+      background: #2f6bff;
+      color: #fff;
+    }
+
+    .child-table {
+      overflow: hidden;
+      border: 1px solid #e6eaf0;
+      border-radius: 8px;
+      background: #fff;
+    }
+
+    .child-table__head,
+    .child-row {
+      display: grid;
+      grid-template-columns: 1.08fr .52fr .75fr 1.28fr .9fr .38fr;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .child-table__head {
+      min-height: 40px;
+      padding: 0 12px;
+      color: #667085;
+      background: #f8fafc;
+      font-size: 13px;
+      line-height: 20px;
+      font-weight: 800;
+    }
+
+    .child-row {
+      width: 100%;
+      min-height: 62px;
+      padding: 0 12px;
+      color: #344054;
+      text-align: left;
+      background: #fff;
+      border: 0;
+      border-top: 1px solid #edf1f6;
+      font-size: 14px;
+      line-height: 22px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+
+    .child-row.is-selected {
+      position: relative;
+      z-index: 1;
+      background: #f4f8ff;
+      box-shadow: inset 0 0 0 1px #2f6bff;
+    }
+
+    .child-name {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      min-width: 0;
+    }
+
+    .child-avatar {
+      width: 34px;
+      height: 34px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: #eef5ff;
+      color: #145dff;
+      font-size: 14px;
+      font-style: normal;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .child-name strong {
+      min-width: 0;
+      color: #344054;
+      font-size: 14px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .radio-mark {
+      justify-self: center;
+      width: 18px;
+      height: 18px;
+      border: 1px solid #b8c2d6;
+      border-radius: 50%;
+    }
+
+    .child-row.is-selected .radio-mark b {
+      display: block;
+      width: 10px;
+      height: 10px;
+      margin: 3px;
+      background: #2f6bff;
+      border-radius: 50%;
+    }
+
+    .modal-footer {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-top: 18px;
+    }
+
+    .selected-child {
+      color: #111827;
+      font-size: 16px;
+      line-height: 24px;
+      font-weight: 700;
+    }
+
+    .selected-child strong {
+      color: #145dff;
+      font-weight: 900;
+    }
+
+    .modal-actions {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .modal-secondary,
+    .modal-primary {
+      height: 36px;
+      padding: 0 15px;
+      border-radius: 8px;
+      font-size: 14px;
+      font-weight: 800;
+      cursor: pointer;
+    }
+
+    .modal-secondary {
+      border: 1px solid #d9d9d9;
+      background: #fff;
+      color: #344054;
+    }
+
+    .modal-primary {
+      border: 1px solid #2f6bff;
+      background: #2f6bff;
+      color: #fff;
+    }
+
+    .modal-primary:disabled {
+      background: #e6edf6;
+      color: #9aa8bb;
+      cursor: not-allowed;
+    }
+  </style>
+</head>
+<body>
+  <div class="stage" id="stage">
+    <div class="canvas">
+      <header class="topbar">
+        <div class="back-btn">‹</div>
+        <div class="title">
+          <h1>开始测评</h1>
+        </div>
+
+        <div class="actions">
+          <div class="search">搜索量表名称 / 编码</div>
+          <div class="student pending" id="studentChip"><span class="avatar">未</span><span class="student-label">未选择学员</span></div>
+          <div class="filter">可用量表</div>
+        </div>
+      </header>
+
+      <main class="layout">
+        <aside class="left">
+          <nav class="category-nav">
+            <div class="side-title">分类 <span>128</span></div>
+            <div class="category-list">
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">发展筛查</span>
+                <span class="category-count">12</span>
+              </div>
+              <div class="category-item active">
+                <span class="category-mark"></span>
+                <span class="category-name">语言沟通</span>
+                <span class="category-count">18</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">社交情绪</span>
+                <span class="category-count">14</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">感觉统合</span>
+                <span class="category-count">11</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">动作发展</span>
+                <span class="category-count">10</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">生活自理</span>
+                <span class="category-count">9</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">适应行为</span>
+                <span class="category-count">8</span>
+              </div>
+              <div class="category-item">
+                <span class="category-mark"></span>
+                <span class="category-name">IEP 目标</span>
+                <span class="category-count">6</span>
+              </div>
+            </div>
+          </nav>
+
+          <section class="draft-card">
+            <b>继续草稿</b>
+            <span>上次未完成的测评可以直接恢复。</span>
+            <strong>3 条草稿</strong>
+          </section>
+        </aside>
+
+        <section class="right">
+          <div class="toolbar">
+            <strong>语言沟通量表</strong>
+            <small>16 个可用，5 个推荐</small>
+            <div class="segmented">
+              <span class="segment active">推荐</span>
+              <span class="segment">全部</span>
+              <span class="segment">初筛</span>
+              <span class="segment">复评</span>
+            </div>
+          </div>
+
+          <section class="scale-grid">
+            <article class="scale-card">
+              <div class="cover pep">
+                <div class="cover-top">
+                  <span class="cover-code">PEP-3</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="58" rx="36" ry="8"/>
+                  <rect class="white" x="14" y="18" width="29" height="34" rx="8"/>
+                  <rect class="white" x="43" y="18" width="29" height="34" rx="8"/>
+                  <path class="line" d="M43 22v29"/>
+                  <path class="line" d="M23 29h12M23 38h9M52 29h12M52 38h8"/>
+                  <circle class="main" cx="72" cy="15" r="9"/>
+                  <path class="line" d="M67 21l-6 8"/>
+                </svg>
+                <div class="cover-name">语言理解</div>
+              </div>
+              <div class="card-body">
+                <h3>PEP-3 语言理解</h3>
+                <p class="card-desc">适合初筛、干预前基线和阶段复评。</p>
+                <div class="card-line">
+                  <span class="tag">56 题</span>
+                  <span class="tag">25 分钟</span>
+                  <span class="tag">2-7岁</span>
+                </div>
+                <div class="card-footer">
+                  <span>最近使用 8 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="scale-card">
+              <div class="cover speech">
+                <div class="cover-top">
+                  <span class="cover-code">SPEECH</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="58" rx="34" ry="8"/>
+                  <rect class="white" x="12" y="12" width="46" height="30" rx="14"/>
+                  <path class="white" d="M25 38l-12 11 4-15z"/>
+                  <rect class="soft" x="36" y="28" width="48" height="30" rx="14"/>
+                  <path class="soft" d="M70 53l12 10-4-15z"/>
+                  <path class="line" d="M24 25h21M50 41h22"/>
+                  <circle class="main" cx="32" cy="25" r="4"/>
+                  <circle class="main" cx="61" cy="41" r="4"/>
+                </svg>
+                <div class="cover-name">口语互动</div>
+              </div>
+              <div class="card-body">
+                <h3>口语发起与互动</h3>
+                <p class="card-desc">观察主动发起、轮替回应和日常沟通。</p>
+                <div class="card-line">
+                  <span class="tag">42 题</span>
+                  <span class="tag">18 分钟</span>
+                  <span class="tag">3-8岁</span>
+                </div>
+                <div class="card-footer">
+                  <span>本月使用 6 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="scale-card">
+              <div class="cover screen">
+                <div class="cover-top">
+                  <span class="cover-code">SCREEN</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="59" rx="33" ry="8"/>
+                  <rect class="white" x="19" y="9" width="44" height="52" rx="11"/>
+                  <rect class="soft" x="30" y="5" width="24" height="10" rx="5"/>
+                  <path class="line" d="M31 28l6 6 12-14M31 45l6 6 12-14"/>
+                  <circle class="soft" cx="69" cy="45" r="15"/>
+                  <path class="line" d="M79 56l9 9"/>
+                </svg>
+                <div class="cover-name">语言筛查</div>
+              </div>
+              <div class="card-body">
+                <h3>语言发展筛查表</h3>
+                <p class="card-desc">快速定位早期语言发展里程碑。</p>
+                <div class="card-line">
+                  <span class="tag">32 题</span>
+                  <span class="tag">15 分钟</span>
+                  <span class="tag">12-48月</span>
+                </div>
+                <div class="card-footer">
+                  <span>最近使用 3 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="scale-card">
+              <div class="cover express">
+                <div class="cover-top">
+                  <span class="cover-code">EXP</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="59" rx="33" ry="8"/>
+                  <rect class="white" x="14" y="14" width="48" height="44" rx="10"/>
+                  <path class="line" d="M25 28h24M25 40h18"/>
+                  <path class="soft" d="M59 15l16 16-29 29-16 4 4-16z"/>
+                  <path class="line" d="M62 18l13 13M38 52l10 10"/>
+                </svg>
+                <div class="cover-name">表达沟通</div>
+              </div>
+              <div class="card-body">
+                <h3>表达沟通量表</h3>
+                <p class="card-desc">关注词汇输出、句型组织和问答回应。</p>
+                <div class="card-line">
+                  <span class="tag">38 题</span>
+                  <span class="tag">22 分钟</span>
+                  <span class="tag">学龄前</span>
+                </div>
+                <div class="card-footer">
+                  <span>最近使用 7 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="scale-card">
+              <div class="cover social">
+                <div class="cover-top">
+                  <span class="cover-code">SOCIAL</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="59" rx="34" ry="8"/>
+                  <circle class="white" cx="30" cy="28" r="16"/>
+                  <circle class="pale" cx="66" cy="28" r="16"/>
+                  <path class="line" d="M43 29h10"/>
+                  <path class="line" d="M18 56c5-12 19-12 24 0M54 56c5-12 19-12 24 0"/>
+                  <circle class="main" cx="48" cy="17" r="6"/>
+                </svg>
+                <div class="cover-name">社交沟通</div>
+              </div>
+              <div class="card-body">
+                <h3>社交沟通观察表</h3>
+                <p class="card-desc">观察共同注意、互动回应和情境沟通。</p>
+                <div class="card-line">
+                  <span class="tag">44 题</span>
+                  <span class="tag">20 分钟</span>
+                  <span class="tag">3-10岁</span>
+                </div>
+                <div class="card-footer">
+                  <span>本月使用 5 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+
+            <article class="scale-card">
+              <div class="cover review">
+                <div class="cover-top">
+                  <span class="cover-code">REVIEW</span>
+                </div>
+                <svg class="cover-art" viewBox="0 0 96 70" aria-hidden="true">
+                  <ellipse class="soft" cx="48" cy="59" rx="33" ry="8"/>
+                  <rect class="white" x="16" y="10" width="54" height="50" rx="10"/>
+                  <path class="line" d="M27 45l12-13 10 8 15-20"/>
+                  <path class="line" d="M27 24h18"/>
+                  <circle class="main" cx="72" cy="18" r="9"/>
+                  <path class="line" d="M67 23l-6 9"/>
+                </svg>
+                <div class="cover-name">综合复评</div>
+              </div>
+              <div class="card-body">
+                <h3>综合语言复评卡</h3>
+                <p class="card-desc">用于阶段对照，并衔接 IEP 目标生成。</p>
+                <div class="card-line">
+                  <span class="tag">48 题</span>
+                  <span class="tag">30 分钟</span>
+                  <span class="tag">4-8岁</span>
+                </div>
+                <div class="card-footer">
+                  <span>最近使用 4 次</span>
+                  <span class="choose">选择</span>
+                </div>
+              </div>
+            </article>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="modal-backdrop" id="studentModal">
+      <section class="student-modal">
+        <button class="modal-close" type="button" id="modalClose">×</button>
+        <div class="modal-header">
+          <h2>选择测评儿童</h2>
+          <p id="modalScaleName">开始 PEP-3 语言理解 测评前，请先选择本次测评对象。</p>
+        </div>
+
+        <div class="child-filter-bar">
+          <div class="child-search">
+            <span>搜索儿童姓名 / 联系电话</span>
+            <span class="search-icon"></span>
+          </div>
+          <button class="child-filter-btn primary" type="button">搜索</button>
+          <button class="child-filter-btn" type="button">重置</button>
+        </div>
+
+        <div class="child-table">
+          <div class="child-table__head">
+            <span>儿童信息</span>
+            <span>性别</span>
+            <span>年龄</span>
+            <span>联系电话</span>
+            <span>最近测评</span>
+            <span>操作</span>
+          </div>
+          <button class="child-row is-selected" type="button" data-name="陈小雨" data-age="5岁2月">
+            <span class="child-name">
+              <i class="child-avatar">陈</i>
+              <strong>陈小雨</strong>
+            </span>
+            <span>女</span>
+            <span>5岁2月</span>
+            <span>138****2641</span>
+            <span>2026-04-18</span>
+            <span class="radio-mark"><b></b></span>
+          </button>
+          <button class="child-row" type="button" data-name="刘一诺" data-age="4岁8月">
+            <span class="child-name">
+              <i class="child-avatar">刘</i>
+              <strong>刘一诺</strong>
+            </span>
+            <span>男</span>
+            <span>4岁8月</span>
+            <span>136****9275</span>
+            <span>未测评</span>
+            <span class="radio-mark"><b></b></span>
+          </button>
+          <button class="child-row" type="button" data-name="周子航" data-age="6岁1月">
+            <span class="child-name">
+              <i class="child-avatar">周</i>
+              <strong>周子航</strong>
+            </span>
+            <span>男</span>
+            <span>6岁1月</span>
+            <span>135****6188</span>
+            <span>2026-03-29</span>
+            <span class="radio-mark"><b></b></span>
+          </button>
+          <button class="child-row" type="button" data-name="王晨" data-age="3岁9月">
+            <span class="child-name">
+              <i class="child-avatar">王</i>
+              <strong>王晨</strong>
+            </span>
+            <span>女</span>
+            <span>3岁9月</span>
+            <span>137****4028</span>
+            <span>未测评</span>
+            <span class="radio-mark"><b></b></span>
+          </button>
+          <button class="child-row" type="button" data-name="赵可" data-age="5岁6月">
+            <span class="child-name">
+              <i class="child-avatar">赵</i>
+              <strong>赵可</strong>
+            </span>
+            <span>女</span>
+            <span>5岁6月</span>
+            <span>139****7821</span>
+            <span>2026-02-16</span>
+            <span class="radio-mark"><b></b></span>
+          </button>
+        </div>
+
+        <div class="modal-footer">
+          <div class="selected-child">
+            已选择：<strong id="selectedChildName">陈小雨</strong>
+          </div>
+          <div class="modal-actions">
+            <button class="modal-secondary" type="button" id="modalCancel">取消</button>
+            <button class="modal-primary" type="button" id="modalConfirm">确认并开始测评</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <script>
+    const DESIGN_WIDTH = 1366;
+    const DESIGN_HEIGHT = 768;
+    const stage = document.getElementById('stage');
+
+    function fitStage() {
+      const scale = Math.min(
+        window.innerWidth / DESIGN_WIDTH,
+        window.innerHeight / DESIGN_HEIGHT,
+      );
+      const left = Math.max((window.innerWidth - DESIGN_WIDTH * scale) / 2, 0);
+      const top = Math.max((window.innerHeight - DESIGN_HEIGHT * scale) / 2, 0);
+      stage.style.transform = `translate(${left}px, ${top}px) scale(${scale})`;
+    }
+
+    window.addEventListener('resize', fitStage);
+    fitStage();
+
+    const modal = document.getElementById('studentModal');
+    const modalScaleName = document.getElementById('modalScaleName');
+    const modalClose = document.getElementById('modalClose');
+    const modalCancel = document.getElementById('modalCancel');
+    const modalConfirm = document.getElementById('modalConfirm');
+    const studentChip = document.getElementById('studentChip');
+    const selectedChildName = document.getElementById('selectedChildName');
+    let selectedScaleCard = null;
+    let selectedStudentCard = null;
+
+    function openStudentModal(card) {
+      document.querySelectorAll('.scale-card.selected').forEach((item) => {
+        item.classList.remove('selected');
+        item.querySelector('.choose').textContent = '选择';
+      });
+      selectedScaleCard = card;
+      selectedScaleCard.classList.add('selected');
+      selectedScaleCard.querySelector('.choose').textContent = '已选';
+      const scaleName = selectedScaleCard.querySelector('h3').textContent;
+      modalScaleName.textContent = `开始 ${scaleName} 测评前，请先选择本次测评对象。`;
+      document.querySelectorAll('.child-row.is-selected').forEach((item) => {
+        item.classList.remove('is-selected');
+      });
+      selectedStudentCard = document.querySelector('.child-row');
+      if (selectedStudentCard) {
+        selectedStudentCard.classList.add('is-selected');
+        selectedChildName.textContent = selectedStudentCard.dataset.name;
+      }
+      modalConfirm.disabled = !selectedStudentCard;
+      modal.classList.add('open');
+    }
+
+    function closeStudentModal() {
+      modal.classList.remove('open');
+    }
+
+    document.querySelectorAll('.scale-card').forEach((card) => {
+      card.addEventListener('click', () => openStudentModal(card));
+    });
+
+    document.querySelectorAll('.child-row').forEach((row) => {
+      row.addEventListener('click', () => {
+        document.querySelectorAll('.child-row.is-selected').forEach((item) => {
+          item.classList.remove('is-selected');
+        });
+        selectedStudentCard = row;
+        selectedStudentCard.classList.add('is-selected');
+        selectedChildName.textContent = selectedStudentCard.dataset.name;
+        modalConfirm.disabled = false;
+      });
+    });
+
+    modalClose.addEventListener('click', closeStudentModal);
+    modalCancel.addEventListener('click', closeStudentModal);
+    modal.addEventListener('click', (event) => {
+      if (event.target === modal) closeStudentModal();
+    });
+    modalConfirm.addEventListener('click', () => {
+      if (!selectedStudentCard) return;
+      const name = selectedStudentCard.dataset.name;
+      const age = selectedStudentCard.dataset.age;
+      studentChip.classList.remove('pending');
+      studentChip.querySelector('.avatar').textContent = name.slice(0, 1);
+      studentChip.querySelector('.student-label').textContent = `${name} · ${age}`;
+      closeStudentModal();
+    });
+  </script>
+</body>
+</html>

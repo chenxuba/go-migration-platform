@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'assessment_scale_category_page.dart';
 import 'auth_client.dart';
 import 'home_client.dart';
 import 'smart_timetable_page.dart';
@@ -87,6 +88,17 @@ class AssessmentPadApp extends StatelessWidget {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => SmartTimetablePage(timetableClient: timetableClient),
+        );
+      case '/assessment-scales':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: AssessmentScaleCategoryScreen(
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
         );
       default:
         return MaterialPageRoute<void>(
@@ -3332,14 +3344,16 @@ class StartAssessmentCard extends StatelessWidget {
                 icon: Icons.add_rounded,
                 label: '新建测评',
                 filled: true,
-                onTap: () {},
+                onTap: () =>
+                    Navigator.of(context).pushNamed('/assessment-scales'),
               ),
               const SizedBox(height: 16),
               _StartButton(
                 icon: Icons.play_arrow_rounded,
                 label: '继续测评',
                 filled: false,
-                onTap: () {},
+                onTap: () =>
+                    Navigator.of(context).pushNamed('/assessment-scales'),
               ),
             ],
           ),
