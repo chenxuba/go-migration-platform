@@ -533,14 +533,17 @@ class _ScaleMainContent extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double gap = 14;
+        const double toolbarHeight = 44;
+        const double toolbarGap = 10;
         final double cardWidth = (constraints.maxWidth - gap * 2) / 3;
-        final double cardHeight = (constraints.maxHeight - 58 - gap - 16) / 2;
+        final double cardHeight =
+            (constraints.maxHeight - toolbarHeight - gap - toolbarGap) / 2;
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             const _ScaleToolbar(),
-            const SizedBox(height: 16),
+            const SizedBox(height: toolbarGap),
             Wrap(
               spacing: gap,
               runSpacing: gap,
@@ -566,49 +569,53 @@ class _ScaleToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 58,
-      child: Row(
-        children: <Widget>[
-          const Row(
-            crossAxisAlignment: CrossAxisAlignment.baseline,
-            textBaseline: TextBaseline.alphabetic,
-            children: <Widget>[
-              Text(
-                '语言沟通量表',
-                style: TextStyle(
-                  color: _ScaleColors.ink,
-                  fontSize: 27,
-                  height: 1.2,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              SizedBox(width: 17),
-              Text(
-                '16 个可用，5 个常用',
-                style: TextStyle(
-                  color: _ScaleColors.muted,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
-          const Spacer(),
-          Container(
-            height: 42,
-            padding: const EdgeInsets.all(4),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1E8).withOpacity(.78),
-              borderRadius: BorderRadius.circular(15),
-            ),
-            child: const Row(
+      height: 44,
+      child: Transform.translate(
+        offset: const Offset(0, 0),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            const Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                _Segment(label: '常用', active: true),
-                _Segment(label: '全部'),
+                Text(
+                  '语言沟通量表',
+                  style: TextStyle(
+                    color: _ScaleColors.ink,
+                    fontSize: 27,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(width: 17),
+                Text(
+                  '16 个可用，5 个常用',
+                  style: TextStyle(
+                    color: _ScaleColors.muted,
+                    fontSize: 14,
+                    height: 1,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
               ],
             ),
-          ),
-        ],
+            const Spacer(),
+            Container(
+              height: 42,
+              padding: const EdgeInsets.all(4),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1E8).withOpacity(.78),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: const Row(
+                children: <Widget>[
+                  _Segment(label: '常用', active: true),
+                  _Segment(label: '全部'),
+                ],
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -639,9 +646,15 @@ class _Segment extends StatelessWidget {
       ),
       child: Text(
         label,
+        strutStyle: const StrutStyle(
+          fontSize: 14,
+          height: 1,
+          forceStrutHeight: true,
+        ),
         style: TextStyle(
           color: active ? _ScaleColors.orangeDeep : _ScaleColors.text,
           fontSize: 14,
+          height: 1,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -769,9 +782,16 @@ class _ChooseButton extends StatelessWidget {
       child: const Text(
         '选择',
         maxLines: 1,
+        textAlign: TextAlign.center,
+        strutStyle: StrutStyle(
+          fontSize: 15,
+          height: 1,
+          forceStrutHeight: true,
+        ),
         style: TextStyle(
           color: _ScaleColors.orangeDeep,
           fontSize: 15,
+          height: 1,
           fontWeight: FontWeight.w900,
         ),
       ),
