@@ -806,6 +806,52 @@ void main() {
     expect(find.byType(SnackBar), findsNothing);
   });
 
+  testWidgets('PEP3 submit validation uses custom message',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakePep3AssessmentClient pep3Client = _FakePep3AssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: pep3Client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('提交记录'));
+    await tester.pump(const Duration(milliseconds: 120));
+
+    expect(find.text('还有 2 道题未评分，请补全后再提交'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget.runtimeType.toString() == 'PadTopMessage',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
   testWidgets('PEP3 workbench shows previous assessment score',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);

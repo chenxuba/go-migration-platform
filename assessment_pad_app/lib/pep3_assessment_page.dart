@@ -454,7 +454,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         _autoSaveText = '草稿已保存';
       });
       if (!silent) {
-        _showCustomMessage('草稿已保存');
+        _showMessage('草稿已保存', tone: PadMessageTone.success);
       }
       await _refreshCaregiverInvite(silent: true);
       return detail;
@@ -536,7 +536,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       }
       final String token = await _readToken();
       await widget.client.submitDraft(token, draftId);
-      _showMessage('已提交正式测评记录');
+      _showMessage('已提交正式测评记录', tone: PadMessageTone.success);
+      await Future<void>.delayed(const Duration(milliseconds: 650));
       if (mounted) {
         widget.onBack();
       }
@@ -569,7 +570,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         _caregiverInvite = invite;
       });
       if (!silent) {
-        _showMessage('照护者报告入口已生成');
+        _showMessage('照护者报告入口已生成', tone: PadMessageTone.success);
       }
     } on Object catch (error) {
       if (!silent) {
@@ -730,22 +731,18 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     });
   }
 
-  void _showMessage(String message) {
-    if (!mounted) {
-      return;
-    }
-    ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(message)));
-  }
-
-  void _showCustomMessage(String message) {
+  void _showMessage(
+    String message, {
+    PadMessageTone tone = PadMessageTone.info,
+  }) {
     if (!mounted || message.trim().isEmpty) {
       return;
     }
     _messageController.show(
       context,
       message,
-      topMargin: 76,
+      tone: tone,
+      topMargin: 12,
       key: 'pep3-top-message',
     );
   }
@@ -885,8 +882,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       caregiverInvite: _caregiverInvite,
                       caregiverLoading: _caregiverLoading,
                       onRecordValue: _setRecordValue,
-                      onSmsTap: () => _showCustomMessage('短信发送功能暂未开放'),
-                      onWechatTap: () => _showCustomMessage('微信推送功能暂未开放'),
+                      onSmsTap: () => _showMessage('短信发送功能暂未开放'),
+                      onWechatTap: () => _showMessage('微信推送功能暂未开放'),
                     ),
                   ),
                 ],
@@ -972,7 +969,7 @@ class _DraftResumeDialog extends StatelessWidget {
                 '发现未完成草稿',
                 style: TextStyle(
                   color: _Pep3Colors.ink,
-                  fontSize: 25,
+                  fontSize: 24,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -988,7 +985,7 @@ class _DraftResumeDialog extends StatelessWidget {
                     '当前儿童存在一份未提交的 PEP-3 测评草稿。',
                     style: TextStyle(
                       color: _Pep3Colors.ink,
-                      fontSize: 18,
+                      fontSize: 17,
                       height: 1.35,
                       fontWeight: FontWeight.w800,
                     ),
@@ -1070,7 +1067,7 @@ class _DraftResumeMeta extends StatelessWidget {
       ),
       style: const TextStyle(
         color: _Pep3Colors.text,
-        fontSize: 16,
+        fontSize: 15,
         height: 1.2,
         fontWeight: FontWeight.w800,
       ),
@@ -1111,7 +1108,7 @@ class _DialogActionButton extends StatelessWidget {
               label,
               style: TextStyle(
                 color: filled ? Colors.white : _Pep3Colors.ink,
-                fontSize: 16,
+                fontSize: 15,
                 fontWeight: FontWeight.w900,
               ),
             ),
