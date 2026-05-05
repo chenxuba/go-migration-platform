@@ -670,6 +670,55 @@ void main() {
     expect(find.text('继续测评'), findsOneWidget);
   });
 
+  testWidgets('PEP3 workbench shows skeleton while initial data loads',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: _FakePep3AssessmentClient(
+              summaryFetchDelay: Duration(milliseconds: 300),
+            ),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('PEP-3 测评工作台'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) =>
+            widget.runtimeType.toString() == '_Pep3SidebarSkeleton',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('旋开瓶盖'), findsWidgets);
+  });
+
   testWidgets('PEP3 draft dialog converts UTC updated time to local time',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1474,6 +1523,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     this.draftUpdatedTime = '2026-05-05T14:01:00',
     this.includeRecordField = false,
     this.includeTextRecordField = false,
+    this.summaryFetchDelay = Duration.zero,
     this.itemFetchDelay = Duration.zero,
   });
 
@@ -1482,6 +1532,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   final String draftUpdatedTime;
   final bool includeRecordField;
   final bool includeTextRecordField;
+  final Duration summaryFetchDelay;
   final Duration itemFetchDelay;
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
@@ -1507,6 +1558,9 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
+    if (summaryFetchDelay > Duration.zero) {
+      await Future<void>.delayed(summaryFetchDelay);
+    }
     return const Pep3TemplateSummary(
       title: 'PEP-3儿童心理教育评核',
       itemCount: 2,
