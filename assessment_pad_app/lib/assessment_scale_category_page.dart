@@ -313,8 +313,11 @@ class _AssessmentScaleCategoryScreenState
   void _showDraftsSheet() {
     showModalBottomSheet<void>(
       context: context,
+      isScrollControlled: true,
       backgroundColor: Colors.transparent,
       barrierColor: Colors.black.withOpacity(.16),
+      elevation: 0,
+      clipBehavior: Clip.none,
       builder: (BuildContext context) {
         return _DraftSheet(
           drafts: _drafts,
@@ -2194,14 +2197,17 @@ class _ScaleCategorySidebar extends StatelessWidget {
                         ),
                       ),
                       const Spacer(),
-                      Text(
-                        loading ? '...' : '$totalCount',
-                        style: const TextStyle(
-                          color: _ScaleColors.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                      if (loading)
+                        const _ScaleSkeletonBlock(width: 24, height: 12)
+                      else
+                        Text(
+                          '$totalCount',
+                          style: const TextStyle(
+                            color: _ScaleColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
-                      ),
                     ],
                   ),
                 ),
@@ -2227,15 +2233,7 @@ class _ScaleCategorySidebar extends StatelessWidget {
   Widget _buildCategoryContent(List<String> visibleCategories) {
     final int allCategoryCount = _allCategoryCount;
     if (loading && visibleCategories.isEmpty) {
-      return const Column(
-        children: <Widget>[
-          _CategorySkeleton(),
-          SizedBox(height: 7),
-          _CategorySkeleton(),
-          SizedBox(height: 7),
-          _CategorySkeleton(),
-        ],
-      );
+      return const _CategorySkeletonList();
     }
     if (errorMessage != null && visibleCategories.isEmpty) {
       return _ScaleSidebarMessage(
@@ -2624,16 +2622,66 @@ class _DraftCard extends StatelessWidget {
   }
 }
 
-class _CategorySkeleton extends StatelessWidget {
-  const _CategorySkeleton();
+class _CategorySkeletonList extends StatelessWidget {
+  const _CategorySkeletonList();
 
   @override
   Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 8,
+      separatorBuilder: (BuildContext context, int index) {
+        return const SizedBox(height: 5);
+      },
+      itemBuilder: (BuildContext context, int index) {
+        return _CategorySkeleton(
+          key: ValueKey<String>('category-skeleton-$index'),
+          index: index,
+        );
+      },
+    );
+  }
+}
+
+class _CategorySkeleton extends StatelessWidget {
+  const _CategorySkeleton({
+    super.key,
+    required this.index,
+  });
+
+  final int index;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = index == 0;
     return Container(
       height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
-        color: const Color(0xFFFFF4EC),
+        color: active ? const Color(0xFFFFF0E7) : Colors.transparent,
         borderRadius: BorderRadius.circular(14),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(
+              color: _categoryAccentColor(index).withOpacity(.72),
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: _ScaleSkeletonBlock(
+              widthFactor: active ? .52 : .7,
+              height: 14,
+            ),
+          ),
+          const SizedBox(width: 12),
+          const _ScaleSkeletonBlock(width: 18, height: 12),
+        ],
       ),
     );
   }
@@ -2738,14 +2786,126 @@ class _ScaleGridSkeleton extends StatelessWidget {
         mainAxisExtent: cardHeight,
       ),
       itemBuilder: (BuildContext context, int index) {
-        return Container(
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.62),
-            borderRadius: BorderRadius.circular(20),
-            border: Border.all(color: _ScaleColors.lineSoft),
-          ),
+        return _ScaleCardSkeleton(
+          key: ValueKey<String>('scale-card-skeleton-$index'),
         );
       },
+    );
+  }
+}
+
+class _ScaleCardSkeleton extends StatelessWidget {
+  const _ScaleCardSkeleton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: _ScaleColors.card.withOpacity(.9),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _ScaleColors.line, width: 1.1),
+        boxShadow: _scaleShadow(
+          color: const Color(0x0DB05F32),
+          blur: 18,
+          offset: const Offset(0, 8),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: const <Widget>[
+          Expanded(child: _ScaleCoverSkeleton()),
+          SizedBox(height: 11),
+          _ScaleSkeletonBlock(widthFactor: .78, height: 20),
+          SizedBox(height: 10),
+          Row(
+            children: <Widget>[
+              _ScaleSkeletonBlock(width: 54, height: 24, radius: 10),
+              SizedBox(width: 8),
+              _ScaleSkeletonBlock(width: 64, height: 24, radius: 10),
+              SizedBox(width: 8),
+              _ScaleSkeletonBlock(width: 58, height: 24, radius: 10),
+            ],
+          ),
+          SizedBox(height: 12),
+          _ScaleSkeletonBlock(height: 38, radius: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScaleCoverSkeleton extends StatelessWidget {
+  const _ScaleCoverSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      child: ColoredBox(
+        color: const Color(0xFFFFF1E8),
+        child: Stack(
+          children: const <Widget>[
+            Positioned(
+              left: 22,
+              top: 22,
+              child: _ScaleSkeletonBlock(width: 74, height: 74, radius: 99),
+            ),
+            Positioned(
+              left: 114,
+              top: 32,
+              right: 24,
+              child: _ScaleSkeletonBlock(height: 16, radius: 99),
+            ),
+            Positioned(
+              left: 114,
+              top: 60,
+              right: 48,
+              child: _ScaleSkeletonBlock(height: 14, radius: 99),
+            ),
+            Positioned(
+              left: 114,
+              top: 86,
+              right: 72,
+              child: _ScaleSkeletonBlock(height: 14, radius: 99),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScaleSkeletonBlock extends StatelessWidget {
+  const _ScaleSkeletonBlock({
+    this.width,
+    this.widthFactor,
+    required this.height,
+    this.radius = 99,
+  });
+
+  final double? width;
+  final double? widthFactor;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget block = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E6DD),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+    if (widthFactor == null) {
+      return block;
+    }
+    return FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: widthFactor,
+      child: block,
     );
   }
 }
@@ -2899,9 +3059,9 @@ class _DraftSheet extends StatelessWidget {
             borderRadius: BorderRadius.circular(22),
             border: Border.all(color: _ScaleColors.line),
             boxShadow: _scaleShadow(
-              color: const Color(0x2AB05F32),
-              blur: 32,
-              offset: const Offset(0, 16),
+              color: const Color(0x14000000),
+              blur: 18,
+              offset: const Offset(0, 8),
             ),
           ),
           child: Column(

@@ -516,6 +516,44 @@ void main() {
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
 
+  testWidgets('scale category page shows structured skeleton while loading',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              categoriesDelay: const Duration(milliseconds: 300),
+              libraryDelay: const Duration(milliseconds: 300),
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.byKey(const ValueKey<String>('category-skeleton-0')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('scale-card-skeleton-0')),
+        findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
+  });
+
   testWidgets('disabled scale start button opens student selector',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -854,6 +892,12 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('重新测评'));
+    await tester.pump();
+
+    expect(find.text('发现未完成草稿'), findsOneWidget);
+    expect(pep3Client.saveDraftCalls, 0);
+
+    await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
 
     expect(pep3Client.saveDraftCalls, 1);
@@ -1335,6 +1379,14 @@ class _FakeHomeClient implements HomeClient {
 }
 
 class _FakeAssessmentScaleClient implements AssessmentScaleClient {
+  _FakeAssessmentScaleClient({
+    this.categoriesDelay = Duration.zero,
+    this.libraryDelay = Duration.zero,
+  });
+
+  final Duration categoriesDelay;
+  final Duration libraryDelay;
+
   static const List<AssessmentScaleItem> _items = <AssessmentScaleItem>[
     AssessmentScaleItem(
       id: 1,
@@ -1394,6 +1446,9 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
 
   @override
   Future<List<String>> fetchCategories(String token) async {
+    if (categoriesDelay > Duration.zero) {
+      await Future<void>.delayed(categoriesDelay);
+    }
     return const <String>['语言与沟通能力', '社交情绪评估'];
   }
 
@@ -1403,6 +1458,9 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     String keyword = '',
     String category = '',
   }) async {
+    if (libraryDelay > Duration.zero) {
+      await Future<void>.delayed(libraryDelay);
+    }
     final String normalizedKeyword = _fakeNormalize(keyword);
     final List<AssessmentScaleItem> filtered = _items.where(
       (AssessmentScaleItem item) {

@@ -1044,6 +1044,10 @@ class _DraftResumeDialogState extends State<_DraftResumeDialog> {
       return;
     }
     setState(() => _continuing = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_continuing) {
+      return;
+    }
     final bool restored = await widget.onContinue();
     if (!mounted) {
       return;
@@ -1146,33 +1150,10 @@ class _DraftResumeDialogState extends State<_DraftResumeDialog> {
                 const Divider(height: 1, color: _Pep3Colors.lineSoft),
                 Padding(
                   padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 160),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeOutCubic,
-                    child: _continuing
-                        ? const Align(
-                            key: ValueKey<String>('draft-resume-loading'),
-                            alignment: Alignment.centerRight,
-                            child: _DialogLoadingButton(),
-                          )
-                        : Row(
-                            key: const ValueKey<String>('draft-resume-actions'),
-                            mainAxisAlignment: MainAxisAlignment.end,
-                            children: <Widget>[
-                              _DialogActionButton(
-                                label: '重新测评',
-                                filled: false,
-                                onTap: _handleRestart,
-                              ),
-                              const SizedBox(width: 12),
-                              _DialogActionButton(
-                                label: '继续测评',
-                                filled: true,
-                                onTap: _handleContinue,
-                              ),
-                            ],
-                          ),
+                  child: _DraftResumeActionArea(
+                    continuing: _continuing,
+                    onRestart: _handleRestart,
+                    onContinue: _handleContinue,
                   ),
                 ),
               ],
@@ -1184,13 +1165,78 @@ class _DraftResumeDialogState extends State<_DraftResumeDialog> {
   }
 }
 
+class _DraftResumeActionArea extends StatelessWidget {
+  const _DraftResumeActionArea({
+    required this.continuing,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final bool continuing;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: SizedBox(
+        width: 236,
+        height: 42,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          reverseDuration: const Duration(milliseconds: 120),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          layoutBuilder: (
+            Widget? currentChild,
+            List<Widget> previousChildren,
+          ) {
+            return Stack(
+              alignment: Alignment.centerRight,
+              children: <Widget>[
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            );
+          },
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: continuing
+              ? const _DialogLoadingButton(
+                  key: ValueKey<String>('draft-resume-loading'),
+                )
+              : Row(
+                  key: const ValueKey<String>('draft-resume-actions'),
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    _DialogActionButton(
+                      label: '重新测评',
+                      filled: false,
+                      onTap: onRestart,
+                    ),
+                    const SizedBox(width: 12),
+                    _DialogActionButton(
+                      label: '继续测评',
+                      filled: true,
+                      onTap: onContinue,
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DialogLoadingButton extends StatelessWidget {
-  const _DialogLoadingButton();
+  const _DialogLoadingButton({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 212,
+      width: 236,
       height: 42,
       decoration: BoxDecoration(
         color: _Pep3Colors.orange,
