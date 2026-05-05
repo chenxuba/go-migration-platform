@@ -8,12 +8,14 @@ type LoginRequest struct {
 	LoginType     int    `json:"loginType"`
 	InstitutionID *int64 `json:"institutionId,omitempty"`
 	UserID        *int64 `json:"userId,omitempty"`
+	Source        string `json:"source,omitempty"`
 }
 
 type InstitutionLoginOptionsRequest struct {
 	Identifier string `json:"identifier"`
 	Password   string `json:"password,omitempty"`
 	LoginType  int    `json:"loginType"`
+	Source     string `json:"source,omitempty"`
 }
 
 type InstitutionLoginOption struct {

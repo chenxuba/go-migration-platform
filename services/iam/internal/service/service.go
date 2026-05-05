@@ -83,6 +83,7 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 	}
 
 	loginType := normalizeLoginType(req.LoginType)
+	assessmentPadLogin := loginType == "org" && isAssessmentPadLoginSource(req.Source)
 	if loginType == "manage" && ctx.TenantSource == "default" {
 		ctx.TenantID = "platform"
 		ctx.TenantSource = "default-platform"
@@ -137,6 +138,18 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		return model.LoginResult{}, errors.New("登录失败,用户名或密码错误")
 	}
 
+	if assessmentPadLogin && selectedOrgID > 0 {
+		resolvedTenantID, resolveErr := svc.repo.ResolveTenantIDByInstitution(context.Background(), selectedOrgID)
+		if resolveErr != nil {
+			return model.LoginResult{}, resolveErr
+		}
+		if resolvedTenantID == "" {
+			return model.LoginResult{}, errors.New("该机构尚未分配租户")
+		}
+		ctx.TenantID = resolvedTenantID
+		ctx.TenantSource = "assessment-pad"
+	}
+
 	if loginType == "manage" && ctx.TenantSource == "default" {
 		resolvedTenantID, resolveErr := svc.resolveDefaultManageTenantForUser(context.Background(), user.ID)
 		if resolveErr != nil {
@@ -154,7 +167,15 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 	}
 	if orgID != nil && *orgID > 0 {
 		if loginType == "org" {
-			resolvedTenantID, resolveErr := svc.resolveInstitutionLoginTenant(ctx, *orgID)
+			var (
+				resolvedTenantID string
+				resolveErr       error
+			)
+			if assessmentPadLogin {
+				resolvedTenantID, resolveErr = svc.repo.ResolveTenantIDByInstitution(context.Background(), *orgID)
+			} else {
+				resolvedTenantID, resolveErr = svc.resolveInstitutionLoginTenant(ctx, *orgID)
+			}
 			if resolveErr != nil {
 				return model.LoginResult{}, resolveErr
 			}
@@ -178,6 +199,7 @@ func (svc *Service) Login(ctx tenant.Context, req model.LoginRequest, userAgent,
 		LoginType: loginType,
 		TenantID:  ctx.TenantID,
 		OrgID:     tokenOrgID,
+		Source:    loginSourceForClaims(req.Source),
 	}, 30*24*time.Hour)
 	if err != nil {
 		return model.LoginResult{}, err
@@ -218,7 +240,15 @@ func (svc *Service) CurrentSession(ctx tenant.Context, claims authx.Claims) (mod
 
 	sessionTenantID := strings.TrimSpace(claims.TenantID)
 	if claims.LoginType == "org" && sessionOrgID > 0 {
-		resolvedTenantID, resolveErr := svc.resolveInstitutionLoginTenant(ctx, sessionOrgID)
+		var (
+			resolvedTenantID string
+			resolveErr       error
+		)
+		if isAssessmentPadLoginSource(claims.Source) {
+			resolvedTenantID, resolveErr = svc.repo.ResolveTenantIDByInstitution(context.Background(), sessionOrgID)
+		} else {
+			resolvedTenantID, resolveErr = svc.resolveInstitutionLoginTenant(ctx, sessionOrgID)
+		}
 		if resolveErr != nil {
 			return model.SessionInfo{}, resolveErr
 		}
@@ -1730,6 +1760,19 @@ func (svc *Service) tenantInstitutionMismatchError(tenantID string) error {
 		tenantName = "当前租户"
 	}
 	return errors.New("该机构不属于" + tenantName + "下属机构")
+}
+
+func isAssessmentPadLoginSource(source string) bool {
+	source = strings.ToLower(strings.TrimSpace(source))
+	source = strings.ReplaceAll(source, "_", "-")
+	return source == "assessment-pad" || source == "pad"
+}
+
+func loginSourceForClaims(source string) string {
+	if isAssessmentPadLoginSource(source) {
+		return "assessment-pad"
+	}
+	return ""
 }
 
 func (svc *Service) resolveInstitutionLoginTenant(ctx tenant.Context, institutionID int64) (string, error) {

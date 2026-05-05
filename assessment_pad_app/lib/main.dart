@@ -153,6 +153,14 @@ const String _authTokenStorageKey = 'auth_token';
 const String _authLoginTypeStorageKey = 'auth_login_type';
 const String _authTenantIdStorageKey = 'auth_tenant_id';
 const String _authOrgIdStorageKey = 'auth_org_id';
+const String _defaultLoginUsername = String.fromEnvironment(
+  'DEFAULT_LOGIN_USERNAME',
+  defaultValue: '',
+);
+const String _defaultLoginPassword = String.fromEnvironment(
+  'DEFAULT_LOGIN_PASSWORD',
+  defaultValue: '',
+);
 
 List<BoxShadow> _softShadow({
   Color color = const Color(0x22000000),
@@ -514,6 +522,9 @@ class _LoginCardState extends State<LoginCard> {
             prefs.getString(_rememberedUsernameKey) ?? '';
         _passwordController.text =
             prefs.getString(_rememberedPasswordKey) ?? '';
+      } else {
+        _usernameController.text = _defaultLoginUsername;
+        _passwordController.text = _defaultLoginPassword;
       }
     });
   }

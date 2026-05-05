@@ -1,8 +1,11 @@
 package config
 
 import (
+	"fmt"
+	"net/url"
 	"os"
 	"strings"
+	"time"
 )
 
 type ServiceConfig struct {
@@ -15,6 +18,9 @@ type ServiceConfig struct {
 	DBName                                string
 	DBUser                                string
 	DBPassword                            string
+	DBLocation                            string
+	DBTimeZone                            string
+	AppTimeZone                           string
 	TokenSecret                           string
 	TokenCookieName                       string
 	MeiliHost                             string
@@ -47,8 +53,9 @@ type ServiceConfig struct {
 func Load(name, defaultPort string) ServiceConfig {
 	portKey := envKey(name, "PORT")
 	configPathKey := envKey(name, "TENANT_CONFIG_PATH")
+	dbLocation := envOrDefault("DB_LOC", "Asia/Shanghai")
 
-	return ServiceConfig{
+	cfg := ServiceConfig{
 		AppEnv:                                envOrDefault("APP_ENV", "dev"),
 		Name:                                  name,
 		Port:                                  envOrDefault(portKey, defaultPort),
@@ -58,6 +65,9 @@ func Load(name, defaultPort string) ServiceConfig {
 		DBName:                                envOrDefault("DB_NAME", "ybk_rebuild_edu"),
 		DBUser:                                envOrDefault("DB_USER", "root"),
 		DBPassword:                            envOrDefault("DB_PASSWORD", "14551ccxx"),
+		DBLocation:                            dbLocation,
+		DBTimeZone:                            envOrDefault("DB_TIME_ZONE", "+08:00"),
+		AppTimeZone:                           envOrDefault("APP_TIMEZONE", dbLocation),
 		TokenSecret:                           envOrDefault("TOKEN_SECRET", "go-migration-platform-secret"),
 		TokenCookieName:                       envOrDefault("TOKEN_COOKIE_NAME", "ybcToken"),
 		MeiliHost:                             envOrDefault("MEILI_HOST", "http://127.0.0.1:7700"),
@@ -86,6 +96,45 @@ func Load(name, defaultPort string) ServiceConfig {
 		WeChatOfficialTextContent:             envOrDefault("WECHAT_OFFICIAL_TEXT_CONTENT", "⚠️点击下方推送消息，立即关注学员⬇⬇⬇"),
 		WeChatOfficialAccountName:             envOrDefault("WECHAT_OFFICIAL_ACCOUNT_NAME", "irts家校云"),
 	}
+	applyLocalTimeZone(cfg.AppTimeZone)
+	return cfg
+}
+
+func (cfg ServiceConfig) MySQLDSN() string {
+	params := url.Values{}
+	params.Set("charset", "utf8mb4")
+	params.Set("parseTime", "true")
+	params.Set("loc", cfg.DBLocation)
+	params.Set("time_zone", mysqlSystemVarString(cfg.DBTimeZone))
+
+	return fmt.Sprintf(
+		"%s:%s@tcp(%s:%s)/%s?%s",
+		cfg.DBUser,
+		cfg.DBPassword,
+		cfg.DBHost,
+		cfg.DBPort,
+		cfg.DBName,
+		params.Encode(),
+	)
+}
+
+func applyLocalTimeZone(name string) {
+	loc, err := time.LoadLocation(strings.TrimSpace(name))
+	if err != nil {
+		return
+	}
+	time.Local = loc
+}
+
+func mysqlSystemVarString(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		trimmed = "+08:00"
+	}
+	if strings.HasPrefix(trimmed, "'") && strings.HasSuffix(trimmed, "'") {
+		return trimmed
+	}
+	return "'" + strings.ReplaceAll(trimmed, "'", "''") + "'"
 }
 
 func envKey(name, suffix string) string {

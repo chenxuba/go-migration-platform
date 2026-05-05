@@ -23,6 +23,10 @@ const String defaultQrLoginUrl = String.fromEnvironment(
   'LOGIN_QR_URL',
   defaultValue: '',
 );
+const String defaultLoginSource = String.fromEnvironment(
+  'LOGIN_SOURCE',
+  defaultValue: 'assessment-pad',
+);
 
 class AuthException implements Exception {
   const AuthException(this.message);
@@ -122,6 +126,7 @@ class IamAuthClient implements AuthClient {
     this.institutionsPath = defaultLoginInstitutionsPath,
     this.tenantDomain = defaultLoginTenantDomain,
     this.qrLoginUrl = defaultQrLoginUrl,
+    this.source = defaultLoginSource,
   });
 
   final String baseUrl;
@@ -129,6 +134,7 @@ class IamAuthClient implements AuthClient {
   final String institutionsPath;
   final String tenantDomain;
   final String qrLoginUrl;
+  final String source;
 
   @override
   Future<List<InstitutionLoginOption>> listInstitutionOptions(
@@ -139,6 +145,9 @@ class IamAuthClient implements AuthClient {
       'identifier': identifier,
       'loginType': 2,
     };
+    if (source.trim().isNotEmpty) {
+      payload['source'] = source.trim();
+    }
     if (password.trim().isNotEmpty) {
       payload['password'] = password;
     }
@@ -166,6 +175,9 @@ class IamAuthClient implements AuthClient {
       'loginType': 2,
       'type': 'account',
     };
+    if (source.trim().isNotEmpty) {
+      payload['source'] = source.trim();
+    }
     if (institution != null) {
       payload['institutionId'] = institution.instId;
       payload['userId'] = institution.userId;

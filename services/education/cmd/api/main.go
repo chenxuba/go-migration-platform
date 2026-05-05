@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"net/http"
 
 	_ "github.com/go-sql-driver/mysql"
@@ -28,8 +27,7 @@ func main() {
 		panic(err)
 	}
 
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&parseTime=true&loc=Local", cfg.DBUser, cfg.DBPassword, cfg.DBHost, cfg.DBPort, cfg.DBName)
-	db, err := sql.Open("mysql", dsn)
+	db, err := sql.Open("mysql", cfg.MySQLDSN())
 	if err != nil {
 		panic(err)
 	}
