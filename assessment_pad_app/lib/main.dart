@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'assessment_scale_client.dart';
 import 'assessment_scale_category_page.dart';
 import 'auth_client.dart';
 import 'home_client.dart';
@@ -44,12 +45,14 @@ class AssessmentPadApp extends StatelessWidget {
   const AssessmentPadApp({
     this.authClient = const IamAuthClient(),
     this.homeClient = const ApiHomeClient(),
+    this.scaleClient = const ApiAssessmentScaleClient(),
     this.timetableClient = const ApiTimetableClient(),
     super.key,
   });
 
   final AuthClient authClient;
   final HomeClient homeClient;
+  final AssessmentScaleClient scaleClient;
   final TimetableClient timetableClient;
 
   @override
@@ -95,6 +98,7 @@ class AssessmentPadApp extends StatelessWidget {
           builder: (BuildContext context) => Scaffold(
             body: PadViewport(
               child: AssessmentScaleCategoryScreen(
+                scaleClient: scaleClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),

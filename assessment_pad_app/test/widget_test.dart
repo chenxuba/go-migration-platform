@@ -1,4 +1,5 @@
 import 'package:assessment_pad_app/auth_client.dart';
+import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/assessment_scale_category_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
@@ -17,6 +18,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -50,6 +52,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -109,6 +112,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: timetableClient,
       ),
     );
@@ -341,6 +345,7 @@ void main() {
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -366,6 +371,7 @@ void main() {
       AssessmentPadApp(
         authClient: _MultiInstitutionAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -395,6 +401,7 @@ void main() {
       AssessmentPadApp(
         authClient: _PasswordCheckingAuthClient(),
         homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -417,6 +424,7 @@ void main() {
         AssessmentPadApp(
           authClient: _FakeAuthClient(),
           homeClient: _FakeHomeClient(),
+          scaleClient: _FakeAssessmentScaleClient(),
           timetableClient: _FakeTimetableClient(),
         ),
       );
@@ -443,14 +451,21 @@ void main() {
       tester.view.resetPhysicalSize();
       tester.view.resetDevicePixelRatio();
     });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
 
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
-          body: AssessmentScaleCategoryScreen(onBack: () {}),
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(),
+            onBack: () {},
+          ),
         ),
       ),
     );
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('搜索量表名称 / 编码'));
     await tester.pumpAndSettle();
@@ -599,6 +614,180 @@ class _FakeHomeClient implements HomeClient {
       ),
     );
   }
+}
+
+class _FakeAssessmentScaleClient implements AssessmentScaleClient {
+  static const List<AssessmentScaleItem> _items = <AssessmentScaleItem>[
+    AssessmentScaleItem(
+      id: 1,
+      name: 'PEP-3语言理解评核量表',
+      code: 'PEP3-CVP',
+      category: '语言与沟通能力',
+      scenario: '语言沟通',
+      ageRange: '2-7岁',
+      ageMinMonths: 24,
+      ageMaxMonths: 84,
+      duration: '25分钟',
+      durationMinMinutes: 20,
+      durationMaxMinutes: 30,
+      currentVersion: '2026',
+      itemCount: 56,
+      domainCount: 1,
+      monthUsage: 5,
+      usageCount: 12,
+      latestUse: '2026-05-04',
+      dataStatus: 'ready',
+      status: 'available',
+      statusText: '可用',
+      updatedAt: '2026-05-04 10:00:00',
+      summary: '语言理解评核',
+      posterUrl: '',
+      executionEntry: 'pep3',
+      apiPackage: 'pep3',
+    ),
+    AssessmentScaleItem(
+      id: 2,
+      name: '口语发起与互动',
+      code: 'ORAL-INT',
+      category: '语言与沟通能力',
+      scenario: '口语表达',
+      ageRange: '3-8岁',
+      ageMinMonths: 36,
+      ageMaxMonths: 96,
+      duration: '18分钟',
+      durationMinMinutes: 15,
+      durationMaxMinutes: 20,
+      currentVersion: '2026',
+      itemCount: 42,
+      domainCount: 1,
+      monthUsage: 2,
+      usageCount: 8,
+      latestUse: '2026-05-03',
+      dataStatus: 'ready',
+      status: 'available',
+      statusText: '可用',
+      updatedAt: '2026-05-03 10:00:00',
+      summary: '口语互动',
+      posterUrl: '',
+      executionEntry: 'oral',
+      apiPackage: 'oral',
+    ),
+  ];
+
+  @override
+  Future<List<String>> fetchCategories(String token) async {
+    return const <String>['语言与沟通能力', '社交情绪评估'];
+  }
+
+  @override
+  Future<AssessmentScaleLibrary> fetchScaleLibrary(
+    String token, {
+    String keyword = '',
+    String category = '',
+  }) async {
+    final String normalizedKeyword = _fakeNormalize(keyword);
+    final List<AssessmentScaleItem> filtered = _items.where(
+      (AssessmentScaleItem item) {
+        if (category.trim().isNotEmpty && item.category != category.trim()) {
+          return false;
+        }
+        if (normalizedKeyword.isEmpty) {
+          return true;
+        }
+        final String target = _fakeNormalize(
+          <String>[
+            item.name,
+            item.code,
+            item.category,
+            item.scenario,
+            item.ageRange,
+            item.duration,
+          ].join(' '),
+        );
+        return target.contains(normalizedKeyword);
+      },
+    ).toList();
+    return AssessmentScaleLibrary(
+      items: filtered,
+      summary: const AssessmentScaleLibrarySummary(
+        total: 2,
+        available: 2,
+        unavailable: 0,
+        monthUsage: 7,
+        usageCount: 20,
+      ),
+      filterOptions: const AssessmentScaleFilterOptions(
+        categories: <String>['语言与沟通能力', '社交情绪评估'],
+        categoryCounts: <String, int>{
+          '语言与沟通能力': 2,
+          '社交情绪评估': 0,
+        },
+        scenarios: <String>['语言沟通', '口语表达'],
+        statuses: <String>['available'],
+      ),
+    );
+  }
+
+  @override
+  Future<AssessmentDraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+  }) async {
+    return const AssessmentDraftPage(
+      total: 1,
+      current: 1,
+      size: 5,
+      items: <AssessmentDraftSummary>[
+        AssessmentDraftSummary(
+          id: 9,
+          studentName: '张一鸣',
+          assessmentCode: 'PEP3',
+          assessmentName: 'PEP-3',
+          scaleVersion: '2026',
+          examinerName: '陈老师',
+          status: 'draft',
+          answeredItemCount: 24,
+          rawScoreCount: 0,
+          completionPercent: .42,
+          createdTime: '2026-05-04T09:00:00Z',
+          updatedTime: '2026-05-04T10:00:00Z',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<AssessmentStudentCandidatePage> fetchStudentCandidates(
+    String token, {
+    String scaleCode = '',
+    String keyword = '',
+    int pageIndex = 1,
+    int pageSize = 20,
+  }) async {
+    return const AssessmentStudentCandidatePage(
+      total: 1,
+      current: 1,
+      size: 20,
+      items: <AssessmentStudentCandidate>[
+        AssessmentStudentCandidate(
+          id: 3,
+          shortName: '张',
+          name: '张一鸣',
+          avatarUrl: '',
+          gender: '男',
+          age: '5岁2个月',
+          birthDate: '2021-03-01',
+          contactPhone: '妈妈 136****0001',
+          latestAssessment: '未测评',
+        ),
+      ],
+    );
+  }
+}
+
+String _fakeNormalize(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-/_.]'), '');
 }
 
 class _FakeTimetableClient implements TimetableClient {

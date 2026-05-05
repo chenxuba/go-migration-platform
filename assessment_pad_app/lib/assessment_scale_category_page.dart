@@ -1,13 +1,21 @@
+import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/chinese_ime_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class AssessmentScaleCategoryScreen extends StatefulWidget {
-  const AssessmentScaleCategoryScreen({required this.onBack, super.key});
+  const AssessmentScaleCategoryScreen({
+    required this.onBack,
+    this.scaleClient = const ApiAssessmentScaleClient(),
+    super.key,
+  });
 
   final VoidCallback onBack;
+  final AssessmentScaleClient scaleClient;
 
   @override
   State<AssessmentScaleCategoryScreen> createState() =>
@@ -16,58 +24,441 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
 
 class _AssessmentScaleCategoryScreenState
     extends State<AssessmentScaleCategoryScreen> {
+  static const String _authTokenStorageKey = 'auth_token';
   static const ChineseImeEngine _searchImeEngine =
       ChineseImeEngine(dictionary: assessmentScaleImeDictionary);
 
   ChineseImeEditingValue _searchImeValue = const ChineseImeEditingValue();
   bool _searchKeyboardVisible = false;
   bool _searchKeyboardShifted = false;
+  Timer? _searchDebounceTimer;
+  List<String> _categories = <String>[];
+  Map<String, int> _categoryCounts = <String, int>{};
+  List<AssessmentScaleItem> _scales = <AssessmentScaleItem>[];
+  List<AssessmentDraftSummary> _drafts = <AssessmentDraftSummary>[];
+  List<AssessmentStudentCandidate> _studentCandidates =
+      <AssessmentStudentCandidate>[];
+  AssessmentStudentCandidate? _selectedStudent;
+  AssessmentScaleLibrarySummary _summary =
+      const AssessmentScaleLibrarySummary();
+  String _selectedCategory = '';
+  bool _categoryLoading = true;
+  bool _scalesLoading = true;
+  bool _draftsLoading = true;
+  bool _studentsLoading = false;
+  int _draftCount = 0;
+  int _scaleLoadSerial = 0;
+  String? _categoryErrorMessage;
+  String? _scaleErrorMessage;
+  String? _draftErrorMessage;
+  String? _studentErrorMessage;
 
   String get _searchQuery => _searchImeValue.text;
+
+  String get _activeCategoryTitle {
+    if (_selectedCategory.trim().isNotEmpty) {
+      return _selectedCategory.trim();
+    }
+    if (_searchQuery.trim().isNotEmpty) {
+      return '搜索结果';
+    }
+    return '全部量表';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInitialData();
+  }
+
+  @override
+  void dispose() {
+    _searchDebounceTimer?.cancel();
+    super.dispose();
+  }
+
+  Future<String> _readToken() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_authTokenStorageKey) ?? '';
+  }
+
+  Future<void> _loadInitialData() async {
+    if (mounted) {
+      setState(() {
+        _categoryLoading = true;
+        _scalesLoading = true;
+        _draftsLoading = true;
+        _categoryErrorMessage = null;
+        _scaleErrorMessage = null;
+        _draftErrorMessage = null;
+      });
+    }
+    final String token = await _readToken();
+    if (token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _categoryLoading = false;
+        _scalesLoading = false;
+        _draftsLoading = false;
+        _categoryErrorMessage = '请先登录后再查看量表分类';
+        _scaleErrorMessage = '请先登录后再查看量表';
+        _draftErrorMessage = '请先登录后再查看草稿';
+      });
+      return;
+    }
+
+    unawaited(_refreshDrafts());
+
+    try {
+      final List<String> categories =
+          await widget.scaleClient.fetchCategories(token);
+      if (!mounted) {
+        return;
+      }
+      final String currentSelected = _selectedCategory.trim();
+      final String nextSelected =
+          currentSelected.isEmpty || categories.contains(currentSelected)
+              ? currentSelected
+              : '';
+      setState(() {
+        _categories = categories;
+        _selectedCategory = nextSelected;
+        _categoryLoading = false;
+        _categoryErrorMessage = null;
+      });
+      unawaited(_loadScales());
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _categoryLoading = false;
+        _scalesLoading = false;
+        _categoryErrorMessage = error.message;
+        _scaleErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _categoryLoading = false;
+        _scalesLoading = false;
+        _categoryErrorMessage = '分类加载失败：$error';
+        _scaleErrorMessage = '量表加载失败：$error';
+      });
+    }
+  }
+
+  Future<void> _loadScales() async {
+    final int serial = ++_scaleLoadSerial;
+    if (mounted) {
+      setState(() {
+        _scalesLoading = true;
+        _scaleErrorMessage = null;
+      });
+    }
+    final String token = await _readToken();
+    if (token.trim().isEmpty) {
+      if (!mounted || serial != _scaleLoadSerial) {
+        return;
+      }
+      setState(() {
+        _scalesLoading = false;
+        _scaleErrorMessage = '请先登录后再查看量表';
+      });
+      return;
+    }
+    try {
+      final AssessmentScaleLibrary result =
+          await widget.scaleClient.fetchScaleLibrary(
+        token,
+        keyword: _searchQuery,
+        category: _selectedCategory,
+      );
+      if (!mounted || serial != _scaleLoadSerial) {
+        return;
+      }
+      final List<String> mergedCategories =
+          _mergeCategories(_categories, result.filterOptions.categories);
+      setState(() {
+        _scales = result.items;
+        _summary = result.summary;
+        _categoryCounts = result.filterOptions.categoryCounts;
+        if (_categories.length != mergedCategories.length ||
+            !_sameStringList(_categories, mergedCategories)) {
+          _categories = mergedCategories;
+        }
+        _scalesLoading = false;
+        _scaleErrorMessage = null;
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted || serial != _scaleLoadSerial) {
+        return;
+      }
+      setState(() {
+        _scalesLoading = false;
+        _scaleErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || serial != _scaleLoadSerial) {
+        return;
+      }
+      setState(() {
+        _scalesLoading = false;
+        _scaleErrorMessage = '量表加载失败：$error';
+      });
+    }
+  }
+
+  Future<void> _refreshDrafts({bool openAfterLoad = false}) async {
+    if (mounted) {
+      setState(() {
+        _draftsLoading = true;
+        _draftErrorMessage = null;
+      });
+    }
+    final String token = await _readToken();
+    if (token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _draftsLoading = false;
+        _draftErrorMessage = '请先登录后再查看草稿';
+      });
+      if (openAfterLoad) {
+        _showDraftsSheet();
+      }
+      return;
+    }
+    try {
+      final AssessmentDraftPage drafts =
+          await widget.scaleClient.fetchDraftsPage(token);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _drafts = drafts.items;
+        _draftCount = drafts.total;
+        _draftsLoading = false;
+        _draftErrorMessage = null;
+      });
+      if (openAfterLoad) {
+        _showDraftsSheet();
+      }
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _draftsLoading = false;
+        _draftErrorMessage = error.message;
+      });
+      if (openAfterLoad) {
+        _showDraftsSheet();
+      }
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _draftsLoading = false;
+        _draftErrorMessage = '草稿加载失败：$error';
+      });
+      if (openAfterLoad) {
+        _showDraftsSheet();
+      }
+    }
+  }
+
+  void _selectCategory(String category) {
+    if (_selectedCategory == category) {
+      return;
+    }
+    _searchDebounceTimer?.cancel();
+    setState(() => _selectedCategory = category);
+    _loadScales();
+  }
+
+  void _scheduleSearchReload() {
+    _searchDebounceTimer?.cancel();
+    _searchDebounceTimer = Timer(
+      const Duration(milliseconds: 320),
+      _loadScales,
+    );
+  }
+
+  void _updateSearchValue(ChineseImeEditingValue value) {
+    final String previousQuery = _searchQuery;
+    setState(() => _searchImeValue = value);
+    if (_normalizeSearchText(previousQuery) !=
+        _normalizeSearchText(_searchQuery)) {
+      _scheduleSearchReload();
+    }
+  }
+
+  void _showDraftsSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withOpacity(.16),
+      builder: (BuildContext context) {
+        return _DraftSheet(
+          drafts: _drafts,
+          total: _draftCount,
+          loading: _draftsLoading,
+          errorMessage: _draftErrorMessage,
+          onRetry: () {
+            Navigator.of(context).pop();
+            _refreshDrafts(openAfterLoad: true);
+          },
+          onOpenDraft: (AssessmentDraftSummary draft) {
+            Navigator.of(context).pop();
+            ScaffoldMessenger.of(this.context).showSnackBar(
+              SnackBar(content: Text('草稿 ${draft.id} 已选中，测评作答页待接入')),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _openStudentSheet() async {
+    if (_studentCandidates.isEmpty && !_studentsLoading) {
+      await _loadStudentCandidates();
+    }
+    if (!mounted) {
+      return;
+    }
+    _showStudentSheet();
+  }
+
+  Future<void> _loadStudentCandidates() async {
+    if (mounted) {
+      setState(() {
+        _studentsLoading = true;
+        _studentErrorMessage = null;
+      });
+    }
+    final String token = await _readToken();
+    if (token.trim().isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentsLoading = false;
+        _studentErrorMessage = '请先登录后再选择学员';
+      });
+      return;
+    }
+    try {
+      final AssessmentStudentCandidatePage page =
+          await widget.scaleClient.fetchStudentCandidates(token);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentCandidates = page.items;
+        _studentsLoading = false;
+        _studentErrorMessage = null;
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentsLoading = false;
+        _studentErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _studentsLoading = false;
+        _studentErrorMessage = '学员加载失败：$error';
+      });
+    }
+  }
+
+  void _showStudentSheet() {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(.18),
+      builder: (BuildContext dialogContext) {
+        return _StudentDialog(
+          students: _studentCandidates,
+          selectedStudent: _selectedStudent,
+          loading: _studentsLoading,
+          errorMessage: _studentErrorMessage,
+          onRetry: () {
+            Navigator.of(dialogContext).pop();
+            _openStudentSheet();
+          },
+          onConfirm: (AssessmentStudentCandidate student) {
+            setState(() => _selectedStudent = student);
+            Navigator.of(dialogContext).pop();
+          },
+        );
+      },
+    );
+  }
+
+  void _chooseScale(AssessmentScaleItem scale) {
+    final AssessmentStudentCandidate? student = _selectedStudent;
+    if (student == null || !scale.available) {
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('已选择 ${student.displayName} · ${scale.name}')),
+    );
+  }
 
   void _openSearchKeyboard() {
     setState(() => _searchKeyboardVisible = true);
   }
 
   void _finishSearchKeyboard() {
+    final String previousQuery = _searchQuery;
+    final ChineseImeEditingValue committed =
+        _searchImeEngine.commit(_searchImeValue);
     setState(() {
-      _searchImeValue = _searchImeEngine.commit(_searchImeValue);
+      _searchImeValue = committed;
       _searchKeyboardVisible = false;
       _searchKeyboardShifted = false;
     });
+    if (_normalizeSearchText(previousQuery) !=
+        _normalizeSearchText(committed.text)) {
+      _scheduleSearchReload();
+    }
   }
 
   void _insertSearchText(String value) {
-    setState(() {
-      _searchImeValue = _searchImeEngine.handleKey(_searchImeValue, value);
-    });
+    _updateSearchValue(_searchImeEngine.handleKey(_searchImeValue, value));
   }
 
   void _replaceSearchText(String value) {
-    setState(() {
-      _searchImeValue = _searchImeEngine.replace(value);
-    });
+    _updateSearchValue(_searchImeEngine.replace(value));
   }
 
   void _commitPinyinCandidate(String value) {
-    setState(() {
-      _searchImeValue = _searchImeEngine.commitCandidate(
+    _updateSearchValue(
+      _searchImeEngine.commitCandidate(
         _searchImeValue,
         value,
-      );
-    });
+      ),
+    );
   }
 
   void _deleteSearchText() {
-    setState(() {
-      _searchImeValue = _searchImeEngine.backspace(_searchImeValue);
-    });
+    _updateSearchValue(_searchImeEngine.backspace(_searchImeValue));
   }
 
   void _clearSearchText() {
-    setState(() {
-      _searchImeValue = _searchImeEngine.clear();
-    });
+    _updateSearchValue(_searchImeEngine.clear());
   }
 
   void _toggleSearchShift() {
@@ -99,8 +490,10 @@ class _AssessmentScaleCategoryScreenState
                       compact: compact,
                       searchQuery: _searchQuery,
                       searchActive: _searchKeyboardVisible,
+                      selectedStudent: _selectedStudent,
                       onSearchTap: _openSearchKeyboard,
                       onSearchClear: _clearSearchText,
+                      onStudentTap: _openStudentSheet,
                     ),
                     const SizedBox(height: 22),
                     Expanded(
@@ -109,11 +502,35 @@ class _AssessmentScaleCategoryScreenState
                         children: <Widget>[
                           SizedBox(
                             width: leftWidth,
-                            child: const _ScaleCategorySidebar(),
+                            child: _ScaleCategorySidebar(
+                              categories: _categories,
+                              categoryCounts: _categoryCounts,
+                              selectedCategory: _selectedCategory,
+                              totalCount: _summary.total,
+                              loading: _categoryLoading,
+                              errorMessage: _categoryErrorMessage,
+                              draftCount: _draftCount,
+                              draftsLoading: _draftsLoading,
+                              draftErrorMessage: _draftErrorMessage,
+                              onCategoryTap: _selectCategory,
+                              onDraftTap: () =>
+                                  _refreshDrafts(openAfterLoad: true),
+                              onRetry: _loadInitialData,
+                            ),
                           ),
                           SizedBox(width: contentGap),
                           Expanded(
-                            child: _ScaleMainContent(searchQuery: _searchQuery),
+                            child: _ScaleMainContent(
+                              searchQuery: _searchQuery,
+                              categoryTitle: _activeCategoryTitle,
+                              scales: _scales,
+                              summary: _summary,
+                              loading: _scalesLoading,
+                              errorMessage: _scaleErrorMessage,
+                              hasSelectedStudent: _selectedStudent != null,
+                              onChooseScale: _chooseScale,
+                              onRetry: _loadScales,
+                            ),
                           ),
                         ],
                       ),
@@ -222,16 +639,20 @@ class _ScaleTopBar extends StatelessWidget {
     required this.compact,
     required this.searchQuery,
     required this.searchActive,
+    required this.selectedStudent,
     required this.onSearchTap,
     required this.onSearchClear,
+    required this.onStudentTap,
   });
 
   final VoidCallback onBack;
   final bool compact;
   final String searchQuery;
   final bool searchActive;
+  final AssessmentStudentCandidate? selectedStudent;
   final VoidCallback onSearchTap;
   final VoidCallback onSearchClear;
+  final VoidCallback onStudentTap;
 
   @override
   Widget build(BuildContext context) {
@@ -264,7 +685,10 @@ class _ScaleTopBar extends StatelessWidget {
             onClear: onSearchClear,
           ),
           const SizedBox(width: 14),
-          const _StudentChip(),
+          _StudentChip(
+            student: selectedStudent,
+            onTap: onStudentTap,
+          ),
           const SizedBox(width: 14),
           const _AvailableFilterChip(),
         ],
@@ -1074,32 +1498,503 @@ class _SearchKeyboardAction extends StatelessWidget {
 }
 
 class _StudentChip extends StatelessWidget {
-  const _StudentChip();
+  const _StudentChip({required this.student, required this.onTap});
+
+  final AssessmentStudentCandidate? student;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final AssessmentStudentCandidate? selected = student;
+    final bool hasStudent = selected != null;
+    final String label = hasStudent
+        ? <String>[
+            selected.displayName,
+            if (selected.age.trim().isNotEmpty) selected.age.trim(),
+          ].join(' · ')
+        : '未选择学员';
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Ink(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.86),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: hasStudent ? _ScaleColors.orange : _ScaleColors.line,
+              width: hasStudent ? 1.3 : 1,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.person_outline_rounded,
+                size: 23,
+                color: hasStudent ? _ScaleColors.orange : _ScaleColors.text,
+              ),
+              const SizedBox(width: 10),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 150),
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color:
+                        hasStudent ? _ScaleColors.orangeDeep : _ScaleColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentDialog extends StatefulWidget {
+  const _StudentDialog({
+    required this.students,
+    required this.selectedStudent,
+    required this.loading,
+    required this.errorMessage,
+    required this.onRetry,
+    required this.onConfirm,
+  });
+
+  final List<AssessmentStudentCandidate> students;
+  final AssessmentStudentCandidate? selectedStudent;
+  final bool loading;
+  final String? errorMessage;
+  final VoidCallback onRetry;
+  final ValueChanged<AssessmentStudentCandidate> onConfirm;
+
+  @override
+  State<_StudentDialog> createState() => _StudentDialogState();
+}
+
+class _StudentDialogState extends State<_StudentDialog> {
+  AssessmentStudentCandidate? _pendingStudent;
+
+  @override
+  void initState() {
+    super.initState();
+    _pendingStudent = widget.selectedStudent;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 820,
+          constraints: const BoxConstraints(maxHeight: 560),
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: _ScaleColors.line),
+            boxShadow: _scaleShadow(
+              color: const Color(0x30B05F32),
+              blur: 36,
+              offset: const Offset(0, 18),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    width: 43,
+                    height: 43,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFE8DA),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(Icons.person_search_rounded,
+                        size: 24, color: _ScaleColors.orange),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '选择学员',
+                          style: TextStyle(
+                            color: _ScaleColors.ink,
+                            fontSize: 16,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 9),
+                        Text(
+                          '开始测评前，请先选择本次测评对象。',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _ScaleColors.muted,
+                            fontSize: 12,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  _SearchKeyboardAction(
+                    label: '关闭',
+                    icon: Icons.close_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Flexible(child: _buildContent()),
+              const SizedBox(height: 18),
+              _buildFooter(context),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (widget.loading) {
+      return const SizedBox(
+        height: 260,
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 3,
+            color: _ScaleColors.orange,
+          ),
+        ),
+      );
+    }
+    if (widget.errorMessage != null) {
+      return SizedBox(
+        height: 260,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                widget.errorMessage!,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ScaleColors.text,
+                  fontSize: 14,
+                  height: 1.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _MiniActionButton(label: '重试', onTap: widget.onRetry),
+            ],
+          ),
+        ),
+      );
+    }
+    if (widget.students.isEmpty) {
+      return const SizedBox(
+        height: 260,
+        child: Center(
+          child: Text(
+            '暂无可选择学员',
+            style: TextStyle(
+              color: _ScaleColors.muted,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+    }
+    return Container(
+      height: 300,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: Column(
+        children: <Widget>[
+          const _StudentDialogHeaderRow(),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+              physics: const BouncingScrollPhysics(),
+              itemCount: widget.students.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 8),
+              itemBuilder: (BuildContext context, int index) {
+                final AssessmentStudentCandidate student =
+                    widget.students[index];
+                return _StudentDialogItem(
+                  student: student,
+                  selected: _pendingStudent?.id == student.id,
+                  onTap: () => setState(() => _pendingStudent = student),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildFooter(BuildContext context) {
+    final AssessmentStudentCandidate? pending = _pendingStudent;
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Text(
+            pending == null ? '已选择：未选择' : '已选择：${pending.displayName}',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _ScaleColors.text,
+              fontSize: 14,
+              height: 1,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+        _DialogActionButton(
+          label: '取消',
+          primary: false,
+          onTap: () => Navigator.of(context).pop(),
+        ),
+        const SizedBox(width: 12),
+        _DialogActionButton(
+          label: '确认选择',
+          primary: true,
+          enabled: pending != null,
+          onTap: pending == null ? null : () => widget.onConfirm(pending),
+        ),
+      ],
+    );
+  }
+}
+
+class _StudentDialogHeaderRow extends StatelessWidget {
+  const _StudentDialogHeaderRow();
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.86),
-        borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _ScaleColors.line),
-      ),
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 16),
       child: const Row(
         children: <Widget>[
-          Icon(Icons.person_outline_rounded,
-              size: 23, color: _ScaleColors.text),
-          SizedBox(width: 10),
-          Text(
-            '未选择学员',
-            style: TextStyle(
-              color: _ScaleColors.ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
+          Expanded(flex: 3, child: _StudentDialogHeaderText('儿童姓名')),
+          Expanded(child: _StudentDialogHeaderText('性别')),
+          Expanded(child: _StudentDialogHeaderText('年龄')),
+          Expanded(flex: 2, child: _StudentDialogHeaderText('联系方式')),
+          Expanded(flex: 2, child: _StudentDialogHeaderText('最近测评')),
+          SizedBox(width: 34),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentDialogHeaderText extends StatelessWidget {
+  const _StudentDialogHeaderText(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: const TextStyle(
+        color: _ScaleColors.muted,
+        fontSize: 12,
+        height: 1,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _StudentDialogItem extends StatelessWidget {
+  const _StudentDialogItem({
+    required this.student,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final AssessmentStudentCandidate student;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 56,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF0E7) : Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: selected ? _ScaleColors.orange : _ScaleColors.lineSoft,
+              width: selected ? 1.3 : 1,
             ),
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                flex: 3,
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: 34,
+                      height: 34,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFFFFDCCB)
+                            : const Color(0xFFFFE8DA),
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        student.displayShortName,
+                        style: const TextStyle(
+                          color: _ScaleColors.orangeDeep,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: _StudentDialogCell(
+                        student.displayName,
+                        strong: true,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(child: _StudentDialogCell(student.gender)),
+              Expanded(child: _StudentDialogCell(student.age)),
+              Expanded(
+                  flex: 2, child: _StudentDialogCell(student.contactPhone)),
+              Expanded(
+                flex: 2,
+                child: _StudentDialogCell(student.latestAssessment),
+              ),
+              const SizedBox(width: 12),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 22,
+                color: selected ? _ScaleColors.orange : _ScaleColors.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentDialogCell extends StatelessWidget {
+  const _StudentDialogCell(this.value, {this.strong = false});
+
+  final String value;
+  final bool strong;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      value.trim().isEmpty ? '-' : value.trim(),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+      style: TextStyle(
+        color: strong ? _ScaleColors.ink : _ScaleColors.text,
+        fontSize: strong ? 14 : 13,
+        height: 1,
+        fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _DialogActionButton extends StatelessWidget {
+  const _DialogActionButton({
+    required this.label,
+    required this.primary,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final String label;
+  final bool primary;
+  final VoidCallback? onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool active = enabled && onTap != null;
+    final Color background = primary
+        ? active
+            ? _ScaleColors.orange
+            : const Color(0xFFD8CAC2)
+        : Colors.white;
+    final Color foreground = primary
+        ? Colors.white
+        : active
+            ? _ScaleColors.text
+            : _ScaleColors.muted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: active ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          width: 116,
+          height: 42,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(12),
+            border: primary ? null : Border.all(color: _ScaleColors.line),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1155,21 +2050,40 @@ class _FilterDot extends StatelessWidget {
 }
 
 class _ScaleCategorySidebar extends StatelessWidget {
-  const _ScaleCategorySidebar();
+  const _ScaleCategorySidebar({
+    required this.categories,
+    required this.categoryCounts,
+    required this.selectedCategory,
+    required this.totalCount,
+    required this.loading,
+    required this.errorMessage,
+    required this.draftCount,
+    required this.draftsLoading,
+    required this.draftErrorMessage,
+    required this.onCategoryTap,
+    required this.onDraftTap,
+    required this.onRetry,
+  });
 
-  static const List<_CategoryItemData> _items = <_CategoryItemData>[
-    _CategoryItemData('发展筛查', 12, Color(0xFFE96F43)),
-    _CategoryItemData('语言与沟通能力', 16, Color(0xFF3F82D2), active: true),
-    _CategoryItemData('社交情绪评估', 14, Color(0xFF6F9F70)),
-    _CategoryItemData('感觉统合', 11, Color(0xFFD99427)),
-    _CategoryItemData('动作与精细运动', 10, Color(0xFF63A999)),
-    _CategoryItemData('生活自理能力', 9, Color(0xFFD96A7F)),
-    _CategoryItemData('适应行为', 8, Color(0xFF6F9F70)),
-    _CategoryItemData('IEP 目标库', 6, Color(0xFF7F77C8)),
-  ];
+  final List<String> categories;
+  final Map<String, int> categoryCounts;
+  final String selectedCategory;
+  final int totalCount;
+  final bool loading;
+  final String? errorMessage;
+  final int draftCount;
+  final bool draftsLoading;
+  final String? draftErrorMessage;
+  final ValueChanged<String> onCategoryTap;
+  final VoidCallback onDraftTap;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
+    final List<String> visibleCategories = categories
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
     return Column(
       children: <Widget>[
         Expanded(
@@ -1183,11 +2097,11 @@ class _ScaleCategorySidebar extends StatelessWidget {
             ),
             child: Column(
               children: <Widget>[
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 2),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 2),
                   child: Row(
                     children: <Widget>[
-                      Text(
+                      const Text(
                         '分类',
                         style: TextStyle(
                           color: _ScaleColors.ink,
@@ -1195,10 +2109,10 @@ class _ScaleCategorySidebar extends StatelessWidget {
                           fontWeight: FontWeight.w900,
                         ),
                       ),
-                      Spacer(),
+                      const Spacer(),
                       Text(
-                        '128',
-                        style: TextStyle(
+                        loading ? '...' : '$totalCount',
+                        style: const TextStyle(
                           color: _ScaleColors.muted,
                           fontSize: 12,
                           fontWeight: FontWeight.w800,
@@ -1208,18 +2122,76 @@ class _ScaleCategorySidebar extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 14),
-                for (int index = 0; index < _items.length; index++) ...<Widget>[
-                  _CategoryItem(data: _items[index]),
-                  if (index != _items.length - 1) const SizedBox(height: 5),
-                ],
+                Expanded(
+                  child: _buildCategoryContent(visibleCategories),
+                ),
               ],
             ),
           ),
         ),
         const SizedBox(height: 14),
-        const _DraftCard(),
+        _DraftCard(
+          count: draftCount,
+          loading: draftsLoading,
+          errorMessage: draftErrorMessage,
+          onTap: onDraftTap,
+        ),
       ],
     );
+  }
+
+  Widget _buildCategoryContent(List<String> visibleCategories) {
+    final int allCategoryCount = _allCategoryCount;
+    if (loading && visibleCategories.isEmpty) {
+      return const Column(
+        children: <Widget>[
+          _CategorySkeleton(),
+          SizedBox(height: 7),
+          _CategorySkeleton(),
+          SizedBox(height: 7),
+          _CategorySkeleton(),
+        ],
+      );
+    }
+    if (errorMessage != null && visibleCategories.isEmpty) {
+      return _ScaleSidebarMessage(
+        text: errorMessage!,
+        actionLabel: '重试',
+        onAction: onRetry,
+      );
+    }
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(),
+      itemCount: visibleCategories.length + 1,
+      separatorBuilder: (_, __) => const SizedBox(height: 5),
+      itemBuilder: (BuildContext context, int index) {
+        final bool allCategory = index == 0;
+        final String name = allCategory ? '全部' : visibleCategories[index - 1];
+        return _CategoryItem(
+          data: _CategoryItemData(
+            name,
+            allCategory ? allCategoryCount : categoryCounts[name] ?? 0,
+            _categoryAccentColor(index),
+            active: allCategory
+                ? selectedCategory.trim().isEmpty
+                : name == selectedCategory,
+          ),
+          onTap: () => onCategoryTap(allCategory ? '' : name),
+        );
+      },
+    );
+  }
+
+  int get _allCategoryCount {
+    final int countedTotal = categoryCounts.values.fold<int>(
+      0,
+      (int total, int count) => total + count,
+    );
+    if (countedTotal > 0) {
+      return countedTotal;
+    }
+    return totalCount;
   }
 }
 
@@ -1238,163 +2210,587 @@ class _CategoryItemData {
 }
 
 class _CategoryItem extends StatelessWidget {
-  const _CategoryItem({required this.data});
+  const _CategoryItem({required this.data, required this.onTap});
 
   final _CategoryItemData data;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: data.active ? const Color(0xFFFFF0E7) : Colors.transparent,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 10,
-            height: 10,
-            decoration:
-                BoxDecoration(color: data.color, shape: BoxShape.circle),
+        child: Ink(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: data.active ? const Color(0xFFFFF0E7) : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
           ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              data.name,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color:
-                    data.active ? _ScaleColors.orangeDeep : _ScaleColors.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 10,
+                height: 10,
+                decoration:
+                    BoxDecoration(color: data.color, shape: BoxShape.circle),
               ),
-            ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  data.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: data.active
+                        ? _ScaleColors.orangeDeep
+                        : _ScaleColors.text,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                '${data.count}',
+                style: TextStyle(
+                  color: data.active
+                      ? _ScaleColors.orangeDeep
+                      : _ScaleColors.muted,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-          const SizedBox(width: 12),
-          Text(
-            '${data.count}',
-            style: TextStyle(
-              color: data.active ? _ScaleColors.orangeDeep : _ScaleColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
 class _DraftCard extends StatelessWidget {
-  const _DraftCard();
+  const _DraftCard({
+    required this.count,
+    required this.loading,
+    required this.errorMessage,
+    required this.onTap,
+  });
+
+  final int count;
+  final bool loading;
+  final String? errorMessage;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 118,
-      padding: const EdgeInsets.fromLTRB(15, 14, 15, 13),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.74),
+    final String countText = loading
+        ? '正在统计草稿...'
+        : errorMessage != null
+            ? '草稿统计失败，点击重试'
+            : '当前共$count条草稿';
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _ScaleColors.line),
-      ),
-      child: const Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Row(
+        child: Ink(
+          height: 118,
+          padding: const EdgeInsets.fromLTRB(15, 14, 15, 13),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.74),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _ScaleColors.line),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Icon(Icons.assignment_outlined,
-                  size: 18, color: _ScaleColors.ink),
-              SizedBox(width: 8),
-              Text(
-                '继续草稿',
+              const Row(
+                children: <Widget>[
+                  Icon(Icons.assignment_outlined,
+                      size: 18, color: _ScaleColors.ink),
+                  SizedBox(width: 8),
+                  Text(
+                    '继续草稿',
+                    style: TextStyle(
+                      color: _ScaleColors.ink,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  Spacer(),
+                  Icon(Icons.chevron_right_rounded,
+                      size: 21, color: _ScaleColors.muted),
+                ],
+              ),
+              const SizedBox(height: 9),
+              const Text(
+                '未完成的测评可直接恢复，支持断点续测！',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: TextStyle(
-                  color: _ScaleColors.ink,
-                  fontSize: 16,
+                  color: _ScaleColors.text,
+                  fontSize: 12,
+                  height: 1.45,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                countText,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: errorMessage == null
+                      ? _ScaleColors.orange
+                      : _ScaleColors.muted,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ],
           ),
-          SizedBox(height: 9),
+        ),
+      ),
+    );
+  }
+}
+
+class _CategorySkeleton extends StatelessWidget {
+  const _CategorySkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF4EC),
+        borderRadius: BorderRadius.circular(14),
+      ),
+    );
+  }
+}
+
+class _ScaleSidebarMessage extends StatelessWidget {
+  const _ScaleSidebarMessage({
+    required this.text,
+    this.actionLabel = '',
+    this.onAction,
+  });
+
+  final String text;
+  final String actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
           Text(
-            '未完成的测评可直接恢复，支持断点续测！',
-            maxLines: 2,
+            text,
+            maxLines: 3,
+            textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: _ScaleColors.text,
-              fontSize: 12,
-              height: 1.45,
-              fontWeight: FontWeight.w700,
+            style: const TextStyle(
+              color: _ScaleColors.muted,
+              fontSize: 13,
+              height: 1.4,
+              fontWeight: FontWeight.w800,
             ),
           ),
-          Spacer(),
-          Text(
-            '当前共3条草稿',
-            style: TextStyle(
-              color: _ScaleColors.orange,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
+          if (onAction != null && actionLabel.trim().isNotEmpty) ...<Widget>[
+            const SizedBox(height: 10),
+            _MiniActionButton(label: actionLabel, onTap: onAction!),
+          ],
         ],
       ),
     );
   }
 }
 
+class _MiniActionButton extends StatelessWidget {
+  const _MiniActionButton({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1E8),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _ScaleColors.lineSoft),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _ScaleColors.orangeDeep,
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScaleGridSkeleton extends StatelessWidget {
+  const _ScaleGridSkeleton({
+    required this.columns,
+    required this.cardHeight,
+  });
+
+  final int columns;
+  final double cardHeight;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: columns * 2,
+      gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: columns,
+        crossAxisSpacing: 14,
+        mainAxisSpacing: 14,
+        mainAxisExtent: cardHeight,
+      ),
+      itemBuilder: (BuildContext context, int index) {
+        return Container(
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.62),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(color: _ScaleColors.lineSoft),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _ScaleErrorState extends StatelessWidget {
+  const _ScaleErrorState({required this.message, required this.onRetry});
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 360,
+        padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.76),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _ScaleColors.lineSoft),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(Icons.wifi_off_rounded,
+                color: _ScaleColors.muted, size: 34),
+            const SizedBox(height: 10),
+            Text(
+              message,
+              maxLines: 3,
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ScaleColors.text,
+                fontSize: 14,
+                height: 1.4,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 14),
+            _MiniActionButton(label: '重新加载', onTap: onRetry),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftSheet extends StatelessWidget {
+  const _DraftSheet({
+    required this.drafts,
+    required this.total,
+    required this.loading,
+    required this.errorMessage,
+    required this.onRetry,
+    required this.onOpenDraft,
+  });
+
+  final List<AssessmentDraftSummary> drafts;
+  final int total;
+  final bool loading;
+  final String? errorMessage;
+  final VoidCallback onRetry;
+  final ValueChanged<AssessmentDraftSummary> onOpenDraft;
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      top: false,
+      child: Align(
+        alignment: Alignment.bottomCenter,
+        child: Container(
+          width: 760,
+          constraints: const BoxConstraints(maxHeight: 430),
+          margin: const EdgeInsets.only(bottom: 18),
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: _ScaleColors.line),
+            boxShadow: _scaleShadow(
+              color: const Color(0x2AB05F32),
+              blur: 32,
+              offset: const Offset(0, 16),
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  const Icon(Icons.assignment_outlined,
+                      size: 22, color: _ScaleColors.orange),
+                  const SizedBox(width: 9),
+                  const Text(
+                    '继续草稿',
+                    style: TextStyle(
+                      color: _ScaleColors.ink,
+                      fontSize: 20,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    loading ? '统计中' : '共$total条',
+                    style: const TextStyle(
+                      color: _ScaleColors.muted,
+                      fontSize: 13,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const Spacer(),
+                  _SearchKeyboardAction(
+                    label: '关闭',
+                    icon: Icons.close_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 14),
+              Flexible(child: _buildContent()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildContent() {
+    if (loading) {
+      return const SizedBox(
+        height: 148,
+        child: Center(
+          child: CircularProgressIndicator(
+            strokeWidth: 3,
+            color: _ScaleColors.orange,
+          ),
+        ),
+      );
+    }
+    if (errorMessage != null) {
+      return SizedBox(
+        height: 148,
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                errorMessage!,
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ScaleColors.text,
+                  fontSize: 14,
+                  height: 1.4,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 12),
+              _MiniActionButton(label: '重试', onTap: onRetry),
+            ],
+          ),
+        ),
+      );
+    }
+    if (drafts.isEmpty) {
+      return const SizedBox(
+        height: 148,
+        child: Center(
+          child: Text(
+            '当前没有未完成草稿',
+            style: TextStyle(
+              color: _ScaleColors.muted,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      shrinkWrap: true,
+      padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(),
+      itemCount: drafts.length,
+      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      itemBuilder: (BuildContext context, int index) {
+        final AssessmentDraftSummary draft = drafts[index];
+        return _DraftSheetItem(
+          draft: draft,
+          onTap: () => onOpenDraft(draft),
+        );
+      },
+    );
+  }
+}
+
+class _DraftSheetItem extends StatelessWidget {
+  const _DraftSheetItem({required this.draft, required this.onTap});
+
+  final AssessmentDraftSummary draft;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final String student = draft.studentName.trim().isNotEmpty
+        ? draft.studentName.trim()
+        : '未选择学员';
+    final String title = draft.assessmentName.trim().isNotEmpty
+        ? draft.assessmentName.trim()
+        : draft.assessmentCode.trim();
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 72,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFAF5),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _ScaleColors.lineSoft),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 42,
+                height: 42,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  color: Color(0xFFFFE8DA),
+                  shape: BoxShape.circle,
+                ),
+                child: Text(
+                  '${draft.completionPercentInt}%',
+                  style: const TextStyle(
+                    color: _ScaleColors.orangeDeep,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      '$student · $title',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ScaleColors.ink,
+                        fontSize: 15,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      '已答${draft.answeredItemCount}题 · 更新${draft.displayUpdatedDate}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ScaleColors.muted,
+                        fontSize: 12,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              const Icon(Icons.chevron_right_rounded,
+                  size: 24, color: _ScaleColors.muted),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ScaleMainContent extends StatelessWidget {
-  const _ScaleMainContent({required this.searchQuery});
+  const _ScaleMainContent({
+    required this.searchQuery,
+    required this.categoryTitle,
+    required this.scales,
+    required this.summary,
+    required this.loading,
+    required this.errorMessage,
+    required this.hasSelectedStudent,
+    required this.onChooseScale,
+    required this.onRetry,
+  });
 
   final String searchQuery;
-
-  static const List<_ScaleCardData> _scales = <_ScaleCardData>[
-    _ScaleCardData(
-      title: 'PEP-3语言理解评核量表',
-      code: 'PEP3-CVP',
-      tags: <String>['56题', '25分钟', '2-7岁'],
-      aliases: <String>['pep3', 'yuyan', 'lijie', 'pinghe', 'liangbiao'],
-      type: _CoverType.book,
-    ),
-    _ScaleCardData(
-      title: '口语发起与互动',
-      code: 'ORAL-INT',
-      tags: <String>['42题', '18分钟', '3-8岁'],
-      aliases: <String>['kouyu', 'kou', 'hudong', 'faqi', 'oral'],
-      type: _CoverType.talk,
-    ),
-    _ScaleCardData(
-      title: '语言发展筛查表',
-      code: 'LANG-SCREEN',
-      tags: <String>['32题', '15分钟', '12-48月'],
-      aliases: <String>['yuyan', 'fazhan', 'shaicha', 'liangbiao', 'lang'],
-      type: _CoverType.screen,
-    ),
-    _ScaleCardData(
-      title: '表达沟通量表',
-      code: 'EXP-COMM',
-      tags: <String>['38题', '22分钟', '学龄前'],
-      aliases: <String>['biaoda', 'goutong', 'liangbiao', 'exp', 'comm'],
-      type: _CoverType.express,
-    ),
-    _ScaleCardData(
-      title: '社交沟通观察表',
-      code: 'SOC-COMM',
-      tags: <String>['44题', '20分钟', '3-10岁'],
-      aliases: <String>['shejiao', 'goutong', 'guancha', 'liangbiao', 'soc'],
-      type: _CoverType.social,
-    ),
-    _ScaleCardData(
-      title: '综合语言复评卡',
-      code: 'LANG-REVIEW',
-      tags: <String>['48题', '30分钟', '4-8岁'],
-      aliases: <String>['zonghe', 'yuyan', 'fuping', 'review', 'lang'],
-      type: _CoverType.review,
-    ),
-  ];
+  final String categoryTitle;
+  final List<AssessmentScaleItem> scales;
+  final AssessmentScaleLibrarySummary summary;
+  final bool loading;
+  final String? errorMessage;
+  final bool hasSelectedStudent;
+  final ValueChanged<AssessmentScaleItem> onChooseScale;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
@@ -1403,57 +2799,89 @@ class _ScaleMainContent extends StatelessWidget {
         const double gap = 14;
         const double toolbarHeight = 44;
         const double toolbarGap = 10;
-        final List<_ScaleCardData> visibleScales = _filterScales(searchQuery);
-        final double cardWidth = (constraints.maxWidth - gap * 2) / 3;
+        final int columns = constraints.maxWidth < 760 ? 2 : 3;
         final double cardHeight =
-            (constraints.maxHeight - toolbarHeight - gap - toolbarGap) / 2;
+            ((constraints.maxHeight - toolbarHeight - gap - toolbarGap) / 2)
+                .clamp(252.0, 292.0)
+                .toDouble();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            const _ScaleToolbar(),
+            _ScaleToolbar(
+              title: categoryTitle,
+              searchQuery: searchQuery,
+              visibleCount: scales.length,
+              summary: summary,
+              loading: loading,
+            ),
             const SizedBox(height: toolbarGap),
-            if (visibleScales.isEmpty)
-              const Expanded(child: _ScaleSearchEmpty())
+            if (errorMessage != null)
+              Expanded(
+                child: _ScaleErrorState(
+                  message: errorMessage!,
+                  onRetry: onRetry,
+                ),
+              )
+            else if (loading)
+              Expanded(
+                child: _ScaleGridSkeleton(
+                  columns: columns,
+                  cardHeight: cardHeight,
+                ),
+              )
+            else if (scales.isEmpty)
+              Expanded(child: _ScaleSearchEmpty(searchQuery: searchQuery))
             else
-              Wrap(
-                spacing: gap,
-                runSpacing: gap,
-                children: <Widget>[
-                  for (final _ScaleCardData data in visibleScales)
-                    SizedBox(
-                      width: cardWidth,
-                      height: cardHeight.clamp(252, 292),
-                      child: _ScaleCard(data: data),
-                    ),
-                ],
+              Expanded(
+                child: GridView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: scales.length,
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: columns,
+                    crossAxisSpacing: gap,
+                    mainAxisSpacing: gap,
+                    mainAxisExtent: cardHeight,
+                  ),
+                  itemBuilder: (BuildContext context, int index) {
+                    return _ScaleCard(
+                      data: scales[index],
+                      enabled: hasSelectedStudent && scales[index].available,
+                      onChoose: () => onChooseScale(scales[index]),
+                    );
+                  },
+                ),
               ),
           ],
         );
       },
     );
   }
-
-  static List<_ScaleCardData> _filterScales(String query) {
-    final String normalizedQuery = _normalizeSearchText(query);
-    if (normalizedQuery.isEmpty) {
-      return _scales;
-    }
-    return _scales.where((_ScaleCardData item) {
-      final String target = _normalizeSearchText(
-        <String>[item.title, item.code, ...item.tags, ...item.aliases]
-            .join(' '),
-      );
-      return target.contains(normalizedQuery);
-    }).toList();
-  }
 }
 
 class _ScaleToolbar extends StatelessWidget {
-  const _ScaleToolbar();
+  const _ScaleToolbar({
+    required this.title,
+    required this.searchQuery,
+    required this.visibleCount,
+    required this.summary,
+    required this.loading,
+  });
+
+  final String title;
+  final String searchQuery;
+  final int visibleCount;
+  final AssessmentScaleLibrarySummary summary;
+  final bool loading;
 
   @override
   Widget build(BuildContext context) {
+    final String statsText = loading
+        ? '正在加载量表'
+        : searchQuery.trim().isNotEmpty
+            ? '$visibleCount 个匹配结果'
+            : '${summary.available} 个可用，${summary.unavailable} 个暂不可用';
     return SizedBox(
       height: 44,
       child: Transform.translate(
@@ -1461,31 +2889,41 @@ class _ScaleToolbar extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: <Widget>[
-            const Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: <Widget>[
-                Text(
-                  '语言沟通量表',
-                  style: TextStyle(
-                    color: _ScaleColors.ink,
-                    fontSize: 27,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
+            Expanded(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Flexible(
+                    child: Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ScaleColors.ink,
+                        fontSize: 27,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                ),
-                SizedBox(width: 17),
-                Text(
-                  '16 个可用，5 个常用',
-                  style: TextStyle(
-                    color: _ScaleColors.muted,
-                    fontSize: 14,
-                    height: 1,
-                    fontWeight: FontWeight.w800,
+                  const SizedBox(width: 17),
+                  Flexible(
+                    child: Text(
+                      statsText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ScaleColors.muted,
+                        fontSize: 14,
+                        height: 1,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-            const Spacer(),
+            const SizedBox(width: 12),
             Container(
               height: 42,
               padding: const EdgeInsets.all(4),
@@ -1495,7 +2933,7 @@ class _ScaleToolbar extends StatelessWidget {
               ),
               child: const Row(
                 children: <Widget>[
-                  _Segment(label: '常用', active: true),
+                  _Segment(label: '可用', active: true),
                   _Segment(label: '全部'),
                 ],
               ),
@@ -1548,31 +2986,81 @@ class _Segment extends StatelessWidget {
   }
 }
 
-class _ScaleCardData {
-  const _ScaleCardData({
-    required this.title,
-    required this.code,
-    required this.tags,
-    required this.aliases,
-    required this.type,
-  });
-
-  final String title;
-  final String code;
-  final List<String> tags;
-  final List<String> aliases;
-  final _CoverType type;
-}
-
 String _normalizeSearchText(String value) {
   return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-/_.]'), '');
 }
 
+List<String> _mergeCategories(List<String> primary, List<String> secondary) {
+  final List<String> out = <String>[];
+  final Set<String> seen = <String>{};
+  for (final String item in <String>[...primary, ...secondary]) {
+    final String normalized = item.trim();
+    if (normalized.isEmpty || seen.contains(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.add(normalized);
+  }
+  return out;
+}
+
+bool _sameStringList(List<String> a, List<String> b) {
+  if (a.length != b.length) {
+    return false;
+  }
+  for (int index = 0; index < a.length; index++) {
+    if (a[index] != b[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Color _categoryAccentColor(int index) {
+  const List<Color> colors = <Color>[
+    Color(0xFFE96F43),
+    Color(0xFF3F82D2),
+    Color(0xFF6F9F70),
+    Color(0xFFD99427),
+    Color(0xFF63A999),
+    Color(0xFFD96A7F),
+    Color(0xFF7F77C8),
+  ];
+  return colors[index % colors.length];
+}
+
+_CoverType _coverTypeForScale(AssessmentScaleItem item) {
+  final String target = _normalizeSearchText(
+    <String>[item.name, item.code, item.category, item.scenario].join(' '),
+  );
+  if (target.contains('pep') || target.contains('book')) {
+    return _CoverType.book;
+  }
+  if (target.contains('社交') ||
+      target.contains('social') ||
+      target.contains('情绪')) {
+    return _CoverType.social;
+  }
+  if (target.contains('筛查') || target.contains('screen')) {
+    return _CoverType.screen;
+  }
+  if (target.contains('表达') || target.contains('沟通')) {
+    return _CoverType.express;
+  }
+  if (target.contains('口语') || target.contains('语言')) {
+    return _CoverType.talk;
+  }
+  return _CoverType.review;
+}
+
 class _ScaleSearchEmpty extends StatelessWidget {
-  const _ScaleSearchEmpty();
+  const _ScaleSearchEmpty({required this.searchQuery});
+
+  final String searchQuery;
 
   @override
   Widget build(BuildContext context) {
+    final bool searching = searchQuery.trim().isNotEmpty;
     return Center(
       child: Container(
         width: 320,
@@ -1582,25 +3070,29 @@ class _ScaleSearchEmpty extends StatelessWidget {
           borderRadius: BorderRadius.circular(18),
           border: Border.all(color: _ScaleColors.lineSoft),
         ),
-        child: const Column(
+        child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            Icon(Icons.search_off_rounded, color: _ScaleColors.muted, size: 34),
-            SizedBox(height: 10),
+            Icon(
+              searching ? Icons.search_off_rounded : Icons.inventory_2_outlined,
+              color: _ScaleColors.muted,
+              size: 34,
+            ),
+            const SizedBox(height: 10),
             Text(
-              '没有匹配的量表',
-              style: TextStyle(
+              searching ? '没有匹配的量表' : '当前分类暂无量表',
+              style: const TextStyle(
                 color: _ScaleColors.ink,
                 fontSize: 17,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
             ),
-            SizedBox(height: 8),
+            const SizedBox(height: 8),
             Text(
-              '可尝试输入 PEP3、语言、筛查等关键词',
+              searching ? '可尝试更换关键词或切换分类' : '可切换左侧分类查看其它量表',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: _ScaleColors.muted,
                 fontSize: 13,
                 height: 1.35,
@@ -1615,12 +3107,19 @@ class _ScaleSearchEmpty extends StatelessWidget {
 }
 
 class _ScaleCard extends StatelessWidget {
-  const _ScaleCard({required this.data});
+  const _ScaleCard({
+    required this.data,
+    required this.enabled,
+    required this.onChoose,
+  });
 
-  final _ScaleCardData data;
+  final AssessmentScaleItem data;
+  final bool enabled;
+  final VoidCallback onChoose;
 
   @override
   Widget build(BuildContext context) {
+    final List<String> tags = data.tags;
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1636,7 +3135,7 @@ class _ScaleCard extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: CustomPaint(
-                painter: _ScaleCoverPainter(type: data.type),
+                painter: _ScaleCoverPainter(type: _coverTypeForScale(data)),
                 child: const SizedBox.expand(),
               ),
             ),
@@ -1646,7 +3145,7 @@ class _ScaleCard extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 child: Text(
-                  data.title,
+                  data.name,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1662,14 +3161,14 @@ class _ScaleCard extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: <Widget>[
-              for (int i = 0; i < data.tags.length; i++) ...<Widget>[
-                _InfoTag(label: data.tags[i]),
-                if (i != data.tags.length - 1) const SizedBox(width: 6),
+              for (int i = 0; i < tags.length; i++) ...<Widget>[
+                _InfoTag(label: tags[i]),
+                if (i != tags.length - 1) const SizedBox(width: 6),
               ],
-              const Spacer(),
-              const _ChooseButton(),
             ],
           ),
+          const SizedBox(height: 10),
+          _ChooseButton(enabled: enabled, onTap: onChoose),
         ],
       ),
     );
@@ -1706,33 +3205,48 @@ class _InfoTag extends StatelessWidget {
 }
 
 class _ChooseButton extends StatelessWidget {
-  const _ChooseButton();
+  const _ChooseButton({required this.enabled, required this.onTap});
+
+  final bool enabled;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: 64,
-      height: 38,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: Colors.white,
+    final Color borderColor =
+        enabled ? _ScaleColors.orange : const Color(0xFFE2D6CE);
+    final Color textColor =
+        enabled ? _ScaleColors.orangeDeep : _ScaleColors.muted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _ScaleColors.orange, width: 1.2),
-      ),
-      child: const Text(
-        '选择',
-        maxLines: 1,
-        textAlign: TextAlign.center,
-        strutStyle: StrutStyle(
-          fontSize: 15,
-          height: 1,
-          forceStrutHeight: true,
-        ),
-        style: TextStyle(
-          color: _ScaleColors.orangeDeep,
-          fontSize: 15,
-          height: 1,
-          fontWeight: FontWeight.w900,
+        child: Ink(
+          height: 38,
+          width: double.infinity,
+          decoration: BoxDecoration(
+            color: enabled ? Colors.white : const Color(0xFFF7F1ED),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: borderColor, width: 1.2),
+          ),
+          child: Center(
+            child: Text(
+              '开始测评',
+              maxLines: 1,
+              textAlign: TextAlign.center,
+              strutStyle: const StrutStyle(
+                fontSize: 15,
+                height: 1,
+                forceStrutHeight: true,
+              ),
+              style: TextStyle(
+                color: textColor,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
         ),
       ),
     );
