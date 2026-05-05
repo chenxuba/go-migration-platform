@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:assessment_pad_app/chinese_ime_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -15,104 +16,57 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
 
 class _AssessmentScaleCategoryScreenState
     extends State<AssessmentScaleCategoryScreen> {
-  String _searchQuery = '';
-  String _pinyinBuffer = '';
+  static const ChineseImeEngine _searchImeEngine =
+      ChineseImeEngine(dictionary: assessmentScaleImeDictionary);
+
+  ChineseImeEditingValue _searchImeValue = const ChineseImeEditingValue();
   bool _searchKeyboardVisible = false;
   bool _searchKeyboardShifted = false;
+
+  String get _searchQuery => _searchImeValue.text;
 
   void _openSearchKeyboard() {
     setState(() => _searchKeyboardVisible = true);
   }
 
   void _finishSearchKeyboard() {
-    final List<String> candidates = _pinyinCandidates(_pinyinBuffer);
     setState(() {
-      if (_pinyinBuffer.isNotEmpty && candidates.isNotEmpty) {
-        final int keepLength =
-            math.max(0, _searchQuery.length - _pinyinBuffer.length);
-        _searchQuery = _searchQuery.substring(0, keepLength) + candidates.first;
-      }
+      _searchImeValue = _searchImeEngine.commit(_searchImeValue);
       _searchKeyboardVisible = false;
       _searchKeyboardShifted = false;
-      _pinyinBuffer = '';
     });
   }
 
   void _insertSearchText(String value) {
-    if (_isAsciiLetter(value)) {
-      setState(() {
-        _searchQuery += value;
-        _pinyinBuffer += value.toLowerCase();
-      });
-      return;
-    }
-
-    final List<String> candidates = _pinyinCandidates(_pinyinBuffer);
-    if (_pinyinBuffer.isNotEmpty && value.length == 1) {
-      final int? digit = int.tryParse(value);
-      if (digit != null && digit >= 1 && digit <= candidates.length) {
-        _commitPinyinCandidate(candidates[digit - 1]);
-        return;
-      }
-      if (digit != null) {
-        setState(() {
-          _searchQuery += value;
-          _pinyinBuffer += value;
-        });
-        return;
-      }
-    }
-
-    if (value == ' ' && candidates.isNotEmpty) {
-      _commitPinyinCandidate(candidates.first);
-      return;
-    }
-
     setState(() {
-      _searchQuery += value;
-      _pinyinBuffer = '';
+      _searchImeValue = _searchImeEngine.handleKey(_searchImeValue, value);
     });
   }
 
   void _replaceSearchText(String value) {
     setState(() {
-      _searchQuery = value;
-      _pinyinBuffer = '';
+      _searchImeValue = _searchImeEngine.replace(value);
     });
   }
 
   void _commitPinyinCandidate(String value) {
-    if (_pinyinBuffer.isEmpty) {
-      setState(() => _searchQuery += value);
-      return;
-    }
-    final int keepLength =
-        math.max(0, _searchQuery.length - _pinyinBuffer.length);
     setState(() {
-      _searchQuery = _searchQuery.substring(0, keepLength) + value;
-      _pinyinBuffer = '';
+      _searchImeValue = _searchImeEngine.commitCandidate(
+        _searchImeValue,
+        value,
+      );
     });
   }
 
   void _deleteSearchText() {
-    if (_searchQuery.isEmpty) {
-      return;
-    }
-    final List<int> runes = _searchQuery.runes.toList();
     setState(() {
-      _searchQuery = String.fromCharCodes(runes.take(runes.length - 1));
-      if (_pinyinBuffer.isNotEmpty) {
-        final List<int> pinyinRunes = _pinyinBuffer.runes.toList();
-        _pinyinBuffer =
-            String.fromCharCodes(pinyinRunes.take(pinyinRunes.length - 1));
-      }
+      _searchImeValue = _searchImeEngine.backspace(_searchImeValue);
     });
   }
 
   void _clearSearchText() {
     setState(() {
-      _searchQuery = '';
-      _pinyinBuffer = '';
+      _searchImeValue = _searchImeEngine.clear();
     });
   }
 
@@ -181,11 +135,12 @@ class _AssessmentScaleCategoryScreenState
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTap: () {},
-                    child: _ScaleSearchKeyboard(
-                      value: _searchQuery,
-                      pinyinBuffer: _pinyinBuffer,
+                    child: ChineseImeKeyboard(
+                      composing: _searchImeValue.composing,
+                      candidates: _searchImeValue.candidates,
                       shifted: _searchKeyboardShifted,
                       compact: compact,
+                      keyPrefix: 'scale-search',
                       onKey: _insertSearchText,
                       onReplace: _replaceSearchText,
                       onCandidate: _commitPinyinCandidate,
@@ -405,6 +360,7 @@ class _SearchBox extends StatelessWidget {
               const SizedBox(width: 12),
               Expanded(
                 child: Text(
+                  key: const ValueKey<String>('scale-search-display-text'),
                   hasValue ? value : '搜索量表名称 / 编码',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
@@ -435,10 +391,10 @@ class _SearchBox extends StatelessWidget {
   }
 }
 
-class _ScaleSearchKeyboard extends StatelessWidget {
-  const _ScaleSearchKeyboard({
-    required this.value,
-    required this.pinyinBuffer,
+class ChineseImeKeyboard extends StatelessWidget {
+  const ChineseImeKeyboard({
+    required this.composing,
+    required this.candidates,
     required this.shifted,
     required this.compact,
     required this.onKey,
@@ -448,12 +404,16 @@ class _ScaleSearchKeyboard extends StatelessWidget {
     required this.onClear,
     required this.onShift,
     required this.onClose,
+    this.keyPrefix = 'chinese-ime',
+    this.quickWords = _defaultQuickWords,
   });
 
-  final String value;
-  final String pinyinBuffer;
+  final String composing;
+  final List<String> candidates;
   final bool shifted;
   final bool compact;
+  final String keyPrefix;
+  final List<String> quickWords;
   final ValueChanged<String> onKey;
   final ValueChanged<String> onReplace;
   final ValueChanged<String> onCandidate;
@@ -464,7 +424,6 @@ class _ScaleSearchKeyboard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final List<String> candidates = _pinyinCandidates(pinyinBuffer);
     return Container(
       width: compact ? 600 : 660,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
@@ -489,33 +448,17 @@ class _ScaleSearchKeyboard extends StatelessWidget {
                 size: 21,
               ),
               const SizedBox(width: 8),
-              Expanded(
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: Container(
-                    height: 25,
-                    constraints: const BoxConstraints(maxWidth: 430),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
-                    alignment: Alignment.centerLeft,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFF1E8),
-                      borderRadius: BorderRadius.circular(999),
-                    ),
-                    child: Text(
-                      value.isEmpty ? '搜索量表' : value,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      textAlign: TextAlign.left,
-                      style: const TextStyle(
-                        color: _ScaleColors.orangeDeep,
-                        fontSize: 13,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ),
+              const Text(
+                '搜索量表',
+                maxLines: 1,
+                style: TextStyle(
+                  color: _ScaleColors.orangeDeep,
+                  fontSize: 16,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
+              const Spacer(),
               _SearchKeyboardAction(
                 label: '关闭',
                 icon: Icons.close_rounded,
@@ -525,21 +468,27 @@ class _ScaleSearchKeyboard extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           _PinyinCandidateBar(
-            pinyin: pinyinBuffer,
+            keyPrefix: keyPrefix,
+            pinyin: composing,
             candidates: candidates,
             onCandidate: onCandidate,
           ),
           const SizedBox(height: 12),
-          Wrap(
-            spacing: 9,
-            runSpacing: 9,
-            children: <Widget>[
-              for (final String word in _quickWords)
-                _SearchKeyboardQuickKey(
-                  label: word,
-                  onTap: () => onReplace(word),
-                ),
-            ],
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Wrap(
+              alignment: WrapAlignment.start,
+              spacing: 9,
+              runSpacing: 9,
+              children: <Widget>[
+                for (final String word in quickWords)
+                  _SearchKeyboardQuickKey(
+                    keyPrefix: keyPrefix,
+                    label: word,
+                    onTap: () => onReplace(word),
+                  ),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
           _keyRow(_digitKeys),
@@ -550,6 +499,7 @@ class _ScaleSearchKeyboard extends StatelessWidget {
           const SizedBox(height: 9),
           _keyRow(<Widget>[
             _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
               label: '大写',
               active: shifted,
               flex: 2,
@@ -557,6 +507,7 @@ class _ScaleSearchKeyboard extends StatelessWidget {
             ),
             ..._letterKeys('zxcvbnm'),
             _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
               label: '删除',
               flex: 2,
               onTap: onBackspace,
@@ -564,12 +515,31 @@ class _ScaleSearchKeyboard extends StatelessWidget {
           ]),
           const SizedBox(height: 9),
           _keyRow(<Widget>[
-            _SearchKeyboardKey(label: '-', onTap: () => onKey('-')),
-            _SearchKeyboardKey(label: '/', onTap: () => onKey('/')),
-            _SearchKeyboardKey(label: '空格', flex: 2, onTap: () => onKey(' ')),
             _SearchKeyboardKey(
-                label: '清空', flex: 2, muted: true, onTap: onClear),
+              keyPrefix: keyPrefix,
+              label: '-',
+              onTap: () => onKey('-'),
+            ),
             _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
+              label: '/',
+              onTap: () => onKey('/'),
+            ),
+            _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
+              label: '空格',
+              flex: 2,
+              onTap: () => onKey(' '),
+            ),
+            _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
+              label: '清空',
+              flex: 2,
+              muted: true,
+              onTap: onClear,
+            ),
+            _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
               label: '完成',
               flex: 2,
               primary: true,
@@ -585,6 +555,7 @@ class _ScaleSearchKeyboard extends StatelessWidget {
     return '1234567890'
         .split('')
         .map((String value) => _SearchKeyboardKey(
+              keyPrefix: keyPrefix,
               label: value,
               onTap: () => onKey(value),
             ))
@@ -594,7 +565,11 @@ class _ScaleSearchKeyboard extends StatelessWidget {
   List<Widget> _letterKeys(String values) {
     return values.split('').map((String value) {
       final String label = shifted ? value.toUpperCase() : value;
-      return _SearchKeyboardKey(label: label, onTap: () => onKey(label));
+      return _SearchKeyboardKey(
+        keyPrefix: keyPrefix,
+        label: label,
+        onTap: () => onKey(label),
+      );
     }).toList();
   }
 
@@ -609,7 +584,7 @@ class _ScaleSearchKeyboard extends StatelessWidget {
     );
   }
 
-  static const List<String> _quickWords = <String>[
+  static const List<String> _defaultQuickWords = <String>[
     'PEP-3',
     '语言',
     '沟通',
@@ -623,11 +598,13 @@ class _ScaleSearchKeyboard extends StatelessWidget {
 
 class _PinyinCandidateBar extends StatelessWidget {
   const _PinyinCandidateBar({
+    required this.keyPrefix,
     required this.pinyin,
     required this.candidates,
     required this.onCandidate,
   });
 
+  final String keyPrefix;
   final String pinyin;
   final List<String> candidates;
   final ValueChanged<String> onCandidate;
@@ -700,6 +677,7 @@ class _PinyinCandidateBar extends StatelessWidget {
                               index < candidates.length;
                               index++)
                             _SearchKeyboardQuickKey(
+                              keyPrefix: keyPrefix,
                               label: '${index + 1}.${candidates[index]}',
                               onTap: () => onCandidate(candidates[index]),
                             ),
@@ -713,8 +691,13 @@ class _PinyinCandidateBar extends StatelessWidget {
 }
 
 class _SearchKeyboardQuickKey extends StatefulWidget {
-  const _SearchKeyboardQuickKey({required this.label, required this.onTap});
+  const _SearchKeyboardQuickKey({
+    required this.keyPrefix,
+    required this.label,
+    required this.onTap,
+  });
 
+  final String keyPrefix;
   final String label;
   final VoidCallback onTap;
 
@@ -754,7 +737,7 @@ class _SearchKeyboardQuickKeyState extends State<_SearchKeyboardQuickKey> {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      key: ValueKey<String>('scale-search-key-${widget.label}'),
+      key: ValueKey<String>('${widget.keyPrefix}-key-${widget.label}'),
       onTapDown: _handleTapDown,
       onTapUp: (_) => _hidePressBubbleSoon(),
       onTapCancel: () {
@@ -880,6 +863,7 @@ class _BubbleTriangleClipper extends CustomClipper<Path> {
 
 class _SearchKeyboardKey extends StatefulWidget {
   const _SearchKeyboardKey({
+    required this.keyPrefix,
     required this.label,
     required this.onTap,
     this.flex = 1,
@@ -888,6 +872,7 @@ class _SearchKeyboardKey extends StatefulWidget {
     this.muted = false,
   });
 
+  final String keyPrefix;
   final String label;
   final VoidCallback onTap;
   final int flex;
@@ -953,7 +938,7 @@ class _SearchKeyboardKeyState extends State<_SearchKeyboardKey> {
     return Expanded(
       flex: widget.flex,
       child: GestureDetector(
-        key: ValueKey<String>('scale-search-key-${widget.label}'),
+        key: ValueKey<String>('${widget.keyPrefix}-key-${widget.label}'),
         onTapDown: _handleTapDown,
         onTapUp: (_) => _hidePressBubbleSoon(),
         onTapCancel: () {
@@ -1560,92 +1545,6 @@ class _ScaleCardData {
 String _normalizeSearchText(String value) {
   return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-/_.]'), '');
 }
-
-bool _isAsciiLetter(String value) {
-  return value.length == 1 && RegExp(r'^[A-Za-z]$').hasMatch(value);
-}
-
-List<String> _pinyinCandidates(String value) {
-  final String pinyin =
-      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
-  if (pinyin.isEmpty) {
-    return const <String>[];
-  }
-  final List<String> exact = _pinyinCandidateMap[pinyin] ?? const <String>[];
-  final List<String> prefix = <String>[];
-  for (final MapEntry<String, List<String>> entry
-      in _pinyinCandidateMap.entries) {
-    if (entry.key.startsWith(pinyin)) {
-      prefix.addAll(entry.value);
-    }
-  }
-  return <String>[...exact, ...prefix]
-      .where((String item) => item.trim().isNotEmpty)
-      .toSet()
-      .take(8)
-      .toList();
-}
-
-const Map<String, List<String>> _pinyinCandidateMap = <String, List<String>>{
-  'p': <String>['评', 'PEP-3'],
-  'pe': <String>['PEP-3'],
-  'pep': <String>['PEP-3'],
-  'pep3': <String>['PEP-3'],
-  'y': <String>['语', '言'],
-  'yu': <String>['语', '语言'],
-  'yan': <String>['言'],
-  'yuyan': <String>['语言'],
-  'g': <String>['沟'],
-  'go': <String>['沟'],
-  'gou': <String>['沟'],
-  'tong': <String>['通'],
-  'gt': <String>['沟通'],
-  'goutong': <String>['沟通'],
-  's': <String>['筛', '社'],
-  'shai': <String>['筛'],
-  'cha': <String>['查'],
-  'sc': <String>['筛查'],
-  'shaicha': <String>['筛查'],
-  'kou': <String>['口'],
-  'ky': <String>['口语'],
-  'kouyu': <String>['口语'],
-  'biao': <String>['表'],
-  'da': <String>['达'],
-  'bd': <String>['表达'],
-  'biaoda': <String>['表达'],
-  'she': <String>['社'],
-  'jiao': <String>['交'],
-  'sj': <String>['社交'],
-  'shejiao': <String>['社交'],
-  'zong': <String>['综'],
-  'he': <String>['合'],
-  'zh': <String>['综合'],
-  'zonghe': <String>['综合'],
-  'fa': <String>['发'],
-  'zhan': <String>['展'],
-  'fz': <String>['发展'],
-  'fazhan': <String>['发展'],
-  'ping': <String>['评'],
-  'heping': <String>['评核'],
-  'ph': <String>['评核'],
-  'pinghe': <String>['评核'],
-  'liang': <String>['量'],
-  'lb': <String>['量表'],
-  'liangbiao': <String>['量表'],
-  'guan': <String>['观'],
-  'gc': <String>['观察'],
-  'guancha': <String>['观察'],
-  'fu': <String>['复'],
-  'fp': <String>['复评'],
-  'fuping': <String>['复评'],
-  'er': <String>['儿'],
-  'et': <String>['儿童'],
-  'ertong': <String>['儿童'],
-  'li': <String>['理'],
-  'jie': <String>['解'],
-  'lj': <String>['理解'],
-  'lijie': <String>['理解'],
-};
 
 class _ScaleSearchEmpty extends StatelessWidget {
   const _ScaleSearchEmpty();

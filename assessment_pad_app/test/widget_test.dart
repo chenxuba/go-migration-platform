@@ -464,6 +464,10 @@ void main() {
     }
 
     expect(find.text('1.语言'), findsOneWidget);
+    final Text searchText = tester.widget<Text>(
+      find.byKey(const ValueKey<String>('scale-search-display-text')),
+    );
+    expect(searchText.data, '语言');
 
     await tester
         .tap(find.byKey(const ValueKey<String>('scale-search-key-1.语言')));
