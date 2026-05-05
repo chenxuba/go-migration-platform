@@ -1,4 +1,5 @@
 import 'package:assessment_pad_app/auth_client.dart';
+import 'package:assessment_pad_app/assessment_scale_category_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
@@ -432,6 +433,45 @@ void main() {
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
+  });
+
+  testWidgets('scale search keyboard shows Chinese candidates for pinyin',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(onBack: () {}),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('搜索量表名称 / 编码'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('输入拼音后在这里选择汉字候选'), findsOneWidget);
+
+    for (final String key in <String>['y', 'u', 'y', 'a', 'n']) {
+      await tester.tap(find.byKey(ValueKey<String>('scale-search-key-$key')));
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(milliseconds: 250));
+    }
+
+    expect(find.text('1.语言'), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('scale-search-key-1.语言')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('1.语言'), findsNothing);
+    expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
 }
 

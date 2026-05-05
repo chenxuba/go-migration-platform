@@ -1,11 +1,124 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
-class AssessmentScaleCategoryScreen extends StatelessWidget {
+class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({required this.onBack, super.key});
 
   final VoidCallback onBack;
+
+  @override
+  State<AssessmentScaleCategoryScreen> createState() =>
+      _AssessmentScaleCategoryScreenState();
+}
+
+class _AssessmentScaleCategoryScreenState
+    extends State<AssessmentScaleCategoryScreen> {
+  String _searchQuery = '';
+  String _pinyinBuffer = '';
+  bool _searchKeyboardVisible = false;
+  bool _searchKeyboardShifted = false;
+
+  void _openSearchKeyboard() {
+    setState(() => _searchKeyboardVisible = true);
+  }
+
+  void _finishSearchKeyboard() {
+    final List<String> candidates = _pinyinCandidates(_pinyinBuffer);
+    setState(() {
+      if (_pinyinBuffer.isNotEmpty && candidates.isNotEmpty) {
+        final int keepLength =
+            math.max(0, _searchQuery.length - _pinyinBuffer.length);
+        _searchQuery = _searchQuery.substring(0, keepLength) + candidates.first;
+      }
+      _searchKeyboardVisible = false;
+      _searchKeyboardShifted = false;
+      _pinyinBuffer = '';
+    });
+  }
+
+  void _insertSearchText(String value) {
+    if (_isAsciiLetter(value)) {
+      setState(() {
+        _searchQuery += value;
+        _pinyinBuffer += value.toLowerCase();
+      });
+      return;
+    }
+
+    final List<String> candidates = _pinyinCandidates(_pinyinBuffer);
+    if (_pinyinBuffer.isNotEmpty && value.length == 1) {
+      final int? digit = int.tryParse(value);
+      if (digit != null && digit >= 1 && digit <= candidates.length) {
+        _commitPinyinCandidate(candidates[digit - 1]);
+        return;
+      }
+      if (digit != null) {
+        setState(() {
+          _searchQuery += value;
+          _pinyinBuffer += value;
+        });
+        return;
+      }
+    }
+
+    if (value == ' ' && candidates.isNotEmpty) {
+      _commitPinyinCandidate(candidates.first);
+      return;
+    }
+
+    setState(() {
+      _searchQuery += value;
+      _pinyinBuffer = '';
+    });
+  }
+
+  void _replaceSearchText(String value) {
+    setState(() {
+      _searchQuery = value;
+      _pinyinBuffer = '';
+    });
+  }
+
+  void _commitPinyinCandidate(String value) {
+    if (_pinyinBuffer.isEmpty) {
+      setState(() => _searchQuery += value);
+      return;
+    }
+    final int keepLength =
+        math.max(0, _searchQuery.length - _pinyinBuffer.length);
+    setState(() {
+      _searchQuery = _searchQuery.substring(0, keepLength) + value;
+      _pinyinBuffer = '';
+    });
+  }
+
+  void _deleteSearchText() {
+    if (_searchQuery.isEmpty) {
+      return;
+    }
+    final List<int> runes = _searchQuery.runes.toList();
+    setState(() {
+      _searchQuery = String.fromCharCodes(runes.take(runes.length - 1));
+      if (_pinyinBuffer.isNotEmpty) {
+        final List<int> pinyinRunes = _pinyinBuffer.runes.toList();
+        _pinyinBuffer =
+            String.fromCharCodes(pinyinRunes.take(pinyinRunes.length - 1));
+      }
+    });
+  }
+
+  void _clearSearchText() {
+    setState(() {
+      _searchQuery = '';
+      _pinyinBuffer = '';
+    });
+  }
+
+  void _toggleSearchShift() {
+    setState(() => _searchKeyboardShifted = !_searchKeyboardShifted);
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -27,7 +140,14 @@ class AssessmentScaleCategoryScreen extends StatelessWidget {
                 padding: EdgeInsets.fromLTRB(margin, 26, margin, 22),
                 child: Column(
                   children: <Widget>[
-                    _ScaleTopBar(onBack: onBack, compact: compact),
+                    _ScaleTopBar(
+                      onBack: widget.onBack,
+                      compact: compact,
+                      searchQuery: _searchQuery,
+                      searchActive: _searchKeyboardVisible,
+                      onSearchTap: _openSearchKeyboard,
+                      onSearchClear: _clearSearchText,
+                    ),
                     const SizedBox(height: 22),
                     Expanded(
                       child: Row(
@@ -38,13 +158,44 @@ class AssessmentScaleCategoryScreen extends StatelessWidget {
                             child: const _ScaleCategorySidebar(),
                           ),
                           SizedBox(width: contentGap),
-                          const Expanded(child: _ScaleMainContent()),
+                          Expanded(
+                            child: _ScaleMainContent(searchQuery: _searchQuery),
+                          ),
                         ],
                       ),
                     ),
                   ],
                 ),
               ),
+              if (_searchKeyboardVisible)
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: _finishSearchKeyboard,
+                  ),
+                ),
+              if (_searchKeyboardVisible)
+                Positioned(
+                  right: margin,
+                  top: 88,
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () {},
+                    child: _ScaleSearchKeyboard(
+                      value: _searchQuery,
+                      pinyinBuffer: _pinyinBuffer,
+                      shifted: _searchKeyboardShifted,
+                      compact: compact,
+                      onKey: _insertSearchText,
+                      onReplace: _replaceSearchText,
+                      onCandidate: _commitPinyinCandidate,
+                      onBackspace: _deleteSearchText,
+                      onClear: _clearSearchText,
+                      onShift: _toggleSearchShift,
+                      onClose: _finishSearchKeyboard,
+                    ),
+                  ),
+                ),
             ],
           ),
         );
@@ -111,10 +262,21 @@ class _ScalePageBackgroundPainter extends CustomPainter {
 }
 
 class _ScaleTopBar extends StatelessWidget {
-  const _ScaleTopBar({required this.onBack, required this.compact});
+  const _ScaleTopBar({
+    required this.onBack,
+    required this.compact,
+    required this.searchQuery,
+    required this.searchActive,
+    required this.onSearchTap,
+    required this.onSearchClear,
+  });
 
   final VoidCallback onBack;
   final bool compact;
+  final String searchQuery;
+  final bool searchActive;
+  final VoidCallback onSearchTap;
+  final VoidCallback onSearchClear;
 
   @override
   Widget build(BuildContext context) {
@@ -139,7 +301,13 @@ class _ScaleTopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          _SearchBox(width: compact ? 280 : 328),
+          _SearchBox(
+            width: compact ? 280 : 328,
+            value: searchQuery,
+            active: searchActive,
+            onTap: onSearchTap,
+            onClear: onSearchClear,
+          ),
           const SizedBox(width: 14),
           const _StudentChip(),
           const SizedBox(width: 14),
@@ -186,34 +354,713 @@ class _IconShell extends StatelessWidget {
 }
 
 class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.width});
+  const _SearchBox({
+    required this.width,
+    required this.value,
+    required this.active,
+    required this.onTap,
+    required this.onClear,
+  });
 
   final double width;
+  final String value;
+  final bool active;
+  final VoidCallback onTap;
+  final VoidCallback onClear;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 17),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.86),
+    final bool hasValue = value.trim().isNotEmpty;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _ScaleColors.line),
+        child: Ink(
+          width: width,
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 17),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.88),
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(
+              color: active ? _ScaleColors.orange : _ScaleColors.line,
+              width: active ? 1.4 : 1,
+            ),
+            boxShadow: active
+                ? _scaleShadow(
+                    color: const Color(0x18E96F43),
+                    blur: 16,
+                    offset: const Offset(0, 7),
+                  )
+                : null,
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.search_rounded,
+                size: 22,
+                color: active ? _ScaleColors.orange : _ScaleColors.text,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  hasValue ? value : '搜索量表名称 / 编码',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: hasValue ? _ScaleColors.ink : _ScaleColors.muted,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (hasValue) ...<Widget>[
+                const SizedBox(width: 8),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: onClear,
+                  child: const Icon(
+                    Icons.cancel_rounded,
+                    size: 19,
+                    color: _ScaleColors.muted,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
-      child: const Row(
+    );
+  }
+}
+
+class _ScaleSearchKeyboard extends StatelessWidget {
+  const _ScaleSearchKeyboard({
+    required this.value,
+    required this.pinyinBuffer,
+    required this.shifted,
+    required this.compact,
+    required this.onKey,
+    required this.onReplace,
+    required this.onCandidate,
+    required this.onBackspace,
+    required this.onClear,
+    required this.onShift,
+    required this.onClose,
+  });
+
+  final String value;
+  final String pinyinBuffer;
+  final bool shifted;
+  final bool compact;
+  final ValueChanged<String> onKey;
+  final ValueChanged<String> onReplace;
+  final ValueChanged<String> onCandidate;
+  final VoidCallback onBackspace;
+  final VoidCallback onClear;
+  final VoidCallback onShift;
+  final VoidCallback onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> candidates = _pinyinCandidates(pinyinBuffer);
+    return Container(
+      width: compact ? 600 : 660,
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.97),
+        borderRadius: BorderRadius.circular(22),
+        border: Border.all(color: _ScaleColors.line),
+        boxShadow: _scaleShadow(
+          color: const Color(0x28B05F32),
+          blur: 28,
+          offset: const Offset(0, 15),
+        ),
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          Icon(Icons.search_rounded, size: 22, color: _ScaleColors.text),
-          SizedBox(width: 12),
-          Text(
-            '搜索量表名称 / 编码',
-            style: TextStyle(
-              color: _ScaleColors.muted,
-              fontSize: 15,
-              fontWeight: FontWeight.w800,
+          Row(
+            children: <Widget>[
+              const Icon(
+                Icons.keyboard_alt_outlined,
+                color: _ScaleColors.orange,
+                size: 21,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: Container(
+                    height: 25,
+                    constraints: const BoxConstraints(maxWidth: 430),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    alignment: Alignment.centerLeft,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E8),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      value.isEmpty ? '搜索量表' : value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.left,
+                      style: const TextStyle(
+                        color: _ScaleColors.orangeDeep,
+                        fontSize: 13,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              _SearchKeyboardAction(
+                label: '关闭',
+                icon: Icons.close_rounded,
+                onTap: onClose,
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _PinyinCandidateBar(
+            pinyin: pinyinBuffer,
+            candidates: candidates,
+            onCandidate: onCandidate,
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 9,
+            runSpacing: 9,
+            children: <Widget>[
+              for (final String word in _quickWords)
+                _SearchKeyboardQuickKey(
+                  label: word,
+                  onTap: () => onReplace(word),
+                ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          _keyRow(_digitKeys),
+          const SizedBox(height: 9),
+          _keyRow(_letterKeys('qwertyuiop')),
+          const SizedBox(height: 9),
+          _keyRow(_letterKeys('asdfghjkl')),
+          const SizedBox(height: 9),
+          _keyRow(<Widget>[
+            _SearchKeyboardKey(
+              label: '大写',
+              active: shifted,
+              flex: 2,
+              onTap: onShift,
+            ),
+            ..._letterKeys('zxcvbnm'),
+            _SearchKeyboardKey(
+              label: '删除',
+              flex: 2,
+              onTap: onBackspace,
+            ),
+          ]),
+          const SizedBox(height: 9),
+          _keyRow(<Widget>[
+            _SearchKeyboardKey(label: '-', onTap: () => onKey('-')),
+            _SearchKeyboardKey(label: '/', onTap: () => onKey('/')),
+            _SearchKeyboardKey(label: '空格', flex: 2, onTap: () => onKey(' ')),
+            _SearchKeyboardKey(
+                label: '清空', flex: 2, muted: true, onTap: onClear),
+            _SearchKeyboardKey(
+              label: '完成',
+              flex: 2,
+              primary: true,
+              onTap: onClose,
+            ),
+          ]),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> get _digitKeys {
+    return '1234567890'
+        .split('')
+        .map((String value) => _SearchKeyboardKey(
+              label: value,
+              onTap: () => onKey(value),
+            ))
+        .toList();
+  }
+
+  List<Widget> _letterKeys(String values) {
+    return values.split('').map((String value) {
+      final String label = shifted ? value.toUpperCase() : value;
+      return _SearchKeyboardKey(label: label, onTap: () => onKey(label));
+    }).toList();
+  }
+
+  Widget _keyRow(List<Widget> children) {
+    return Row(
+      children: <Widget>[
+        for (int index = 0; index < children.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 8),
+          children[index],
+        ],
+      ],
+    );
+  }
+
+  static const List<String> _quickWords = <String>[
+    'PEP-3',
+    '语言',
+    '沟通',
+    '筛查',
+    '口语',
+    '表达',
+    '社交',
+    '综合',
+  ];
+}
+
+class _PinyinCandidateBar extends StatelessWidget {
+  const _PinyinCandidateBar({
+    required this.pinyin,
+    required this.candidates,
+    required this.onCandidate,
+  });
+
+  final String pinyin;
+  final List<String> candidates;
+  final ValueChanged<String> onCandidate;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool composing = pinyin.trim().isNotEmpty;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Container(
+            height: 30,
+            constraints: const BoxConstraints(minWidth: 58),
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            alignment: Alignment.centerLeft,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF1E8),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Text(
+              composing ? pinyin : '拼音',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ScaleColors.orangeDeep,
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: !composing
+                ? const Text(
+                    '输入拼音后在这里选择汉字候选',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _ScaleColors.muted,
+                      fontSize: 13,
+                      height: 1,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  )
+                : candidates.isEmpty
+                    ? const Text(
+                        '暂无候选，继续输入或直接搜索编码',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: _ScaleColors.muted,
+                          fontSize: 13,
+                          height: 1,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      )
+                    : Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          for (int index = 0;
+                              index < candidates.length;
+                              index++)
+                            _SearchKeyboardQuickKey(
+                              label: '${index + 1}.${candidates[index]}',
+                              onTap: () => onCandidate(candidates[index]),
+                            ),
+                        ],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchKeyboardQuickKey extends StatefulWidget {
+  const _SearchKeyboardQuickKey({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  State<_SearchKeyboardQuickKey> createState() =>
+      _SearchKeyboardQuickKeyState();
+}
+
+class _SearchKeyboardQuickKeyState extends State<_SearchKeyboardQuickKey> {
+  bool _pressed = false;
+  bool _showBubble = false;
+  int _feedbackToken = 0;
+
+  void _handleTapDown(TapDownDetails _) {
+    HapticFeedback.selectionClick();
+    _feedbackToken++;
+    setState(() {
+      _pressed = true;
+      _showBubble = true;
+    });
+  }
+
+  void _hidePressBubbleSoon() {
+    final int token = _feedbackToken;
+    Future<void>.delayed(const Duration(milliseconds: 90), () {
+      if (mounted && token == _feedbackToken) {
+        setState(() => _pressed = false);
+      }
+    });
+    Future<void>.delayed(const Duration(milliseconds: 210), () {
+      if (mounted && token == _feedbackToken) {
+        setState(() => _showBubble = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      key: ValueKey<String>('scale-search-key-${widget.label}'),
+      onTapDown: _handleTapDown,
+      onTapUp: (_) => _hidePressBubbleSoon(),
+      onTapCancel: () {
+        if (mounted) {
+          setState(() {
+            _pressed = false;
+            _showBubble = false;
+          });
+        }
+      },
+      onTap: widget.onTap,
+      child: Stack(
+        clipBehavior: Clip.none,
+        alignment: Alignment.center,
+        children: <Widget>[
+          AnimatedScale(
+            scale: _pressed ? .96 : 1,
+            duration: const Duration(milliseconds: 70),
+            curve: Curves.easeOut,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 70),
+              curve: Curves.easeOut,
+              height: 32,
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                color: _pressed
+                    ? const Color(0xFFFFE8DA)
+                    : const Color(0xFFFFF8F1),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: _pressed ? _ScaleColors.orange : _ScaleColors.lineSoft,
+                  width: _pressed ? 1.3 : 1,
+                ),
+              ),
+              child: Center(
+                widthFactor: 1,
+                child: Text(
+                  widget.label,
+                  style: const TextStyle(
+                    color: _ScaleColors.text,
+                    fontSize: 13,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (_showBubble)
+            Positioned(
+              bottom: 40,
+              child: _SearchKeyboardBubble(label: widget.label),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SearchKeyboardBubble extends StatelessWidget {
+  const _SearchKeyboardBubble({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            height: 46,
+            constraints: const BoxConstraints(minWidth: 46),
+            padding: const EdgeInsets.symmetric(horizontal: 15),
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: _ScaleColors.orange,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: _scaleShadow(
+                color: const Color(0x24D15E36),
+                blur: 14,
+                offset: const Offset(0, 8),
+              ),
+            ),
+            child: Text(
+              label,
+              maxLines: 1,
+              style: const TextStyle(
+                color: Colors.white,
+                fontSize: 20,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          ClipPath(
+            clipper: _BubbleTriangleClipper(),
+            child: Container(
+              width: 12,
+              height: 7,
+              color: _ScaleColors.orange,
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _BubbleTriangleClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    return Path()
+      ..moveTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..lineTo(size.width / 2, size.height)
+      ..close();
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _SearchKeyboardKey extends StatefulWidget {
+  const _SearchKeyboardKey({
+    required this.label,
+    required this.onTap,
+    this.flex = 1,
+    this.primary = false,
+    this.active = false,
+    this.muted = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final int flex;
+  final bool primary;
+  final bool active;
+  final bool muted;
+
+  @override
+  State<_SearchKeyboardKey> createState() => _SearchKeyboardKeyState();
+}
+
+class _SearchKeyboardKeyState extends State<_SearchKeyboardKey> {
+  bool _pressed = false;
+  bool _showBubble = false;
+  int _feedbackToken = 0;
+
+  void _handleTapDown(TapDownDetails _) {
+    HapticFeedback.selectionClick();
+    _feedbackToken++;
+    setState(() {
+      _pressed = true;
+      _showBubble = true;
+    });
+  }
+
+  void _hidePressBubbleSoon() {
+    final int token = _feedbackToken;
+    Future<void>.delayed(const Duration(milliseconds: 90), () {
+      if (mounted && token == _feedbackToken) {
+        setState(() => _pressed = false);
+      }
+    });
+    Future<void>.delayed(const Duration(milliseconds: 210), () {
+      if (mounted && token == _feedbackToken) {
+        setState(() => _showBubble = false);
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background = widget.primary
+        ? _ScaleColors.orange
+        : widget.active
+            ? const Color(0xFFFFE7D9)
+            : widget.muted
+                ? const Color(0xFFF7EFE9)
+                : const Color(0xFFFFFAF5);
+    final Color foreground = widget.primary
+        ? Colors.white
+        : widget.active
+            ? _ScaleColors.orangeDeep
+            : _ScaleColors.ink;
+    final Color pressedBackground = widget.primary
+        ? _ScaleColors.orangeDeep
+        : widget.active
+            ? const Color(0xFFFFD6C2)
+            : const Color(0xFFFFE8DA);
+    final Color keyBackground = _pressed ? pressedBackground : background;
+    final Color keyBorder =
+        _pressed ? _ScaleColors.orange : _ScaleColors.lineSoft;
+
+    return Expanded(
+      flex: widget.flex,
+      child: GestureDetector(
+        key: ValueKey<String>('scale-search-key-${widget.label}'),
+        onTapDown: _handleTapDown,
+        onTapUp: (_) => _hidePressBubbleSoon(),
+        onTapCancel: () {
+          if (mounted) {
+            setState(() {
+              _pressed = false;
+              _showBubble = false;
+            });
+          }
+        },
+        onTap: widget.onTap,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: <Widget>[
+            AnimatedScale(
+              scale: _pressed ? .96 : 1,
+              duration: const Duration(milliseconds: 70),
+              curve: Curves.easeOut,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 70),
+                curve: Curves.easeOut,
+                height: 48,
+                decoration: BoxDecoration(
+                  color: keyBackground,
+                  borderRadius: BorderRadius.circular(12),
+                  border: widget.primary
+                      ? null
+                      : Border.all(color: keyBorder, width: _pressed ? 1.4 : 1),
+                  boxShadow: widget.primary || _pressed
+                      ? _scaleShadow(
+                          color: _pressed
+                              ? const Color(0x2FD15E36)
+                              : const Color(0x20D15E36),
+                          blur: _pressed ? 16 : 12,
+                          offset: Offset(0, _pressed ? 5 : 7),
+                        )
+                      : null,
+                ),
+                child: Center(
+                  child: Text(
+                    widget.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.clip,
+                    strutStyle: const StrutStyle(
+                      fontSize: 15,
+                      height: 1,
+                      forceStrutHeight: true,
+                    ),
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: widget.label.length > 2 ? 13 : 16,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (_showBubble)
+              Positioned(
+                bottom: 56,
+                child: _SearchKeyboardBubble(label: widget.label),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchKeyboardAction extends StatelessWidget {
+  const _SearchKeyboardAction({
+    required this.label,
+    required this.icon,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          child: Row(
+            children: <Widget>[
+              Icon(icon, color: _ScaleColors.text, size: 18),
+              const SizedBox(width: 3),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _ScaleColors.text,
+                  fontSize: 12,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -493,37 +1340,51 @@ class _DraftCard extends StatelessWidget {
 }
 
 class _ScaleMainContent extends StatelessWidget {
-  const _ScaleMainContent();
+  const _ScaleMainContent({required this.searchQuery});
+
+  final String searchQuery;
 
   static const List<_ScaleCardData> _scales = <_ScaleCardData>[
     _ScaleCardData(
-      title: 'PEP-3语言理解',
+      title: 'PEP-3语言理解评核量表',
+      code: 'PEP3-CVP',
       tags: <String>['56题', '25分钟', '2-7岁'],
+      aliases: <String>['pep3', 'yuyan', 'lijie', 'pinghe', 'liangbiao'],
       type: _CoverType.book,
     ),
     _ScaleCardData(
       title: '口语发起与互动',
+      code: 'ORAL-INT',
       tags: <String>['42题', '18分钟', '3-8岁'],
+      aliases: <String>['kouyu', 'kou', 'hudong', 'faqi', 'oral'],
       type: _CoverType.talk,
     ),
     _ScaleCardData(
       title: '语言发展筛查表',
+      code: 'LANG-SCREEN',
       tags: <String>['32题', '15分钟', '12-48月'],
+      aliases: <String>['yuyan', 'fazhan', 'shaicha', 'liangbiao', 'lang'],
       type: _CoverType.screen,
     ),
     _ScaleCardData(
       title: '表达沟通量表',
+      code: 'EXP-COMM',
       tags: <String>['38题', '22分钟', '学龄前'],
+      aliases: <String>['biaoda', 'goutong', 'liangbiao', 'exp', 'comm'],
       type: _CoverType.express,
     ),
     _ScaleCardData(
       title: '社交沟通观察表',
+      code: 'SOC-COMM',
       tags: <String>['44题', '20分钟', '3-10岁'],
+      aliases: <String>['shejiao', 'goutong', 'guancha', 'liangbiao', 'soc'],
       type: _CoverType.social,
     ),
     _ScaleCardData(
       title: '综合语言复评卡',
+      code: 'LANG-REVIEW',
       tags: <String>['48题', '30分钟', '4-8岁'],
+      aliases: <String>['zonghe', 'yuyan', 'fuping', 'review', 'lang'],
       type: _CoverType.review,
     ),
   ];
@@ -535,6 +1396,7 @@ class _ScaleMainContent extends StatelessWidget {
         const double gap = 14;
         const double toolbarHeight = 44;
         const double toolbarGap = 10;
+        final List<_ScaleCardData> visibleScales = _filterScales(searchQuery);
         final double cardWidth = (constraints.maxWidth - gap * 2) / 3;
         final double cardHeight =
             (constraints.maxHeight - toolbarHeight - gap - toolbarGap) / 2;
@@ -544,22 +1406,39 @@ class _ScaleMainContent extends StatelessWidget {
           children: <Widget>[
             const _ScaleToolbar(),
             const SizedBox(height: toolbarGap),
-            Wrap(
-              spacing: gap,
-              runSpacing: gap,
-              children: <Widget>[
-                for (final _ScaleCardData data in _scales)
-                  SizedBox(
-                    width: cardWidth,
-                    height: cardHeight.clamp(252, 292),
-                    child: _ScaleCard(data: data),
-                  ),
-              ],
-            ),
+            if (visibleScales.isEmpty)
+              const Expanded(child: _ScaleSearchEmpty())
+            else
+              Wrap(
+                spacing: gap,
+                runSpacing: gap,
+                children: <Widget>[
+                  for (final _ScaleCardData data in visibleScales)
+                    SizedBox(
+                      width: cardWidth,
+                      height: cardHeight.clamp(252, 292),
+                      child: _ScaleCard(data: data),
+                    ),
+                ],
+              ),
           ],
         );
       },
     );
+  }
+
+  static List<_ScaleCardData> _filterScales(String query) {
+    final String normalizedQuery = _normalizeSearchText(query);
+    if (normalizedQuery.isEmpty) {
+      return _scales;
+    }
+    return _scales.where((_ScaleCardData item) {
+      final String target = _normalizeSearchText(
+        <String>[item.title, item.code, ...item.tags, ...item.aliases]
+            .join(' '),
+      );
+      return target.contains(normalizedQuery);
+    }).toList();
   }
 }
 
@@ -665,13 +1544,153 @@ class _Segment extends StatelessWidget {
 class _ScaleCardData {
   const _ScaleCardData({
     required this.title,
+    required this.code,
     required this.tags,
+    required this.aliases,
     required this.type,
   });
 
   final String title;
+  final String code;
   final List<String> tags;
+  final List<String> aliases;
   final _CoverType type;
+}
+
+String _normalizeSearchText(String value) {
+  return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-/_.]'), '');
+}
+
+bool _isAsciiLetter(String value) {
+  return value.length == 1 && RegExp(r'^[A-Za-z]$').hasMatch(value);
+}
+
+List<String> _pinyinCandidates(String value) {
+  final String pinyin =
+      value.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '');
+  if (pinyin.isEmpty) {
+    return const <String>[];
+  }
+  final List<String> exact = _pinyinCandidateMap[pinyin] ?? const <String>[];
+  final List<String> prefix = <String>[];
+  for (final MapEntry<String, List<String>> entry
+      in _pinyinCandidateMap.entries) {
+    if (entry.key.startsWith(pinyin)) {
+      prefix.addAll(entry.value);
+    }
+  }
+  return <String>[...exact, ...prefix]
+      .where((String item) => item.trim().isNotEmpty)
+      .toSet()
+      .take(8)
+      .toList();
+}
+
+const Map<String, List<String>> _pinyinCandidateMap = <String, List<String>>{
+  'p': <String>['评', 'PEP-3'],
+  'pe': <String>['PEP-3'],
+  'pep': <String>['PEP-3'],
+  'pep3': <String>['PEP-3'],
+  'y': <String>['语', '言'],
+  'yu': <String>['语', '语言'],
+  'yan': <String>['言'],
+  'yuyan': <String>['语言'],
+  'g': <String>['沟'],
+  'go': <String>['沟'],
+  'gou': <String>['沟'],
+  'tong': <String>['通'],
+  'gt': <String>['沟通'],
+  'goutong': <String>['沟通'],
+  's': <String>['筛', '社'],
+  'shai': <String>['筛'],
+  'cha': <String>['查'],
+  'sc': <String>['筛查'],
+  'shaicha': <String>['筛查'],
+  'kou': <String>['口'],
+  'ky': <String>['口语'],
+  'kouyu': <String>['口语'],
+  'biao': <String>['表'],
+  'da': <String>['达'],
+  'bd': <String>['表达'],
+  'biaoda': <String>['表达'],
+  'she': <String>['社'],
+  'jiao': <String>['交'],
+  'sj': <String>['社交'],
+  'shejiao': <String>['社交'],
+  'zong': <String>['综'],
+  'he': <String>['合'],
+  'zh': <String>['综合'],
+  'zonghe': <String>['综合'],
+  'fa': <String>['发'],
+  'zhan': <String>['展'],
+  'fz': <String>['发展'],
+  'fazhan': <String>['发展'],
+  'ping': <String>['评'],
+  'heping': <String>['评核'],
+  'ph': <String>['评核'],
+  'pinghe': <String>['评核'],
+  'liang': <String>['量'],
+  'lb': <String>['量表'],
+  'liangbiao': <String>['量表'],
+  'guan': <String>['观'],
+  'gc': <String>['观察'],
+  'guancha': <String>['观察'],
+  'fu': <String>['复'],
+  'fp': <String>['复评'],
+  'fuping': <String>['复评'],
+  'er': <String>['儿'],
+  'et': <String>['儿童'],
+  'ertong': <String>['儿童'],
+  'li': <String>['理'],
+  'jie': <String>['解'],
+  'lj': <String>['理解'],
+  'lijie': <String>['理解'],
+};
+
+class _ScaleSearchEmpty extends StatelessWidget {
+  const _ScaleSearchEmpty();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 320,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(.72),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _ScaleColors.lineSoft),
+        ),
+        child: const Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(Icons.search_off_rounded, color: _ScaleColors.muted, size: 34),
+            SizedBox(height: 10),
+            Text(
+              '没有匹配的量表',
+              style: TextStyle(
+                color: _ScaleColors.ink,
+                fontSize: 17,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            SizedBox(height: 8),
+            Text(
+              '可尝试输入 PEP3、语言、筛查等关键词',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _ScaleColors.muted,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ScaleCard extends StatelessWidget {
@@ -724,7 +1743,7 @@ class _ScaleCard extends StatelessWidget {
             children: <Widget>[
               for (int i = 0; i < data.tags.length; i++) ...<Widget>[
                 _InfoTag(label: data.tags[i]),
-                if (i != data.tags.length - 1) const SizedBox(width: 9),
+                if (i != data.tags.length - 1) const SizedBox(width: 6),
               ],
               const Spacer(),
               const _ChooseButton(),
@@ -745,7 +1764,7 @@ class _InfoTag extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 8),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFFFF8F1),
@@ -771,7 +1790,7 @@ class _ChooseButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 68,
+      width: 64,
       height: 38,
       alignment: Alignment.center,
       decoration: BoxDecoration(
