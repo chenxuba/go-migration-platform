@@ -513,6 +513,37 @@ void main() {
     expect(find.text('1.语言'), findsNothing);
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
+
+  testWidgets('disabled scale start button opens student selector',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('开始测评前，请先选择本次测评对象。'), findsOneWidget);
+    expect(find.text('确认选择'), findsOneWidget);
+  });
 }
 
 Future<void> _enterWithCustomKeyboard(

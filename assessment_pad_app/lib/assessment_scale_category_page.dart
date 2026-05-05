@@ -529,6 +529,7 @@ class _AssessmentScaleCategoryScreenState
                               errorMessage: _scaleErrorMessage,
                               hasSelectedStudent: _selectedStudent != null,
                               onChooseScale: _chooseScale,
+                              onRequireStudent: _openStudentSheet,
                               onRetry: _loadScales,
                             ),
                           ),
@@ -1519,6 +1520,7 @@ class _StudentChip extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(15),
         child: Ink(
+          width: 202,
           height: 46,
           padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
@@ -1537,8 +1539,7 @@ class _StudentChip extends StatelessWidget {
                 color: hasStudent ? _ScaleColors.orange : _ScaleColors.text,
               ),
               const SizedBox(width: 10),
-              ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 150),
+              Expanded(
                 child: Text(
                   label,
                   maxLines: 1,
@@ -2779,6 +2780,7 @@ class _ScaleMainContent extends StatelessWidget {
     required this.errorMessage,
     required this.hasSelectedStudent,
     required this.onChooseScale,
+    required this.onRequireStudent,
     required this.onRetry,
   });
 
@@ -2790,6 +2792,7 @@ class _ScaleMainContent extends StatelessWidget {
   final String? errorMessage;
   final bool hasSelectedStudent;
   final ValueChanged<AssessmentScaleItem> onChooseScale;
+  final VoidCallback onRequireStudent;
   final VoidCallback onRetry;
 
   @override
@@ -2848,7 +2851,15 @@ class _ScaleMainContent extends StatelessWidget {
                     return _ScaleCard(
                       data: scales[index],
                       enabled: hasSelectedStudent && scales[index].available,
-                      onChoose: () => onChooseScale(scales[index]),
+                      onChoose: () {
+                        if (hasSelectedStudent) {
+                          onChooseScale(scales[index]);
+                          return;
+                        }
+                        onRequireStudent();
+                      },
+                      canRequestStudent:
+                          !hasSelectedStudent && scales[index].available,
                     );
                   },
                 ),
@@ -3111,11 +3122,13 @@ class _ScaleCard extends StatelessWidget {
     required this.data,
     required this.enabled,
     required this.onChoose,
+    required this.canRequestStudent,
   });
 
   final AssessmentScaleItem data;
   final bool enabled;
   final VoidCallback onChoose;
+  final bool canRequestStudent;
 
   @override
   Widget build(BuildContext context) {
@@ -3168,7 +3181,11 @@ class _ScaleCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 10),
-          _ChooseButton(enabled: enabled, onTap: onChoose),
+          _ChooseButton(
+            enabled: enabled,
+            feedbackEnabled: canRequestStudent,
+            onTap: onChoose,
+          ),
         ],
       ),
     );
@@ -3196,7 +3213,7 @@ class _InfoTag extends StatelessWidget {
         maxLines: 1,
         style: const TextStyle(
           color: _ScaleColors.text,
-          fontSize: 13,
+          fontSize: 12,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -3205,13 +3222,19 @@ class _InfoTag extends StatelessWidget {
 }
 
 class _ChooseButton extends StatelessWidget {
-  const _ChooseButton({required this.enabled, required this.onTap});
+  const _ChooseButton({
+    required this.enabled,
+    required this.feedbackEnabled,
+    required this.onTap,
+  });
 
   final bool enabled;
+  final bool feedbackEnabled;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
+    final bool tappable = enabled || feedbackEnabled;
     final Color borderColor =
         enabled ? _ScaleColors.orange : const Color(0xFFE2D6CE);
     final Color textColor =
@@ -3219,7 +3242,7 @@ class _ChooseButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: enabled ? onTap : null,
+        onTap: tappable ? onTap : null,
         borderRadius: BorderRadius.circular(12),
         child: Ink(
           height: 38,
@@ -3311,7 +3334,7 @@ class _ScaleCoverPainter extends CustomPainter {
   void _drawBook(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
-    _drawChild(canvas, Offset(w * .28, h * .42),
+    _drawChild(canvas, Offset(w * .28, h * .54),
         shirt: const Color(0xFF7FA1B5));
     final Paint page = Paint()..color = Colors.white.withOpacity(.86);
     final RRect left = RRect.fromRectAndRadius(
