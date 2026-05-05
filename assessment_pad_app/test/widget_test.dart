@@ -456,6 +456,23 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('输入拼音后在这里选择汉字候选'), findsOneWidget);
+    final double idleKeyboardHeight = tester
+        .getRect(find.byKey(const ValueKey<String>('scale-search-keyboard')))
+        .height;
+
+    await tester.tap(find.byKey(const ValueKey<String>('scale-search-key-x')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
+
+    expect(find.text('暂无候选，继续输入或直接搜索编码'), findsOneWidget);
+    final double emptyCandidateKeyboardHeight = tester
+        .getRect(find.byKey(const ValueKey<String>('scale-search-keyboard')))
+        .height;
+    expect(emptyCandidateKeyboardHeight, idleKeyboardHeight);
+
+    await tester.tap(find.byKey(const ValueKey<String>('scale-search-key-清空')));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 250));
 
     for (final String key in <String>['y', 'u', 'y', 'a', 'n']) {
       await tester.tap(find.byKey(ValueKey<String>('scale-search-key-$key')));
@@ -464,6 +481,10 @@ void main() {
     }
 
     expect(find.text('1.语言'), findsOneWidget);
+    final double candidateKeyboardHeight = tester
+        .getRect(find.byKey(const ValueKey<String>('scale-search-keyboard')))
+        .height;
+    expect(candidateKeyboardHeight, idleKeyboardHeight);
     final Text searchText = tester.widget<Text>(
       find.byKey(const ValueKey<String>('scale-search-display-text')),
     );

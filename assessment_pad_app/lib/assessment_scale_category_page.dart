@@ -425,6 +425,7 @@ class ChineseImeKeyboard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      key: ValueKey<String>('$keyPrefix-keyboard'),
       width: compact ? 600 : 660,
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       decoration: BoxDecoration(
@@ -609,83 +610,104 @@ class _PinyinCandidateBar extends StatelessWidget {
   final List<String> candidates;
   final ValueChanged<String> onCandidate;
 
+  static const double _height = 52;
+  static const double _contentHeight = 32;
+
   @override
   Widget build(BuildContext context) {
     final bool composing = pinyin.trim().isNotEmpty;
-    return Container(
+    return SizedBox(
+      height: _height,
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFAF5),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _ScaleColors.lineSoft),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            height: 30,
-            constraints: const BoxConstraints(minWidth: 58),
-            padding: const EdgeInsets.symmetric(horizontal: 10),
-            alignment: Alignment.centerLeft,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1E8),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Text(
-              composing ? pinyin : '拼音',
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _ScaleColors.orangeDeep,
-                fontSize: 14,
-                height: 1,
-                fontWeight: FontWeight.w900,
+      child: Container(
+        padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAF5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _ScaleColors.lineSoft),
+        ),
+        child: Row(
+          children: <Widget>[
+            Container(
+              height: _contentHeight,
+              constraints: const BoxConstraints(minWidth: 58),
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              alignment: Alignment.centerLeft,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF1E8),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Text(
+                composing ? pinyin : '拼音',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ScaleColors.orangeDeep,
+                  fontSize: 14,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
               ),
             ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: !composing
-                ? const Text(
-                    '输入拼音后在这里选择汉字候选',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: _ScaleColors.muted,
-                      fontSize: 13,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  )
-                : candidates.isEmpty
-                    ? const Text(
-                        '暂无候选，继续输入或直接搜索编码',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: _ScaleColors.muted,
-                          fontSize: 13,
-                          height: 1,
-                          fontWeight: FontWeight.w700,
-                        ),
-                      )
-                    : Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: <Widget>[
-                          for (int index = 0;
-                              index < candidates.length;
-                              index++)
-                            _SearchKeyboardQuickKey(
-                              keyPrefix: keyPrefix,
-                              label: '${index + 1}.${candidates[index]}',
-                              onTap: () => onCandidate(candidates[index]),
-                            ),
-                        ],
-                      ),
-          ),
-        ],
+            const SizedBox(width: 10),
+            Expanded(
+              child: SizedBox(
+                height: _contentHeight,
+                child: _buildCandidateContent(composing),
+              ),
+            ),
+          ],
+        ),
       ),
+    );
+  }
+
+  Widget _buildCandidateContent(bool composing) {
+    if (!composing) {
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          '输入拼音后在这里选择汉字候选',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _ScaleColors.muted,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    if (candidates.isEmpty) {
+      return const Align(
+        alignment: Alignment.centerLeft,
+        child: Text(
+          '暂无候选，继续输入或直接搜索编码',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(
+            color: _ScaleColors.muted,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      );
+    }
+    return ListView.separated(
+      scrollDirection: Axis.horizontal,
+      padding: EdgeInsets.zero,
+      physics: const BouncingScrollPhysics(),
+      itemCount: candidates.length,
+      separatorBuilder: (_, __) => const SizedBox(width: 8),
+      itemBuilder: (BuildContext context, int index) {
+        return _SearchKeyboardQuickKey(
+          keyPrefix: keyPrefix,
+          label: '${index + 1}.${candidates[index]}',
+          onTap: () => onCandidate(candidates[index]),
+        );
+      },
     );
   }
 }
