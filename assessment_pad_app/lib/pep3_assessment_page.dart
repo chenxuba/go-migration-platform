@@ -48,6 +48,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   Pep3DraftDetail? _draft;
   Pep3DraftSummary? _detectedDraft;
   Pep3CaregiverInvite? _caregiverInvite;
+  int _caregiverInviteDraftId = 0;
+  Future<void>? _caregiverInviteRequest;
   HomeSession _session = HomeSession.fallback;
   final Map<int, int> _previousItemScores = <int, int>{};
   int _currentItemNo = 0;
@@ -178,6 +180,10 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   Future<void> _loadDraftDetail(String token, int draftId) async {
     final Pep3DraftDetail detail =
         await widget.client.fetchDraftDetail(token, draftId);
+    if (_caregiverInviteDraftId != detail.id) {
+      _caregiverInvite = null;
+      _caregiverInviteDraftId = 0;
+    }
     _draft = detail;
     _studentName = detail.studentName.trim().isNotEmpty
         ? detail.studentName.trim()
@@ -212,10 +218,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
               Navigator.of(dialogContext).pop();
               _restartWithoutDetectedDraft();
             },
-            onContinue: () {
-              Navigator.of(dialogContext).pop();
-              _continueDetectedDraft(draft);
-            },
+            onContinue: () => _continueDetectedDraft(draft),
           );
         },
       );
@@ -233,6 +236,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       _recordValues.clear();
       _savedItems.clear();
       _caregiverInvite = null;
+      _caregiverInviteDraftId = 0;
       _autoSaveText = '已开始新的测评';
       _assessmentDate =
           _normalizeDate(widget.args.assessmentDate) ?? _todayIsoDate();
@@ -252,15 +256,17 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       await _refreshCaregiverInvite(silent: true);
       return;
     }
-    await _saveDraft(silent: true);
+    final Pep3DraftDetail? detail = await _saveDraft(silent: true);
+    if ((detail?.id ?? 0) > 0) {
+      await _refreshCaregiverInvite(silent: true);
+    }
   }
 
-  Future<void> _continueDetectedDraft(Pep3DraftSummary draft) async {
+  Future<bool> _continueDetectedDraft(Pep3DraftSummary draft) async {
     if (draft.id <= 0) {
-      return;
+      return false;
     }
     setState(() {
-      _loading = true;
       _autoSaveText = '';
     });
     try {
@@ -271,21 +277,21 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       await _loadCurrentItem(token);
       await _loadPreviousAssessment(token);
       if (!mounted) {
-        return;
+        return false;
       }
       setState(() {
         _detectedDraft = null;
-        _loading = false;
         _autoSaveText = '已恢复最新草稿';
       });
       _keepActiveItemVisible();
-      _refreshCaregiverInvite(silent: true);
+      await _refreshCaregiverInvite(silent: true);
+      return true;
     } on Object catch (error) {
       if (!mounted) {
-        return;
+        return false;
       }
-      setState(() => _loading = false);
       _showMessage('恢复草稿失败：$error');
+      return false;
     }
   }
 
@@ -456,7 +462,6 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       if (!silent) {
         _showMessage('草稿已保存', tone: PadMessageTone.success);
       }
-      await _refreshCaregiverInvite(silent: true);
       return detail;
     } on Object catch (error) {
       _showMessage('保存草稿失败：$error');
@@ -558,6 +563,29 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       }
       return;
     }
+    if (_caregiverInviteDraftId == draftId && _caregiverInvite != null) {
+      return;
+    }
+    final Future<void>? currentRequest = _caregiverInviteRequest;
+    if (currentRequest != null) {
+      await currentRequest;
+      return;
+    }
+    final Future<void> request = _loadCaregiverInvite(draftId, silent: silent);
+    _caregiverInviteRequest = request;
+    try {
+      await request;
+    } finally {
+      if (identical(_caregiverInviteRequest, request)) {
+        _caregiverInviteRequest = null;
+      }
+    }
+  }
+
+  Future<void> _loadCaregiverInvite(
+    int draftId, {
+    required bool silent,
+  }) async {
     setState(() => _caregiverLoading = true);
     try {
       final String token = await _readToken();
@@ -566,8 +594,12 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       if (!mounted) {
         return;
       }
+      if ((_draft?.id ?? 0) != draftId) {
+        return;
+      }
       setState(() {
         _caregiverInvite = invite;
+        _caregiverInviteDraftId = draftId;
       });
       if (!silent) {
         _showMessage('照护者报告入口已生成', tone: PadMessageTone.success);
@@ -924,7 +956,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 }
 
-class _DraftResumeDialog extends StatelessWidget {
+class _DraftResumeDialog extends StatefulWidget {
   const _DraftResumeDialog({
     required this.draft,
     required this.total,
@@ -935,16 +967,39 @@ class _DraftResumeDialog extends StatelessWidget {
   final Pep3DraftSummary draft;
   final int total;
   final VoidCallback onRestart;
-  final VoidCallback onContinue;
+  final Future<bool> Function() onContinue;
+
+  @override
+  State<_DraftResumeDialog> createState() => _DraftResumeDialogState();
+}
+
+class _DraftResumeDialogState extends State<_DraftResumeDialog> {
+  bool _continuing = false;
+
+  Future<void> _handleContinue() async {
+    if (_continuing) {
+      return;
+    }
+    setState(() => _continuing = true);
+    final bool restored = await widget.onContinue();
+    if (!mounted) {
+      return;
+    }
+    if (restored) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _continuing = false);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final int answered = draft.progress.answeredItemCount > 0
-        ? draft.progress.answeredItemCount
-        : draft.answeredItemCount;
-    final int resolvedTotal = draft.progress.itemCount > 0
-        ? draft.progress.itemCount
-        : math.max(total, answered);
+    final int answered = widget.draft.progress.answeredItemCount > 0
+        ? widget.draft.progress.answeredItemCount
+        : widget.draft.answeredItemCount;
+    final int resolvedTotal = widget.draft.progress.itemCount > 0
+        ? widget.draft.progress.itemCount
+        : math.max(widget.total, answered);
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
       backgroundColor: Colors.transparent,
@@ -1009,7 +1064,7 @@ class _DraftResumeDialog extends StatelessWidget {
                         const SizedBox(height: 13),
                         _DraftResumeMeta(
                           label: '更新时间',
-                          value: _formatDateTime(draft.updatedTime),
+                          value: _formatDateTime(widget.draft.updatedTime),
                         ),
                       ],
                     ),
@@ -1020,21 +1075,74 @@ class _DraftResumeDialog extends StatelessWidget {
             const Divider(height: 1, color: _Pep3Colors.lineSoft),
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: <Widget>[
-                  _DialogActionButton(
-                    label: '重新测评',
-                    filled: false,
-                    onTap: onRestart,
-                  ),
-                  const SizedBox(width: 12),
-                  _DialogActionButton(
-                    label: '继续测评',
-                    filled: true,
-                    onTap: onContinue,
-                  ),
-                ],
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 160),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeOutCubic,
+                child: _continuing
+                    ? const Align(
+                        key: ValueKey<String>('draft-resume-loading'),
+                        alignment: Alignment.centerRight,
+                        child: _DialogLoadingButton(),
+                      )
+                    : Row(
+                        key: const ValueKey<String>('draft-resume-actions'),
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: <Widget>[
+                          _DialogActionButton(
+                            label: '重新测评',
+                            filled: false,
+                            onTap: widget.onRestart,
+                          ),
+                          const SizedBox(width: 12),
+                          _DialogActionButton(
+                            label: '继续测评',
+                            filled: true,
+                            onTap: _handleContinue,
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogLoadingButton extends StatelessWidget {
+  const _DialogLoadingButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 212,
+      height: 42,
+      decoration: BoxDecoration(
+        color: _Pep3Colors.orange,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _Pep3Colors.orange),
+      ),
+      child: const Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              '题目填充中，请稍后...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ],
@@ -1765,9 +1873,9 @@ class _QuestionLoadingView extends StatelessWidget {
         ),
         const SizedBox(height: 16),
         const _QuestionLoadingCard(title: '材料', height: 72),
-        const _QuestionLoadingCard(title: '操作标准', height: 120),
+        const _QuestionLoadingCard(title: '操作标准', height: 86),
         const _QuestionLoadingCard(title: '指导语', height: 86),
-        const _QuestionLoadingCard(title: '评分标准', height: 104),
+        const _QuestionLoadingCard(title: '评分标准', height: 86),
         const SizedBox(height: 3),
         Row(
           children: <Widget>[
@@ -1839,7 +1947,7 @@ class _QuestionLoadingCard extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      height: height,
+      constraints: BoxConstraints(minHeight: height),
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
       decoration: BoxDecoration(
@@ -1854,6 +1962,7 @@ class _QuestionLoadingCard extends StatelessWidget {
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Row(
             children: <Widget>[
@@ -2461,27 +2570,78 @@ class _CaregiverPanel extends StatelessWidget {
   }
 }
 
-class _CaregiverQr extends StatelessWidget {
+class _CaregiverQr extends StatefulWidget {
   const _CaregiverQr({required this.invite, required this.qrValue});
 
   final Pep3CaregiverInvite? invite;
   final String qrValue;
 
   @override
+  State<_CaregiverQr> createState() => _CaregiverQrState();
+}
+
+class _CaregiverQrState extends State<_CaregiverQr> {
+  String _signature = '';
+  Widget _cachedQr = const SizedBox.shrink();
+
+  @override
+  void initState() {
+    super.initState();
+    _cacheQr();
+  }
+
+  @override
+  void didUpdateWidget(covariant _CaregiverQr oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final String nextSignature = _qrSignature(widget.invite, widget.qrValue);
+    if (nextSignature != _signature) {
+      _cacheQr();
+    }
+  }
+
+  void _cacheQr() {
+    final String signature = _qrSignature(widget.invite, widget.qrValue);
+    _signature = signature;
+    _cachedQr = _buildQr(widget.invite, widget.qrValue, signature);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    return RepaintBoundary(child: _cachedQr);
+  }
+
+  static String _qrSignature(Pep3CaregiverInvite? invite, String qrValue) {
+    final String dataUrl = invite?.miniProgramCodeDataUrl.trim() ?? '';
+    if (dataUrl.isNotEmpty) {
+      return 'data:$dataUrl';
+    }
+    if (qrValue.trim().isNotEmpty) {
+      return 'qr:${qrValue.trim()}';
+    }
+    return 'empty';
+  }
+
+  static Widget _buildQr(
+    Pep3CaregiverInvite? invite,
+    String qrValue,
+    String signature,
+  ) {
     final String dataUrl = invite?.miniProgramCodeDataUrl ?? '';
     final RegExpMatch? match =
         RegExp(r'^data:image/[^;]+;base64,(.+)$').firstMatch(dataUrl);
     if (match != null) {
       return Image.memory(
         base64Decode(match.group(1)!),
+        key: ValueKey<String>('caregiver-image-$signature'),
         width: 116,
         height: 116,
         fit: BoxFit.contain,
+        gaplessPlayback: true,
       );
     }
     if (qrValue.isNotEmpty) {
       return QrImageView(
+        key: ValueKey<String>('caregiver-qr-$signature'),
         data: qrValue,
         version: QrVersions.auto,
         padding: EdgeInsets.zero,
@@ -2701,26 +2861,56 @@ class _RecordFieldEditor extends StatelessWidget {
               ],
             )
           else
-            TextFormField(
-              initialValue: value == null ? '' : '$value',
-              minLines: field.fieldType == 'textarea' ? 2 : 1,
-              maxLines: field.fieldType == 'textarea' ? 4 : 1,
-              keyboardType:
-                  field.fieldType == 'number' ? TextInputType.number : null,
-              decoration: InputDecoration(
-                isDense: true,
-                hintText: field.placeholder.trim().isEmpty
-                    ? '请输入'
-                    : field.placeholder,
-                filled: true,
-                fillColor: Colors.white,
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: _Pep3Colors.line),
+            SizedBox(
+              height: field.fieldType == 'textarea' ? null : 52,
+              child: TextFormField(
+                initialValue: value == null ? '' : '$value',
+                minLines: field.fieldType == 'textarea' ? 2 : 1,
+                maxLines: field.fieldType == 'textarea' ? 4 : 1,
+                keyboardType:
+                    field.fieldType == 'number' ? TextInputType.number : null,
+                textAlignVertical: field.fieldType == 'textarea'
+                    ? TextAlignVertical.top
+                    : TextAlignVertical.center,
+                style: const TextStyle(
+                  color: _Pep3Colors.ink,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
                 ),
-              ),
-              onChanged: (String text) => onChanged(
-                field.fieldType == 'number' ? num.tryParse(text.trim()) : text,
+                decoration: InputDecoration(
+                  isDense: true,
+                  contentPadding: EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: field.fieldType == 'textarea' ? 10 : 14,
+                  ),
+                  hintText: field.placeholder.trim().isEmpty
+                      ? '请输入'
+                      : field.placeholder,
+                  hintStyle: const TextStyle(
+                    color: _Pep3Colors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                  filled: true,
+                  fillColor: Colors.white,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _Pep3Colors.line),
+                  ),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _Pep3Colors.line),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _Pep3Colors.orange),
+                  ),
+                ),
+                onChanged: (String text) => onChanged(
+                  field.fieldType == 'number'
+                      ? num.tryParse(text.trim())
+                      : text,
+                ),
               ),
             ),
         ],
