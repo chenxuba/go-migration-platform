@@ -19,20 +19,26 @@ import (
 )
 
 const (
-	defaultPadWeatherCity      = "深圳"
-	defaultPadWeatherLatitude  = 22.5431
-	defaultPadWeatherLongitude = 114.0579
+	defaultPadWeatherCity      = "北京"
+	defaultPadWeatherLatitude  = 39.9042
+	defaultPadWeatherLongitude = 116.4074
 	padHomeWeatherCacheTTL     = 10 * time.Minute
 )
 
-var sharedPadHomeWeatherCache = struct {
-	sync.Mutex
+type padHomeWeatherCacheEntry struct {
 	weather    model.PadHomeWeather
 	expiresAt  time.Time
 	refreshing bool
-}{}
+}
 
-func (svc *Service) GetPadHomeSummary(userID int64) (model.PadHomeSummaryVO, error) {
+var sharedPadHomeWeatherCache = struct {
+	sync.Mutex
+	entries map[string]padHomeWeatherCacheEntry
+}{
+	entries: map[string]padHomeWeatherCacheEntry{},
+}
+
+func (svc *Service) GetPadHomeSummary(userID int64, query model.PadHomeSummaryQueryDTO) (model.PadHomeSummaryVO, error) {
 	if svc.repo == nil {
 		return model.PadHomeSummaryVO{}, errors.New("education repository is not configured")
 	}
@@ -66,7 +72,7 @@ func (svc *Service) GetPadHomeSummary(userID int64) (model.PadHomeSummaryVO, err
 		Weekday:         chineseWeekday(now.Weekday()),
 		AssessmentStats: stats,
 		Schedule:        padHomeScheduleItems(schedules, now),
-		Weather:         svc.padHomeWeather(ctx),
+		Weather:         svc.padHomeWeather(ctx, instID, query),
 	}, nil
 }
 
@@ -148,52 +154,76 @@ func padHomeScheduleState(schedule model.TeachingScheduleVO, now time.Time) stri
 	return "未开始"
 }
 
-func (svc *Service) padHomeWeather(_ context.Context) model.PadHomeWeather {
+func (svc *Service) padHomeWeather(ctx context.Context, instID int64, query model.PadHomeSummaryQueryDTO) model.PadHomeWeather {
+	location, err := svc.resolvePadWeatherLocation(ctx, instID, query)
+	if err != nil {
+		return fallbackPadHomeWeather(query.City)
+	}
+	cacheKey := location.cacheKey()
 	now := time.Now()
 	sharedPadHomeWeatherCache.Lock()
-	cached := sharedPadHomeWeatherCache.weather
-	if !sharedPadHomeWeatherCache.expiresAt.IsZero() && now.Before(sharedPadHomeWeatherCache.expiresAt) {
+	entry := sharedPadHomeWeatherCache.entries[cacheKey]
+	if !entry.expiresAt.IsZero() && now.Before(entry.expiresAt) {
 		sharedPadHomeWeatherCache.Unlock()
-		return cached
+		return entry.weather
 	}
-	fallback := cached
-	if strings.TrimSpace(fallback.City) == "" {
-		fallback = fallbackPadHomeWeather()
-	}
-	if !sharedPadHomeWeatherCache.refreshing {
-		sharedPadHomeWeatherCache.refreshing = true
-		go refreshPadHomeWeatherCache()
+	stale := entry.weather
+	if strings.TrimSpace(stale.City) != "" {
+		if !entry.refreshing {
+			entry.refreshing = true
+			sharedPadHomeWeatherCache.entries[cacheKey] = entry
+			go refreshPadHomeWeatherCache(cacheKey, location)
+		}
+		sharedPadHomeWeatherCache.Unlock()
+		return stale
 	}
 	sharedPadHomeWeatherCache.Unlock()
-	return fallback
+
+	weather, err := fetchPadHomeWeather(ctx, location)
+	if err != nil {
+		return fallbackPadHomeWeather(location.city)
+	}
+	storePadHomeWeatherCache(cacheKey, weather)
+	return weather
 }
 
-func fallbackPadHomeWeather() model.PadHomeWeather {
+func fallbackPadHomeWeather(city string) model.PadHomeWeather {
+	if strings.TrimSpace(city) == "" {
+		city = "当前位置"
+	}
 	return model.PadHomeWeather{
-		City:        padWeatherCity(),
+		City:        city,
 		Condition:   "sunny",
 		DisplayName: "晴",
 		Source:      "fallback",
 	}
 }
 
-func refreshPadHomeWeatherCache() {
-	weather, err := fetchPadHomeWeather(context.Background())
+func refreshPadHomeWeatherCache(cacheKey string, location padWeatherLocation) {
+	weather, err := fetchPadHomeWeather(context.Background(), location)
 	sharedPadHomeWeatherCache.Lock()
 	defer sharedPadHomeWeatherCache.Unlock()
-	sharedPadHomeWeatherCache.refreshing = false
+	entry := sharedPadHomeWeatherCache.entries[cacheKey]
+	entry.refreshing = false
 	if err != nil {
+		sharedPadHomeWeatherCache.entries[cacheKey] = entry
 		return
 	}
-	sharedPadHomeWeatherCache.weather = weather
-	sharedPadHomeWeatherCache.expiresAt = time.Now().Add(padHomeWeatherCacheTTL)
+	entry.weather = weather
+	entry.expiresAt = time.Now().Add(padHomeWeatherCacheTTL)
+	sharedPadHomeWeatherCache.entries[cacheKey] = entry
 }
 
-func fetchPadHomeWeather(ctx context.Context) (model.PadHomeWeather, error) {
-	location, err := resolvePadWeatherLocation(ctx)
-	if err != nil {
-		return model.PadHomeWeather{}, err
+func storePadHomeWeatherCache(cacheKey string, weather model.PadHomeWeather) {
+	sharedPadHomeWeatherCache.Lock()
+	defer sharedPadHomeWeatherCache.Unlock()
+	sharedPadHomeWeatherCache.entries[cacheKey] = padHomeWeatherCacheEntry{
+		weather:   weather,
+		expiresAt: time.Now().Add(padHomeWeatherCacheTTL),
 	}
+}
+
+func fetchPadHomeWeather(ctx context.Context, location padWeatherLocation) (model.PadHomeWeather, error) {
 	endpoint, err := url.Parse("https://api.open-meteo.com/v1/forecast")
 	if err != nil {
 		return model.PadHomeWeather{}, err
@@ -241,7 +271,41 @@ type padWeatherLocation struct {
 	longitude float64
 }
 
-func resolvePadWeatherLocation(ctx context.Context) (padWeatherLocation, error) {
+func (location padWeatherLocation) cacheKey() string {
+	return fmt.Sprintf("%s|%.4f,%.4f", strings.TrimSpace(location.city), location.latitude, location.longitude)
+}
+
+func (svc *Service) resolvePadWeatherLocation(ctx context.Context, instID int64, query model.PadHomeSummaryQueryDTO) (padWeatherLocation, error) {
+	if query.HasCoordinates && validPadWeatherCoordinates(query.Latitude, query.Longitude) {
+		city := strings.TrimSpace(query.City)
+		if city == "" {
+			city = "当前位置"
+		}
+		return padWeatherLocation{
+			city:      city,
+			latitude:  query.Latitude,
+			longitude: query.Longitude,
+		}, nil
+	}
+
+	if svc.repo != nil && instID > 0 {
+		location, err := svc.repo.GetInstitutionWeatherLocation(ctx, instID)
+		if err == nil && validPadWeatherCoordinates(location.Latitude, location.Longitude) {
+			city := strings.TrimSpace(location.City)
+			if city == "" {
+				city = "机构地址"
+			}
+			return padWeatherLocation{
+				city:      city,
+				latitude:  location.Latitude,
+				longitude: location.Longitude,
+			}, nil
+		}
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return padWeatherLocation{}, err
+		}
+	}
+
 	if latitude, longitude, ok := padWeatherCoordinatesFromEnv(); ok {
 		return padWeatherLocation{
 			city:      padWeatherCity(),
@@ -255,16 +319,16 @@ func resolvePadWeatherLocation(ctx context.Context) (padWeatherLocation, error) 
 	if err != nil {
 		return padWeatherLocation{}, err
 	}
-	query := endpoint.Query()
-	query.Set("name", city)
-	query.Set("count", "1")
-	query.Set("language", "zh")
+	values := endpoint.Query()
+	values.Set("name", city)
+	values.Set("count", "1")
+	values.Set("language", "zh")
 	if country := strings.TrimSpace(os.Getenv("PAD_WEATHER_COUNTRY_CODE")); country != "" {
-		query.Set("countryCode", country)
+		values.Set("countryCode", country)
 	} else {
-		query.Set("countryCode", "CN")
+		values.Set("countryCode", "CN")
 	}
-	endpoint.RawQuery = query.Encode()
+	endpoint.RawQuery = values.Encode()
 
 	reqCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
@@ -301,10 +365,14 @@ func resolvePadWeatherLocation(ctx context.Context) (padWeatherLocation, error) 
 	}, nil
 }
 
+func validPadWeatherCoordinates(latitude, longitude float64) bool {
+	return latitude >= -90 && latitude <= 90 && longitude >= -180 && longitude <= 180 && !(latitude == 0 && longitude == 0)
+}
+
 func padWeatherCoordinatesFromEnv() (float64, float64, bool) {
 	latitude, latErr := strconv.ParseFloat(strings.TrimSpace(os.Getenv("PAD_WEATHER_LATITUDE")), 64)
 	longitude, lngErr := strconv.ParseFloat(strings.TrimSpace(os.Getenv("PAD_WEATHER_LONGITUDE")), 64)
-	if latErr != nil || lngErr != nil || latitude == 0 || longitude == 0 {
+	if latErr != nil || lngErr != nil || !validPadWeatherCoordinates(latitude, longitude) {
 		return 0, 0, false
 	}
 	return latitude, longitude, true

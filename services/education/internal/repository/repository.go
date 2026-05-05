@@ -450,6 +450,75 @@ func (repo *Repository) GetInstitutionName(ctx context.Context, instID int64) (s
 	return name, err
 }
 
+func (repo *Repository) GetInstitutionWeatherLocation(ctx context.Context, instID int64) (model.PadHomeWeatherLocation, error) {
+	var organName, province, city, region string
+	var latitude, longitude sql.NullFloat64
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT
+			IFNULL(organ_name, ''),
+			IFNULL(province, ''),
+			IFNULL(city, ''),
+			IFNULL(region, ''),
+			CAST(NULLIF(TRIM(CAST(lat AS CHAR)), '') AS DECIMAL(16, 6)),
+			CAST(NULLIF(TRIM(CAST(lng AS CHAR)), '') AS DECIMAL(16, 6))
+		FROM org_institution
+		WHERE id = ? AND del_flag = 0
+		LIMIT 1
+	`, instID).Scan(&organName, &province, &city, &region, &latitude, &longitude)
+	if err != nil {
+		return model.PadHomeWeatherLocation{}, err
+	}
+	location := model.PadHomeWeatherLocation{
+		City: institutionWeatherDisplayCity(province, city, region, organName),
+	}
+	if latitude.Valid && longitude.Valid {
+		location.Latitude = latitude.Float64
+		location.Longitude = longitude.Float64
+	}
+	return location, nil
+}
+
+func institutionWeatherDisplayCity(province, city, region, organName string) string {
+	province = strings.TrimSpace(province)
+	city = strings.TrimSpace(city)
+	region = strings.TrimSpace(region)
+	organName = strings.TrimSpace(organName)
+	if isDirectControlledMunicipality(province) {
+		return province
+	}
+	if city != "" && !isGenericMunicipalityCity(city) {
+		return city
+	}
+	return firstInstitutionWeatherText(region, city, province, organName)
+}
+
+func isDirectControlledMunicipality(province string) bool {
+	switch strings.TrimSpace(province) {
+	case "北京市", "北京", "上海市", "上海", "天津市", "天津", "重庆市", "重庆":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGenericMunicipalityCity(city string) bool {
+	switch strings.TrimSpace(city) {
+	case "市辖区", "县", "城区":
+		return true
+	default:
+		return false
+	}
+}
+
+func firstInstitutionWeatherText(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
 func (repo *Repository) ListActiveStaffNames(ctx context.Context, instID int64) ([]string, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT IFNULL(nick_name, '') AS nick_name

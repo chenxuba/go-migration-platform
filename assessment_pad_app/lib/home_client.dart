@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
 import 'auth_client.dart';
@@ -99,9 +100,9 @@ class HomeSummary {
       ),
       schedule: const <HomeScheduleItem>[],
       weather: const HomeWeather(
-        city: '深圳',
+        city: '',
         condition: 'sunny',
-        displayName: '晴',
+        displayName: '',
       ),
     );
   }
@@ -239,8 +240,9 @@ class ApiHomeClient implements HomeClient {
 
   @override
   Future<HomeSummary> fetchSummary(String token) async {
+    final _HomeLocation? location = await _resolveCurrentHomeLocation();
     final Object? data = await _getJson(
-      _uri(educationBaseUrl, homeSummaryPath),
+      _withHomeLocation(_uri(educationBaseUrl, homeSummaryPath), location),
       token,
     );
     if (data is! Map) {
@@ -290,10 +292,73 @@ class ApiHomeClient implements HomeClient {
   }
 }
 
+class _HomeLocation {
+  const _HomeLocation({
+    required this.latitude,
+    required this.longitude,
+  });
+
+  final double latitude;
+  final double longitude;
+}
+
+Future<_HomeLocation?> _resolveCurrentHomeLocation() async {
+  try {
+    final bool serviceEnabled = await Geolocator.isLocationServiceEnabled()
+        .timeout(const Duration(seconds: 1), onTimeout: () => false);
+    if (!serviceEnabled) {
+      return null;
+    }
+
+    LocationPermission permission = await Geolocator.checkPermission().timeout(
+        const Duration(seconds: 1),
+        onTimeout: () => LocationPermission.denied);
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.unableToDetermine) {
+      permission = await Geolocator.requestPermission().timeout(
+        const Duration(seconds: 8),
+        onTimeout: () => LocationPermission.denied,
+      );
+    }
+    if (permission == LocationPermission.denied ||
+        permission == LocationPermission.deniedForever ||
+        permission == LocationPermission.unableToDetermine) {
+      return null;
+    }
+
+    final Position position = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.low,
+      timeLimit: const Duration(seconds: 3),
+    ).timeout(const Duration(seconds: 4));
+    if (position.latitude == 0 && position.longitude == 0) {
+      return null;
+    }
+    return _HomeLocation(
+      latitude: position.latitude,
+      longitude: position.longitude,
+    );
+  } on Object {
+    return null;
+  }
+}
+
 Uri _uri(String baseUrl, String path) {
   final String trimmedBase = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
   final String normalizedPath = path.startsWith('/') ? path : '/$path';
   return Uri.parse('$trimmedBase$normalizedPath');
+}
+
+Uri _withHomeLocation(Uri uri, _HomeLocation? location) {
+  if (location == null) {
+    return uri;
+  }
+  return uri.replace(
+    queryParameters: <String, String>{
+      ...uri.queryParameters,
+      'latitude': location.latitude.toStringAsFixed(6),
+      'longitude': location.longitude.toStringAsFixed(6),
+    },
+  );
 }
 
 Object? _decodeResponse(String body) {

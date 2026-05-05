@@ -8,6 +8,13 @@ type PadHomeSummaryVO struct {
 	Weather         PadHomeWeather         `json:"weather"`
 }
 
+type PadHomeSummaryQueryDTO struct {
+	Latitude       float64
+	Longitude      float64
+	HasCoordinates bool
+	City           string
+}
+
 type PadHomeAssessmentStats struct {
 	EnrolledStudents   int     `json:"enrolledStudents"`
 	AssessedStudents   int     `json:"assessedStudents"`
@@ -36,4 +43,10 @@ type PadHomeWeather struct {
 	Temperature float64 `json:"temperature,omitempty"`
 	UpdatedAt   string  `json:"updatedAt,omitempty"`
 	Source      string  `json:"source,omitempty"`
+}
+
+type PadHomeWeatherLocation struct {
+	City      string
+	Latitude  float64
+	Longitude float64
 }
