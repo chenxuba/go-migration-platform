@@ -991,6 +991,66 @@ void main() {
     expect(pep3Client.inviteCalls, 1);
   });
 
+  testWidgets('PEP3 record text stays isolated when switching focused question',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakePep3AssessmentClient pep3Client =
+        _FakePep3AssessmentClient(includeTextRecordField: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: pep3Client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField), '第36题输入内容');
+    await tester.pump();
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).last)
+          .controller
+          .text,
+      '第36题输入内容',
+    );
+
+    await tester.tap(find.text('上一题'));
+    await tester.pumpAndSettle();
+
+    expect(
+      tester
+          .widget<EditableText>(find.byType(EditableText).last)
+          .controller
+          .text,
+      isEmpty,
+    );
+    expect(find.text('第36题输入内容'), findsNothing);
+  });
+
   testWidgets('PEP3 fast next loading skeleton does not overflow',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -1413,6 +1473,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     this.hasPreviousRecord = false,
     this.draftUpdatedTime = '2026-05-05T14:01:00',
     this.includeRecordField = false,
+    this.includeTextRecordField = false,
     this.itemFetchDelay = Duration.zero,
   });
 
@@ -1420,6 +1481,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   final bool hasPreviousRecord;
   final String draftUpdatedTime;
   final bool includeRecordField;
+  final bool includeTextRecordField;
   final Duration itemFetchDelay;
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
@@ -1495,22 +1557,34 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
       guidanceVideo: '',
       standard: '',
       scoreOptions: _scoreOptions,
-      recordFields: includeRecordField
+      recordFields: includeTextRecordField
           ? const <Pep3RecordField>[
               Pep3RecordField(
-                key: 'shape',
-                label: '正确位置',
-                fieldType: 'radio',
+                key: 'trainingNote',
+                label: '训练记录备注',
+                fieldType: 'text',
                 displayType: '',
                 required: false,
-                placeholder: '',
-                options: <Pep3RecordFieldOption>[
-                  Pep3RecordFieldOption(value: 'triangle', label: '三角形'),
-                  Pep3RecordFieldOption(value: 'square', label: '正方形'),
-                ],
+                placeholder: '请输入训练记录',
+                options: <Pep3RecordFieldOption>[],
               ),
             ]
-          : const <Pep3RecordField>[],
+          : includeRecordField
+              ? const <Pep3RecordField>[
+                  Pep3RecordField(
+                    key: 'shape',
+                    label: '正确位置',
+                    fieldType: 'radio',
+                    displayType: '',
+                    required: false,
+                    placeholder: '',
+                    options: <Pep3RecordFieldOption>[
+                      Pep3RecordFieldOption(value: 'triangle', label: '三角形'),
+                      Pep3RecordFieldOption(value: 'square', label: '正方形'),
+                    ],
+                  ),
+                ]
+              : const <Pep3RecordField>[],
     );
   }
 

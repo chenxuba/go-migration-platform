@@ -42,6 +42,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   final ScrollController _leftScrollController = ScrollController();
   final ScrollController _questionScrollController = ScrollController();
   final GlobalKey _activeNavItemKey = GlobalKey();
+  final Map<String, GlobalKey> _pageGroupKeys = <String, GlobalKey>{};
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
 
@@ -473,8 +474,10 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     }
   }
 
-  Future<void> _saveCurrentItem() async {
-    if (_currentItemNo <= 0) {
+  Future<void> _saveCurrentItem() => _saveItem(_currentItemNo);
+
+  Future<void> _saveItem(int itemNo) async {
+    if (itemNo <= 0) {
       return;
     }
     final String token = await _readToken();
@@ -491,11 +494,10 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       return;
     }
     setState(() {
-      _savingItems.add(_currentItemNo);
-      _savedItems.remove(_currentItemNo);
+      _savingItems.add(itemNo);
+      _savedItems.remove(itemNo);
       _autoSaveText = '自动保存中...';
     });
-    final int itemNo = _currentItemNo;
     try {
       final Pep3DraftDetail detail = await widget.client.saveDraftItem(
         token,
@@ -684,18 +686,22 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 
   void _setRecordValue(String key, dynamic value) {
-    if (_currentItemNo <= 0) {
+    _setRecordValueForItem(_currentItemNo, key, value);
+  }
+
+  void _setRecordValueForItem(int itemNo, String key, dynamic value) {
+    if (itemNo <= 0) {
       return;
     }
     setState(() {
       if (_isEmptyRecordValue(value)) {
-        _recordValues[_currentItemNo]?.remove(key);
+        _recordValues[itemNo]?.remove(key);
       } else {
-        _recordValues.putIfAbsent(_currentItemNo, () => <String, dynamic>{});
-        _recordValues[_currentItemNo]![key] = value;
+        _recordValues.putIfAbsent(itemNo, () => <String, dynamic>{});
+        _recordValues[itemNo]![key] = value;
       }
     });
-    _saveCurrentItem();
+    _saveItem(itemNo);
   }
 
   Future<void> _goToItem(int itemNo) async {
@@ -703,6 +709,11 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         .any((Pep3ItemSummary item) => item.itemNo == itemNo)) {
       return;
     }
+    if (itemNo == _currentItemNo && !_itemLoading) {
+      _keepActiveItemVisible();
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
     final bool shouldLoad = !_itemCache.containsKey(itemNo);
     setState(() {
       _currentItemNo = itemNo;
@@ -758,6 +769,26 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
         alignment: .34,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
+  void _keepPageGroupVisible(String groupKey) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_leftScrollController.hasClients) {
+        return;
+      }
+      final BuildContext? groupContext =
+          _pageGroupKeys[groupKey]?.currentContext;
+      if (groupContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        groupContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: .02,
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
       );
     });
@@ -871,11 +902,15 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       currentItemNo: _currentItemNo,
                       controller: _leftScrollController,
                       activeItemKey: _activeNavItemKey,
+                      groupKeys: _pageGroupKeys,
                       onToggleGroup: (String key) {
+                        final bool opening = _expandedGroupKey != key;
                         setState(() {
-                          _expandedGroupKey =
-                              _expandedGroupKey == key ? '' : key;
+                          _expandedGroupKey = opening ? key : '';
                         });
+                        if (opening) {
+                          _keepPageGroupVisible(key);
+                        }
                       },
                       onTapItem: _goToItem,
                     ),
@@ -907,13 +942,14 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       answered: _answeredCount,
                       total: _totalCount,
                       missing: _missingCount,
+                      currentItemNo: _currentItemNo,
                       recordFields:
                           _currentItem?.recordFields ?? <Pep3RecordField>[],
                       recordValues:
                           _recordValues[_currentItemNo] ?? <String, dynamic>{},
                       caregiverInvite: _caregiverInvite,
                       caregiverLoading: _caregiverLoading,
-                      onRecordValue: _setRecordValue,
+                      onRecordValue: _setRecordValueForItem,
                       onSmsTap: () => _showMessage('短信发送功能暂未开放'),
                       onWechatTap: () => _showMessage('微信推送功能暂未开放'),
                     ),
@@ -1388,6 +1424,7 @@ class _Pep3PageSidebar extends StatelessWidget {
     required this.currentItemNo,
     required this.controller,
     required this.activeItemKey,
+    required this.groupKeys,
     required this.onToggleGroup,
     required this.onTapItem,
   });
@@ -1398,6 +1435,7 @@ class _Pep3PageSidebar extends StatelessWidget {
   final int currentItemNo;
   final ScrollController controller;
   final GlobalKey activeItemKey;
+  final Map<String, GlobalKey> groupKeys;
   final ValueChanged<String> onToggleGroup;
   final ValueChanged<int> onTapItem;
 
@@ -1432,6 +1470,10 @@ class _Pep3PageSidebar extends StatelessWidget {
     final int total = group.items.length;
     final int percent = total == 0 ? 0 : ((done / total) * 100).round();
     return _PageGroup(
+      key: groupKeys.putIfAbsent(
+        group.key,
+        () => GlobalKey(debugLabel: 'pep3-page-group-${group.key}'),
+      ),
       group: group,
       expanded: expanded,
       done: done,
@@ -1477,6 +1519,7 @@ class _SidebarHeader extends StatelessWidget {
 
 class _PageGroup extends StatelessWidget {
   const _PageGroup({
+    super.key,
     required this.group,
     required this.expanded,
     required this.done,
@@ -2304,6 +2347,7 @@ class _Pep3RightRail extends StatelessWidget {
     required this.answered,
     required this.total,
     required this.missing,
+    required this.currentItemNo,
     required this.recordFields,
     required this.recordValues,
     required this.caregiverInvite,
@@ -2317,11 +2361,12 @@ class _Pep3RightRail extends StatelessWidget {
   final int answered;
   final int total;
   final int missing;
+  final int currentItemNo;
   final List<Pep3RecordField> recordFields;
   final Map<String, dynamic> recordValues;
   final Pep3CaregiverInvite? caregiverInvite;
   final bool caregiverLoading;
-  final void Function(String key, dynamic value) onRecordValue;
+  final void Function(int itemNo, String key, dynamic value) onRecordValue;
   final VoidCallback onSmsTap;
   final VoidCallback onWechatTap;
 
@@ -2347,9 +2392,11 @@ class _Pep3RightRail extends StatelessWidget {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: _TrainingRecordPanel(
+              currentItemNo: currentItemNo,
               fields: recordFields,
               values: recordValues,
-              onChanged: onRecordValue,
+              onChanged: (String key, dynamic value) =>
+                  onRecordValue(currentItemNo, key, value),
             ),
           ),
         ),
@@ -2440,11 +2487,13 @@ class _ProgressPanel extends StatelessWidget {
 
 class _TrainingRecordPanel extends StatelessWidget {
   const _TrainingRecordPanel({
+    required this.currentItemNo,
     required this.fields,
     required this.values,
     required this.onChanged,
   });
 
+  final int currentItemNo;
   final List<Pep3RecordField> fields;
   final Map<String, dynamic> values;
   final void Function(String key, dynamic value) onChanged;
@@ -2485,6 +2534,10 @@ class _TrainingRecordPanel extends StatelessWidget {
         else
           for (final Pep3RecordField field in fields)
             _RecordFieldEditor(
+              key: ValueKey<String>(
+                'pep3-record-field-$currentItemNo-${field.key}',
+              ),
+              currentItemNo: currentItemNo,
               field: field,
               value: values[field.key],
               onChanged: (dynamic value) => onChanged(field.key, value),
@@ -2787,11 +2840,14 @@ class _RailCard extends StatelessWidget {
 
 class _RecordFieldEditor extends StatelessWidget {
   const _RecordFieldEditor({
+    super.key,
+    required this.currentItemNo,
     required this.field,
     required this.value,
     required this.onChanged,
   });
 
+  final int currentItemNo;
   final Pep3RecordField field;
   final dynamic value;
   final ValueChanged<dynamic> onChanged;
@@ -2864,6 +2920,9 @@ class _RecordFieldEditor extends StatelessWidget {
             SizedBox(
               height: field.fieldType == 'textarea' ? null : 52,
               child: TextFormField(
+                key: ValueKey<String>(
+                  'pep3-record-input-$currentItemNo-${field.key}',
+                ),
                 initialValue: value == null ? '' : '$value',
                 minLines: field.fieldType == 'textarea' ? 2 : 1,
                 maxLines: field.fieldType == 'textarea' ? 4 : 1,
