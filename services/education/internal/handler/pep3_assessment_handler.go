@@ -1063,6 +1063,7 @@ type assessmentDraftPagePayload struct {
 	AssessmentDateBegin string                       `json:"assessmentDateBegin"`
 	AssessmentDateEnd   string                       `json:"assessmentDateEnd"`
 	Status              string                       `json:"status"`
+	LatestOnly          bool                         `json:"latestOnly"`
 }
 
 type assessmentRecordQueryPayload struct {
@@ -1081,6 +1082,7 @@ type assessmentDraftQueryPayload struct {
 	AssessmentDateBegin string       `json:"assessmentDateBegin"`
 	AssessmentDateEnd   string       `json:"assessmentDateEnd"`
 	Status              string       `json:"status"`
+	LatestOnly          bool         `json:"latestOnly"`
 }
 
 type int64Payload struct {
@@ -1189,6 +1191,7 @@ func (payload assessmentDraftQueryPayload) toDraftQueryModel() model.AssessmentD
 		Status:              strings.TrimSpace(payload.Status),
 		AssessmentDateBegin: strings.TrimSpace(payload.AssessmentDateBegin),
 		AssessmentDateEnd:   strings.TrimSpace(payload.AssessmentDateEnd),
+		LatestOnly:          payload.LatestOnly,
 	}
 }
 
@@ -1243,6 +1246,9 @@ func mergeAssessmentDraftFlatQuery(query *model.AssessmentDraftPageQueryDTO, fla
 	}
 	if query.QueryModel.AssessmentDateEnd == "" {
 		query.QueryModel.AssessmentDateEnd = strings.TrimSpace(flat.AssessmentDateEnd)
+	}
+	if !query.QueryModel.LatestOnly {
+		query.QueryModel.LatestOnly = flat.LatestOnly
 	}
 }
 

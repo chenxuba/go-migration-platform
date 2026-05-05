@@ -3,6 +3,7 @@ import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/assessment_scale_category_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
+import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
@@ -569,7 +570,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.text('开始测评').last);
+    await tester.tap(find.text('开始测评').at(1));
     await tester.pumpAndSettle();
     await tester.tap(find.text('王安全'));
     await tester.pumpAndSettle();
@@ -577,6 +578,53 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('王安全 * 未知'), findsOneWidget);
+  });
+
+  testWidgets('selected PEP3 scale opens dedicated workbench',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        pep3Client: _FakePep3AssessmentClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('新建测评'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('张一鸣'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+    final Finder pep3Card = find.ancestor(
+      of: find.text('PEP-3语言理解评核量表'),
+      matching: find.byWidgetPredicate(
+        (Widget widget) => widget.runtimeType.toString() == '_ScaleCard',
+      ),
+    );
+    expect(pep3Card, findsOneWidget);
+    final Rect cardRect = tester.getRect(pep3Card);
+    await tester.tapAt(Offset(cardRect.center.dx, cardRect.bottom - 31));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PEP-3 测评工作台'), findsOneWidget);
+    expect(find.text('记录册页面'), findsOneWidget);
+    expect(find.textContaining('旋开瓶盖'), findsWidgets);
   });
 }
 
@@ -798,6 +846,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     String token, {
     int pageIndex = 1,
     int pageSize = 5,
+    bool latestOnly = false,
   }) async {
     return const AssessmentDraftPage(
       total: 1,
@@ -858,6 +907,159 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
           latestAssessment: '未测评',
         ),
       ],
+    );
+  }
+}
+
+class _FakePep3AssessmentClient implements Pep3AssessmentClient {
+  static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
+    Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
+    Pep3ScoreOption(value: 1, label: '部分通过', description: '经提示可完成'),
+    Pep3ScoreOption(value: 0, label: '未通过', description: '未能完成'),
+  ];
+
+  static const Pep3DraftProgress _progress = Pep3DraftProgress(
+    itemCount: 2,
+    answeredItemCount: 0,
+    missingItemCount: 2,
+    rawScoreCount: 0,
+    caregiverRawScoreCount: 0,
+    completionPercent: 0,
+    complete: false,
+    canScore: false,
+    missingItemNos: <int>[1, 2],
+  );
+
+  @override
+  Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
+    return const Pep3TemplateSummary(
+      title: 'PEP-3儿童心理教育评核',
+      itemCount: 2,
+      scoreOptions: _scoreOptions,
+      itemGroups: <Pep3ItemGroupSummary>[
+        Pep3ItemGroupSummary(
+          groupCode: 'page_1',
+          title: '记录册第1页',
+          bookletPageNo: 1,
+          startItemNo: 1,
+          endItemNo: 2,
+          items: <Pep3ItemSummary>[
+            Pep3ItemSummary(
+              itemNo: 1,
+              itemTitle: '（1） 旋开瓶盖',
+              testItem: '旋开瓶盖',
+              domainCode: 'FM',
+              domainName: '小肌肉',
+            ),
+            Pep3ItemSummary(
+              itemNo: 2,
+              itemTitle: '（2） 叠积木',
+              testItem: '叠积木',
+              domainCode: 'FM',
+              domainName: '小肌肉',
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<Pep3AssessmentItem> fetchTemplateItem(String token, int itemNo) async {
+    return Pep3AssessmentItem(
+      itemNo: itemNo,
+      itemTitle: itemNo == 1 ? '（1） 旋开瓶盖' : '（2） 叠积木',
+      testItem: itemNo == 1 ? '旋开瓶盖' : '叠积木',
+      domainCode: 'FM',
+      domainName: '小肌肉',
+      materials: itemNo == 1 ? '肥皂泡液' : '积木',
+      materialImages: const <String>[],
+      method: '观察儿童是否可以按标准完成任务。',
+      guidance: '请你试试看。',
+      guidanceVideo: '',
+      standard: '',
+      scoreOptions: _scoreOptions,
+      recordFields: const <Pep3RecordField>[],
+    );
+  }
+
+  @override
+  Future<Pep3DraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 1,
+    int studentId = 0,
+    bool latestOnly = true,
+  }) async {
+    return const Pep3DraftPage(
+      items: <Pep3DraftSummary>[],
+      total: 0,
+      current: 1,
+      size: 0,
+    );
+  }
+
+  @override
+  Future<Pep3DraftDetail> fetchDraftDetail(String token, int id) async {
+    return _draftDetail(id: id);
+  }
+
+  @override
+  Future<Pep3DraftDetail> saveDraft(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    return _draftDetail(id: 11);
+  }
+
+  @override
+  Future<Pep3DraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    return _draftDetail(id: 11);
+  }
+
+  @override
+  Future<Pep3CaregiverInvite> inviteCaregiverReport(
+    String token,
+    int draftId,
+  ) async {
+    return const Pep3CaregiverInvite(
+      miniProgramCodeDataUrl: '',
+      qrCodeValue: 'pep3-caregiver-report',
+      wechatUrlLink: '',
+      miniProgramPath: '',
+      url: '',
+    );
+  }
+
+  @override
+  Future<void> submitDraft(String token, int draftId) async {}
+
+  Pep3DraftDetail _draftDetail({required int id}) {
+    return Pep3DraftDetail(
+      id: id,
+      studentId: 3,
+      studentName: '张一鸣',
+      birthDate: '2021-03-01',
+      assessmentDate: '2026-05-05',
+      examinerName: '陈老师',
+      answeredItemCount: 0,
+      completionPercent: 0,
+      updatedTime: '2026-05-05T09:00:00Z',
+      progress: _progress,
+      input: const Pep3DraftInput(
+        studentId: 3,
+        studentName: '张一鸣',
+        examinerName: '陈老师',
+        birthDate: '2021-03-01',
+        assessmentDate: '2026-05-05',
+        remark: '',
+        allowMissingItems: true,
+        itemScores: <int, int>{},
+        itemRecordValues: <int, Map<String, dynamic>>{},
+      ),
     );
   }
 }

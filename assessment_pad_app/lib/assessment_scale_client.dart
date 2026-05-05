@@ -438,6 +438,7 @@ abstract interface class AssessmentScaleClient {
     String token, {
     int pageIndex = 1,
     int pageSize = 5,
+    bool latestOnly = false,
   });
 
   Future<AssessmentStudentCandidatePage> fetchStudentCandidates(
@@ -501,6 +502,7 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     String token, {
     int pageIndex = 1,
     int pageSize = 5,
+    bool latestOnly = false,
   }) async {
     final Object? data = await _postJson(
       _uri(educationBaseUrl, draftsPagePath),
@@ -510,7 +512,10 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
           'pageIndex': pageIndex,
           'pageSize': pageSize,
         },
-        'queryModel': <String, String>{},
+        'queryModel': <String, dynamic>{
+          if (latestOnly) 'latestOnly': true,
+        },
+        if (latestOnly) 'latestOnly': true,
       },
     );
     if (data is! Map) {

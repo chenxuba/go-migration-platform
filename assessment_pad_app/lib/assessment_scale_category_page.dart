@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/chinese_ime_engine.dart';
+import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -244,8 +245,8 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     try {
-      final AssessmentDraftPage drafts =
-          await widget.scaleClient.fetchDraftsPage(token);
+      final AssessmentDraftPage drafts = await widget.scaleClient
+          .fetchDraftsPage(token, pageSize: 100, latestOnly: true);
       if (!mounted) {
         return;
       }
@@ -326,9 +327,7 @@ class _AssessmentScaleCategoryScreenState
           },
           onOpenDraft: (AssessmentDraftSummary draft) {
             Navigator.of(context).pop();
-            ScaffoldMessenger.of(this.context).showSnackBar(
-              SnackBar(content: Text('草稿 ${draft.id} 已选中，测评作答页待接入')),
-            );
+            _openDraft(draft);
           },
         );
       },
@@ -421,10 +420,48 @@ class _AssessmentScaleCategoryScreenState
     if (student == null || !scale.available) {
       return;
     }
+    if (_isPep3Scale(scale)) {
+      _openPep3Assessment(
+        Pep3AssessmentLaunchArgs(
+          studentId: student.id,
+          studentName: student.displayName,
+          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          birthDate: student.birthDate,
+          assessmentDate: _todayIsoDate(),
+          scaleName: scale.name,
+        ),
+      );
+      return;
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-          content: Text('已选择 ${_studentEchoLabel(student)} · ${scale.name}')),
+        content: Text('${scale.name} 的作答页待接入'),
+      ),
     );
+  }
+
+  void _openDraft(AssessmentDraftSummary draft) {
+    if (_isPep3Draft(draft)) {
+      _openPep3Assessment(
+        Pep3AssessmentLaunchArgs(
+          draftId: draft.id,
+          studentName: draft.studentName,
+          assessmentDate: _todayIsoDate(),
+          examinerName: draft.examinerName,
+          scaleName: draft.assessmentName.trim().isEmpty
+              ? 'PEP-3'
+              : draft.assessmentName.trim(),
+        ),
+      );
+      return;
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${draft.assessmentName} 的作答页待接入')),
+    );
+  }
+
+  void _openPep3Assessment(Pep3AssessmentLaunchArgs args) {
+    Navigator.of(context).pushNamed('/pep3-assessment', arguments: args);
   }
 
   void _openSearchKeyboard() {
@@ -1573,6 +1610,39 @@ String _studentEchoLabel(AssessmentStudentCandidate student) {
   return '${student.displayName} * $age';
 }
 
+bool _isPep3Scale(AssessmentScaleItem scale) {
+  return _isPep3Text(
+    <String>[
+      scale.executionEntry,
+      scale.apiPackage,
+      scale.code,
+      scale.name,
+    ].join(' '),
+  );
+}
+
+bool _isPep3Draft(AssessmentDraftSummary draft) {
+  return _isPep3Text(
+    <String>[
+      draft.assessmentCode,
+      draft.assessmentName,
+    ].join(' '),
+  );
+}
+
+bool _isPep3Text(String value) {
+  final String normalized =
+      value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+  return normalized.contains('pep3');
+}
+
+String _todayIsoDate() {
+  final DateTime now = DateTime.now();
+  return '${now.year.toString().padLeft(4, '0')}-'
+      '${now.month.toString().padLeft(2, '0')}-'
+      '${now.day.toString().padLeft(2, '0')}';
+}
+
 class _StudentDialog extends StatefulWidget {
   const _StudentDialog({
     required this.students,
@@ -2174,26 +2244,29 @@ class _ScaleCategorySidebar extends StatelessWidget {
         onAction: onRetry,
       );
     }
-    return ListView.separated(
-      padding: EdgeInsets.zero,
-      physics: const BouncingScrollPhysics(),
-      itemCount: visibleCategories.length + 1,
-      separatorBuilder: (_, __) => const SizedBox(height: 5),
-      itemBuilder: (BuildContext context, int index) {
-        final bool allCategory = index == 0;
-        final String name = allCategory ? '全部' : visibleCategories[index - 1];
-        return _CategoryItem(
-          data: _CategoryItemData(
-            name,
-            allCategory ? allCategoryCount : categoryCounts[name] ?? 0,
-            _categoryAccentColor(index),
-            active: allCategory
-                ? selectedCategory.trim().isEmpty
-                : name == selectedCategory,
-          ),
-          onTap: () => onCategoryTap(allCategory ? '' : name),
-        );
-      },
+    return _CategoryScrollViewport(
+      items: <_CategoryItemData>[
+        for (int index = 0; index < visibleCategories.length + 1; index++)
+          _categoryItemDataFor(index, visibleCategories, allCategoryCount),
+      ],
+      onCategoryTap: (String name) => onCategoryTap(name == '全部' ? '' : name),
+    );
+  }
+
+  _CategoryItemData _categoryItemDataFor(
+    int index,
+    List<String> visibleCategories,
+    int allCategoryCount,
+  ) {
+    final bool allCategory = index == 0;
+    final String name = allCategory ? '全部' : visibleCategories[index - 1];
+    return _CategoryItemData(
+      name,
+      allCategory ? allCategoryCount : categoryCounts[name] ?? 0,
+      _categoryAccentColor(index),
+      active: allCategory
+          ? selectedCategory.trim().isEmpty
+          : name == selectedCategory,
     );
   }
 
@@ -2221,6 +2294,185 @@ class _CategoryItemData {
   final int count;
   final Color color;
   final bool active;
+}
+
+class _CategoryScrollViewport extends StatefulWidget {
+  const _CategoryScrollViewport({
+    required this.items,
+    required this.onCategoryTap,
+  });
+
+  final List<_CategoryItemData> items;
+  final ValueChanged<String> onCategoryTap;
+
+  @override
+  State<_CategoryScrollViewport> createState() =>
+      _CategoryScrollViewportState();
+}
+
+class _CategoryScrollViewportState extends State<_CategoryScrollViewport> {
+  final ScrollController _controller = ScrollController();
+  bool _canScrollUp = false;
+  bool _canScrollDown = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller.addListener(_updateScrollHints);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollHints());
+  }
+
+  @override
+  void didUpdateWidget(covariant _CategoryScrollViewport oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollHints());
+  }
+
+  @override
+  void dispose() {
+    _controller
+      ..removeListener(_updateScrollHints)
+      ..dispose();
+    super.dispose();
+  }
+
+  void _updateScrollHints() {
+    if (!mounted || !_controller.hasClients) {
+      return;
+    }
+    final ScrollPosition position = _controller.position;
+    final bool canScroll = position.maxScrollExtent > 1;
+    final bool nextCanScrollUp = canScroll && position.pixels > 6;
+    final bool nextCanScrollDown =
+        canScroll && position.pixels < position.maxScrollExtent - 6;
+    if (_canScrollUp == nextCanScrollUp &&
+        _canScrollDown == nextCanScrollDown) {
+      return;
+    }
+    setState(() {
+      _canScrollUp = nextCanScrollUp;
+      _canScrollDown = nextCanScrollDown;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+      children: <Widget>[
+        ListView.separated(
+          controller: _controller,
+          padding: EdgeInsets.zero,
+          physics: const BouncingScrollPhysics(),
+          itemCount: widget.items.length,
+          separatorBuilder: (_, __) => const SizedBox(height: 5),
+          itemBuilder: (BuildContext context, int index) {
+            final _CategoryItemData data = widget.items[index];
+            return _CategoryItem(
+              data: data,
+              onTap: () => widget.onCategoryTap(data.name),
+            );
+          },
+        ),
+        _CategoryScrollEdgeHint(
+          alignment: Alignment.topCenter,
+          visible: _canScrollUp,
+          icon: Icons.keyboard_arrow_up_rounded,
+          top: true,
+        ),
+        _CategoryScrollEdgeHint(
+          alignment: Alignment.bottomCenter,
+          visible: _canScrollDown,
+          icon: Icons.keyboard_arrow_down_rounded,
+          label: '继续下滑',
+        ),
+      ],
+    );
+  }
+}
+
+class _CategoryScrollEdgeHint extends StatelessWidget {
+  const _CategoryScrollEdgeHint({
+    required this.alignment,
+    required this.visible,
+    required this.icon,
+    this.label = '',
+    this.top = false,
+  });
+
+  final Alignment alignment;
+  final bool visible;
+  final IconData icon;
+  final String label;
+  final bool top;
+
+  @override
+  Widget build(BuildContext context) {
+    return Positioned(
+      left: 0,
+      right: 0,
+      top: top ? 0 : null,
+      bottom: top ? null : 0,
+      height: label.isEmpty ? 28 : 48,
+      child: IgnorePointer(
+        child: AnimatedOpacity(
+          opacity: visible ? 1 : 0,
+          duration: const Duration(milliseconds: 180),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: top ? Alignment.topCenter : Alignment.bottomCenter,
+                end: top ? Alignment.bottomCenter : Alignment.topCenter,
+                colors: const <Color>[
+                  Color(0xFFFFFFFF),
+                  Color(0x00FFFFFF),
+                ],
+              ),
+            ),
+            child: Align(
+              alignment: alignment,
+              child: label.isEmpty
+                  ? Icon(icon, size: 20, color: _ScaleColors.orange)
+                  : Container(
+                      height: 28,
+                      margin: const EdgeInsets.only(bottom: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(.94),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(color: _ScaleColors.lineSoft),
+                        boxShadow: _scaleShadow(
+                          color: const Color(0x14B05F32),
+                          blur: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Text(
+                            label,
+                            style: const TextStyle(
+                              color: _ScaleColors.orangeDeep,
+                              fontSize: 11,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 2),
+                          Icon(
+                            icon,
+                            size: 18,
+                            color: _ScaleColors.orange,
+                          ),
+                        ],
+                      ),
+                    ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class _CategoryItem extends StatelessWidget {

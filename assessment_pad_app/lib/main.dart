@@ -10,6 +10,8 @@ import 'assessment_scale_client.dart';
 import 'assessment_scale_category_page.dart';
 import 'auth_client.dart';
 import 'home_client.dart';
+import 'pep3_assessment_client.dart';
+import 'pep3_assessment_page.dart';
 import 'smart_timetable_page.dart';
 import 'timetable_client.dart';
 
@@ -46,6 +48,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.authClient = const IamAuthClient(),
     this.homeClient = const ApiHomeClient(),
     this.scaleClient = const ApiAssessmentScaleClient(),
+    this.pep3Client = const ApiPep3AssessmentClient(),
     this.timetableClient = const ApiTimetableClient(),
     super.key,
   });
@@ -53,6 +56,7 @@ class AssessmentPadApp extends StatelessWidget {
   final AuthClient authClient;
   final HomeClient homeClient;
   final AssessmentScaleClient scaleClient;
+  final Pep3AssessmentClient pep3Client;
   final TimetableClient timetableClient;
 
   @override
@@ -104,6 +108,25 @@ class AssessmentPadApp extends StatelessWidget {
             ),
           ),
         );
+      case '/pep3-assessment':
+        final Object? rawArgs = settings.arguments;
+        final Pep3AssessmentLaunchArgs args =
+            rawArgs is Pep3AssessmentLaunchArgs
+                ? rawArgs
+                : const Pep3AssessmentLaunchArgs();
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: Pep3AssessmentPage(
+                args: args,
+                client: pep3Client,
+                homeClient: homeClient,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
       default:
         return MaterialPageRoute<void>(
           settings: settings,
@@ -136,7 +159,7 @@ const double _wideDesignWidth = 1366;
 const double _loginLeftShiftCompact = 24;
 const double _loginLeftShiftWide = 64;
 const double _loginCardWidth = 408;
-const double _loginCardHeight = 522;
+const double _loginCardHeight = 548;
 const double _loginCardRight = 64;
 const double _loginCardTop = 162;
 const double _loginKeyboardWidth = 540;

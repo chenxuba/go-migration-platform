@@ -31,6 +31,7 @@ type AssessmentDraftQueryModel struct {
 	Status              string `json:"status,omitempty"`
 	AssessmentDateBegin string `json:"assessmentDateBegin,omitempty"`
 	AssessmentDateEnd   string `json:"assessmentDateEnd,omitempty"`
+	LatestOnly          bool   `json:"latestOnly,omitempty"`
 }
 
 type AssessmentRecordSummaryVO struct {

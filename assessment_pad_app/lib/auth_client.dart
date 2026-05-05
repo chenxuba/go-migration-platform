@@ -230,7 +230,7 @@ class IamAuthClient implements AuthClient {
     } on TimeoutException {
       throw const AuthException('登录接口响应超时，请检查网络');
     } on Object catch (error) {
-      throw AuthException('无法连接登录接口：$error');
+      throw AuthException(_loginConnectionErrorMessage(_uri(path), error));
     }
 
     final Object? decoded = _decodeResponse(response.body);
@@ -254,6 +254,23 @@ class IamAuthClient implements AuthClient {
     final String normalizedPath = path.startsWith('/') ? path : '/$path';
     return Uri.parse('$trimmedBase$normalizedPath');
   }
+}
+
+String _loginConnectionErrorMessage(Uri uri, Object error) {
+  final String host = uri.host.trim().isEmpty ? '当前配置地址' : uri.host;
+  if (host == '127.0.0.1' || host == 'localhost') {
+    return '无法连接登录接口：真机不能使用 $host，请配置电脑局域网 IP';
+  }
+
+  final String raw = '$error';
+  if (raw.contains('Connection refused') ||
+      raw.contains('Connection failed') ||
+      raw.contains('Connection closed') ||
+      raw.contains('Failed host lookup') ||
+      raw.contains('Network is unreachable')) {
+    return '无法连接登录接口：请确认服务已启动，且设备可访问 $host';
+  }
+  return '无法连接登录接口，请检查网络和接口地址';
 }
 
 Object? _decodeResponse(String body) {

@@ -1326,20 +1326,44 @@ func (repo *Repository) PageAssessmentDrafts(ctx context.Context, instID int64, 
 	}
 
 	whereSQL := strings.Join(where, " AND ")
-	var total int
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) FROM assessment_draft WHERE "+whereSQL, args...).Scan(&total); err != nil {
-		return model.PageResult[model.AssessmentDraftSummaryVO]{}, err
-	}
-	offset := (current - 1) * size
-	rows, err := repo.db.QueryContext(ctx, `
+	selectSQL := `
 		SELECT id, inst_id, student_id, student_name, assessment_code, assessment_name, scale_version,
 		       birth_date, assessment_date, examiner_id, examiner_name, progress_json,
 		       answered_item_count, raw_score_count, status, submitted_record_id, remark, create_time, update_time
 		FROM assessment_draft
-		WHERE `+whereSQL+`
+		WHERE ` + whereSQL
+	listSQL := selectSQL
+	listArgs := append([]any{}, args...)
+	countSQL := "SELECT COUNT(1) FROM assessment_draft WHERE " + whereSQL
+	countArgs := append([]any{}, args...)
+	if query.LatestOnly {
+		listSQL = `
+			SELECT *
+			FROM (` + selectSQL + `) ranked
+			WHERE NOT EXISTS (
+				SELECT 1
+				FROM (` + selectSQL + `) newer
+				WHERE newer.student_id = ranked.student_id
+				  AND newer.assessment_code = ranked.assessment_code
+				  AND (
+				  	newer.update_time > ranked.update_time
+				  	OR (newer.update_time = ranked.update_time AND newer.id > ranked.id)
+				  )
+			)
+		`
+		listArgs = append(append([]any{}, args...), args...)
+		countSQL = "SELECT COUNT(1) FROM (" + listSQL + ") latest"
+		countArgs = append([]any{}, listArgs...)
+	}
+	var total int
+	if err := repo.db.QueryRowContext(ctx, countSQL, countArgs...).Scan(&total); err != nil {
+		return model.PageResult[model.AssessmentDraftSummaryVO]{}, err
+	}
+	offset := (current - 1) * size
+	rows, err := repo.db.QueryContext(ctx, listSQL+`
 		ORDER BY update_time DESC, id DESC
 		LIMIT ? OFFSET ?
-	`, append(args, size, offset)...)
+	`, append(listArgs, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.AssessmentDraftSummaryVO]{}, err
 	}
