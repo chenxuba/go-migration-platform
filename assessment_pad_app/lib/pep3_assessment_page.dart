@@ -40,8 +40,10 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   final ScrollController _questionScrollController = ScrollController();
 
   Pep3DraftDetail? _draft;
+  Pep3DraftSummary? _detectedDraft;
   Pep3CaregiverInvite? _caregiverInvite;
   HomeSession _session = HomeSession.fallback;
+  final Map<int, int> _previousItemScores = <int, int>{};
   int _currentItemNo = 0;
   String _expandedGroupKey = '';
   String _errorMessage = '';
@@ -51,6 +53,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   String _birthDate = '';
   String _assessmentDate = '';
   String _examinerName = '';
+  String _previousAssessmentDate = '';
+  bool _draftDialogShown = false;
   bool _loading = true;
   bool _itemLoading = false;
   bool _savingDraft = false;
@@ -116,11 +120,12 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       if (widget.args.draftId > 0) {
         await _loadDraftDetail(token, widget.args.draftId);
       } else {
-        await _tryResumeLatestDraft(token);
+        _detectedDraft = await _findLatestDraft(token);
       }
       _currentItemNo = _resolveInitialItemNo();
       _expandedGroupKey = _groupKeyForItem(_currentItemNo);
       await _loadCurrentItem(token);
+      await _loadPreviousAssessment(token);
       if (_draft?.id != null && _draft!.id > 0) {
         _refreshCaregiverInvite(silent: true);
       }
@@ -130,6 +135,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       setState(() {
         _loading = false;
       });
+      _showDetectedDraftDialogIfNeeded();
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -141,10 +147,10 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     }
   }
 
-  Future<void> _tryResumeLatestDraft(String token) async {
+  Future<Pep3DraftSummary?> _findLatestDraft(String token) async {
     final int studentId = widget.args.studentId;
     if (studentId <= 0) {
-      return;
+      return null;
     }
     final Pep3DraftPage page = await widget.client.fetchDraftsPage(
       token,
@@ -153,10 +159,9 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       latestOnly: true,
     );
     if (page.items.isEmpty || page.items.first.id <= 0) {
-      return;
+      return null;
     }
-    await _loadDraftDetail(token, page.items.first.id);
-    _autoSaveText = '已恢复最新草稿';
+    return page.items.first;
   }
 
   Future<void> _loadDraftDetail(String token, int draftId) async {
@@ -172,6 +177,132 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         ? detail.examinerName.trim()
         : _examinerName;
     _applyDraftInput(detail.input);
+  }
+
+  void _showDetectedDraftDialogIfNeeded() {
+    final Pep3DraftSummary? draft = _detectedDraft;
+    if (!mounted || _draftDialogShown || draft == null || draft.id <= 0) {
+      return;
+    }
+    _draftDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(.32),
+        builder: (BuildContext dialogContext) {
+          return _DraftResumeDialog(
+            draft: draft,
+            total: _totalCount,
+            onRestart: () {
+              Navigator.of(dialogContext).pop();
+              _restartWithoutDetectedDraft();
+            },
+            onContinue: () {
+              Navigator.of(dialogContext).pop();
+              _continueDetectedDraft(draft);
+            },
+          );
+        },
+      );
+    });
+  }
+
+  void _restartWithoutDetectedDraft() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _detectedDraft = null;
+      _draft = null;
+      _itemScores.clear();
+      _recordValues.clear();
+      _savedItems.clear();
+      _caregiverInvite = null;
+      _autoSaveText = '已开始新的测评';
+      _assessmentDate =
+          _normalizeDate(widget.args.assessmentDate) ?? _todayIsoDate();
+      _examinerName = widget.args.examinerName.trim().isNotEmpty
+          ? widget.args.examinerName.trim()
+          : _examinerName;
+      _currentItemNo =
+          _template.allItems.isEmpty ? 0 : _template.allItems.first.itemNo;
+      _expandedGroupKey = _groupKeyForItem(_currentItemNo);
+    });
+    _loadCurrentItem();
+  }
+
+  Future<void> _continueDetectedDraft(Pep3DraftSummary draft) async {
+    if (draft.id <= 0) {
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _autoSaveText = '';
+    });
+    try {
+      final String token = await _readToken();
+      await _loadDraftDetail(token, draft.id);
+      _currentItemNo = _resolveInitialItemNo();
+      _expandedGroupKey = _groupKeyForItem(_currentItemNo);
+      await _loadCurrentItem(token);
+      await _loadPreviousAssessment(token);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _detectedDraft = null;
+        _loading = false;
+        _autoSaveText = '已恢复最新草稿';
+      });
+      _refreshCaregiverInvite(silent: true);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _loading = false);
+      _showMessage('恢复草稿失败：$error');
+    }
+  }
+
+  Future<void> _loadPreviousAssessment(String token) async {
+    final int studentId = _studentId;
+    if (studentId <= 0) {
+      _previousAssessmentDate = '';
+      _previousItemScores.clear();
+      return;
+    }
+    try {
+      final Pep3RecordPage page = await widget.client.fetchRecordsPage(
+        token,
+        studentId: studentId,
+        assessmentDateEnd: _assessmentDate,
+        pageSize: 5,
+      );
+      final Pep3RecordSummary? latest = page.items
+          .where((Pep3RecordSummary item) => item.id > 0)
+          .cast<Pep3RecordSummary?>()
+          .firstOrNull;
+      if (latest == null) {
+        _previousAssessmentDate = '';
+        _previousItemScores.clear();
+        return;
+      }
+      final Pep3RecordDetail detail =
+          await widget.client.fetchRecordDetail(token, latest.id);
+      _previousAssessmentDate = _normalizeDate(detail.assessmentDate) ??
+          _normalizeDate(latest.assessmentDate) ??
+          '';
+      _previousItemScores
+        ..clear()
+        ..addAll(detail.input.itemScores);
+    } on Object {
+      _previousAssessmentDate = '';
+      _previousItemScores.clear();
+    }
   }
 
   void _applyDraftInput(Pep3DraftInput input) {
@@ -644,6 +775,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       summary: _currentSummary,
                       scoreOptions: _currentScoreOptions,
                       selectedScore: _itemScores[_currentItemNo],
+                      previousScore: _previousItemScores[_currentItemNo],
+                      previousAssessmentDate: _previousAssessmentDate,
                       saving: _savingItems.contains(_currentItemNo),
                       saved: _savedItems.contains(_currentItemNo),
                       recordValues:
@@ -708,6 +841,201 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 }
 
+class _DraftResumeDialog extends StatelessWidget {
+  const _DraftResumeDialog({
+    required this.draft,
+    required this.total,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final Pep3DraftSummary draft;
+  final int total;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    final int answered = draft.progress.answeredItemCount > 0
+        ? draft.progress.answeredItemCount
+        : draft.answeredItemCount;
+    final int resolvedTotal = draft.progress.itemCount > 0
+        ? draft.progress.itemCount
+        : math.max(total, answered);
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 520,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: _pep3Shadow(
+            color: const Color(0x33000000),
+            blur: 30,
+            offset: const Offset(0, 18),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(30, 26, 30, 24),
+              child: Text(
+                '发现未完成草稿',
+                style: TextStyle(
+                  color: _Pep3Colors.ink,
+                  fontSize: 25,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: _Pep3Colors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 30, 30, 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    '当前儿童存在一份未提交的 PEP-3 测评草稿。',
+                    style: TextStyle(
+                      color: _Pep3Colors.ink,
+                      fontSize: 18,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBF7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _Pep3Colors.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _DraftResumeMeta(
+                          label: '已完成',
+                          value: '$answered / $resolvedTotal 题',
+                        ),
+                        const SizedBox(height: 13),
+                        _DraftResumeMeta(
+                          label: '更新时间',
+                          value: _formatDateTime(draft.updatedTime),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _Pep3Colors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  _DialogActionButton(
+                    label: '重新测评',
+                    filled: false,
+                    onTap: onRestart,
+                  ),
+                  const SizedBox(width: 12),
+                  _DialogActionButton(
+                    label: '继续测评',
+                    filled: true,
+                    onTap: onContinue,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _DraftResumeMeta extends StatelessWidget {
+  const _DraftResumeMeta({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: '$label：'),
+          TextSpan(
+            text: value,
+            style: const TextStyle(
+              color: _Pep3Colors.ink,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+      style: const TextStyle(
+        color: _Pep3Colors.text,
+        fontSize: 16,
+        height: 1.2,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
+class _DialogActionButton extends StatelessWidget {
+  const _DialogActionButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          width: 112,
+          height: 42,
+          decoration: BoxDecoration(
+            color: filled ? _Pep3Colors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: filled ? _Pep3Colors.orange : _Pep3Colors.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? Colors.white : _Pep3Colors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _Pep3Header extends StatelessWidget {
   const _Pep3Header({
     required this.title,
@@ -751,10 +1079,11 @@ class _Pep3Header extends StatelessWidget {
           final bool compact = constraints.maxWidth < 1120;
           return Row(
             children: <Widget>[
-              _HeaderIconButton(icon: Icons.arrow_back_rounded, onTap: onBack),
-              const SizedBox(width: 12),
+              _HeaderIconButton(
+                  icon: Icons.chevron_left_rounded, onTap: onBack),
+              const SizedBox(width: 10),
               SizedBox(
-                width: compact ? 188 : 236,
+                width: compact ? 206 : 250,
                 child: Text(
                   '$title 测评工作台',
                   maxLines: 1,
@@ -767,7 +1096,7 @@ class _Pep3Header extends StatelessWidget {
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: Row(
                   children: <Widget>[
@@ -775,6 +1104,7 @@ class _Pep3Header extends StatelessWidget {
                         child: _HeaderMeta(label: '儿童', value: studentName)),
                     Expanded(child: _HeaderMeta(label: '年龄', value: age)),
                     Expanded(
+                      flex: 2,
                       child: _HeaderMeta(label: '测评日期', value: assessmentDate),
                     ),
                     Expanded(
@@ -1169,6 +1499,8 @@ class _Pep3QuestionPanel extends StatelessWidget {
     required this.summary,
     required this.scoreOptions,
     required this.selectedScore,
+    required this.previousScore,
+    required this.previousAssessmentDate,
     required this.saving,
     required this.saved,
     required this.recordValues,
@@ -1182,6 +1514,8 @@ class _Pep3QuestionPanel extends StatelessWidget {
   final Pep3ItemSummary? summary;
   final List<Pep3ScoreOption> scoreOptions;
   final int? selectedScore;
+  final int? previousScore;
+  final String previousAssessmentDate;
   final bool saving;
   final bool saved;
   final Map<String, dynamic> recordValues;
@@ -1254,14 +1588,25 @@ class _Pep3QuestionPanel extends StatelessWidget {
                   body: _scoreStandardText(resolved, scoreOptions),
                 ),
                 const SizedBox(height: 3),
-                const Text(
-                  '评分',
-                  style: TextStyle(
-                    color: _Pep3Colors.ink,
-                    fontSize: 15,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Row(
+                  children: <Widget>[
+                    const Text(
+                      '评分',
+                      style: TextStyle(
+                        color: _Pep3Colors.ink,
+                        fontSize: 15,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const Spacer(),
+                    if (previousScore != null &&
+                        previousAssessmentDate.trim().isNotEmpty)
+                      _PreviousScoreSummary(
+                        score: previousScore!,
+                        date: previousAssessmentDate,
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 Row(
@@ -1271,6 +1616,9 @@ class _Pep3QuestionPanel extends StatelessWidget {
                         child: _ScoreOptionCard(
                           option: scoreOptions[i],
                           selected: selectedScore == scoreOptions[i].value,
+                          previous: previousScore == scoreOptions[i].value &&
+                              previousAssessmentDate.trim().isNotEmpty,
+                          previousDate: previousAssessmentDate,
                           onTap: () => onScore(scoreOptions[i].value),
                         ),
                       ),
@@ -1360,11 +1708,15 @@ class _ScoreOptionCard extends StatelessWidget {
   const _ScoreOptionCard({
     required this.option,
     required this.selected,
+    required this.previous,
+    required this.previousDate,
     required this.onTap,
   });
 
   final Pep3ScoreOption option;
   final bool selected;
+  final bool previous;
+  final String previousDate;
   final VoidCallback onTap;
 
   @override
@@ -1376,8 +1728,8 @@ class _ScoreOptionCard extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
-          height: 72,
-          padding: const EdgeInsets.fromLTRB(16, 10, 14, 10),
+          height: 94,
+          padding: const EdgeInsets.fromLTRB(16, 9, 14, 9),
           decoration: BoxDecoration(
             color: selected ? color.withOpacity(.08) : Colors.white,
             borderRadius: BorderRadius.circular(10),
@@ -1417,6 +1769,11 @@ class _ScoreOptionCard extends StatelessWidget {
                   ],
                 ),
               ),
+              if (previous) ...<Widget>[
+                const SizedBox(width: 8),
+                _PreviousScoreBadge(date: previousDate),
+              ],
+              const SizedBox(width: 8),
               Icon(
                 selected
                     ? Icons.check_circle_rounded
@@ -1426,6 +1783,84 @@ class _ScoreOptionCard extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviousScoreSummary extends StatelessWidget {
+  const _PreviousScoreSummary({required this.score, required this.date});
+
+  final int score;
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = _scoreColor(score);
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.06),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: color.withOpacity(.38)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            width: 7,
+            height: 7,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 9),
+          Text(
+            '上次测评 ${_compactDateLabel(date)}',
+            style: const TextStyle(
+              color: _Pep3Colors.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$score 分 · ${_shortScoreLabel(score, '')}',
+            style: TextStyle(
+              color: color,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviousScoreBadge extends StatelessWidget {
+  const _PreviousScoreBadge({required this.date});
+
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: _Pep3Colors.red, width: 1.1),
+      ),
+      child: Text(
+        '上次 ${_shortDateLabel(date)}',
+        maxLines: 1,
+        style: const TextStyle(
+          color: _Pep3Colors.red,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -1877,6 +2312,7 @@ class _RecordFieldEditor extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
@@ -2111,11 +2547,16 @@ class _HeaderIconButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: Icon(icon, color: _Pep3Colors.ink, size: 25),
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _Pep3Colors.line),
+          ),
+          child: Icon(icon, color: _Pep3Colors.text, size: 34),
         ),
       ),
     );
@@ -2448,6 +2889,37 @@ String? _normalizeDate(String? value) {
     return text.length >= 10 ? text.substring(0, 10) : text;
   }
   return '${parsed.year.toString().padLeft(4, '0')}-${parsed.month.toString().padLeft(2, '0')}-${parsed.day.toString().padLeft(2, '0')}';
+}
+
+String _formatDateTime(String value) {
+  final String text = value.trim();
+  if (text.isEmpty) {
+    return '-';
+  }
+  final DateTime? parsed = DateTime.tryParse(text);
+  if (parsed == null) {
+    if (text.length >= 16) {
+      return text.substring(0, 16).replaceFirst('T', ' ');
+    }
+    return text;
+  }
+  return '${parsed.year.toString().padLeft(4, '0')}-'
+      '${parsed.month.toString().padLeft(2, '0')}-'
+      '${parsed.day.toString().padLeft(2, '0')} '
+      '${parsed.hour.toString().padLeft(2, '0')}:'
+      '${parsed.minute.toString().padLeft(2, '0')}';
+}
+
+String _compactDateLabel(String value) {
+  return _normalizeDate(value) ?? value.trim();
+}
+
+String _shortDateLabel(String value) {
+  final String normalized = _normalizeDate(value) ?? value.trim();
+  if (normalized.length >= 10) {
+    return normalized.substring(5, 10);
+  }
+  return normalized;
 }
 
 String _assessmentAgeText(String birthDate, String assessmentDate) {

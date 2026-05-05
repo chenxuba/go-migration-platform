@@ -4,6 +4,7 @@ import 'package:assessment_pad_app/assessment_scale_category_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
+import 'package:assessment_pad_app/pep3_assessment_page.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
@@ -626,6 +627,85 @@ void main() {
     expect(find.text('记录册页面'), findsOneWidget);
     expect(find.textContaining('旋开瓶盖'), findsWidgets);
   });
+
+  testWidgets('PEP3 workbench prompts when latest draft exists',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: const _FakePep3AssessmentClient(hasDraft: true),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsOneWidget);
+    expect(find.text('当前儿童存在一份未提交的 PEP-3 测评草稿。'), findsOneWidget);
+    expect(
+      find.textContaining('已完成：1 / 2', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.text('重新测评'), findsOneWidget);
+    expect(find.text('继续测评'), findsOneWidget);
+  });
+
+  testWidgets('PEP3 workbench shows previous assessment score',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: const _FakePep3AssessmentClient(hasPreviousRecord: true),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('上次测评 2026-05-04'), findsOneWidget);
+    expect(find.text('0 分 · 未通过'), findsOneWidget);
+    expect(find.text('上次 05-04'), findsOneWidget);
+  });
 }
 
 Future<void> _enterWithCustomKeyboard(
@@ -912,6 +992,14 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
 }
 
 class _FakePep3AssessmentClient implements Pep3AssessmentClient {
+  const _FakePep3AssessmentClient({
+    this.hasDraft = false,
+    this.hasPreviousRecord = false,
+  });
+
+  final bool hasDraft;
+  final bool hasPreviousRecord;
+
   static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
     Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
     Pep3ScoreOption(value: 1, label: '部分通过', description: '经提示可完成'),
@@ -991,6 +1079,37 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     int studentId = 0,
     bool latestOnly = true,
   }) async {
+    if (hasDraft) {
+      return const Pep3DraftPage(
+        items: <Pep3DraftSummary>[
+          Pep3DraftSummary(
+            id: 11,
+            studentId: 3,
+            studentName: '张一鸣',
+            birthDate: '2021-03-01',
+            assessmentDate: '2026-05-05',
+            examinerName: '陈老师',
+            answeredItemCount: 1,
+            completionPercent: .5,
+            updatedTime: '2026-05-05T14:01:00',
+            progress: Pep3DraftProgress(
+              itemCount: 2,
+              answeredItemCount: 1,
+              missingItemCount: 1,
+              rawScoreCount: 0,
+              caregiverRawScoreCount: 0,
+              completionPercent: .5,
+              complete: false,
+              canScore: false,
+              missingItemNos: <int>[2],
+            ),
+          ),
+        ],
+        total: 1,
+        current: 1,
+        size: 1,
+      );
+    }
     return const Pep3DraftPage(
       items: <Pep3DraftSummary>[],
       total: 0,
@@ -1036,6 +1155,68 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
   @override
   Future<void> submitDraft(String token, int draftId) async {}
+
+  @override
+  Future<Pep3RecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  }) async {
+    if (!hasPreviousRecord) {
+      return const Pep3RecordPage(
+        items: <Pep3RecordSummary>[],
+        total: 0,
+        current: 1,
+        size: 0,
+      );
+    }
+    return const Pep3RecordPage(
+      items: <Pep3RecordSummary>[
+        Pep3RecordSummary(
+          id: 21,
+          studentId: 3,
+          studentName: '张一鸣',
+          assessmentCode: 'PEP3',
+          assessmentName: 'PEP-3',
+          birthDate: '2021-03-01',
+          assessmentDate: '2026-05-04',
+          examinerName: '陈老师',
+          updatedTime: '2026-05-04T16:00:00',
+        ),
+      ],
+      total: 1,
+      current: 1,
+      size: 1,
+    );
+  }
+
+  @override
+  Future<Pep3RecordDetail> fetchRecordDetail(String token, int id) async {
+    return const Pep3RecordDetail(
+      id: 21,
+      studentId: 3,
+      studentName: '张一鸣',
+      assessmentCode: 'PEP3',
+      assessmentName: 'PEP-3',
+      birthDate: '2021-03-01',
+      assessmentDate: '2026-05-04',
+      examinerName: '陈老师',
+      updatedTime: '2026-05-04T16:00:00',
+      input: Pep3DraftInput(
+        studentId: 3,
+        studentName: '张一鸣',
+        examinerName: '陈老师',
+        birthDate: '2021-03-01',
+        assessmentDate: '2026-05-04',
+        remark: '',
+        allowMissingItems: true,
+        itemScores: <int, int>{1: 0},
+        itemRecordValues: <int, Map<String, dynamic>>{},
+      ),
+    );
+  }
 
   Pep3DraftDetail _draftDetail({required int id}) {
     return Pep3DraftDetail(

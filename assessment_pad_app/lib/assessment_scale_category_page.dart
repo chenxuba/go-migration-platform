@@ -2916,7 +2916,7 @@ class _DraftSheet extends StatelessWidget {
                     '继续草稿',
                     style: TextStyle(
                       color: _ScaleColors.ink,
-                      fontSize: 20,
+                      fontSize: 18,
                       height: 1,
                       fontWeight: FontWeight.w900,
                     ),

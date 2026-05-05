@@ -37,6 +37,14 @@ const String defaultPep3CaregiverInvitePath = String.fromEnvironment(
   'PEP3_CAREGIVER_INVITE_PATH',
   defaultValue: '/api/v1/assessments/pep3/drafts/caregiver-report/invite',
 );
+const String defaultPep3RecordsPagePath = String.fromEnvironment(
+  'PEP3_RECORDS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/page',
+);
+const String defaultPep3RecordDetailPath = String.fromEnvironment(
+  'PEP3_RECORD_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/detail',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -588,6 +596,99 @@ class Pep3CaregiverInvite {
   }
 }
 
+class Pep3RecordPage {
+  const Pep3RecordPage({
+    required this.items,
+    required this.total,
+    required this.current,
+    required this.size,
+  });
+
+  factory Pep3RecordPage.fromJson(Map<String, dynamic> json) {
+    return Pep3RecordPage(
+      items: _listFrom(json['items']).map(Pep3RecordSummary.fromJson).toList(),
+      total: _intFrom(json['total']),
+      current: _intFrom(json['current']),
+      size: _intFrom(json['size']),
+    );
+  }
+
+  final List<Pep3RecordSummary> items;
+  final int total;
+  final int current;
+  final int size;
+}
+
+class Pep3RecordSummary {
+  const Pep3RecordSummary({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.assessmentCode,
+    required this.assessmentName,
+    required this.birthDate,
+    required this.assessmentDate,
+    required this.examinerName,
+    required this.updatedTime,
+  });
+
+  factory Pep3RecordSummary.fromJson(Map<String, dynamic> json) {
+    return Pep3RecordSummary(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      assessmentCode: '${json['assessmentCode'] ?? ''}',
+      assessmentName: '${json['assessmentName'] ?? ''}',
+      birthDate: '${json['birthDate'] ?? ''}',
+      assessmentDate: '${json['assessmentDate'] ?? ''}',
+      examinerName: '${json['examinerName'] ?? ''}',
+      updatedTime: '${json['updatedTime'] ?? ''}',
+    );
+  }
+
+  final int id;
+  final int studentId;
+  final String studentName;
+  final String assessmentCode;
+  final String assessmentName;
+  final String birthDate;
+  final String assessmentDate;
+  final String examinerName;
+  final String updatedTime;
+}
+
+class Pep3RecordDetail extends Pep3RecordSummary {
+  const Pep3RecordDetail({
+    required super.id,
+    required super.studentId,
+    required super.studentName,
+    required super.assessmentCode,
+    required super.assessmentName,
+    required super.birthDate,
+    required super.assessmentDate,
+    required super.examinerName,
+    required super.updatedTime,
+    required this.input,
+  });
+
+  factory Pep3RecordDetail.fromJson(Map<String, dynamic> json) {
+    return Pep3RecordDetail(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      assessmentCode: '${json['assessmentCode'] ?? ''}',
+      assessmentName: '${json['assessmentName'] ?? ''}',
+      birthDate: '${json['birthDate'] ?? ''}',
+      assessmentDate: '${json['assessmentDate'] ?? ''}',
+      examinerName: '${json['examinerName'] ?? ''}',
+      updatedTime: '${json['updatedTime'] ?? ''}',
+      input: Pep3DraftInput.fromJson(_mapFrom(json['input'])),
+    );
+  }
+
+  final Pep3DraftInput input;
+}
+
 abstract interface class Pep3AssessmentClient {
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token);
 
@@ -616,6 +717,16 @@ abstract interface class Pep3AssessmentClient {
   Future<Pep3CaregiverInvite> inviteCaregiverReport(String token, int draftId);
 
   Future<void> submitDraft(String token, int draftId);
+
+  Future<Pep3RecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  });
+
+  Future<Pep3RecordDetail> fetchRecordDetail(String token, int id);
 }
 
 class ApiPep3AssessmentClient implements Pep3AssessmentClient {
@@ -629,6 +740,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.draftsPagePath = defaultPep3DraftsPagePath,
     this.draftSubmitPath = defaultPep3DraftSubmitPath,
     this.caregiverInvitePath = defaultPep3CaregiverInvitePath,
+    this.recordsPagePath = defaultPep3RecordsPagePath,
+    this.recordDetailPath = defaultPep3RecordDetailPath,
   });
 
   final String educationBaseUrl;
@@ -640,6 +753,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String draftsPagePath;
   final String draftSubmitPath;
   final String caregiverInvitePath;
+  final String recordsPagePath;
+  final String recordDetailPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -758,6 +873,54 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   @override
   Future<void> submitDraft(String token, int draftId) async {
     await _postJson(_uri(draftSubmitPath), token, <String, int>{'id': draftId});
+  }
+
+  @override
+  Future<Pep3RecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(recordsPagePath),
+      token,
+      <String, dynamic>{
+        'pageRequestModel': <String, int>{
+          'pageIndex': pageIndex,
+          'pageSize': pageSize,
+        },
+        'queryModel': <String, dynamic>{
+          'assessmentCode': 'PEP3',
+          if (studentId > 0) 'studentId': studentId,
+          if (assessmentDateEnd.trim().isNotEmpty)
+            'assessmentDateEnd': assessmentDateEnd.trim(),
+        },
+      },
+    );
+    if (data is! Map) {
+      return const Pep3RecordPage(
+        items: <Pep3RecordSummary>[],
+        total: 0,
+        current: 1,
+        size: 0,
+      );
+    }
+    return Pep3RecordPage.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<Pep3RecordDetail> fetchRecordDetail(String token, int id) async {
+    final Uri uri =
+        _uri(recordDetailPath).replace(queryParameters: <String, String>{
+      'id': '$id',
+    });
+    final Object? data = await _getJson(uri, token);
+    if (data is! Map) {
+      throw const Pep3ApiException('测评记录详情返回格式不正确');
+    }
+    return Pep3RecordDetail.fromJson(Map<String, dynamic>.from(data));
   }
 
   Uri _uri(String path) {
