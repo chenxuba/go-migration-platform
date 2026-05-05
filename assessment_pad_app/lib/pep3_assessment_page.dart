@@ -6,6 +6,7 @@ import 'package:qr_flutter/qr_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_client.dart';
+import 'pad_top_message.dart';
 import 'pep3_assessment_client.dart';
 
 class Pep3AssessmentPage extends StatefulWidget {
@@ -31,6 +32,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
 
   Pep3TemplateSummary _template = Pep3TemplateSummary.empty;
   final Map<int, Pep3AssessmentItem> _itemCache = <int, Pep3AssessmentItem>{};
+  final Map<int, Future<Pep3AssessmentItem>> _itemFetches =
+      <int, Future<Pep3AssessmentItem>>{};
   final Map<int, int> _itemScores = <int, int>{};
   final Map<int, Map<String, dynamic>> _recordValues =
       <int, Map<String, dynamic>>{};
@@ -38,6 +41,9 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   final Set<int> _savedItems = <int>{};
   final ScrollController _leftScrollController = ScrollController();
   final ScrollController _questionScrollController = ScrollController();
+  final GlobalKey _activeNavItemKey = GlobalKey();
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
 
   Pep3DraftDetail? _draft;
   Pep3DraftSummary? _detectedDraft;
@@ -76,6 +82,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
 
   @override
   void dispose() {
+    _messageController.dispose();
     _leftScrollController.dispose();
     _questionScrollController.dispose();
     super.dispose();
@@ -135,7 +142,11 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       setState(() {
         _loading = false;
       });
+      _keepActiveItemVisible();
       _showDetectedDraftDialogIfNeeded();
+      if (_detectedDraft == null && (_draft?.id ?? 0) <= 0) {
+        await _ensureDraftAndInvite();
+      }
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -211,7 +222,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     });
   }
 
-  void _restartWithoutDetectedDraft() {
+  Future<void> _restartWithoutDetectedDraft() async {
     if (!mounted) {
       return;
     }
@@ -232,7 +243,16 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
           _template.allItems.isEmpty ? 0 : _template.allItems.first.itemNo;
       _expandedGroupKey = _groupKeyForItem(_currentItemNo);
     });
-    _loadCurrentItem();
+    await _loadCurrentItem();
+    await _ensureDraftAndInvite();
+  }
+
+  Future<void> _ensureDraftAndInvite() async {
+    if ((_draft?.id ?? 0) > 0) {
+      await _refreshCaregiverInvite(silent: true);
+      return;
+    }
+    await _saveDraft(silent: true);
   }
 
   Future<void> _continueDetectedDraft(Pep3DraftSummary draft) async {
@@ -258,6 +278,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         _loading = false;
         _autoSaveText = '已恢复最新草稿';
       });
+      _keepActiveItemVisible();
       _refreshCaregiverInvite(silent: true);
     } on Object catch (error) {
       if (!mounted) {
@@ -340,27 +361,75 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 
   Future<void> _loadCurrentItem([String? token]) async {
-    if (_currentItemNo <= 0 || _itemCache.containsKey(_currentItemNo)) {
+    final int itemNo = _currentItemNo;
+    if (itemNo <= 0) {
       return;
     }
-    setState(() => _itemLoading = true);
-    try {
-      final String resolvedToken = token ?? await _readToken();
-      final Pep3AssessmentItem item =
-          await widget.client.fetchTemplateItem(resolvedToken, _currentItemNo);
-      if (!mounted) {
-        return;
+    if (_itemCache.containsKey(itemNo)) {
+      if (mounted && _itemLoading) {
+        setState(() => _itemLoading = false);
       }
-      setState(() {
-        _itemCache[_currentItemNo] = item;
-      });
+      _prefetchNextItem(token);
+      return;
+    }
+    if (mounted && !_itemLoading) {
+      setState(() => _itemLoading = true);
+    }
+    try {
+      await _fetchAndCacheItem(itemNo, token);
+      _prefetchNextItem(token);
     } on Object catch (error) {
-      _showMessage('第$_currentItemNo题加载失败：$error');
+      _showMessage('第$itemNo题加载失败：$error');
     } finally {
-      if (mounted) {
+      if (mounted && _currentItemNo == itemNo) {
         setState(() => _itemLoading = false);
       }
     }
+  }
+
+  Future<Pep3AssessmentItem> _fetchAndCacheItem(
+    int itemNo, [
+    String? token,
+  ]) {
+    final Pep3AssessmentItem? cached = _itemCache[itemNo];
+    if (cached != null) {
+      return Future<Pep3AssessmentItem>.value(cached);
+    }
+    final Future<Pep3AssessmentItem>? existing = _itemFetches[itemNo];
+    if (existing != null) {
+      return existing;
+    }
+    final Future<Pep3AssessmentItem> future = (() async {
+      try {
+        final String resolvedToken = token ?? await _readToken();
+        final Pep3AssessmentItem item =
+            await widget.client.fetchTemplateItem(resolvedToken, itemNo);
+        if (mounted) {
+          setState(() => _itemCache[itemNo] = item);
+        } else {
+          _itemCache[itemNo] = item;
+        }
+        return item;
+      } finally {
+        _itemFetches.remove(itemNo);
+      }
+    })();
+    _itemFetches[itemNo] = future;
+    return future;
+  }
+
+  void _prefetchNextItem([String? token]) {
+    final int nextIndex = _currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= _template.allItems.length) {
+      return;
+    }
+    final int nextItemNo = _template.allItems[nextIndex].itemNo;
+    if (nextItemNo <= 0 || _itemCache.containsKey(nextItemNo)) {
+      return;
+    }
+    _fetchAndCacheItem(nextItemNo, token).catchError((Object _) {
+      return Pep3AssessmentItem.empty;
+    });
   }
 
   Future<Pep3DraftDetail?> _saveDraft({bool silent = false}) async {
@@ -385,9 +454,9 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         _autoSaveText = '草稿已保存';
       });
       if (!silent) {
-        _showMessage('草稿已保存');
+        _showCustomMessage('草稿已保存');
       }
-      _refreshCaregiverInvite(silent: true);
+      await _refreshCaregiverInvite(silent: true);
       return detail;
     } on Object catch (error) {
       _showMessage('保存草稿失败：$error');
@@ -601,9 +670,11 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         .any((Pep3ItemSummary item) => item.itemNo == itemNo)) {
       return;
     }
+    final bool shouldLoad = !_itemCache.containsKey(itemNo);
     setState(() {
       _currentItemNo = itemNo;
       _expandedGroupKey = _groupKeyForItem(itemNo);
+      _itemLoading = shouldLoad;
     });
     if (_questionScrollController.hasClients) {
       _questionScrollController.jumpTo(0);
@@ -640,20 +711,21 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
 
   void _keepActiveItemVisible() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!_leftScrollController.hasClients || _currentItemNo <= 0) {
+      if (!mounted ||
+          !_leftScrollController.hasClients ||
+          _currentItemNo <= 0) {
         return;
       }
-      final int index = _template.allItems
-          .indexWhere((Pep3ItemSummary item) => item.itemNo == _currentItemNo);
-      if (index < 0) {
+      final BuildContext? itemContext = _activeNavItemKey.currentContext;
+      if (itemContext == null) {
         return;
       }
-      final double target = math.max(0, index * 34.0 - 120);
-      final double max = _leftScrollController.position.maxScrollExtent;
-      _leftScrollController.animateTo(
-        math.min(target, max),
+      Scrollable.ensureVisible(
+        itemContext,
         duration: const Duration(milliseconds: 180),
         curve: Curves.easeOut,
+        alignment: .34,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
       );
     });
   }
@@ -664,6 +736,18 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     }
     ScaffoldMessenger.of(context)
         .showSnackBar(SnackBar(content: Text(message)));
+  }
+
+  void _showCustomMessage(String message) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      topMargin: 76,
+      key: 'pep3-top-message',
+    );
   }
 
   int get _studentId => _draft?.studentId != null && _draft!.studentId > 0
@@ -745,7 +829,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
           ),
           Expanded(
             child: Padding(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 0),
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
@@ -757,6 +841,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       itemScores: _itemScores,
                       currentItemNo: _currentItemNo,
                       controller: _leftScrollController,
+                      activeItemKey: _activeNavItemKey,
                       onToggleGroup: (String key) {
                         setState(() {
                           _expandedGroupKey =
@@ -800,7 +885,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       caregiverInvite: _caregiverInvite,
                       caregiverLoading: _caregiverLoading,
                       onRecordValue: _setRecordValue,
-                      onRefreshInvite: () => _refreshCaregiverInvite(),
+                      onSmsTap: () => _showCustomMessage('短信发送功能暂未开放'),
+                      onWechatTap: () => _showCustomMessage('微信推送功能暂未开放'),
                     ),
                   ),
                 ],
@@ -1196,6 +1282,7 @@ class _Pep3PageSidebar extends StatelessWidget {
     required this.itemScores,
     required this.currentItemNo,
     required this.controller,
+    required this.activeItemKey,
     required this.onToggleGroup,
     required this.onTapItem,
   });
@@ -1205,6 +1292,7 @@ class _Pep3PageSidebar extends StatelessWidget {
   final Map<int, int> itemScores;
   final int currentItemNo;
   final ScrollController controller;
+  final GlobalKey activeItemKey;
   final ValueChanged<String> onToggleGroup;
   final ValueChanged<int> onTapItem;
 
@@ -1215,37 +1303,40 @@ class _Pep3PageSidebar extends StatelessWidget {
         children: <Widget>[
           const _SidebarHeader(),
           Expanded(
-            child: ListView.builder(
+            child: SingleChildScrollView(
               controller: controller,
-              padding: EdgeInsets.zero,
               physics: const BouncingScrollPhysics(),
-              itemCount: groups.length,
-              itemBuilder: (BuildContext context, int index) {
-                final Pep3ItemGroupSummary group = groups[index];
-                final bool expanded = group.key == expandedGroupKey;
-                final int done = group.items
-                    .where((Pep3ItemSummary item) =>
-                        itemScores.containsKey(item.itemNo))
-                    .length;
-                final int total = group.items.length;
-                final int percent =
-                    total == 0 ? 0 : ((done / total) * 100).round();
-                return _PageGroup(
-                  group: group,
-                  expanded: expanded,
-                  done: done,
-                  total: total,
-                  percent: percent,
-                  itemScores: itemScores,
-                  currentItemNo: currentItemNo,
-                  onToggle: () => onToggleGroup(group.key),
-                  onTapItem: onTapItem,
-                );
-              },
+              child: Column(
+                children: <Widget>[
+                  for (final Pep3ItemGroupSummary group in groups)
+                    _buildGroup(group),
+                ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildGroup(Pep3ItemGroupSummary group) {
+    final bool expanded = group.key == expandedGroupKey;
+    final int done = group.items
+        .where((Pep3ItemSummary item) => itemScores.containsKey(item.itemNo))
+        .length;
+    final int total = group.items.length;
+    final int percent = total == 0 ? 0 : ((done / total) * 100).round();
+    return _PageGroup(
+      group: group,
+      expanded: expanded,
+      done: done,
+      total: total,
+      percent: percent,
+      itemScores: itemScores,
+      currentItemNo: currentItemNo,
+      activeItemKey: activeItemKey,
+      onToggle: () => onToggleGroup(group.key),
+      onTapItem: onTapItem,
     );
   }
 }
@@ -1288,6 +1379,7 @@ class _PageGroup extends StatelessWidget {
     required this.percent,
     required this.itemScores,
     required this.currentItemNo,
+    required this.activeItemKey,
     required this.onToggle,
     required this.onTapItem,
   });
@@ -1299,6 +1391,7 @@ class _PageGroup extends StatelessWidget {
   final int percent;
   final Map<int, int> itemScores;
   final int currentItemNo;
+  final GlobalKey activeItemKey;
   final VoidCallback onToggle;
   final ValueChanged<int> onTapItem;
 
@@ -1386,6 +1479,7 @@ class _PageGroup extends StatelessWidget {
             const SizedBox(height: 7),
             for (final Pep3ItemSummary item in group.items)
               _QuestionNavItem(
+                key: item.itemNo == currentItemNo ? activeItemKey : null,
                 item: item,
                 active: item.itemNo == currentItemNo,
                 done: itemScores.containsKey(item.itemNo),
@@ -1400,6 +1494,7 @@ class _PageGroup extends StatelessWidget {
 
 class _QuestionNavItem extends StatelessWidget {
   const _QuestionNavItem({
+    super.key,
     required this.item,
     required this.active,
     required this.done,
@@ -1528,12 +1623,13 @@ class _Pep3QuestionPanel extends StatelessWidget {
     final Pep3ItemSummary? resolvedSummary = summary;
     return _RailCard(
       child: loading && item == null
-          ? const Center(
-              child: CircularProgressIndicator(color: _Pep3Colors.orange),
+          ? _QuestionLoadingView(
+              summary: resolvedSummary,
+              scoreOptions: scoreOptions,
             )
           : ListView(
               controller: controller,
-              padding: const EdgeInsets.fromLTRB(16, 18, 16, 90),
+              padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
               physics: const BouncingScrollPhysics(),
               children: <Widget>[
                 Row(
@@ -1629,6 +1725,226 @@ class _Pep3QuestionPanel extends StatelessWidget {
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _QuestionLoadingView extends StatelessWidget {
+  const _QuestionLoadingView({
+    required this.summary,
+    required this.scoreOptions,
+  });
+
+  final Pep3ItemSummary? summary;
+  final List<Pep3ScoreOption> scoreOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 18, 16, 18),
+      physics: const NeverScrollableScrollPhysics(),
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '第 ${summary?.itemNo ?? 0} 题  ${summary?.displayTitle ?? ''}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _Pep3Colors.ink,
+                  fontSize: 23,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const SizedBox(width: 10),
+            _DomainChip(
+              code: summary?.domainCode ?? '',
+              name: summary?.domainName ?? '',
+            ),
+          ],
+        ),
+        const SizedBox(height: 16),
+        const _QuestionLoadingCard(title: '材料', height: 72),
+        const _QuestionLoadingCard(title: '操作标准', height: 120),
+        const _QuestionLoadingCard(title: '指导语', height: 86),
+        const _QuestionLoadingCard(title: '评分标准', height: 104),
+        const SizedBox(height: 3),
+        Row(
+          children: <Widget>[
+            const Text(
+              '评分',
+              style: TextStyle(
+                color: _Pep3Colors.ink,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const Spacer(),
+            Container(
+              height: 28,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF2EA),
+                borderRadius: BorderRadius.circular(9),
+                border: Border.all(color: const Color(0xFFFFD6C3)),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _Pep3Colors.orange,
+                    ),
+                  ),
+                  SizedBox(width: 8),
+                  Text(
+                    '题目加载中',
+                    style: TextStyle(
+                      color: _Pep3Colors.orangeDeep,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Row(
+          children: <Widget>[
+            for (int i = 0; i < scoreOptions.length; i++) ...<Widget>[
+              const Expanded(child: _ScoreLoadingCard()),
+              if (i != scoreOptions.length - 1) const SizedBox(width: 14),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _QuestionLoadingCard extends StatelessWidget {
+  const _QuestionLoadingCard({required this.title, required this.height});
+
+  final String title;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      height: height,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.94),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _Pep3Colors.line),
+        boxShadow: _pep3Shadow(
+          color: const Color(0x0FB05F32),
+          blur: 12,
+          offset: const Offset(0, 6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 17,
+                height: 17,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEFE6),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFFFFCFB6)),
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                title,
+                style: const TextStyle(
+                  color: _Pep3Colors.ink,
+                  fontSize: 16,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const _LoadingLine(widthFactor: .72),
+          const SizedBox(height: 8),
+          const _LoadingLine(widthFactor: .92),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScoreLoadingCard extends StatelessWidget {
+  const _ScoreLoadingCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 94,
+      padding: const EdgeInsets.fromLTRB(16, 15, 14, 14),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _Pep3Colors.line),
+      ),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: <Widget>[
+          _LoadingLine(width: 54, height: 20),
+          SizedBox(height: 12),
+          _LoadingLine(width: 72, height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingLine extends StatelessWidget {
+  const _LoadingLine({
+    this.width,
+    this.widthFactor,
+    this.height = 10,
+  });
+
+  final double? width;
+  final double? widthFactor;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget line = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E8DF),
+        borderRadius: BorderRadius.circular(99),
+      ),
+    );
+    if (widthFactor == null) {
+      return line;
+    }
+    return FractionallySizedBox(
+      alignment: Alignment.centerLeft,
+      widthFactor: widthFactor,
+      child: line,
     );
   }
 }
@@ -1738,49 +2054,57 @@ class _ScoreOptionCard extends StatelessWidget {
               width: selected ? 1.5 : 1,
             ),
           ),
-          child: Row(
+          child: Stack(
+            fit: StackFit.expand,
+            clipBehavior: Clip.none,
             children: <Widget>[
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: <Widget>[
-                    Text(
-                      '${option.value} 分',
-                      style: TextStyle(
-                        color: color,
-                        fontSize: 24,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: <Widget>[
+                        Text(
+                          '${option.value} 分',
+                          style: TextStyle(
+                            color: color,
+                            fontSize: 24,
+                            height: 1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          _shortScoreLabel(option.value, option.label),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _Pep3Colors.text,
+                            fontSize: 13,
+                            height: 1,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      _shortScoreLabel(option.value, option.label),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _Pep3Colors.text,
-                        fontSize: 13,
-                        height: 1,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ],
+                  ),
+                  const SizedBox(width: 36),
+                  Icon(
+                    selected
+                        ? Icons.check_circle_rounded
+                        : Icons.radio_button_unchecked_rounded,
+                    color: selected ? color : const Color(0xFFCAB8AA),
+                    size: 23,
+                  ),
+                ],
+              ),
+              if (previous)
+                Positioned(
+                  top: -5,
+                  right: -8,
+                  child: _PreviousScoreBadge(date: previousDate, color: color),
                 ),
-              ),
-              if (previous) ...<Widget>[
-                const SizedBox(width: 8),
-                _PreviousScoreBadge(date: previousDate),
-              ],
-              const SizedBox(width: 8),
-              Icon(
-                selected
-                    ? Icons.check_circle_rounded
-                    : Icons.radio_button_unchecked_rounded,
-                color: selected ? color : const Color(0xFFCAB8AA),
-                size: 23,
-              ),
             ],
           ),
         ),
@@ -1839,9 +2163,10 @@ class _PreviousScoreSummary extends StatelessWidget {
 }
 
 class _PreviousScoreBadge extends StatelessWidget {
-  const _PreviousScoreBadge({required this.date});
+  const _PreviousScoreBadge({required this.date, required this.color});
 
   final String date;
+  final Color color;
 
   @override
   Widget build(BuildContext context) {
@@ -1852,13 +2177,13 @@ class _PreviousScoreBadge extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: _Pep3Colors.red, width: 1.1),
+        border: Border.all(color: color.withOpacity(.62), width: 1.1),
       ),
       child: Text(
         '上次 ${_shortDateLabel(date)}',
         maxLines: 1,
-        style: const TextStyle(
-          color: _Pep3Colors.red,
+        style: TextStyle(
+          color: color,
           fontSize: 13,
           fontWeight: FontWeight.w900,
         ),
@@ -1878,7 +2203,8 @@ class _Pep3RightRail extends StatelessWidget {
     required this.caregiverInvite,
     required this.caregiverLoading,
     required this.onRecordValue,
-    required this.onRefreshInvite,
+    required this.onSmsTap,
+    required this.onWechatTap,
   });
 
   final int progressPercent;
@@ -1890,7 +2216,8 @@ class _Pep3RightRail extends StatelessWidget {
   final Pep3CaregiverInvite? caregiverInvite;
   final bool caregiverLoading;
   final void Function(String key, dynamic value) onRecordValue;
-  final VoidCallback onRefreshInvite;
+  final VoidCallback onSmsTap;
+  final VoidCallback onWechatTap;
 
   @override
   Widget build(BuildContext context) {
@@ -1927,7 +2254,8 @@ class _Pep3RightRail extends StatelessWidget {
             child: _CaregiverPanel(
               invite: caregiverInvite,
               loading: caregiverLoading,
-              onRefresh: onRefreshInvite,
+              onSmsTap: onSmsTap,
+              onWechatTap: onWechatTap,
             ),
           ),
         ),
@@ -2064,12 +2392,14 @@ class _CaregiverPanel extends StatelessWidget {
   const _CaregiverPanel({
     required this.invite,
     required this.loading,
-    required this.onRefresh,
+    required this.onSmsTap,
+    required this.onWechatTap,
   });
 
   final Pep3CaregiverInvite? invite;
   final bool loading;
-  final VoidCallback onRefresh;
+  final VoidCallback onSmsTap;
+  final VoidCallback onWechatTap;
 
   @override
   Widget build(BuildContext context) {
@@ -2119,7 +2449,7 @@ class _CaregiverPanel extends StatelessWidget {
           icon: Icons.sms_outlined,
           filled: false,
           loading: loading,
-          onTap: onRefresh,
+          onTap: onSmsTap,
         ),
         const SizedBox(height: 8),
         _CaregiverActionButton(
@@ -2127,7 +2457,7 @@ class _CaregiverPanel extends StatelessWidget {
           icon: Icons.wechat,
           filled: true,
           loading: loading,
-          onTap: onRefresh,
+          onTap: onWechatTap,
         ),
       ],
     );

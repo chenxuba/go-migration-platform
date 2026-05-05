@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'pad_top_message.dart';
 import 'timetable_client.dart';
 
 part 'smart_timetable/smart_timetable_state.dart';

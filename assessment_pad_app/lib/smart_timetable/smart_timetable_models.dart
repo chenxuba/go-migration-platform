@@ -5,58 +5,6 @@ enum _ScheduleMode {
   groupClass,
 }
 
-enum _ScheduleMessageTone {
-  info,
-  success,
-}
-
-extension _ScheduleMessageToneView on _ScheduleMessageTone {
-  IconData get icon {
-    switch (this) {
-      case _ScheduleMessageTone.info:
-        return Icons.info_outline_rounded;
-      case _ScheduleMessageTone.success:
-        return Icons.check_circle_outline_rounded;
-    }
-  }
-
-  Color get foreground {
-    switch (this) {
-      case _ScheduleMessageTone.info:
-        return _SmartColors.orangeDeep;
-      case _ScheduleMessageTone.success:
-        return _SmartColors.green;
-    }
-  }
-
-  Color get textColor {
-    switch (this) {
-      case _ScheduleMessageTone.info:
-        return _SmartColors.ink;
-      case _ScheduleMessageTone.success:
-        return const Color(0xFF426D44);
-    }
-  }
-
-  Color get background {
-    switch (this) {
-      case _ScheduleMessageTone.info:
-        return const Color(0xFFFFF8EE);
-      case _ScheduleMessageTone.success:
-        return const Color(0xFFF0FAEF);
-    }
-  }
-
-  Color get border {
-    switch (this) {
-      case _ScheduleMessageTone.info:
-        return const Color(0xFFF0DDC9);
-      case _ScheduleMessageTone.success:
-        return const Color(0xFFCBEACB);
-    }
-  }
-}
-
 class _ScheduleCellSlot {
   const _ScheduleCellSlot({
     required this.row,

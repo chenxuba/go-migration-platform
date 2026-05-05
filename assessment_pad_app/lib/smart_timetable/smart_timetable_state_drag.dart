@@ -100,7 +100,7 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
       );
       _showScheduleMessage(
         '调课成功，已刷新课表',
-        tone: _ScheduleMessageTone.success,
+        tone: PadMessageTone.success,
       );
       await _loadTimetable();
     } on TimetableApiException catch (error) {

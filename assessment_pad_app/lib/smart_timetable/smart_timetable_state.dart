@@ -37,11 +37,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   bool _dragValidationActive = false;
   String? _creatingSlotKey;
   String? _movingScheduleId;
-  OverlayEntry? _scheduleMessageEntry;
-  Timer? _scheduleMessageTimer;
-  bool _scheduleMessageVisible = false;
-  String _scheduleMessageText = '';
-  _ScheduleMessageTone _scheduleMessageTone = _ScheduleMessageTone.info;
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
   TimetableData _data = TimetableData.fallback();
   List<_PeriodGroupOption> _periodGroups = const <_PeriodGroupOption>[];
   List<_TeacherOption> _teachers = const <_TeacherOption>[];
@@ -59,8 +56,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
 
   @override
   void dispose() {
-    _scheduleMessageTimer?.cancel();
-    this._removeScheduleMessage();
+    _messageController.dispose();
     super.dispose();
   }
 

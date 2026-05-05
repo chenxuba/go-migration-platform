@@ -651,7 +651,7 @@ void main() {
               birthDate: '2021-03-01',
               assessmentDate: '2026-05-05',
             ),
-            client: const _FakePep3AssessmentClient(hasDraft: true),
+            client: _FakePep3AssessmentClient(hasDraft: true),
             homeClient: _FakeHomeClient(),
             onBack: () {},
           ),
@@ -668,6 +668,142 @@ void main() {
     );
     expect(find.text('重新测评'), findsOneWidget);
     expect(find.text('继续测评'), findsOneWidget);
+  });
+
+  testWidgets('PEP3 restart creates draft and caregiver QR immediately',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakePep3AssessmentClient pep3Client =
+        _FakePep3AssessmentClient(hasDraft: true);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: pep3Client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('重新测评'));
+    await tester.pumpAndSettle();
+
+    expect(pep3Client.saveDraftCalls, 1);
+    expect(pep3Client.inviteCalls, 1);
+    expect(find.text('暂无二维码'), findsNothing);
+  });
+
+  testWidgets('PEP3 caregiver action buttons only show custom message',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakePep3AssessmentClient pep3Client = _FakePep3AssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: pep3Client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(pep3Client.inviteCalls, 1);
+
+    await tester.tap(find.text('发送短信给家长'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(pep3Client.inviteCalls, 1);
+    expect(find.text('短信发送功能暂未开放'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+
+    await tester.tap(find.text('推送微信消息'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(pep3Client.inviteCalls, 1);
+    expect(find.text('微信推送功能暂未开放'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+  });
+
+  testWidgets('PEP3 save draft uses custom message',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakePep3AssessmentClient pep3Client = _FakePep3AssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: const Pep3AssessmentLaunchArgs(
+              studentId: 3,
+              studentName: '张一鸣',
+              studentAge: '5岁2个月',
+              birthDate: '2021-03-01',
+              assessmentDate: '2026-05-05',
+            ),
+            client: pep3Client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(pep3Client.saveDraftCalls, 1);
+
+    await tester.tap(find.text('保存草稿'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(pep3Client.saveDraftCalls, 2);
+    expect(find.text('草稿已保存'), findsWidgets);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget.runtimeType.toString() == 'PadTopMessage',
+      ),
+      findsOneWidget,
+    );
+    expect(find.byType(SnackBar), findsNothing);
   });
 
   testWidgets('PEP3 workbench shows previous assessment score',
@@ -693,7 +829,7 @@ void main() {
               birthDate: '2021-03-01',
               assessmentDate: '2026-05-05',
             ),
-            client: const _FakePep3AssessmentClient(hasPreviousRecord: true),
+            client: _FakePep3AssessmentClient(hasPreviousRecord: true),
             homeClient: _FakeHomeClient(),
             onBack: () {},
           ),
@@ -702,6 +838,10 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(
+      find.text('测评日期：2026-05-05', findRichText: true),
+      findsOneWidget,
+    );
     expect(find.text('上次测评 2026-05-04'), findsOneWidget);
     expect(find.text('0 分 · 未通过'), findsOneWidget);
     expect(find.text('上次 05-04'), findsOneWidget);
@@ -992,13 +1132,15 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
 }
 
 class _FakePep3AssessmentClient implements Pep3AssessmentClient {
-  const _FakePep3AssessmentClient({
+  _FakePep3AssessmentClient({
     this.hasDraft = false,
     this.hasPreviousRecord = false,
   });
 
   final bool hasDraft;
   final bool hasPreviousRecord;
+  int saveDraftCalls = 0;
+  int inviteCalls = 0;
 
   static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
     Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
@@ -1128,6 +1270,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     String token,
     Map<String, dynamic> payload,
   ) async {
+    saveDraftCalls += 1;
     return _draftDetail(id: 11);
   }
 
@@ -1144,6 +1287,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     String token,
     int draftId,
   ) async {
+    inviteCalls += 1;
     return const Pep3CaregiverInvite(
       miniProgramCodeDataUrl: '',
       qrCodeValue: 'pep3-caregiver-report',
