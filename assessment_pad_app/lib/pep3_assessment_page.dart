@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -52,6 +53,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   Pep3CaregiverInvite? _caregiverInvite;
   int _caregiverInviteDraftId = 0;
   Future<void>? _caregiverInviteRequest;
+  Future<Pep3DraftDetail>? _detectedDraftDetailRequest;
+  int _detectedDraftDetailDraftId = 0;
   HomeSession _session = HomeSession.fallback;
   final Map<int, int> _previousItemScores = <int, int>{};
   int _currentItemNo = 0;
@@ -64,6 +67,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   String _assessmentDate = '';
   String _examinerName = '';
   String _previousAssessmentDate = '';
+  String _previousAssessmentLookupKey = '';
   bool _draftDialogShown = false;
   bool _loading = true;
   bool _itemLoading = false;
@@ -132,6 +136,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         await _loadDraftDetail(token, widget.args.draftId);
       } else {
         _detectedDraft = await _findLatestDraft(token);
+        _prefetchDetectedDraftDetail(token, _detectedDraft);
       }
       _currentItemNo = _resolveInitialItemNo();
       _expandedGroupKey = _groupKeyForItem(_currentItemNo);
@@ -180,8 +185,15 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 
   Future<void> _loadDraftDetail(String token, int draftId) async {
-    final Pep3DraftDetail detail =
-        await widget.client.fetchDraftDetail(token, draftId);
+    final Pep3DraftDetail detail = await _fetchDraftDetail(token, draftId);
+    _applyDraftDetail(detail);
+  }
+
+  Future<Pep3DraftDetail> _fetchDraftDetail(String token, int draftId) {
+    return widget.client.fetchDraftDetail(token, draftId);
+  }
+
+  void _applyDraftDetail(Pep3DraftDetail detail) {
     if (_caregiverInviteDraftId != detail.id) {
       _caregiverInvite = null;
       _caregiverInviteDraftId = 0;
@@ -196,6 +208,42 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         ? detail.examinerName.trim()
         : _examinerName;
     _applyDraftInput(detail.input);
+  }
+
+  void _prefetchDetectedDraftDetail(String token, Pep3DraftSummary? draft) {
+    if (draft == null || draft.id <= 0) {
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      return;
+    }
+    if (_detectedDraftDetailDraftId == draft.id &&
+        _detectedDraftDetailRequest != null) {
+      return;
+    }
+    final Future<Pep3DraftDetail> request = _fetchDraftDetail(token, draft.id);
+    _detectedDraftDetailDraftId = draft.id;
+    _detectedDraftDetailRequest = request;
+    unawaited(
+      request.then<void>(
+        (Pep3DraftDetail _) {},
+        onError: (Object _, StackTrace __) {},
+      ),
+    );
+  }
+
+  Future<Pep3DraftDetail> _resolveDetectedDraftDetail(
+    String token,
+    Pep3DraftSummary draft,
+  ) async {
+    final Future<Pep3DraftDetail>? prefetched = _detectedDraftDetailRequest;
+    if (_detectedDraftDetailDraftId == draft.id && prefetched != null) {
+      try {
+        return await prefetched;
+      } on Object {
+        // Retry below if the prefetch failed.
+      }
+    }
+    return _fetchDraftDetail(token, draft.id);
   }
 
   void _showDetectedDraftDialogIfNeeded() {
@@ -238,6 +286,8 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
       _savedItems.clear();
       _caregiverInvite = null;
       _caregiverInviteDraftId = 0;
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
       _autoSaveText = '已开始新的测评';
       _assessmentDate =
           _normalizeDate(widget.args.assessmentDate) ?? _todayIsoDate();
@@ -272,20 +322,36 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     });
     try {
       final String token = await _readToken();
-      await _loadDraftDetail(token, draft.id);
-      _currentItemNo = _resolveInitialItemNo();
-      _expandedGroupKey = _groupKeyForItem(_currentItemNo);
-      await _loadCurrentItem(token);
-      await _loadPreviousAssessment(token);
+      if (token.trim().isEmpty) {
+        _showMessage('请先登录后再恢复草稿');
+        return false;
+      }
+      final Pep3DraftDetail detail =
+          await _resolveDetectedDraftDetail(token, draft);
+      _applyDraftDetail(detail);
       if (!mounted) {
         return false;
       }
+      final int restoredItemNo = _resolveInitialItemNo();
+      final bool shouldLoadItem = !_itemCache.containsKey(restoredItemNo);
       setState(() {
+        _currentItemNo = restoredItemNo;
+        _expandedGroupKey = _groupKeyForItem(restoredItemNo);
+        _itemLoading = shouldLoadItem;
         _detectedDraft = null;
         _autoSaveText = '已恢复最新草稿';
       });
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      if (_questionScrollController.hasClients) {
+        _questionScrollController.jumpTo(0);
+      }
       _keepActiveItemVisible();
-      await _refreshCaregiverInvite(silent: true);
+      unawaited(_loadCurrentItem(token));
+      if (_currentPreviousAssessmentLookupKey != _previousAssessmentLookupKey) {
+        unawaited(_loadPreviousAssessment(token));
+      }
+      unawaited(_refreshCaregiverInvite(silent: true));
       return true;
     } on Object catch (error) {
       if (!mounted) {
@@ -297,10 +363,16 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   }
 
   Future<void> _loadPreviousAssessment(String token) async {
+    final String lookupKey = _currentPreviousAssessmentLookupKey;
     final int studentId = _studentId;
+    String nextPreviousAssessmentDate = '';
+    final Map<int, int> nextPreviousItemScores = <int, int>{};
     if (studentId <= 0) {
-      _previousAssessmentDate = '';
-      _previousItemScores.clear();
+      _applyPreviousAssessmentState(
+        lookupKey: '',
+        previousAssessmentDate: '',
+        previousItemScores: nextPreviousItemScores,
+      );
       return;
     }
     try {
@@ -315,22 +387,28 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
           .cast<Pep3RecordSummary?>()
           .firstOrNull;
       if (latest == null) {
-        _previousAssessmentDate = '';
-        _previousItemScores.clear();
+        _applyPreviousAssessmentState(
+          lookupKey: lookupKey,
+          previousAssessmentDate: '',
+          previousItemScores: nextPreviousItemScores,
+        );
         return;
       }
       final Pep3RecordDetail detail =
           await widget.client.fetchRecordDetail(token, latest.id);
-      _previousAssessmentDate = _normalizeDate(detail.assessmentDate) ??
+      nextPreviousAssessmentDate = _normalizeDate(detail.assessmentDate) ??
           _normalizeDate(latest.assessmentDate) ??
           '';
-      _previousItemScores
-        ..clear()
-        ..addAll(detail.input.itemScores);
+      nextPreviousItemScores.addAll(detail.input.itemScores);
     } on Object {
-      _previousAssessmentDate = '';
-      _previousItemScores.clear();
+      nextPreviousAssessmentDate = '';
+      nextPreviousItemScores.clear();
     }
+    _applyPreviousAssessmentState(
+      lookupKey: lookupKey,
+      previousAssessmentDate: nextPreviousAssessmentDate,
+      previousItemScores: nextPreviousItemScores,
+    );
   }
 
   void _applyDraftInput(Pep3DraftInput input) {
@@ -359,12 +437,45 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     if (items.isEmpty) {
       return 0;
     }
-    final List<int> missing = _draft?.progress.missingItemNos ?? <int>[];
+    final List<int> missing = _draft?.progress.missingItemNos ??
+        _detectedDraft?.progress.missingItemNos ??
+        <int>[];
     if (missing.isNotEmpty &&
         items.any((Pep3ItemSummary item) => item.itemNo == missing.first)) {
       return missing.first;
     }
     return items.first.itemNo;
+  }
+
+  String get _currentPreviousAssessmentLookupKey {
+    final int studentId = _studentId;
+    final String assessmentDate = _assessmentDate.trim();
+    if (studentId <= 0 || assessmentDate.isEmpty) {
+      return '';
+    }
+    return '$studentId|$assessmentDate';
+  }
+
+  void _applyPreviousAssessmentState({
+    required String lookupKey,
+    required String previousAssessmentDate,
+    required Map<int, int> previousItemScores,
+  }) {
+    if (!mounted) {
+      _previousAssessmentLookupKey = lookupKey;
+      _previousAssessmentDate = previousAssessmentDate;
+      _previousItemScores
+        ..clear()
+        ..addAll(previousItemScores);
+      return;
+    }
+    setState(() {
+      _previousAssessmentLookupKey = lookupKey;
+      _previousAssessmentDate = previousAssessmentDate;
+      _previousItemScores
+        ..clear()
+        ..addAll(previousItemScores);
+    });
   }
 
   Future<void> _loadCurrentItem([String? token]) async {

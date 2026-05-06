@@ -701,7 +701,8 @@ void main() {
     expect(find.byKey(const ValueKey<String>('scale-card-skeleton-0')),
         findsOneWidget);
 
-    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
 
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
@@ -1204,8 +1205,11 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'auth_token': 'existing-token',
     });
-    final _FakePep3AssessmentClient pep3Client =
-        _FakePep3AssessmentClient(hasDraft: true);
+    final _FakePep3AssessmentClient pep3Client = _FakePep3AssessmentClient(
+      hasDraft: true,
+      draftDetailDelay: const Duration(milliseconds: 120),
+      inviteDelay: const Duration(milliseconds: 900),
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1231,6 +1235,14 @@ void main() {
     await tester.pump();
 
     expect(find.text('题目填充中，请稍后...'), findsOneWidget);
+    expect(
+      find.byWidgetPredicate(
+        (Widget widget) => widget.runtimeType.toString() == '_Pep3LoadingShell',
+      ),
+      findsNothing,
+    );
+
+    await tester.pump(const Duration(milliseconds: 160));
     expect(
       find.byWidgetPredicate(
         (Widget widget) => widget.runtimeType.toString() == '_Pep3LoadingShell',
@@ -2043,6 +2055,8 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     this.longInstructions = false,
     this.summaryFetchDelay = Duration.zero,
     this.itemFetchDelay = Duration.zero,
+    this.draftDetailDelay = Duration.zero,
+    this.inviteDelay = Duration.zero,
   });
 
   final bool hasDraft;
@@ -2053,9 +2067,12 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   final bool longInstructions;
   final Duration summaryFetchDelay;
   final Duration itemFetchDelay;
+  final Duration draftDetailDelay;
+  final Duration inviteDelay;
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
   int inviteCalls = 0;
+  int inviteCompletedCalls = 0;
 
   static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
     Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
@@ -2214,6 +2231,9 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
   @override
   Future<Pep3DraftDetail> fetchDraftDetail(String token, int id) async {
+    if (draftDetailDelay > Duration.zero) {
+      await Future<void>.delayed(draftDetailDelay);
+    }
     return _draftDetail(id: id);
   }
 
@@ -2241,6 +2261,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     int draftId,
   ) async {
     inviteCalls += 1;
+    if (inviteDelay > Duration.zero) {
+      await Future<void>.delayed(inviteDelay);
+    }
+    inviteCompletedCalls += 1;
     return const Pep3CaregiverInvite(
       miniProgramCodeDataUrl: '',
       qrCodeValue: 'pep3-caregiver-report',

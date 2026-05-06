@@ -6371,12 +6371,6 @@ func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx
 			enable_price_leave_normal_record,
 			enable_price_truancy_normal_record,
 			enable_price_makeup,
-			enable_collector_staff,
-			enable_phone_sell_staff,
-			enable_foreground,
-			enable_vice_sell_staff,
-			enable_advisor,
-			enable_student_manager,
 			limit_same_weChat,
 			limit_import_same_weChat,
 			enable_public_pool,
@@ -6411,7 +6405,7 @@ func (repo *Repository) createDefaultInstitutionConfigTx(ctx context.Context, tx
 			create_time,
 			version
 		)
-		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
+		SELECT ?, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 'all', 0, 0, 0, 0, 0, '1', 1, 1.00, 0.00, 100.00, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, '19:00', 0, 'month', '2', 'course', 0, '1.0', 0, '5', 0, '15', 0, '500', 0, NOW(), 0
 		FROM DUAL
 		WHERE NOT EXISTS (
 			SELECT 1
