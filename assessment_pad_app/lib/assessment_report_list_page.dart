@@ -43,6 +43,7 @@ class _AssessmentReportListScreenState
   bool _listLoading = true;
   bool _categoryLoading = true;
   String _errorMessage = '';
+  int _searchResetSeed = 0;
 
   @override
   void initState() {
@@ -166,6 +167,20 @@ class _AssessmentReportListScreenState
     await _loadData();
   }
 
+  void _resetFilters() {
+    final DateTime today = _dateOnly(DateTime.now());
+    setState(() {
+      _range = DateTimeRange(
+        start: today.subtract(const Duration(days: 29)),
+        end: today,
+      );
+      _selectedCategory = '';
+      _searchKey = '';
+      _searchResetSeed += 1;
+    });
+    _loadData();
+  }
+
   void _submitSearch(String value) {
     _searchKey = value.trim();
     _loadData();
@@ -186,7 +201,8 @@ class _AssessmentReportListScreenState
         categoryLoading: _categoryLoading,
         listLoading: _listLoading,
         errorMessage: _errorMessage,
-        onRefresh: _loadData,
+        searchResetSeed: _searchResetSeed,
+        onReset: _resetFilters,
         onRangeTap: _selectRange,
         onSearchSubmitted: _submitSearch,
         onCategorySelected: (String category) => _loadData(
@@ -233,7 +249,8 @@ class _AssessmentReportListBody extends StatelessWidget {
     required this.categoryLoading,
     required this.listLoading,
     required this.errorMessage,
-    required this.onRefresh,
+    required this.searchResetSeed,
+    required this.onReset,
     required this.onRangeTap,
     required this.onSearchSubmitted,
     required this.onCategorySelected,
@@ -250,7 +267,8 @@ class _AssessmentReportListBody extends StatelessWidget {
   final bool categoryLoading;
   final bool listLoading;
   final String errorMessage;
-  final VoidCallback onRefresh;
+  final int searchResetSeed;
+  final VoidCallback onReset;
   final VoidCallback onRangeTap;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<String> onCategorySelected;
@@ -283,7 +301,8 @@ class _AssessmentReportListBody extends StatelessWidget {
                       onBack: onBack,
                       range: range,
                       onRangeTap: onRangeTap,
-                      onRefresh: onRefresh,
+                      onReset: onReset,
+                      searchResetSeed: searchResetSeed,
                       onSearchSubmitted: onSearchSubmitted,
                     ),
                     const SizedBox(height: 30),
@@ -310,7 +329,7 @@ class _AssessmentReportListBody extends StatelessWidget {
                               total: total,
                               loading: listLoading,
                               errorMessage: errorMessage,
-                              onRetry: onRefresh,
+                              onRetry: onReset,
                             ),
                           ),
                         ],
@@ -332,14 +351,16 @@ class _TopBar extends StatelessWidget {
     required this.onBack,
     required this.range,
     required this.onRangeTap,
-    required this.onRefresh,
+    required this.onReset,
+    required this.searchResetSeed,
     required this.onSearchSubmitted,
   });
 
   final VoidCallback onBack;
   final DateTimeRange range;
   final VoidCallback onRangeTap;
-  final VoidCallback onRefresh;
+  final VoidCallback onReset;
+  final int searchResetSeed;
   final ValueChanged<String> onSearchSubmitted;
 
   @override
@@ -360,15 +381,17 @@ class _TopBar extends StatelessWidget {
             ),
           ),
           const Spacer(),
-          _SearchBox(onSubmitted: onSearchSubmitted),
+          _SearchBox(
+              resetSeed: searchResetSeed, onSubmitted: onSearchSubmitted),
           const SizedBox(width: 10),
           _ToolbarButton(
             label: '${_dateText(range.start)} - ${_dateText(range.end)}',
             icon: Icons.calendar_month_rounded,
             onTap: onRangeTap,
+            triggerOnTapDown: true,
           ),
           const SizedBox(width: 10),
-          _ToolbarButton(label: '刷新列表', filled: true, onTap: onRefresh),
+          _ToolbarButton(label: '重置', filled: true, onTap: onReset),
         ],
       ),
     );
@@ -406,10 +429,41 @@ class _BackButton extends StatelessWidget {
   }
 }
 
-class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.onSubmitted});
+class _SearchBox extends StatefulWidget {
+  const _SearchBox({
+    required this.resetSeed,
+    required this.onSubmitted,
+  });
 
+  final int resetSeed;
   final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_SearchBox> createState() => _SearchBoxState();
+}
+
+class _SearchBoxState extends State<_SearchBox> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void didUpdateWidget(_SearchBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resetSeed != widget.resetSeed) {
+      _controller.clear();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -422,7 +476,8 @@ class _SearchBox extends StatelessWidget {
         border: Border.all(color: _ReportTheme.line),
       ),
       child: TextField(
-        onSubmitted: onSubmitted,
+        controller: _controller,
+        onSubmitted: widget.onSubmitted,
         textInputAction: TextInputAction.search,
         style: const TextStyle(
           color: _ReportTheme.ink,
@@ -457,19 +512,21 @@ class _ToolbarButton extends StatelessWidget {
     this.filled = false,
     this.icon,
     this.onTap,
+    this.triggerOnTapDown = false,
   });
 
   final String label;
   final bool filled;
   final IconData? icon;
   final VoidCallback? onTap;
+  final bool triggerOnTapDown;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
+    final Widget button = Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: triggerOnTapDown ? null : onTap,
         borderRadius: BorderRadius.circular(13),
         child: Container(
           height: 42,
@@ -504,6 +561,14 @@ class _ToolbarButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+    if (!triggerOnTapDown || onTap == null) {
+      return button;
+    }
+    return Listener(
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (_) => onTap!(),
+      child: button,
     );
   }
 }

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 Future<DateTimeRange?> showPadDateRangePicker({
@@ -8,44 +10,33 @@ Future<DateTimeRange?> showPadDateRangePicker({
   DateTime? maxDate,
 }) {
   final DateTime currentDay = _dateOnly(today ?? DateTime.now());
-  return showGeneralDialog<DateTimeRange>(
-    context: context,
-    barrierColor: const Color(0x33000000),
-    barrierDismissible: true,
-    barrierLabel: MaterialLocalizations.of(context).modalBarrierDismissLabel,
-    transitionDuration: const Duration(milliseconds: 80),
-    pageBuilder: (
-      BuildContext context,
-      Animation<double> animation,
-      Animation<double> secondaryAnimation,
-    ) {
-      return _PadDateRangeDialog(
+  final Completer<DateTimeRange?> completer = Completer<DateTimeRange?>();
+  final OverlayState overlay = Overlay.of(context, rootOverlay: true);
+  late final OverlayEntry entry;
+
+  void close([DateTimeRange? range]) {
+    if (entry.mounted) {
+      entry.remove();
+    }
+    if (!completer.isCompleted) {
+      completer.complete(range);
+    }
+  }
+
+  entry = OverlayEntry(
+    builder: (BuildContext context) {
+      return _PadDateRangeOverlay(
         initialRange: initialRange,
         today: currentDay,
         minDate: _dateOnly(minDate ?? DateTime(currentDay.year - 5)),
         maxDate: _dateOnly(maxDate ?? DateTime(currentDay.year + 1, 12, 31)),
-      );
-    },
-    transitionBuilder: (
-      BuildContext context,
-      Animation<double> animation,
-      Animation<double> secondaryAnimation,
-      Widget child,
-    ) {
-      final CurvedAnimation curved = CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeOutCubic,
-        reverseCurve: Curves.easeInCubic,
-      );
-      return FadeTransition(
-        opacity: curved,
-        child: ScaleTransition(
-          scale: Tween<double>(begin: .985, end: 1).animate(curved),
-          child: child,
-        ),
+        onCancel: close,
+        onSubmit: close,
       );
     },
   );
+  overlay.insert(entry);
+  return completer.future;
 }
 
 class _PickerColors {
@@ -59,18 +50,66 @@ class _PickerColors {
   static const Color orangeDeep = Color(0xFFC95D37);
 }
 
-class _PadDateRangeDialog extends StatefulWidget {
-  const _PadDateRangeDialog({
+class _PadDateRangeOverlay extends StatelessWidget {
+  const _PadDateRangeOverlay({
     required this.initialRange,
     required this.today,
     required this.minDate,
     required this.maxDate,
+    required this.onCancel,
+    required this.onSubmit,
   });
 
   final DateTimeRange initialRange;
   final DateTime today;
   final DateTime minDate;
   final DateTime maxDate;
+  final VoidCallback onCancel;
+  final ValueChanged<DateTimeRange> onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(
+            child: GestureDetector(
+              behavior: HitTestBehavior.opaque,
+              onTap: onCancel,
+              child: const ColoredBox(color: Color(0x33000000)),
+            ),
+          ),
+          _PadDateRangeDialog(
+            initialRange: initialRange,
+            today: today,
+            minDate: minDate,
+            maxDate: maxDate,
+            onCancel: onCancel,
+            onSubmit: onSubmit,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PadDateRangeDialog extends StatefulWidget {
+  const _PadDateRangeDialog({
+    required this.initialRange,
+    required this.today,
+    required this.minDate,
+    required this.maxDate,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final DateTimeRange initialRange;
+  final DateTime today;
+  final DateTime minDate;
+  final DateTime maxDate;
+  final VoidCallback onCancel;
+  final ValueChanged<DateTimeRange> onSubmit;
 
   @override
   State<_PadDateRangeDialog> createState() => _PadDateRangeDialogState();
@@ -219,7 +258,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                 const SizedBox(width: 10),
                 _IconCircleButton(
                   icon: Icons.close_rounded,
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: widget.onCancel,
                 ),
               ],
             ),
@@ -305,7 +344,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                 const Spacer(),
                 _DialogActionButton(
                   label: '取消',
-                  onTap: () => Navigator.of(context).pop(),
+                  onTap: widget.onCancel,
                 ),
                 const SizedBox(width: 10),
                 _DialogActionButton(
@@ -314,7 +353,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                   enabled: canSubmit,
                   onTap: canSubmit
                       ? () {
-                          Navigator.of(context).pop(
+                          widget.onSubmit(
                             DateTimeRange(start: _start, end: end),
                           );
                         }
