@@ -41,6 +41,7 @@ type AssessmentRecordSummaryVO struct {
 	StudentName        string     `json:"studentName,omitempty"`
 	StudentGender      string     `json:"studentGender,omitempty"`
 	StudentAvatar      string     `json:"studentAvatar,omitempty"`
+	StudentPhone       string     `json:"studentPhone,omitempty"`
 	AssessmentCode     string     `json:"assessmentCode"`
 	AssessmentName     string     `json:"assessmentName"`
 	ScaleCategory      string     `json:"scaleCategory,omitempty"`

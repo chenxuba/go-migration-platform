@@ -268,6 +268,10 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 	err := repo.db.QueryRowContext(ctx, `
 		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
 		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
+		       CASE
+		           WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+		           ELSE IFNULL(s.mobile, '')
+		       END,
 		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
 		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
 		       ar.examiner_id, ar.examiner_name, ar.input_json, ar.result_json, ar.data_status, ar.remark, ar.create_time, ar.update_time
@@ -288,6 +292,7 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 		&item.StudentName,
 		&sex,
 		&item.StudentAvatar,
+		&item.StudentPhone,
 		&item.AssessmentCode,
 		&item.AssessmentName,
 		&item.ScaleCategory,
@@ -557,6 +562,10 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
 		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
+	       CASE
+	           WHEN CHAR_LENGTH(IFNULL(s.mobile, '')) >= 7 THEN CONCAT(LEFT(s.mobile, 3), '****', RIGHT(s.mobile, 4))
+	           ELSE IFNULL(s.mobile, '')
+	       END,
 	       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
 	       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
 	       (
@@ -600,6 +609,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			&item.StudentName,
 			&sex,
 			&item.StudentAvatar,
+			&item.StudentPhone,
 			&item.AssessmentCode,
 			&item.AssessmentName,
 			&item.ScaleCategory,

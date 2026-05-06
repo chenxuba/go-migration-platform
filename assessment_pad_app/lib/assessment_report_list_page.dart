@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -37,7 +39,8 @@ class _AssessmentReportListScreenState
     size: 0,
   );
   String _searchKey = '';
-  bool _loading = true;
+  bool _listLoading = true;
+  bool _categoryLoading = true;
   String _errorMessage = '';
 
   @override
@@ -51,9 +54,18 @@ class _AssessmentReportListScreenState
     _loadData();
   }
 
-  Future<void> _loadData({String? selectedCategory}) async {
+  Future<void> _loadData({
+    String? selectedCategory,
+    bool reloadCategories = true,
+  }) async {
+    final bool shouldReloadCategories = reloadCategories || _categories.isEmpty;
+    final bool shouldShowCategorySkeleton =
+        shouldReloadCategories && _categories.isEmpty;
     setState(() {
-      _loading = true;
+      _listLoading = true;
+      if (shouldShowCategorySkeleton) {
+        _categoryLoading = true;
+      }
       _errorMessage = '';
       if (selectedCategory != null) {
         _selectedCategory = selectedCategory;
@@ -62,8 +74,9 @@ class _AssessmentReportListScreenState
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
-      final List<String> categories =
-          await widget.scaleClient.fetchCategories(token);
+      final List<String> categories = shouldReloadCategories
+          ? await widget.scaleClient.fetchCategories(token)
+          : _categories;
       final Pep3RecordPage page = await widget.recordClient.fetchRecordsPage(
         token,
         pageIndex: 1,
@@ -74,48 +87,58 @@ class _AssessmentReportListScreenState
         assessmentDateBegin: _dateText(_range.start),
         assessmentDateEnd: _dateText(_range.end),
       );
-      final Pep3RecordPage allCountPage = _selectedCategory.isEmpty
-          ? page
-          : await widget.recordClient.fetchRecordsPage(
-              token,
-              pageIndex: 1,
-              pageSize: 1,
-              assessmentCode: '',
-              searchKey: _searchKey,
-              assessmentDateBegin: _dateText(_range.start),
-              assessmentDateEnd: _dateText(_range.end),
-            );
-      final Map<String, int> counts = <String, int>{};
-      for (final String category in categories) {
-        final Pep3RecordPage countPage =
-            await widget.recordClient.fetchRecordsPage(
-          token,
-          pageIndex: 1,
-          pageSize: 1,
-          assessmentCode: '',
-          scaleCategory: category,
-          searchKey: _searchKey,
-          assessmentDateBegin: _dateText(_range.start),
-          assessmentDateEnd: _dateText(_range.end),
-        );
-        counts[category] = countPage.total;
+      Pep3RecordPage? allCountPage;
+      Map<String, int>? counts;
+      if (shouldReloadCategories) {
+        allCountPage = _selectedCategory.isEmpty
+            ? page
+            : await widget.recordClient.fetchRecordsPage(
+                token,
+                pageIndex: 1,
+                pageSize: 1,
+                assessmentCode: '',
+                searchKey: _searchKey,
+                assessmentDateBegin: _dateText(_range.start),
+                assessmentDateEnd: _dateText(_range.end),
+              );
+        counts = <String, int>{};
+        for (final String category in categories) {
+          final Pep3RecordPage countPage =
+              await widget.recordClient.fetchRecordsPage(
+            token,
+            pageIndex: 1,
+            pageSize: 1,
+            assessmentCode: '',
+            scaleCategory: category,
+            searchKey: _searchKey,
+            assessmentDateBegin: _dateText(_range.start),
+            assessmentDateEnd: _dateText(_range.end),
+          );
+          counts[category] = countPage.total;
+        }
       }
       if (!mounted) {
         return;
       }
       setState(() {
-        _categories = categories;
-        _categoryCounts = counts;
-        _rangeTotal = allCountPage.total;
+        if (shouldReloadCategories) {
+          _categories = categories;
+          _categoryCounts = counts ?? const <String, int>{};
+          _rangeTotal = allCountPage?.total ?? page.total;
+          _categoryLoading = false;
+        }
         _page = page;
-        _loading = false;
+        _listLoading = false;
       });
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
-        _loading = false;
+        _listLoading = false;
+        if (shouldReloadCategories) {
+          _categoryLoading = false;
+        }
         _errorMessage = '$error';
       });
     }
@@ -123,17 +146,15 @@ class _AssessmentReportListScreenState
 
   Future<void> _selectRange() async {
     final DateTime today = _dateOnly(DateTime.now());
-    final DateTimeRange? picked = await showDateRangePicker(
+    final DateTimeRange? picked = await showDialog<DateTimeRange>(
       context: context,
-      initialDateRange: _range,
-      firstDate: DateTime(today.year - 5),
-      lastDate: DateTime(today.year + 1, 12, 31),
-      builder: (BuildContext context, Widget? child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: ColorScheme.fromSeed(seedColor: _ReportTheme.orange),
-          ),
-          child: child ?? const SizedBox.shrink(),
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return _ReportDateRangeDialog(
+          initialRange: _range,
+          today: today,
+          minDate: DateTime(today.year - 5),
+          maxDate: DateTime(today.year + 1, 12, 31),
         );
       },
     );
@@ -166,13 +187,16 @@ class _AssessmentReportListScreenState
         rangeTotal: _rangeTotal,
         total: _page.total,
         range: _range,
-        loading: _loading,
+        categoryLoading: _categoryLoading,
+        listLoading: _listLoading,
         errorMessage: _errorMessage,
         onRefresh: _loadData,
         onRangeTap: _selectRange,
         onSearchSubmitted: _submitSearch,
-        onCategorySelected: (String category) =>
-            _loadData(selectedCategory: category),
+        onCategorySelected: (String category) => _loadData(
+          selectedCategory: category,
+          reloadCategories: false,
+        ),
       ),
     );
   }
@@ -210,7 +234,8 @@ class _AssessmentReportListBody extends StatelessWidget {
     required this.rangeTotal,
     required this.total,
     required this.range,
-    required this.loading,
+    required this.categoryLoading,
+    required this.listLoading,
     required this.errorMessage,
     required this.onRefresh,
     required this.onRangeTap,
@@ -226,7 +251,8 @@ class _AssessmentReportListBody extends StatelessWidget {
   final int rangeTotal;
   final int total;
   final DateTimeRange range;
-  final bool loading;
+  final bool categoryLoading;
+  final bool listLoading;
   final String errorMessage;
   final VoidCallback onRefresh;
   final VoidCallback onRangeTap;
@@ -276,7 +302,7 @@ class _AssessmentReportListBody extends StatelessWidget {
                               counts: categoryCounts,
                               selectedCategory: selectedCategory,
                               total: rangeTotal,
-                              loading: loading,
+                              loading: categoryLoading,
                               onSelected: onCategorySelected,
                             ),
                           ),
@@ -286,7 +312,7 @@ class _AssessmentReportListBody extends StatelessWidget {
                             child: _ReportListPanel(
                               records: records,
                               total: total,
-                              loading: loading,
+                              loading: listLoading,
                               errorMessage: errorMessage,
                               onRetry: onRefresh,
                             ),
@@ -486,6 +512,774 @@ class _ToolbarButton extends StatelessWidget {
   }
 }
 
+class _ReportDateRangeDialog extends StatefulWidget {
+  const _ReportDateRangeDialog({
+    required this.initialRange,
+    required this.today,
+    required this.minDate,
+    required this.maxDate,
+  });
+
+  final DateTimeRange initialRange;
+  final DateTime today;
+  final DateTime minDate;
+  final DateTime maxDate;
+
+  @override
+  State<_ReportDateRangeDialog> createState() => _ReportDateRangeDialogState();
+}
+
+class _ReportDateRangeDialogState extends State<_ReportDateRangeDialog> {
+  late DateTime _visibleMonth;
+  late DateTime _start;
+  DateTime? _end;
+  String _selectedPresetLabel = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _start = _dateOnly(widget.initialRange.start);
+    _end = _dateOnly(widget.initialRange.end);
+    _visibleMonth = _boundedVisibleMonth(_monthOnly(_start));
+    _selectedPresetLabel = _presetLabelForRange(_start, _end);
+  }
+
+  DateTime _boundedVisibleMonth(DateTime month) {
+    final DateTime minMonth = _monthOnly(widget.minDate);
+    final DateTime maxFirstMonth = _addMonths(_monthOnly(widget.maxDate), -1);
+    if (month.isBefore(minMonth)) {
+      return minMonth;
+    }
+    if (month.isAfter(maxFirstMonth)) {
+      return maxFirstMonth;
+    }
+    return month;
+  }
+
+  void _shiftMonth(int offset) {
+    setState(() {
+      _visibleMonth = _boundedVisibleMonth(_addMonths(_visibleMonth, offset));
+    });
+  }
+
+  void _selectDay(DateTime day) {
+    final DateTime value = _dateOnly(day);
+    if (_isBeforeDay(value, widget.minDate) ||
+        _isAfterDay(value, widget.maxDate)) {
+      return;
+    }
+    setState(() {
+      if (_end != null) {
+        _start = value;
+        _end = null;
+        _selectedPresetLabel = '';
+        return;
+      }
+      if (value.isBefore(_start)) {
+        _end = _start;
+        _start = value;
+      } else {
+        _end = value;
+      }
+      _selectedPresetLabel = _presetLabelForRange(_start, _end);
+    });
+  }
+
+  void _applyPreset(_RangePreset preset) {
+    final DateTime clippedStart = _clampDay(preset.start);
+    final DateTime clippedEnd = _clampDay(preset.end);
+    setState(() {
+      if (clippedStart.isAfter(clippedEnd)) {
+        _start = clippedEnd;
+        _end = clippedStart;
+      } else {
+        _start = clippedStart;
+        _end = clippedEnd;
+      }
+      _selectedPresetLabel = preset.label;
+      _visibleMonth = _boundedVisibleMonth(_monthOnly(_start));
+    });
+  }
+
+  String _presetLabelForRange(DateTime start, DateTime? end) {
+    if (end == null) {
+      return '';
+    }
+    for (final _RangePreset preset in _rangePresets(widget.today)) {
+      if (_sameDay(start, preset.start) && _sameDay(end, preset.end)) {
+        return preset.label;
+      }
+    }
+    return '';
+  }
+
+  DateTime _clampDay(DateTime value) {
+    final DateTime day = _dateOnly(value);
+    if (_isBeforeDay(day, widget.minDate)) {
+      return _dateOnly(widget.minDate);
+    }
+    if (_isAfterDay(day, widget.maxDate)) {
+      return _dateOnly(widget.maxDate);
+    }
+    return day;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? end = _end;
+    final bool canSubmit = end != null;
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 56, vertical: 42),
+      child: Container(
+        width: 760,
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(
+          color: _ReportTheme.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _ReportTheme.line),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x1FC26B3E),
+              blurRadius: 34,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '选择日期范围',
+                  style: TextStyle(
+                    color: _ReportTheme.ink,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                _RangePreview(label: '开始', value: _dateText(_start)),
+                const SizedBox(width: 8),
+                _RangePreview(
+                  label: '结束',
+                  value: end == null ? '请选择' : _dateText(end),
+                  muted: end == null,
+                ),
+                const SizedBox(width: 10),
+                _IconCircleButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                SizedBox(
+                  width: 118,
+                  child: _RangePresetRail(
+                    today: widget.today,
+                    selectedLabel: _selectedPresetLabel,
+                    onSelected: _applyPreset,
+                  ),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          _IconCircleButton(
+                            icon: Icons.chevron_left_rounded,
+                            enabled: _canShiftPrevious,
+                            onTap: () => _shiftMonth(-1),
+                          ),
+                          const Spacer(),
+                          _MonthTitle(month: _visibleMonth),
+                          const SizedBox(width: 108),
+                          _MonthTitle(month: _addMonths(_visibleMonth, 1)),
+                          const Spacer(),
+                          _IconCircleButton(
+                            icon: Icons.chevron_right_rounded,
+                            enabled: _canShiftNext,
+                            onTap: () => _shiftMonth(1),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: _MonthCalendar(
+                              month: _visibleMonth,
+                              minDate: widget.minDate,
+                              maxDate: widget.maxDate,
+                              today: widget.today,
+                              start: _start,
+                              end: end,
+                              onSelect: _selectDay,
+                            ),
+                          ),
+                          const SizedBox(width: 18),
+                          Expanded(
+                            child: _MonthCalendar(
+                              month: _addMonths(_visibleMonth, 1),
+                              minDate: widget.minDate,
+                              maxDate: widget.maxDate,
+                              today: widget.today,
+                              start: _start,
+                              end: end,
+                              onSelect: _selectDay,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                const Text(
+                  '点击日期重新选择开始日期，再点击一次选择结束日期',
+                  style: TextStyle(
+                    color: _ReportTheme.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                _DialogActionButton(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _DialogActionButton(
+                  label: '确定',
+                  filled: true,
+                  enabled: canSubmit,
+                  onTap: canSubmit
+                      ? () {
+                          Navigator.of(context).pop(
+                            DateTimeRange(start: _start, end: end),
+                          );
+                        }
+                      : null,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool get _canShiftPrevious {
+    return !_addMonths(_visibleMonth, -1).isBefore(_monthOnly(widget.minDate));
+  }
+
+  bool get _canShiftNext {
+    final DateTime nextSecondMonth = _addMonths(_visibleMonth, 2);
+    return !nextSecondMonth.isAfter(_monthOnly(widget.maxDate));
+  }
+}
+
+class _RangePreview extends StatelessWidget {
+  const _RangePreview({
+    required this.label,
+    required this.value,
+    this.muted = false,
+  });
+
+  final String label;
+  final String value;
+  final bool muted;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8F2),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            label,
+            style: const TextStyle(
+              color: _ReportTheme.muted,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            value,
+            style: TextStyle(
+              color: muted ? _ReportTheme.muted : _ReportTheme.ink,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RangePresetRail extends StatelessWidget {
+  const _RangePresetRail({
+    required this.today,
+    required this.selectedLabel,
+    required this.onSelected,
+  });
+
+  final DateTime today;
+  final String selectedLabel;
+  final ValueChanged<_RangePreset> onSelected;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<_RangePreset> presets = _rangePresets(today);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const Text(
+          '快捷选择',
+          style: TextStyle(
+            color: _ReportTheme.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 10),
+        for (final _RangePreset preset in presets) ...<Widget>[
+          _PresetButton(
+            label: preset.label,
+            selected: preset.label == selectedLabel,
+            onTap: () => onSelected(preset),
+          ),
+          const SizedBox(height: 8),
+        ],
+      ],
+    );
+  }
+}
+
+class _RangePreset {
+  const _RangePreset(this.label, this.start, this.end);
+
+  final String label;
+  final DateTime start;
+  final DateTime end;
+}
+
+List<_RangePreset> _rangePresets(DateTime today) {
+  final DateTime day = _dateOnly(today);
+  final DateTime monthStart = DateTime(day.year, day.month);
+  final DateTime lastMonthStart = DateTime(day.year, day.month - 1);
+  return <_RangePreset>[
+    _RangePreset('近7天', day.subtract(const Duration(days: 6)), day),
+    _RangePreset('近30天', day.subtract(const Duration(days: 29)), day),
+    _RangePreset('本月', monthStart, day),
+    _RangePreset(
+        '上月', lastMonthStart, monthStart.subtract(const Duration(days: 1))),
+  ];
+}
+
+class _PresetButton extends StatelessWidget {
+  const _PresetButton({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 36,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF0E7) : const Color(0xFFFFF8F2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? _ReportTheme.orange : _ReportTheme.lineSoft,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (selected) ...<Widget>[
+                const Icon(
+                  Icons.check_rounded,
+                  size: 16,
+                  color: _ReportTheme.orangeDeep,
+                ),
+                const SizedBox(width: 4),
+              ],
+              Flexible(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color:
+                        selected ? _ReportTheme.orangeDeep : _ReportTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthTitle extends StatelessWidget {
+  const _MonthTitle({required this.month});
+
+  final DateTime month;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 96,
+      child: Text(
+        '${month.year}年${month.month}月',
+        textAlign: TextAlign.center,
+        style: const TextStyle(
+          color: _ReportTheme.ink,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthCalendar extends StatelessWidget {
+  const _MonthCalendar({
+    required this.month,
+    required this.minDate,
+    required this.maxDate,
+    required this.today,
+    required this.start,
+    required this.end,
+    required this.onSelect,
+  });
+
+  final DateTime month;
+  final DateTime minDate;
+  final DateTime maxDate;
+  final DateTime today;
+  final DateTime start;
+  final DateTime? end;
+  final ValueChanged<DateTime> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime firstDay = DateTime(month.year, month.month);
+    final int leadingDays = firstDay.weekday - DateTime.monday;
+    final DateTime gridStart = firstDay.subtract(Duration(days: leadingDays));
+    return Column(
+      children: <Widget>[
+        const Row(
+          children: <Widget>[
+            _WeekdayLabel('一'),
+            _WeekdayLabel('二'),
+            _WeekdayLabel('三'),
+            _WeekdayLabel('四'),
+            _WeekdayLabel('五'),
+            _WeekdayLabel('六'),
+            _WeekdayLabel('日'),
+          ],
+        ),
+        const SizedBox(height: 6),
+        for (int row = 0; row < 6; row++)
+          Row(
+            children: <Widget>[
+              for (int column = 0; column < 7; column++)
+                Expanded(
+                  child: _DateCell(
+                    day: gridStart.add(Duration(days: row * 7 + column)),
+                    visibleMonth: month,
+                    minDate: minDate,
+                    maxDate: maxDate,
+                    today: today,
+                    start: start,
+                    end: end,
+                    onSelect: onSelect,
+                  ),
+                ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class _WeekdayLabel extends StatelessWidget {
+  const _WeekdayLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Center(
+        child: Text(
+          label,
+          style: const TextStyle(
+            color: _ReportTheme.muted,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DateCell extends StatelessWidget {
+  const _DateCell({
+    required this.day,
+    required this.visibleMonth,
+    required this.minDate,
+    required this.maxDate,
+    required this.today,
+    required this.start,
+    required this.end,
+    required this.onSelect,
+  });
+
+  final DateTime day;
+  final DateTime visibleMonth;
+  final DateTime minDate;
+  final DateTime maxDate;
+  final DateTime today;
+  final DateTime start;
+  final DateTime? end;
+  final ValueChanged<DateTime> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime current = _dateOnly(day);
+    final bool inCurrentMonth = current.year == visibleMonth.year &&
+        current.month == visibleMonth.month;
+    final bool enabled = inCurrentMonth &&
+        !_isBeforeDay(current, minDate) &&
+        !_isAfterDay(current, maxDate);
+    final bool isStart = _sameDay(current, start);
+    final bool isEnd = end != null && _sameDay(current, end!);
+    final bool inRange = end != null &&
+        !current.isBefore(start) &&
+        !current.isAfter(end!) &&
+        inCurrentMonth;
+    final bool isToday = _sameDay(current, today);
+    final int lastDayOfMonth =
+        DateTime(visibleMonth.year, visibleMonth.month + 1, 0).day;
+    final bool startsRangeBand =
+        isStart || current.weekday == DateTime.monday || current.day == 1;
+    final bool endsRangeBand = isEnd ||
+        current.weekday == DateTime.sunday ||
+        current.day == lastDayOfMonth;
+    final bool isSingleDay = isStart && isEnd;
+    final bool shouldShowBand = inRange && !isSingleDay;
+    final Color textColor = isStart || isEnd
+        ? Colors.white
+        : enabled
+            ? _ReportTheme.text
+            : _ReportTheme.line;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? () => onSelect(current) : null,
+          borderRadius: BorderRadius.circular(10),
+          child: SizedBox(
+            height: 34,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double halfWidth = constraints.maxWidth / 2;
+                return Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    if (shouldShowBand)
+                      Positioned(
+                        top: 5,
+                        bottom: 5,
+                        left: isStart ? halfWidth : 0,
+                        right: isEnd ? halfWidth : 0,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF0E7),
+                            borderRadius: BorderRadius.horizontal(
+                              left: Radius.circular(
+                                startsRangeBand && !isStart ? 10 : 0,
+                              ),
+                              right: Radius.circular(
+                                endsRangeBand && !isEnd ? 10 : 0,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    if (isStart || isEnd)
+                      Container(
+                        width: 32,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          color: _ReportTheme.orange,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      )
+                    else if (isToday)
+                      Container(
+                        width: 32,
+                        height: 28,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: _ReportTheme.orange.withOpacity(.42),
+                          ),
+                        ),
+                      ),
+                    Text(
+                      '${current.day}',
+                      style: TextStyle(
+                        color: textColor,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IconCircleButton extends StatelessWidget {
+  const _IconCircleButton({
+    required this.icon,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 34,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: enabled ? const Color(0xFFFFF8F2) : const Color(0xFFF8EEE6),
+            shape: BoxShape.circle,
+            border: Border.all(color: _ReportTheme.lineSoft),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: enabled ? _ReportTheme.text : _ReportTheme.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _DialogActionButton extends StatelessWidget {
+  const _DialogActionButton({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+    this.enabled = true,
+  });
+
+  final String label;
+  final VoidCallback? onTap;
+  final bool filled;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 38,
+          constraints: const BoxConstraints(minWidth: 76),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color:
+                filled && enabled ? _ReportTheme.orange : _ReportTheme.surface,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color:
+                  filled && enabled ? _ReportTheme.orange : _ReportTheme.line,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: filled && enabled
+                  ? Colors.white
+                  : enabled
+                      ? _ReportTheme.text
+                      : _ReportTheme.muted,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _DomainPanel extends StatelessWidget {
   const _DomainPanel({
     required this.categories,
@@ -547,22 +1341,51 @@ class _DomainPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
-          if (loading)
-            for (int index = 0; index < 6; index++) ...<Widget>[
-              const _DomainSkeletonRow(),
-              if (index != 5) const SizedBox(height: 7),
-            ]
-          else
-            for (int index = 0; index < domains.length; index++) ...<Widget>[
-              _DomainRow(
-                item: domains[index],
-                selected: domains[index].value == selectedCategory,
-                onTap: () => onSelected(domains[index].value),
-              ),
-              if (index != domains.length - 1) const SizedBox(height: 7),
-            ],
+          Expanded(
+            child: loading
+                ? const _DomainSkeletonList()
+                : ListView.separated(
+                    padding: EdgeInsets.zero,
+                    itemCount: domains.length,
+                    separatorBuilder: (BuildContext context, int index) =>
+                        const SizedBox(height: 7),
+                    itemBuilder: (BuildContext context, int index) {
+                      final _DomainItem item = domains[index];
+                      return _DomainRow(
+                        item: item,
+                        selected: item.value == selectedCategory,
+                        onTap: () => onSelected(item.value),
+                      );
+                    },
+                  ),
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _DomainSkeletonList extends StatelessWidget {
+  const _DomainSkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int rowCount = math.max(
+          8,
+          ((constraints.maxHeight + 7) / 54).ceil(),
+        );
+        return ListView.separated(
+          padding: EdgeInsets.zero,
+          physics: const NeverScrollableScrollPhysics(),
+          itemCount: rowCount,
+          separatorBuilder: (BuildContext context, int index) =>
+              const SizedBox(height: 7),
+          itemBuilder: (BuildContext context, int index) =>
+              const _DomainSkeletonRow(),
+        );
+      },
     );
   }
 }
@@ -830,13 +1653,14 @@ class _ReportTableHeader extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              _ColumnCell(flex: 270, child: Text('儿童信息')),
-              _ColumnCell(flex: 200, child: Text('测评量表')),
-              _ColumnCell(flex: 100, child: Text('测评年龄')),
-              _ColumnCell(flex: 150, child: Text('测评日期')),
-              _ColumnCell(flex: 150, child: Text('报告时间')),
+              _ColumnCell(flex: 250, child: Text('儿童信息')),
+              _ColumnCell(flex: 220, trailingGap: 24, child: Text('测评量表')),
+              _ColumnCell(flex: 130, child: Text('测评年龄')),
+              _ColumnCell(flex: 145, child: Text('测评日期')),
+              _ColumnCell(flex: 145, child: Text('报告时间')),
               _ColumnCell(
                 flex: 168,
+                trailingGap: 0,
                 child:
                     Align(alignment: Alignment.centerRight, child: Text('操作')),
               ),
@@ -864,19 +1688,24 @@ class _ReportRow extends StatelessWidget {
       child: _ReportColumns(
         child: Row(
           children: <Widget>[
-            _ColumnCell(flex: 270, child: _ChildInfo(record: record)),
-            _ColumnCell(flex: 200, child: _ScaleInfo(record: record)),
-            _ColumnCell(flex: 100, child: _PlainCell(_ageText(record))),
+            _ColumnCell(flex: 250, child: _ChildInfo(record: record)),
             _ColumnCell(
-              flex: 150,
+              flex: 220,
+              trailingGap: 24,
+              child: _ScaleInfo(record: record),
+            ),
+            _ColumnCell(flex: 130, child: _PlainCell(_ageText(record))),
+            _ColumnCell(
+              flex: 145,
               child: _PlainCell(_dateOnlyText(record.assessmentDate)),
             ),
             _ColumnCell(
-              flex: 150,
-              child: _PlainCell(_dateTimeText(_reportTimeRaw(record))),
+              flex: 145,
+              child: _ReportTimeCell(_reportTimeRaw(record)),
             ),
             const _ColumnCell(
               flex: 168,
+              trailingGap: 0,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: _RowActions(),
@@ -903,13 +1732,18 @@ class _ReportSkeletonRow extends StatelessWidget {
       child: const _ReportColumns(
         child: Row(
           children: <Widget>[
-            _ColumnCell(flex: 270, child: _ChildInfoSkeleton()),
-            _ColumnCell(flex: 200, child: _ScaleInfoSkeleton()),
-            _ColumnCell(flex: 100, child: _SkeletonBox(width: 48, height: 14)),
-            _ColumnCell(flex: 150, child: _SkeletonBox(width: 82, height: 14)),
-            _ColumnCell(flex: 150, child: _SkeletonBox(width: 116, height: 14)),
+            _ColumnCell(flex: 250, child: _ChildInfoSkeleton()),
+            _ColumnCell(
+              flex: 220,
+              trailingGap: 24,
+              child: _ScaleInfoSkeleton(),
+            ),
+            _ColumnCell(flex: 130, child: _SkeletonTextCell(width: 58)),
+            _ColumnCell(flex: 145, child: _SkeletonTextCell(width: 76)),
+            _ColumnCell(flex: 145, child: _SkeletonTextCell(width: 86)),
             _ColumnCell(
               flex: 168,
+              trailingGap: 0,
               child: Align(
                 alignment: Alignment.centerRight,
                 child: _ActionSkeleton(),
@@ -996,14 +1830,25 @@ class _ReportColumns extends StatelessWidget {
 }
 
 class _ColumnCell extends StatelessWidget {
-  const _ColumnCell({required this.flex, required this.child});
+  const _ColumnCell({
+    required this.flex,
+    required this.child,
+    this.trailingGap = 12,
+  });
 
   final int flex;
   final Widget child;
+  final double trailingGap;
 
   @override
   Widget build(BuildContext context) {
-    return Expanded(flex: flex, child: child);
+    return Expanded(
+      flex: flex,
+      child: Padding(
+        padding: EdgeInsets.only(right: trailingGap),
+        child: child,
+      ),
+    );
   }
 }
 
@@ -1124,6 +1969,58 @@ class _PlainCell extends StatelessWidget {
         fontSize: 13,
         fontWeight: FontWeight.w800,
       ),
+    );
+  }
+}
+
+class _ReportTimeCell extends StatelessWidget {
+  const _ReportTimeCell(this.raw);
+
+  final String raw;
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? parsed = _parseDateTime(raw);
+    if (parsed == null) {
+      return Text(
+        raw.trim().isEmpty ? '-' : raw.trim(),
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _ReportTheme.text,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+      );
+    }
+
+    final DateTime local = parsed.toLocal();
+    final String hour = local.hour.toString().padLeft(2, '0');
+    final String minute = local.minute.toString().padLeft(2, '0');
+    return Column(
+      mainAxisAlignment: MainAxisAlignment.center,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          _dateText(local),
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: _ReportTheme.text,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 3),
+        Text(
+          '$hour:$minute',
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            color: _ReportTheme.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1300,8 +2197,54 @@ class _SkeletonBox extends StatelessWidget {
   }
 }
 
+class _SkeletonTextCell extends StatelessWidget {
+  const _SkeletonTextCell({required this.width});
+
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double available =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : width;
+        double actualWidth = width;
+        if (available > 24 && actualWidth > available - 10) {
+          actualWidth = available - 10;
+        } else if (available <= 24) {
+          actualWidth = available;
+        }
+        return Align(
+          alignment: Alignment.centerLeft,
+          child: _SkeletonBox(width: actualWidth, height: 14),
+        );
+      },
+    );
+  }
+}
+
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+DateTime _monthOnly(DateTime value) => DateTime(value.year, value.month);
+
+DateTime _addMonths(DateTime value, int months) {
+  return DateTime(value.year, value.month + months);
+}
+
+bool _sameDay(DateTime left, DateTime right) {
+  return left.year == right.year &&
+      left.month == right.month &&
+      left.day == right.day;
+}
+
+bool _isBeforeDay(DateTime left, DateTime right) {
+  return _dateOnly(left).isBefore(_dateOnly(right));
+}
+
+bool _isAfterDay(DateTime left, DateTime right) {
+  return _dateOnly(left).isAfter(_dateOnly(right));
+}
 
 String _dateText(DateTime value) {
   final String month = value.month.toString().padLeft(2, '0');
@@ -1309,36 +2252,92 @@ String _dateText(DateTime value) {
   return '${value.year}-$month-$day';
 }
 
+DateTime? _parseDateTime(String raw) {
+  final String text = raw.trim();
+  if (text.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(text) ??
+      DateTime.tryParse(text.replaceFirst(' ', 'T'));
+}
+
 String _dateOnlyText(String raw) {
-  final DateTime? parsed = DateTime.tryParse(raw);
+  final DateTime? parsed = _parseDateTime(raw);
   if (parsed == null) {
     return raw.trim().isEmpty ? '-' : raw.trim();
   }
   return _dateText(parsed.toLocal());
 }
 
-String _dateTimeText(String raw) {
-  final DateTime? parsed = DateTime.tryParse(raw);
-  if (parsed == null) {
-    return raw.trim().isEmpty ? '-' : raw.trim();
-  }
-  final DateTime local = parsed.toLocal();
-  final String hour = local.hour.toString().padLeft(2, '0');
-  final String minute = local.minute.toString().padLeft(2, '0');
-  return '${_dateText(local)} $hour:$minute';
-}
-
 String _ageText(Pep3RecordSummary record) {
-  if (record.ageYears <= 0 && record.ageMonths <= 0) {
+  if (record.ageYears <= 0 && record.ageMonths <= 0 && record.ageDays <= 0) {
     return '-';
   }
-  if (record.ageYears <= 0) {
-    return '${record.ageMonths}月';
+  return _formatAgeParts(record.ageYears, record.ageMonths, record.ageDays);
+}
+
+String _formatAgeParts(
+  int years,
+  int months,
+  int days, {
+  bool showZeroDayWhenEmpty = false,
+}) {
+  final List<String> parts = <String>[];
+  if (years > 0) {
+    parts.add('$years岁');
   }
-  if (record.ageMonths <= 0) {
-    return '${record.ageYears}岁';
+  if (months > 0) {
+    parts.add('$months月');
   }
-  return '${record.ageYears}岁${record.ageMonths}月';
+  if (days > 0) {
+    parts.add('$days天');
+  }
+  if (parts.isEmpty && showZeroDayWhenEmpty) {
+    return '0天';
+  }
+  return parts.join();
+}
+
+String _realAgeText(Pep3RecordSummary record) {
+  final DateTime? birth = DateTime.tryParse(record.birthDate);
+  if (birth == null) {
+    return '-';
+  }
+  final DateTime start = _dateOnly(birth.toLocal());
+  final DateTime end = _dateOnly(DateTime.now());
+  if (start.isAfter(end)) {
+    return '-';
+  }
+
+  int years = end.year - start.year;
+  DateTime yearAnchor =
+      _clampedDate(start.year + years, start.month, start.day);
+  if (yearAnchor.isAfter(end)) {
+    years -= 1;
+    yearAnchor = _clampedDate(start.year + years, start.month, start.day);
+  }
+
+  int months = (end.year - yearAnchor.year) * 12 + end.month - yearAnchor.month;
+  DateTime monthAnchor = _addMonthsClamped(yearAnchor, months);
+  if (monthAnchor.isAfter(end)) {
+    months -= 1;
+    monthAnchor = _addMonthsClamped(yearAnchor, months);
+  }
+
+  final int days = end.difference(monthAnchor).inDays;
+  return _formatAgeParts(years, months, days, showZeroDayWhenEmpty: true);
+}
+
+DateTime _addMonthsClamped(DateTime value, int months) {
+  final int totalMonths = value.year * 12 + value.month - 1 + months;
+  final int year = totalMonths ~/ 12;
+  final int month = totalMonths % 12 + 1;
+  return _clampedDate(year, month, value.day);
+}
+
+DateTime _clampedDate(int year, int month, int day) {
+  final int lastDay = DateTime(year, month + 1, 0).day;
+  return DateTime(year, month, math.min(day, lastDay));
 }
 
 String _studentName(Pep3RecordSummary record) {
@@ -1357,12 +2356,13 @@ String _studentMeta(Pep3RecordSummary record) {
   if (gender.isNotEmpty) {
     parts.add(gender);
   }
-  final String age = _ageText(record);
+  final String age = _realAgeText(record);
   if (age != '-') {
     parts.add(age);
   }
-  if (record.studentId > 0) {
-    parts.add('ID ${record.studentId}');
+  final String phone = record.studentPhone.trim();
+  if (phone.isNotEmpty) {
+    parts.add(phone);
   }
   return parts.isEmpty ? '-' : parts.join(' · ');
 }

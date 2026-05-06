@@ -632,6 +632,7 @@ class Pep3RecordSummary {
     required this.updatedTime,
     this.studentGender = '',
     this.studentAvatar = '',
+    this.studentPhone = '',
     this.scaleCategory = '',
     this.scaleVersion = '',
     this.ageYears = 0,
@@ -649,6 +650,7 @@ class Pep3RecordSummary {
       studentName: '${json['studentName'] ?? ''}',
       studentGender: '${json['studentGender'] ?? ''}',
       studentAvatar: '${json['studentAvatar'] ?? ''}',
+      studentPhone: '${json['studentPhone'] ?? ''}',
       assessmentCode: '${json['assessmentCode'] ?? ''}',
       assessmentName: '${json['assessmentName'] ?? ''}',
       scaleCategory: '${json['scaleCategory'] ?? ''}',
@@ -671,6 +673,7 @@ class Pep3RecordSummary {
   final String studentName;
   final String studentGender;
   final String studentAvatar;
+  final String studentPhone;
   final String assessmentCode;
   final String assessmentName;
   final String scaleCategory;
@@ -700,6 +703,7 @@ class Pep3RecordDetail extends Pep3RecordSummary {
     required super.updatedTime,
     super.studentGender,
     super.studentAvatar,
+    super.studentPhone,
     super.scaleCategory,
     super.scaleVersion,
     super.ageYears,
@@ -718,6 +722,7 @@ class Pep3RecordDetail extends Pep3RecordSummary {
       studentName: '${json['studentName'] ?? ''}',
       studentGender: '${json['studentGender'] ?? ''}',
       studentAvatar: '${json['studentAvatar'] ?? ''}',
+      studentPhone: '${json['studentPhone'] ?? ''}',
       assessmentCode: '${json['assessmentCode'] ?? ''}',
       assessmentName: '${json['assessmentName'] ?? ''}',
       scaleCategory: '${json['scaleCategory'] ?? ''}',
