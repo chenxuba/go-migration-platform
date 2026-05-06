@@ -277,68 +277,72 @@ class _AssessmentReportListBody extends StatelessWidget {
   Widget build(BuildContext context) {
     return Builder(
       builder: (BuildContext context) {
-        return ColoredBox(
-          color: _ReportTheme.page,
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) {
-              final double width = constraints.maxWidth;
-              final double horizontalPadding = width >= 1200 ? 32 : 24;
-              final double contentWidth = width - horizontalPadding * 2;
-              final double sideWidth = width >= 1200 ? 214 : 198;
-              final double gap = width >= 1200 ? 18 : 14;
-              final double listWidth = contentWidth - sideWidth - gap;
+        return Listener(
+          behavior: HitTestBehavior.translucent,
+          onPointerDown: (_) => FocusManager.instance.primaryFocus?.unfocus(),
+          child: ColoredBox(
+            color: _ReportTheme.page,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double width = constraints.maxWidth;
+                final double horizontalPadding = width >= 1200 ? 32 : 24;
+                final double contentWidth = width - horizontalPadding * 2;
+                final double sideWidth = width >= 1200 ? 214 : 198;
+                final double gap = width >= 1200 ? 18 : 14;
+                final double listWidth = contentWidth - sideWidth - gap;
 
-              return Padding(
-                padding: EdgeInsets.fromLTRB(
-                  horizontalPadding,
-                  31,
-                  horizontalPadding,
-                  42,
-                ),
-                child: Column(
-                  children: <Widget>[
-                    _TopBar(
-                      onBack: onBack,
-                      range: range,
-                      onRangeTap: onRangeTap,
-                      onReset: onReset,
-                      searchResetSeed: searchResetSeed,
-                      onSearchSubmitted: onSearchSubmitted,
-                    ),
-                    const SizedBox(height: 30),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: <Widget>[
-                          SizedBox(
-                            width: sideWidth,
-                            child: _DomainPanel(
-                              categories: categories,
-                              counts: categoryCounts,
-                              selectedCategory: selectedCategory,
-                              total: rangeTotal,
-                              loading: categoryLoading,
-                              onSelected: onCategorySelected,
-                            ),
-                          ),
-                          SizedBox(width: gap),
-                          SizedBox(
-                            width: listWidth,
-                            child: _ReportListPanel(
-                              records: records,
-                              total: total,
-                              loading: listLoading,
-                              errorMessage: errorMessage,
-                              onRetry: onReset,
-                            ),
-                          ),
-                        ],
+                return Padding(
+                  padding: EdgeInsets.fromLTRB(
+                    horizontalPadding,
+                    31,
+                    horizontalPadding,
+                    42,
+                  ),
+                  child: Column(
+                    children: <Widget>[
+                      _TopBar(
+                        onBack: onBack,
+                        range: range,
+                        onRangeTap: onRangeTap,
+                        onReset: onReset,
+                        searchResetSeed: searchResetSeed,
+                        onSearchSubmitted: onSearchSubmitted,
                       ),
-                    ),
-                  ],
-                ),
-              );
-            },
+                      const SizedBox(height: 30),
+                      Expanded(
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            SizedBox(
+                              width: sideWidth,
+                              child: _DomainPanel(
+                                categories: categories,
+                                counts: categoryCounts,
+                                selectedCategory: selectedCategory,
+                                total: rangeTotal,
+                                loading: categoryLoading,
+                                onSelected: onCategorySelected,
+                              ),
+                            ),
+                            SizedBox(width: gap),
+                            SizedBox(
+                              width: listWidth,
+                              child: _ReportListPanel(
+                                records: records,
+                                total: total,
+                                loading: listLoading,
+                                errorMessage: errorMessage,
+                                onRetry: onReset,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
           ),
         );
       },
@@ -493,7 +497,7 @@ class _SearchBoxState extends State<_SearchBox> {
             color: _ReportTheme.muted,
           ),
           prefixIconConstraints: BoxConstraints(minWidth: 42),
-          hintText: '搜索儿童姓名 / 报告编号',
+          hintText: '搜索儿童姓名',
           hintStyle: TextStyle(
             color: _ReportTheme.muted,
             fontSize: 13,
