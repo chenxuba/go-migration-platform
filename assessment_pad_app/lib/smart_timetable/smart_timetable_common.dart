@@ -188,6 +188,33 @@ class _ShellBox extends StatelessWidget {
   }
 }
 
+class _TimetableSkeletonBox extends StatelessWidget {
+  const _TimetableSkeletonBox({
+    this.width,
+    this.height = 14,
+    this.radius = 13,
+  });
+
+  final double? width;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E6DA),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: const Color(0xFFF0DFD1),
+        ),
+      ),
+    );
+  }
+}
+
 class _DiagonalPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {

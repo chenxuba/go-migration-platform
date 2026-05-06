@@ -141,6 +141,44 @@ void main() {
     expect(find.text('今日暂无排课'), findsNothing);
   });
 
+  testWidgets('smart timetable shows structured skeleton while loading',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient(
+      timetableDelay: const Duration(milliseconds: 300),
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+
+    expect(
+      find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-timetable-skeleton-board')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-timetable-skeleton-row-0')),
+      findsOneWidget,
+    );
+    expect(find.text('陈思语老师'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
+      findsNothing,
+    );
+    expect(find.text('陈思语老师'), findsOneWidget);
+  });
+
   testWidgets('home shortcut opens smart timetable page',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
@@ -280,11 +318,9 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
-    final int lessonCount = find
-            .byKey(const ValueKey<String>('lesson-0-0'))
-            .evaluate()
-            .length +
-        find.byKey(const ValueKey<String>('lesson-0-1')).evaluate().length;
+    final int lessonCount =
+        find.byKey(const ValueKey<String>('lesson-0-0')).evaluate().length +
+            find.byKey(const ValueKey<String>('lesson-0-1')).evaluate().length;
     expect(lessonCount, 1);
   });
 
@@ -2342,9 +2378,13 @@ String _fakeNormalize(String value) {
 }
 
 class _FakeTimetableClient implements TimetableClient {
-  _FakeTimetableClient({this.availabilityValid = true});
+  _FakeTimetableClient({
+    this.availabilityValid = true,
+    this.timetableDelay = Duration.zero,
+  });
 
   final bool availabilityValid;
+  final Duration timetableDelay;
   int validateCalls = 0;
   int createCalls = 0;
   int updateCalls = 0;
@@ -2368,6 +2408,9 @@ class _FakeTimetableClient implements TimetableClient {
     String teacherId = '',
     String periodGroupId = '',
   }) async {
+    if (timetableDelay > Duration.zero) {
+      await Future<void>.delayed(timetableDelay);
+    }
     final String selectedGroupId =
         periodGroupId.trim().isEmpty ? 'group-a' : periodGroupId.trim();
     final Set<String> groupTeacherIds =

@@ -88,6 +88,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           teacherIndex: _teacherIndex,
           teacherDropdownOpen: _teacherDropdownOpen,
           schedulePanelOpen: _schedulePanelOpen,
+          loading: _loading,
           scheduleMode: _scheduleMode,
           selectedScheduleTarget: this._selectedScheduleTarget,
           oneToOneTargets: _oneToOneTargets,

@@ -61,6 +61,7 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.teacherIndex,
     required this.teacherDropdownOpen,
     required this.schedulePanelOpen,
+    required this.loading,
     required this.scheduleMode,
     required this.selectedScheduleTarget,
     required this.oneToOneTargets,
@@ -116,6 +117,7 @@ class _SmartTimetableScreen extends StatelessWidget {
   final int teacherIndex;
   final bool teacherDropdownOpen;
   final bool schedulePanelOpen;
+  final bool loading;
   final _ScheduleMode scheduleMode;
   final ScheduleTargetOption? selectedScheduleTarget;
   final List<ScheduleTargetOption> oneToOneTargets;
@@ -176,6 +178,71 @@ class _SmartTimetableScreen extends StatelessWidget {
 
         final double teacherWidth = compact ? 190 : 224;
         final double primaryWidth = compact ? 104 : 110;
+        final Widget pageBody = loading
+            ? _TimetableLoadingScaffold(
+                compact: compact,
+                primaryWidth: primaryWidth,
+                teacherWidth: teacherWidth,
+              )
+            : Column(
+                children: <Widget>[
+                  _TimetableTopBar(
+                    compact: compact,
+                    teacher: teacher,
+                    teacherDropdownOpen: teacherDropdownOpen,
+                    teacherWidth: teacherWidth,
+                    primaryWidth: primaryWidth,
+                    dateRange: dateRange,
+                    onBack: onBack,
+                    onPrevWeek: onPrevWeek,
+                    onNextWeek: onNextWeek,
+                    onToday: onToday,
+                    onTeacherToggle: onTeacherToggle,
+                    onPrimaryScheduleTap: onPrimaryScheduleTap,
+                  ),
+                  const SizedBox(height: 10),
+                  _TimetableSubBar(
+                    compact: compact,
+                    scheduleMode: scheduleMode,
+                    selectedScheduleTarget: selectedScheduleTarget,
+                    schedulePanelOpen: schedulePanelOpen,
+                    availabilityLoading: availabilityLoading,
+                    availabilityMessage: availabilityMessage,
+                    periodGroups: periodGroups,
+                    periodGroupIndex: periodGroupIndex,
+                    errorMessage: errorMessage,
+                    onSchedulePanelToggle: onSchedulePanelToggle,
+                    onScheduleModeChanged: onScheduleModeChanged,
+                    onScheduleTargetCleared: onScheduleTargetCleared,
+                    onAvailabilityRefresh: onAvailabilityRefresh,
+                    onPeriodGroupSelected: onPeriodGroupSelected,
+                    onRefresh: onRefresh,
+                  ),
+                  const SizedBox(height: 4),
+                  _TimetableSummary(compact: compact, summary: summary),
+                  const SizedBox(height: 4),
+                  Expanded(
+                    child: _TimetableBoard(
+                      compact: compact,
+                      rows: scheduleRows,
+                      weekDays: weekDays,
+                      timeSlots: timeSlots,
+                      selectedTeacherId: teacher.id,
+                      scheduleTargetSelected: selectedScheduleTarget != null,
+                      availabilityLoading: availabilityLoading,
+                      slotAvailability: slotAvailability,
+                      dragSlotAvailability: dragSlotAvailability,
+                      dragCheckingSlotKeys: dragCheckingSlotKeys,
+                      dragValidationActive: dragValidationActive,
+                      creatingSlotKey: creatingSlotKey,
+                      onLessonMove: onLessonMove,
+                      onLessonDragStarted: onLessonDragStarted,
+                      onLessonDragEnded: onLessonDragEnded,
+                      onEmptySlotTap: onEmptySlotTap,
+                    ),
+                  ),
+                ],
+              );
 
         return ColoredBox(
           color: _SmartColors.page,
@@ -183,67 +250,9 @@ class _SmartTimetableScreen extends StatelessWidget {
             children: <Widget>[
               Padding(
                 padding: EdgeInsets.fromLTRB(pagePadding, 24, pagePadding, 24),
-                child: Column(
-                  children: <Widget>[
-                    _TimetableTopBar(
-                      compact: compact,
-                      teacher: teacher,
-                      teacherDropdownOpen: teacherDropdownOpen,
-                      teacherWidth: teacherWidth,
-                      primaryWidth: primaryWidth,
-                      dateRange: dateRange,
-                      onBack: onBack,
-                      onPrevWeek: onPrevWeek,
-                      onNextWeek: onNextWeek,
-                      onToday: onToday,
-                      onTeacherToggle: onTeacherToggle,
-                      onPrimaryScheduleTap: onPrimaryScheduleTap,
-                    ),
-                    const SizedBox(height: 10),
-                    _TimetableSubBar(
-                      compact: compact,
-                      scheduleMode: scheduleMode,
-                      selectedScheduleTarget: selectedScheduleTarget,
-                      schedulePanelOpen: schedulePanelOpen,
-                      availabilityLoading: availabilityLoading,
-                      availabilityMessage: availabilityMessage,
-                      periodGroups: periodGroups,
-                      periodGroupIndex: periodGroupIndex,
-                      errorMessage: errorMessage,
-                      onSchedulePanelToggle: onSchedulePanelToggle,
-                      onScheduleModeChanged: onScheduleModeChanged,
-                      onScheduleTargetCleared: onScheduleTargetCleared,
-                      onAvailabilityRefresh: onAvailabilityRefresh,
-                      onPeriodGroupSelected: onPeriodGroupSelected,
-                      onRefresh: onRefresh,
-                    ),
-                    const SizedBox(height: 4),
-                    _TimetableSummary(compact: compact, summary: summary),
-                    const SizedBox(height: 4),
-                    Expanded(
-                      child: _TimetableBoard(
-                        compact: compact,
-                        rows: scheduleRows,
-                        weekDays: weekDays,
-                        timeSlots: timeSlots,
-                        selectedTeacherId: teacher.id,
-                        scheduleTargetSelected: selectedScheduleTarget != null,
-                        availabilityLoading: availabilityLoading,
-                        slotAvailability: slotAvailability,
-                        dragSlotAvailability: dragSlotAvailability,
-                        dragCheckingSlotKeys: dragCheckingSlotKeys,
-                        dragValidationActive: dragValidationActive,
-                        creatingSlotKey: creatingSlotKey,
-                        onLessonMove: onLessonMove,
-                        onLessonDragStarted: onLessonDragStarted,
-                        onLessonDragEnded: onLessonDragEnded,
-                        onEmptySlotTap: onEmptySlotTap,
-                      ),
-                    ),
-                  ],
-                ),
+                child: pageBody,
               ),
-              if (teacherDropdownOpen) ...<Widget>[
+              if (!loading && teacherDropdownOpen) ...<Widget>[
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
@@ -261,7 +270,7 @@ class _SmartTimetableScreen extends StatelessWidget {
                   ),
                 ),
               ],
-              if (schedulePanelOpen) ...<Widget>[
+              if (!loading && schedulePanelOpen) ...<Widget>[
                 Positioned.fill(
                   child: GestureDetector(
                     behavior: HitTestBehavior.translucent,
@@ -296,6 +305,154 @@ class _SmartTimetableScreen extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+class _TimetableLoadingScaffold extends StatelessWidget {
+  const _TimetableLoadingScaffold({
+    required this.compact,
+    required this.primaryWidth,
+    required this.teacherWidth,
+  });
+
+  final bool compact;
+  final double primaryWidth;
+  final double teacherWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final double periodGroupWidth = compact ? 250 : 284;
+    return Column(
+      key: const ValueKey<String>('smart-timetable-skeleton'),
+      children: <Widget>[
+        SizedBox(
+          height: 56,
+          child: Row(
+            children: <Widget>[
+              SizedBox(
+                width: compact ? 188 : 210,
+                child: Row(
+                  children: <Widget>[
+                    const _TimetableSkeletonBox(
+                      width: 42,
+                      height: 42,
+                      radius: 12,
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: _TimetableSkeletonBox(height: 30, radius: 11),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    _TimetableSkeletonBox(
+                      width: compact ? 302 : 352,
+                      height: 42,
+                    ),
+                    const SizedBox(width: 10),
+                    _TimetableSkeletonBox(
+                      width: compact ? 74 : 82,
+                      height: 42,
+                    ),
+                    const SizedBox(width: 10),
+                    _TimetableSkeletonBox(
+                      width: teacherWidth,
+                      height: 42,
+                    ),
+                    const SizedBox(width: 10),
+                    _TimetableSkeletonBox(
+                      width: primaryWidth,
+                      height: 42,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 44,
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _TimetableSkeletonBox(
+                        height: 44,
+                        radius: 14,
+                      ),
+                    ),
+                    SizedBox(width: compact ? 8 : 10),
+                    const _TimetableSkeletonBox(
+                      width: 92,
+                      height: 34,
+                      radius: 11,
+                    ),
+                    const SizedBox(width: 8),
+                    const _TimetableSkeletonBox(
+                      width: 92,
+                      height: 34,
+                      radius: 11,
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: compact ? 8 : 10),
+              _TimetableSkeletonBox(
+                width: periodGroupWidth,
+                height: 34,
+                radius: 11,
+              ),
+              SizedBox(width: compact ? 8 : 10),
+              const _TimetableSkeletonBox(width: 88, height: 34, radius: 11),
+              const SizedBox(width: 8),
+              const _TimetableSkeletonBox(width: 88, height: 34, radius: 11),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        const _TimetableSummarySkeleton(),
+        const SizedBox(height: 4),
+        const Expanded(child: _TimetableBoardSkeleton()),
+      ],
+    );
+  }
+}
+
+class _TimetableSummarySkeleton extends StatelessWidget {
+  const _TimetableSummarySkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 38,
+      child: Row(
+        children: const <Widget>[
+          SizedBox(width: 12),
+          _SummaryAccent(),
+          SizedBox(width: 11),
+          _TimetableSkeletonBox(width: 218, height: 16, radius: 7),
+          Spacer(),
+          _TimetableSkeletonBox(width: 64, height: 12, radius: 6),
+          SizedBox(width: 14),
+          _TimetableSkeletonBox(width: 64, height: 12, radius: 6),
+          SizedBox(width: 14),
+          _TimetableSkeletonBox(width: 64, height: 12, radius: 6),
+          SizedBox(width: 14),
+          _TimetableSkeletonBox(width: 64, height: 12, radius: 6),
+          SizedBox(width: 14),
+          _TimetableSkeletonBox(width: 64, height: 12, radius: 6),
+          SizedBox(width: 2),
+        ],
+      ),
     );
   }
 }

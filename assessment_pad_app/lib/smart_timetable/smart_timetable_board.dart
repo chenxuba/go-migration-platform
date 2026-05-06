@@ -127,6 +127,253 @@ class _TimetableBoard extends StatelessWidget {
   }
 }
 
+class _TimetableBoardSkeleton extends StatelessWidget {
+  const _TimetableBoardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    const int columnCount = 7;
+    const int rowCount = 8;
+    const double leftWidth = 118;
+
+    return Align(
+      alignment: Alignment.topCenter,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          key: const ValueKey<String>('smart-timetable-skeleton-board'),
+          color: Colors.white,
+          foregroundDecoration: BoxDecoration(
+            border: Border.all(color: _SmartColors.line),
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            children: <Widget>[
+              SizedBox(
+                height: _headerHeight,
+                child: Row(
+                  children: <Widget>[
+                    Container(
+                      width: leftWidth,
+                      height: _headerHeight,
+                      decoration: const BoxDecoration(
+                        color: _SmartColors.surface,
+                        border: Border(
+                          right: BorderSide(color: _SmartColors.line),
+                          bottom: BorderSide(color: _SmartColors.line),
+                        ),
+                      ),
+                      child: const Padding(
+                        padding: EdgeInsets.fromLTRB(10, 10, 10, 8),
+                        child: Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Align(
+                                alignment: Alignment.topRight,
+                                child: _TimetableSkeletonBox(
+                                  width: 24,
+                                  height: 10,
+                                  radius: 6,
+                                ),
+                              ),
+                            ),
+                            SizedBox(width: 12),
+                            Align(
+                              alignment: Alignment.bottomLeft,
+                              child: _TimetableSkeletonBox(
+                                width: 24,
+                                height: 10,
+                                radius: 6,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: Row(
+                        children:
+                            List<Widget>.generate(columnCount, (int index) {
+                          return Expanded(
+                            child: Container(
+                              decoration: BoxDecoration(
+                                color: _SmartColors.surface,
+                                border: Border(
+                                  right: BorderSide(
+                                    color: index == columnCount - 1
+                                        ? Colors.transparent
+                                        : _SmartColors.line,
+                                  ),
+                                  bottom: const BorderSide(
+                                      color: _SmartColors.line),
+                                ),
+                              ),
+                              child: const Center(
+                                child: Column(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: <Widget>[
+                                    _TimetableSkeletonBox(
+                                      width: 32,
+                                      height: 12,
+                                      radius: 6,
+                                    ),
+                                    SizedBox(height: 5),
+                                    _TimetableSkeletonBox(
+                                      width: 52,
+                                      height: 10,
+                                      radius: 6,
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SizedBox(
+                        width: leftWidth,
+                        child: ColoredBox(
+                          color: _SmartColors.slot,
+                          child: Column(
+                            children:
+                                List<Widget>.generate(rowCount, (int index) {
+                              return Container(
+                                key: ValueKey<String>(
+                                  'smart-timetable-skeleton-row-$index',
+                                ),
+                                height: _rowHeight,
+                                width: double.infinity,
+                                padding:
+                                    const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                decoration: BoxDecoration(
+                                  color: _SmartColors.slot,
+                                  border: Border(
+                                    right: const BorderSide(
+                                        color: _SmartColors.line),
+                                    bottom: BorderSide(
+                                      color: index == rowCount - 1
+                                          ? Colors.transparent
+                                          : _SmartColors.lineSoft,
+                                    ),
+                                  ),
+                                ),
+                                child: const Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: <Widget>[
+                                    _TimetableSkeletonBox(
+                                      width: 30,
+                                      height: 12,
+                                      radius: 6,
+                                    ),
+                                    SizedBox(height: 8),
+                                    _TimetableSkeletonBox(
+                                      width: 66,
+                                      height: 10,
+                                      radius: 6,
+                                    ),
+                                  ],
+                                ),
+                              );
+                            }),
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          children: List<Widget>.generate(rowCount, (int row) {
+                            return SizedBox(
+                              height: _rowHeight,
+                              child: Row(
+                                children: List<Widget>.generate(columnCount,
+                                    (int column) {
+                                  final bool showCard = row == 0 ||
+                                      row == 2 &&
+                                          (column == 1 || column == 4) ||
+                                      row == 4 &&
+                                          (column == 0 || column == 5) ||
+                                      row == 6 && column == 3;
+                                  return Expanded(
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: Colors.white.withOpacity(.72),
+                                        border: Border(
+                                          right: BorderSide(
+                                            color: column == columnCount - 1
+                                                ? Colors.transparent
+                                                : _SmartColors.lineSoft,
+                                          ),
+                                          bottom: BorderSide(
+                                            color: row == rowCount - 1
+                                                ? Colors.transparent
+                                                : _SmartColors.lineSoft,
+                                          ),
+                                        ),
+                                      ),
+                                      child: showCard
+                                          ? const _TimetableSkeletonLessonCard()
+                                          : const SizedBox.expand(),
+                                    ),
+                                  );
+                                }),
+                              ),
+                            );
+                          }),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TimetableSkeletonLessonCard extends StatelessWidget {
+  const _TimetableSkeletonLessonCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7F0),
+        border: Border.all(color: const Color(0xFFF2E3D6)),
+        borderRadius: BorderRadius.circular(11),
+      ),
+      padding: const EdgeInsets.fromLTRB(9, 7, 9, 6),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: <Widget>[
+          _TimetableSkeletonBox(height: 10, radius: 6),
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: _TimetableSkeletonBox(height: 8, radius: 6),
+              ),
+              SizedBox(width: 8),
+              _TimetableSkeletonBox(width: 28, height: 12, radius: 6),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _TimeRail extends StatelessWidget {
   const _TimeRail({required this.rowCount, required this.timeSlots});
 
