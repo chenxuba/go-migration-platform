@@ -8,6 +8,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'pad_responsive.dart';
+
 class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({
     required this.onBack,
@@ -322,19 +324,22 @@ class _AssessmentScaleCategoryScreenState
       elevation: 0,
       clipBehavior: Clip.none,
       builder: (BuildContext context) {
-        return _DraftSheet(
-          drafts: _drafts,
-          total: _draftCount,
-          loading: _draftsLoading,
-          errorMessage: _draftErrorMessage,
-          onRetry: () {
-            Navigator.of(context).pop();
-            _refreshDrafts(openAfterLoad: true);
-          },
-          onOpenDraft: (AssessmentDraftSummary draft) {
-            Navigator.of(context).pop();
-            _openDraft(draft);
-          },
+        return PadDialogViewport(
+          alignment: Alignment.bottomCenter,
+          child: _DraftSheet(
+            drafts: _drafts,
+            total: _draftCount,
+            loading: _draftsLoading,
+            errorMessage: _draftErrorMessage,
+            onRetry: () {
+              Navigator.of(context).pop();
+              _refreshDrafts(openAfterLoad: true);
+            },
+            onOpenDraft: (AssessmentDraftSummary draft) {
+              Navigator.of(context).pop();
+              _openDraft(draft);
+            },
+          ),
         );
       },
     );
@@ -436,26 +441,29 @@ class _AssessmentScaleCategoryScreenState
       context: context,
       barrierColor: Colors.black.withOpacity(.18),
       builder: (BuildContext dialogContext) {
-        return _StudentDialog(
-          students: _studentCandidates,
-          selectedStudent: _selectedStudent,
-          initialStatus: _studentCandidateStatus,
-          loading: _studentsLoading,
-          errorMessage: _studentErrorMessage,
-          confirmLabel: scaleToOpenAfterConfirm == null ? '确认选择' : '确认选择并进入测评',
-          onLoadStudents: _loadStudentCandidatesForDialog,
-          onConfirm: (AssessmentStudentCandidate student) {
-            setState(() => _selectedStudent = student);
-            Navigator.of(dialogContext).pop();
-            final AssessmentScaleItem? nextScale = scaleToOpenAfterConfirm;
-            if (nextScale != null) {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) {
-                  _chooseScale(nextScale);
-                }
-              });
-            }
-          },
+        return PadDialogViewport(
+          child: _StudentDialog(
+            students: _studentCandidates,
+            selectedStudent: _selectedStudent,
+            initialStatus: _studentCandidateStatus,
+            loading: _studentsLoading,
+            errorMessage: _studentErrorMessage,
+            confirmLabel:
+                scaleToOpenAfterConfirm == null ? '确认选择' : '确认选择并进入测评',
+            onLoadStudents: _loadStudentCandidatesForDialog,
+            onConfirm: (AssessmentStudentCandidate student) {
+              setState(() => _selectedStudent = student);
+              Navigator.of(dialogContext).pop();
+              final AssessmentScaleItem? nextScale = scaleToOpenAfterConfirm;
+              if (nextScale != null) {
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) {
+                    _chooseScale(nextScale);
+                  }
+                });
+              }
+            },
+          ),
         );
       },
     );

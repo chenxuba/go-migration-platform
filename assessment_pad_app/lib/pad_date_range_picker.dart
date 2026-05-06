@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import 'pad_responsive.dart';
+
 Future<DateTimeRange?> showPadDateRangePicker({
   required BuildContext context,
   required DateTimeRange initialRange,
@@ -80,13 +82,17 @@ class _PadDateRangeOverlay extends StatelessWidget {
               child: const ColoredBox(color: Color(0x33000000)),
             ),
           ),
-          _PadDateRangeDialog(
-            initialRange: initialRange,
-            today: today,
-            minDate: minDate,
-            maxDate: maxDate,
-            onCancel: onCancel,
-            onSubmit: onSubmit,
+          Positioned.fill(
+            child: PadDialogViewport(
+              child: _PadDateRangeDialog(
+                initialRange: initialRange,
+                today: today,
+                minDate: minDate,
+                maxDate: maxDate,
+                onCancel: onCancel,
+                onSubmit: onSubmit,
+              ),
+            ),
           ),
         ],
       ),

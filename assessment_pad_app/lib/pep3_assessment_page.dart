@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'home_client.dart';
 import 'pad_top_message.dart';
+import 'pad_responsive.dart';
 import 'pep3_assessment_client.dart';
 
 class Pep3AssessmentPage extends StatefulWidget {
@@ -212,11 +213,13 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         barrierDismissible: false,
         barrierColor: Colors.black.withOpacity(.32),
         builder: (BuildContext dialogContext) {
-          return _DraftResumeDialog(
-            draft: draft,
-            total: _totalCount,
-            onRestart: _restartWithoutDetectedDraft,
-            onContinue: () => _continueDetectedDraft(draft),
+          return PadDialogViewport(
+            child: _DraftResumeDialog(
+              draft: draft,
+              total: _totalCount,
+              onRestart: _restartWithoutDetectedDraft,
+              onContinue: () => _continueDetectedDraft(draft),
+            ),
           );
         },
       );

@@ -13,6 +13,7 @@ import 'auth_client.dart';
 import 'home_client.dart';
 import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
+import 'pad_responsive.dart';
 import 'smart_timetable_page.dart';
 import 'timetable_client.dart';
 
@@ -811,7 +812,9 @@ class _LoginCardState extends State<LoginCard> {
     return showDialog<InstitutionLoginOption>(
       context: context,
       builder: (BuildContext context) {
-        return InstitutionPickerDialog(options: options);
+        return PadDialogViewport(
+          child: InstitutionPickerDialog(options: options),
+        );
       },
     );
   }
