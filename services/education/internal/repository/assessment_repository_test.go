@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
+	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
@@ -11,6 +12,28 @@ import (
 	"sync/atomic"
 	"testing"
 )
+
+func TestAssessmentDraftInputHydrationPlanSkipsNormalizedSnapshot(t *testing.T) {
+	plan := assessmentDraftInputHydrationPlan(
+		json.RawMessage(`{"itemScores":{"1":2},"rawScores":{"DEV":3},"itemRecordValues":{}}`),
+		1,
+		1,
+	)
+	if plan.needItemScores || plan.needRawScores || plan.needItemRecordValues {
+		t.Fatalf("expected normalized snapshot to skip hydration, got %#v", plan)
+	}
+}
+
+func TestAssessmentDraftInputHydrationPlanFallsBackForLegacySnapshot(t *testing.T) {
+	plan := assessmentDraftInputHydrationPlan(
+		json.RawMessage(`{"remark":"legacy snapshot"}`),
+		2,
+		1,
+	)
+	if !plan.needItemScores || !plan.needRawScores || !plan.needItemRecordValues {
+		t.Fatalf("expected legacy snapshot to require hydration, got %#v", plan)
+	}
+}
 
 type assessmentRepoExpectation struct {
 	query        string

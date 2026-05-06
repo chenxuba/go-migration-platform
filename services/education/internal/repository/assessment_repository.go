@@ -1173,7 +1173,8 @@ func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID 
 	}
 	fillAssessmentDraftTimes(&item.AssessmentDraftSummaryVO, birthDate, testDate, createdAt, updatedAt)
 	item.InputJSON = json.RawMessage(inputRaw)
-	if hydratedInput, err := repo.hydrateAssessmentDraftInputFromDetails(ctx, instID, draftID, item.InputJSON); err == nil {
+	hydrationPlan := assessmentDraftInputHydrationPlan(item.InputJSON, item.AnsweredItemCount, item.RawScoreCount)
+	if hydratedInput, err := repo.hydrateAssessmentDraftInputFromDetails(ctx, instID, draftID, item.InputJSON, hydrationPlan); err == nil {
 		item.InputJSON = hydratedInput
 	} else {
 		return model.AssessmentDraftDetailVO{}, err
@@ -1185,21 +1186,92 @@ func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID 
 	return item, nil
 }
 
-func (repo *Repository) hydrateAssessmentDraftInputFromDetails(ctx context.Context, instID, draftID int64, raw json.RawMessage) (json.RawMessage, error) {
-	itemScores, err := repo.ListAssessmentDraftItemScores(ctx, instID, draftID)
-	if err != nil {
-		return nil, err
+type assessmentDraftDetailHydrationPlan struct {
+	needItemScores       bool
+	needRawScores        bool
+	needItemRecordValues bool
+}
+
+func assessmentDraftInputHydrationPlan(
+	raw json.RawMessage,
+	answeredItemCount int,
+	rawScoreCount int,
+) assessmentDraftDetailHydrationPlan {
+	if len(raw) == 0 {
+		return assessmentDraftDetailHydrationPlan{
+			needItemScores:       answeredItemCount > 0,
+			needRawScores:        rawScoreCount > 0,
+			needItemRecordValues: true,
+		}
 	}
-	rawScores, err := repo.ListAssessmentDraftRawScores(ctx, instID, draftID)
-	if err != nil {
-		return nil, err
+	var snapshot map[string]json.RawMessage
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return assessmentDraftDetailHydrationPlan{
+			needItemScores:       answeredItemCount > 0,
+			needRawScores:        rawScoreCount > 0,
+			needItemRecordValues: true,
+		}
 	}
-	itemRecordValues, err := repo.ListAssessmentDraftItemRecordValues(ctx, instID, draftID)
-	if err != nil {
-		return nil, err
+	hasItemScores := len(snapshot["itemScores"]) > 0 || len(snapshot["itemScoreList"]) > 0
+	hasRawScores := len(snapshot["rawScores"]) > 0 || len(snapshot["rawScoreList"]) > 0
+	hasItemRecordValues := len(snapshot["itemRecordValues"]) > 0 || len(snapshot["itemRecordValueList"]) > 0
+	hasAnyDetail := hasItemScores || hasRawScores || hasItemRecordValues
+	if !hasAnyDetail {
+		return assessmentDraftDetailHydrationPlan{
+			needItemScores:       answeredItemCount > 0,
+			needRawScores:        rawScoreCount > 0,
+			needItemRecordValues: true,
+		}
+	}
+	return assessmentDraftDetailHydrationPlan{
+		needItemScores:       !hasItemScores && answeredItemCount > 0,
+		needRawScores:        !hasRawScores && rawScoreCount > 0,
+		needItemRecordValues: !hasItemRecordValues,
+	}
+}
+
+func (plan assessmentDraftDetailHydrationPlan) needsHydration() bool {
+	return plan.needItemScores || plan.needRawScores || plan.needItemRecordValues
+}
+
+func (repo *Repository) hydrateAssessmentDraftInputFromDetails(
+	ctx context.Context,
+	instID, draftID int64,
+	raw json.RawMessage,
+	plan assessmentDraftDetailHydrationPlan,
+) (json.RawMessage, error) {
+	if !plan.needsHydration() {
+		return raw, nil
+	}
+	var (
+		itemScores       map[int]int
+		rawScores        map[string]int
+		itemRecordValues map[int]map[string]any
+		err              error
+	)
+	if plan.needItemScores {
+		itemScores, err = repo.ListAssessmentDraftItemScores(ctx, instID, draftID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if plan.needRawScores {
+		rawScores, err = repo.ListAssessmentDraftRawScores(ctx, instID, draftID)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if plan.needItemRecordValues {
+		itemRecordValues, err = repo.ListAssessmentDraftItemRecordValues(ctx, instID, draftID)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if len(itemScores) == 0 && len(rawScores) == 0 && len(itemRecordValues) == 0 {
-		return raw, nil
+		if len(raw) > 0 {
+			return raw, nil
+		}
+		return json.RawMessage(`{}`), nil
 	}
 	var snapshot map[string]any
 	if len(raw) > 0 {
@@ -1208,15 +1280,15 @@ func (repo *Repository) hydrateAssessmentDraftInputFromDetails(ctx context.Conte
 	if snapshot == nil {
 		snapshot = map[string]any{}
 	}
-	if len(itemScores) > 0 {
+	if plan.needItemScores && len(itemScores) > 0 {
 		snapshot["itemScores"] = itemScores
 		snapshot["itemScoreList"] = assessmentDraftItemScoreList(itemScores)
 	}
-	if len(rawScores) > 0 {
+	if plan.needRawScores && len(rawScores) > 0 {
 		snapshot["rawScores"] = rawScores
 		snapshot["rawScoreList"] = assessmentDraftRawScoreList(rawScores)
 	}
-	if len(itemRecordValues) > 0 {
+	if plan.needItemRecordValues && len(itemRecordValues) > 0 {
 		snapshot["itemRecordValues"] = itemRecordValues
 		snapshot["itemRecordValueList"] = assessmentDraftItemRecordValueList(itemRecordValues)
 	}
