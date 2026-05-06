@@ -35,29 +35,30 @@ type AssessmentDraftQueryModel struct {
 }
 
 type AssessmentRecordSummaryVO struct {
-	ID             int64      `json:"id"`
-	InstID         int64      `json:"instId"`
-	StudentID      int64      `json:"studentId,omitempty"`
-	StudentName    string     `json:"studentName,omitempty"`
-	StudentGender  string     `json:"studentGender,omitempty"`
-	StudentAvatar  string     `json:"studentAvatar,omitempty"`
-	AssessmentCode string     `json:"assessmentCode"`
-	AssessmentName string     `json:"assessmentName"`
-	ScaleCategory  string     `json:"scaleCategory,omitempty"`
-	ScaleVersion   string     `json:"scaleVersion"`
-	BirthDate      *time.Time `json:"birthDate,omitempty"`
-	AssessmentDate *time.Time `json:"assessmentDate,omitempty"`
-	AgeYears       int        `json:"ageYears"`
-	AgeMonths      int        `json:"ageMonths"`
-	AgeDays        int        `json:"ageDays"`
-	NormAgeMonths  int        `json:"normAgeMonths"`
-	ExaminerID     int64      `json:"examinerId,omitempty"`
-	ExaminerName   string     `json:"examinerName,omitempty"`
-	DataStatus     string     `json:"dataStatus,omitempty"`
-	Remark         string     `json:"remark,omitempty"`
-	IEPPlanStatus  string     `json:"iepPlanStatus,omitempty"`
-	CreatedTime    *time.Time `json:"createdTime,omitempty"`
-	UpdatedTime    *time.Time `json:"updatedTime,omitempty"`
+	ID                 int64      `json:"id"`
+	InstID             int64      `json:"instId"`
+	StudentID          int64      `json:"studentId,omitempty"`
+	StudentName        string     `json:"studentName,omitempty"`
+	StudentGender      string     `json:"studentGender,omitempty"`
+	StudentAvatar      string     `json:"studentAvatar,omitempty"`
+	AssessmentCode     string     `json:"assessmentCode"`
+	AssessmentName     string     `json:"assessmentName"`
+	ScaleCategory      string     `json:"scaleCategory,omitempty"`
+	ScaleVersion       string     `json:"scaleVersion"`
+	BirthDate          *time.Time `json:"birthDate,omitempty"`
+	AssessmentDate     *time.Time `json:"assessmentDate,omitempty"`
+	AgeYears           int        `json:"ageYears"`
+	AgeMonths          int        `json:"ageMonths"`
+	AgeDays            int        `json:"ageDays"`
+	NormAgeMonths      int        `json:"normAgeMonths"`
+	AssessmentSequence int        `json:"assessmentSequence,omitempty"`
+	ExaminerID         int64      `json:"examinerId,omitempty"`
+	ExaminerName       string     `json:"examinerName,omitempty"`
+	DataStatus         string     `json:"dataStatus,omitempty"`
+	Remark             string     `json:"remark,omitempty"`
+	IEPPlanStatus      string     `json:"iepPlanStatus,omitempty"`
+	CreatedTime        *time.Time `json:"createdTime,omitempty"`
+	UpdatedTime        *time.Time `json:"updatedTime,omitempty"`
 }
 
 type AssessmentRecordDetailVO struct {

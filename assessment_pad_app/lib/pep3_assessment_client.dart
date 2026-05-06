@@ -630,6 +630,16 @@ class Pep3RecordSummary {
     required this.assessmentDate,
     required this.examinerName,
     required this.updatedTime,
+    this.studentGender = '',
+    this.studentAvatar = '',
+    this.scaleCategory = '',
+    this.scaleVersion = '',
+    this.ageYears = 0,
+    this.ageMonths = 0,
+    this.ageDays = 0,
+    this.normAgeMonths = 0,
+    this.assessmentSequence = 0,
+    this.createdTime = '',
   });
 
   factory Pep3RecordSummary.fromJson(Map<String, dynamic> json) {
@@ -637,11 +647,21 @@ class Pep3RecordSummary {
       id: _intFrom(json['id']),
       studentId: _intFrom(json['studentId']),
       studentName: '${json['studentName'] ?? ''}',
+      studentGender: '${json['studentGender'] ?? ''}',
+      studentAvatar: '${json['studentAvatar'] ?? ''}',
       assessmentCode: '${json['assessmentCode'] ?? ''}',
       assessmentName: '${json['assessmentName'] ?? ''}',
+      scaleCategory: '${json['scaleCategory'] ?? ''}',
+      scaleVersion: '${json['scaleVersion'] ?? ''}',
       birthDate: '${json['birthDate'] ?? ''}',
       assessmentDate: '${json['assessmentDate'] ?? ''}',
+      ageYears: _intFrom(json['ageYears']),
+      ageMonths: _intFrom(json['ageMonths']),
+      ageDays: _intFrom(json['ageDays']),
+      normAgeMonths: _intFrom(json['normAgeMonths']),
+      assessmentSequence: _intFrom(json['assessmentSequence']),
       examinerName: '${json['examinerName'] ?? ''}',
+      createdTime: '${json['createdTime'] ?? ''}',
       updatedTime: '${json['updatedTime'] ?? ''}',
     );
   }
@@ -649,11 +669,21 @@ class Pep3RecordSummary {
   final int id;
   final int studentId;
   final String studentName;
+  final String studentGender;
+  final String studentAvatar;
   final String assessmentCode;
   final String assessmentName;
+  final String scaleCategory;
+  final String scaleVersion;
   final String birthDate;
   final String assessmentDate;
+  final int ageYears;
+  final int ageMonths;
+  final int ageDays;
+  final int normAgeMonths;
+  final int assessmentSequence;
   final String examinerName;
+  final String createdTime;
   final String updatedTime;
 }
 
@@ -668,6 +698,16 @@ class Pep3RecordDetail extends Pep3RecordSummary {
     required super.assessmentDate,
     required super.examinerName,
     required super.updatedTime,
+    super.studentGender,
+    super.studentAvatar,
+    super.scaleCategory,
+    super.scaleVersion,
+    super.ageYears,
+    super.ageMonths,
+    super.ageDays,
+    super.normAgeMonths,
+    super.assessmentSequence,
+    super.createdTime,
     required this.input,
   });
 
@@ -676,11 +716,21 @@ class Pep3RecordDetail extends Pep3RecordSummary {
       id: _intFrom(json['id']),
       studentId: _intFrom(json['studentId']),
       studentName: '${json['studentName'] ?? ''}',
+      studentGender: '${json['studentGender'] ?? ''}',
+      studentAvatar: '${json['studentAvatar'] ?? ''}',
       assessmentCode: '${json['assessmentCode'] ?? ''}',
       assessmentName: '${json['assessmentName'] ?? ''}',
+      scaleCategory: '${json['scaleCategory'] ?? ''}',
+      scaleVersion: '${json['scaleVersion'] ?? ''}',
       birthDate: '${json['birthDate'] ?? ''}',
       assessmentDate: '${json['assessmentDate'] ?? ''}',
+      ageYears: _intFrom(json['ageYears']),
+      ageMonths: _intFrom(json['ageMonths']),
+      ageDays: _intFrom(json['ageDays']),
+      normAgeMonths: _intFrom(json['normAgeMonths']),
+      assessmentSequence: _intFrom(json['assessmentSequence']),
       examinerName: '${json['examinerName'] ?? ''}',
+      createdTime: '${json['createdTime'] ?? ''}',
       updatedTime: '${json['updatedTime'] ?? ''}',
       input: Pep3DraftInput.fromJson(_mapFrom(json['input'])),
     );
@@ -723,6 +773,10 @@ abstract interface class Pep3AssessmentClient {
     int pageIndex = 1,
     int pageSize = 5,
     int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String scaleCategory = '',
+    String searchKey = '',
+    String assessmentDateBegin = '',
     String assessmentDateEnd = '',
   });
 
@@ -881,6 +935,10 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     int pageIndex = 1,
     int pageSize = 5,
     int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String scaleCategory = '',
+    String searchKey = '',
+    String assessmentDateBegin = '',
     String assessmentDateEnd = '',
   }) async {
     final Object? data = await _postJson(
@@ -892,8 +950,14 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
           'pageSize': pageSize,
         },
         'queryModel': <String, dynamic>{
-          'assessmentCode': 'PEP3',
+          if (assessmentCode.trim().isNotEmpty)
+            'assessmentCode': assessmentCode.trim(),
+          if (scaleCategory.trim().isNotEmpty)
+            'scaleCategory': scaleCategory.trim(),
           if (studentId > 0) 'studentId': studentId,
+          if (searchKey.trim().isNotEmpty) 'searchKey': searchKey.trim(),
+          if (assessmentDateBegin.trim().isNotEmpty)
+            'assessmentDateBegin': assessmentDateBegin.trim(),
           if (assessmentDateEnd.trim().isNotEmpty)
             'assessmentDateEnd': assessmentDateEnd.trim(),
         },

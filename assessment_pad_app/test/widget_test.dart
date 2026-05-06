@@ -2157,6 +2157,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     int pageIndex = 1,
     int pageSize = 5,
     int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String scaleCategory = '',
+    String searchKey = '',
+    String assessmentDateBegin = '',
     String assessmentDateEnd = '',
   }) async {
     if (!hasPreviousRecord) {

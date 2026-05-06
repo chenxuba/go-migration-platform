@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
 import 'assessment_scale_category_page.dart';
+import 'assessment_report_list_page.dart';
 import 'auth_client.dart';
 import 'home_client.dart';
 import 'pep3_assessment_client.dart';
@@ -95,6 +96,19 @@ class AssessmentPadApp extends StatelessWidget {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => SmartTimetablePage(timetableClient: timetableClient),
+        );
+      case '/assessment-reports':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: AssessmentReportListScreen(
+                scaleClient: scaleClient,
+                recordClient: pep3Client,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
         );
       case '/assessment-scales':
         return MaterialPageRoute<void>(
@@ -2625,6 +2639,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 spacing: metrics.shortcutSpacing,
                 onTimetableTap: () =>
                     Navigator.of(context).pushNamed('/smart-timetable'),
+                onReportTap: () =>
+                    Navigator.of(context).pushNamed('/assessment-reports'),
               ),
             ),
             Positioned(
@@ -4072,12 +4088,14 @@ class FeatureShortcutRow extends StatelessWidget {
     this.cardWidth = 187,
     this.spacing = 14,
     this.onTimetableTap,
+    this.onReportTap,
     super.key,
   });
 
   final double cardWidth;
   final double spacing;
   final VoidCallback? onTimetableTap;
+  final VoidCallback? onReportTap;
 
   @override
   Widget build(BuildContext context) {
@@ -4135,13 +4153,14 @@ class FeatureShortcutRow extends StatelessWidget {
         ),
         SizedBox(width: spacing),
         ShortcutCard(
-          title: '数据概览',
-          desc1: '多维数据',
-          desc2: '清晰趋势',
-          icon: Icons.pie_chart_rounded,
-          iconColor: const Color(0xFF6FA477),
-          bg: const Color(0xFFEAF3E7),
+          title: '评估报告',
+          desc1: '测评结果',
+          desc2: '快速查看',
+          icon: Icons.article_outlined,
+          iconColor: const Color(0xFF3F82D2),
+          bg: const Color(0xFFEDF5FF),
           width: cardWidth,
+          onTap: onReportTap,
         ),
       ],
     );

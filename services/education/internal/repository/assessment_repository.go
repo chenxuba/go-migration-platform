@@ -557,9 +557,22 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
 		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
-		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
-		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
-		       ar.examiner_id, ar.examiner_name, ar.remark, IFNULL(aip.status, ''), ar.create_time, ar.update_time
+	       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
+	       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
+	       (
+	         SELECT COUNT(1)
+	         FROM assessment_record ar_seq
+	         WHERE ar_seq.inst_id = ar.inst_id
+	           AND ar_seq.student_id = ar.student_id
+	           AND CONVERT(ar_seq.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+	           AND ar_seq.del_flag = 0
+	           AND (
+	             ar_seq.assessment_date < ar.assessment_date
+	             OR (ar_seq.assessment_date = ar.assessment_date AND ar_seq.id <= ar.id)
+	             OR (ar_seq.assessment_date IS NULL AND ar.assessment_date IS NULL AND ar_seq.id <= ar.id)
+	           )
+	       ) AS assessment_sequence,
+	       ar.examiner_id, ar.examiner_name, ar.remark, IFNULL(aip.status, ''), ar.create_time, ar.update_time
 		`+fromSQL+`
 		WHERE `+whereSQL+`
 		ORDER BY ar.assessment_date DESC, ar.id DESC
@@ -597,6 +610,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 			&item.AgeMonths,
 			&item.AgeDays,
 			&item.NormAgeMonths,
+			&item.AssessmentSequence,
 			&item.ExaminerID,
 			&item.ExaminerName,
 			&item.Remark,

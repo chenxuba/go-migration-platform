@@ -1,0 +1,885 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pad 评估报告列表设计图</title>
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --page: #fff7ee;
+      --surface: #fffdf9;
+      --panel: #ffffff;
+      --ink: #3f2b22;
+      --text: #6f5b50;
+      --muted: #a7958b;
+      --line: #ead7c9;
+      --line-soft: #f4e8df;
+      --orange: #e96f43;
+      --orange-deep: #c95d37;
+      --green: #6f9f70;
+      --blue: #3f82d2;
+      --amber: #d99427;
+      --teal: #63a999;
+      --rose: #d96a7f;
+      --violet: #7f77c8;
+      --gray: #98a2ad;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      background: var(--page);
+      color: var(--ink);
+      font-family: "PingFang SC", "Microsoft YaHei", "Heiti SC", Arial, sans-serif;
+    }
+
+    .canvas {
+      width: 1366px;
+      height: 768px;
+      padding: 24px 32px;
+      background: var(--page);
+    }
+
+    .topbar {
+      height: 56px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .back-btn,
+    .search,
+    .filter-btn,
+    .date-btn,
+    .outline-btn,
+    .primary-btn,
+    .side-card,
+    .summary-card,
+    .list-panel,
+    .tabs {
+      border: 1px solid var(--line);
+      background: rgba(255, 253, 249, .94);
+      box-shadow: 0 12px 24px rgba(194, 107, 62, .08);
+    }
+
+    .back-btn {
+      width: 42px;
+      height: 42px;
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 25px;
+      line-height: 1;
+      font-weight: 800;
+      flex: 0 0 auto;
+    }
+
+    .title {
+      min-width: 260px;
+    }
+
+    h1 {
+      margin: 0;
+      font-size: 25px;
+      line-height: 30px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .actions {
+      margin-left: auto;
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 10px;
+    }
+
+    .search {
+      width: 324px;
+      height: 42px;
+      border-radius: 13px;
+      padding: 0 15px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      box-shadow: none;
+      color: var(--muted);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .search-icon {
+      width: 16px;
+      height: 16px;
+      border: 2px solid #b9a69b;
+      border-radius: 50%;
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .search-icon::after {
+      content: "";
+      width: 7px;
+      height: 2px;
+      position: absolute;
+      right: -5px;
+      bottom: -3px;
+      border-radius: 2px;
+      background: #b9a69b;
+      transform: rotate(45deg);
+    }
+
+    .date-btn,
+    .filter-btn,
+    .outline-btn,
+    .primary-btn {
+      height: 42px;
+      border-radius: 13px;
+      padding: 0 14px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 900;
+      box-shadow: none;
+      white-space: nowrap;
+    }
+
+    .primary-btn {
+      min-width: 118px;
+      border: 0;
+      background: var(--orange);
+      color: #fff;
+    }
+
+    .outline-btn {
+      min-width: 74px;
+    }
+
+    .filter-mark {
+      width: 14px;
+      height: 12px;
+      position: relative;
+      flex: 0 0 auto;
+    }
+
+    .filter-mark::before,
+    .filter-mark::after,
+    .filter-mark span {
+      content: "";
+      display: block;
+      height: 2px;
+      border-radius: 2px;
+      background: currentColor;
+      position: absolute;
+      left: 0;
+    }
+
+    .filter-mark::before {
+      width: 14px;
+      top: 1px;
+    }
+
+    .filter-mark span {
+      width: 10px;
+      top: 5px;
+    }
+
+    .filter-mark::after {
+      width: 6px;
+      top: 9px;
+    }
+
+    .subbar {
+      height: 48px;
+      margin-top: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .tabs {
+      height: 42px;
+      padding: 4px;
+      border-radius: 13px;
+      background: rgba(255, 241, 232, .82);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      box-shadow: none;
+    }
+
+    .tab {
+      height: 34px;
+      min-width: 88px;
+      border-radius: 10px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: var(--text);
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .tab.active {
+      background: #fff;
+      color: var(--orange-deep);
+      box-shadow: 0 8px 18px rgba(194, 107, 62, .1);
+    }
+
+    .meta-line {
+      flex: 1;
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      flex: 0 0 auto;
+    }
+
+    .highlight {
+      color: var(--orange-deep);
+      font-weight: 900;
+    }
+
+    .quick-actions {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      flex: 0 0 auto;
+    }
+
+    .layout {
+      height: 624px;
+      margin-top: 22px;
+      display: grid;
+      grid-template-columns: 214px 1fr;
+      gap: 18px;
+    }
+
+    .side {
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      min-height: 0;
+    }
+
+    .side-card {
+      border-radius: 20px;
+      padding: 16px 12px;
+      min-width: 0;
+    }
+
+    .side-card.main {
+      flex: 1;
+      height: auto;
+    }
+
+    .side-title {
+      margin: 0 4px 12px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      color: var(--ink);
+      font-size: 17px;
+      line-height: 22px;
+      font-weight: 900;
+    }
+
+    .side-title span {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 800;
+    }
+
+    .category-list {
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+    }
+
+    .category-item {
+      height: 47px;
+      border-radius: 14px;
+      padding: 0 10px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .category-item.active {
+      background: #fff0e7;
+      color: var(--orange-deep);
+    }
+
+    .category-item .bullet {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex: 0 0 auto;
+    }
+
+    .category-item .label {
+      min-width: 0;
+      flex: 1;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .category-item .count {
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .category-item.active .count {
+      color: var(--orange-deep);
+    }
+
+    .main {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+    }
+
+    .summary-grid {
+      height: 42px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .summary-card {
+      width: 146px;
+      height: 42px;
+      border-radius: 12px;
+      padding: 0 12px;
+      position: relative;
+      overflow: hidden;
+      box-shadow: none;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+
+    .summary-card::after {
+      content: none;
+      width: 46px;
+      height: 46px;
+      border-radius: 50%;
+      position: absolute;
+      right: -14px;
+      top: -18px;
+      background: rgba(255, 255, 255, .42);
+    }
+
+    .summary-card.blue {
+      background: rgba(239, 246, 255, .58);
+      border-color: #d7e6f8;
+    }
+
+    .summary-card.green {
+      background: rgba(238, 248, 239, .58);
+      border-color: #dbead7;
+    }
+
+    .summary-card.amber {
+      background: rgba(255, 245, 217, .58);
+      border-color: #f0dec0;
+    }
+
+    .summary-card.rose {
+      background: rgba(255, 240, 244, .58);
+      border-color: #f1d7de;
+    }
+
+    .summary-label {
+      color: var(--text);
+      font-size: 11px;
+      line-height: 14px;
+      font-weight: 900;
+      position: relative;
+      z-index: 1;
+      white-space: nowrap;
+    }
+
+    .summary-value {
+      margin: 0;
+      color: var(--ink);
+      font-size: 20px;
+      line-height: 22px;
+      font-weight: 900;
+      position: relative;
+      z-index: 1;
+      white-space: nowrap;
+    }
+
+    .summary-hint {
+      display: none;
+    }
+
+    .list-panel {
+      flex: 1;
+      min-height: 0;
+      border-radius: 20px;
+      overflow: hidden;
+      background: rgba(255, 253, 249, .96);
+    }
+
+    .panel-head {
+      height: 64px;
+      padding: 0 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      border-bottom: 1px solid var(--line);
+    }
+
+    .panel-title {
+      min-width: 150px;
+    }
+
+    .panel-title h2 {
+      margin: 0;
+      font-size: 19px;
+      line-height: 23px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .panel-metrics {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      flex: 1;
+    }
+
+    .metric-chip {
+      height: 28px;
+      border-radius: 10px;
+      padding: 0 10px;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line-soft);
+      background: #fff8f2;
+      color: var(--text);
+      font-size: 11px;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .metric-chip strong {
+      color: var(--ink);
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 900;
+    }
+
+    .table {
+      width: 100%;
+    }
+
+    .thead,
+    .row {
+      display: grid;
+      grid-template-columns: 270px 200px 100px 150px 150px 168px;
+      align-items: center;
+    }
+
+    .thead {
+      height: 42px;
+      padding: 0 16px;
+      color: var(--muted);
+      background: rgba(255, 248, 242, .78);
+      font-size: 12px;
+      font-weight: 900;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .row {
+      height: 73px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line-soft);
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 800;
+    }
+
+    .row:last-child {
+      border-bottom: 0;
+    }
+
+    .child {
+      display: flex;
+      align-items: center;
+      gap: 11px;
+      min-width: 0;
+    }
+
+    .avatar {
+      width: 38px;
+      height: 38px;
+      border-radius: 50%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
+    .avatar.blue {
+      background: var(--blue);
+    }
+
+    .avatar.orange {
+      background: var(--orange);
+    }
+
+    .avatar.green {
+      background: var(--green);
+    }
+
+    .avatar.violet {
+      background: var(--violet);
+    }
+
+    .avatar.rose {
+      background: var(--rose);
+    }
+
+    .child-main {
+      min-width: 0;
+    }
+
+    .child-name {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--ink);
+      font-size: 15px;
+      line-height: 18px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .child-meta {
+      margin-top: 5px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 14px;
+      font-weight: 800;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .tag {
+      min-width: 0;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 24px;
+      padding: 0 9px;
+      border-radius: 999px;
+      font-size: 12px;
+      line-height: 1;
+      font-weight: 900;
+      white-space: nowrap;
+    }
+
+    .tag.blue {
+      color: var(--blue);
+      background: #edf5ff;
+    }
+
+    .tag.orange {
+      color: var(--orange-deep);
+      background: #fff0e7;
+    }
+
+    .tag.green {
+      color: var(--green);
+      background: #eef7ef;
+    }
+
+    .tag.amber {
+      color: var(--amber);
+      background: #fff6df;
+    }
+
+    .tag.rose {
+      color: var(--rose);
+      background: #fff0f4;
+    }
+
+    .type-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .type-name {
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 900;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 154px;
+    }
+
+    .date-cell,
+    .age-cell {
+      color: var(--text);
+      line-height: 17px;
+      white-space: nowrap;
+    }
+
+    .date-cell span {
+      display: block;
+      margin-top: 3px;
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 800;
+    }
+
+    .ops {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .op-btn {
+      height: 32px;
+      min-width: 54px;
+      padding: 0 11px;
+      border-radius: 11px;
+      border: 1px solid #f2cdbb;
+      background: #fff8f2;
+      color: var(--orange-deep);
+      font-size: 12px;
+      font-weight: 900;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .op-btn.primary {
+      border-color: var(--orange);
+      background: var(--orange);
+      color: #fff;
+    }
+
+    .op-btn.ghost {
+      border-color: var(--line);
+      color: var(--text);
+      background: #fffdf9;
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas">
+    <section class="topbar">
+      <div class="back-btn">‹</div>
+      <div class="title">
+        <h1>评估报告</h1>
+      </div>
+      <div class="actions">
+        <div class="search"><span class="search-icon"></span>搜索儿童姓名 / 报告编号</div>
+        <div class="date-btn">近30天</div>
+        <div class="primary-btn">刷新列表</div>
+      </div>
+    </section>
+
+    <section class="layout">
+      <aside class="side">
+        <div class="side-card main">
+          <div class="side-title">测评领域 <span>42</span></div>
+          <div class="category-list">
+            <div class="category-item active"><span class="bullet" style="background:#e96f43"></span><span class="label">全部领域</span><span class="count">42</span></div>
+            <div class="category-item"><span class="bullet" style="background:#3f82d2"></span><span class="label">语言沟通</span><span class="count">18</span></div>
+            <div class="category-item"><span class="bullet" style="background:#d96a7f"></span><span class="label">综合能力</span><span class="count">9</span></div>
+            <div class="category-item"><span class="bullet" style="background:#63a999"></span><span class="label">社交沟通</span><span class="count">6</span></div>
+            <div class="category-item"><span class="bullet" style="background:#7f77c8"></span><span class="label">动作发展</span><span class="count">5</span></div>
+            <div class="category-item"><span class="bullet" style="background:#d99427"></span><span class="label">生活自理</span><span class="count">4</span></div>
+          </div>
+        </div>
+
+      </aside>
+
+      <section class="main">
+        <div class="list-panel">
+          <div class="panel-head">
+            <div class="panel-title">
+              <h2>评估报告列表</h2>
+            </div>
+            <div class="panel-metrics">
+              <div class="metric-chip">全部 <strong>42</strong></div>
+              <div class="metric-chip">本月 <strong>12</strong></div>
+              <div class="metric-chip">家长已读 <strong>19</strong></div>
+            </div>
+          </div>
+
+          <div class="table">
+            <div class="thead">
+              <div>儿童信息</div>
+              <div>测评量表</div>
+              <div>测评年龄</div>
+              <div>测评日期</div>
+              <div>报告时间</div>
+              <div style="text-align:right;">操作</div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar blue">陈</div>
+                <div class="child-main">
+                  <div class="child-name">陈小雨 <span class="tag blue">PEP-3</span></div>
+                  <div class="child-meta">女 · 5岁2月 · 138****2641</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">语言理解评估</div>
+                <span class="tag orange">第3次</span>
+              </div>
+              <div class="age-cell">5岁2月</div>
+              <div class="date-cell">2026-04-18</div>
+              <div class="date-cell">2026-04-18 10:18</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar orange">刘</div>
+                <div class="child-main">
+                  <div class="child-name">刘一诺 <span class="tag green">SPEECH</span></div>
+                  <div class="child-meta">男 · 4岁8月 · 136****9275</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">口语发起与互动</div>
+                <span class="tag green">第2次</span>
+              </div>
+              <div class="age-cell">4岁8月</div>
+              <div class="date-cell">2026-04-16</div>
+              <div class="date-cell">2026-04-16 16:24</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar green">周</div>
+                <div class="child-main">
+                  <div class="child-name">周子航 <span class="tag amber">EXP</span></div>
+                  <div class="child-meta">男 · 6岁1月 · 135****6188</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">表达沟通量表</div>
+                <span class="tag amber">第4次</span>
+              </div>
+              <div class="age-cell">6岁1月</div>
+              <div class="date-cell">2026-03-29</div>
+              <div class="date-cell">2026-03-29 14:05</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar violet">王</div>
+                <div class="child-main">
+                  <div class="child-name">王晨 <span class="tag rose">REVIEW</span></div>
+                  <div class="child-meta">女 · 3岁9月 · 137****4028</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">综合语言测评</div>
+                <span class="tag rose">第2次</span>
+              </div>
+              <div class="age-cell">3岁9月</div>
+              <div class="date-cell">2026-03-22</div>
+              <div class="date-cell">2026-03-22 09:47</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar rose">赵</div>
+                <div class="child-main">
+                  <div class="child-name">赵可 <span class="tag blue">SCREEN</span></div>
+                  <div class="child-meta">女 · 5岁6月 · 139****7821</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">语言发展筛查表</div>
+                <span class="tag blue">第1次</span>
+              </div>
+              <div class="age-cell">5岁6月</div>
+              <div class="date-cell">2026-02-16</div>
+              <div class="date-cell">2026-02-16 11:32</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+
+            <div class="row">
+              <div class="child">
+                <div class="avatar blue">孙</div>
+                <div class="child-main">
+                  <div class="child-name">孙乐乐 <span class="tag green">SOCIAL</span></div>
+                  <div class="child-meta">男 · 4岁4月 · 132****5066</div>
+                </div>
+              </div>
+              <div class="type-cell">
+                <div class="type-name">社交沟通观察</div>
+                <span class="tag green">第3次</span>
+              </div>
+              <div class="age-cell">4岁4月</div>
+              <div class="date-cell">2026-02-08</div>
+              <div class="date-cell">2026-02-08 15:20</div>
+              <div class="ops"><div class="op-btn">查看</div><div class="op-btn ghost">配置</div></div>
+            </div>
+          </div>
+        </div>
+      </section>
+    </section>
+  </main>
+</body>
+</html>
