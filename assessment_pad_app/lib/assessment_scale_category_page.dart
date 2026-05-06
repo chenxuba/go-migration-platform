@@ -121,23 +121,35 @@ class _AssessmentScaleCategoryScreenState
     unawaited(_refreshDrafts());
 
     try {
-      final List<String> categories =
-          await widget.scaleClient.fetchCategories(token);
+      final AssessmentScaleLibrary result =
+          await widget.scaleClient.fetchScaleLibrary(
+        token,
+        keyword: _searchQuery,
+        category: _selectedCategory,
+      );
       if (!mounted) {
         return;
       }
+      final List<String> categories = result.filterOptions.categories;
       final String currentSelected = _selectedCategory.trim();
       final String nextSelected =
           currentSelected.isEmpty || categories.contains(currentSelected)
               ? currentSelected
               : '';
+      final List<String> mergedCategories =
+          _mergeCategories(_categories, categories);
       setState(() {
-        _categories = categories;
+        _categories = mergedCategories;
         _selectedCategory = nextSelected;
         _categoryLoading = false;
         _categoryErrorMessage = null;
+        _scales = result.items;
+        _summary = result.summary;
+        _categoryCounts = result.filterOptions.categoryCounts;
+        _scalesLoading = false;
+        _scalesInitialized = true;
+        _scaleErrorMessage = null;
       });
-      unawaited(_loadScales());
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;

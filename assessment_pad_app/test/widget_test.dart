@@ -2229,6 +2229,24 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Pep3RecordCategoryStats> fetchRecordCategoryStats(
+    String token, {
+    int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  }) async {
+    if (!hasPreviousRecord) {
+      return Pep3RecordCategoryStats.empty;
+    }
+    return const Pep3RecordCategoryStats(
+      total: 1,
+      categoryCounts: <String, int>{'儿童发展评估': 1},
+    );
+  }
+
+  @override
   Future<Pep3RecordDetail> fetchRecordDetail(String token, int id) async {
     return const Pep3RecordDetail(
       id: 21,

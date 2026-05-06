@@ -61,11 +61,11 @@ class _AssessmentReportListScreenState
 
   Future<void> _loadData({
     String? selectedCategory,
-    bool reloadCategories = true,
+    bool reloadCategories = false,
   }) async {
-    final bool shouldReloadCategories = reloadCategories || _categories.isEmpty;
+    final bool shouldLoadCategories = reloadCategories || _categories.isEmpty;
     final bool shouldShowCategorySkeleton =
-        shouldReloadCategories && _categories.isEmpty;
+        shouldLoadCategories && _categories.isEmpty;
     setState(() {
       _listLoading = true;
       if (shouldShowCategorySkeleton) {
@@ -79,59 +79,51 @@ class _AssessmentReportListScreenState
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
-      final List<String> categories = shouldReloadCategories
-          ? await widget.scaleClient.fetchCategories(token)
-          : _categories;
-      final Pep3RecordPage page = await widget.recordClient.fetchRecordsPage(
-        token,
-        pageIndex: 1,
-        pageSize: 50,
-        assessmentCode: '',
-        scaleCategory: _selectedCategory,
-        searchKey: _searchKey,
-        assessmentDateBegin: _dateText(_range.start),
-        assessmentDateEnd: _dateText(_range.end),
-      );
-      Pep3RecordPage? allCountPage;
-      Map<String, int>? counts;
-      if (shouldReloadCategories) {
-        allCountPage = _selectedCategory.isEmpty
-            ? page
-            : await widget.recordClient.fetchRecordsPage(
-                token,
-                pageIndex: 1,
-                pageSize: 1,
-                assessmentCode: '',
-                searchKey: _searchKey,
-                assessmentDateBegin: _dateText(_range.start),
-                assessmentDateEnd: _dateText(_range.end),
-              );
-        counts = <String, int>{};
-        for (final String category in categories) {
-          final Pep3RecordPage countPage =
-              await widget.recordClient.fetchRecordsPage(
+      final String dateBegin = _dateText(_range.start);
+      final String dateEnd = _dateText(_range.end);
+      final Future<List<String>> categoriesFuture = shouldLoadCategories
+          ? widget.scaleClient.fetchCategories(token)
+          : Future<List<String>>.value(_categories);
+      final List<dynamic> results = await Future.wait<dynamic>(
+        <Future<dynamic>>[
+          categoriesFuture,
+          widget.recordClient.fetchRecordsPage(
             token,
             pageIndex: 1,
-            pageSize: 1,
+            pageSize: 50,
             assessmentCode: '',
-            scaleCategory: category,
+            scaleCategory: _selectedCategory,
             searchKey: _searchKey,
-            assessmentDateBegin: _dateText(_range.start),
-            assessmentDateEnd: _dateText(_range.end),
-          );
-          counts[category] = countPage.total;
-        }
-      }
+            assessmentDateBegin: dateBegin,
+            assessmentDateEnd: dateEnd,
+          ),
+          widget.recordClient.fetchRecordCategoryStats(
+            token,
+            assessmentCode: '',
+            searchKey: _searchKey,
+            assessmentDateBegin: dateBegin,
+            assessmentDateEnd: dateEnd,
+          ),
+        ],
+      );
+      final List<String> categories = List<String>.from(results[0] as List);
+      final Pep3RecordPage page = results[1] as Pep3RecordPage;
+      final Pep3RecordCategoryStats stats =
+          results[2] as Pep3RecordCategoryStats;
+      final Map<String, int> counts = <String, int>{
+        for (final String category in categories)
+          category: stats.categoryCounts[category] ?? 0,
+      };
       if (!mounted) {
         return;
       }
       setState(() {
-        if (shouldReloadCategories) {
+        if (shouldLoadCategories) {
           _categories = categories;
-          _categoryCounts = counts ?? const <String, int>{};
-          _rangeTotal = allCountPage?.total ?? page.total;
-          _categoryLoading = false;
         }
+        _categoryCounts = counts;
+        _rangeTotal = stats.total;
+        _categoryLoading = false;
         _page = page;
         _listLoading = false;
       });
@@ -141,7 +133,7 @@ class _AssessmentReportListScreenState
       }
       setState(() {
         _listLoading = false;
-        if (shouldReloadCategories) {
+        if (shouldLoadCategories) {
           _categoryLoading = false;
         }
         _errorMessage = '$error';
@@ -211,7 +203,6 @@ class _AssessmentReportListScreenState
         onViewReport: _openReportViewer,
         onCategorySelected: (String category) => _loadData(
           selectedCategory: category,
-          reloadCategories: false,
         ),
       ),
     );
@@ -225,6 +216,7 @@ class _AssessmentReportListScreenState
     }
     showDialog<void>(
       context: context,
+      barrierDismissible: false,
       barrierColor: Colors.black.withOpacity(.28),
       builder: (BuildContext dialogContext) {
         return PadDialogViewport(

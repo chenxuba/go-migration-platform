@@ -42,6 +42,10 @@ const String defaultPep3RecordsPagePath = String.fromEnvironment(
   'PEP3_RECORDS_PAGE_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/page',
 );
+const String defaultPep3RecordCategoryStatsPath = String.fromEnvironment(
+  'PEP3_RECORD_CATEGORY_STATS_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/category-stats',
+);
 const String defaultPep3RecordDetailPath = String.fromEnvironment(
   'PEP3_RECORD_DETAIL_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/detail',
@@ -624,6 +628,28 @@ class Pep3RecordPage {
   final int size;
 }
 
+class Pep3RecordCategoryStats {
+  const Pep3RecordCategoryStats({
+    required this.total,
+    required this.categoryCounts,
+  });
+
+  factory Pep3RecordCategoryStats.fromJson(Map<String, dynamic> json) {
+    return Pep3RecordCategoryStats(
+      total: _intFrom(json['total']),
+      categoryCounts: _stringIntMapFrom(json['categoryCounts']),
+    );
+  }
+
+  static const Pep3RecordCategoryStats empty = Pep3RecordCategoryStats(
+    total: 0,
+    categoryCounts: <String, int>{},
+  );
+
+  final int total;
+  final Map<String, int> categoryCounts;
+}
+
 class Pep3RecordSummary {
   const Pep3RecordSummary({
     required this.id,
@@ -790,6 +816,15 @@ abstract interface class Pep3AssessmentClient {
     String assessmentDateEnd = '',
   });
 
+  Future<Pep3RecordCategoryStats> fetchRecordCategoryStats(
+    String token, {
+    int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  });
+
   Future<Pep3RecordDetail> fetchRecordDetail(String token, int id);
 
   Future<Uint8List> downloadRecordBookletPdf(
@@ -811,6 +846,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.draftSubmitPath = defaultPep3DraftSubmitPath,
     this.caregiverInvitePath = defaultPep3CaregiverInvitePath,
     this.recordsPagePath = defaultPep3RecordsPagePath,
+    this.recordCategoryStatsPath = defaultPep3RecordCategoryStatsPath,
     this.recordDetailPath = defaultPep3RecordDetailPath,
     this.recordBookletPdfPath = defaultPep3RecordBookletPdfPath,
   });
@@ -825,6 +861,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String draftSubmitPath;
   final String caregiverInvitePath;
   final String recordsPagePath;
+  final String recordCategoryStatsPath;
   final String recordDetailPath;
   final String recordBookletPdfPath;
 
@@ -990,6 +1027,41 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
       );
     }
     return Pep3RecordPage.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<Pep3RecordCategoryStats> fetchRecordCategoryStats(
+    String token, {
+    int studentId = 0,
+    String assessmentCode = 'PEP3',
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(recordCategoryStatsPath),
+      token,
+      <String, dynamic>{
+        'pageRequestModel': const <String, int>{
+          'pageIndex': 1,
+          'pageSize': 1,
+        },
+        'queryModel': <String, dynamic>{
+          if (assessmentCode.trim().isNotEmpty)
+            'assessmentCode': assessmentCode.trim(),
+          if (studentId > 0) 'studentId': studentId,
+          if (searchKey.trim().isNotEmpty) 'searchKey': searchKey.trim(),
+          if (assessmentDateBegin.trim().isNotEmpty)
+            'assessmentDateBegin': assessmentDateBegin.trim(),
+          if (assessmentDateEnd.trim().isNotEmpty)
+            'assessmentDateEnd': assessmentDateEnd.trim(),
+        },
+      },
+    );
+    if (data is! Map) {
+      return Pep3RecordCategoryStats.empty;
+    }
+    return Pep3RecordCategoryStats.fromJson(Map<String, dynamic>.from(data));
   }
 
   @override
@@ -1321,6 +1393,19 @@ Map<String, dynamic> _mapFrom(Object? value) {
     return Map<String, dynamic>.from(value);
   }
   return <String, dynamic>{};
+}
+
+Map<String, int> _stringIntMapFrom(Object? value) {
+  final Map<String, dynamic> source = _mapFrom(value);
+  final Map<String, int> result = <String, int>{};
+  source.forEach((String key, dynamic item) {
+    final String normalizedKey = key.trim();
+    if (normalizedKey.isEmpty) {
+      return;
+    }
+    result[normalizedKey] = _intFrom(item);
+  });
+  return result;
 }
 
 int _intFrom(Object? value) {

@@ -10,6 +10,11 @@ type AssessmentRecordPageQueryDTO struct {
 	QueryModel       AssessmentRecordQueryModel `json:"queryModel"`
 }
 
+type AssessmentRecordCategoryStatsVO struct {
+	Total          int            `json:"total"`
+	CategoryCounts map[string]int `json:"categoryCounts"`
+}
+
 type AssessmentRecordQueryModel struct {
 	AssessmentCode      string `json:"assessmentCode,omitempty"`
 	ScaleCategory       string `json:"scaleCategory,omitempty"`

@@ -500,47 +500,124 @@ func (repo *Repository) GetPadHomeAssessmentStats(ctx context.Context, instID in
 	return stats, nil
 }
 
-func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
-	current, size = normalizeAssessmentPage(current, size)
-	where := []string{"ar.inst_id = ?", "ar.del_flag = 0"}
-	args := []any{instID}
+type assessmentRecordQueryParts struct {
+	whereParts      []string
+	args            []any
+	needStudentJoin bool
+	needScaleJoin   bool
+}
+
+func buildAssessmentRecordQueryParts(instID int64, query model.AssessmentRecordQueryModel) assessmentRecordQueryParts {
+	parts := assessmentRecordQueryParts{
+		whereParts: []string{"ar.inst_id = ?", "ar.del_flag = 0"},
+		args:       []any{instID},
+	}
 	if code := strings.TrimSpace(query.AssessmentCode); code != "" {
-		where = append(where, "ar.assessment_code = ?")
-		args = append(args, code)
+		parts.whereParts = append(parts.whereParts, "ar.assessment_code = ?")
+		parts.args = append(parts.args, code)
 	}
 	if category := strings.TrimSpace(query.ScaleCategory); category != "" {
-		where = append(where, "IFNULL(sc.category, '') = ?")
-		args = append(args, category)
+		parts.needScaleJoin = true
+		parts.whereParts = append(parts.whereParts, "IFNULL(sc.category, '') = ?")
+		parts.args = append(parts.args, category)
 	}
 	if query.StudentID != nil && *query.StudentID > 0 {
-		where = append(where, "ar.student_id = ?")
-		args = append(args, *query.StudentID)
+		parts.whereParts = append(parts.whereParts, "ar.student_id = ?")
+		parts.args = append(parts.args, *query.StudentID)
 	}
 	if searchKey := strings.TrimSpace(query.SearchKey); searchKey != "" {
+		parts.needStudentJoin = true
 		like := "%" + searchKey + "%"
-		where = append(where, "(ar.student_name LIKE ? OR s.stu_name LIKE ? OR s.mobile LIKE ? OR ar.examiner_name LIKE ?)")
-		args = append(args, like, like, like, like)
+		parts.whereParts = append(parts.whereParts, "(ar.student_name LIKE ? OR s.stu_name LIKE ? OR s.mobile LIKE ? OR ar.examiner_name LIKE ?)")
+		parts.args = append(parts.args, like, like, like, like)
 	}
 	if begin := strings.TrimSpace(query.AssessmentDateBegin); begin != "" {
-		where = append(where, "ar.assessment_date >= ?")
-		args = append(args, begin)
+		parts.whereParts = append(parts.whereParts, "ar.assessment_date >= ?")
+		parts.args = append(parts.args, begin)
 	}
 	if end := strings.TrimSpace(query.AssessmentDateEnd); end != "" {
-		where = append(where, "ar.assessment_date <= ?")
-		args = append(args, end)
+		parts.whereParts = append(parts.whereParts, "ar.assessment_date <= ?")
+		parts.args = append(parts.args, end)
 	}
+	return parts
+}
 
-	whereSQL := strings.Join(where, " AND ")
-	var total int
-	fromSQL := `
-		FROM assessment_record ar
-		LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
-		LEFT JOIN (
+func assessmentRecordStudentJoinSQL() string {
+	return "LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0"
+}
+
+func assessmentRecordScaleCategoryJoinSQL() string {
+	return `LEFT JOIN (
 			SELECT scale_code, MAX(category) AS category
 			FROM sys_scale
 			WHERE del_flag = 0
 			GROUP BY scale_code
-		) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+		) sc ON CONVERT(sc.scale_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci`
+}
+
+func (repo *Repository) SummarizeAssessmentRecordCategories(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel) (model.AssessmentRecordCategoryStatsVO, error) {
+	parts := buildAssessmentRecordQueryParts(instID, query)
+	joins := []string{assessmentRecordScaleCategoryJoinSQL()}
+	if parts.needStudentJoin {
+		joins = append([]string{assessmentRecordStudentJoinSQL()}, joins...)
+	}
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT IFNULL(sc.category, '') AS category, COUNT(1) AS total
+		FROM assessment_record ar
+		`+strings.Join(joins, "\n		")+`
+		WHERE `+strings.Join(parts.whereParts, " AND ")+`
+		GROUP BY IFNULL(sc.category, '')
+		ORDER BY IFNULL(sc.category, '') ASC
+	`, parts.args...)
+	if err != nil {
+		return model.AssessmentRecordCategoryStatsVO{}, err
+	}
+	defer rows.Close()
+
+	stats := model.AssessmentRecordCategoryStatsVO{
+		CategoryCounts: map[string]int{},
+	}
+	for rows.Next() {
+		var (
+			category string
+			total    int
+		)
+		if err := rows.Scan(&category, &total); err != nil {
+			return model.AssessmentRecordCategoryStatsVO{}, err
+		}
+		stats.CategoryCounts[category] = total
+		stats.Total += total
+	}
+	if err := rows.Err(); err != nil {
+		return model.AssessmentRecordCategoryStatsVO{}, err
+	}
+	return stats, nil
+}
+
+func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64, query model.AssessmentRecordQueryModel, current, size int) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
+	current, size = normalizeAssessmentPage(current, size)
+	parts := buildAssessmentRecordQueryParts(instID, query)
+	whereSQL := strings.Join(parts.whereParts, " AND ")
+	var total int
+	countJoins := make([]string, 0, 2)
+	if parts.needStudentJoin {
+		countJoins = append(countJoins, assessmentRecordStudentJoinSQL())
+	}
+	if parts.needScaleJoin {
+		countJoins = append(countJoins, assessmentRecordScaleCategoryJoinSQL())
+	}
+	countFromSQL := "FROM assessment_record ar"
+	if len(countJoins) > 0 {
+		countFromSQL += "\n\t\t" + strings.Join(countJoins, "\n\t\t")
+	}
+	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+countFromSQL+" WHERE "+whereSQL, parts.args...).Scan(&total); err != nil {
+		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
+	}
+	offset := (current - 1) * size
+	pageFromSQL := `
+		FROM assessment_record ar
+		` + assessmentRecordStudentJoinSQL() + `
+		` + assessmentRecordScaleCategoryJoinSQL() + `
 		LEFT JOIN (
 			SELECT
 				inst_id,
@@ -551,14 +628,11 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 					ELSE ''
 				END AS status
 			FROM assessment_iep_plan
-			WHERE del_flag = 0
+			WHERE inst_id = ? AND del_flag = 0
 			GROUP BY inst_id, record_id
 		) aip ON aip.inst_id = ar.inst_id AND aip.record_id = ar.id
 	`
-	if err := repo.db.QueryRowContext(ctx, "SELECT COUNT(1) "+fromSQL+" WHERE "+whereSQL, args...).Scan(&total); err != nil {
-		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
-	}
-	offset := (current - 1) * size
+	pageArgs := append([]any{instID}, parts.args...)
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT ar.id, ar.inst_id, ar.student_id, COALESCE(NULLIF(ar.student_name, ''), IFNULL(s.stu_name, '')),
 		       IFNULL(s.stu_sex, -1), IFNULL(s.avatar_url, ''),
@@ -582,11 +656,11 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 	           )
 	       ) AS assessment_sequence,
 	       ar.examiner_id, ar.examiner_name, ar.remark, IFNULL(aip.status, ''), ar.create_time, ar.update_time
-		`+fromSQL+`
+		`+pageFromSQL+`
 		WHERE `+whereSQL+`
 		ORDER BY ar.assessment_date DESC, ar.id DESC
 		LIMIT ? OFFSET ?
-	`, append(args, size, offset)...)
+	`, append(pageArgs, size, offset)...)
 	if err != nil {
 		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
 	}

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"errors"
@@ -19,6 +20,9 @@ import (
 //go:embed assets/pep3_record_booklet/page_*.jpg
 var pep3RecordBookletTemplateImages embed.FS
 
+//go:embed assets/fonts/NotoSansSC-Regular.ttf
+var pep3PDFFontAssets embed.FS
+
 const (
 	pep3BookletPDFSpreadWidth      = 1190.52001953125
 	pep3BookletPDFPageWidth        = pep3BookletPDFSpreadWidth / 2
@@ -33,6 +37,11 @@ type pep3BookletPDFRenderer struct {
 	pdf     *gopdf.GoPdf
 	pageMap map[int]int
 }
+
+var (
+	pep3BookletPDFRegularTextOffsets = []float64{0, 0.16, -0.16}
+	pep3BookletPDFBoldTextOffsets    = []float64{0, 0.32, -0.32, 0.18}
+)
 
 func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64, exportDimension string) (string, []byte, error) {
 	detail, err := svc.GetPEP3AssessmentRecord(userID, recordID)
@@ -82,7 +91,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	if err != nil {
 		return nil, err
 	}
-	fontPath, err := resolvePEP3PDFFontPath()
+	fontBytes, err := loadPEP3PDFFontBytes()
 	if err != nil {
 		return nil, err
 	}
@@ -109,7 +118,7 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 			return nil, fmt.Errorf("draw PEP-3 booklet template page %d: %w", pageNo, err)
 		}
 	}
-	if err := pdf.AddTTFFont(pep3BookletPDFFontFamily, fontPath); err != nil {
+	if err := pdf.AddTTFFontByReader(pep3BookletPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
 		return nil, fmt.Errorf("load PEP-3 PDF font: %w", err)
 	}
 	renderer := pep3BookletPDFRenderer{pdf: &pdf, pageMap: pageMap}
@@ -2225,8 +2234,7 @@ func (r pep3BookletPDFRenderer) centerInBox(centerX, centerY, width, size float6
 	if err != nil || textWidth > width {
 		textWidth = 0
 	}
-	r.pdf.SetXY(centerX-textWidth/2, centerY+size*0.35)
-	_ = r.pdf.Text(value)
+	r.drawText(centerX-textWidth/2, centerY+size*0.35, value, pep3BookletPDFRegularTextOffsets)
 }
 
 func (r pep3BookletPDFRenderer) centerBoldInBox(centerX, centerY, width, size float64, value string) {
@@ -2239,12 +2247,7 @@ func (r pep3BookletPDFRenderer) centerBoldInBox(centerX, centerY, width, size fl
 	if err != nil || textWidth > width {
 		textWidth = 0
 	}
-	baseX := centerX - textWidth/2
-	baseY := centerY + size*0.35
-	for _, offsetX := range []float64{0, 0.35, -0.35} {
-		r.pdf.SetXY(baseX+offsetX, baseY)
-		_ = r.pdf.Text(value)
-	}
+	r.drawText(centerX-textWidth/2, centerY+size*0.35, value, pep3BookletPDFBoldTextOffsets)
 }
 
 // text 用于左对齐填值：x 是文字起点，y 是底图横线位置，size 是字号。
@@ -2254,8 +2257,7 @@ func (r pep3BookletPDFRenderer) text(x, y, size float64, value string) {
 		return
 	}
 	_ = r.pdf.SetFont(pep3BookletPDFFontFamily, "", size)
-	r.pdf.SetXY(x, y-pep3BookletPDFLineBaselineGap)
-	_ = r.pdf.Text(value)
+	r.drawText(x, y-pep3BookletPDFLineBaselineGap, value, pep3BookletPDFRegularTextOffsets)
 }
 
 func (r pep3BookletPDFRenderer) multilineText(lines []pep3BookletPDFTextLine, size float64, value string) {
@@ -2273,8 +2275,7 @@ func (r pep3BookletPDFRenderer) multilineText(lines []pep3BookletPDFTextLine, si
 		if strings.TrimSpace(text) == "" {
 			continue
 		}
-		r.pdf.SetXY(line.X, line.Y-pep3BookletPDFLineBaselineGap)
-		_ = r.pdf.Text(text)
+		r.drawText(line.X, line.Y-pep3BookletPDFLineBaselineGap, text, pep3BookletPDFRegularTextOffsets)
 		remaining = rest
 	}
 }
@@ -2320,8 +2321,7 @@ func (r pep3BookletPDFRenderer) center(x, y, width, size float64, value string) 
 	if err != nil || textWidth > width {
 		textWidth = 0
 	}
-	r.pdf.SetXY(x+(width-textWidth)/2, y-pep3BookletPDFLineBaselineGap)
-	_ = r.pdf.Text(value)
+	r.drawText(x+(width-textWidth)/2, y-pep3BookletPDFLineBaselineGap, value, pep3BookletPDFRegularTextOffsets)
 }
 
 func (r pep3BookletPDFRenderer) centerBold(x, y, width, size float64, value string) {
@@ -2334,10 +2334,15 @@ func (r pep3BookletPDFRenderer) centerBold(x, y, width, size float64, value stri
 	if err != nil || textWidth > width {
 		textWidth = 0
 	}
-	baseX := x + (width-textWidth)/2
-	baseY := y - pep3BookletPDFLineBaselineGap
-	for _, offsetX := range []float64{0, 0.35, -0.35} {
-		r.pdf.SetXY(baseX+offsetX, baseY)
+	r.drawText(x+(width-textWidth)/2, y-pep3BookletPDFLineBaselineGap, value, pep3BookletPDFBoldTextOffsets)
+}
+
+func (r pep3BookletPDFRenderer) drawText(x, y float64, value string, offsets []float64) {
+	if len(offsets) == 0 {
+		offsets = []float64{0}
+	}
+	for _, offsetX := range offsets {
+		r.pdf.SetXY(x+offsetX, y)
 		_ = r.pdf.Text(value)
 	}
 }
@@ -2359,22 +2364,17 @@ func dateParts(value *time.Time) (string, string, string) {
 	return strconv.Itoa(value.Year()), strconv.Itoa(int(value.Month())), strconv.Itoa(value.Day())
 }
 
-func resolvePEP3PDFFontPath() (string, error) {
+func loadPEP3PDFFontBytes() ([]byte, error) {
 	if path := strings.TrimSpace(os.Getenv("PEP3_PDF_FONT_PATH")); path != "" {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, fmt.Errorf("read PEP3_PDF_FONT_PATH %q: %w", path, err)
 		}
-		return "", fmt.Errorf("PEP3_PDF_FONT_PATH does not exist: %s", path)
+		return content, nil
 	}
-	for _, path := range []string{
-		"/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
-		"/Library/Fonts/Arial Unicode.ttf",
-		"/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttf",
-		"/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.otf",
-	} {
-		if _, err := os.Stat(path); err == nil {
-			return path, nil
-		}
+	content, err := pep3PDFFontAssets.ReadFile("assets/fonts/NotoSansSC-Regular.ttf")
+	if err != nil {
+		return nil, errors.New("missing bundled CJK font for PEP-3 PDF")
 	}
-	return "", errors.New("missing CJK font for PEP-3 PDF; set PEP3_PDF_FONT_PATH to a Chinese-capable .ttf/.otf font")
+	return content, nil
 }

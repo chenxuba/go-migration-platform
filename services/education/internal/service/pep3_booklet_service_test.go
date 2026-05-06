@@ -209,8 +209,8 @@ func TestPEP3BookletPDFExportScopes(t *testing.T) {
 }
 
 func TestBuildPEP3BookletPDFUsesTemplateBackground(t *testing.T) {
-	if _, err := resolvePEP3PDFFontPath(); err != nil {
-		t.Skipf("PEP-3 PDF font not available: %v", err)
+	if _, err := loadPEP3PDFFontBytes(); err != nil {
+		t.Fatalf("PEP-3 PDF font not available: %v", err)
 	}
 	resultRaw := pep3BookletTestScoreRaw(t)
 	itemScoreList := make([]map[string]int, 0, 172)

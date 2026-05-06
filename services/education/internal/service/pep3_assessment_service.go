@@ -237,6 +237,22 @@ func (svc *Service) PagePEP3AssessmentRecords(userID int64, query model.Assessme
 	return svc.repo.PageAssessmentRecords(context.Background(), instID, query.QueryModel, query.PageRequestModel.PageIndex, query.PageRequestModel.PageSize)
 }
 
+func (svc *Service) SummarizePEP3AssessmentRecordCategories(userID int64, query model.AssessmentRecordQueryModel) (model.AssessmentRecordCategoryStatsVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordCategoryStatsVO{}, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.repo.FindInstIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentRecordCategoryStatsVO{}, errors.New("no institution context")
+		}
+		return model.AssessmentRecordCategoryStatsVO{}, err
+	}
+	query.AssessmentCode = pep3ScaleCode
+	query.ScaleCategory = ""
+	return svc.repo.SummarizeAssessmentRecordCategories(context.Background(), instID, query)
+}
+
 func (svc *Service) DeletePEP3AssessmentRecord(userID, recordID int64) (bool, error) {
 	if svc.repo == nil {
 		return false, errors.New("assessment repository is not configured")

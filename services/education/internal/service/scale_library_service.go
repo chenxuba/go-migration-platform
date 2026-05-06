@@ -22,16 +22,13 @@ func (svc *Service) GetScaleLibrary(userID int64, query model.ScaleLibraryQuery)
 		}
 		return model.ScaleLibraryVO{}, err
 	}
-	items, err := svc.repo.ListInstitutionScaleLibrary(ctx, instID, query)
+	items, err := svc.repo.ListInstitutionScaleLibrary(ctx, instID, query, false)
 	if err != nil {
 		return model.ScaleLibraryVO{}, err
 	}
-	filterOptionItems := items
-	if hasScaleLibraryQuery(query) {
-		filterOptionItems, err = svc.repo.ListInstitutionScaleLibrary(ctx, instID, model.ScaleLibraryQuery{})
-		if err != nil {
-			return model.ScaleLibraryVO{}, err
-		}
+	filterOptionItems, err := svc.repo.ListScaleLibraryFilterItems(ctx)
+	if err != nil {
+		return model.ScaleLibraryVO{}, err
 	}
 	categoryOptions, err := svc.repo.ListScaleLibraryCategoryOptions(ctx)
 	if err != nil {
@@ -70,15 +67,6 @@ func (svc *Service) ListScaleCategoryOptions(userID int64) ([]string, error) {
 		return nil, err
 	}
 	return svc.repo.ListScaleLibraryCategoryOptions(context.Background())
-}
-
-func hasScaleLibraryQuery(query model.ScaleLibraryQuery) bool {
-	return query.Keyword != "" ||
-		query.Category != "" ||
-		query.Scenario != "" ||
-		query.Status != "" ||
-		query.AgeScope != "" ||
-		query.Duration != ""
 }
 
 func buildScaleLibrarySummary(items []model.ScaleLibraryItem) model.ScaleLibrarySummary {

@@ -39,7 +39,7 @@ func (repo *Repository) ensureScaleLibrarySchema(ctx context.Context) error {
 	return err
 }
 
-func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID int64, query model.ScaleLibraryQuery) ([]model.ScaleLibraryItem, error) {
+func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID int64, query model.ScaleLibraryQuery, includeResources bool) ([]model.ScaleLibraryItem, error) {
 	filters := []string{"s.del_flag = 0"}
 	filterArgs := make([]any, 0, 8)
 
@@ -152,7 +152,7 @@ func (repo *Repository) ListInstitutionScaleLibrary(ctx context.Context, instID 
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
-	if len(items) == 0 {
+	if !includeResources || len(items) == 0 {
 		return items, nil
 	}
 	if err := repo.loadScaleLibraryReferences(ctx, items); err != nil {
@@ -208,6 +208,52 @@ func (repo *Repository) ListScaleLibraryCategoryOptions(ctx context.Context) ([]
 		}
 		seen[value] = true
 		items = append(items, value)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+func (repo *Repository) ListScaleLibraryFilterItems(ctx context.Context) ([]model.ScaleLibraryItem, error) {
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			s.id,
+			IFNULL(s.category, ''),
+			IFNULL(s.scenario, ''),
+			IFNULL(s.age_min_months, 0),
+			IFNULL(s.age_max_months, 0),
+			IFNULL(s.duration_min_minutes, 0),
+			IFNULL(s.duration_max_minutes, 0),
+			IFNULL(s.execution_entry, ''),
+			IFNULL(s.api_package, '')
+		FROM sys_scale s
+		WHERE s.del_flag = 0
+		ORDER BY s.sort ASC, s.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.ScaleLibraryItem, 0, 8)
+	for rows.Next() {
+		item := model.ScaleLibraryItem{}
+		if err := rows.Scan(
+			&item.ID,
+			&item.Category,
+			&item.Scenario,
+			&item.AgeMinMonths,
+			&item.AgeMaxMonths,
+			&item.DurationMinMinutes,
+			&item.DurationMaxMinutes,
+			&item.ExecutionEntry,
+			&item.APIPackage,
+		); err != nil {
+			return nil, err
+		}
+		item.Status, item.StatusText = scaleLibraryStatus(item)
+		items = append(items, item)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
