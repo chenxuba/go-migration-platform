@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -44,6 +45,10 @@ const String defaultPep3RecordsPagePath = String.fromEnvironment(
 const String defaultPep3RecordDetailPath = String.fromEnvironment(
   'PEP3_RECORD_DETAIL_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/detail',
+);
+const String defaultPep3RecordBookletPdfPath = String.fromEnvironment(
+  'PEP3_RECORD_BOOKLET_PDF_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/booklet/pdf',
 );
 
 class Pep3AssessmentLaunchArgs {
@@ -786,6 +791,12 @@ abstract interface class Pep3AssessmentClient {
   });
 
   Future<Pep3RecordDetail> fetchRecordDetail(String token, int id);
+
+  Future<Uint8List> downloadRecordBookletPdf(
+    String token,
+    int id, {
+    String dimension = 'score_and_profile',
+  });
 }
 
 class ApiPep3AssessmentClient implements Pep3AssessmentClient {
@@ -801,6 +812,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.caregiverInvitePath = defaultPep3CaregiverInvitePath,
     this.recordsPagePath = defaultPep3RecordsPagePath,
     this.recordDetailPath = defaultPep3RecordDetailPath,
+    this.recordBookletPdfPath = defaultPep3RecordBookletPdfPath,
   });
 
   final String educationBaseUrl;
@@ -814,6 +826,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String caregiverInvitePath;
   final String recordsPagePath;
   final String recordDetailPath;
+  final String recordBookletPdfPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -992,6 +1005,44 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     return Pep3RecordDetail.fromJson(Map<String, dynamic>.from(data));
   }
 
+  @override
+  Future<Uint8List> downloadRecordBookletPdf(
+    String token,
+    int id, {
+    String dimension = 'score_and_profile',
+  }) async {
+    final Uri uri = _uri(recordBookletPdfPath).replace(
+      queryParameters: <String, String>{
+        'id': '$id',
+        'dimension':
+            dimension.trim().isEmpty ? 'score_and_profile' : dimension.trim(),
+      },
+    );
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: _headers(token)).timeout(
+            const Duration(seconds: 20),
+          );
+    } on TimeoutException {
+      throw const Pep3ApiException('评估报告PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接评估报告PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw Pep3ApiException(
+        _messageFromPayload(_decodeResponse(response.body)) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Pep3ApiException(
+        _messageFromPayload(_decodeResponse(response.body)) ?? '评估报告PDF加载失败',
+      );
+    }
+    return _normalizeReportPdfBytes(response.bodyBytes);
+  }
+
   Uri _uri(String path) {
     final String trimmedBase =
         educationBaseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -1092,6 +1143,160 @@ String? _messageFromPayload(Object? payload) {
     }
   }
   return null;
+}
+
+const List<int> _pep3InvalidPdfBinaryMarker = <int>[
+  0x25,
+  0x50,
+  0x44,
+  0x46,
+  0x2d,
+  0x31,
+  0x2e,
+  0x37,
+  0x0a,
+  0x25,
+  0xef,
+  0xbf,
+  0xbd,
+  0xef,
+  0xbf,
+  0xbd,
+  0xef,
+  0xbf,
+  0xbd,
+  0xef,
+  0xbf,
+  0xbd,
+  0x0a,
+  0x0a,
+];
+
+const List<int> _pep3ValidPdfBinaryMarker = <int>[
+  0x25,
+  0x50,
+  0x44,
+  0x46,
+  0x2d,
+  0x31,
+  0x2e,
+  0x37,
+  0x0a,
+  0x25,
+  0xe2,
+  0xe3,
+  0xcf,
+  0xd3,
+  0x0a,
+  0x0a,
+];
+
+Uint8List _normalizeReportPdfBytes(Uint8List bytes) {
+  if (!_startsWithBytes(bytes, _pep3InvalidPdfBinaryMarker)) {
+    return bytes;
+  }
+  final int delta =
+      _pep3InvalidPdfBinaryMarker.length - _pep3ValidPdfBinaryMarker.length;
+  final Uint8List repaired = Uint8List.fromList(<int>[
+    ..._pep3ValidPdfBinaryMarker,
+    ...bytes.skip(_pep3InvalidPdfBinaryMarker.length),
+  ]);
+  return _repairPdfCrossReferenceTable(repaired, delta);
+}
+
+bool _startsWithBytes(Uint8List bytes, List<int> prefix) {
+  if (bytes.length < prefix.length) {
+    return false;
+  }
+  for (int index = 0; index < prefix.length; index++) {
+    if (bytes[index] != prefix[index]) {
+      return false;
+    }
+  }
+  return true;
+}
+
+Uint8List _repairPdfCrossReferenceTable(Uint8List bytes, int delta) {
+  final String source = latin1.decode(bytes, allowInvalid: true);
+  final int startxrefLabelIndex = source.lastIndexOf('startxref');
+  if (startxrefLabelIndex < 0) {
+    return bytes;
+  }
+
+  final int startxrefValueStart =
+      _skipPdfWhitespace(source, startxrefLabelIndex + 'startxref'.length);
+  final int startxrefValueEnd = _scanPdfDigits(source, startxrefValueStart);
+  if (startxrefValueEnd <= startxrefValueStart) {
+    return bytes;
+  }
+
+  final int? oldStartxref = int.tryParse(
+    source.substring(startxrefValueStart, startxrefValueEnd),
+  );
+  if (oldStartxref == null || oldStartxref < delta) {
+    return bytes;
+  }
+
+  final int xrefIndex = oldStartxref - delta;
+  if (xrefIndex < 0 || xrefIndex >= source.length) {
+    return bytes;
+  }
+  if (!source.startsWith('xref', xrefIndex)) {
+    return bytes;
+  }
+
+  final int trailerIndex = source.indexOf('trailer', xrefIndex);
+  if (trailerIndex <= xrefIndex) {
+    return bytes;
+  }
+
+  final String xrefSection = source.substring(xrefIndex, trailerIndex);
+  final String repairedXrefSection = xrefSection.replaceAllMapped(
+    RegExp(r'^(\d{10}) (\d{5}) n(\s*)$', multiLine: true),
+    (Match match) {
+      final int offset = int.parse(match.group(1)!);
+      final int repairedOffset = offset >= delta ? offset - delta : offset;
+      return '${repairedOffset.toString().padLeft(10, '0')} '
+          '${match.group(2)} n${match.group(3)}';
+    },
+  );
+
+  final String repairedSource = source
+      .replaceRange(xrefIndex, trailerIndex, repairedXrefSection)
+      .replaceRange(
+        startxrefValueStart,
+        startxrefValueEnd,
+        '${oldStartxref - delta}',
+      );
+
+  return Uint8List.fromList(latin1.encode(repairedSource));
+}
+
+int _skipPdfWhitespace(String source, int index) {
+  int cursor = index;
+  while (cursor < source.length) {
+    final int codeUnit = source.codeUnitAt(cursor);
+    if (codeUnit != 0x20 &&
+        codeUnit != 0x09 &&
+        codeUnit != 0x0a &&
+        codeUnit != 0x0d) {
+      break;
+    }
+    cursor += 1;
+  }
+  return cursor;
+}
+
+int _scanPdfDigits(String source, int index) {
+  int cursor = index;
+  while (cursor < source.length) {
+    final int codeUnit = source.codeUnitAt(cursor);
+    if (codeUnit < 0x30 || codeUnit > 0x39) {
+      break;
+    }
+    cursor += 1;
+  }
+  return cursor;
 }
 
 List<Map<String, dynamic>> _listFrom(Object? value) {

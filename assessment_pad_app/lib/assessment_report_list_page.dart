@@ -1,10 +1,13 @@
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
 import 'pad_date_range_picker.dart';
+import 'pad_responsive.dart';
 import 'pep3_assessment_client.dart';
 
 class AssessmentReportListScreen extends StatefulWidget {
@@ -205,11 +208,33 @@ class _AssessmentReportListScreenState
         onReset: _resetFilters,
         onRangeTap: _selectRange,
         onSearchSubmitted: _submitSearch,
+        onViewReport: _openReportViewer,
         onCategorySelected: (String category) => _loadData(
           selectedCategory: category,
           reloadCategories: false,
         ),
       ),
+    );
+  }
+
+  Future<void> _openReportViewer(Pep3RecordSummary record) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    if (!mounted) {
+      return;
+    }
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(.28),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ReportPreviewDialog(
+            record: record,
+            token: token,
+            client: widget.recordClient,
+          ),
+        );
+      },
     );
   }
 }
@@ -253,6 +278,7 @@ class _AssessmentReportListBody extends StatelessWidget {
     required this.onReset,
     required this.onRangeTap,
     required this.onSearchSubmitted,
+    required this.onViewReport,
     required this.onCategorySelected,
   });
 
@@ -271,6 +297,7 @@ class _AssessmentReportListBody extends StatelessWidget {
   final VoidCallback onReset;
   final VoidCallback onRangeTap;
   final ValueChanged<String> onSearchSubmitted;
+  final ValueChanged<Pep3RecordSummary> onViewReport;
   final ValueChanged<String> onCategorySelected;
 
   @override
@@ -333,6 +360,7 @@ class _AssessmentReportListBody extends StatelessWidget {
                                 loading: listLoading,
                                 errorMessage: errorMessage,
                                 onRetry: onReset,
+                                onViewReport: onViewReport,
                               ),
                             ),
                           ],
@@ -779,6 +807,7 @@ class _ReportListPanel extends StatelessWidget {
     required this.loading,
     required this.errorMessage,
     required this.onRetry,
+    required this.onViewReport,
   });
 
   final List<Pep3RecordSummary> records;
@@ -786,6 +815,7 @@ class _ReportListPanel extends StatelessWidget {
   final bool loading;
   final String errorMessage;
   final VoidCallback onRetry;
+  final ValueChanged<Pep3RecordSummary> onViewReport;
 
   @override
   Widget build(BuildContext context) {
@@ -822,7 +852,7 @@ class _ReportListPanel extends StatelessWidget {
               const Expanded(child: _ReportState(message: '暂无评估报告'))
             else
               for (final Pep3RecordSummary record in records)
-                _ReportRow(record: record),
+                _ReportRow(record: record, onViewReport: onViewReport),
           ],
         ),
       ),
@@ -970,9 +1000,10 @@ class _ReportTableHeader extends StatelessWidget {
 }
 
 class _ReportRow extends StatelessWidget {
-  const _ReportRow({required this.record});
+  const _ReportRow({required this.record, required this.onViewReport});
 
   final Pep3RecordSummary record;
+  final ValueChanged<Pep3RecordSummary> onViewReport;
 
   @override
   Widget build(BuildContext context) {
@@ -1000,12 +1031,15 @@ class _ReportRow extends StatelessWidget {
               flex: 145,
               child: _ReportTimeCell(_reportTimeRaw(record)),
             ),
-            const _ColumnCell(
+            _ColumnCell(
               flex: 168,
               trailingGap: 0,
               child: Align(
                 alignment: Alignment.centerRight,
-                child: _RowActions(),
+                child: _RowActions(
+                  record: record,
+                  onViewReport: onViewReport,
+                ),
               ),
             ),
           ],
@@ -1359,47 +1393,604 @@ class _Tag extends StatelessWidget {
 }
 
 class _RowActions extends StatelessWidget {
-  const _RowActions();
+  const _RowActions({required this.record, required this.onViewReport});
+
+  final Pep3RecordSummary record;
+  final ValueChanged<Pep3RecordSummary> onViewReport;
 
   @override
   Widget build(BuildContext context) {
-    return const Row(
+    return Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        _ActionButton(label: '查看', emphasized: true),
-        SizedBox(width: 8),
-        _ActionButton(label: '配置'),
+        _ActionButton(
+          label: '查看',
+          emphasized: true,
+          onTap: () => onViewReport(record),
+        ),
+        const SizedBox(width: 8),
+        const _ActionButton(label: '配置'),
       ],
     );
   }
 }
 
 class _ActionButton extends StatelessWidget {
-  const _ActionButton({required this.label, this.emphasized = false});
+  const _ActionButton({
+    required this.label,
+    this.emphasized = false,
+    this.onTap,
+  });
 
   final String label;
   final bool emphasized;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 32,
-      constraints: const BoxConstraints(minWidth: 54),
-      alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 11),
-      decoration: BoxDecoration(
-        color: emphasized ? const Color(0xFFFFF8F2) : _ReportTheme.surface,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(11),
-        border: Border.all(
-          color: emphasized ? const Color(0xFFF2CDBB) : _ReportTheme.line,
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(minWidth: 54),
+          child: Ink(
+            height: 32,
+            padding: const EdgeInsets.symmetric(horizontal: 11),
+            decoration: BoxDecoration(
+              color:
+                  emphasized ? const Color(0xFFFFF8F2) : _ReportTheme.surface,
+              borderRadius: BorderRadius.circular(11),
+              border: Border.all(
+                color: emphasized ? const Color(0xFFF2CDBB) : _ReportTheme.line,
+              ),
+            ),
+            child: Center(
+              widthFactor: 1,
+              child: Text(
+                label,
+                style: TextStyle(
+                  color:
+                      emphasized ? _ReportTheme.orangeDeep : _ReportTheme.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
         ),
       ),
+    );
+  }
+}
+
+class _ReportModuleOption {
+  const _ReportModuleOption({
+    required this.value,
+    required this.label,
+    required this.pages,
+    required this.description,
+    this.recommended = false,
+  });
+
+  final String value;
+  final String label;
+  final String pages;
+  final String description;
+  final bool recommended;
+}
+
+const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
+  _ReportModuleOption(
+    value: 'test_score',
+    label: '测验分数',
+    pages: '第 1 页',
+    description: '导出首页测验分数汇总，适合快速归档总览。',
+  ),
+  _ReportModuleOption(
+    value: 'development_profile',
+    label: '发展表现图',
+    pages: '第 19 页',
+    description: '只导出发展表现图，用于查看各领域发展曲线。',
+  ),
+  _ReportModuleOption(
+    value: 'score_and_profile',
+    label: '分数+表现图',
+    pages: '第 1、19 页',
+    description: '包含测验分数汇总和发展表现图，适合简版报告。',
+    recommended: true,
+  ),
+  _ReportModuleOption(
+    value: 'scoring_tables',
+    label: '评分表',
+    pages: '第 2-18 页',
+    description: '导出儿童表现记录、评分统计和照顾者评分表。',
+  ),
+];
+
+class _ReportPreviewDialog extends StatefulWidget {
+  const _ReportPreviewDialog({
+    required this.record,
+    required this.token,
+    required this.client,
+  });
+
+  final Pep3RecordSummary record;
+  final String token;
+  final Pep3AssessmentClient client;
+
+  @override
+  State<_ReportPreviewDialog> createState() => _ReportPreviewDialogState();
+}
+
+class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
+  late _ReportModuleOption _activeOption;
+  Uint8List? _pdfBytes;
+  bool _loading = true;
+  String _errorMessage = '';
+  int _loadSerial = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _activeOption = _reportModuleOptions.firstWhere(
+      (_ReportModuleOption option) => option.recommended,
+      orElse: () => _reportModuleOptions.first,
+    );
+    _loadPdf();
+  }
+
+  Future<void> _loadPdf() async {
+    final int serial = ++_loadSerial;
+    setState(() {
+      _loading = true;
+      _errorMessage = '';
+      _pdfBytes = null;
+    });
+
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _loading = false;
+        _errorMessage = '请先登录后再查看评估报告';
+      });
+      return;
+    }
+
+    try {
+      final Uint8List bytes = await widget.client.downloadRecordBookletPdf(
+        token,
+        widget.record.id,
+        dimension: _activeOption.value,
+      );
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = bytes;
+        _loading = false;
+      });
+    } on Pep3ApiException catch (error) {
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = null;
+        _loading = false;
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || serial != _loadSerial) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = null;
+        _loading = false;
+        _errorMessage = '评估报告加载失败：$error';
+      });
+    }
+  }
+
+  void _selectOption(_ReportModuleOption option) {
+    if (_activeOption.value == option.value || _loading) {
+      return;
+    }
+    setState(() => _activeOption = option);
+    _loadPdf();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 980,
+          height: 654,
+          padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: _ReportTheme.line),
+            boxShadow: const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x24000000),
+                blurRadius: 34,
+                offset: Offset(0, 18),
+              ),
+            ],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              _buildHeader(context),
+              const SizedBox(height: 18),
+              _buildModuleBar(),
+              const SizedBox(height: 18),
+              Expanded(child: _buildContent()),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '评估报告',
+                style: TextStyle(
+                  color: _ReportTheme.ink,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                '${widget.record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : widget.record.assessmentName}   ${_studentName(widget.record)} / ${_dateOnlyText(widget.record.assessmentDate)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ReportTheme.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: () => Navigator.of(context).pop(),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8F2),
+                shape: BoxShape.circle,
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 22,
+                color: _ReportTheme.muted,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildModuleBar() {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final bool stackMeta = constraints.maxWidth < 820;
+        final Widget chips = Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: _reportModuleOptions
+              .map(
+                (_ReportModuleOption option) => _ReportModuleChip(
+                  option: option,
+                  active: option.value == _activeOption.value,
+                  onTap: () => _selectOption(option),
+                ),
+              )
+              .toList(),
+        );
+        final Widget meta = ConstrainedBox(
+          constraints: const BoxConstraints(
+            minWidth: 280,
+            maxWidth: 340,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(
+                _activeOption.pages,
+                style: const TextStyle(
+                  color: _ReportTheme.blue,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                _activeOption.description,
+                maxLines: stackMeta ? 3 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ReportTheme.muted,
+                  fontSize: 12,
+                  height: 1.3,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        );
+
+        return Container(
+          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFCF8),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _ReportTheme.lineSoft),
+          ),
+          child: stackMeta
+              ? Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    chips,
+                    const SizedBox(height: 12),
+                    meta,
+                  ],
+                )
+              : Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(child: chips),
+                    const SizedBox(width: 18),
+                    meta,
+                  ],
+                ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContent() {
+    if (_loading) {
+      return const _ReportPreviewLoadingState(message: '评估报告加载中...');
+    }
+    if (_errorMessage.isNotEmpty) {
+      return _ReportPreviewErrorState(
+        message: _errorMessage,
+        onRetry: _loadPdf,
+      );
+    }
+    final Uint8List? bytes = _pdfBytes;
+    if (bytes == null || bytes.isEmpty) {
+      return const _ReportPreviewEmptyState(message: '暂无评估报告内容');
+    }
+
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF8F3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: PdfPreview(
+        key: ValueKey<String>(
+          'report-pdf-${widget.record.id}-${_activeOption.value}-${bytes.length}',
+        ),
+        build: (_) async => bytes,
+        allowPrinting: false,
+        allowSharing: false,
+        useActions: false,
+        canChangePageFormat: false,
+        canChangeOrientation: false,
+        canDebug: false,
+        dynamicLayout: false,
+        shouldRepaint: true,
+        maxPageWidth: 860,
+        padding: const EdgeInsets.all(18),
+        previewPageMargin: const EdgeInsets.all(12),
+        scrollViewDecoration: const BoxDecoration(
+          color: Color(0xFFFDF8F3),
+        ),
+        pdfPreviewPageDecoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x11000000),
+              blurRadius: 12,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        loadingWidget: const _ReportPreviewLoadingState(message: '评估报告渲染中...'),
+        onError: (BuildContext context, Object error) {
+          return _ReportPreviewErrorState(
+            message: '评估报告预览失败：$error',
+            onRetry: _loadPdf,
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ReportModuleChip extends StatelessWidget {
+  const _ReportModuleChip({
+    required this.option,
+    required this.active,
+    required this.onTap,
+  });
+
+  final _ReportModuleOption option;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFFF2F7FF) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: active ? _ReportTheme.blue : _ReportTheme.lineSoft,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 10,
+                height: 10,
+                decoration: BoxDecoration(
+                  color: active ? _ReportTheme.blue : const Color(0xFFD5DDE6),
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 10),
+              Text(
+                option.label,
+                style: TextStyle(
+                  color: active ? _ReportTheme.blue : _ReportTheme.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (option.recommended) ...<Widget>[
+                const SizedBox(width: 10),
+                Text(
+                  '推荐',
+                  style: TextStyle(
+                    color: active ? _ReportTheme.blue : _ReportTheme.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportPreviewLoadingState extends StatelessWidget {
+  const _ReportPreviewLoadingState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          const SizedBox(
+            width: 26,
+            height: 26,
+            child: CircularProgressIndicator(
+              strokeWidth: 3,
+              color: _ReportTheme.orange,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            message,
+            style: const TextStyle(
+              color: _ReportTheme.text,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportPreviewErrorState extends StatelessWidget {
+  const _ReportPreviewErrorState({
+    required this.message,
+    required this.onRetry,
+  });
+
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            message,
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: _ReportTheme.text,
+              fontSize: 14,
+              height: 1.4,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 14),
+          _ToolbarButton(
+            label: '重新加载',
+            filled: true,
+            onTap: onRetry,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportPreviewEmptyState extends StatelessWidget {
+  const _ReportPreviewEmptyState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
       child: Text(
-        label,
-        style: TextStyle(
-          color: emphasized ? _ReportTheme.orangeDeep : _ReportTheme.text,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
+        message,
+        style: const TextStyle(
+          color: _ReportTheme.muted,
+          fontSize: 14,
+          fontWeight: FontWeight.w800,
         ),
       ),
     );

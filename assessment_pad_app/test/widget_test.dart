@@ -1,6 +1,7 @@
 import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/assessment_scale_category_page.dart';
+import 'package:assessment_pad_app/assessment_report_list_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
@@ -62,6 +63,42 @@ void main() {
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
+  });
+
+  testWidgets('assessment report list opens preview dialog from view action',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: _FakePep3AssessmentClient(hasPreviousRecord: true),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('张一鸣'), findsOneWidget);
+    await tester.tap(find.text('查看'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('分数+表现图'), findsOneWidget);
+    expect(find.text('暂无评估报告内容'), findsOneWidget);
   });
 
   testWidgets('home header fallback does not show a fake institution',
@@ -2215,6 +2252,15 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
         itemRecordValues: <int, Map<String, dynamic>>{},
       ),
     );
+  }
+
+  @override
+  Future<Uint8List> downloadRecordBookletPdf(
+    String token,
+    int id, {
+    String dimension = 'score_and_profile',
+  }) async {
+    return Uint8List(0);
   }
 
   Pep3DraftDetail _draftDetail({required int id}) {
