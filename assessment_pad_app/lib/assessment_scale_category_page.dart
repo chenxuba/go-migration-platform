@@ -1594,16 +1594,16 @@ class _SearchKeyboardAction extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 6),
           child: Row(
             children: <Widget>[
-              Icon(icon, color: _ScaleColors.text, size: 18),
-              const SizedBox(width: 3),
+              Icon(icon, color: _ScaleColors.text, size: 19),
+              const SizedBox(width: 4),
               Text(
                 label,
                 style: const TextStyle(
                   color: _ScaleColors.text,
-                  fontSize: 12,
+                  fontSize: 13,
                   height: 1,
                   fontWeight: FontWeight.w900,
                 ),
@@ -1731,7 +1731,7 @@ class _StudentStatusTabs extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 40,
+      height: 44,
       padding: const EdgeInsets.all(4),
       decoration: BoxDecoration(
         color: const Color(0xFFFFF5ED),
@@ -1773,8 +1773,8 @@ class _StudentStatusTabButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(11),
         onTap: selected ? null : onTap,
         child: Ink(
-          width: 96,
-          height: 32,
+          width: 104,
+          height: 36,
           decoration: BoxDecoration(
             color: selected ? Colors.white : Colors.transparent,
             borderRadius: BorderRadius.circular(11),
@@ -1792,7 +1792,7 @@ class _StudentStatusTabButton extends StatelessWidget {
               maxLines: 1,
               style: TextStyle(
                 color: selected ? _ScaleColors.orangeDeep : _ScaleColors.muted,
-                fontSize: 13,
+                fontSize: 14,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
@@ -1866,7 +1866,7 @@ class _StudentDialog extends StatefulWidget {
 class _StudentDialogMetrics {
   const _StudentDialogMetrics._();
 
-  static const double contentHeight = 300;
+  static const double contentHeight = 360;
 }
 
 class _StudentDialogState extends State<_StudentDialog> {
@@ -1908,9 +1908,9 @@ class _StudentDialogState extends State<_StudentDialog> {
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: 820,
-          constraints: const BoxConstraints(maxHeight: 560),
-          padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+          width: 960,
+          constraints: const BoxConstraints(maxHeight: 660),
+          padding: const EdgeInsets.fromLTRB(28, 26, 28, 26),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -1946,7 +1946,7 @@ class _StudentDialogState extends State<_StudentDialog> {
                           '选择学员',
                           style: TextStyle(
                             color: _ScaleColors.ink,
-                            fontSize: 16,
+                            fontSize: 18,
                             height: 1.1,
                             fontWeight: FontWeight.w900,
                           ),
@@ -1958,7 +1958,7 @@ class _StudentDialogState extends State<_StudentDialog> {
                           overflow: TextOverflow.ellipsis,
                           style: TextStyle(
                             color: _ScaleColors.muted,
-                            fontSize: 12,
+                            fontSize: 14,
                             height: 1,
                             fontWeight: FontWeight.w800,
                           ),
@@ -1981,7 +1981,7 @@ class _StudentDialogState extends State<_StudentDialog> {
               ),
               const SizedBox(height: 18),
               Flexible(child: _buildContent()),
-              const SizedBox(height: 18),
+              const SizedBox(height: 22),
               _buildFooter(context),
             ],
           ),
@@ -2016,7 +2016,7 @@ class _StudentDialogState extends State<_StudentDialog> {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _ScaleColors.text,
-                  fontSize: 14,
+                  fontSize: 15,
                   height: 1.4,
                   fontWeight: FontWeight.w800,
                 ),
@@ -2036,7 +2036,7 @@ class _StudentDialogState extends State<_StudentDialog> {
             '暂无${_studentStatusLabel(_activeStatus)}',
             style: const TextStyle(
               color: _ScaleColors.muted,
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -2216,7 +2216,7 @@ class _StudentDialogState extends State<_StudentDialog> {
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _ScaleColors.text,
-              fontSize: 14,
+              fontSize: 15,
               height: 1,
               fontWeight: FontWeight.w800,
             ),
@@ -2245,7 +2245,7 @@ class _StudentDialogHeaderRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 42,
+      height: 46,
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: const Row(
         children: <Widget>[
@@ -2274,7 +2274,7 @@ class _StudentDialogHeaderText extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(
         color: _ScaleColors.muted,
-        fontSize: 12,
+        fontSize: 13,
         height: 1,
         fontWeight: FontWeight.w900,
       ),
@@ -2302,8 +2302,8 @@ class _StudentDialogGroup extends StatelessWidget {
   final _StudentLetterGroup group;
   final int? selectedStudentId;
   final ValueChanged<AssessmentStudentCandidate> onStudentTap;
-  static const double headerHeight = 26;
-  static const double itemHeight = 64;
+  static const double headerHeight = 28;
+  static const double itemHeight = 70;
 
   @override
   Widget build(BuildContext context) {
@@ -2332,7 +2332,7 @@ class _StudentLetterHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 26,
+      height: 28,
       alignment: Alignment.centerLeft,
       padding: const EdgeInsets.symmetric(horizontal: 4),
       child: Row(
@@ -2341,7 +2341,7 @@ class _StudentLetterHeader extends StatelessWidget {
             letter,
             style: const TextStyle(
               color: _ScaleColors.orangeDeep,
-              fontSize: 12,
+              fontSize: 13,
               height: 1,
               fontWeight: FontWeight.w900,
             ),
@@ -2418,14 +2418,14 @@ class _StudentAlphabetIndexLetter extends StatelessWidget {
       behavior: HitTestBehavior.opaque,
       onTap: active ? onTap : null,
       child: SizedBox(
-        height: 18,
+        height: 19,
         child: Center(
           child: Text(
             letter,
             maxLines: 1,
             style: TextStyle(
               color: active ? color : color.withOpacity(.36),
-              fontSize: 9,
+              fontSize: 10,
               height: 1,
               fontWeight: active ? FontWeight.w900 : FontWeight.w700,
             ),
@@ -2455,7 +2455,7 @@ class _StudentDialogItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
-          height: 56,
+          height: 62,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: selected ? const Color(0xFFFFF0E7) : Colors.white,
@@ -2485,7 +2485,7 @@ class _StudentDialogItem extends StatelessWidget {
                         student.displayShortName,
                         style: const TextStyle(
                           color: _ScaleColors.orangeDeep,
-                          fontSize: 14,
+                          fontSize: 15,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -2538,7 +2538,7 @@ class _StudentDialogCell extends StatelessWidget {
       overflow: TextOverflow.ellipsis,
       style: TextStyle(
         color: strong ? _ScaleColors.ink : _ScaleColors.text,
-        fontSize: strong ? 14 : 13,
+        fontSize: strong ? 15 : 14,
         height: 1,
         fontWeight: strong ? FontWeight.w900 : FontWeight.w800,
       ),
@@ -2862,7 +2862,7 @@ class _DialogActionButton extends StatelessWidget {
         : active
             ? _ScaleColors.text
             : _ScaleColors.muted;
-    final double width = label.length > 5 ? 168 : 116;
+    final double width = label.length > 5 ? 176 : 122;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -2870,7 +2870,7 @@ class _DialogActionButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Ink(
           width: width,
-          height: 42,
+          height: 44,
           decoration: BoxDecoration(
             color: background,
             borderRadius: BorderRadius.circular(12),
@@ -2882,7 +2882,7 @@ class _DialogActionButton extends StatelessWidget {
               maxLines: 1,
               style: TextStyle(
                 color: foreground,
-                fontSize: 14,
+                fontSize: 15,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
@@ -3547,8 +3547,8 @@ class _MiniActionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
-          height: 32,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           decoration: BoxDecoration(
             color: const Color(0xFFFFF1E8),
             borderRadius: BorderRadius.circular(10),
@@ -3559,7 +3559,7 @@ class _MiniActionButton extends StatelessWidget {
               label,
               style: const TextStyle(
                 color: _ScaleColors.orangeDeep,
-                fontSize: 13,
+                fontSize: 14,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
@@ -3857,10 +3857,10 @@ class _DraftSheet extends StatelessWidget {
       child: Align(
         alignment: Alignment.bottomCenter,
         child: Container(
-          width: 760,
-          constraints: const BoxConstraints(maxHeight: 430),
-          margin: const EdgeInsets.only(bottom: 18),
-          padding: const EdgeInsets.fromLTRB(20, 18, 20, 20),
+          width: 920,
+          constraints: const BoxConstraints(maxHeight: 520),
+          margin: const EdgeInsets.only(bottom: 16),
+          padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(22),
@@ -3877,23 +3877,23 @@ class _DraftSheet extends StatelessWidget {
               Row(
                 children: <Widget>[
                   const Icon(Icons.assignment_outlined,
-                      size: 22, color: _ScaleColors.orange),
-                  const SizedBox(width: 9),
+                      size: 24, color: _ScaleColors.orange),
+                  const SizedBox(width: 10),
                   const Text(
                     '继续草稿',
                     style: TextStyle(
                       color: _ScaleColors.ink,
-                      fontSize: 18,
+                      fontSize: 20,
                       height: 1,
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(width: 12),
+                  const SizedBox(width: 14),
                   Text(
                     loading ? '统计中' : '共$total条',
                     style: const TextStyle(
                       color: _ScaleColors.muted,
-                      fontSize: 13,
+                      fontSize: 14,
                       height: 1,
                       fontWeight: FontWeight.w800,
                     ),
@@ -3906,7 +3906,7 @@ class _DraftSheet extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 16),
               Flexible(child: _buildContent()),
             ],
           ),
@@ -3941,7 +3941,7 @@ class _DraftSheet extends StatelessWidget {
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _ScaleColors.text,
-                  fontSize: 14,
+                  fontSize: 15,
                   height: 1.4,
                   fontWeight: FontWeight.w800,
                 ),
@@ -3961,7 +3961,7 @@ class _DraftSheet extends StatelessWidget {
             '当前没有未完成草稿',
             style: TextStyle(
               color: _ScaleColors.muted,
-              fontSize: 15,
+              fontSize: 16,
               fontWeight: FontWeight.w800,
             ),
           ),
@@ -3973,7 +3973,7 @@ class _DraftSheet extends StatelessWidget {
       padding: EdgeInsets.zero,
       physics: const BouncingScrollPhysics(),
       itemCount: drafts.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 10),
+      separatorBuilder: (_, __) => const SizedBox(height: 12),
       itemBuilder: (BuildContext context, int index) {
         final AssessmentDraftSummary draft = drafts[index];
         return _DraftSheetItem(
@@ -4005,8 +4005,8 @@ class _DraftSheetItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
-          height: 72,
-          padding: const EdgeInsets.symmetric(horizontal: 15),
+          height: 84,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
           decoration: BoxDecoration(
             color: const Color(0xFFFFFAF5),
             borderRadius: BorderRadius.circular(14),
@@ -4026,7 +4026,7 @@ class _DraftSheetItem extends StatelessWidget {
                   '${draft.completionPercentInt}%',
                   style: const TextStyle(
                     color: _ScaleColors.orangeDeep,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -4043,7 +4043,7 @@ class _DraftSheetItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: _ScaleColors.ink,
-                        fontSize: 15,
+                        fontSize: 16,
                         height: 1,
                         fontWeight: FontWeight.w900,
                       ),
@@ -4055,7 +4055,7 @@ class _DraftSheetItem extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         color: _ScaleColors.muted,
-                        fontSize: 12,
+                        fontSize: 13,
                         height: 1,
                         fontWeight: FontWeight.w800,
                       ),

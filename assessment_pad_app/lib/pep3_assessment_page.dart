@@ -197,6 +197,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
     if (_caregiverInviteDraftId != detail.id) {
       _caregiverInvite = null;
       _caregiverInviteDraftId = 0;
+      _caregiverLoading = detail.id > 0;
     }
     _draft = detail;
     _studentName = detail.studentName.trim().isNotEmpty

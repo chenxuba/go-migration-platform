@@ -202,10 +202,13 @@ func (svc *Service) syncPEP3SubmittedDraftAfterRecordUpdate(userID, instID, reco
 		progress.RawScoreCount,
 		"submitted",
 		examinerID,
+		input.ScoreInput.ItemScores,
+		input.ScoreInput.RawScores,
+		input.ItemRecordValues,
 	); err != nil {
 		return err
 	}
-	return svc.repo.SyncAssessmentDraftDetails(context.Background(), instID, draft.ID, input.ScoreInput.ItemScores, input.ScoreInput.RawScores, input.ItemRecordValues, examinerID)
+	return nil
 }
 
 func (svc *Service) GetPEP3AssessmentRecord(userID, recordID int64) (model.AssessmentRecordDetailVO, error) {

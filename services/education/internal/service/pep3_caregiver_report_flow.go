@@ -97,54 +97,60 @@ func (svc *Service) GeneratePEP3CaregiverReportInviteForRecord(claims authx.Clai
 }
 
 func (svc *Service) buildPEP3CaregiverReportInvite(claims authx.Claims, instID int64, draft model.AssessmentDraftDetailVO, recordID int64) (model.PEP3CaregiverReportInviteVO, error) {
-	expiresAt := time.Now().Add(pep3CaregiverReportInviteTTL)
+	invite, err := svc.ensurePEP3CaregiverReportInvite(context.Background(), instID, draft.ID, recordID)
+	if err != nil {
+		return model.PEP3CaregiverReportInviteVO{}, err
+	}
+	expiresAt := invite.ExpiresAt
+	ttl := time.Until(expiresAt)
+	if ttl <= 0 {
+		ttl = pep3CaregiverReportInviteTTL
+		expiresAt = time.Now().Add(ttl)
+	}
 	token, err := svc.tokenManager.Generate(authx.Claims{
 		UserID:    draft.ID,
 		Username:  "pep3_caregiver",
 		LoginType: pep3CaregiverReportLoginType,
 		TenantID:  strings.TrimSpace(claims.TenantID),
 		OrgID:     instID,
-	}, pep3CaregiverReportInviteTTL)
-	if err != nil {
-		return model.PEP3CaregiverReportInviteVO{}, err
-	}
-	ticket, err := svc.createPEP3CaregiverReportInviteTicket(instID, draft.ID, recordID, expiresAt)
+	}, ttl)
 	if err != nil {
 		return model.PEP3CaregiverReportInviteVO{}, err
 	}
 
-	path, page, query := buildPEP3CaregiverReportMiniProgramPath(ticket)
+	path, _, _ := buildPEP3CaregiverReportMiniProgramPath(invite.Ticket)
 	qrCodeValue := path
 	qrCodeType := "mini_program_path"
 	qrCodeMessage := "当前二维码为小程序路径调试码；如果微信 URL Link 未生成，普通微信扫码不会自动跳转小程序。"
-	wechatURLLink := ""
-	miniProgramCodeDataURL := ""
+	wechatURLLink := strings.TrimSpace(invite.WeChatURLLink)
 	envVersion := ""
 	if svc.wechatMiniProgram != nil && svc.wechatMiniProgram.isEnabled() {
 		envVersion = svc.wechatMiniProgram.config.EnvVersion
-		if image, contentType, codeErr := svc.wechatMiniProgram.generateUnlimitedQRCode(context.Background(), ticket, pep3CaregiverReportMiniProgramPage, false); codeErr == nil && len(image) > 0 {
-			miniProgramCodeDataURL = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(image)
-			qrCodeValue = ticket
-			qrCodeType = "wechat_mini_program_code"
+	}
+	if strings.TrimSpace(invite.MiniProgramCodeDataURL) == "" && svc.wechatMiniProgram != nil && svc.wechatMiniProgram.isEnabled() {
+		var qrMessage string
+		invite, qrMessage, err = svc.populatePEP3CaregiverReportInviteCache(context.Background(), invite)
+		if err != nil {
+			return model.PEP3CaregiverReportInviteVO{}, err
+		}
+		wechatURLLink = strings.TrimSpace(invite.WeChatURLLink)
+		if strings.TrimSpace(qrMessage) != "" {
+			qrCodeMessage = qrMessage
+		}
+	}
+	miniProgramCodeDataURL := ""
+	if dataURL := strings.TrimSpace(invite.MiniProgramCodeDataURL); dataURL != "" {
+		miniProgramCodeDataURL = dataURL
+		qrCodeValue = invite.Ticket
+		qrCodeType = "wechat_mini_program_code"
+		if strings.HasPrefix(qrCodeMessage, "当前二维码为小程序路径调试码") {
 			qrCodeMessage = "微信扫码直接进入" + miniProgramEnvLabel(envVersion) + "照顾者报告页。"
-		} else if link, linkErr := svc.wechatMiniProgram.generateURLLink(context.Background(), page, query, expiresAt); linkErr == nil && strings.TrimSpace(link) != "" {
-			wechatURLLink = strings.TrimSpace(link)
-			qrCodeValue = wechatURLLink
-			qrCodeType = "wechat_url_link"
-			qrCodeMessage = "小程序码生成失败，已生成微信 URL Link：" + codeErr.Error()
-		} else if linkErr != nil {
-			if apiErr, ok := linkErr.(weChatMiniProgramAPIError); ok && apiErr.ErrCode == weChatMiniProgramInvalidPagePathErrCode {
-				if link, retryErr := svc.wechatMiniProgram.generateURLLink(context.Background(), "", buildPEP3CaregiverReportHomeRedirectQuery(ticket), expiresAt); retryErr == nil && strings.TrimSpace(link) != "" {
-					wechatURLLink = strings.TrimSpace(link)
-					qrCodeValue = wechatURLLink
-					qrCodeType = "wechat_url_link"
-					qrCodeMessage = "小程序码生成失败，且微信当前版本还未识别照顾者报告页面，已生成默认入口中转码：" + codeErr.Error()
-				} else {
-					qrCodeMessage = "小程序码生成失败：" + codeErr.Error() + "；URL Link 也失败：" + retryErr.Error()
-				}
-			} else {
-				qrCodeMessage = "小程序码生成失败：" + codeErr.Error() + "；URL Link 也失败，已降级为路径调试码：" + linkErr.Error()
-			}
+		}
+	} else if wechatURLLink != "" {
+		qrCodeValue = wechatURLLink
+		qrCodeType = "wechat_url_link"
+		if strings.HasPrefix(qrCodeMessage, "当前二维码为小程序路径调试码") {
+			qrCodeMessage = "小程序码生成失败，已降级为微信二维码入口。"
 		}
 	}
 
@@ -152,7 +158,7 @@ func (svc *Service) buildPEP3CaregiverReportInvite(claims authx.Claims, instID i
 		DraftID:                draft.ID,
 		RecordID:               recordID,
 		StudentName:            draft.StudentName,
-		Ticket:                 ticket,
+		Ticket:                 invite.Ticket,
 		Token:                  token,
 		ExpiresAt:              &expiresAt,
 		MiniProgramPath:        path,
@@ -233,6 +239,10 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 	if err != nil {
 		return model.PEP3CaregiverReportSubmitVO{}, err
 	}
+	itemRecordValues, err := decodeSavedPEP3ItemRecordValues(draft.InputJSON)
+	if err != nil {
+		return model.PEP3CaregiverReportSubmitVO{}, err
+	}
 	if rawScores == nil {
 		rawScores = map[string]int{}
 	}
@@ -278,13 +288,16 @@ func (svc *Service) SubmitPEP3CaregiverReport(input model.PEP3CaregiverReportSub
 	if err := svc.repo.UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
 		context.Background(),
 		claims.OrgID,
-		claims.UserID,
+		draft.ID,
 		nextInput,
 		progress,
 		progress.AnsweredItemCount,
 		progress.RawScoreCount,
 		nextDraftStatus,
 		0,
+		itemScores,
+		rawScores,
+		itemRecordValues,
 	); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.PEP3CaregiverReportSubmitVO{}, errors.New("assessment draft not found")
@@ -362,28 +375,102 @@ func (svc *Service) updatePEP3SubmittedRecordCaregiverReport(instID, recordID in
 	)
 }
 
-func (svc *Service) createPEP3CaregiverReportInviteTicket(instID, draftID, recordID int64, expiresAt time.Time) (string, error) {
+func (svc *Service) ensurePEP3CaregiverReportInvite(ctx context.Context, instID, draftID, recordID int64) (repository.AssessmentCaregiverInviteEntity, error) {
+	invite, err := svc.repo.GetActiveAssessmentCaregiverInviteByDraft(ctx, instID, draftID)
+	if err == nil {
+		if invite.RecordID <= 0 && recordID > 0 {
+			invite.RecordID = recordID
+		}
+		return invite, nil
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return repository.AssessmentCaregiverInviteEntity{}, err
+	}
+
+	expiresAt := time.Now().Add(pep3CaregiverReportInviteTTL)
 	for attempt := 0; attempt < 5; attempt++ {
 		ticket, err := newPEP3CaregiverReportTicket()
 		if err != nil {
-			return "", err
+			return repository.AssessmentCaregiverInviteEntity{}, err
 		}
-		err = svc.repo.CreateAssessmentCaregiverInvite(context.Background(), repository.AssessmentCaregiverInviteEntity{
+		invite = repository.AssessmentCaregiverInviteEntity{
 			Ticket:    ticket,
 			InstID:    instID,
 			DraftID:   draftID,
 			RecordID:  recordID,
 			ExpiresAt: expiresAt,
-		})
+		}
+		err = svc.repo.CreateAssessmentCaregiverInvite(ctx, invite)
 		if err == nil {
-			return ticket, nil
+			return invite, nil
 		}
 		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
 			continue
 		}
-		return "", err
+		return repository.AssessmentCaregiverInviteEntity{}, err
 	}
-	return "", errors.New("generate caregiver report invite ticket failed")
+	return repository.AssessmentCaregiverInviteEntity{}, errors.New("generate caregiver report invite ticket failed")
+}
+
+func (svc *Service) populatePEP3CaregiverReportInviteCache(ctx context.Context, invite repository.AssessmentCaregiverInviteEntity) (repository.AssessmentCaregiverInviteEntity, string, error) {
+	if svc == nil || svc.wechatMiniProgram == nil || !svc.wechatMiniProgram.isEnabled() {
+		return invite, "", nil
+	}
+	if strings.TrimSpace(invite.MiniProgramCodeDataURL) != "" {
+		return invite, "", nil
+	}
+
+	image, contentType, codeErr := svc.wechatMiniProgram.generateUnlimitedQRCode(ctx, invite.Ticket, pep3CaregiverReportMiniProgramPage, false)
+	if codeErr == nil && len(image) > 0 {
+		invite.WeChatURLLink = ""
+		invite.MiniProgramCodeDataURL = "data:" + contentType + ";base64," + base64.StdEncoding.EncodeToString(image)
+		if err := svc.repo.UpsertAssessmentCaregiverInvite(ctx, invite); err != nil {
+			return repository.AssessmentCaregiverInviteEntity{}, "", err
+		}
+		return invite, "", nil
+	}
+
+	_, page, query := buildPEP3CaregiverReportMiniProgramPath(invite.Ticket)
+	urlLink, urlLinkMessage, urlLinkErr := svc.generatePEP3CaregiverReportURLLink(ctx, invite, page, query)
+	if strings.TrimSpace(urlLink) != "" {
+		invite.WeChatURLLink = strings.TrimSpace(urlLink)
+		invite.MiniProgramCodeDataURL = ""
+		if err := svc.repo.UpsertAssessmentCaregiverInvite(ctx, invite); err != nil {
+			return repository.AssessmentCaregiverInviteEntity{}, "", err
+		}
+		if codeErr != nil {
+			return invite, "小程序码生成失败，已降级为微信二维码入口：" + codeErr.Error(), nil
+		}
+		return invite, urlLinkMessage, nil
+	}
+
+	if urlLinkErr != nil && codeErr != nil {
+		return invite, "小程序码失败：" + codeErr.Error() + "；微信二维码入口也失败，已降级为路径调试码：" + urlLinkErr.Error(), nil
+	}
+	if codeErr != nil {
+		return invite, "小程序码生成失败，已降级为路径调试码：" + codeErr.Error(), nil
+	}
+	return invite, urlLinkMessage, nil
+}
+
+func (svc *Service) generatePEP3CaregiverReportURLLink(ctx context.Context, invite repository.AssessmentCaregiverInviteEntity, page, query string) (string, string, error) {
+	link, err := svc.wechatMiniProgram.generateURLLink(ctx, page, query, invite.ExpiresAt)
+	if err == nil && strings.TrimSpace(link) != "" {
+		return strings.TrimSpace(link), "", nil
+	}
+	if err != nil {
+		if apiErr, ok := err.(weChatMiniProgramAPIError); ok && apiErr.ErrCode == weChatMiniProgramInvalidPagePathErrCode {
+			retryLink, retryErr := svc.wechatMiniProgram.generateURLLink(ctx, "", buildPEP3CaregiverReportHomeRedirectQuery(invite.Ticket), invite.ExpiresAt)
+			if retryErr == nil && strings.TrimSpace(retryLink) != "" {
+				return strings.TrimSpace(retryLink), "微信当前版本还未识别照顾者报告页面，已生成默认入口中转码。", nil
+			}
+			if retryErr != nil {
+				return "", "", fmt.Errorf("%w; default redirect failed: %w", err, retryErr)
+			}
+		}
+		return "", "", err
+	}
+	return "", "", errors.New("generate mini program url link failed: empty url_link")
 }
 
 func newPEP3CaregiverReportTicket() (string, error) {

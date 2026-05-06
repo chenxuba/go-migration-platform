@@ -78,14 +78,11 @@ func (svc *Service) SavePEP3AssessmentDraft(userID int64, input PEP3AssessmentDr
 		Remark:            strings.TrimSpace(input.Remark),
 		CreatedBy:         examinerID,
 		UpdatedBy:         examinerID,
-	})
+	}, input.ItemScores, input.RawScores, input.ItemRecordValues, examinerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.AssessmentDraftDetailVO{}, errors.New("assessment draft not found")
 		}
-		return model.AssessmentDraftDetailVO{}, err
-	}
-	if err := svc.repo.SyncAssessmentDraftDetails(context.Background(), instID, draftID, input.ItemScores, input.RawScores, input.ItemRecordValues, examinerID); err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
 	return svc.repo.GetAssessmentDraft(context.Background(), instID, draftID)

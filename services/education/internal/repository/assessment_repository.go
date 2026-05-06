@@ -59,18 +59,14 @@ type AssessmentDraftEntity struct {
 }
 
 type AssessmentCaregiverInviteEntity struct {
-	ID        int64
-	Ticket    string
-	InstID    int64
-	DraftID   int64
-	RecordID  int64
-	ExpiresAt time.Time
-}
-
-type AssessmentDraftItemRecordValueEntity struct {
-	ItemNo   int    `json:"itemNo"`
-	FieldKey string `json:"fieldKey"`
-	Value    any    `json:"value"`
+	ID                     int64
+	Ticket                 string
+	InstID                 int64
+	DraftID                int64
+	RecordID               int64
+	WeChatURLLink          string
+	MiniProgramCodeDataURL string
+	ExpiresAt              time.Time
 }
 
 func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
@@ -199,6 +195,8 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 			inst_id BIGINT NOT NULL DEFAULT 0,
 			draft_id BIGINT NOT NULL DEFAULT 0,
 			record_id BIGINT NOT NULL DEFAULT 0,
+			wechat_url_link VARCHAR(1024) NOT NULL DEFAULT '',
+			mini_program_code_data_url LONGTEXT NULL,
 			expires_at DATETIME NULL,
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
 			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -208,7 +206,13 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 			KEY idx_assessment_caregiver_invite_record (inst_id, record_id, update_time)
 		)
 	`)
-	return err
+	if err != nil {
+		return err
+	}
+	return ensureColumnsOnTable(ctx, db, "assessment_caregiver_invite", map[string]string{
+		"wechat_url_link":            "wechat_url_link VARCHAR(1024) NOT NULL DEFAULT '' AFTER record_id",
+		"mini_program_code_data_url": "mini_program_code_data_url LONGTEXT NULL AFTER wechat_url_link",
+	})
 }
 
 func (repo *Repository) CreateAssessmentRecord(ctx context.Context, entity AssessmentRecordEntity) (int64, error) {
@@ -737,7 +741,53 @@ func (repo *Repository) DeleteAssessmentRecord(ctx context.Context, instID, reco
 	return affected > 0, nil
 }
 
-func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity AssessmentDraftEntity) (int64, error) {
+func (repo *Repository) SaveAssessmentDraft(
+	ctx context.Context,
+	entity AssessmentDraftEntity,
+	itemScores map[int]int,
+	rawScores map[string]int,
+	itemRecordValues map[int]map[string]any,
+	operatorID int64,
+) (int64, error) {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	draftID, err := saveAssessmentDraftWithExecutor(ctx, tx, entity)
+	if err != nil {
+		return 0, err
+	}
+	if err = replaceAssessmentDraftItemScores(ctx, tx, entity.InstID, draftID, itemScores, operatorID); err != nil {
+		return 0, err
+	}
+	if err = replaceAssessmentDraftRawScores(ctx, tx, entity.InstID, draftID, rawScores, operatorID); err != nil {
+		return 0, err
+	}
+	if err = replaceAssessmentDraftItemRecordValues(ctx, tx, entity.InstID, draftID, itemRecordValues, operatorID); err != nil {
+		return 0, err
+	}
+	if err = tx.Commit(); err != nil {
+		return 0, err
+	}
+	committed = true
+	return draftID, nil
+}
+
+type assessmentDraftExecContext interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func saveAssessmentDraftWithExecutor(
+	ctx context.Context,
+	exec assessmentDraftExecContext,
+	entity AssessmentDraftEntity,
+) (int64, error) {
 	inputRaw, err := json.Marshal(entity.Input)
 	if err != nil {
 		return 0, fmt.Errorf("marshal assessment draft input: %w", err)
@@ -752,7 +802,7 @@ func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity Assessme
 	}
 
 	if entity.ID > 0 {
-		result, err := repo.db.ExecContext(ctx, `
+		result, err := exec.ExecContext(ctx, `
 			UPDATE assessment_draft
 			SET student_id = ?,
 			    student_name = ?,
@@ -806,7 +856,7 @@ func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity Assessme
 		return entity.ID, nil
 	}
 
-	result, err := repo.db.ExecContext(ctx, `
+	result, err := exec.ExecContext(ctx, `
 		INSERT INTO assessment_draft (
 			inst_id, student_id, student_name, assessment_code, assessment_name, scale_version,
 			birth_date, assessment_date, examiner_id, examiner_name, input_json, progress_json,
@@ -837,33 +887,6 @@ func (repo *Repository) SaveAssessmentDraft(ctx context.Context, entity Assessme
 		return 0, err
 	}
 	return result.LastInsertId()
-}
-
-func (repo *Repository) SyncAssessmentDraftDetails(ctx context.Context, instID, draftID int64, itemScores map[int]int, rawScores map[string]int, itemRecordValues map[int]map[string]any, operatorID int64) error {
-	tx, err := repo.db.BeginTx(ctx, nil)
-	if err != nil {
-		return err
-	}
-	committed := false
-	defer func() {
-		if !committed {
-			_ = tx.Rollback()
-		}
-	}()
-	if err = replaceAssessmentDraftItemScores(ctx, tx, instID, draftID, itemScores, operatorID); err != nil {
-		return err
-	}
-	if err = replaceAssessmentDraftRawScores(ctx, tx, instID, draftID, rawScores, operatorID); err != nil {
-		return err
-	}
-	if err = replaceAssessmentDraftItemRecordValues(ctx, tx, instID, draftID, itemRecordValues, operatorID); err != nil {
-		return err
-	}
-	if err = tx.Commit(); err != nil {
-		return err
-	}
-	committed = true
-	return nil
 }
 
 func (repo *Repository) UpsertAssessmentDraftItemDetails(ctx context.Context, instID, draftID int64, itemNo int, score *int, recordValues map[string]any, replaceRecordValues bool, operatorID int64) error {
@@ -1173,264 +1196,11 @@ func (repo *Repository) GetAssessmentDraft(ctx context.Context, instID, draftID 
 	}
 	fillAssessmentDraftTimes(&item.AssessmentDraftSummaryVO, birthDate, testDate, createdAt, updatedAt)
 	item.InputJSON = json.RawMessage(inputRaw)
-	hydrationPlan := assessmentDraftInputHydrationPlan(item.InputJSON, item.AnsweredItemCount, item.RawScoreCount)
-	if hydratedInput, err := repo.hydrateAssessmentDraftInputFromDetails(ctx, instID, draftID, item.InputJSON, hydrationPlan); err == nil {
-		item.InputJSON = hydratedInput
-	} else {
-		return model.AssessmentDraftDetailVO{}, err
-	}
 	if err := json.Unmarshal([]byte(progressRaw), &item.Progress); err != nil {
 		return model.AssessmentDraftDetailVO{}, fmt.Errorf("decode assessment draft progress: %w", err)
 	}
 	item.CompletionPercent = item.Progress.CompletionPercent
 	return item, nil
-}
-
-type assessmentDraftDetailHydrationPlan struct {
-	needItemScores       bool
-	needRawScores        bool
-	needItemRecordValues bool
-}
-
-func assessmentDraftInputHydrationPlan(
-	raw json.RawMessage,
-	answeredItemCount int,
-	rawScoreCount int,
-) assessmentDraftDetailHydrationPlan {
-	if len(raw) == 0 {
-		return assessmentDraftDetailHydrationPlan{
-			needItemScores:       answeredItemCount > 0,
-			needRawScores:        rawScoreCount > 0,
-			needItemRecordValues: true,
-		}
-	}
-	var snapshot map[string]json.RawMessage
-	if err := json.Unmarshal(raw, &snapshot); err != nil {
-		return assessmentDraftDetailHydrationPlan{
-			needItemScores:       answeredItemCount > 0,
-			needRawScores:        rawScoreCount > 0,
-			needItemRecordValues: true,
-		}
-	}
-	hasItemScores := len(snapshot["itemScores"]) > 0 || len(snapshot["itemScoreList"]) > 0
-	hasRawScores := len(snapshot["rawScores"]) > 0 || len(snapshot["rawScoreList"]) > 0
-	hasItemRecordValues := len(snapshot["itemRecordValues"]) > 0 || len(snapshot["itemRecordValueList"]) > 0
-	hasAnyDetail := hasItemScores || hasRawScores || hasItemRecordValues
-	if !hasAnyDetail {
-		return assessmentDraftDetailHydrationPlan{
-			needItemScores:       answeredItemCount > 0,
-			needRawScores:        rawScoreCount > 0,
-			needItemRecordValues: true,
-		}
-	}
-	return assessmentDraftDetailHydrationPlan{
-		needItemScores:       !hasItemScores && answeredItemCount > 0,
-		needRawScores:        !hasRawScores && rawScoreCount > 0,
-		needItemRecordValues: !hasItemRecordValues,
-	}
-}
-
-func (plan assessmentDraftDetailHydrationPlan) needsHydration() bool {
-	return plan.needItemScores || plan.needRawScores || plan.needItemRecordValues
-}
-
-func (repo *Repository) hydrateAssessmentDraftInputFromDetails(
-	ctx context.Context,
-	instID, draftID int64,
-	raw json.RawMessage,
-	plan assessmentDraftDetailHydrationPlan,
-) (json.RawMessage, error) {
-	if !plan.needsHydration() {
-		return raw, nil
-	}
-	var (
-		itemScores       map[int]int
-		rawScores        map[string]int
-		itemRecordValues map[int]map[string]any
-		err              error
-	)
-	if plan.needItemScores {
-		itemScores, err = repo.ListAssessmentDraftItemScores(ctx, instID, draftID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if plan.needRawScores {
-		rawScores, err = repo.ListAssessmentDraftRawScores(ctx, instID, draftID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if plan.needItemRecordValues {
-		itemRecordValues, err = repo.ListAssessmentDraftItemRecordValues(ctx, instID, draftID)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(itemScores) == 0 && len(rawScores) == 0 && len(itemRecordValues) == 0 {
-		if len(raw) > 0 {
-			return raw, nil
-		}
-		return json.RawMessage(`{}`), nil
-	}
-	var snapshot map[string]any
-	if len(raw) > 0 {
-		_ = json.Unmarshal(raw, &snapshot)
-	}
-	if snapshot == nil {
-		snapshot = map[string]any{}
-	}
-	if plan.needItemScores && len(itemScores) > 0 {
-		snapshot["itemScores"] = itemScores
-		snapshot["itemScoreList"] = assessmentDraftItemScoreList(itemScores)
-	}
-	if plan.needRawScores && len(rawScores) > 0 {
-		snapshot["rawScores"] = rawScores
-		snapshot["rawScoreList"] = assessmentDraftRawScoreList(rawScores)
-	}
-	if plan.needItemRecordValues && len(itemRecordValues) > 0 {
-		snapshot["itemRecordValues"] = itemRecordValues
-		snapshot["itemRecordValueList"] = assessmentDraftItemRecordValueList(itemRecordValues)
-	}
-	out, err := json.Marshal(snapshot)
-	if err != nil {
-		return nil, fmt.Errorf("marshal hydrated assessment draft input: %w", err)
-	}
-	return json.RawMessage(out), nil
-}
-
-func (repo *Repository) ListAssessmentDraftItemScores(ctx context.Context, instID, draftID int64) (map[int]int, error) {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT item_no, score
-		FROM assessment_draft_item_score
-		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
-		ORDER BY item_no
-	`, instID, draftID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[int]int{}
-	for rows.Next() {
-		var itemNo, score int
-		if err := rows.Scan(&itemNo, &score); err != nil {
-			return nil, err
-		}
-		out[itemNo] = score
-	}
-	return out, rows.Err()
-}
-
-func (repo *Repository) ListAssessmentDraftRawScores(ctx context.Context, instID, draftID int64) (map[string]int, error) {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT scale_code, raw_score
-		FROM assessment_draft_raw_score
-		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
-		ORDER BY scale_code
-	`, instID, draftID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[string]int{}
-	for rows.Next() {
-		var scaleCode string
-		var rawScore int
-		if err := rows.Scan(&scaleCode, &rawScore); err != nil {
-			return nil, err
-		}
-		if normalized := strings.ToUpper(strings.TrimSpace(scaleCode)); normalized != "" {
-			out[normalized] = rawScore
-		}
-	}
-	return out, rows.Err()
-}
-
-func (repo *Repository) ListAssessmentDraftItemRecordValues(ctx context.Context, instID, draftID int64) (map[int]map[string]any, error) {
-	rows, err := repo.db.QueryContext(ctx, `
-		SELECT item_no, field_key, value_json
-		FROM assessment_draft_item_record_value
-		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
-		ORDER BY item_no, field_key
-	`, instID, draftID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	out := map[int]map[string]any{}
-	for rows.Next() {
-		var (
-			itemNo   int
-			fieldKey string
-			raw      string
-			value    any
-		)
-		if err := rows.Scan(&itemNo, &fieldKey, &raw); err != nil {
-			return nil, err
-		}
-		if err := json.Unmarshal([]byte(raw), &value); err != nil {
-			return nil, fmt.Errorf("decode draft item record value %d/%s: %w", itemNo, fieldKey, err)
-		}
-		key := strings.TrimSpace(fieldKey)
-		if itemNo <= 0 || key == "" || isAssessmentDraftEmptyDetailValue(value) {
-			continue
-		}
-		if out[itemNo] == nil {
-			out[itemNo] = map[string]any{}
-		}
-		out[itemNo][key] = value
-	}
-	return out, rows.Err()
-}
-
-func assessmentDraftItemScoreList(itemScores map[int]int) []map[string]int {
-	itemNos := make([]int, 0, len(itemScores))
-	for itemNo := range itemScores {
-		itemNos = append(itemNos, itemNo)
-	}
-	sort.Ints(itemNos)
-	out := make([]map[string]int, 0, len(itemNos))
-	for _, itemNo := range itemNos {
-		out = append(out, map[string]int{"itemNo": itemNo, "score": itemScores[itemNo]})
-	}
-	return out
-}
-
-func assessmentDraftRawScoreList(rawScores map[string]int) []map[string]any {
-	scaleCodes := make([]string, 0, len(rawScores))
-	for scaleCode := range rawScores {
-		scaleCodes = append(scaleCodes, scaleCode)
-	}
-	sort.Strings(scaleCodes)
-	out := make([]map[string]any, 0, len(scaleCodes))
-	for _, scaleCode := range scaleCodes {
-		out = append(out, map[string]any{"scaleCode": scaleCode, "rawScore": rawScores[scaleCode]})
-	}
-	return out
-}
-
-func assessmentDraftItemRecordValueList(itemRecordValues map[int]map[string]any) []AssessmentDraftItemRecordValueEntity {
-	itemNos := make([]int, 0, len(itemRecordValues))
-	for itemNo := range itemRecordValues {
-		itemNos = append(itemNos, itemNo)
-	}
-	sort.Ints(itemNos)
-	out := make([]AssessmentDraftItemRecordValueEntity, 0)
-	for _, itemNo := range itemNos {
-		fieldKeys := make([]string, 0, len(itemRecordValues[itemNo]))
-		for fieldKey := range itemRecordValues[itemNo] {
-			fieldKeys = append(fieldKeys, fieldKey)
-		}
-		sort.Strings(fieldKeys)
-		for _, fieldKey := range fieldKeys {
-			out = append(out, AssessmentDraftItemRecordValueEntity{
-				ItemNo:   itemNo,
-				FieldKey: fieldKey,
-				Value:    itemRecordValues[itemNo][fieldKey],
-			})
-		}
-	}
-	return out
 }
 
 func isAssessmentDraftEmptyDetailValue(value any) bool {
@@ -1608,54 +1378,68 @@ func (repo *Repository) DeleteAssessmentDraft(ctx context.Context, instID, draft
 	return affected > 0, nil
 }
 
-func (repo *Repository) UpdateAssessmentDraftInputAndProgress(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, operatorID int64) error {
-	inputRaw, err := json.Marshal(input)
+func (repo *Repository) UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
+	ctx context.Context,
+	instID, draftID int64,
+	input any,
+	progress any,
+	answeredItemCount, rawScoreCount int,
+	status string,
+	operatorID int64,
+	itemScores map[int]int,
+	rawScores map[string]int,
+	itemRecordValues map[int]map[string]any,
+) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
-		return fmt.Errorf("marshal assessment draft input: %w", err)
+		return err
 	}
-	progressRaw, err := json.Marshal(progress)
-	if err != nil {
-		return fmt.Errorf("marshal assessment draft progress: %w", err)
-	}
-	status = strings.TrimSpace(status)
-	if status == "" {
-		status = "draft"
-	}
-
-	result, err := repo.db.ExecContext(ctx, `
-		UPDATE assessment_draft
-		SET input_json = ?,
-		    progress_json = ?,
-		    answered_item_count = ?,
-		    raw_score_count = ?,
-		    status = ?,
-		    update_id = ?,
-		    update_time = NOW()
-		WHERE id = ? AND inst_id = ? AND del_flag = 0 AND submitted_record_id = 0
-	`,
-		string(inputRaw),
-		string(progressRaw),
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback()
+		}
+	}()
+	if err = updateAssessmentDraftInputAndProgressIncludingSubmittedWithExecutor(
+		ctx,
+		tx,
+		instID,
+		draftID,
+		input,
+		progress,
 		answeredItemCount,
 		rawScoreCount,
 		status,
 		operatorID,
-		draftID,
-		instID,
-	)
-	if err != nil {
+	); err != nil {
 		return err
 	}
-	affected, err := result.RowsAffected()
-	if err != nil {
+	if err = replaceAssessmentDraftItemScores(ctx, tx, instID, draftID, itemScores, operatorID); err != nil {
 		return err
 	}
-	if affected == 0 {
-		return sql.ErrNoRows
+	if err = replaceAssessmentDraftRawScores(ctx, tx, instID, draftID, rawScores, operatorID); err != nil {
+		return err
 	}
+	if err = replaceAssessmentDraftItemRecordValues(ctx, tx, instID, draftID, itemRecordValues, operatorID); err != nil {
+		return err
+	}
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	committed = true
 	return nil
 }
 
-func (repo *Repository) UpdateAssessmentDraftInputAndProgressIncludingSubmitted(ctx context.Context, instID, draftID int64, input any, progress any, answeredItemCount, rawScoreCount int, status string, operatorID int64) error {
+func updateAssessmentDraftInputAndProgressIncludingSubmittedWithExecutor(
+	ctx context.Context,
+	exec assessmentDraftExecContext,
+	instID, draftID int64,
+	input any,
+	progress any,
+	answeredItemCount, rawScoreCount int,
+	status string,
+	operatorID int64,
+) error {
 	inputRaw, err := json.Marshal(input)
 	if err != nil {
 		return fmt.Errorf("marshal assessment draft input: %w", err)
@@ -1669,7 +1453,7 @@ func (repo *Repository) UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
 		status = "draft"
 	}
 
-	result, err := repo.db.ExecContext(ctx, `
+	result, err := exec.ExecContext(ctx, `
 		UPDATE assessment_draft
 		SET input_json = ?,
 		    progress_json = ?,
@@ -1746,25 +1530,94 @@ func (repo *Repository) MarkAssessmentDraftSubmitted(ctx context.Context, instID
 func (repo *Repository) CreateAssessmentCaregiverInvite(ctx context.Context, entity AssessmentCaregiverInviteEntity) error {
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO assessment_caregiver_invite (
-			ticket, inst_id, draft_id, record_id, expires_at, create_time, update_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			ticket, inst_id, draft_id, record_id, wechat_url_link, mini_program_code_data_url, expires_at, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
 	`,
 		strings.TrimSpace(entity.Ticket),
 		entity.InstID,
 		entity.DraftID,
 		entity.RecordID,
+		strings.TrimSpace(entity.WeChatURLLink),
+		strings.TrimSpace(entity.MiniProgramCodeDataURL),
 		entity.ExpiresAt,
 	)
 	return err
 }
 
-func (repo *Repository) GetAssessmentCaregiverInviteByTicket(ctx context.Context, ticket string) (AssessmentCaregiverInviteEntity, error) {
+func (repo *Repository) UpsertAssessmentCaregiverInvite(ctx context.Context, entity AssessmentCaregiverInviteEntity) error {
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO assessment_caregiver_invite (
+			ticket, inst_id, draft_id, record_id, wechat_url_link, mini_program_code_data_url, expires_at, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			inst_id = VALUES(inst_id),
+			draft_id = VALUES(draft_id),
+			record_id = VALUES(record_id),
+			wechat_url_link = VALUES(wechat_url_link),
+			mini_program_code_data_url = VALUES(mini_program_code_data_url),
+			expires_at = VALUES(expires_at),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		strings.TrimSpace(entity.Ticket),
+		entity.InstID,
+		entity.DraftID,
+		entity.RecordID,
+		strings.TrimSpace(entity.WeChatURLLink),
+		strings.TrimSpace(entity.MiniProgramCodeDataURL),
+		entity.ExpiresAt,
+	)
+	return err
+}
+
+func (repo *Repository) GetActiveAssessmentCaregiverInviteByDraft(ctx context.Context, instID, draftID int64) (AssessmentCaregiverInviteEntity, error) {
 	var (
-		item      AssessmentCaregiverInviteEntity
-		expiresAt sql.NullTime
+		item                   AssessmentCaregiverInviteEntity
+		wechatURLLink          sql.NullString
+		miniProgramCodeDataURL sql.NullString
+		expiresAt              sql.NullTime
 	)
 	err := repo.db.QueryRowContext(ctx, `
-		SELECT id, ticket, inst_id, draft_id, record_id, expires_at
+		SELECT id, ticket, inst_id, draft_id, record_id, wechat_url_link, mini_program_code_data_url, expires_at
+		FROM assessment_caregiver_invite
+		WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+		  AND (expires_at IS NULL OR expires_at > NOW())
+		ORDER BY update_time DESC, id DESC
+		LIMIT 1
+	`, instID, draftID).Scan(
+		&item.ID,
+		&item.Ticket,
+		&item.InstID,
+		&item.DraftID,
+		&item.RecordID,
+		&wechatURLLink,
+		&miniProgramCodeDataURL,
+		&expiresAt,
+	)
+	if err != nil {
+		return AssessmentCaregiverInviteEntity{}, err
+	}
+	if expiresAt.Valid {
+		item.ExpiresAt = expiresAt.Time
+	}
+	if wechatURLLink.Valid {
+		item.WeChatURLLink = strings.TrimSpace(wechatURLLink.String)
+	}
+	if miniProgramCodeDataURL.Valid {
+		item.MiniProgramCodeDataURL = strings.TrimSpace(miniProgramCodeDataURL.String)
+	}
+	return item, nil
+}
+
+func (repo *Repository) GetAssessmentCaregiverInviteByTicket(ctx context.Context, ticket string) (AssessmentCaregiverInviteEntity, error) {
+	var (
+		item                   AssessmentCaregiverInviteEntity
+		wechatURLLink          sql.NullString
+		miniProgramCodeDataURL sql.NullString
+		expiresAt              sql.NullTime
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, ticket, inst_id, draft_id, record_id, wechat_url_link, mini_program_code_data_url, expires_at
 		FROM assessment_caregiver_invite
 		WHERE ticket = ? AND del_flag = 0
 		LIMIT 1
@@ -1774,6 +1627,8 @@ func (repo *Repository) GetAssessmentCaregiverInviteByTicket(ctx context.Context
 		&item.InstID,
 		&item.DraftID,
 		&item.RecordID,
+		&wechatURLLink,
+		&miniProgramCodeDataURL,
 		&expiresAt,
 	)
 	if err != nil {
@@ -1781,6 +1636,12 @@ func (repo *Repository) GetAssessmentCaregiverInviteByTicket(ctx context.Context
 	}
 	if expiresAt.Valid {
 		item.ExpiresAt = expiresAt.Time
+	}
+	if wechatURLLink.Valid {
+		item.WeChatURLLink = strings.TrimSpace(wechatURLLink.String)
+	}
+	if miniProgramCodeDataURL.Valid {
+		item.MiniProgramCodeDataURL = strings.TrimSpace(miniProgramCodeDataURL.String)
 	}
 	return item, nil
 }

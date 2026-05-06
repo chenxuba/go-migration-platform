@@ -223,10 +223,10 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
     return Dialog(
       elevation: 0,
       backgroundColor: Colors.transparent,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 56, vertical: 42),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
       child: Container(
-        width: 760,
-        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        width: 920,
+        padding: const EdgeInsets.fromLTRB(26, 24, 26, 24),
         decoration: BoxDecoration(
           color: _PickerColors.surface,
           borderRadius: BorderRadius.circular(22),
@@ -249,7 +249,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                   '选择日期范围',
                   style: TextStyle(
                     color: _PickerColors.ink,
-                    fontSize: 20,
+                    fontSize: 22,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -268,19 +268,19 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 22),
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 SizedBox(
-                  width: 118,
+                  width: 136,
                   child: _RangePresetRail(
                     today: widget.today,
                     selectedLabel: _selectedPresetLabel,
                     onSelected: _applyPreset,
                   ),
                 ),
-                const SizedBox(width: 16),
+                const SizedBox(width: 20),
                 Expanded(
                   child: Column(
                     children: <Widget>[
@@ -293,7 +293,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                           ),
                           const Spacer(),
                           _MonthTitle(month: _visibleMonth),
-                          const SizedBox(width: 108),
+                          const SizedBox(width: 132),
                           _MonthTitle(month: _addMonths(_visibleMonth, 1)),
                           const Spacer(),
                           _IconCircleButton(
@@ -303,7 +303,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 16),
                       Row(
                         children: <Widget>[
                           Expanded(
@@ -317,7 +317,7 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                               onSelect: _selectDay,
                             ),
                           ),
-                          const SizedBox(width: 18),
+                          const SizedBox(width: 22),
                           Expanded(
                             child: _MonthCalendar(
                               month: _addMonths(_visibleMonth, 1),
@@ -336,14 +336,14 @@ class _PadDateRangeDialogState extends State<_PadDateRangeDialog> {
                 ),
               ],
             ),
-            const SizedBox(height: 18),
+            const SizedBox(height: 22),
             Row(
               children: <Widget>[
                 const Text(
                   '点击日期重新选择开始日期，再点击一次选择结束日期',
                   style: TextStyle(
                     color: _PickerColors.muted,
-                    fontSize: 12,
+                    fontSize: 13,
                     fontWeight: FontWeight.w800,
                   ),
                 ),
@@ -397,8 +397,8 @@ class _RangePreview extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 11),
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 13),
       decoration: BoxDecoration(
         color: const Color(0xFFFFF8F2),
         borderRadius: BorderRadius.circular(12),
@@ -411,7 +411,7 @@ class _RangePreview extends StatelessWidget {
             label,
             style: const TextStyle(
               color: _PickerColors.muted,
-              fontSize: 11,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -420,7 +420,7 @@ class _RangePreview extends StatelessWidget {
             value,
             style: TextStyle(
               color: muted ? _PickerColors.muted : _PickerColors.ink,
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -451,7 +451,7 @@ class _RangePresetRail extends StatelessWidget {
           '快捷选择',
           style: TextStyle(
             color: _PickerColors.muted,
-            fontSize: 12,
+            fontSize: 14,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -513,9 +513,9 @@ class _PresetButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 36,
+          height: 42,
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: selected ? const Color(0xFFFFF0E7) : const Color(0xFFFFF8F2),
             borderRadius: BorderRadius.circular(12),
@@ -529,7 +529,7 @@ class _PresetButton extends StatelessWidget {
               if (selected) ...<Widget>[
                 const Icon(
                   Icons.check_rounded,
-                  size: 16,
+                  size: 17,
                   color: _PickerColors.orangeDeep,
                 ),
                 const SizedBox(width: 4),
@@ -542,7 +542,7 @@ class _PresetButton extends StatelessWidget {
                     color: selected
                         ? _PickerColors.orangeDeep
                         : _PickerColors.text,
-                    fontSize: 13,
+                    fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
@@ -563,13 +563,13 @@ class _MonthTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: 96,
+      width: 116,
       child: Text(
         '${month.year}年${month.month}月',
         textAlign: TextAlign.center,
         style: const TextStyle(
           color: _PickerColors.ink,
-          fontSize: 15,
+          fontSize: 18,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -614,7 +614,7 @@ class _MonthCalendar extends StatelessWidget {
             _WeekdayLabel('日'),
           ],
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 8),
         for (int row = 0; row < 6; row++)
           Row(
             children: <Widget>[
@@ -651,7 +651,7 @@ class _WeekdayLabel extends StatelessWidget {
           label,
           style: const TextStyle(
             color: _PickerColors.muted,
-            fontSize: 11,
+            fontSize: 13,
             fontWeight: FontWeight.w900,
           ),
         ),
@@ -711,14 +711,14 @@ class _DateCell extends StatelessWidget {
             ? _PickerColors.text
             : _PickerColors.line;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 3),
       child: Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: enabled ? () => onSelect(current) : null,
           borderRadius: BorderRadius.circular(10),
           child: SizedBox(
-            height: 34,
+            height: 40,
             child: LayoutBuilder(
               builder: (BuildContext context, BoxConstraints constraints) {
                 final double halfWidth = constraints.maxWidth / 2;
@@ -727,8 +727,8 @@ class _DateCell extends StatelessWidget {
                   children: <Widget>[
                     if (shouldShowBand)
                       Positioned(
-                        top: 5,
-                        bottom: 5,
+                        top: 6,
+                        bottom: 6,
                         left: isStart ? halfWidth : 0,
                         right: isEnd ? halfWidth : 0,
                         child: DecoratedBox(
@@ -747,8 +747,8 @@ class _DateCell extends StatelessWidget {
                       ),
                     if (isStart || isEnd)
                       Container(
-                        width: 32,
-                        height: 28,
+                        width: 34,
+                        height: 30,
                         decoration: BoxDecoration(
                           color: _PickerColors.orange,
                           borderRadius: BorderRadius.circular(10),
@@ -756,8 +756,8 @@ class _DateCell extends StatelessWidget {
                       )
                     else if (isToday)
                       Container(
-                        width: 32,
-                        height: 28,
+                        width: 34,
+                        height: 30,
                         decoration: BoxDecoration(
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
@@ -769,7 +769,7 @@ class _DateCell extends StatelessWidget {
                       '${current.day}',
                       style: TextStyle(
                         color: textColor,
-                        fontSize: 12,
+                        fontSize: 14,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
@@ -804,8 +804,8 @@ class _IconCircleButton extends StatelessWidget {
         onTap: enabled ? onTap : null,
         customBorder: const CircleBorder(),
         child: Container(
-          width: 34,
-          height: 34,
+          width: 40,
+          height: 40,
           alignment: Alignment.center,
           decoration: BoxDecoration(
             color: enabled ? const Color(0xFFFFF8F2) : const Color(0xFFF8EEE6),
@@ -814,7 +814,7 @@ class _IconCircleButton extends StatelessWidget {
           ),
           child: Icon(
             icon,
-            size: 20,
+            size: 23,
             color: enabled ? _PickerColors.text : _PickerColors.muted,
           ),
         ),
@@ -845,10 +845,10 @@ class _DialogActionButton extends StatelessWidget {
         onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(12),
         child: Container(
-          height: 38,
-          constraints: const BoxConstraints(minWidth: 76),
+          height: 44,
+          constraints: const BoxConstraints(minWidth: 88),
           alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.symmetric(horizontal: 20),
           decoration: BoxDecoration(
             color: filled && enabled
                 ? _PickerColors.orange
@@ -867,7 +867,7 @@ class _DialogActionButton extends StatelessWidget {
                   : enabled
                       ? _PickerColors.text
                       : _PickerColors.muted,
-              fontSize: 13,
+              fontSize: 15,
               fontWeight: FontWeight.w900,
             ),
           ),

@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"database/sql/driver"
-	"encoding/json"
 	"fmt"
 	"io"
 	"reflect"
@@ -12,28 +11,6 @@ import (
 	"sync/atomic"
 	"testing"
 )
-
-func TestAssessmentDraftInputHydrationPlanSkipsNormalizedSnapshot(t *testing.T) {
-	plan := assessmentDraftInputHydrationPlan(
-		json.RawMessage(`{"itemScores":{"1":2},"rawScores":{"DEV":3},"itemRecordValues":{}}`),
-		1,
-		1,
-	)
-	if plan.needItemScores || plan.needRawScores || plan.needItemRecordValues {
-		t.Fatalf("expected normalized snapshot to skip hydration, got %#v", plan)
-	}
-}
-
-func TestAssessmentDraftInputHydrationPlanFallsBackForLegacySnapshot(t *testing.T) {
-	plan := assessmentDraftInputHydrationPlan(
-		json.RawMessage(`{"remark":"legacy snapshot"}`),
-		2,
-		1,
-	)
-	if !plan.needItemScores || !plan.needRawScores || !plan.needItemRecordValues {
-		t.Fatalf("expected legacy snapshot to require hydration, got %#v", plan)
-	}
-}
 
 type assessmentRepoExpectation struct {
 	query        string
@@ -172,6 +149,316 @@ func (r *assessmentRepoScriptedRows) Next(dest []driver.Value) error {
 	copy(dest, r.values)
 	r.read = true
 	return nil
+}
+
+func TestSaveAssessmentDraftPersistsMainAndDetailRowsInTransaction(t *testing.T) {
+	const (
+		instID     int64 = 10
+		draftID    int64 = 20
+		operatorID int64 = 30
+	)
+	expectations := []assessmentRepoExpectation{
+		{
+			query: `
+				UPDATE assessment_draft
+				SET student_id = ?,
+				    student_name = ?,
+				    assessment_code = ?,
+				    assessment_name = ?,
+				    scale_version = ?,
+				    birth_date = ?,
+				    assessment_date = ?,
+				    examiner_id = ?,
+				    examiner_name = ?,
+				    input_json = ?,
+				    progress_json = ?,
+				    answered_item_count = ?,
+				    raw_score_count = ?,
+				    status = ?,
+				    submitted_record_id = 0,
+				    remark = ?,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`,
+			args: []any{
+				int64(3),
+				"张一鸣",
+				"PEP3",
+				"PEP-3儿童心理教育评核",
+				"2025-92题版",
+				nil,
+				nil,
+				operatorID,
+				"陈老师",
+				`{"studentName":"张一鸣","itemScoreList":[{"itemNo":1,"score":2}]}`,
+				`{"answeredItemCount":1}`,
+				1,
+				1,
+				"draft",
+				"",
+				operatorID,
+				draftID,
+				instID,
+			},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_item_score
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_item_score (
+					inst_id, draft_id, item_no, score, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					score = VALUES(score),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, 1, 2, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_raw_score
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_raw_score (
+					inst_id, draft_id, scale_code, raw_score, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					raw_score = VALUES(raw_score),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, "DEV", 3, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_item_record_value
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_item_record_value (
+					inst_id, draft_id, item_no, field_key, value_json, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					value_json = VALUES(value_json),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, 1, "惯用眼", `"右眼"`, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{commit: true},
+	}
+	repo, cleanup := newAssessmentRepoScriptedRepository(t, expectations)
+	defer cleanup()
+
+	entity := AssessmentDraftEntity{
+		ID:             draftID,
+		InstID:         instID,
+		StudentID:      3,
+		StudentName:    "张一鸣",
+		AssessmentCode: "PEP3",
+		AssessmentName: "PEP-3儿童心理教育评核",
+		ScaleVersion:   "2025-92题版",
+		ExaminerID:     operatorID,
+		ExaminerName:   "陈老师",
+		Input: struct {
+			StudentName   string           `json:"studentName"`
+			ItemScoreList []map[string]int `json:"itemScoreList"`
+		}{
+			StudentName:   "张一鸣",
+			ItemScoreList: []map[string]int{{"itemNo": 1, "score": 2}},
+		},
+		Progress: struct {
+			AnsweredItemCount int `json:"answeredItemCount"`
+		}{
+			AnsweredItemCount: 1,
+		},
+		AnsweredItemCount: 1,
+		RawScoreCount:     1,
+		Status:            "draft",
+		CreatedBy:         operatorID,
+		UpdatedBy:         operatorID,
+	}
+	draftIDResult, err := repo.SaveAssessmentDraft(
+		context.Background(),
+		entity,
+		map[int]int{1: 2},
+		map[string]int{"dev": 3},
+		map[int]map[string]any{1: {"惯用眼": "右眼"}},
+		operatorID,
+	)
+	if err != nil {
+		t.Fatalf("SaveAssessmentDraft returned error: %v", err)
+	}
+	if draftIDResult != draftID {
+		t.Fatalf("expected draft id %d, got %d", draftID, draftIDResult)
+	}
+}
+
+func TestUpdateAssessmentDraftInputAndProgressIncludingSubmittedPersistsMainAndDetailRowsInTransaction(t *testing.T) {
+	const (
+		instID     int64 = 10
+		draftID    int64 = 20
+		operatorID int64 = 30
+	)
+	expectations := []assessmentRepoExpectation{
+		{
+			query: `
+				UPDATE assessment_draft
+				SET input_json = ?,
+				    progress_json = ?,
+				    answered_item_count = ?,
+				    raw_score_count = ?,
+				    status = ?,
+				    update_id = ?,
+				    update_time = NOW()
+				WHERE id = ? AND inst_id = ? AND del_flag = 0
+			`,
+			args: []any{
+				`{"studentName":"张一鸣","itemScoreList":[{"itemNo":1,"score":2}]}`,
+				`{"answeredItemCount":1}`,
+				1,
+				1,
+				"submitted",
+				operatorID,
+				draftID,
+				instID,
+			},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_item_score
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_item_score (
+					inst_id, draft_id, item_no, score, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					score = VALUES(score),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, 1, 2, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_raw_score
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_raw_score (
+					inst_id, draft_id, scale_code, raw_score, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					raw_score = VALUES(raw_score),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, "DEV", 3, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				UPDATE assessment_draft_item_record_value
+				SET del_flag = 1, update_id = ?, update_time = NOW()
+				WHERE inst_id = ? AND draft_id = ? AND del_flag = 0
+			`,
+			args:         []any{operatorID, instID, draftID},
+			rowsAffected: 1,
+		},
+		{
+			query: `
+				INSERT INTO assessment_draft_item_record_value (
+					inst_id, draft_id, item_no, field_key, value_json, create_id, update_id, create_time, update_time, del_flag
+				) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+				ON DUPLICATE KEY UPDATE
+					inst_id = VALUES(inst_id),
+					value_json = VALUES(value_json),
+					update_id = VALUES(update_id),
+					update_time = NOW(),
+					del_flag = 0
+			`,
+			args:         []any{instID, draftID, 1, "惯用眼", `"右眼"`, operatorID, operatorID},
+			rowsAffected: 1,
+		},
+		{commit: true},
+	}
+	repo, cleanup := newAssessmentRepoScriptedRepository(t, expectations)
+	defer cleanup()
+
+	err := repo.UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
+		context.Background(),
+		instID,
+		draftID,
+		struct {
+			StudentName   string           `json:"studentName"`
+			ItemScoreList []map[string]int `json:"itemScoreList"`
+		}{
+			StudentName:   "张一鸣",
+			ItemScoreList: []map[string]int{{"itemNo": 1, "score": 2}},
+		},
+		struct {
+			AnsweredItemCount int `json:"answeredItemCount"`
+		}{
+			AnsweredItemCount: 1,
+		},
+		1,
+		1,
+		"submitted",
+		operatorID,
+		map[int]int{1: 2},
+		map[string]int{"dev": 3},
+		map[int]map[string]any{1: {"惯用眼": "右眼"}},
+	)
+	if err != nil {
+		t.Fatalf("UpdateAssessmentDraftInputAndProgressIncludingSubmitted returned error: %v", err)
+	}
 }
 
 func TestUpdateAssessmentDraftInputProgressAndItemDetailsPersistsOneItemInTransaction(t *testing.T) {

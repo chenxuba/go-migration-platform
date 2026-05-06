@@ -1115,12 +1115,12 @@ class InstitutionPickerDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       elevation: 0,
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32, vertical: 24),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
       backgroundColor: Colors.transparent,
       child: Container(
-        width: 560,
-        constraints: const BoxConstraints(maxHeight: 500),
-        padding: const EdgeInsets.fromLTRB(26, 12, 26, 24),
+        width: 700,
+        constraints: const BoxConstraints(maxHeight: 620),
+        padding: const EdgeInsets.fromLTRB(30, 18, 30, 28),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(.96),
           borderRadius: BorderRadius.circular(24),
@@ -1138,8 +1138,8 @@ class InstitutionPickerDialog extends StatelessWidget {
             Row(
               children: <Widget>[
                 Container(
-                  width: 42,
-                  height: 42,
+                  width: 50,
+                  height: 50,
                   decoration: const BoxDecoration(
                     color: Color(0xFFFFF1E8),
                     shape: BoxShape.circle,
@@ -1147,10 +1147,10 @@ class InstitutionPickerDialog extends StatelessWidget {
                   child: const Icon(
                     Icons.business_rounded,
                     color: AppColors.orange,
-                    size: 22,
+                    size: 26,
                   ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 16),
                 const Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -1159,16 +1159,16 @@ class InstitutionPickerDialog extends StatelessWidget {
                         '选择登录机构',
                         style: TextStyle(
                           color: AppColors.ink,
-                          fontSize: 18,
+                          fontSize: 20,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                      SizedBox(height: 1),
+                      SizedBox(height: 3),
                       Text(
                         '当前账号关联多个机构，请选择本次进入的后台',
                         style: TextStyle(
                           color: AppColors.body,
-                          fontSize: 12,
+                          fontSize: 14,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -1181,17 +1181,17 @@ class InstitutionPickerDialog extends StatelessWidget {
                   icon: const Icon(
                     Icons.close_rounded,
                     color: AppColors.muted,
-                    size: 22,
+                    size: 24,
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 22),
             Flexible(
               child: ListView.separated(
                 shrinkWrap: true,
                 itemCount: options.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, __) => const SizedBox(height: 16),
                 itemBuilder: (BuildContext context, int index) {
                   return InstitutionOptionTile(option: options[index]);
                 },
@@ -1218,16 +1218,17 @@ class InstitutionOptionTile extends StatelessWidget {
     return GestureDetector(
       onTap: () => Navigator.of(context).pop(option),
       child: Container(
-        padding: const EdgeInsets.fromLTRB(16, 14, 14, 14),
+        constraints: const BoxConstraints(minHeight: 136),
+        padding: const EdgeInsets.fromLTRB(20, 18, 18, 18),
         decoration: BoxDecoration(
           color: const Color(0xFFFFFBF6),
-          borderRadius: BorderRadius.circular(16),
+          borderRadius: BorderRadius.circular(18),
           border: Border.all(color: const Color(0xFFF3DACB), width: 1.2),
         ),
         child: Row(
           children: <Widget>[
             _InstitutionAvatar(option: option),
-            const SizedBox(width: 14),
+            const SizedBox(width: 16),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -1238,22 +1239,22 @@ class InstitutionOptionTile extends StatelessWidget {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.ink,
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
-                  const SizedBox(height: 7),
+                  const SizedBox(height: 8),
                   Text(
                     subtitle.trim().isNotEmpty ? subtitle : option.loginName,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AppColors.body,
-                      fontSize: 13,
+                      fontSize: 15,
                       fontWeight: FontWeight.w600,
                     ),
                   ),
-                  const SizedBox(height: 9),
+                  const SizedBox(height: 10),
                   Row(
                     children: <Widget>[
                       _InstitutionTag(
@@ -1278,8 +1279,8 @@ class InstitutionOptionTile extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Container(
-              width: 34,
-              height: 34,
+              width: 42,
+              height: 42,
               decoration: const BoxDecoration(
                 color: Color(0xFFFFEFE6),
                 shape: BoxShape.circle,
@@ -1287,7 +1288,7 @@ class InstitutionOptionTile extends StatelessWidget {
               child: const Icon(
                 Icons.arrow_forward_ios_rounded,
                 color: AppColors.orange,
-                size: 15,
+                size: 18,
               ),
             ),
           ],
@@ -1373,18 +1374,18 @@ class _InstitutionAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final String logo = option.logo.trim();
     return Container(
-      width: 52,
-      height: 52,
+      width: 64,
+      height: 64,
       decoration: BoxDecoration(
         color: const Color(0xFFFFE7D8),
-        borderRadius: BorderRadius.circular(16),
+        borderRadius: BorderRadius.circular(20),
       ),
       clipBehavior: Clip.antiAlias,
       child: logo.isEmpty
           ? const Icon(
               Icons.apartment_rounded,
               color: AppColors.orange,
-              size: 28,
+              size: 32,
             )
           : Image.network(
               logo,
@@ -1392,7 +1393,7 @@ class _InstitutionAvatar extends StatelessWidget {
               errorBuilder: (_, __, ___) => const Icon(
                 Icons.apartment_rounded,
                 color: AppColors.orange,
-                size: 28,
+                size: 32,
               ),
             ),
     );
@@ -1417,8 +1418,8 @@ class _InstitutionTag extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 23,
-      padding: const EdgeInsets.symmetric(horizontal: 8),
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(999),
@@ -1429,12 +1430,12 @@ class _InstitutionTag extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(icon, size: 12, color: color),
-          const SizedBox(width: 4),
+          const SizedBox(width: 5),
           Text(
             label,
             style: TextStyle(
               color: color,
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.w800,
               height: 1,
             ),
