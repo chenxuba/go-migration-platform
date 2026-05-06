@@ -10,6 +10,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   bool _teacherDropdownOpen = false;
   bool _schedulePanelOpen = false;
   bool _scheduleOptionsLoading = false;
+  bool _scheduleOptionsLoaded = false;
   bool _availabilityLoading = false;
   bool _loading = true;
   String? _errorMessage;
@@ -51,7 +52,6 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     super.initState();
     this._applyTimetableData(_data, preserveTeacherSelection: false);
     this._loadTimetable();
-    this._loadScheduleOptions();
   }
 
   @override

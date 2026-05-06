@@ -627,6 +627,291 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	return items, nil
 }
 
+type teachingScheduleConflictScope struct {
+	Slots         []normalizedScheduleSlot
+	StaffIDs      []int64
+	ClassroomIDs  []int64
+	GroupClassIDs []int64
+	StudentIDs    []int64
+}
+
+func (scope teachingScheduleConflictScope) hasResources() bool {
+	return len(scope.StaffIDs) > 0 ||
+		len(scope.ClassroomIDs) > 0 ||
+		len(scope.GroupClassIDs) > 0 ||
+		len(scope.StudentIDs) > 0
+}
+
+func collectTeachingScheduleConflictScope(targets []model.TeachingScheduleVO) teachingScheduleConflictScope {
+	slotSeen := make(map[string]struct{}, len(targets))
+	staffIDs := make([]int64, 0, len(targets))
+	classroomIDs := make([]int64, 0, len(targets))
+	groupClassIDs := make([]int64, 0, len(targets))
+	studentIDs := make([]int64, 0, len(targets))
+	slots := make([]normalizedScheduleSlot, 0, len(targets))
+
+	appendStudentIDs := func(raw string) {
+		for _, part := range strings.Split(strings.TrimSpace(raw), ",") {
+			value, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+			if err != nil || value <= 0 {
+				continue
+			}
+			studentIDs = append(studentIDs, value)
+		}
+	}
+
+	for _, item := range targets {
+		if !item.StartAt.IsZero() && !item.EndAt.IsZero() && item.EndAt.After(item.StartAt) {
+			slot := normalizedScheduleSlot{
+				LessonDate: startOfDay(item.StartAt),
+				StartAt:    item.StartAt,
+				EndAt:      item.EndAt,
+			}
+			key := slot.LessonDate.Format("2006-01-02") + "|" +
+				slot.StartAt.Format(time.RFC3339Nano) + "|" +
+				slot.EndAt.Format(time.RFC3339Nano)
+			if _, ok := slotSeen[key]; !ok {
+				slotSeen[key] = struct{}{}
+				slots = append(slots, slot)
+			}
+		}
+
+		if teacherID, err := strconv.ParseInt(strings.TrimSpace(item.TeacherID), 10, 64); err == nil && teacherID > 0 {
+			staffIDs = append(staffIDs, teacherID)
+		}
+		staffIDs = append(staffIDs, parseStringIDs(item.AssistantIDs)...)
+
+		if classroomID, err := strconv.ParseInt(strings.TrimSpace(item.ClassroomID), 10, 64); err == nil && classroomID > 0 {
+			classroomIDs = append(classroomIDs, classroomID)
+		}
+		if item.ClassType == model.TeachingClassTypeNormal {
+			if classID, err := strconv.ParseInt(strings.TrimSpace(item.TeachingClassID), 10, 64); err == nil && classID > 0 {
+				groupClassIDs = append(groupClassIDs, classID)
+			}
+		}
+		appendStudentIDs(item.StudentID)
+	}
+
+	return teachingScheduleConflictScope{
+		Slots:         slots,
+		StaffIDs:      uniquePositiveInt64s(staffIDs),
+		ClassroomIDs:  uniquePositiveInt64s(classroomIDs),
+		GroupClassIDs: uniquePositiveInt64s(groupClassIDs),
+		StudentIDs:    uniquePositiveInt64s(studentIDs),
+	}
+}
+
+func buildTeachingScheduleConflictSlotFilter(slots []normalizedScheduleSlot, args *[]any) string {
+	parts := make([]string, 0, len(slots))
+	for _, slot := range slots {
+		if slot.LessonDate.IsZero() || slot.StartAt.IsZero() || slot.EndAt.IsZero() || !slot.EndAt.After(slot.StartAt) {
+			continue
+		}
+		parts = append(parts, "(ts.lesson_date = ? AND ts.lesson_start_at < ? AND ts.lesson_end_at > ?)")
+		*args = append(*args, slot.LessonDate.Format("2006-01-02"), slot.EndAt, slot.StartAt)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func buildTeachingScheduleConflictStudentFilter(studentIDs []int64, args *[]any) string {
+	if len(studentIDs) == 0 {
+		return ""
+	}
+	holders := sqlPlaceholders(len(studentIDs))
+	*args = append(*args, int64SliceToAny(studentIDs)...)
+	*args = append(*args, int64SliceToAny(studentIDs)...)
+	*args = append(*args,
+		model.TeachingScheduleStudentRosterStatusActive,
+		model.TeachingScheduleStudentRosterStatusRemoved,
+		model.TeachingClassTypeNormal,
+	)
+	*args = append(*args, int64SliceToAny(studentIDs)...)
+	return `(
+		ts.student_id IN (` + holders + `)
+		OR EXISTS (
+			SELECT 1
+			FROM teaching_schedule_student tss
+			WHERE tss.inst_id = ts.inst_id
+			  AND tss.teaching_schedule_id = ts.id
+			  AND tss.del_flag = 0
+			  AND tss.student_id IN (` + holders + `)
+			  AND IFNULL(tss.roster_status, ?) <> ?
+		)
+		OR (
+			ts.class_type = ?
+			AND EXISTS (
+				SELECT 1
+				FROM teaching_class_student tcs
+				WHERE tcs.inst_id = ts.inst_id
+				  AND tcs.teaching_class_id = ts.teaching_class_id
+				  AND tcs.del_flag = 0
+				  AND tcs.create_time < GREATEST(ts.lesson_start_at, ts.create_time)
+				  AND (
+					IFNULL(tcs.class_student_status, 1) = 1
+					OR tcs.update_time > GREATEST(ts.lesson_start_at, ts.create_time)
+				  )
+				  AND tcs.student_id IN (` + holders + `)
+			)
+		)
+	)`
+}
+
+func buildTeachingScheduleConflictResourceFilter(scope teachingScheduleConflictScope, args *[]any) string {
+	parts := make([]string, 0, 4)
+	if len(scope.StaffIDs) > 0 {
+		staffPart := make([]string, 0, len(scope.StaffIDs)+1)
+		staffPart = append(staffPart, "ts.teacher_id IN ("+sqlPlaceholders(len(scope.StaffIDs))+")")
+		*args = append(*args, int64SliceToAny(scope.StaffIDs)...)
+		for _, id := range scope.StaffIDs {
+			staffPart = append(staffPart, "JSON_SEARCH(COALESCE(ts.assistant_ids_json, JSON_ARRAY()), 'one', ?) IS NOT NULL")
+			*args = append(*args, strconv.FormatInt(id, 10))
+		}
+		parts = append(parts, "("+strings.Join(staffPart, " OR ")+")")
+	}
+	if len(scope.ClassroomIDs) > 0 {
+		parts = append(parts, "ts.classroom_id IN ("+sqlPlaceholders(len(scope.ClassroomIDs))+")")
+		*args = append(*args, int64SliceToAny(scope.ClassroomIDs)...)
+	}
+	if len(scope.GroupClassIDs) > 0 {
+		parts = append(parts, "(ts.class_type = ? AND ts.teaching_class_id IN ("+sqlPlaceholders(len(scope.GroupClassIDs))+"))")
+		*args = append(*args, model.TeachingClassTypeNormal)
+		*args = append(*args, int64SliceToAny(scope.GroupClassIDs)...)
+	}
+	if studentPart := buildTeachingScheduleConflictStudentFilter(scope.StudentIDs, args); studentPart != "" {
+		parts = append(parts, studentPart)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return "(" + strings.Join(parts, " OR ") + ")"
+}
+
+func (repo *Repository) ListTeachingSchedulesForConflictTargets(ctx context.Context, instID int64, targets []model.TeachingScheduleVO) ([]model.TeachingScheduleVO, error) {
+	scope := collectTeachingScheduleConflictScope(targets)
+	if len(scope.Slots) == 0 || !scope.hasResources() {
+		return []model.TeachingScheduleVO{}, nil
+	}
+
+	filters := []string{
+		"ts.inst_id = ?",
+		"ts.del_flag = 0",
+		"ts.status = ?",
+	}
+	args := []any{
+		instID,
+		model.TeachingScheduleStatusActive,
+	}
+
+	slotFilter := buildTeachingScheduleConflictSlotFilter(scope.Slots, &args)
+	if slotFilter == "" {
+		return []model.TeachingScheduleVO{}, nil
+	}
+	resourceFilter := buildTeachingScheduleConflictResourceFilter(scope, &args)
+	if resourceFilter == "" {
+		return []model.TeachingScheduleVO{}, nil
+	}
+	filters = append(filters, slotFilter, resourceFilter)
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(batch_no, ''),
+			IFNULL(batch_size, 1),
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_id, 0),
+			IFNULL(student_name, ''),
+			IFNULL(lesson_id, 0),
+			IFNULL(lesson_name, ''),
+			IFNULL(teacher_id, 0),
+			IFNULL(teacher_name, ''),
+			assistant_ids_json,
+			assistant_names_json,
+			IFNULL(classroom_id, 0),
+			IFNULL(classroom_name, ''),
+			lesson_date,
+			lesson_start_at,
+			lesson_end_at,
+			IFNULL(status, 0)
+		FROM teaching_schedule ts
+		WHERE `+strings.Join(filters, " AND ")+`
+		ORDER BY ts.lesson_date ASC, ts.lesson_start_at ASC, ts.id ASC
+	`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.TeachingScheduleVO, 0, len(targets)*2)
+	for rows.Next() {
+		var (
+			item              model.TeachingScheduleVO
+			id                int64
+			teachingClassID   int64
+			studentID         int64
+			lessonID          int64
+			teacherID         int64
+			classroomID       int64
+			lessonDate        time.Time
+			assistantIDsRaw   []byte
+			assistantNamesRaw []byte
+		)
+		if err := rows.Scan(
+			&id,
+			&item.BatchNo,
+			&item.BatchSize,
+			&item.ClassType,
+			&teachingClassID,
+			&item.TeachingClassName,
+			&studentID,
+			&item.StudentName,
+			&lessonID,
+			&item.LessonName,
+			&teacherID,
+			&item.TeacherName,
+			&assistantIDsRaw,
+			&assistantNamesRaw,
+			&classroomID,
+			&item.ClassroomName,
+			&lessonDate,
+			&item.StartAt,
+			&item.EndAt,
+			&item.Status,
+		); err != nil {
+			return nil, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.TeachingClassID = strconv.FormatInt(teachingClassID, 10)
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		item.LessonID = strconv.FormatInt(lessonID, 10)
+		item.TeacherID = strconv.FormatInt(teacherID, 10)
+		item.ClassroomID = strconv.FormatInt(classroomID, 10)
+		if classroomID <= 0 {
+			item.ClassroomID = ""
+		}
+		item.LessonDate = lessonDate.Format("2006-01-02")
+		item.CanRollCall, item.RollCallDisabledReason = teachingScheduleRollCallPermission(lessonDate)
+		if len(assistantIDsRaw) > 0 {
+			_ = json.Unmarshal(assistantIDsRaw, &item.AssistantIDs)
+		}
+		if len(assistantNamesRaw) > 0 {
+			_ = json.Unmarshal(assistantNamesRaw, &item.AssistantNames)
+		}
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := repo.fillGroupClassStudentRosterForSchedules(ctx, instID, items); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 func (repo *Repository) GetTeachingScheduleBatchMetaMap(ctx context.Context, instID int64, batchNos []string) (map[string]model.TeachingScheduleBatchMeta, error) {
 	result := make(map[string]model.TeachingScheduleBatchMeta)
 	normalizedBatchNos := compactStrings(batchNos)

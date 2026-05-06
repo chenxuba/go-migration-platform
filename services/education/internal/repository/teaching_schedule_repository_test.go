@@ -1,6 +1,7 @@
 package repository
 
 import (
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -101,6 +102,64 @@ func TestBuildTeachingClassFinishedCountSQLFallsBackWhenRecordSQLMissing(t *test
 	}
 	if !strings.Contains(got, strconv.Itoa(model.TeachingScheduleStatusActive)) {
 		t.Fatalf("expected live finished count SQL to keep active status constraint, got %s", got)
+	}
+}
+
+func TestCollectTeachingScheduleConflictScopeBuildsDistinctResources(t *testing.T) {
+	firstStart := time.Date(2026, 5, 6, 9, 15, 0, 0, time.Local)
+	firstEnd := time.Date(2026, 5, 6, 9, 55, 0, 0, time.Local)
+	secondStart := time.Date(2026, 5, 7, 10, 5, 0, 0, time.Local)
+	secondEnd := time.Date(2026, 5, 7, 10, 45, 0, 0, time.Local)
+
+	scope := collectTeachingScheduleConflictScope([]model.TeachingScheduleVO{
+		{
+			ID:              "1",
+			ClassType:       model.TeachingClassTypeOneToOne,
+			TeacherID:       "11",
+			AssistantIDs:    []string{"21", "22", "22"},
+			ClassroomID:     "31",
+			StudentID:       "41",
+			StartAt:         firstStart,
+			EndAt:           firstEnd,
+			TeachingClassID: "501",
+		},
+		{
+			ID:              "2",
+			ClassType:       model.TeachingClassTypeNormal,
+			TeacherID:       "11",
+			AssistantIDs:    []string{"22", "23"},
+			ClassroomID:     "32",
+			StudentID:       "51,52,52",
+			StartAt:         secondStart,
+			EndAt:           secondEnd,
+			TeachingClassID: "601",
+		},
+		{
+			ID:           "3",
+			ClassType:    model.TeachingClassTypeNormal,
+			TeacherID:    "11",
+			AssistantIDs: []string{"23"},
+			ClassroomID:  "32",
+			StudentID:    "51",
+			StartAt:      secondStart,
+			EndAt:        secondEnd,
+		},
+	})
+
+	if len(scope.Slots) != 2 {
+		t.Fatalf("expected distinct conflict slots, got %d", len(scope.Slots))
+	}
+	if !reflect.DeepEqual(scope.StaffIDs, []int64{11, 21, 22, 23}) {
+		t.Fatalf("unexpected staff ids: %#v", scope.StaffIDs)
+	}
+	if !reflect.DeepEqual(scope.ClassroomIDs, []int64{31, 32}) {
+		t.Fatalf("unexpected classroom ids: %#v", scope.ClassroomIDs)
+	}
+	if !reflect.DeepEqual(scope.GroupClassIDs, []int64{601}) {
+		t.Fatalf("unexpected group class ids: %#v", scope.GroupClassIDs)
+	}
+	if !reflect.DeepEqual(scope.StudentIDs, []int64{41, 51, 52}) {
+		t.Fatalf("unexpected student ids: %#v", scope.StudentIDs)
 	}
 }
 

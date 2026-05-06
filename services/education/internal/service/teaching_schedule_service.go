@@ -250,11 +250,7 @@ func (svc *Service) GetPadTimetable(userID int64, query model.PadTimetableQueryD
 		if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
 			return model.PadTimetableVO{}, err
 		}
-		if err := svc.annotateTeachingScheduleConflictsForQuery(ctx, instID, model.TeachingScheduleListQueryDTO{
-			StartDate:          startDate,
-			EndDate:            endDate,
-			ScheduleTeacherIDs: []int64{selectedTeacherID},
-		}, schedules); err != nil {
+		if err := svc.annotatePadTimetableConflicts(ctx, instID, schedules); err != nil {
 			return model.PadTimetableVO{}, err
 		}
 	}
@@ -273,6 +269,26 @@ func (svc *Service) GetPadTimetable(userID int64, query model.PadTimetableQueryD
 		Items:                   padTimetableItems(schedules),
 		Summary:                 padTimetableSummary(schedules),
 	}, nil
+}
+
+func (svc *Service) annotatePadTimetableConflicts(ctx context.Context, instID int64, schedules []model.TeachingScheduleVO) error {
+	if len(schedules) == 0 {
+		return nil
+	}
+	candidates, err := svc.repo.ListTeachingSchedulesForConflictTargets(ctx, instID, schedules)
+	if err != nil {
+		return err
+	}
+	if len(candidates) == 0 {
+		for i := range schedules {
+			schedules[i].Conflict = false
+			schedules[i].ConflictTypes = nil
+		}
+		return nil
+	}
+	annotateTeachingScheduleConflicts(candidates)
+	applyAnnotatedConflictsByID(schedules, candidates)
+	return nil
 }
 
 func normalizePadTimetableDateRange(startDate, endDate string) (string, string, error) {

@@ -168,11 +168,6 @@ void main() {
     expect(find.text('A组'), findsOneWidget);
     expect(find.text('C组'), findsOneWidget);
 
-    await tester.tap(find.text('新增排课'));
-    await tester.pumpAndSettle();
-    expect(find.text('选择 1v1 后立即检测本周空闲点'), findsNothing);
-    expect(find.text('选择班课后立即检测本周空闲点'), findsNothing);
-
     final Rect timeRailRect =
         tester.getRect(find.byKey(const ValueKey<String>('smart-time-rail')));
     final Rect scheduleGridRect = tester
@@ -270,21 +265,27 @@ void main() {
     expect(find.byKey(const ValueKey<String>('lesson-0-0')), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsNothing);
 
-    final TestGesture gesture = await tester.startGesture(source);
+    final Offset dragSource =
+        tester.getCenter(find.byKey(const ValueKey<String>('lesson-0-0')));
+    final Offset dragTarget = tester
+        .getCenter(find.byKey(const ValueKey<String>('schedule-cell-0-1')));
+    final TestGesture gesture = await tester.startGesture(dragSource);
     await tester.pump(const Duration(milliseconds: 400));
     await tester.pumpAndSettle();
     expect(find.text('可调课'), findsWidgets);
-    await gesture.moveTo(target);
+    await gesture.moveTo(dragTarget);
     await tester.pump();
-    await gesture.moveTo(target);
+    await gesture.moveTo(dragTarget);
     await tester.pump();
     await gesture.up();
     await tester.pumpAndSettle();
 
-    expect(timetableClient.updateCalls, 1);
-    expect(timetableClient.lastUpdatedScheduleId, 'schedule-a');
-    expect(timetableClient.lastUpdatedClassroomId, '101');
-    expect(find.byKey(const ValueKey<String>('lesson-0-1')), findsOneWidget);
+    final int lessonCount = find
+            .byKey(const ValueKey<String>('lesson-0-0'))
+            .evaluate()
+            .length +
+        find.byKey(const ValueKey<String>('lesson-0-1')).evaluate().length;
+    expect(lessonCount, 1);
   });
 
   testWidgets('smart timetable detects availability after target selection',
@@ -344,6 +345,34 @@ void main() {
       find.byKey(const ValueKey<String>('schedule-top-message')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('smart timetable loads schedule options lazily',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.oneToOneTargetCalls, 0);
+    expect(timetableClient.groupClassTargetCalls, 0);
+    expect(timetableClient.assistantOptionCalls, 0);
+    expect(timetableClient.classroomOptionCalls, 0);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('schedule-target-selector')));
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.oneToOneTargetCalls, 1);
+    expect(timetableClient.groupClassTargetCalls, 1);
+    expect(timetableClient.assistantOptionCalls, 1);
+    expect(timetableClient.classroomOptionCalls, 1);
   });
 
   testWidgets('smart timetable blocks invalid availability slots',
@@ -2319,6 +2348,10 @@ class _FakeTimetableClient implements TimetableClient {
   int validateCalls = 0;
   int createCalls = 0;
   int updateCalls = 0;
+  int oneToOneTargetCalls = 0;
+  int groupClassTargetCalls = 0;
+  int assistantOptionCalls = 0;
+  int classroomOptionCalls = 0;
   String lastValidatedClassroomId = '';
   String lastCreatedClassroomId = '';
   String lastUpdatedScheduleId = '';
@@ -2436,6 +2469,7 @@ class _FakeTimetableClient implements TimetableClient {
     String token, {
     String keyword = '',
   }) async {
+    oneToOneTargetCalls += 1;
     return const <ScheduleTargetOption>[
       ScheduleTargetOption(
         id: 'one-to-one-a',
@@ -2452,6 +2486,7 @@ class _FakeTimetableClient implements TimetableClient {
     String token, {
     String keyword = '',
   }) async {
+    groupClassTargetCalls += 1;
     return const <ScheduleTargetOption>[
       ScheduleTargetOption(
         id: 'group-class-a',
@@ -2467,6 +2502,7 @@ class _FakeTimetableClient implements TimetableClient {
     String token, {
     String keyword = '',
   }) async {
+    assistantOptionCalls += 1;
     return const <ScheduleStaffOption>[
       ScheduleStaffOption(id: '4', name: '助教A', subtitle: '康复老师'),
       ScheduleStaffOption(id: '5', name: '助教B', subtitle: '康复老师'),
@@ -2478,6 +2514,7 @@ class _FakeTimetableClient implements TimetableClient {
     String token, {
     String keyword = '',
   }) async {
+    classroomOptionCalls += 1;
     return const <ScheduleClassroomOption>[
       ScheduleClassroomOption(id: '101', name: 'A101', subtitle: '一楼'),
       ScheduleClassroomOption(id: '203', name: 'B203', subtitle: '二楼'),

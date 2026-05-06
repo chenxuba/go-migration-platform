@@ -43,6 +43,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         _groupClassTargets = groupClassTargets;
         _assistantOptions = assistantOptions;
         _classroomOptions = classroomOptions;
+        _scheduleOptionsLoaded = true;
         _selectedOneToOneTarget = _preserveSelectedTarget(
           _selectedOneToOneTarget,
           oneToOneTargets,

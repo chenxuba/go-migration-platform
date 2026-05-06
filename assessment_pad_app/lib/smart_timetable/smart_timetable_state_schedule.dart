@@ -8,8 +8,7 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
     });
     if (_schedulePanelOpen &&
         !_scheduleOptionsLoading &&
-        _oneToOneTargets.isEmpty &&
-        _groupClassTargets.isEmpty) {
+        !_scheduleOptionsLoaded) {
       unawaited(_loadScheduleOptions());
     }
   }
