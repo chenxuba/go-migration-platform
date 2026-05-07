@@ -7,8 +7,11 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   int _loadSequence = 0;
   int _scheduleOptionsSequence = 0;
   int _availabilitySequence = 0;
+  final LayerLink _periodGroupDropdownLink = LayerLink();
   bool _teacherDropdownOpen = false;
+  bool _periodGroupDropdownOpen = false;
   bool _schedulePanelOpen = false;
+  _TimetableFilterKind? _openFilterKind;
   bool _scheduleOptionsLoading = false;
   bool _scheduleOptionsLoaded = false;
   bool _availabilityLoading = false;
@@ -29,6 +32,9 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   List<ScheduleClassroomOption> _classroomOptions =
       const <ScheduleClassroomOption>[];
   Set<String> _selectedAssistantIds = <String>{};
+  Set<String> _selectedStudentFilters = <String>{};
+  Set<String> _selectedCourseFilters = <String>{};
+  Set<String> _selectedCallStatusFilters = <String>{};
   Map<String, _SlotAvailability> _slotAvailability =
       const <String, _SlotAvailability>{};
   Map<String, _SlotAvailability> _dragSlotAvailability =
@@ -87,6 +93,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           teachers: _teachers,
           teacherIndex: _teacherIndex,
           teacherDropdownOpen: _teacherDropdownOpen,
+          periodGroupDropdownOpen: _periodGroupDropdownOpen,
+          periodGroupDropdownLink: _periodGroupDropdownLink,
           schedulePanelOpen: _schedulePanelOpen,
           loading: _loading,
           scheduleMode: _scheduleMode,
@@ -99,6 +107,17 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           selectedClassroom: _selectedClassroom,
           scheduleOptionsLoading: _scheduleOptionsLoading,
           scheduleOptionsError: _scheduleOptionsError,
+          openFilterKind: _openFilterKind,
+          studentFilterLabel: _filterButtonLabel(_TimetableFilterKind.student),
+          courseFilterLabel: _filterButtonLabel(_TimetableFilterKind.course),
+          callStatusFilterLabel:
+              _filterButtonLabel(_TimetableFilterKind.callStatus),
+          studentFilterOptions: _studentFilterOptions,
+          courseFilterOptions: _courseFilterOptions,
+          callStatusFilterOptions: _callStatusFilterOptions,
+          selectedStudentFilters: _selectedStudentFilters,
+          selectedCourseFilters: _selectedCourseFilters,
+          selectedCallStatusFilters: _selectedCallStatusFilters,
           availabilityLoading: _availabilityLoading,
           availabilityMessage: _availabilityMessage,
           slotAvailability: _slotAvailability,
@@ -106,26 +125,36 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           dragCheckingSlotKeys: _dragCheckingSlotKeys,
           dragValidationActive: _dragValidationActive,
           creatingSlotKey: _creatingSlotKey,
-          scheduleRows: _scheduleRows,
+          scheduleRows: _visibleScheduleRows,
           weekDays: _weekDays,
           timeSlots: _timeSlots,
-          summary: _data.summary,
+          summary: _visibleTimetableSummary,
           errorMessage: _errorMessage,
           dateRange: _dateRangeText(_weekOffset),
           onBack: () => Navigator.of(context).maybePop(),
           onPrevWeek: () => _changeWeek(-1),
           onNextWeek: () => _changeWeek(1),
           onToday: this._backToCurrentWeek,
+          onPeriodGroupToggle: this._togglePeriodGroupDropdown,
           onPeriodGroupSelected: this._selectPeriodGroup,
+          onPeriodGroupDropdownClose: this._closePeriodGroupDropdown,
           onTeacherToggle: () => setState(() {
             _teacherDropdownOpen = !_teacherDropdownOpen;
+            _periodGroupDropdownOpen = false;
             _schedulePanelOpen = false;
+            _openFilterKind = null;
           }),
           onTeacherSelected: this._selectTeacher,
           onTeacherDropdownClose: () =>
               setState(() => _teacherDropdownOpen = false),
           onSchedulePanelToggle: this._toggleSchedulePanel,
           onSchedulePanelClose: this._closeSchedulePanel,
+          onFilterToggle: this._toggleFilterPanel,
+          onFilterClose: this._closeFilterPanel,
+          onStudentFilterToggled: this._toggleStudentFilter,
+          onCourseFilterToggled: this._toggleCourseFilter,
+          onCallStatusFilterToggled: this._toggleCallStatusFilter,
+          onFilterCleared: this._clearFilter,
           onScheduleModeChanged: this._setScheduleMode,
           onScheduleTargetSelected: this._selectScheduleTarget,
           onScheduleTargetCleared: this._clearScheduleTarget,

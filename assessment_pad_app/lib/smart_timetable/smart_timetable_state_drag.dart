@@ -66,6 +66,7 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
 
     final List<List<_LessonCell?>> previousRows =
         _cloneScheduleRows(_scheduleRows);
+    final TimetableData previousData = _data;
     _updateState(() {
       _movingScheduleId = sourceLesson.id;
       final List<List<_LessonCell?>> nextRows =
@@ -73,6 +74,10 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
       nextRows[source.row][source.column] = null;
       nextRows[targetRow][targetColumn] = sourceLesson;
       _scheduleRows = nextRows;
+      _data = _optimisticallyMovedTimetableData(
+        sourceLessonId: sourceLesson.id,
+        targetSlot: targetSlot,
+      );
       _dragValidationActive = false;
       _dragCheckingSlotKeys = const <String>{};
     });
@@ -80,7 +85,7 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
       final String token = await _readAuthToken();
       if (token.trim().isEmpty) {
         _showScheduleMessage('登录已失效，请重新登录');
-        _rollbackOptimisticLessonMove(previousRows);
+        _rollbackOptimisticLessonMove(previousRows, previousData);
         return;
       }
       await widget.timetableClient.updateScheduleSlot(
@@ -99,16 +104,16 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
         ),
       );
       _showScheduleMessage(
-        '调课成功，已刷新课表',
+        '调课成功',
         tone: PadMessageTone.success,
       );
       await _loadTimetable(showSkeleton: false);
     } on TimetableApiException catch (error) {
       _showScheduleMessage(error.message);
-      _rollbackOptimisticLessonMove(previousRows);
+      _rollbackOptimisticLessonMove(previousRows, previousData);
     } on Object catch (error) {
       _showScheduleMessage('调课失败：$error');
-      _rollbackOptimisticLessonMove(previousRows);
+      _rollbackOptimisticLessonMove(previousRows, previousData);
     } finally {
       if (mounted) {
         _updateState(() {
@@ -118,13 +123,61 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
     }
   }
 
-  void _rollbackOptimisticLessonMove(List<List<_LessonCell?>> previousRows) {
+  void _rollbackOptimisticLessonMove(
+    List<List<_LessonCell?>> previousRows,
+    TimetableData previousData,
+  ) {
     if (!mounted) {
       return;
     }
     _updateState(() {
       _scheduleRows = previousRows;
+      _data = previousData;
     });
+  }
+
+  TimetableData _optimisticallyMovedTimetableData({
+    required String sourceLessonId,
+    required _ScheduleCellSlot targetSlot,
+  }) {
+    return TimetableData(
+      startDate: _data.startDate,
+      endDate: _data.endDate,
+      selectedPeriodGroupId: _data.selectedPeriodGroupId,
+      selectedTeacherId: _data.selectedTeacherId,
+      selectedTeacherName: _data.selectedTeacherName,
+      periodGroups: _data.periodGroups,
+      teachers: _data.teachers,
+      days: _data.days,
+      slots: _data.slots,
+      items: _data.items.map((TimetableItem item) {
+        if (item.id != sourceLessonId) {
+          return item;
+        }
+        return TimetableItem(
+          id: item.id,
+          batchNo: item.batchNo,
+          classType: item.classType,
+          teachingClassId: item.teachingClassId,
+          teachingClassName: item.teachingClassName,
+          studentName: item.studentName,
+          teacherId: item.teacherId,
+          teacherName: item.teacherName,
+          lessonName: item.lessonName,
+          personName: item.personName,
+          classroomName: item.classroomName,
+          assistantIds: item.assistantIds,
+          classroomId: item.classroomId,
+          status: item.status,
+          statusText: item.statusText,
+          conflict: item.conflict,
+          date: targetSlot.date,
+          startTime: targetSlot.startTime,
+          endTime: targetSlot.endTime,
+        );
+      }).toList(),
+      summary: _data.summary,
+    );
   }
 
   void _startLessonDrag(_LessonDragData source) {

@@ -155,6 +155,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         _selectedPeriodGroupId = data.selectedPeriodGroupId;
         _selectedTeacherId = data.selectedTeacherId;
         _applyTimetableData(data);
+        _pruneQuickFilters();
         _loading = false;
       });
       if (_selectedScheduleTarget != null) {
@@ -215,6 +216,9 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
     }
     final _PeriodGroupOption group = _periodGroups[index];
     if (group.id == _selectedPeriodGroupId && !_loading) {
+      _updateState(() {
+        _periodGroupDropdownOpen = false;
+      });
       return;
     }
     _updateState(() {
@@ -222,7 +226,9 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _selectedPeriodGroupId = group.id;
       _selectedTeacherId = '';
       _teacherIndex = 0;
+      _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
+      _openFilterKind = null;
       _loading = true;
       _errorMessage = null;
       _resetAvailabilityFields();
@@ -239,7 +245,9 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
     _updateState(() {
       _teacherIndex = index;
       _selectedTeacherId = teacherId;
+      _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
+      _openFilterKind = null;
       _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(teacher);
@@ -252,7 +260,9 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
   void _changeWeek(int delta) {
     _updateState(() {
       _weekOffset += delta;
+      _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
+      _openFilterKind = null;
       _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(
@@ -269,7 +279,9 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
   void _backToCurrentWeek() {
     _updateState(() {
       _weekOffset = 0;
+      _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
+      _openFilterKind = null;
       _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(

@@ -139,16 +139,17 @@ List<_TimeSlot> _timeSlotsFromData(TimetableData data) {
       .toList();
 }
 
-List<List<_LessonCell?>> _scheduleRowsFromData(
-  TimetableData data,
+List<List<_LessonCell?>> _scheduleRowsFromItems(
+  List<TimetableItem> items,
+  List<TimetableDay> sourceDays,
   List<_WeekDay> weekDays,
   List<_TimeSlot> timeSlots,
 ) {
   final Map<String, int> dayIndexByDate = <String, int>{};
   for (int index = 0;
-      index < data.days.length && index < weekDays.length;
+      index < sourceDays.length && index < weekDays.length;
       index += 1) {
-    dayIndexByDate[data.days[index].date] = index;
+    dayIndexByDate[sourceDays[index].date] = index;
   }
   final Map<String, int> slotIndexByKey = <String, int>{};
   for (int index = 0; index < timeSlots.length; index += 1) {
@@ -159,7 +160,7 @@ List<List<_LessonCell?>> _scheduleRowsFromData(
     timeSlots.length,
     (_) => List<_LessonCell?>.filled(weekDays.length, null),
   );
-  for (final TimetableItem item in data.items) {
+  for (final TimetableItem item in items) {
     final int? row = slotIndexByKey[_slotKey(item.startTime, item.endTime)];
     final int? column = dayIndexByDate[item.date];
     if (row == null ||
@@ -181,6 +182,88 @@ List<List<_LessonCell?>> _scheduleRowsFromData(
     );
   }
   return rows;
+}
+
+List<List<_LessonCell?>> _scheduleRowsFromData(
+  TimetableData data,
+  List<_WeekDay> weekDays,
+  List<_TimeSlot> timeSlots,
+) {
+  return _scheduleRowsFromItems(data.items, data.days, weekDays, timeSlots);
+}
+
+TimetableSummary _timetableSummaryFromItems(List<TimetableItem> items) {
+  int unsigned = 0;
+  int signed = 0;
+  int partial = 0;
+  int trial = 0;
+  int conflict = 0;
+  for (final TimetableItem item in items) {
+    switch (_lessonStatusFromApi(item.status)) {
+      case _LessonStatus.unsigned:
+        unsigned += 1;
+        break;
+      case _LessonStatus.signed:
+        signed += 1;
+        break;
+      case _LessonStatus.partial:
+        partial += 1;
+        break;
+      case _LessonStatus.trial:
+        trial += 1;
+        break;
+      case _LessonStatus.conflict:
+        conflict += 1;
+        break;
+    }
+  }
+  return TimetableSummary(
+    total: items.length,
+    unsigned: unsigned,
+    signed: signed,
+    partial: partial,
+    trial: trial,
+    conflict: conflict,
+  );
+}
+
+String _studentFilterValue(TimetableItem item) {
+  final String student = item.studentName.trim();
+  if (student.isNotEmpty) {
+    return student;
+  }
+  final String person = item.personName.trim();
+  if (person.isNotEmpty) {
+    return person;
+  }
+  final String teachingClass = item.teachingClassName.trim();
+  if (teachingClass.isNotEmpty) {
+    return teachingClass;
+  }
+  final String lessonName = item.lessonName.trim();
+  if (lessonName.isNotEmpty) {
+    return lessonName;
+  }
+  return '未命名对象';
+}
+
+String _courseFilterValue(TimetableItem item) {
+  final String lessonName = item.lessonName.trim();
+  return lessonName.isEmpty ? '未命名课程' : lessonName;
+}
+
+String _callStatusFilterValue(TimetableItem item) {
+  switch (_lessonStatusFromApi(item.status)) {
+    case _LessonStatus.signed:
+      return 'signed';
+    case _LessonStatus.partial:
+      return 'partial';
+    case _LessonStatus.unsigned:
+      return 'unsigned';
+    case _LessonStatus.trial:
+    case _LessonStatus.conflict:
+      return '';
+  }
 }
 
 String _lessonPersonText(TimetableItem item) {

@@ -53,18 +53,39 @@ func (svc *Service) GetPadHomeSummary(userID int64, query model.PadHomeSummaryQu
 
 	now := time.Now().In(padHomeLocation())
 	today := now.Format("2006-01-02")
-	stats, err := svc.repo.GetPadHomeAssessmentStats(ctx, instID, "", now)
-	if err != nil {
-		return model.PadHomeSummaryVO{}, err
+	var (
+		stats     model.PadHomeAssessmentStats
+		schedules []model.TeachingScheduleVO
+		weather   model.PadHomeWeather
+		statsErr  error
+		schedErr  error
+	)
+	var wg sync.WaitGroup
+	wg.Add(3)
+	go func() {
+		defer wg.Done()
+		stats, statsErr = svc.repo.GetPadHomeAssessmentStats(ctx, instID, "", now)
+	}()
+	go func() {
+		defer wg.Done()
+		schedules, schedErr = svc.repo.ListPadHomeSchedules(ctx, instID, today)
+		if schedErr != nil {
+			return
+		}
+		if err := svc.repo.FillTeachingScheduleCallStatus(ctx, instID, schedules); err != nil {
+			schedErr = err
+		}
+	}()
+	go func() {
+		defer wg.Done()
+		weather = svc.padHomeWeather(ctx, instID, query)
+	}()
+	wg.Wait()
+	if statsErr != nil {
+		return model.PadHomeSummaryVO{}, statsErr
 	}
-
-	schedules, err := svc.ListTeachingSchedules(userID, model.TeachingScheduleListQueryDTO{
-		StartDate:     today,
-		EndDate:       today,
-		SortDirection: "asc",
-	})
-	if err != nil {
-		return model.PadHomeSummaryVO{}, err
+	if schedErr != nil {
+		return model.PadHomeSummaryVO{}, schedErr
 	}
 
 	return model.PadHomeSummaryVO{
@@ -72,7 +93,7 @@ func (svc *Service) GetPadHomeSummary(userID int64, query model.PadHomeSummaryQu
 		Weekday:         chineseWeekday(now.Weekday()),
 		AssessmentStats: stats,
 		Schedule:        padHomeScheduleItems(schedules, now),
-		Weather:         svc.padHomeWeather(ctx, instID, query),
+		Weather:         weather,
 	}, nil
 }
 

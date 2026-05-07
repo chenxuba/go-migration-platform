@@ -5,6 +5,22 @@ enum _ScheduleMode {
   groupClass,
 }
 
+enum _TimetableFilterKind {
+  student,
+  course,
+  callStatus,
+}
+
+class _TimetableFilterOption {
+  const _TimetableFilterOption({
+    required this.id,
+    required this.label,
+  });
+
+  final String id;
+  final String label;
+}
+
 class _ScheduleCellSlot {
   const _ScheduleCellSlot({
     required this.row,

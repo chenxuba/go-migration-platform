@@ -5,6 +5,8 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
     _updateState(() {
       _schedulePanelOpen = !_schedulePanelOpen;
       _teacherDropdownOpen = false;
+      _periodGroupDropdownOpen = false;
+      _openFilterKind = null;
     });
     if (_schedulePanelOpen &&
         !_scheduleOptionsLoading &&
@@ -55,6 +57,7 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
       } else {
         _selectedGroupClassTarget = option;
       }
+      _periodGroupDropdownOpen = false;
       _schedulePanelOpen = false;
       _resetAvailabilityFields();
     });
@@ -68,6 +71,7 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
       } else {
         _selectedGroupClassTarget = null;
       }
+      _periodGroupDropdownOpen = false;
       _schedulePanelOpen = false;
       _resetAvailabilityFields();
     });

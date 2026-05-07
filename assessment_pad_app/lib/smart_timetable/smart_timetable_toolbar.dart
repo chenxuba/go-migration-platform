@@ -108,14 +108,16 @@ class _PeriodGroupTabs extends StatelessWidget {
   const _PeriodGroupTabs({
     required this.groups,
     required this.selectedIndex,
-    required this.onSelected,
-    required this.compact,
+    required this.isOpen,
+    required this.layerLink,
+    required this.onToggle,
   });
 
   final List<_PeriodGroupOption> groups;
   final int selectedIndex;
-  final ValueChanged<int> onSelected;
-  final bool compact;
+  final bool isOpen;
+  final LayerLink layerLink;
+  final VoidCallback onToggle;
 
   @override
   Widget build(BuildContext context) {
@@ -128,91 +130,13 @@ class _PeriodGroupTabs extends StatelessWidget {
             ),
           ]
         : groups;
-    return SizedBox(
-      height: 34,
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: ListView.separated(
-              scrollDirection: Axis.horizontal,
-              physics: const BouncingScrollPhysics(),
-              itemBuilder: (BuildContext context, int index) {
-                final _PeriodGroupOption group = displayGroups[index];
-                return _PeriodGroupTab(
-                  key: ValueKey<String>('period-group-tab-${group.id}'),
-                  group: group,
-                  selected: index == selectedIndex,
-                  compact: compact,
-                  onTap: () => onSelected(index),
-                );
-              },
-              separatorBuilder: (_, __) => SizedBox(width: compact ? 6 : 8),
-              itemCount: displayGroups.length,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PeriodGroupTab extends StatelessWidget {
-  const _PeriodGroupTab({
-    required this.group,
-    required this.selected,
-    required this.compact,
-    required this.onTap,
-    super.key,
-  });
-
-  final _PeriodGroupOption group;
-  final bool selected;
-  final bool compact;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(11),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(11),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 160),
-          width: compact ? 74 : 82,
-          height: 34,
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: selected ? const Color(0xFFFFF0E5) : _SmartColors.card,
-            border: Border.all(
-              color: selected ? _SmartColors.orange : _SmartColors.line,
-            ),
-            borderRadius: BorderRadius.circular(11),
-            boxShadow: selected
-                ? const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x24E96F43),
-                      blurRadius: 14,
-                      offset: Offset(0, 6),
-                    ),
-                  ]
-                : null,
-          ),
-          child: Text(
-            group.name,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: _SmartColors.text,
-              fontSize: 12,
-              height: 1,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ),
-      ),
+    final int safeIndex = selectedIndex.clamp(0, displayGroups.length - 1);
+    final _PeriodGroupOption current = displayGroups[safeIndex];
+    return _PeriodGroupDropdownButton(
+      group: current,
+      open: isOpen,
+      layerLink: layerLink,
+      onTap: onToggle,
     );
   }
 }
@@ -227,13 +151,20 @@ class _TimetableSubBar extends StatelessWidget {
     required this.availabilityMessage,
     required this.periodGroups,
     required this.periodGroupIndex,
+    required this.periodGroupDropdownOpen,
+    required this.periodGroupDropdownLink,
     required this.errorMessage,
+    required this.openFilterKind,
+    required this.studentFilterLabel,
+    required this.courseFilterLabel,
+    required this.callStatusFilterLabel,
+    required this.onPeriodGroupToggle,
     required this.onSchedulePanelToggle,
     required this.onScheduleModeChanged,
     required this.onScheduleTargetCleared,
     required this.onAvailabilityRefresh,
-    required this.onPeriodGroupSelected,
     required this.onRefresh,
+    required this.onFilterToggle,
   });
 
   final bool compact;
@@ -244,17 +175,24 @@ class _TimetableSubBar extends StatelessWidget {
   final String? availabilityMessage;
   final List<_PeriodGroupOption> periodGroups;
   final int periodGroupIndex;
+  final bool periodGroupDropdownOpen;
+  final LayerLink periodGroupDropdownLink;
   final String? errorMessage;
+  final _TimetableFilterKind? openFilterKind;
+  final String studentFilterLabel;
+  final String courseFilterLabel;
+  final String callStatusFilterLabel;
+  final VoidCallback onPeriodGroupToggle;
   final VoidCallback onSchedulePanelToggle;
   final ValueChanged<_ScheduleMode> onScheduleModeChanged;
   final VoidCallback onScheduleTargetCleared;
   final VoidCallback onAvailabilityRefresh;
-  final ValueChanged<int> onPeriodGroupSelected;
   final VoidCallback onRefresh;
+  final ValueChanged<_TimetableFilterKind> onFilterToggle;
 
   @override
   Widget build(BuildContext context) {
-    final double periodGroupWidth = compact ? 250 : 284;
+    final double periodGroupWidth = compact ? 126 : 136;
     return SizedBox(
       height: 44,
       child: Row(
@@ -277,21 +215,42 @@ class _TimetableSubBar extends StatelessWidget {
           SizedBox(
             width: periodGroupWidth,
             child: _PeriodGroupTabs(
-              compact: compact,
               groups: periodGroups,
               selectedIndex: periodGroupIndex,
-              onSelected: onPeriodGroupSelected,
+              isOpen: periodGroupDropdownOpen,
+              layerLink: periodGroupDropdownLink,
+              onToggle: onPeriodGroupToggle,
             ),
           ),
           SizedBox(width: compact ? 8 : 10),
           if (errorMessage != null)
             _TimetableLoadStatus(message: errorMessage!, onRefresh: onRefresh),
           if (errorMessage != null) const SizedBox(width: 10),
-          const _FilterButton(icon: Icons.filter_list_rounded, label: '全部课程'),
+          _FilterButton(
+            key: const ValueKey<String>('smart-filter-student'),
+            icon: Icons.person_outline_rounded,
+            label: studentFilterLabel,
+            width: compact ? 118 : 130,
+            selected: openFilterKind == _TimetableFilterKind.student,
+            onTap: () => onFilterToggle(_TimetableFilterKind.student),
+          ),
           const SizedBox(width: 8),
-          const _FilterButton(
-            icon: Icons.library_books_outlined,
-            label: '全部状态',
+          _FilterButton(
+            key: const ValueKey<String>('smart-filter-course'),
+            icon: Icons.menu_book_outlined,
+            label: courseFilterLabel,
+            width: compact ? 118 : 130,
+            selected: openFilterKind == _TimetableFilterKind.course,
+            onTap: () => onFilterToggle(_TimetableFilterKind.course),
+          ),
+          const SizedBox(width: 8),
+          _FilterButton(
+            key: const ValueKey<String>('smart-filter-call-status'),
+            icon: Icons.fact_check_outlined,
+            label: callStatusFilterLabel,
+            width: compact ? 110 : 122,
+            selected: openFilterKind == _TimetableFilterKind.callStatus,
+            onTap: () => onFilterToggle(_TimetableFilterKind.callStatus),
           ),
         ],
       ),

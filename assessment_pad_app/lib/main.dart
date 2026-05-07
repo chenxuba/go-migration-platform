@@ -2825,7 +2825,22 @@ class HomeHeader extends StatelessWidget {
             ),
           ),
         if (loading || errorMessage != null) const SizedBox(width: 24),
-        const Icon(Icons.search_rounded, size: 31, color: AppColors.ink),
+        SizedBox(
+          width: 31,
+          height: 31,
+          child: IconButton(
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints.tightFor(width: 31, height: 31),
+            splashRadius: 18,
+            tooltip: '刷新首页',
+            onPressed: loading ? null : onRefresh,
+            icon: const Icon(
+              Icons.refresh_rounded,
+              size: 31,
+              color: AppColors.ink,
+            ),
+          ),
+        ),
         const SizedBox(width: 26),
         Stack(
           clipBehavior: Clip.none,
@@ -3341,81 +3356,85 @@ class StartAssessmentCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 334,
-      padding: const EdgeInsets.fromLTRB(30, 34, 30, 28),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: <Color>[Color(0xFFF28A58), Color(0xFFD85C36)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context).pushNamed('/assessment-scales'),
+      child: Container(
+        width: width,
+        height: 334,
+        padding: const EdgeInsets.fromLTRB(30, 34, 30, 28),
+        decoration: BoxDecoration(
+          gradient: const LinearGradient(
+            colors: <Color>[Color(0xFFF28A58), Color(0xFFD85C36)],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: _softShadow(
+            color: const Color(0x30C85C38),
+            blur: 22,
+            offset: const Offset(0, 14),
+          ),
         ),
-        borderRadius: BorderRadius.circular(18),
-        boxShadow: _softShadow(
-          color: const Color(0x30C85C38),
-          blur: 22,
-          offset: const Offset(0, 14),
-        ),
-      ),
-      child: Stack(
-        children: <Widget>[
-          Positioned(
-            right: -10,
-            bottom: 26,
-            child: ClipOval(
-              child: Container(
-                width: 140,
-                height: 58,
-                color: const Color(0x22FFFFFF),
+        child: Stack(
+          children: <Widget>[
+            Positioned(
+              right: -10,
+              bottom: 26,
+              child: ClipOval(
+                child: Container(
+                  width: 140,
+                  height: 58,
+                  color: const Color(0x22FFFFFF),
+                ),
               ),
             ),
-          ),
-          const Positioned(
-            right: 6,
-            bottom: 46,
-            child: ClipboardPencilIllustration(),
-          ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              const Text(
-                '开始测评',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 33,
-                  fontWeight: FontWeight.w800,
-                  height: 1,
+            const Positioned(
+              right: 6,
+              bottom: 46,
+              child: ClipboardPencilIllustration(),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Text(
+                  '开始测评',
+                  style: TextStyle(
+                    color: Colors.white,
+                    fontSize: 33,
+                    fontWeight: FontWeight.w800,
+                    height: 1,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 17),
-              const Text(
-                '科学评估 · 全面了解 · 助力成长',
-                style: TextStyle(
-                  color: Color(0xFFFFE9DA),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 17),
+                const Text(
+                  '科学评估 · 全面了解 · 助力成长',
+                  style: TextStyle(
+                    color: Color(0xFFFFE9DA),
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
                 ),
-              ),
-              const Spacer(),
-              _StartButton(
-                icon: Icons.add_rounded,
-                label: '新建测评',
-                filled: true,
-                onTap: () =>
-                    Navigator.of(context).pushNamed('/assessment-scales'),
-              ),
-              const SizedBox(height: 16),
-              _StartButton(
-                icon: Icons.play_arrow_rounded,
-                label: '继续测评',
-                filled: false,
-                onTap: () =>
-                    Navigator.of(context).pushNamed('/assessment-scales'),
-              ),
-            ],
-          ),
-        ],
+                const Spacer(),
+                _StartButton(
+                  icon: Icons.add_rounded,
+                  label: '新建测评',
+                  filled: true,
+                  onTap: () =>
+                      Navigator.of(context).pushNamed('/assessment-scales'),
+                ),
+                const SizedBox(height: 16),
+                _StartButton(
+                  icon: Icons.play_arrow_rounded,
+                  label: '继续测评',
+                  filled: false,
+                  onTap: () =>
+                      Navigator.of(context).pushNamed('/assessment-scales'),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -4106,17 +4125,6 @@ class FeatureShortcutRow extends StatelessWidget {
     return Row(
       children: <Widget>[
         ShortcutCard(
-          title: '排课日程',
-          desc1: '课程安排',
-          desc2: '一目了然',
-          icon: Icons.calendar_month_rounded,
-          iconColor: const Color(0xFFE87B52),
-          bg: const Color(0xFFFFF5EA),
-          width: cardWidth,
-          onTap: onTimetableTap,
-        ),
-        SizedBox(width: spacing),
-        ShortcutCard(
           title: '学员档案',
           desc1: '成长记录',
           desc2: '全面管理',
@@ -4124,6 +4132,17 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFF74AA79),
           bg: const Color(0xFFEFF7EC),
           width: cardWidth,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
+          title: '评估报告',
+          desc1: '测评结果',
+          desc2: '快速查看',
+          icon: Icons.article_outlined,
+          iconColor: const Color(0xFF3F82D2),
+          bg: const Color(0xFFEDF5FF),
+          width: cardWidth,
+          onTap: onReportTap,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
@@ -4147,6 +4166,17 @@ class FeatureShortcutRow extends StatelessWidget {
         ),
         SizedBox(width: spacing),
         ShortcutCard(
+          title: '排课日程',
+          desc1: '课程安排',
+          desc2: '一目了然',
+          icon: Icons.calendar_month_rounded,
+          iconColor: const Color(0xFFE87B52),
+          bg: const Color(0xFFFFF5EA),
+          width: cardWidth,
+          onTap: onTimetableTap,
+        ),
+        SizedBox(width: spacing),
+        ShortcutCard(
           title: '训练中心',
           desc1: '训练动态',
           desc2: '即时掌握',
@@ -4154,17 +4184,6 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFF4D9C8E),
           bg: const Color(0xFFE8F7F3),
           width: cardWidth,
-        ),
-        SizedBox(width: spacing),
-        ShortcutCard(
-          title: '评估报告',
-          desc1: '测评结果',
-          desc2: '快速查看',
-          icon: Icons.article_outlined,
-          iconColor: const Color(0xFF3F82D2),
-          bg: const Color(0xFFEDF5FF),
-          width: cardWidth,
-          onTap: onReportTap,
         ),
       ],
     );

@@ -305,33 +305,23 @@ class _HomeLocation {
 Future<_HomeLocation?> _resolveCurrentHomeLocation() async {
   try {
     final bool serviceEnabled = await Geolocator.isLocationServiceEnabled()
-        .timeout(const Duration(seconds: 1), onTimeout: () => false);
+        .timeout(const Duration(milliseconds: 250), onTimeout: () => false);
     if (!serviceEnabled) {
       return null;
     }
 
     LocationPermission permission = await Geolocator.checkPermission().timeout(
-        const Duration(seconds: 1),
+        const Duration(milliseconds: 250),
         onTimeout: () => LocationPermission.denied);
-    if (permission == LocationPermission.denied ||
-        permission == LocationPermission.unableToDetermine) {
-      permission = await Geolocator.requestPermission().timeout(
-        const Duration(seconds: 8),
-        onTimeout: () => LocationPermission.denied,
-      );
-    }
     if (permission == LocationPermission.denied ||
         permission == LocationPermission.deniedForever ||
         permission == LocationPermission.unableToDetermine) {
       return null;
     }
 
-    final Position position = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.low,
-      forceAndroidLocationManager: true,
-      timeLimit: const Duration(seconds: 3),
-    ).timeout(const Duration(seconds: 4));
-    if (position.latitude == 0 && position.longitude == 0) {
+    final Position? position = await Geolocator.getLastKnownPosition();
+    if (position == null ||
+        (position.latitude == 0 && position.longitude == 0)) {
       return null;
     }
     return _HomeLocation(

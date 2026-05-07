@@ -60,6 +60,8 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.teachers,
     required this.teacherIndex,
     required this.teacherDropdownOpen,
+    required this.periodGroupDropdownOpen,
+    required this.periodGroupDropdownLink,
     required this.schedulePanelOpen,
     required this.loading,
     required this.scheduleMode,
@@ -72,6 +74,16 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.selectedClassroom,
     required this.scheduleOptionsLoading,
     required this.scheduleOptionsError,
+    required this.openFilterKind,
+    required this.studentFilterLabel,
+    required this.courseFilterLabel,
+    required this.callStatusFilterLabel,
+    required this.studentFilterOptions,
+    required this.courseFilterOptions,
+    required this.callStatusFilterOptions,
+    required this.selectedStudentFilters,
+    required this.selectedCourseFilters,
+    required this.selectedCallStatusFilters,
     required this.availabilityLoading,
     required this.availabilityMessage,
     required this.slotAvailability,
@@ -89,12 +101,20 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.onPrevWeek,
     required this.onNextWeek,
     required this.onToday,
+    required this.onPeriodGroupToggle,
     required this.onPeriodGroupSelected,
+    required this.onPeriodGroupDropdownClose,
     required this.onTeacherToggle,
     required this.onTeacherSelected,
     required this.onTeacherDropdownClose,
     required this.onSchedulePanelToggle,
     required this.onSchedulePanelClose,
+    required this.onFilterToggle,
+    required this.onFilterClose,
+    required this.onStudentFilterToggled,
+    required this.onCourseFilterToggled,
+    required this.onCallStatusFilterToggled,
+    required this.onFilterCleared,
     required this.onScheduleModeChanged,
     required this.onScheduleTargetSelected,
     required this.onScheduleTargetCleared,
@@ -116,6 +136,8 @@ class _SmartTimetableScreen extends StatelessWidget {
   final List<_TeacherOption> teachers;
   final int teacherIndex;
   final bool teacherDropdownOpen;
+  final bool periodGroupDropdownOpen;
+  final LayerLink periodGroupDropdownLink;
   final bool schedulePanelOpen;
   final bool loading;
   final _ScheduleMode scheduleMode;
@@ -128,6 +150,16 @@ class _SmartTimetableScreen extends StatelessWidget {
   final ScheduleClassroomOption? selectedClassroom;
   final bool scheduleOptionsLoading;
   final String? scheduleOptionsError;
+  final _TimetableFilterKind? openFilterKind;
+  final String studentFilterLabel;
+  final String courseFilterLabel;
+  final String callStatusFilterLabel;
+  final List<_TimetableFilterOption> studentFilterOptions;
+  final List<_TimetableFilterOption> courseFilterOptions;
+  final List<_TimetableFilterOption> callStatusFilterOptions;
+  final Set<String> selectedStudentFilters;
+  final Set<String> selectedCourseFilters;
+  final Set<String> selectedCallStatusFilters;
   final bool availabilityLoading;
   final String? availabilityMessage;
   final Map<String, _SlotAvailability> slotAvailability;
@@ -145,12 +177,20 @@ class _SmartTimetableScreen extends StatelessWidget {
   final VoidCallback onPrevWeek;
   final VoidCallback onNextWeek;
   final VoidCallback onToday;
+  final VoidCallback onPeriodGroupToggle;
   final ValueChanged<int> onPeriodGroupSelected;
+  final VoidCallback onPeriodGroupDropdownClose;
   final VoidCallback onTeacherToggle;
   final ValueChanged<int> onTeacherSelected;
   final VoidCallback onTeacherDropdownClose;
   final VoidCallback onSchedulePanelToggle;
   final VoidCallback onSchedulePanelClose;
+  final ValueChanged<_TimetableFilterKind> onFilterToggle;
+  final VoidCallback onFilterClose;
+  final ValueChanged<String> onStudentFilterToggled;
+  final ValueChanged<String> onCourseFilterToggled;
+  final ValueChanged<String> onCallStatusFilterToggled;
+  final ValueChanged<_TimetableFilterKind> onFilterCleared;
   final ValueChanged<_ScheduleMode> onScheduleModeChanged;
   final ValueChanged<ScheduleTargetOption> onScheduleTargetSelected;
   final VoidCallback onScheduleTargetCleared;
@@ -210,13 +250,20 @@ class _SmartTimetableScreen extends StatelessWidget {
                     availabilityMessage: availabilityMessage,
                     periodGroups: periodGroups,
                     periodGroupIndex: periodGroupIndex,
+                    periodGroupDropdownOpen: periodGroupDropdownOpen,
+                    periodGroupDropdownLink: periodGroupDropdownLink,
                     errorMessage: errorMessage,
+                    openFilterKind: openFilterKind,
+                    studentFilterLabel: studentFilterLabel,
+                    courseFilterLabel: courseFilterLabel,
+                    callStatusFilterLabel: callStatusFilterLabel,
+                    onPeriodGroupToggle: onPeriodGroupToggle,
                     onSchedulePanelToggle: onSchedulePanelToggle,
                     onScheduleModeChanged: onScheduleModeChanged,
                     onScheduleTargetCleared: onScheduleTargetCleared,
                     onAvailabilityRefresh: onAvailabilityRefresh,
-                    onPeriodGroupSelected: onPeriodGroupSelected,
                     onRefresh: onRefresh,
+                    onFilterToggle: onFilterToggle,
                   ),
                   const SizedBox(height: 4),
                   _TimetableSummary(compact: compact, summary: summary),
@@ -270,6 +317,32 @@ class _SmartTimetableScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              if (!loading && periodGroupDropdownOpen) ...<Widget>[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: onPeriodGroupDropdownClose,
+                  ),
+                ),
+                CompositedTransformFollower(
+                  link: periodGroupDropdownLink,
+                  showWhenUnlinked: false,
+                  targetAnchor: Alignment.bottomLeft,
+                  followerAnchor: Alignment.topLeft,
+                  offset: const Offset(0, 8),
+                  child: Material(
+                    color: Colors.transparent,
+                    child: SizedBox(
+                      width: compact ? 188 : 200,
+                      child: _PeriodGroupDropdownPanel(
+                        groups: periodGroups,
+                        selectedIndex: periodGroupIndex,
+                        onSelected: onPeriodGroupSelected,
+                      ),
+                    ),
+                  ),
+                ),
+              ],
               if (!loading && schedulePanelOpen) ...<Widget>[
                 Positioned.fill(
                   child: GestureDetector(
@@ -301,6 +374,45 @@ class _SmartTimetableScreen extends StatelessWidget {
                   ),
                 ),
               ],
+              if (!loading && openFilterKind != null) ...<Widget>[
+                Positioned.fill(
+                  child: GestureDetector(
+                    behavior: HitTestBehavior.translucent,
+                    onTap: onFilterClose,
+                  ),
+                ),
+                Positioned(
+                  top: 134,
+                  right: _filterPanelRightOffset(
+                    kind: openFilterKind!,
+                    compact: compact,
+                    pagePadding: pagePadding,
+                  ),
+                  width: compact ? 220 : 236,
+                  child: _TimetableFilterPanel(
+                    kind: openFilterKind!,
+                    options: switch (openFilterKind!) {
+                      _TimetableFilterKind.student => studentFilterOptions,
+                      _TimetableFilterKind.course => courseFilterOptions,
+                      _TimetableFilterKind.callStatus =>
+                        callStatusFilterOptions,
+                    },
+                    selectedIds: switch (openFilterKind!) {
+                      _TimetableFilterKind.student => selectedStudentFilters,
+                      _TimetableFilterKind.course => selectedCourseFilters,
+                      _TimetableFilterKind.callStatus =>
+                        selectedCallStatusFilters,
+                    },
+                    onOptionToggled: switch (openFilterKind!) {
+                      _TimetableFilterKind.student => onStudentFilterToggled,
+                      _TimetableFilterKind.course => onCourseFilterToggled,
+                      _TimetableFilterKind.callStatus =>
+                        onCallStatusFilterToggled,
+                    },
+                    onClear: () => onFilterCleared(openFilterKind!),
+                  ),
+                ),
+              ],
             ],
           ),
         );
@@ -322,7 +434,7 @@ class _TimetableLoadingScaffold extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double periodGroupWidth = compact ? 250 : 284;
+    final double periodGroupWidth = compact ? 126 : 136;
     return Column(
       key: const ValueKey<String>('smart-timetable-skeleton'),
       children: <Widget>[
@@ -455,4 +567,20 @@ class _TimetableSummarySkeleton extends StatelessWidget {
       ),
     );
   }
+}
+
+double _filterPanelRightOffset({
+  required _TimetableFilterKind kind,
+  required bool compact,
+  required double pagePadding,
+}) {
+  final double courseWidth = compact ? 118 : 130;
+  final double statusWidth = compact ? 110 : 122;
+  const double gap = 8;
+  return switch (kind) {
+    _TimetableFilterKind.student =>
+      pagePadding + courseWidth + gap + statusWidth + gap,
+    _TimetableFilterKind.course => pagePadding + statusWidth + gap,
+    _TimetableFilterKind.callStatus => pagePadding,
+  };
 }

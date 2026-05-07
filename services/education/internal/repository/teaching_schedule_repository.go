@@ -627,6 +627,68 @@ func (repo *Repository) ListTeachingSchedules(ctx context.Context, instID int64,
 	return items, nil
 }
 
+func (repo *Repository) ListPadHomeSchedules(ctx context.Context, instID int64, lessonDate string) ([]model.TeachingScheduleVO, error) {
+	lessonDate = strings.TrimSpace(lessonDate)
+	if lessonDate == "" {
+		return []model.TeachingScheduleVO{}, nil
+	}
+
+	rows, err := repo.db.QueryContext(ctx, `
+		SELECT
+			id,
+			IFNULL(class_type, 0),
+			IFNULL(teaching_class_id, 0),
+			IFNULL(teaching_class_name, ''),
+			IFNULL(student_id, 0),
+			IFNULL(lesson_name, ''),
+			IFNULL(classroom_name, ''),
+			lesson_start_at,
+			lesson_end_at
+		FROM teaching_schedule ts
+		WHERE ts.inst_id = ?
+		  AND ts.del_flag = 0
+		  AND ts.status = ?
+		  AND ts.lesson_date = ?
+		ORDER BY ts.lesson_start_at ASC, ts.id ASC
+		LIMIT 4
+	`, instID, model.TeachingScheduleStatusActive, lessonDate)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items := make([]model.TeachingScheduleVO, 0, 4)
+	for rows.Next() {
+		var (
+			item            model.TeachingScheduleVO
+			id              int64
+			teachingClassID int64
+			studentID       int64
+		)
+		if err := rows.Scan(
+			&id,
+			&item.ClassType,
+			&teachingClassID,
+			&item.TeachingClassName,
+			&studentID,
+			&item.LessonName,
+			&item.ClassroomName,
+			&item.StartAt,
+			&item.EndAt,
+		); err != nil {
+			return nil, err
+		}
+		item.ID = strconv.FormatInt(id, 10)
+		item.TeachingClassID = strconv.FormatInt(teachingClassID, 10)
+		item.StudentID = strconv.FormatInt(studentID, 10)
+		items = append(items, item)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 type teachingScheduleConflictScope struct {
 	Slots         []normalizedScheduleSlot
 	StaffIDs      []int64

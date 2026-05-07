@@ -16,11 +16,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 void main() {
   testWidgets('login page opens the home dashboard after real login callback',
       (WidgetTester tester) async {
+    final _FakeHomeClient homeClient = _FakeHomeClient();
     SharedPreferences.setMockInitialValues(<String, Object>{});
     await tester.pumpWidget(
       AssessmentPadApp(
         authClient: _FakeAuthClient(),
-        homeClient: _FakeHomeClient(),
+        homeClient: homeClient,
         scaleClient: _FakeAssessmentScaleClient(),
         timetableClient: _FakeTimetableClient(),
       ),
@@ -37,7 +38,15 @@ void main() {
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('开始测评'), findsOneWidget);
-    expect(find.byIcon(Icons.search_rounded), findsOneWidget);
+    expect(find.byIcon(Icons.refresh_rounded), findsWidgets);
+    expect(homeClient.fetchCurrentSessionCalls, 1);
+    expect(homeClient.fetchSummaryCalls, 1);
+
+    await tester.tap(find.byTooltip('刷新首页'));
+    await tester.pumpAndSettle();
+
+    expect(homeClient.fetchCurrentSessionCalls, 2);
+    expect(homeClient.fetchSummaryCalls, 2);
 
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
@@ -63,6 +72,27 @@ void main() {
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
+  });
+
+  testWidgets('start assessment card opens assessment scales when tapping card',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
 
   testWidgets('assessment report list opens preview dialog from view action',
@@ -179,6 +209,58 @@ void main() {
     expect(find.text('陈思语老师'), findsOneWidget);
   });
 
+  testWidgets('smart timetable layout does not overflow on wide viewport',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: _FakeTimetableClient()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('smart timetable filters schedules by call status',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('感统训练'), findsOneWidget);
+    expect(find.text('语言认知课'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('smart-filter-call-status')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('smart-filter-option-callStatus-signed'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('感统训练'), findsNothing);
+    expect(find.text('语言认知课'), findsOneWidget);
+  });
+
   testWidgets('home shortcut opens smart timetable page',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
@@ -204,7 +286,6 @@ void main() {
     expect(find.text('按固定时段查看老师一周排课'), findsNothing);
     expect(find.text('陈思语老师'), findsOneWidget);
     expect(find.text('A组'), findsOneWidget);
-    expect(find.text('C组'), findsOneWidget);
 
     final Rect timeRailRect =
         tester.getRect(find.byKey(const ValueKey<String>('smart-time-rail')));
@@ -265,9 +346,13 @@ void main() {
     expect(find.text('09:15 - 09:55'), findsOneWidget);
     expect(find.text('切换老师课表'), findsNothing);
 
-    await tester.tap(find.text('C组'));
+    await tester
+        .tap(find.byKey(const ValueKey<String>('period-group-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('C组').last);
     await tester.pumpAndSettle();
 
+    expect(find.text('C组'), findsOneWidget);
     expect(find.text('周子涵老师'), findsOneWidget);
     expect(find.text('08:30 - 09:10'), findsOneWidget);
     expect(find.text('09:15 - 09:55'), findsNothing);
@@ -1782,8 +1867,12 @@ class _FakeAuthClient implements AuthClient {
 }
 
 class _FakeHomeClient implements HomeClient {
+  int fetchCurrentSessionCalls = 0;
+  int fetchSummaryCalls = 0;
+
   @override
   Future<HomeSession> fetchCurrentSession(String token) async {
+    fetchCurrentSessionCalls += 1;
     return const HomeSession(
       nickName: '陈老师',
       orgName: '启明成长中心',
@@ -1792,6 +1881,7 @@ class _FakeHomeClient implements HomeClient {
 
   @override
   Future<HomeSummary> fetchSummary(String token) async {
+    fetchSummaryCalls += 1;
     return const HomeSummary(
       date: '2026-05-04',
       weekday: '星期一',
