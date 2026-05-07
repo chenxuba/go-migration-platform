@@ -292,6 +292,424 @@ class _PeriodGroupDropdownItem extends StatelessWidget {
   }
 }
 
+class _ScheduleMoveConfirmDialog extends StatelessWidget {
+  const _ScheduleMoveConfirmDialog({
+    required this.before,
+    required this.after,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final _ScheduleMovePreviewData before;
+  final _ScheduleMovePreviewData after;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.zero,
+      child: Container(
+        width: 720,
+        height: 456,
+        decoration: BoxDecoration(
+          color: _SmartColors.card,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x24000000),
+              blurRadius: 28,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 14, 12),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E8),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.swap_horiz_rounded,
+                      color: _SmartColors.orangeDeep,
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: <Widget>[
+                        Text(
+                          '确认调课',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _SmartColors.ink,
+                            fontSize: 18,
+                            height: 1.1,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        SizedBox(height: 4),
+                        Text(
+                          '将课程从原时段移动到新时段',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _SmartColors.muted,
+                            fontSize: 12,
+                            height: 1.2,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  IconButton(
+                    onPressed: onCancel,
+                    icon: const Icon(Icons.close_rounded),
+                    color: _SmartColors.muted,
+                    iconSize: 20,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints.tightFor(
+                      width: 34,
+                      height: 34,
+                    ),
+                    splashRadius: 18,
+                    tooltip: '关闭',
+                  ),
+                ],
+              ),
+            ),
+            const Divider(
+                height: 1, thickness: 1, color: _SmartColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 14, 18, 0),
+              child: Container(
+                width: double.infinity,
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 10,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF6EF),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFF4DFCF)),
+                ),
+                child: Row(
+                  children: <Widget>[
+                    const Icon(
+                      Icons.info_outline_rounded,
+                      color: _SmartColors.orangeDeep,
+                      size: 16,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '确认后将立即更新课表。',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _SmartColors.text,
+                          fontSize: 12,
+                          height: 1.2,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(18, 12, 18, 0),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Expanded(
+                      child: _ScheduleMovePreviewCard(
+                        label: '调整前',
+                        accent: false,
+                        data: before,
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Center(
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFFF1E8),
+                          shape: BoxShape.circle,
+                        ),
+                        child: const Icon(
+                          Icons.chevron_right_rounded,
+                          color: _SmartColors.orangeDeep,
+                          size: 22,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 14),
+                    Expanded(
+                      child: _ScheduleMovePreviewCard(
+                        label: '调整后',
+                        accent: true,
+                        data: after,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  _ScheduleMoveActionButton(
+                    label: '取消',
+                    filled: false,
+                    onTap: onCancel,
+                  ),
+                  const SizedBox(width: 12),
+                  _ScheduleMoveActionButton(
+                    label: '确认调课',
+                    filled: true,
+                    onTap: onConfirm,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleMovePreviewCard extends StatelessWidget {
+  const _ScheduleMovePreviewCard({
+    required this.label,
+    required this.data,
+    required this.accent,
+  });
+
+  final String label;
+  final _ScheduleMovePreviewData data;
+  final bool accent;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color borderColor =
+        accent ? const Color(0xFFF0D2C1) : _SmartColors.lineSoft;
+    final Color backgroundColor =
+        accent ? const Color(0xFFFFF8F2) : Colors.white;
+    final Color titleColor =
+        accent ? _SmartColors.orangeDeep : _SmartColors.ink;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+      decoration: BoxDecoration(
+        color: backgroundColor,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: borderColor,
+          width: 1,
+        ),
+        boxShadow: <BoxShadow>[
+          BoxShadow(
+            color: accent ? const Color(0x0A000000) : const Color(0x08000000),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: accent ? const Color(0xFFFFE3D4) : const Color(0xFFF5F1EC),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: accent ? _SmartColors.orangeDeep : _SmartColors.text,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            data.dateLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: titleColor,
+              fontSize: 18,
+              height: 1.1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            data.timeLabel,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: titleColor,
+              fontSize: 18,
+              height: 1.1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Text(
+            data.title,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _SmartColors.ink,
+              fontSize: 15,
+              height: 1.15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          _ScheduleMoveInfoLine(
+            label: '课程：',
+            value: data.courseLabel,
+          ),
+          const SizedBox(height: 6),
+          _ScheduleMoveInfoLine(
+            label: '学员：',
+            value: data.studentLabel,
+          ),
+          const SizedBox(height: 6),
+          _ScheduleMoveInfoLine(
+            label: '主教：',
+            value: data.teacherLabel,
+          ),
+          const SizedBox(height: 6),
+          _ScheduleMoveInfoLine(
+            label: '助教：',
+            value: data.assistantLabel,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScheduleMoveInfoLine extends StatelessWidget {
+  const _ScheduleMoveInfoLine({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(
+            text: label,
+            style: const TextStyle(
+              color: _SmartColors.text,
+              fontSize: 12,
+              height: 1.15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          TextSpan(
+            text: value,
+            style: const TextStyle(
+              color: _SmartColors.text,
+              fontSize: 12,
+              height: 1.15,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ],
+      ),
+      maxLines: 1,
+      overflow: TextOverflow.ellipsis,
+    );
+  }
+}
+
+class _ScheduleMoveActionButton extends StatelessWidget {
+  const _ScheduleMoveActionButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color borderColor = filled ? Colors.transparent : _SmartColors.line;
+    final Color background = filled ? _SmartColors.orangeDeep : Colors.white;
+    final Color textColor = filled ? Colors.white : _SmartColors.text;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: borderColor),
+            boxShadow: filled
+                ? const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x22E96F43),
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
+                    ),
+                  ]
+                : null,
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _TimetableFilterPanel extends StatelessWidget {
   const _TimetableFilterPanel({
     required this.kind,

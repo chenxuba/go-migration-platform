@@ -64,6 +64,16 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
       return;
     }
 
+    final TimetableItem? sourceItem = _timetableItemById(sourceLesson.id);
+    if (sourceItem == null) {
+      _showScheduleMessage('缺少日程明细，无法调课');
+      return;
+    }
+    final bool confirmed = await _confirmLessonMove(sourceItem, targetSlot);
+    if (!confirmed || !mounted) {
+      return;
+    }
+
     final List<List<_LessonCell?>> previousRows =
         _cloneScheduleRows(_scheduleRows);
     final TimetableData previousData = _data;
@@ -121,6 +131,119 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
         });
       }
     }
+  }
+
+  Future<bool> _confirmLessonMove(
+    TimetableItem sourceItem,
+    _ScheduleCellSlot targetSlot,
+  ) async {
+    if (!mounted) {
+      return false;
+    }
+    final _ScheduleMovePreviewData before = _buildMovePreviewData(
+      sourceItem,
+      sourceItem.date,
+      sourceItem.startTime,
+      sourceItem.endTime,
+    );
+    final _ScheduleMovePreviewData after = _buildMovePreviewData(
+      sourceItem,
+      targetSlot.date,
+      targetSlot.startTime,
+      targetSlot.endTime,
+    );
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(.34),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ScheduleMoveConfirmDialog(
+            before: before,
+            after: after,
+            onCancel: () => Navigator.of(dialogContext).pop(false),
+            onConfirm: () => Navigator.of(dialogContext).pop(true),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
+  _ScheduleMovePreviewData _buildMovePreviewData(
+    TimetableItem sourceItem,
+    String date,
+    String startTime,
+    String endTime,
+  ) {
+    final String lessonName = sourceItem.lessonName.trim().isNotEmpty
+        ? sourceItem.lessonName.trim()
+        : '未命名课程';
+    final String personName = sourceItem.personName.trim().isNotEmpty
+        ? sourceItem.personName.trim()
+        : (sourceItem.studentName.trim().isNotEmpty
+            ? sourceItem.studentName.trim()
+            : '未命名学员');
+    final String teacherName = sourceItem.teacherName.trim().isNotEmpty
+        ? sourceItem.teacherName.trim()
+        : (_teachers.isNotEmpty
+            ? _teachers[_teacherIndex.clamp(0, _teachers.length - 1)].name
+            : '未安排');
+    final List<String> assistantNames = <String>[];
+    final Map<String, String> assistantNameById = <String, String>{
+      for (final ScheduleStaffOption staff in _assistantOptions)
+        if (staff.id.trim().isNotEmpty && staff.name.trim().isNotEmpty)
+          staff.id.trim(): staff.name.trim(),
+      for (final _TeacherOption teacher in _teachers)
+        if (teacher.id.trim().isNotEmpty && teacher.name.trim().isNotEmpty)
+          teacher.id.trim(): teacher.name.trim(),
+    };
+    for (final String id in sourceItem.assistantIds ?? const <String>[]) {
+      final String name = assistantNameById[id.trim()] ?? '';
+      if (name.isNotEmpty && !assistantNames.contains(name)) {
+        assistantNames.add(name);
+      }
+    }
+    final String assistantLabel = assistantNames.isEmpty
+        ? ((sourceItem.assistantIds ?? const <String>[]).isEmpty
+            ? '未安排'
+            : '已安排')
+        : assistantNames.join('、');
+    return _ScheduleMovePreviewData(
+      dateLabel: _moveDateLabel(date),
+      timeLabel: _moveTimeLabel(startTime, endTime),
+      title: '$personName-$lessonName',
+      courseLabel: lessonName,
+      studentLabel: personName,
+      teacherLabel: teacherName,
+      assistantLabel: assistantLabel,
+    );
+  }
+
+  String _moveDateLabel(String rawDate) {
+    final DateTime? date = DateTime.tryParse(rawDate);
+    if (date == null) {
+      return rawDate;
+    }
+    return '${date.month.toString().padLeft(2, '0')}-'
+        '${date.day.toString().padLeft(2, '0')}（${_weekdayShortByNumber(date.weekday)}）';
+  }
+
+  String _moveTimeLabel(String startTime, String endTime) {
+    return '${startTime.trim()}~${endTime.trim()}';
+  }
+
+  TimetableItem? _timetableItemById(String id) {
+    final String normalized = id.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    for (final TimetableItem item in _data.items) {
+      if (item.id.trim() == normalized) {
+        return item;
+      }
+    }
+    return null;
   }
 
   void _rollbackOptimisticLessonMove(

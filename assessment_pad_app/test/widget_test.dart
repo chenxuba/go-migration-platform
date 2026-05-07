@@ -209,6 +209,47 @@ void main() {
     expect(find.text('陈思语老师'), findsOneWidget);
   });
 
+  testWidgets('switching period groups does not show skeleton again',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient(
+      timetableDelay: const Duration(milliseconds: 300),
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
+        findsNothing);
+    expect(find.text('A组'), findsOneWidget);
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('period-group-dropdown')));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('period-group-option-group-c')),
+    );
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
+        findsNothing);
+    expect(find.text('C组'), findsOneWidget);
+    expect(find.text('陈思语老师'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
+        findsNothing);
+    expect(find.text('周子涵老师'), findsOneWidget);
+  });
+
   testWidgets('smart timetable layout does not overflow on wide viewport',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);

@@ -229,11 +229,14 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
       _openFilterKind = null;
-      _loading = true;
       _errorMessage = null;
       _resetAvailabilityFields();
     });
-    _loadTimetable(teacherId: '', periodGroupId: group.id);
+    _loadTimetable(
+      teacherId: '',
+      periodGroupId: group.id,
+      showSkeleton: false,
+    );
   }
 
   void _selectTeacher(int index) {

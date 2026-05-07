@@ -51,6 +51,26 @@ class _SlotAvailability {
   final List<String> conflictTypes;
 }
 
+class _ScheduleMovePreviewData {
+  const _ScheduleMovePreviewData({
+    required this.dateLabel,
+    required this.timeLabel,
+    required this.title,
+    required this.courseLabel,
+    required this.studentLabel,
+    required this.teacherLabel,
+    required this.assistantLabel,
+  });
+
+  final String dateLabel;
+  final String timeLabel;
+  final String title;
+  final String courseLabel;
+  final String studentLabel;
+  final String teacherLabel;
+  final String assistantLabel;
+}
+
 class _PeriodGroupOption {
   const _PeriodGroupOption({
     required this.id,
