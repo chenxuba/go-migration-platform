@@ -1571,6 +1571,7 @@ class _ReportConfigDialog extends StatefulWidget {
 class _ReportConfigDialogState extends State<_ReportConfigDialog> {
   final LayerLink _teacherFieldLink = LayerLink();
   final GlobalKey _teacherFieldKey = GlobalKey();
+  static const double _teacherFieldHeight = 56;
   late DateTime _assessmentDate;
   late List<String> _selectedExaminerNames;
   late String _originalExaminerName;
@@ -2057,11 +2058,13 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
                         _detailHydrating
                             ? const _ConfigLoadingField(
                                 text: '正在加载评估老师',
+                                height: _teacherFieldHeight,
                               )
                             : _ConfigTeacherSelectField(
                                 fieldKey: _teacherFieldKey,
                                 layerLink: _teacherFieldLink,
                                 names: _selectedExaminerNames,
+                                height: _teacherFieldHeight,
                                 enabled: !_saving,
                                 open: _teacherDropdownOpen,
                                 onTap: _toggleTeacherDropdown,
@@ -2219,6 +2222,7 @@ class _ConfigTeacherSelectField extends StatelessWidget {
     required this.fieldKey,
     required this.layerLink,
     required this.names,
+    required this.height,
     required this.enabled,
     required this.open,
     required this.onTap,
@@ -2228,6 +2232,7 @@ class _ConfigTeacherSelectField extends StatelessWidget {
   final GlobalKey fieldKey;
   final LayerLink layerLink;
   final List<String> names;
+  final double height;
   final bool enabled;
   final bool open;
   final VoidCallback onTap;
@@ -2235,84 +2240,207 @@ class _ConfigTeacherSelectField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CompositedTransformTarget(
-      link: layerLink,
-      child: Material(
-        key: fieldKey,
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: enabled ? onTap : null,
-          borderRadius: BorderRadius.circular(14),
-          child: Ink(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFFCF8),
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final _ConfigTeacherFieldPreview preview = _buildTeacherFieldPreview(
+          context,
+          names,
+          math.max(0, constraints.maxWidth - 12 - 12 - 10 - 22),
+        );
+        return CompositedTransformTarget(
+          link: layerLink,
+          child: Material(
+            key: fieldKey,
+            color: Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: enabled ? onTap : null,
               borderRadius: BorderRadius.circular(14),
-              border: Border.all(
-                color: open ? _ReportTheme.orangeDeep : _ReportTheme.line,
-              ),
-            ),
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Expanded(
-                  child: names.isEmpty
-                      ? const Padding(
-                          padding: EdgeInsets.only(top: 3),
-                          child: Text(
-                            '请选择评估老师',
-                            style: TextStyle(
-                              color: _ReportTheme.muted,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        )
-                      : Wrap(
-                          spacing: 8,
-                          runSpacing: 8,
-                          children: names
-                              .map(
-                                (String name) => _ConfigTeacherChip(
-                                  label: name,
-                                  enabled: enabled,
-                                  onRemove: () => onRemove(name),
-                                ),
-                              )
-                              .toList(),
-                        ),
-                ),
-                const SizedBox(width: 10),
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Icon(
-                    open
-                        ? Icons.keyboard_arrow_up_rounded
-                        : Icons.keyboard_arrow_down_rounded,
-                    color: _ReportTheme.muted,
-                    size: 22,
+              child: Ink(
+                height: height,
+                width: double.infinity,
+                padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFCF8),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: open ? _ReportTheme.orangeDeep : _ReportTheme.line,
                   ),
                 ),
-              ],
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: names.isEmpty
+                          ? const Text(
+                              '请选择评估老师',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: _ReportTheme.muted,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            )
+                          : SizedBox(
+                              height: 32,
+                              child: Row(
+                                children: <Widget>[
+                                  for (int index = 0;
+                                      index < preview.visibleNames.length;
+                                      index += 1) ...<Widget>[
+                                    if (index > 0) const SizedBox(width: 8),
+                                    ConstrainedBox(
+                                      constraints: const BoxConstraints(
+                                        maxWidth: 128,
+                                      ),
+                                      child: _ConfigTeacherChip(
+                                        label: preview.visibleNames[index],
+                                        enabled: enabled,
+                                        onRemove: () => onRemove(
+                                          preview.visibleNames[index],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                  if (preview.hiddenCount > 0) ...<Widget>[
+                                    if (preview.visibleNames.isNotEmpty)
+                                      const SizedBox(width: 8),
+                                    _ConfigTeacherOverflowChip(
+                                      hiddenCount: preview.hiddenCount,
+                                    ),
+                                  ],
+                                ],
+                              ),
+                            ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(
+                      open
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: _ReportTheme.muted,
+                      size: 22,
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
 
+class _ConfigTeacherFieldPreview {
+  const _ConfigTeacherFieldPreview({
+    required this.visibleNames,
+    required this.hiddenCount,
+  });
+
+  final List<String> visibleNames;
+  final int hiddenCount;
+}
+
+_ConfigTeacherFieldPreview _buildTeacherFieldPreview(
+  BuildContext context,
+  List<String> names,
+  double maxWidth,
+) {
+  if (names.isEmpty || maxWidth <= 0) {
+    return const _ConfigTeacherFieldPreview(
+      visibleNames: <String>[],
+      hiddenCount: 0,
+    );
+  }
+  const double spacing = 8;
+  double usedWidth = 0;
+  final List<String> visibleNames = <String>[];
+  for (int index = 0; index < names.length; index += 1) {
+    final String name = names[index];
+    final int remainingAfter = names.length - index - 1;
+    final double chipWidth = _measureConfigTeacherChipWidth(context, name);
+    final double nextWidth =
+        usedWidth + (visibleNames.isEmpty ? 0 : spacing) + chipWidth;
+    final double overflowWidth = remainingAfter > 0
+        ? spacing +
+            _measureConfigTeacherOverflowChipWidth(
+              context,
+              remainingAfter,
+            )
+        : 0;
+    if (nextWidth + overflowWidth <= maxWidth || visibleNames.isEmpty) {
+      visibleNames.add(name);
+      usedWidth = nextWidth;
+      continue;
+    }
+    return _ConfigTeacherFieldPreview(
+      visibleNames: visibleNames,
+      hiddenCount: names.length - visibleNames.length,
+    );
+  }
+  return _ConfigTeacherFieldPreview(
+    visibleNames: visibleNames,
+    hiddenCount: 0,
+  );
+}
+
+double _measureConfigTeacherChipWidth(BuildContext context, String name) {
+  return math.min(
+    128,
+    _measureConfigTeacherTextWidth(
+          context,
+          name,
+          const TextStyle(
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ) +
+        42,
+  );
+}
+
+double _measureConfigTeacherOverflowChipWidth(
+  BuildContext context,
+  int hiddenCount,
+) {
+  return _measureConfigTeacherTextWidth(
+        context,
+        '+$hiddenCount',
+        const TextStyle(
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+        ),
+      ) +
+      24;
+}
+
+double _measureConfigTeacherTextWidth(
+  BuildContext context,
+  String text,
+  TextStyle style,
+) {
+  final TextPainter painter = TextPainter(
+    text: TextSpan(text: text, style: style),
+    textDirection: Directionality.of(context),
+    maxLines: 1,
+  )..layout();
+  return painter.width;
+}
+
 class _ConfigLoadingField extends StatelessWidget {
-  const _ConfigLoadingField({required this.text});
+  const _ConfigLoadingField({
+    required this.text,
+    this.height = 50,
+  });
 
   final String text;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 50,
+      height: height,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF8),
@@ -2320,6 +2448,7 @@ class _ConfigLoadingField extends StatelessWidget {
         border: Border.all(color: _ReportTheme.line),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           const SizedBox(
             width: 18,
@@ -2330,12 +2459,15 @@ class _ConfigLoadingField extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          Text(
-            text,
-            style: const TextStyle(
-              color: _ReportTheme.muted,
-              fontSize: 14,
-              fontWeight: FontWeight.w800,
+          Expanded(
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ReportTheme.muted,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+              ),
             ),
           ),
         ],
@@ -2547,6 +2679,34 @@ class _ConfigTeacherChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ConfigTeacherOverflowChip extends StatelessWidget {
+  const _ConfigTeacherOverflowChip({required this.hiddenCount});
+
+  final int hiddenCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF7F1EB),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFE8D7C7)),
+      ),
+      alignment: Alignment.center,
+      child: Text(
+        '+$hiddenCount',
+        style: const TextStyle(
+          color: _ReportTheme.text,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -2956,9 +3116,9 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
                 _buildHeader(context),
-                const SizedBox(height: 18),
+                const SizedBox(height: 14),
                 _buildModuleBar(),
-                const SizedBox(height: 18),
+                const SizedBox(height: 12),
                 Expanded(child: _buildContent()),
               ],
             ),
@@ -3032,8 +3192,8 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       builder: (BuildContext context, BoxConstraints constraints) {
         final bool stackMeta = constraints.maxWidth < 820;
         final Widget chips = Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 8,
+          runSpacing: 8,
           children: _reportModuleOptions
               .map(
                 (_ReportModuleOption option) => _ReportModuleChip(
@@ -3046,8 +3206,8 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         );
         final Widget meta = ConstrainedBox(
           constraints: const BoxConstraints(
-            minWidth: 280,
-            maxWidth: 340,
+            minWidth: 240,
+            maxWidth: 300,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -3057,19 +3217,19 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                 _activeOption.pages,
                 style: const TextStyle(
                   color: _ReportTheme.blue,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
               ),
-              const SizedBox(height: 4),
+              const SizedBox(height: 2),
               Text(
                 _activeOption.description,
-                maxLines: stackMeta ? 3 : 2,
+                maxLines: stackMeta ? 2 : 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
                   color: _ReportTheme.muted,
-                  fontSize: 12,
-                  height: 1.3,
+                  fontSize: 11,
+                  height: 1.2,
                   fontWeight: FontWeight.w800,
                 ),
               ),
@@ -3078,10 +3238,10 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         );
 
         return Container(
-          padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
           decoration: BoxDecoration(
             color: const Color(0xFFFFFCF8),
-            borderRadius: BorderRadius.circular(18),
+            borderRadius: BorderRadius.circular(16),
             border: Border.all(color: _ReportTheme.lineSoft),
           ),
           child: stackMeta
@@ -3089,15 +3249,15 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
                     chips,
-                    const SizedBox(height: 12),
+                    const SizedBox(height: 8),
                     meta,
                   ],
                 )
               : Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: <Widget>[
                     Expanded(child: chips),
-                    const SizedBox(width: 18),
+                    const SizedBox(width: 14),
                     meta,
                   ],
                 ),
@@ -3236,7 +3396,7 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
   @override
   Widget build(BuildContext context) {
     return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       cacheExtent: 720,
       itemCount: widget.pageCount,
       itemBuilder: (BuildContext context, int index) {
@@ -3265,7 +3425,7 @@ class _LazyReportPdfPageCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: pageIndex == pageCount - 1 ? 0 : 18),
+      padding: EdgeInsets.only(bottom: pageIndex == pageCount - 1 ? 0 : 16),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double cardWidth = math.min(constraints.maxWidth, 860);
@@ -3285,33 +3445,9 @@ class _LazyReportPdfPageCard extends StatelessWidget {
                   ],
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  padding: const EdgeInsets.all(12),
+                  child: Stack(
                     children: <Widget>[
-                      Row(
-                        children: <Widget>[
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF6EFE8),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                            child: Text(
-                              '第 ${pageIndex + 1} / $pageCount 页',
-                              style: const TextStyle(
-                                color: _ReportTheme.text,
-                                fontSize: 12,
-                                fontWeight: FontWeight.w900,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
                       FutureBuilder<_ReportPdfPageSnapshot>(
                         future: pageFuture,
                         builder: (
@@ -3351,6 +3487,15 @@ class _LazyReportPdfPageCard extends StatelessWidget {
                           );
                         },
                       ),
+                      Positioned(
+                        top: 10,
+                        right: 10,
+                        child: IgnorePointer(
+                          child: _ReportPdfPageBadge(
+                            text: '第 ${pageIndex + 1} / $pageCount 页',
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -3384,6 +3529,41 @@ class _ReportPdfPagePlaceholder extends StatelessWidget {
   }
 }
 
+class _ReportPdfPageBadge extends StatelessWidget {
+  const _ReportPdfPageBadge({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: const Color(0xEFFFFFFB),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFE9D8CA)),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 8,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: _ReportTheme.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ReportModuleChip extends StatelessWidget {
   const _ReportModuleChip({
     required this.option,
@@ -3399,16 +3579,16 @@ class _ReportModuleChip extends StatelessWidget {
   Widget build(BuildContext context) {
     return Material(
       color: Colors.transparent,
-      borderRadius: BorderRadius.circular(14),
+      borderRadius: BorderRadius.circular(12),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(12),
         child: Ink(
-          height: 48,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
             color: active ? const Color(0xFFF2F7FF) : Colors.white,
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
               color: active ? _ReportTheme.blue : _ReportTheme.lineSoft,
             ),
@@ -3417,29 +3597,29 @@ class _ReportModuleChip extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               Container(
-                width: 10,
-                height: 10,
+                width: 8,
+                height: 8,
                 decoration: BoxDecoration(
                   color: active ? _ReportTheme.blue : const Color(0xFFD5DDE6),
                   shape: BoxShape.circle,
                 ),
               ),
-              const SizedBox(width: 10),
+              const SizedBox(width: 8),
               Text(
                 option.label,
                 style: TextStyle(
                   color: active ? _ReportTheme.blue : _ReportTheme.text,
-                  fontSize: 14,
+                  fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               if (option.recommended) ...<Widget>[
-                const SizedBox(width: 10),
+                const SizedBox(width: 8),
                 Text(
                   '推荐',
                   style: TextStyle(
                     color: active ? _ReportTheme.blue : _ReportTheme.muted,
-                    fontSize: 13,
+                    fontSize: 12,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
