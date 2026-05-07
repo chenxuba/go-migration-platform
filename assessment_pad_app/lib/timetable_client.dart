@@ -57,6 +57,10 @@ const String defaultScheduleBatchUpdatePath = String.fromEnvironment(
   'SCHEDULE_BATCH_UPDATE_PATH',
   defaultValue: '/api/v1/teaching-schedules/batch-update',
 );
+const String defaultScheduleCancelScopedPath = String.fromEnvironment(
+  'SCHEDULE_CANCEL_SCOPED_PATH',
+  defaultValue: '/api/v1/teaching-schedules/cancel-scoped',
+);
 
 class TimetableApiException implements Exception {
   const TimetableApiException(this.message, {this.unauthorized = false});
@@ -423,6 +427,192 @@ class TimetableSummary {
   final int conflict;
 }
 
+class TimetableScheduleBatchMeta {
+  const TimetableScheduleBatchMeta({
+    this.schedulingMode = '',
+    this.repeatRule = '',
+    this.selectedWeekdays = const <String>[],
+    this.freeSelectedDates = const <String>[],
+    this.plannedClassCount = 0,
+  });
+
+  factory TimetableScheduleBatchMeta.fromJson(Map<String, dynamic> json) {
+    return TimetableScheduleBatchMeta(
+      schedulingMode: '${json['schedulingMode'] ?? ''}',
+      repeatRule: '${json['repeatRule'] ?? ''}',
+      selectedWeekdays: _stringListFrom(json['selectedWeekdays']),
+      freeSelectedDates: _stringListFrom(json['freeSelectedDates']),
+      plannedClassCount: _intFrom(json['plannedClassCount']),
+    );
+  }
+
+  final String schedulingMode;
+  final String repeatRule;
+  final List<String> selectedWeekdays;
+  final List<String> freeSelectedDates;
+  final int plannedClassCount;
+}
+
+class TimetableScheduleDetailStudent {
+  const TimetableScheduleDetailStudent({
+    required this.studentId,
+    required this.studentName,
+    this.maskedPhone = '',
+    this.phoneRelationshipText = '',
+    this.scheduleStudentType = 0,
+    this.scheduleStudentTypeText = '',
+    this.classStatusText = '',
+    this.callStatus = 0,
+    this.callStatusText = '',
+    this.hasTeachingRecord = false,
+    this.actionDisabled = false,
+    this.actionDisabledReason = '',
+  });
+
+  factory TimetableScheduleDetailStudent.fromJson(Map<String, dynamic> json) {
+    return TimetableScheduleDetailStudent(
+      studentId: '${json['studentId'] ?? ''}',
+      studentName: '${json['studentName'] ?? ''}',
+      maskedPhone: '${json['maskedPhone'] ?? json['phone'] ?? ''}',
+      phoneRelationshipText: '${json['phoneRelationshipText'] ?? ''}',
+      scheduleStudentType: _intFrom(json['scheduleStudentType']),
+      scheduleStudentTypeText: '${json['scheduleStudentTypeText'] ?? ''}',
+      classStatusText: '${json['classStatusText'] ?? ''}',
+      callStatus: _intFrom(json['callStatus']),
+      callStatusText: '${json['callStatusText'] ?? ''}',
+      hasTeachingRecord: json['hasTeachingRecord'] == true,
+      actionDisabled: json['actionDisabled'] == true,
+      actionDisabledReason: '${json['actionDisabledReason'] ?? ''}',
+    );
+  }
+
+  final String studentId;
+  final String studentName;
+  final String maskedPhone;
+  final String phoneRelationshipText;
+  final int scheduleStudentType;
+  final String scheduleStudentTypeText;
+  final String classStatusText;
+  final int callStatus;
+  final String callStatusText;
+  final bool hasTeachingRecord;
+  final bool actionDisabled;
+  final String actionDisabledReason;
+}
+
+class TimetableScheduleDetail {
+  const TimetableScheduleDetail({
+    required this.id,
+    required this.classType,
+    required this.teachingClassId,
+    required this.teachingClassName,
+    required this.lessonId,
+    required this.lessonName,
+    required this.teacherId,
+    required this.teacherName,
+    required this.lessonDate,
+    required this.startAt,
+    required this.endAt,
+    required this.durationMinutes,
+    required this.callStatus,
+    required this.students,
+    this.batchNo = '',
+    this.batchSize = 0,
+    this.assistantIds = const <String>[],
+    this.assistantNames = const <String>[],
+    this.classroomId = '',
+    this.classroomName = '',
+    this.teachingRecordId = '',
+    this.callStatusText = '',
+    this.canRollCall,
+    this.rollCallDisabledReason = '',
+    this.remark = '',
+    this.batchMeta,
+    this.leaveStudents = const <TimetableScheduleDetailStudent>[],
+  });
+
+  factory TimetableScheduleDetail.fromJson(Map<String, dynamic> json) {
+    return TimetableScheduleDetail(
+      id: '${json['id'] ?? ''}',
+      batchNo: '${json['batchNo'] ?? ''}',
+      batchSize: _intFrom(json['batchSize']),
+      classType: _intFrom(json['classType']),
+      teachingClassId: '${json['teachingClassId'] ?? ''}',
+      teachingClassName: '${json['teachingClassName'] ?? ''}',
+      lessonId: '${json['lessonId'] ?? ''}',
+      lessonName: '${json['lessonName'] ?? ''}',
+      teacherId: '${json['teacherId'] ?? ''}',
+      teacherName: '${json['teacherName'] ?? ''}',
+      assistantIds: _stringListFrom(json['assistantIds']),
+      assistantNames: _stringListFrom(json['assistantNames']),
+      classroomId: '${json['classroomId'] ?? ''}',
+      classroomName: '${json['classroomName'] ?? ''}',
+      lessonDate: '${json['lessonDate'] ?? ''}',
+      startAt: '${json['startAt'] ?? ''}',
+      endAt: '${json['endAt'] ?? ''}',
+      teachingRecordId: '${json['teachingRecordId'] ?? ''}',
+      durationMinutes: _intFrom(json['durationMinutes']),
+      callStatus: _intFrom(json['callStatus']),
+      callStatusText: '${json['callStatusText'] ?? ''}',
+      canRollCall: json.containsKey('canRollCall')
+          ? json['canRollCall'] == true
+          : null,
+      rollCallDisabledReason: '${json['rollCallDisabledReason'] ?? ''}',
+      remark: '${json['remark'] ?? ''}',
+      batchMeta: json['batchMeta'] is Map
+          ? TimetableScheduleBatchMeta.fromJson(
+              Map<String, dynamic>.from(json['batchMeta'] as Map),
+            )
+          : null,
+      students: _listFrom(json['students'])
+          .map(
+            (Map<String, dynamic> item) =>
+                TimetableScheduleDetailStudent.fromJson(item),
+          )
+          .toList(),
+      leaveStudents: _listFrom(json['leaveStudents'])
+          .map(
+            (Map<String, dynamic> item) =>
+                TimetableScheduleDetailStudent.fromJson(item),
+          )
+          .toList(),
+    );
+  }
+
+  final String id;
+  final String batchNo;
+  final int batchSize;
+  final int classType;
+  final String teachingClassId;
+  final String teachingClassName;
+  final String lessonId;
+  final String lessonName;
+  final String teacherId;
+  final String teacherName;
+  final List<String> assistantIds;
+  final List<String> assistantNames;
+  final String classroomId;
+  final String classroomName;
+  final String lessonDate;
+  final String startAt;
+  final String endAt;
+  final String teachingRecordId;
+  final int durationMinutes;
+  final int callStatus;
+  final String callStatusText;
+  final bool? canRollCall;
+  final String rollCallDisabledReason;
+  final String remark;
+  final TimetableScheduleBatchMeta? batchMeta;
+  final List<TimetableScheduleDetailStudent> students;
+  final List<TimetableScheduleDetailStudent> leaveStudents;
+}
+
+enum ScheduleDeleteScope {
+  current,
+  future,
+}
+
 enum ScheduleTargetType {
   oneToOne,
   groupClass,
@@ -701,6 +891,17 @@ abstract interface class TimetableClient {
     required String? classroomId,
     required ScheduleSlotRequest slot,
   });
+
+  Future<TimetableScheduleDetail> fetchScheduleDetail(
+    String token, {
+    required String scheduleId,
+  });
+
+  Future<int> cancelScheduleScoped(
+    String token, {
+    required String scheduleId,
+    required ScheduleDeleteScope scope,
+  });
 }
 
 class ApiTimetableClient implements TimetableClient {
@@ -719,6 +920,7 @@ class ApiTimetableClient implements TimetableClient {
     this.groupClassCreatePath = defaultGroupClassCreatePath,
     this.scheduleDetailPath = defaultScheduleDetailPath,
     this.scheduleBatchUpdatePath = defaultScheduleBatchUpdatePath,
+    this.scheduleCancelScopedPath = defaultScheduleCancelScopedPath,
   });
 
   final String educationBaseUrl;
@@ -735,6 +937,7 @@ class ApiTimetableClient implements TimetableClient {
   final String groupClassCreatePath;
   final String scheduleDetailPath;
   final String scheduleBatchUpdatePath;
+  final String scheduleCancelScopedPath;
 
   @override
   Future<TimetableData> fetchTimetable(
@@ -1058,6 +1261,43 @@ class ApiTimetableClient implements TimetableClient {
     }
     await _postJson(
         _uri(educationBaseUrl, scheduleBatchUpdatePath), token, payload);
+  }
+
+  @override
+  Future<TimetableScheduleDetail> fetchScheduleDetail(
+    String token, {
+    required String scheduleId,
+  }) async {
+    final Object? data = await _getJson(
+      _uri(educationBaseUrl, scheduleDetailPath).replace(
+        queryParameters: <String, String>{'id': scheduleId.trim()},
+      ),
+      token,
+    );
+    if (data is! Map) {
+      throw const TimetableApiException('日程详情接口返回格式不正确');
+    }
+    return TimetableScheduleDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<int> cancelScheduleScoped(
+    String token, {
+    required String scheduleId,
+    required ScheduleDeleteScope scope,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, scheduleCancelScopedPath),
+      token,
+      <String, dynamic>{
+        'id': scheduleId.trim(),
+        'scope': scope.name,
+      },
+    );
+    if (data is Map) {
+      return _intFrom(data['canceled']);
+    }
+    return 0;
   }
 
   Future<_ScheduleUpdateContext> _fetchScheduleUpdateContext(

@@ -124,6 +124,7 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.onAvailabilityRefresh,
     required this.onRefresh,
     required this.onPrimaryScheduleTap,
+    required this.onLessonTap,
     required this.onLessonMove,
     required this.onLessonDragStarted,
     required this.onLessonDragEnded,
@@ -200,6 +201,7 @@ class _SmartTimetableScreen extends StatelessWidget {
   final VoidCallback onAvailabilityRefresh;
   final VoidCallback onRefresh;
   final VoidCallback onPrimaryScheduleTap;
+  final ValueChanged<_LessonCell> onLessonTap;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
   final ValueChanged<_LessonDragData> onLessonDragStarted;
@@ -282,6 +284,7 @@ class _SmartTimetableScreen extends StatelessWidget {
                       dragCheckingSlotKeys: dragCheckingSlotKeys,
                       dragValidationActive: dragValidationActive,
                       creatingSlotKey: creatingSlotKey,
+                      onLessonTap: onLessonTap,
                       onLessonMove: onLessonMove,
                       onLessonDragStarted: onLessonDragStarted,
                       onLessonDragEnded: onLessonDragEnded,

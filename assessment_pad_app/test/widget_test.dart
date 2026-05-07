@@ -271,6 +271,118 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('smart timetable opens schedule detail dialog on lesson tap',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const ValueKey<String>('lesson-0-0')));
+    await tester.pumpAndSettle();
+
+    final Finder detailDialog =
+        find.byKey(const ValueKey<String>('schedule-detail-dialog'));
+    expect(detailDialog, findsOneWidget);
+    expect(find.text('感统训练'), findsWidgets);
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('09:15 - 09:55'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('上课教师'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(of: detailDialog, matching: find.textContaining('课程')),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('上课学员'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('试听学员'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('请假学员'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.textContaining('对内备注'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.descendant(
+        of: detailDialog,
+        matching: find.text('课前先做前庭唤醒'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('A101'), findsNothing);
+    expect(timetableClient.detailCalls, 1);
+  });
+
+  testWidgets(
+      'smart timetable deletes current schedule from detail dialog and refreshes',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('lesson-0-0')), findsOneWidget);
+
+    await tester.tap(find.byKey(const ValueKey<String>('lesson-0-0')));
+    await tester.pumpAndSettle();
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-detail-delete-current')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-delete-confirm-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(timetableClient.deleteCalls, 1);
+    expect(timetableClient.lastDeleteScope, ScheduleDeleteScope.current);
+    expect(find.byKey(const ValueKey<String>('schedule-detail-dialog')),
+        findsNothing);
+    expect(find.text('感统训练'), findsNothing);
+  });
+
   testWidgets('smart timetable filters schedules by call status',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
@@ -2650,10 +2762,14 @@ class _FakeTimetableClient implements TimetableClient {
   int courseFilterOptionCalls = 0;
   int assistantOptionCalls = 0;
   int classroomOptionCalls = 0;
+  int detailCalls = 0;
+  int deleteCalls = 0;
   String lastValidatedClassroomId = '';
   String lastCreatedClassroomId = '';
   String lastUpdatedScheduleId = '';
   String lastUpdatedClassroomId = '';
+  ScheduleDeleteScope? lastDeleteScope;
+  final Set<String> _deletedScheduleIds = <String>{};
   String? _scheduleADate;
   String? _scheduleAStartTime;
   String? _scheduleAEndTime;
@@ -2683,6 +2799,46 @@ class _FakeTimetableClient implements TimetableClient {
       '3' => '黄雨萱老师',
       _ => '陈思语老师',
     };
+    final List<TimetableItem> items = <TimetableItem>[
+      if (!_deletedScheduleIds.contains('schedule-a'))
+        TimetableItem(
+          id: 'schedule-a',
+          classType: 2,
+          teachingClassId: 'one-to-one-a',
+          date: _scheduleADate ?? startDate,
+          startTime: _scheduleAStartTime ??
+              (selectedGroupId == 'group-c' ? '08:30' : '09:15'),
+          endTime: _scheduleAEndTime ??
+              (selectedGroupId == 'group-c' ? '09:10' : '09:55'),
+          lessonName: '感统训练',
+          personName: '陈小雨',
+          classroomName: 'A101',
+          teacherId: selectedTeacherId,
+          teacherName: selectedTeacherName,
+          assistantIds: const <String>['3'],
+          classroomId: '101',
+          status: 'unsigned',
+          statusText: '未点名',
+        ),
+      if (!_deletedScheduleIds.contains('schedule-b'))
+        TimetableItem(
+          id: 'schedule-b',
+          classType: 1,
+          teachingClassId: 'group-class-a',
+          date: _offsetDate(startDate, 2),
+          startTime: selectedGroupId == 'group-c' ? '09:20' : '10:05',
+          endTime: selectedGroupId == 'group-c' ? '10:00' : '10:45',
+          lessonName: '语言认知课',
+          personName: '星星班',
+          classroomName: 'B203',
+          teacherId: selectedTeacherId,
+          teacherName: selectedTeacherName,
+          assistantIds: const <String>[],
+          classroomId: '203',
+          status: 'signed',
+          statusText: '已点名',
+        ),
+    ];
     return TimetableData(
       startDate: startDate,
       endDate: endDate,
@@ -2719,48 +2875,14 @@ class _FakeTimetableClient implements TimetableClient {
             ],
       days: _fakeTimetableDays(startDate),
       slots: _fakeTimetableSlotsForGroup(selectedGroupId),
-      items: <TimetableItem>[
-        TimetableItem(
-          id: 'schedule-a',
-          classType: 2,
-          teachingClassId: 'one-to-one-a',
-          date: _scheduleADate ?? startDate,
-          startTime: _scheduleAStartTime ??
-              (selectedGroupId == 'group-c' ? '08:30' : '09:15'),
-          endTime: _scheduleAEndTime ??
-              (selectedGroupId == 'group-c' ? '09:10' : '09:55'),
-          lessonName: '感统训练',
-          personName: '陈小雨',
-          classroomName: 'A101',
-          teacherId: selectedTeacherId,
-          teacherName: selectedTeacherName,
-          assistantIds: const <String>['3'],
-          classroomId: '101',
-          status: 'unsigned',
-          statusText: '未点名',
-        ),
-        TimetableItem(
-          id: 'schedule-b',
-          classType: 1,
-          teachingClassId: 'group-class-a',
-          date: _offsetDate(startDate, 2),
-          startTime: selectedGroupId == 'group-c' ? '09:20' : '10:05',
-          endTime: selectedGroupId == 'group-c' ? '10:00' : '10:45',
-          lessonName: '语言认知课',
-          personName: '星星班',
-          classroomName: 'B203',
-          teacherId: selectedTeacherId,
-          teacherName: selectedTeacherName,
-          assistantIds: const <String>[],
-          classroomId: '203',
-          status: 'signed',
-          statusText: '已点名',
-        ),
-      ],
-      summary: const TimetableSummary(
-        total: 2,
-        unsigned: 1,
-        signed: 1,
+      items: items,
+      summary: TimetableSummary(
+        total: items.length,
+        unsigned: items
+            .where((TimetableItem item) => item.status == 'unsigned')
+            .length,
+        signed:
+            items.where((TimetableItem item) => item.status == 'signed').length,
       ),
     );
   }
@@ -2924,6 +3046,113 @@ class _FakeTimetableClient implements TimetableClient {
       _scheduleAStartTime = slot.startTime;
       _scheduleAEndTime = slot.endTime;
     }
+  }
+
+  @override
+  Future<TimetableScheduleDetail> fetchScheduleDetail(
+    String token, {
+    required String scheduleId,
+  }) async {
+    detailCalls += 1;
+    if (scheduleId == 'schedule-b') {
+      return const TimetableScheduleDetail(
+        id: 'schedule-b',
+        batchNo: 'batch-group',
+        batchSize: 4,
+        classType: 1,
+        teachingClassId: 'group-class-a',
+        teachingClassName: '星星班',
+        lessonId: 'lesson-b',
+        lessonName: '语言认知课',
+        teacherId: '1',
+        teacherName: '陈思语老师',
+        assistantNames: <String>['黄雨萱老师'],
+        classroomId: '203',
+        classroomName: 'B203',
+        lessonDate: '2026-05-07',
+        startAt: '2026-05-07 10:05:00',
+        endAt: '2026-05-07 10:45:00',
+        durationMinutes: 40,
+        callStatus: 2,
+        callStatusText: '已点名',
+        students: <TimetableScheduleDetailStudent>[
+          TimetableScheduleDetailStudent(
+            studentId: 's-2',
+            studentName: '李小北',
+            maskedPhone: '138****8888',
+            scheduleStudentTypeText: '正式',
+            classStatusText: '在读',
+            callStatus: 2,
+            callStatusText: '已点名',
+          ),
+        ],
+      );
+    }
+    return const TimetableScheduleDetail(
+      id: 'schedule-a',
+      batchNo: 'batch-a',
+      batchSize: 3,
+      classType: 2,
+      teachingClassId: 'one-to-one-a',
+      teachingClassName: '陈小雨-感统训练',
+      lessonId: 'lesson-a',
+      lessonName: '感统训练',
+      teacherId: '1',
+      teacherName: '陈思语老师',
+      assistantIds: <String>['3'],
+      assistantNames: <String>['黄雨萱老师'],
+      classroomId: '101',
+      classroomName: 'A101',
+      lessonDate: '2026-05-05',
+      startAt: '2026-05-05 09:15:00',
+      endAt: '2026-05-05 09:55:00',
+      durationMinutes: 40,
+      callStatus: 1,
+      callStatusText: '未点名',
+      remark: '课前先做前庭唤醒',
+      batchMeta: TimetableScheduleBatchMeta(
+        schedulingMode: 'repeat',
+        repeatRule: 'weekly',
+        selectedWeekdays: <String>['周一'],
+        plannedClassCount: 3,
+      ),
+      students: <TimetableScheduleDetailStudent>[
+        TimetableScheduleDetailStudent(
+          studentId: 's-1',
+          studentName: '陈小雨',
+          maskedPhone: '136****0001',
+          phoneRelationshipText: '妈妈',
+          scheduleStudentTypeText: '正式',
+          classStatusText: '在读',
+          callStatus: 1,
+          callStatusText: '未点名',
+        ),
+      ],
+      leaveStudents: <TimetableScheduleDetailStudent>[
+        TimetableScheduleDetailStudent(
+          studentId: 's-3',
+          studentName: '周小米',
+          maskedPhone: '136****0002',
+          phoneRelationshipText: '爸爸',
+          scheduleStudentTypeText: '请假',
+          classStatusText: '请假',
+          callStatus: 1,
+          callStatusText: '未点名',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<int> cancelScheduleScoped(
+    String token, {
+    required String scheduleId,
+    required ScheduleDeleteScope scope,
+  }) async {
+    deleteCalls += 1;
+    lastDeleteScope = scope;
+    _deletedScheduleIds.add(scheduleId);
+    return 1;
   }
 }
 

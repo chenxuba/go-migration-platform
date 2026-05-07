@@ -19,6 +19,7 @@ part 'smart_timetable/smart_timetable_helpers.dart';
 part 'smart_timetable/smart_timetable_shell.dart';
 part 'smart_timetable/smart_timetable_toolbar.dart';
 part 'smart_timetable/smart_timetable_board.dart';
+part 'smart_timetable/smart_timetable_detail_dialog.dart';
 part 'smart_timetable/smart_timetable_controls.dart';
 part 'smart_timetable/smart_timetable_common.dart';
 part 'smart_timetable/smart_timetable_models.dart';

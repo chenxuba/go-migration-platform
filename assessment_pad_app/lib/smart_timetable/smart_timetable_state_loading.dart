@@ -310,13 +310,16 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
       _openFilterKind = null;
-      _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(teacher);
       _applyTimetableData(_data);
       _resetAvailabilityFields();
     });
-    _loadTimetable(teacherId: teacherId, periodGroupId: _selectedPeriodGroupId);
+    _loadTimetable(
+      teacherId: teacherId,
+      periodGroupId: _selectedPeriodGroupId,
+      showSkeleton: false,
+    );
   }
 
   void _changeWeek(int delta) {
@@ -325,7 +328,6 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
       _openFilterKind = null;
-      _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(
         _teachers.isEmpty
@@ -335,7 +337,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _applyTimetableData(_data);
       _resetAvailabilityFields();
     });
-    _loadTimetable();
+    _loadTimetable(showSkeleton: false);
   }
 
   void _backToCurrentWeek() {
@@ -344,7 +346,6 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
       _openFilterKind = null;
-      _loading = true;
       _errorMessage = null;
       _data = _loadingTimetableDataForTeacher(
         _teachers.isEmpty
@@ -354,7 +355,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       _applyTimetableData(_data);
       _resetAvailabilityFields();
     });
-    _loadTimetable();
+    _loadTimetable(showSkeleton: false);
   }
 
   TimetableData _loadingTimetableDataForTeacher(_TeacherOption teacher) {
@@ -368,7 +369,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       periodGroups: _data.periodGroups,
       teachers: _data.teachers,
       days: _timetableDaysForRange(range),
-      slots: const <TimetableSlot>[],
+      slots: _data.slots,
       items: const <TimetableItem>[],
       summary: const TimetableSummary(),
     );

@@ -14,6 +14,7 @@ class _TimetableBoard extends StatelessWidget {
     required this.dragCheckingSlotKeys,
     required this.dragValidationActive,
     required this.creatingSlotKey,
+    required this.onLessonTap,
     required this.onLessonMove,
     required this.onLessonDragStarted,
     required this.onLessonDragEnded,
@@ -32,6 +33,7 @@ class _TimetableBoard extends StatelessWidget {
   final Set<String> dragCheckingSlotKeys;
   final bool dragValidationActive;
   final String? creatingSlotKey;
+  final ValueChanged<_LessonCell> onLessonTap;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
   final ValueChanged<_LessonDragData> onLessonDragStarted;
@@ -109,6 +111,7 @@ class _TimetableBoard extends StatelessWidget {
                           dragCheckingSlotKeys: dragCheckingSlotKeys,
                           dragValidationActive: dragValidationActive,
                           creatingSlotKey: creatingSlotKey,
+                          onLessonTap: onLessonTap,
                           onLessonMove: onLessonMove,
                           onLessonDragStarted: onLessonDragStarted,
                           onLessonDragEnded: onLessonDragEnded,
@@ -518,6 +521,7 @@ class _ScheduleGrid extends StatelessWidget {
     required this.dragCheckingSlotKeys,
     required this.dragValidationActive,
     required this.creatingSlotKey,
+    required this.onLessonTap,
     required this.onLessonMove,
     required this.onLessonDragStarted,
     required this.onLessonDragEnded,
@@ -535,6 +539,7 @@ class _ScheduleGrid extends StatelessWidget {
   final Set<String> dragCheckingSlotKeys;
   final bool dragValidationActive;
   final String? creatingSlotKey;
+  final ValueChanged<_LessonCell> onLessonTap;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
   final ValueChanged<_LessonDragData> onLessonDragStarted;
@@ -563,6 +568,7 @@ class _ScheduleGrid extends StatelessWidget {
               dragValidationActive: dragValidationActive,
               creatingSlotKey: creatingSlotKey,
               isLastRow: row == rows.length - 1,
+              onLessonTap: onLessonTap,
               onLessonMove: onLessonMove,
               onLessonDragStarted: onLessonDragStarted,
               onLessonDragEnded: onLessonDragEnded,
@@ -687,6 +693,7 @@ class _ScheduleGridRow extends StatelessWidget {
     required this.dragValidationActive,
     required this.creatingSlotKey,
     required this.isLastRow,
+    required this.onLessonTap,
     required this.onLessonMove,
     required this.onLessonDragStarted,
     required this.onLessonDragEnded,
@@ -706,6 +713,7 @@ class _ScheduleGridRow extends StatelessWidget {
   final bool dragValidationActive;
   final String? creatingSlotKey;
   final bool isLastRow;
+  final ValueChanged<_LessonCell> onLessonTap;
   final void Function(_LessonDragData source, int targetRow, int targetColumn)
       onLessonMove;
   final ValueChanged<_LessonDragData> onLessonDragStarted;
@@ -734,6 +742,7 @@ class _ScheduleGridRow extends StatelessWidget {
                     scheduleTargetSelected: scheduleTargetSelected,
                     availabilityLoading: availabilityLoading,
                     creating: creatingSlotKey == availabilityKey,
+                    onLessonTap: onLessonTap,
                     isToday: column < weekDays.length
                         ? weekDays[column].isToday
                         : false,
@@ -778,6 +787,7 @@ class _ScheduleGridCell extends StatelessWidget {
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
     required this.creating,
+    required this.onLessonTap,
     required this.isToday,
     required this.isLastColumn,
     required this.isLastRow,
@@ -796,6 +806,7 @@ class _ScheduleGridCell extends StatelessWidget {
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
   final bool creating;
+  final ValueChanged<_LessonCell> onLessonTap;
   final bool isToday;
   final bool isLastColumn;
   final bool isLastRow;
@@ -869,6 +880,7 @@ class _ScheduleGridCell extends StatelessWidget {
                 _DraggableLessonBlock(
                   lesson: lesson!,
                   source: _LessonDragData(row: rowIndex, column: columnIndex),
+                  onTap: () => onLessonTap(lesson!),
                   onDragStarted: onLessonDragStarted,
                   onDragEnded: onLessonDragEnded,
                 ),
@@ -1005,12 +1017,14 @@ class _DraggableLessonBlock extends StatefulWidget {
   const _DraggableLessonBlock({
     required this.lesson,
     required this.source,
+    required this.onTap,
     required this.onDragStarted,
     required this.onDragEnded,
   });
 
   final _LessonCell lesson;
   final _LessonDragData source;
+  final VoidCallback onTap;
   final ValueChanged<_LessonDragData> onDragStarted;
   final VoidCallback onDragEnded;
 
@@ -1129,7 +1143,11 @@ class _DraggableLessonBlockState extends State<_DraggableLessonBlock> {
         onDragCompleted: _handleDragEnded,
         onDraggableCanceled: (_, __) => _handleDragEnded(),
         onDragEnd: (_) => _handleDragEnded(),
-        child: child,
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: widget.onTap,
+          child: child,
+        ),
       ),
     );
   }

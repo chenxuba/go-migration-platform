@@ -176,6 +176,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           onAvailabilityRefresh: this._detectScheduleAvailability,
           onRefresh: _loadTimetable,
           onPrimaryScheduleTap: this._handlePrimaryScheduleTap,
+          onLessonTap: this._openLessonDetail,
           onLessonMove: this._moveLesson,
           onLessonDragStarted: this._startLessonDrag,
           onLessonDragEnded: this._endLessonDrag,
