@@ -1548,12 +1548,12 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       orElse: () => _reportModuleOptions.first,
     );
     unawaited(_syncLatestRecord());
-    unawaited(_activateModule(_activeOption));
-    for (final _ReportModuleOption option in _reportModuleOptions) {
-      if (option.value != _activeOption.value) {
-        unawaited(_ensureModulePdf(option));
-      }
-    }
+    unawaited(_bootstrapPreview());
+  }
+
+  Future<void> _bootstrapPreview() async {
+    await _activateModule(_activeOption);
+    await _prewarmOtherModules();
   }
 
   Future<void> _syncLatestRecord() async {
@@ -1585,7 +1585,25 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
 
   void _retryPreview() {
     unawaited(_syncLatestRecord());
-    unawaited(_activateModule(_activeOption, refresh: true));
+    unawaited(_refreshPreviewModules());
+  }
+
+  Future<void> _refreshPreviewModules() async {
+    await _activateModule(_activeOption, refresh: true);
+    await _prewarmOtherModules(refresh: true);
+  }
+
+  Future<void> _prewarmOtherModules({bool refresh = false}) async {
+    for (final _ReportModuleOption option in _reportModuleOptions) {
+      if (option.value == _activeOption.value) {
+        continue;
+      }
+      try {
+        await _ensureModulePdf(option, refresh: refresh);
+      } on Object {
+        // 预热失败不影响当前弹窗。
+      }
+    }
   }
 
   Future<Uint8List> _ensureModulePdf(
