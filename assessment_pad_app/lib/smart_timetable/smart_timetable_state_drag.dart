@@ -102,7 +102,7 @@ extension _SmartTimetableStateDrag on _SmartTimetablePageState {
         '调课成功，已刷新课表',
         tone: PadMessageTone.success,
       );
-      await _loadTimetable();
+      await _loadTimetable(showSkeleton: false);
     } on TimetableApiException catch (error) {
       _showScheduleMessage(error.message);
       _rollbackOptimisticLessonMove(previousRows);

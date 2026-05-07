@@ -41,6 +41,54 @@ Future<DateTimeRange?> showPadDateRangePicker({
   return completer.future;
 }
 
+Future<DateTime?> showPadDatePicker({
+  required BuildContext context,
+  required DateTime initialDate,
+  DateTime? today,
+  DateTime? minDate,
+  DateTime? maxDate,
+}) {
+  final DateTime currentDay = _dateOnly(today ?? DateTime.now());
+  final DateTime resolvedMinDate = _dateOnly(
+    minDate ?? DateTime(currentDay.year - 5),
+  );
+  final DateTime resolvedMaxDate = _dateOnly(
+    maxDate ?? DateTime(currentDay.year + 1, 12, 31),
+  );
+  final DateTime resolvedInitialDate = _clampDayWithinBounds(
+    _dateOnly(initialDate),
+    resolvedMinDate,
+    resolvedMaxDate,
+  );
+  final Completer<DateTime?> completer = Completer<DateTime?>();
+  final OverlayState overlay = Overlay.of(context, rootOverlay: true);
+  late final OverlayEntry entry;
+
+  void close([DateTime? value]) {
+    if (entry.mounted) {
+      entry.remove();
+    }
+    if (!completer.isCompleted) {
+      completer.complete(value);
+    }
+  }
+
+  entry = OverlayEntry(
+    builder: (BuildContext context) {
+      return _PadSingleDateOverlay(
+        initialDate: resolvedInitialDate,
+        today: currentDay,
+        minDate: resolvedMinDate,
+        maxDate: resolvedMaxDate,
+        onCancel: close,
+        onSubmit: close,
+      );
+    },
+  );
+  overlay.insert(entry);
+  return completer.future;
+}
+
 class _PickerColors {
   static const Color surface = Color(0xFFFFFDFA);
   static const Color ink = Color(0xFF3F2B22);
@@ -50,6 +98,222 @@ class _PickerColors {
   static const Color lineSoft = Color(0xFFF4E8DF);
   static const Color orange = Color(0xFFE96F43);
   static const Color orangeDeep = Color(0xFFC95D37);
+}
+
+class _PadSingleDateOverlay extends StatelessWidget {
+  const _PadSingleDateOverlay({
+    required this.initialDate,
+    required this.today,
+    required this.minDate,
+    required this.maxDate,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final DateTime initialDate;
+  final DateTime today;
+  final DateTime minDate;
+  final DateTime maxDate;
+  final VoidCallback onCancel;
+  final ValueChanged<DateTime> onSubmit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Stack(
+        children: <Widget>[
+          const Positioned.fill(
+            child: ColoredBox(color: Color(0x33000000)),
+          ),
+          Positioned.fill(
+            child: PadDialogViewport(
+              child: _PadSingleDateDialog(
+                initialDate: initialDate,
+                today: today,
+                minDate: minDate,
+                maxDate: maxDate,
+                onCancel: onCancel,
+                onSubmit: onSubmit,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PadSingleDateDialog extends StatefulWidget {
+  const _PadSingleDateDialog({
+    required this.initialDate,
+    required this.today,
+    required this.minDate,
+    required this.maxDate,
+    required this.onCancel,
+    required this.onSubmit,
+  });
+
+  final DateTime initialDate;
+  final DateTime today;
+  final DateTime minDate;
+  final DateTime maxDate;
+  final VoidCallback onCancel;
+  final ValueChanged<DateTime> onSubmit;
+
+  @override
+  State<_PadSingleDateDialog> createState() => _PadSingleDateDialogState();
+}
+
+class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
+  late DateTime _visibleMonth;
+  late DateTime _selectedDate;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDate = _dateOnly(widget.initialDate);
+    _visibleMonth = _boundedVisibleMonth(_monthOnly(_selectedDate));
+  }
+
+  DateTime _boundedVisibleMonth(DateTime month) {
+    final DateTime minMonth = _monthOnly(widget.minDate);
+    final DateTime maxMonth = _monthOnly(widget.maxDate);
+    if (month.isBefore(minMonth)) {
+      return minMonth;
+    }
+    if (month.isAfter(maxMonth)) {
+      return maxMonth;
+    }
+    return month;
+  }
+
+  void _shiftMonth(int offset) {
+    setState(() {
+      _visibleMonth = _boundedVisibleMonth(_addMonths(_visibleMonth, offset));
+    });
+  }
+
+  void _selectDay(DateTime day) {
+    final DateTime value = _dateOnly(day);
+    if (_isBeforeDay(value, widget.minDate) ||
+        _isAfterDay(value, widget.maxDate)) {
+      return;
+    }
+    setState(() {
+      _selectedDate = value;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 560,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _PickerColors.surface,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _PickerColors.line),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x1FC26B3E),
+              blurRadius: 34,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '选择评估日期',
+                  style: TextStyle(
+                    color: _PickerColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                _RangePreview(label: '日期', value: _dateText(_selectedDate)),
+                const SizedBox(width: 10),
+                _IconCircleButton(
+                  icon: Icons.close_rounded,
+                  onTap: widget.onCancel,
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              children: <Widget>[
+                _IconCircleButton(
+                  icon: Icons.chevron_left_rounded,
+                  enabled: _canShiftPrevious,
+                  onTap: () => _shiftMonth(-1),
+                ),
+                const Spacer(),
+                _MonthTitle(month: _visibleMonth),
+                const Spacer(),
+                _IconCircleButton(
+                  icon: Icons.chevron_right_rounded,
+                  enabled: _canShiftNext,
+                  onTap: () => _shiftMonth(1),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            _MonthCalendar(
+              month: _visibleMonth,
+              minDate: widget.minDate,
+              maxDate: widget.maxDate,
+              today: widget.today,
+              start: _selectedDate,
+              end: _selectedDate,
+              onSelect: _selectDay,
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                const Text(
+                  '请选择实际评估日期',
+                  style: TextStyle(
+                    color: _PickerColors.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+                const Spacer(),
+                _DialogActionButton(
+                  label: '取消',
+                  onTap: widget.onCancel,
+                ),
+                const SizedBox(width: 10),
+                _DialogActionButton(
+                  label: '确定',
+                  filled: true,
+                  onTap: () => widget.onSubmit(_selectedDate),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool get _canShiftPrevious {
+    return !_addMonths(_visibleMonth, -1).isBefore(_monthOnly(widget.minDate));
+  }
+
+  bool get _canShiftNext {
+    return !_addMonths(_visibleMonth, 1).isAfter(_monthOnly(widget.maxDate));
+  }
 }
 
 class _PadDateRangeOverlay extends StatelessWidget {
@@ -884,6 +1148,17 @@ DateTime _monthOnly(DateTime value) => DateTime(value.year, value.month);
 
 DateTime _addMonths(DateTime value, int months) {
   return DateTime(value.year, value.month + months);
+}
+
+DateTime _clampDayWithinBounds(DateTime value, DateTime min, DateTime max) {
+  final DateTime day = _dateOnly(value);
+  if (_isBeforeDay(day, min)) {
+    return _dateOnly(min);
+  }
+  if (_isAfterDay(day, max)) {
+    return _dateOnly(max);
+  }
+  return day;
 }
 
 bool _sameDay(DateTime left, DateTime right) {

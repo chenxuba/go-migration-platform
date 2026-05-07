@@ -50,6 +50,10 @@ const String defaultPep3RecordDetailPath = String.fromEnvironment(
   'PEP3_RECORD_DETAIL_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/detail',
 );
+const String defaultPep3RecordConfigUpdatePath = String.fromEnvironment(
+  'PEP3_RECORD_CONFIG_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/config/update',
+);
 const String defaultPep3RecordBookletPdfPath = String.fromEnvironment(
   'PEP3_RECORD_BOOKLET_PDF_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/booklet/pdf',
@@ -827,6 +831,13 @@ abstract interface class Pep3AssessmentClient {
 
   Future<Pep3RecordDetail> fetchRecordDetail(String token, int id);
 
+  Future<Pep3RecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  });
+
   Future<Uint8List> downloadRecordBookletPdf(
     String token,
     int id, {
@@ -848,6 +859,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.recordsPagePath = defaultPep3RecordsPagePath,
     this.recordCategoryStatsPath = defaultPep3RecordCategoryStatsPath,
     this.recordDetailPath = defaultPep3RecordDetailPath,
+    this.recordConfigUpdatePath = defaultPep3RecordConfigUpdatePath,
     this.recordBookletPdfPath = defaultPep3RecordBookletPdfPath,
   });
 
@@ -863,6 +875,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String recordsPagePath;
   final String recordCategoryStatsPath;
   final String recordDetailPath;
+  final String recordConfigUpdatePath;
   final String recordBookletPdfPath;
 
   @override
@@ -1073,6 +1086,28 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     final Object? data = await _getJson(uri, token);
     if (data is! Map) {
       throw const Pep3ApiException('测评记录详情返回格式不正确');
+    }
+    return Pep3RecordDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<Pep3RecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(recordConfigUpdatePath),
+      token,
+      <String, dynamic>{
+        'id': id,
+        'examinerName': examinerName.trim(),
+        'assessmentDate': assessmentDate.trim(),
+      },
+    );
+    if (data is! Map) {
+      throw const Pep3ApiException('评估配置返回格式不正确');
     }
     return Pep3RecordDetail.fromJson(Map<String, dynamic>.from(data));
   }

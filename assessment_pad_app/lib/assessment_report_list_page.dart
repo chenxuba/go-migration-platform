@@ -10,19 +10,23 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'assessment_scale_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
+import 'pad_top_message.dart';
 import 'pep3_assessment_client.dart';
+import 'timetable_client.dart';
 
 class AssessmentReportListScreen extends StatefulWidget {
   const AssessmentReportListScreen({
     required this.onBack,
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.recordClient = const ApiPep3AssessmentClient(),
+    this.staffClient = const ApiTimetableClient(),
     super.key,
   });
 
   final VoidCallback onBack;
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient recordClient;
+  final TimetableClient staffClient;
 
   @override
   State<AssessmentReportListScreen> createState() =>
@@ -33,6 +37,8 @@ class _AssessmentReportListScreenState
     extends State<AssessmentReportListScreen> {
   static const String _authTokenStorageKey = 'auth_token';
 
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
   late DateTimeRange _range;
   List<String> _categories = const <String>[];
   Map<String, int> _categoryCounts = const <String, int>{};
@@ -184,6 +190,12 @@ class _AssessmentReportListScreenState
   }
 
   @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return _ReportTheme(
       child: _AssessmentReportListBody(
@@ -203,6 +215,7 @@ class _AssessmentReportListScreenState
         onRangeTap: _selectRange,
         onSearchSubmitted: _submitSearch,
         onViewReport: _openReportViewer,
+        onConfigRecord: _openConfigDialog,
         onCategorySelected: (String category) => _loadData(
           selectedCategory: category,
         ),
@@ -229,6 +242,64 @@ class _AssessmentReportListScreenState
           ),
         );
       },
+    );
+  }
+
+  Future<void> _openConfigDialog(Pep3RecordSummary record) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    if (!mounted) {
+      return;
+    }
+    final Pep3RecordDetail? savedDetail = await showDialog<Pep3RecordDetail>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(.28),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ReportConfigDialog(
+            record: record,
+            token: token,
+            client: widget.recordClient,
+            staffClient: widget.staffClient,
+          ),
+        );
+      },
+    );
+    if (savedDetail == null || !mounted) {
+      return;
+    }
+    setState(() {
+      final List<Pep3RecordSummary> nextItems = _page.items
+          .map(
+            (Pep3RecordSummary item) =>
+                item.id == savedDetail.id ? savedDetail : item,
+          )
+          .toList();
+      _page = Pep3RecordPage(
+        items: nextItems,
+        total: _page.total,
+        current: _page.current,
+        size: _page.size,
+      );
+    });
+    _showMessage('评估配置已保存', tone: PadMessageTone.success);
+    unawaited(_loadData());
+  }
+
+  void _showMessage(
+    String message, {
+    PadMessageTone tone = PadMessageTone.info,
+  }) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 12,
+      key: 'report-list-top-message',
     );
   }
 }
@@ -273,6 +344,7 @@ class _AssessmentReportListBody extends StatelessWidget {
     required this.onRangeTap,
     required this.onSearchSubmitted,
     required this.onViewReport,
+    required this.onConfigRecord,
     required this.onCategorySelected,
   });
 
@@ -292,6 +364,7 @@ class _AssessmentReportListBody extends StatelessWidget {
   final VoidCallback onRangeTap;
   final ValueChanged<String> onSearchSubmitted;
   final ValueChanged<Pep3RecordSummary> onViewReport;
+  final ValueChanged<Pep3RecordSummary> onConfigRecord;
   final ValueChanged<String> onCategorySelected;
 
   @override
@@ -355,6 +428,7 @@ class _AssessmentReportListBody extends StatelessWidget {
                                 errorMessage: errorMessage,
                                 onRetry: onReset,
                                 onViewReport: onViewReport,
+                                onConfigRecord: onConfigRecord,
                               ),
                             ),
                           ],
@@ -802,6 +876,7 @@ class _ReportListPanel extends StatelessWidget {
     required this.errorMessage,
     required this.onRetry,
     required this.onViewReport,
+    required this.onConfigRecord,
   });
 
   final List<Pep3RecordSummary> records;
@@ -810,6 +885,7 @@ class _ReportListPanel extends StatelessWidget {
   final String errorMessage;
   final VoidCallback onRetry;
   final ValueChanged<Pep3RecordSummary> onViewReport;
+  final ValueChanged<Pep3RecordSummary> onConfigRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -846,7 +922,11 @@ class _ReportListPanel extends StatelessWidget {
               const Expanded(child: _ReportState(message: '暂无评估报告'))
             else
               for (final Pep3RecordSummary record in records)
-                _ReportRow(record: record, onViewReport: onViewReport),
+                _ReportRow(
+                  record: record,
+                  onViewReport: onViewReport,
+                  onConfigRecord: onConfigRecord,
+                ),
           ],
         ),
       ),
@@ -994,10 +1074,15 @@ class _ReportTableHeader extends StatelessWidget {
 }
 
 class _ReportRow extends StatelessWidget {
-  const _ReportRow({required this.record, required this.onViewReport});
+  const _ReportRow({
+    required this.record,
+    required this.onViewReport,
+    required this.onConfigRecord,
+  });
 
   final Pep3RecordSummary record;
   final ValueChanged<Pep3RecordSummary> onViewReport;
+  final ValueChanged<Pep3RecordSummary> onConfigRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1033,6 +1118,7 @@ class _ReportRow extends StatelessWidget {
                 child: _RowActions(
                   record: record,
                   onViewReport: onViewReport,
+                  onConfigRecord: onConfigRecord,
                 ),
               ),
             ),
@@ -1387,10 +1473,15 @@ class _Tag extends StatelessWidget {
 }
 
 class _RowActions extends StatelessWidget {
-  const _RowActions({required this.record, required this.onViewReport});
+  const _RowActions({
+    required this.record,
+    required this.onViewReport,
+    required this.onConfigRecord,
+  });
 
   final Pep3RecordSummary record;
   final ValueChanged<Pep3RecordSummary> onViewReport;
+  final ValueChanged<Pep3RecordSummary> onConfigRecord;
 
   @override
   Widget build(BuildContext context) {
@@ -1403,7 +1494,7 @@ class _RowActions extends StatelessWidget {
           onTap: () => onViewReport(record),
         ),
         const SizedBox(width: 8),
-        const _ActionButton(label: '配置'),
+        _ActionButton(label: '配置', onTap: () => onConfigRecord(record)),
       ],
     );
   }
@@ -1451,6 +1542,1131 @@ class _ActionButton extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
                 ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportConfigDialog extends StatefulWidget {
+  const _ReportConfigDialog({
+    required this.record,
+    required this.token,
+    required this.client,
+    required this.staffClient,
+  });
+
+  final Pep3RecordSummary record;
+  final String token;
+  final Pep3AssessmentClient client;
+  final TimetableClient staffClient;
+
+  @override
+  State<_ReportConfigDialog> createState() => _ReportConfigDialogState();
+}
+
+class _ReportConfigDialogState extends State<_ReportConfigDialog> {
+  final LayerLink _teacherFieldLink = LayerLink();
+  final GlobalKey _teacherFieldKey = GlobalKey();
+  late DateTime _assessmentDate;
+  late List<String> _selectedExaminerNames;
+  late String _originalExaminerName;
+  DateTime? _originalAssessmentDate;
+  List<ScheduleStaffOption> _teacherOptions = const <ScheduleStaffOption>[];
+  bool _detailHydrating = true;
+  bool _teacherLoading = false;
+  bool _saving = false;
+  String _errorMessage = '';
+  String _teacherErrorMessage = '';
+  bool _teacherSelectionTouched = false;
+  bool _assessmentDateTouched = false;
+  OverlayEntry? _teacherDropdownEntry;
+
+  @override
+  void initState() {
+    super.initState();
+    _assessmentDate = _configDateValue(widget.record.assessmentDate) ??
+        _dateOnly(DateTime.now());
+    _selectedExaminerNames = _uniqueExaminerNames(
+      _splitExaminerNames(widget.record.examinerName),
+    );
+    _originalExaminerName = widget.record.examinerName.trim();
+    _originalAssessmentDate = _configDateValue(widget.record.assessmentDate);
+    _teacherOptions = _mergeTeacherOptions(const <ScheduleStaffOption>[]);
+    unawaited(_loadTeacherOptions());
+    unawaited(_hydrateOriginalDetail());
+  }
+
+  @override
+  void dispose() {
+    _removeTeacherDropdown();
+    super.dispose();
+  }
+
+  Future<void> _hydrateOriginalDetail() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _detailHydrating = false;
+      });
+      return;
+    }
+    try {
+      final Pep3RecordDetail detail = await widget.client.fetchRecordDetail(
+        token,
+        widget.record.id,
+      );
+      if (!mounted) {
+        return;
+      }
+      final String originalExaminerName =
+          detail.input.examinerName.trim().isNotEmpty
+              ? detail.input.examinerName.trim()
+              : widget.record.examinerName.trim();
+      final DateTime? originalAssessmentDate =
+          _configDateValue(detail.input.assessmentDate) ??
+              _configDateValue(widget.record.assessmentDate);
+      final List<String> currentExaminerNames = _uniqueExaminerNames(
+        _splitExaminerNames(detail.examinerName),
+      );
+      final DateTime? currentAssessmentDate =
+          _configDateValue(detail.assessmentDate);
+      setState(() {
+        if (!_teacherSelectionTouched && currentExaminerNames.isNotEmpty) {
+          _selectedExaminerNames = currentExaminerNames;
+        }
+        if (!_assessmentDateTouched && currentAssessmentDate != null) {
+          _assessmentDate = currentAssessmentDate;
+        }
+        _originalExaminerName = originalExaminerName;
+        _originalAssessmentDate = originalAssessmentDate;
+        _teacherOptions = _mergeTeacherOptions(_teacherOptions);
+        _detailHydrating = false;
+      });
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        if (!_teacherSelectionTouched) {
+          _selectedExaminerNames = _uniqueExaminerNames(
+            _splitExaminerNames(widget.record.examinerName),
+          );
+        }
+        if (!_assessmentDateTouched) {
+          _assessmentDate = _configDateValue(widget.record.assessmentDate) ??
+              _dateOnly(DateTime.now());
+        }
+        _originalExaminerName = widget.record.examinerName.trim();
+        _originalAssessmentDate =
+            _configDateValue(widget.record.assessmentDate);
+        _teacherOptions = _mergeTeacherOptions(_teacherOptions);
+        _detailHydrating = false;
+      });
+    }
+  }
+
+  List<ScheduleStaffOption> _mergeTeacherOptions(
+    List<ScheduleStaffOption> base,
+  ) {
+    final Map<String, ScheduleStaffOption> merged =
+        <String, ScheduleStaffOption>{
+      for (final ScheduleStaffOption option in base)
+        if (option.name.trim().isNotEmpty) option.name.trim(): option,
+    };
+    for (final String name in <String>[
+      ..._selectedExaminerNames,
+      ..._splitExaminerNames(_originalExaminerName),
+    ]) {
+      final String trimmed = name.trim();
+      if (trimmed.isEmpty || merged.containsKey(trimmed)) {
+        continue;
+      }
+      merged[trimmed] = ScheduleStaffOption(id: 'name:$trimmed', name: trimmed);
+    }
+    return merged.values.toList();
+  }
+
+  Future<void> _loadTeacherOptions() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      return;
+    }
+    setState(() {
+      _teacherLoading = true;
+      _teacherErrorMessage = '';
+    });
+    try {
+      final List<ScheduleStaffOption> options =
+          await widget.staffClient.fetchInstitutionStaffOptions(
+        token,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _teacherOptions = _mergeTeacherOptions(options);
+        _teacherLoading = false;
+      });
+      _markTeacherDropdownNeedsBuild();
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _teacherOptions = _mergeTeacherOptions(_teacherOptions);
+        _teacherLoading = false;
+        _teacherErrorMessage = '评估老师加载失败：$error';
+      });
+      _markTeacherDropdownNeedsBuild();
+    }
+  }
+
+  void _toggleExaminerName(String name) {
+    final String trimmed = name.trim();
+    if (trimmed.isEmpty) {
+      return;
+    }
+    setState(() {
+      if (_selectedExaminerNames.contains(trimmed)) {
+        _selectedExaminerNames = _selectedExaminerNames
+            .where((String item) => item != trimmed)
+            .toList();
+      } else {
+        _selectedExaminerNames = <String>[
+          ..._selectedExaminerNames,
+          trimmed,
+        ];
+      }
+      _teacherSelectionTouched = true;
+      _teacherOptions = _mergeTeacherOptions(_teacherOptions);
+      _errorMessage = '';
+    });
+    _markTeacherDropdownNeedsBuild();
+  }
+
+  void _restoreOriginalExaminer() {
+    final List<String> originalNames =
+        _uniqueExaminerNames(_splitExaminerNames(_originalExaminerName));
+    if (originalNames.isEmpty) {
+      return;
+    }
+    setState(() {
+      _selectedExaminerNames = originalNames;
+      _teacherSelectionTouched = true;
+      _teacherOptions = _mergeTeacherOptions(_teacherOptions);
+      _errorMessage = '';
+    });
+    _markTeacherDropdownNeedsBuild();
+  }
+
+  void _restoreOriginalAssessmentDate() {
+    final DateTime? originalDate = _originalAssessmentDate;
+    if (originalDate == null) {
+      return;
+    }
+    setState(() {
+      _assessmentDate = originalDate;
+      _assessmentDateTouched = true;
+      _errorMessage = '';
+    });
+  }
+
+  bool get _teacherDropdownOpen => _teacherDropdownEntry != null;
+
+  void _toggleTeacherDropdown() {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_teacherDropdownOpen) {
+      _removeTeacherDropdown();
+      return;
+    }
+    _showTeacherDropdown();
+  }
+
+  void _showTeacherDropdown() {
+    final BuildContext? fieldContext = _teacherFieldKey.currentContext;
+    if (fieldContext == null) {
+      return;
+    }
+    final RenderBox box = fieldContext.findRenderObject()! as RenderBox;
+    final Size fieldSize = box.size;
+    _teacherDropdownEntry = OverlayEntry(
+      builder: (BuildContext context) {
+        return Stack(
+          children: <Widget>[
+            Positioned.fill(
+              child: GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                onTap: _removeTeacherDropdown,
+                child: const SizedBox.expand(),
+              ),
+            ),
+            CompositedTransformFollower(
+              link: _teacherFieldLink,
+              showWhenUnlinked: false,
+              targetAnchor: Alignment.bottomLeft,
+              followerAnchor: Alignment.topLeft,
+              offset: const Offset(0, 8),
+              child: Material(
+                color: Colors.transparent,
+                child: SizedBox(
+                  width: fieldSize.width,
+                  child: _ConfigTeacherDropdown(
+                    loading: _teacherLoading,
+                    errorMessage: _teacherErrorMessage,
+                    options: _teacherOptions,
+                    selectedNames: _selectedExaminerNames,
+                    enabled: !_saving,
+                    onToggleOption: (String name) => _toggleExaminerName(name),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    Overlay.of(context, rootOverlay: true).insert(_teacherDropdownEntry!);
+    setState(() {});
+    if (_teacherOptions.isEmpty && !_teacherLoading) {
+      unawaited(_loadTeacherOptions());
+    }
+  }
+
+  void _removeTeacherDropdown() {
+    final OverlayEntry? entry = _teacherDropdownEntry;
+    if (entry == null) {
+      return;
+    }
+    _teacherDropdownEntry = null;
+    entry.remove();
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  void _markTeacherDropdownNeedsBuild() {
+    _teacherDropdownEntry?.markNeedsBuild();
+  }
+
+  Future<void> _pickAssessmentDate() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _removeTeacherDropdown();
+    final DateTime today = _dateOnly(DateTime.now());
+    final DateTime? picked = await showPadDatePicker(
+      context: context,
+      initialDate:
+          _dateOnly(_assessmentDate).isAfter(today) ? today : _assessmentDate,
+      today: today,
+      minDate: DateTime(today.year - 10, 1, 1),
+      maxDate: today,
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _assessmentDate = _dateOnly(picked);
+      _assessmentDateTouched = true;
+      _errorMessage = '';
+    });
+  }
+
+  Future<void> _saveConfig() async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    _removeTeacherDropdown();
+    final String token = widget.token.trim();
+    final String examinerName = _joinExaminerNames(_selectedExaminerNames);
+    if (examinerName.isEmpty) {
+      setState(() => _errorMessage = '请选择评估老师');
+      return;
+    }
+    if (token.isEmpty) {
+      setState(() => _errorMessage = '请先登录后再保存');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _errorMessage = '';
+    });
+    try {
+      final Pep3RecordDetail detail = await widget.client.updateRecordConfig(
+        token,
+        widget.record.id,
+        examinerName: examinerName,
+        assessmentDate: _dateText(_assessmentDate),
+      );
+      if (!mounted) {
+        return;
+      }
+      Navigator.of(context).pop(detail);
+    } on Pep3ApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _errorMessage = '保存评估配置失败：$error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String studentName = _studentName(widget.record);
+    final String assessmentName = widget.record.assessmentName.trim().isEmpty
+        ? 'PEP-3评估记录'
+        : widget.record.assessmentName.trim();
+    final bool configLocked = _saving || _detailHydrating;
+    return PopScope(
+      canPop: !_saving,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 560,
+            constraints: const BoxConstraints(maxHeight: 640),
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _ReportTheme.line),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 34,
+                  offset: Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: <Widget>[
+                          const Text(
+                            '配置评估记录',
+                            style: TextStyle(
+                              color: _ReportTheme.ink,
+                              fontSize: 24,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(height: 7),
+                          Text(
+                            '$studentName / $assessmentName',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _ReportTheme.muted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 16),
+                    Material(
+                      color: Colors.transparent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        onTap:
+                            _saving ? null : () => Navigator.of(context).pop(),
+                        customBorder: const CircleBorder(),
+                        child: Container(
+                          width: 38,
+                          height: 38,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8F2),
+                            shape: BoxShape.circle,
+                            border: Border.all(color: _ReportTheme.lineSoft),
+                          ),
+                          child: const Icon(
+                            Icons.close_rounded,
+                            size: 22,
+                            color: _ReportTheme.muted,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 18),
+                Container(
+                  padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF7FBFF),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: const Color(0xFFD9E9FF)),
+                  ),
+                  child: const Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Padding(
+                        padding: EdgeInsets.only(top: 2),
+                        child: Icon(
+                          Icons.info_outline_rounded,
+                          size: 18,
+                          color: _ReportTheme.blue,
+                        ),
+                      ),
+                      SizedBox(width: 10),
+                      Expanded(
+                        child: Text(
+                          '仅修改评估老师和评估日期的展示信息，不重新计算测评结果，也不影响已生成IEP。',
+                          style: TextStyle(
+                            color: _ReportTheme.text,
+                            fontSize: 13,
+                            height: 1.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Flexible(
+                  child: SingleChildScrollView(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        const _RequiredFieldLabel(label: '评估老师'),
+                        const SizedBox(height: 8),
+                        _detailHydrating
+                            ? const _ConfigLoadingField(
+                                text: '正在加载评估老师',
+                              )
+                            : _ConfigTeacherSelectField(
+                                fieldKey: _teacherFieldKey,
+                                layerLink: _teacherFieldLink,
+                                names: _selectedExaminerNames,
+                                enabled: !_saving,
+                                open: _teacherDropdownOpen,
+                                onTap: _toggleTeacherDropdown,
+                                onRemove: (String name) =>
+                                    _toggleExaminerName(name),
+                              ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                '原评估老师：${_detailHydrating ? '加载中...' : (_originalExaminerName.trim().isEmpty ? '-' : _originalExaminerName.trim())}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _ReportTheme.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            _InlineTextButton(
+                              label: '恢复原评估老师',
+                              enabled: !_detailHydrating &&
+                                  _originalExaminerName.trim().isNotEmpty,
+                              onTap: _restoreOriginalExaminer,
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        const _RequiredFieldLabel(label: '评估日期'),
+                        const SizedBox(height: 8),
+                        _detailHydrating
+                            ? const _ConfigLoadingField(text: '正在加载评估日期')
+                            : Material(
+                                color: Colors.transparent,
+                                borderRadius: BorderRadius.circular(14),
+                                child: InkWell(
+                                  onTap: _saving ? null : _pickAssessmentDate,
+                                  borderRadius: BorderRadius.circular(14),
+                                  child: Ink(
+                                    height: 50,
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFFFFCF8),
+                                      borderRadius: BorderRadius.circular(14),
+                                      border:
+                                          Border.all(color: _ReportTheme.line),
+                                    ),
+                                    child: Row(
+                                      children: <Widget>[
+                                        Expanded(
+                                          child: Text(
+                                            _dateText(_assessmentDate),
+                                            style: const TextStyle(
+                                              color: _ReportTheme.ink,
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                        ),
+                                        const Icon(
+                                          Icons.calendar_month_rounded,
+                                          size: 20,
+                                          color: _ReportTheme.orangeDeep,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: <Widget>[
+                            Expanded(
+                              child: Text(
+                                '原评估日期：${_detailHydrating ? '加载中...' : (_originalAssessmentDate == null ? '-' : _dateText(_originalAssessmentDate!))}',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  color: _ReportTheme.muted,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 12),
+                            _InlineTextButton(
+                              label: '恢复原评估日期',
+                              enabled: !_detailHydrating &&
+                                  _originalAssessmentDate != null,
+                              onTap: _restoreOriginalAssessmentDate,
+                            ),
+                          ],
+                        ),
+                        if (_errorMessage.isNotEmpty) ...<Widget>[
+                          const SizedBox(height: 16),
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF4F2),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFFF4C7BE),
+                              ),
+                            ),
+                            child: Text(
+                              _errorMessage,
+                              style: const TextStyle(
+                                color: Color(0xFFB85A43),
+                                fontSize: 13,
+                                height: 1.45,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _ConfigDialogButton(
+                        label: '取消',
+                        onTap:
+                            _saving ? null : () => Navigator.of(context).pop(),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _ConfigDialogButton(
+                        label: _saving ? '保存中...' : '保存',
+                        filled: true,
+                        onTap: configLocked ? null : _saveConfig,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigTeacherSelectField extends StatelessWidget {
+  const _ConfigTeacherSelectField({
+    required this.fieldKey,
+    required this.layerLink,
+    required this.names,
+    required this.enabled,
+    required this.open,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  final GlobalKey fieldKey;
+  final LayerLink layerLink;
+  final List<String> names;
+  final bool enabled;
+  final bool open;
+  final VoidCallback onTap;
+  final ValueChanged<String> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return CompositedTransformTarget(
+      link: layerLink,
+      child: Material(
+        key: fieldKey,
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(14),
+          child: Ink(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFCF8),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: open ? _ReportTheme.orangeDeep : _ReportTheme.line,
+              ),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: names.isEmpty
+                      ? const Padding(
+                          padding: EdgeInsets.only(top: 3),
+                          child: Text(
+                            '请选择评估老师',
+                            style: TextStyle(
+                              color: _ReportTheme.muted,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        )
+                      : Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: names
+                              .map(
+                                (String name) => _ConfigTeacherChip(
+                                  label: name,
+                                  enabled: enabled,
+                                  onRemove: () => onRemove(name),
+                                ),
+                              )
+                              .toList(),
+                        ),
+                ),
+                const SizedBox(width: 10),
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Icon(
+                    open
+                        ? Icons.keyboard_arrow_up_rounded
+                        : Icons.keyboard_arrow_down_rounded,
+                    color: _ReportTheme.muted,
+                    size: 22,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigLoadingField extends StatelessWidget {
+  const _ConfigLoadingField({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _ReportTheme.line),
+      ),
+      child: Row(
+        children: <Widget>[
+          const SizedBox(
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: _ReportTheme.orangeDeep,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            text,
+            style: const TextStyle(
+              color: _ReportTheme.muted,
+              fontSize: 14,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfigTeacherDropdown extends StatelessWidget {
+  const _ConfigTeacherDropdown({
+    required this.loading,
+    required this.errorMessage,
+    required this.options,
+    required this.selectedNames,
+    required this.enabled,
+    required this.onToggleOption,
+  });
+
+  final bool loading;
+  final String errorMessage;
+  final List<ScheduleStaffOption> options;
+  final List<String> selectedNames;
+  final bool enabled;
+  final ValueChanged<String> onToggleOption;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _ReportTheme.line),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x12000000),
+            blurRadius: 16,
+            offset: Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Container(
+            height: 188,
+            padding: const EdgeInsets.all(12),
+            child: loading
+                ? const Center(
+                    child: SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2.4,
+                        color: _ReportTheme.orangeDeep,
+                      ),
+                    ),
+                  )
+                : options.isEmpty
+                    ? Center(
+                        child: Text(
+                          errorMessage.isNotEmpty ? errorMessage : '暂无可选评估老师',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: _ReportTheme.muted,
+                            fontSize: 13,
+                            height: 1.45,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      )
+                    : ListView.separated(
+                        itemCount: options.length,
+                        separatorBuilder: (_, __) => const SizedBox(height: 8),
+                        itemBuilder: (BuildContext context, int index) {
+                          final ScheduleStaffOption option = options[index];
+                          return _ConfigTeacherOptionTile(
+                            title: option.name,
+                            subtitle: option.subtitle,
+                            selected: selectedNames.contains(option.name),
+                            onTap: enabled
+                                ? () => onToggleOption(option.name)
+                                : null,
+                          );
+                        },
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RequiredFieldLabel extends StatelessWidget {
+  const _RequiredFieldLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        children: <InlineSpan>[
+          const TextSpan(
+            text: '* ',
+            style: TextStyle(
+              color: Color(0xFFFF5A4F),
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          TextSpan(
+            text: label,
+            style: const TextStyle(
+              color: _ReportTheme.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InlineTextButton extends StatelessWidget {
+  const _InlineTextButton({
+    required this.label,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: enabled ? _ReportTheme.blue : _ReportTheme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigTeacherChip extends StatelessWidget {
+  const _ConfigTeacherChip({
+    required this.label,
+    required this.enabled,
+    required this.onRemove,
+  });
+
+  final String label;
+  final bool enabled;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF1E8),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFF1C7B0)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Flexible(
+            child: Text(
+              label,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ReportTheme.orangeDeep,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Material(
+            color: Colors.transparent,
+            shape: const CircleBorder(),
+            child: InkWell(
+              onTap: enabled ? onRemove : null,
+              customBorder: const CircleBorder(),
+              child: const Padding(
+                padding: EdgeInsets.all(1),
+                child: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: _ReportTheme.orangeDeep,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ConfigTeacherOptionTile extends StatelessWidget {
+  const _ConfigTeacherOptionTile({
+    required this.title,
+    required this.subtitle,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(11),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(11),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          constraints: const BoxConstraints(minHeight: 44),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF1E8) : Colors.white,
+            borderRadius: BorderRadius.circular(11),
+            border: Border.all(
+              color: selected ? _ReportTheme.orange : _ReportTheme.lineSoft,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 18,
+                color: selected ? _ReportTheme.orangeDeep : _ReportTheme.muted,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ReportTheme.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (subtitle.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _ReportTheme.muted,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ConfigDialogButton extends StatelessWidget {
+  const _ConfigDialogButton({
+    required this.label,
+    this.filled = false,
+    this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          height: 48,
+          decoration: BoxDecoration(
+            color: filled ? _ReportTheme.orangeDeep : const Color(0xFFFFFCF8),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: filled ? _ReportTheme.orangeDeep : _ReportTheme.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? Colors.white : _ReportTheme.text,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
               ),
             ),
           ),
@@ -1535,7 +2751,6 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   final Map<String, Future<Uint8List>> _modulePdfLoads =
       <String, Future<Uint8List>>{};
   bool _loading = true;
-  bool _recordSyncing = false;
   String _errorMessage = '';
   int _recordSyncSerial = 0;
 
@@ -1562,7 +2777,6 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       return;
     }
     final int serial = ++_recordSyncSerial;
-    setState(() => _recordSyncing = true);
     try {
       final Pep3RecordDetail detail = await widget.client.fetchRecordDetail(
         token,
@@ -1573,13 +2787,11 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       }
       setState(() {
         _displayRecord = detail;
-        _recordSyncing = false;
       });
     } on Object {
       if (!mounted || serial != _recordSyncSerial) {
         return;
       }
-      setState(() => _recordSyncing = false);
     }
   }
 
@@ -1719,34 +2931,37 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return Center(
-      child: Material(
-        color: Colors.transparent,
-        child: Container(
-          width: 980,
-          height: 654,
-          padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(24),
-            border: Border.all(color: _ReportTheme.line),
-            boxShadow: const <BoxShadow>[
-              BoxShadow(
-                color: Color(0x24000000),
-                blurRadius: 34,
-                offset: Offset(0, 18),
-              ),
-            ],
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              _buildHeader(context),
-              const SizedBox(height: 18),
-              _buildModuleBar(),
-              const SizedBox(height: 18),
-              Expanded(child: _buildContent()),
-            ],
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 980,
+            height: 654,
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _ReportTheme.line),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 34,
+                  offset: Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _buildHeader(context),
+                const SizedBox(height: 18),
+                _buildModuleBar(),
+                const SizedBox(height: 18),
+                Expanded(child: _buildContent()),
+              ],
+            ),
           ),
         ),
       ),
@@ -1781,17 +2996,6 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
-              if (_recordSyncing) ...<Widget>[
-                const SizedBox(height: 6),
-                const Text(
-                  '正在同步最新记录...',
-                  style: TextStyle(
-                    color: _ReportTheme.blue,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
             ],
           ),
         ),
@@ -2455,6 +3659,37 @@ class _SkeletonTextCell extends StatelessWidget {
 
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
+
+DateTime? _configDateValue(String raw) {
+  final DateTime? parsed = _parseDateTime(raw);
+  return parsed == null ? null : _dateOnly(parsed.toLocal());
+}
+
+List<String> _splitExaminerNames(String raw) {
+  return raw
+      .split(RegExp(r'[、,，]'))
+      .map((String item) => item.trim())
+      .where((String item) => item.isNotEmpty)
+      .toList();
+}
+
+List<String> _uniqueExaminerNames(Iterable<String> names) {
+  final Set<String> seen = <String>{};
+  final List<String> result = <String>[];
+  for (final String item in names) {
+    final String trimmed = item.trim();
+    if (trimmed.isEmpty || seen.contains(trimmed)) {
+      continue;
+    }
+    seen.add(trimmed);
+    result.add(trimmed);
+  }
+  return result;
+}
+
+String _joinExaminerNames(Iterable<String> names) {
+  return _uniqueExaminerNames(names).join('、');
+}
 
 String _dateText(DateTime value) {
   final String month = value.month.toString().padLeft(2, '0');

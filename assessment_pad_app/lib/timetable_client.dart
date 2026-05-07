@@ -634,6 +634,11 @@ abstract interface class TimetableClient {
     String keyword = '',
   });
 
+  Future<List<ScheduleStaffOption>> fetchInstitutionStaffOptions(
+    String token, {
+    String keyword = '',
+  });
+
   Future<List<ScheduleClassroomOption>> fetchScheduleClassrooms(
     String token, {
     String keyword = '',
@@ -801,6 +806,33 @@ class ApiTimetableClient implements TimetableClient {
           'needTotal': false,
           'pageSize': 40,
           'pageIndex': 1,
+        },
+      },
+    );
+    return _listPayload(data)
+        .map((Map<String, dynamic> item) => ScheduleStaffOption.fromJson(item))
+        .where((ScheduleStaffOption item) => item.id.trim().isNotEmpty)
+        .toList();
+  }
+
+  @override
+  Future<List<ScheduleStaffOption>> fetchInstitutionStaffOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, scheduleAssistantPath),
+      token,
+      <String, dynamic>{
+        'queryModel': <String, dynamic>{
+          'searchKey': keyword.trim(),
+          'status': false,
+        },
+        'pageRequestModel': <String, dynamic>{
+          'needTotal': false,
+          'pageSize': 500,
+          'pageIndex': 1,
+          'skipCount': 0,
         },
       },
     );
@@ -1141,7 +1173,19 @@ List<Map<String, dynamic>> _listPayload(Object? raw) {
     return _listFrom(raw);
   }
   if (raw is Map) {
-    return _listFrom(Map<String, dynamic>.from(raw)['list']);
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(raw);
+    List<Map<String, dynamic>>? emptyResult;
+    for (final String key in <String>['list', 'items', 'records', 'rows']) {
+      final Object? value = payload[key];
+      if (value is List) {
+        final List<Map<String, dynamic>> items = _listFrom(value);
+        if (items.isNotEmpty) {
+          return items;
+        }
+        emptyResult ??= items;
+      }
+    }
+    return emptyResult ?? <Map<String, dynamic>>[];
   }
   return <Map<String, dynamic>>[];
 }

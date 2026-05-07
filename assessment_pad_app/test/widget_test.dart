@@ -2362,6 +2362,37 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Pep3RecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  }) async {
+    return Pep3RecordDetail(
+      id: id,
+      studentId: 3,
+      studentName: '张一鸣',
+      assessmentCode: 'PEP3',
+      assessmentName: 'PEP-3',
+      birthDate: '2021-03-01',
+      assessmentDate: assessmentDate,
+      examinerName: examinerName,
+      updatedTime: '2026-05-07T10:00:00',
+      input: Pep3DraftInput(
+        studentId: 3,
+        studentName: '张一鸣',
+        examinerName: examinerName,
+        birthDate: '2021-03-01',
+        assessmentDate: assessmentDate,
+        remark: '',
+        allowMissingItems: true,
+        itemScores: const <int, int>{1: 0},
+        itemRecordValues: const <int, Map<String, dynamic>>{},
+      ),
+    );
+  }
+
+  @override
   Future<Uint8List> downloadRecordBookletPdf(
     String token,
     int id, {
@@ -2573,6 +2604,19 @@ class _FakeTimetableClient implements TimetableClient {
     return const <ScheduleStaffOption>[
       ScheduleStaffOption(id: '4', name: '助教A', subtitle: '康复老师'),
       ScheduleStaffOption(id: '5', name: '助教B', subtitle: '康复老师'),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleStaffOption>> fetchInstitutionStaffOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    assistantOptionCalls += 1;
+    return const <ScheduleStaffOption>[
+      ScheduleStaffOption(id: '1', name: '陈老师', subtitle: '评估老师'),
+      ScheduleStaffOption(id: '2', name: '李老师', subtitle: '康复老师'),
+      ScheduleStaffOption(id: '3', name: '王老师', subtitle: '感觉统合老师'),
     ];
   }
 

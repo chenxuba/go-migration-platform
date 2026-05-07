@@ -111,8 +111,11 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
     return null;
   }
 
-  Future<void> _loadTimetable(
-      {String? teacherId, String? periodGroupId}) async {
+  Future<void> _loadTimetable({
+    String? teacherId,
+    String? periodGroupId,
+    bool showSkeleton = true,
+  }) async {
     final int sequence = ++_loadSequence;
     final String token = await _readAuthToken();
     if (token.trim().isEmpty) {
@@ -126,9 +129,13 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
       return;
     }
     final _WeekRange range = _weekRange(_weekOffset);
-    if (mounted) {
+    if (mounted && showSkeleton) {
       _updateState(() {
         _loading = true;
+        _errorMessage = null;
+      });
+    } else if (mounted) {
+      _updateState(() {
         _errorMessage = null;
       });
     }
