@@ -97,6 +97,7 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.summary,
     required this.errorMessage,
     required this.dateRange,
+    required this.isCurrentWeek,
     required this.onBack,
     required this.onPrevWeek,
     required this.onNextWeek,
@@ -174,6 +175,7 @@ class _SmartTimetableScreen extends StatelessWidget {
   final TimetableSummary summary;
   final String? errorMessage;
   final String dateRange;
+  final bool isCurrentWeek;
   final VoidCallback onBack;
   final VoidCallback onPrevWeek;
   final VoidCallback onNextWeek;
@@ -235,6 +237,7 @@ class _SmartTimetableScreen extends StatelessWidget {
                     teacherWidth: teacherWidth,
                     primaryWidth: primaryWidth,
                     dateRange: dateRange,
+                    isCurrentWeek: isCurrentWeek,
                     onBack: onBack,
                     onPrevWeek: onPrevWeek,
                     onNextWeek: onNextWeek,

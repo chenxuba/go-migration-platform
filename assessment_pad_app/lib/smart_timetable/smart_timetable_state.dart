@@ -143,6 +143,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           summary: _visibleTimetableSummary,
           errorMessage: _errorMessage,
           dateRange: _dateRangeText(_weekOffset),
+          isCurrentWeek: _weekOffset == 0,
           onBack: () => Navigator.of(context).maybePop(),
           onPrevWeek: () => _changeWeek(-1),
           onNextWeek: () => _changeWeek(1),

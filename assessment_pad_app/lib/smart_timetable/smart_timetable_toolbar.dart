@@ -8,6 +8,7 @@ class _TimetableTopBar extends StatelessWidget {
     required this.teacherWidth,
     required this.primaryWidth,
     required this.dateRange,
+    required this.isCurrentWeek,
     required this.onBack,
     required this.onPrevWeek,
     required this.onNextWeek,
@@ -22,6 +23,7 @@ class _TimetableTopBar extends StatelessWidget {
   final double teacherWidth;
   final double primaryWidth;
   final String dateRange;
+  final bool isCurrentWeek;
   final VoidCallback onBack;
   final VoidCallback onPrevWeek;
   final VoidCallback onNextWeek;
@@ -71,6 +73,7 @@ class _TimetableTopBar extends StatelessWidget {
                 _DateSwitch(
                   width: compact ? 302 : 352,
                   dateRange: dateRange,
+                  isCurrentWeek: isCurrentWeek,
                   onPrev: onPrevWeek,
                   onNext: onNextWeek,
                 ),

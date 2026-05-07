@@ -223,12 +223,14 @@ class _DateSwitch extends StatelessWidget {
   const _DateSwitch({
     required this.width,
     required this.dateRange,
+    required this.isCurrentWeek,
     required this.onPrev,
     required this.onNext,
   });
 
   final double width;
   final String dateRange;
+  final bool isCurrentWeek;
   final VoidCallback onPrev;
   final VoidCallback onNext;
 
@@ -249,8 +251,9 @@ class _DateSwitch extends StatelessWidget {
               dateRange,
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _SmartColors.ink,
+              style: TextStyle(
+                color:
+                    isCurrentWeek ? _SmartColors.orangeDeep : _SmartColors.ink,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
