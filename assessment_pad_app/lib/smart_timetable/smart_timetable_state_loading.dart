@@ -174,6 +174,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
     String? teacherId,
     String? periodGroupId,
     bool showSkeleton = true,
+    bool bootstrap = false,
   }) async {
     final int sequence = ++_loadSequence;
     final String token = await _readAuthToken();
@@ -182,18 +183,19 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         return;
       }
       _updateState(() {
+        _bootstrapLoading = false;
         _loading = false;
         _errorMessage = '登录已失效，请重新登录';
       });
       return;
     }
     final _WeekRange range = _weekRange(_weekOffset);
-    if (mounted && showSkeleton) {
+    if (mounted && showSkeleton && !bootstrap) {
       _updateState(() {
         _loading = true;
         _errorMessage = null;
       });
-    } else if (mounted) {
+    } else if (mounted && !bootstrap) {
       _updateState(() {
         _errorMessage = null;
       });
@@ -215,6 +217,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         _selectedTeacherId = data.selectedTeacherId;
         _applyTimetableData(data);
         _pruneQuickFilters();
+        _bootstrapLoading = false;
         _loading = false;
       });
       if (_selectedScheduleTarget != null) {
@@ -225,6 +228,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         return;
       }
       _updateState(() {
+        _bootstrapLoading = false;
         _loading = false;
         _errorMessage = error.message;
       });
@@ -233,6 +237,7 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
         return;
       }
       _updateState(() {
+        _bootstrapLoading = false;
         _loading = false;
         _errorMessage = '排课日程加载失败：$error';
       });

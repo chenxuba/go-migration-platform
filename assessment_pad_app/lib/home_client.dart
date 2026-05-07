@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 
@@ -267,7 +268,7 @@ class ApiHomeClient implements HomeClient {
       throw HomeApiException('无法连接首页接口：$error');
     }
 
-    final Object? decoded = _decodeResponse(response.body);
+    final Object? decoded = await _decodeResponse(response.body);
     if (response.statusCode == 401) {
       throw HomeApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -291,6 +292,8 @@ class ApiHomeClient implements HomeClient {
     return decoded;
   }
 }
+
+const int _homeBackgroundDecodeThreshold = 24 * 1024;
 
 class _HomeLocation {
   const _HomeLocation({
@@ -352,16 +355,21 @@ Uri _withHomeLocation(Uri uri, _HomeLocation? location) {
   );
 }
 
-Object? _decodeResponse(String body) {
+Future<Object?> _decodeResponse(String body) async {
   if (body.trim().isEmpty) {
     return null;
   }
   try {
-    return jsonDecode(body);
+    if (body.length >= _homeBackgroundDecodeThreshold) {
+      return await compute(_decodeHomeJsonPayload, body);
+    }
+    return _decodeHomeJsonPayload(body);
   } on FormatException {
     return body;
   }
 }
+
+Object? _decodeHomeJsonPayload(String body) => jsonDecode(body);
 
 String? _messageFromPayload(Object? payload) {
   if (payload is Map) {

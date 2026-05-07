@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
+import 'route_bootstrap.dart';
 import 'timetable_client.dart';
 
 part 'smart_timetable/smart_timetable_state.dart';

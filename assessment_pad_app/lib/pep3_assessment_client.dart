@@ -1,7 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'home_client.dart';
@@ -1138,13 +1138,15 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
 
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw Pep3ApiException(
-        _messageFromPayload(_decodeResponse(response.body)) ?? '登录已失效，请重新登录',
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '登录已失效，请重新登录',
         unauthorized: true,
       );
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Pep3ApiException(
-        _messageFromPayload(_decodeResponse(response.body)) ?? '评估报告PDF加载失败',
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '评估报告PDF加载失败',
       );
     }
     return _normalizeReportPdfBytes(response.bodyBytes);
@@ -1202,8 +1204,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     };
   }
 
-  Object? _handleResponse(http.Response response) {
-    final Object? decoded = _decodeResponse(response.body);
+  Future<Object?> _handleResponse(http.Response response) async {
+    final Object? decoded = await _decodeResponse(response.body);
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw Pep3ApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -1231,16 +1233,23 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   }
 }
 
-Object? _decodeResponse(String body) {
+const int _pep3BackgroundDecodeThreshold = 24 * 1024;
+
+Future<Object?> _decodeResponse(String body) async {
   if (body.trim().isEmpty) {
     return null;
   }
   try {
-    return jsonDecode(body);
+    if (body.length >= _pep3BackgroundDecodeThreshold) {
+      return await compute(_decodePep3JsonPayload, body);
+    }
+    return _decodePep3JsonPayload(body);
   } on FormatException {
     return body;
   }
 }
+
+Object? _decodePep3JsonPayload(String body) => jsonDecode(body);
 
 String? _messageFromPayload(Object? payload) {
   if (payload is Map) {

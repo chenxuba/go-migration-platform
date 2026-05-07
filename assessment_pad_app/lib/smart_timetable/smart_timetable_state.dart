@@ -19,6 +19,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   bool _filterOptionsLoaded = false;
   bool _availabilityLoading = false;
   bool _loading = true;
+  bool _bootstrapLoading = true;
   String? _errorMessage;
   String? _scheduleOptionsError;
   String? _availabilityMessage;
@@ -64,7 +65,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   void initState() {
     super.initState();
     this._applyTimetableData(_data, preserveTeacherSelection: false);
-    this._loadTimetable();
+    runAfterRouteEntrance(context, () => this._loadTimetable(bootstrap: true));
   }
 
   @override
@@ -108,6 +109,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           periodGroupDropdownOpen: _periodGroupDropdownOpen,
           periodGroupDropdownLink: _periodGroupDropdownLink,
           schedulePanelOpen: _schedulePanelOpen,
+          bootstrapLoading: _bootstrapLoading && _loading,
           loading: _loading,
           scheduleMode: _scheduleMode,
           selectedScheduleTarget: this._selectedScheduleTarget,

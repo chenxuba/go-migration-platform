@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pad_responsive.dart';
+import 'route_bootstrap.dart';
 
 class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({
@@ -50,6 +51,7 @@ class _AssessmentScaleCategoryScreenState
   bool _categoryLoading = true;
   bool _scalesLoading = true;
   bool _scalesInitialized = false;
+  bool _bootstrapLoading = true;
   bool _draftsLoading = true;
   bool _studentsLoading = false;
   int _draftCount = 0;
@@ -75,7 +77,7 @@ class _AssessmentScaleCategoryScreenState
   @override
   void initState() {
     super.initState();
-    _loadInitialData();
+    runAfterRouteEntrance(context, () => _loadInitialData(bootstrap: true));
   }
 
   @override
@@ -89,8 +91,8 @@ class _AssessmentScaleCategoryScreenState
     return prefs.getString(_authTokenStorageKey) ?? '';
   }
 
-  Future<void> _loadInitialData() async {
-    if (mounted) {
+  Future<void> _loadInitialData({bool bootstrap = false}) async {
+    if (mounted && !bootstrap) {
       setState(() {
         _categoryLoading = true;
         _scalesLoading = true;
@@ -107,6 +109,7 @@ class _AssessmentScaleCategoryScreenState
         return;
       }
       setState(() {
+        _bootstrapLoading = false;
         _categoryLoading = false;
         _scalesLoading = false;
         _scalesInitialized = true;
@@ -117,8 +120,6 @@ class _AssessmentScaleCategoryScreenState
       });
       return;
     }
-
-    unawaited(_refreshDrafts());
 
     try {
       final AssessmentScaleLibrary result =
@@ -141,6 +142,7 @@ class _AssessmentScaleCategoryScreenState
       setState(() {
         _categories = mergedCategories;
         _selectedCategory = nextSelected;
+        _bootstrapLoading = false;
         _categoryLoading = false;
         _categoryErrorMessage = null;
         _scales = result.items;
@@ -150,28 +152,33 @@ class _AssessmentScaleCategoryScreenState
         _scalesInitialized = true;
         _scaleErrorMessage = null;
       });
+      unawaited(_refreshDrafts(bootstrap: true));
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
+        _bootstrapLoading = false;
         _categoryLoading = false;
         _scalesLoading = false;
         _scalesInitialized = true;
         _categoryErrorMessage = error.message;
         _scaleErrorMessage = error.message;
       });
+      unawaited(_refreshDrafts(bootstrap: true));
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
       setState(() {
+        _bootstrapLoading = false;
         _categoryLoading = false;
         _scalesLoading = false;
         _scalesInitialized = true;
         _categoryErrorMessage = '分类加载失败：$error';
         _scaleErrorMessage = '量表加载失败：$error';
       });
+      unawaited(_refreshDrafts(bootstrap: true));
     }
   }
 
@@ -240,8 +247,11 @@ class _AssessmentScaleCategoryScreenState
     }
   }
 
-  Future<void> _refreshDrafts({bool openAfterLoad = false}) async {
-    if (mounted) {
+  Future<void> _refreshDrafts({
+    bool openAfterLoad = false,
+    bool bootstrap = false,
+  }) async {
+    if (mounted && !bootstrap) {
       setState(() {
         _draftsLoading = true;
         _draftErrorMessage = null;
@@ -594,7 +604,8 @@ class _AssessmentScaleCategoryScreenState
           color: _ScaleColors.page,
           child: Stack(
             children: <Widget>[
-              const Positioned.fill(child: _ScalePageBackground()),
+              if (!_bootstrapLoading)
+                const Positioned.fill(child: _ScalePageBackground()),
               Padding(
                 padding: EdgeInsets.fromLTRB(margin, 26, margin, 22),
                 child: Column(
@@ -616,38 +627,43 @@ class _AssessmentScaleCategoryScreenState
                         children: <Widget>[
                           SizedBox(
                             width: leftWidth,
-                            child: _ScaleCategorySidebar(
-                              categories: _categories,
-                              categoryCounts: _categoryCounts,
-                              selectedCategory: _selectedCategory,
-                              totalCount: _summary.total,
-                              loading: _categoryLoading,
-                              errorMessage: _categoryErrorMessage,
-                              draftCount: _draftCount,
-                              draftsLoading: _draftsLoading,
-                              draftErrorMessage: _draftErrorMessage,
-                              onCategoryTap: _selectCategory,
-                              onDraftTap: () =>
-                                  _refreshDrafts(openAfterLoad: true),
-                              onRetry: _loadInitialData,
-                            ),
+                            child: _bootstrapLoading
+                                ? const _ScaleBootstrapSidebar()
+                                : _ScaleCategorySidebar(
+                                    categories: _categories,
+                                    categoryCounts: _categoryCounts,
+                                    selectedCategory: _selectedCategory,
+                                    totalCount: _summary.total,
+                                    loading: _categoryLoading,
+                                    errorMessage: _categoryErrorMessage,
+                                    draftCount: _draftCount,
+                                    draftsLoading: _draftsLoading,
+                                    draftErrorMessage: _draftErrorMessage,
+                                    onCategoryTap: _selectCategory,
+                                    onDraftTap: () =>
+                                        _refreshDrafts(openAfterLoad: true),
+                                    onRetry: _loadInitialData,
+                                  ),
                           ),
                           SizedBox(width: contentGap),
                           Expanded(
-                            child: _ScaleMainContent(
-                              searchQuery: _searchQuery,
-                              categoryTitle: _activeCategoryTitle,
-                              scales: _scales,
-                              summary: _summary,
-                              loading: _scalesLoading,
-                              initialLoading:
-                                  _scalesLoading && !_scalesInitialized,
-                              errorMessage: _scaleErrorMessage,
-                              hasSelectedStudent: _selectedStudent != null,
-                              onChooseScale: _chooseScale,
-                              onRequireStudent: _openStudentSheet,
-                              onRetry: _loadScales,
-                            ),
+                            child: _bootstrapLoading
+                                ? const _ScaleBootstrapContent()
+                                : _ScaleMainContent(
+                                    searchQuery: _searchQuery,
+                                    categoryTitle: _activeCategoryTitle,
+                                    scales: _scales,
+                                    summary: _summary,
+                                    loading: _scalesLoading,
+                                    initialLoading:
+                                        _scalesLoading && !_scalesInitialized,
+                                    errorMessage: _scaleErrorMessage,
+                                    hasSelectedStudent:
+                                        _selectedStudent != null,
+                                    onChooseScale: _chooseScale,
+                                    onRequireStudent: _openStudentSheet,
+                                    onRetry: _loadScales,
+                                  ),
                           ),
                         ],
                       ),
@@ -749,6 +765,160 @@ class _ScalePageBackgroundPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+class _ScaleBootstrapSidebar extends StatelessWidget {
+  const _ScaleBootstrapSidebar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 17, 14, 16),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.88),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _ScaleColors.line),
+              boxShadow: _scaleShadow(
+                color: const Color(0x12B05F32),
+                blur: 18,
+                offset: const Offset(0, 10),
+              ),
+            ),
+            child: const Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                Row(
+                  children: <Widget>[
+                    Text(
+                      '分类',
+                      style: TextStyle(
+                        color: _ScaleColors.ink,
+                        fontSize: 19,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    Spacer(),
+                    _ScaleSkeletonBlock(width: 22, height: 12, radius: 6),
+                  ],
+                ),
+                SizedBox(height: 14),
+                Expanded(child: _CategorySkeletonList()),
+              ],
+            ),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Container(
+          height: 100,
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.9),
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _ScaleColors.line),
+            boxShadow: _scaleShadow(
+              color: const Color(0x0FB05F32),
+              blur: 16,
+              offset: const Offset(0, 8),
+            ),
+          ),
+          padding: const EdgeInsets.all(14),
+          child: const Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Text(
+                '草稿箱',
+                style: TextStyle(
+                  color: _ScaleColors.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              SizedBox(height: 10),
+              _ScaleSkeletonBlock(height: 34, radius: 12),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ScaleBootstrapContent extends StatelessWidget {
+  const _ScaleBootstrapContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(
+          height: 44,
+          child: Row(
+            children: <Widget>[
+              Text(
+                '全部量表',
+                style: TextStyle(
+                  color: _ScaleColors.ink,
+                  fontSize: 26,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              Spacer(),
+              _ScaleSkeletonBlock(width: 96, height: 26, radius: 10),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: GridView.builder(
+            padding: EdgeInsets.zero,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: 5,
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              crossAxisSpacing: 14,
+              mainAxisSpacing: 14,
+              mainAxisExtent: 224,
+            ),
+            itemBuilder: (BuildContext context, int index) {
+              return Container(
+                key: index == 0
+                    ? const ValueKey<String>('scale-card-skeleton-0')
+                    : null,
+                decoration: BoxDecoration(
+                  color: _ScaleColors.card.withOpacity(.9),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: _ScaleColors.line),
+                  boxShadow: _scaleShadow(
+                    color: const Color(0x0EB05F32),
+                    blur: 16,
+                    offset: const Offset(0, 8),
+                  ),
+                ),
+                padding: const EdgeInsets.all(12),
+                child: const Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    _ScaleSkeletonBlock(height: 98, radius: 16),
+                    SizedBox(height: 10),
+                    _ScaleSkeletonBlock(
+                      widthFactor: .62,
+                      height: 16,
+                      radius: 8,
+                    ),
+                    SizedBox(height: 8),
+                    _ScaleSkeletonBlock(height: 28, radius: 12),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class _ScaleTopBar extends StatelessWidget {
@@ -3437,7 +3607,7 @@ class _CategorySkeletonList extends StatelessWidget {
     return ListView.separated(
       padding: EdgeInsets.zero,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: 8,
+      itemCount: 6,
       separatorBuilder: (BuildContext context, int index) {
         return const SizedBox(height: 5);
       },

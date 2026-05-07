@@ -136,7 +136,6 @@ class _TimetableBoardSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     const int columnCount = 7;
-    const int rowCount = 8;
     const double leftWidth = 118;
 
     return Align(
@@ -238,103 +237,122 @@ class _TimetableBoardSkeleton extends StatelessWidget {
                 ),
               ),
               Expanded(
-                child: SingleChildScrollView(
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      SizedBox(
-                        width: leftWidth,
-                        child: ColoredBox(
-                          color: _SmartColors.slot,
+                child: LayoutBuilder(
+                  builder: (BuildContext context, BoxConstraints constraints) {
+                    final int rowCount = math.max(
+                      7,
+                      (constraints.maxHeight / _rowHeight).round(),
+                    );
+                    final double rowHeight = constraints.maxHeight / rowCount;
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        SizedBox(
+                          width: leftWidth,
+                          child: ColoredBox(
+                            color: _SmartColors.slot,
+                            child: Column(
+                              children: List<Widget>.generate(
+                                rowCount,
+                                (int index) {
+                                  return Container(
+                                    key: ValueKey<String>(
+                                      'smart-timetable-skeleton-row-$index',
+                                    ),
+                                    height: rowHeight,
+                                    width: double.infinity,
+                                    padding:
+                                        const EdgeInsets.fromLTRB(10, 8, 10, 8),
+                                    decoration: BoxDecoration(
+                                      color: _SmartColors.slot,
+                                      border: Border(
+                                        right: const BorderSide(
+                                          color: _SmartColors.line,
+                                        ),
+                                        bottom: BorderSide(
+                                          color: index == rowCount - 1
+                                              ? Colors.transparent
+                                              : _SmartColors.lineSoft,
+                                        ),
+                                      ),
+                                    ),
+                                    child: const Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: <Widget>[
+                                        _TimetableSkeletonBox(
+                                          width: 30,
+                                          height: 12,
+                                          radius: 6,
+                                        ),
+                                        SizedBox(height: 8),
+                                        _TimetableSkeletonBox(
+                                          width: 66,
+                                          height: 10,
+                                          radius: 6,
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                        ),
+                        Expanded(
                           child: Column(
                             children:
-                                List<Widget>.generate(rowCount, (int index) {
-                              return Container(
-                                key: ValueKey<String>(
-                                  'smart-timetable-skeleton-row-$index',
-                                ),
-                                height: _rowHeight,
-                                width: double.infinity,
-                                padding:
-                                    const EdgeInsets.fromLTRB(10, 8, 10, 8),
-                                decoration: BoxDecoration(
-                                  color: _SmartColors.slot,
-                                  border: Border(
-                                    right: const BorderSide(
-                                        color: _SmartColors.line),
-                                    bottom: BorderSide(
-                                      color: index == rowCount - 1
-                                          ? Colors.transparent
-                                          : _SmartColors.lineSoft,
-                                    ),
+                                List<Widget>.generate(rowCount, (int row) {
+                              return SizedBox(
+                                height: rowHeight,
+                                child: Row(
+                                  children: List<Widget>.generate(
+                                    columnCount,
+                                    (int column) {
+                                      final bool showCard = row == 0 &&
+                                              (column == 1 || column == 4) ||
+                                          row == 1 && column == 6 ||
+                                          row == 2 &&
+                                              (column == 0 || column == 3) ||
+                                          row == 3 && column == 5 ||
+                                          row == 4 &&
+                                              (column == 2 || column == 6) ||
+                                          row == 5 && column == 1 ||
+                                          row == 6 && column == 4;
+                                      return Expanded(
+                                        child: Container(
+                                          padding: const EdgeInsets.all(6),
+                                          decoration: BoxDecoration(
+                                            color:
+                                                Colors.white.withOpacity(.72),
+                                            border: Border(
+                                              right: BorderSide(
+                                                color: column == columnCount - 1
+                                                    ? Colors.transparent
+                                                    : _SmartColors.lineSoft,
+                                              ),
+                                              bottom: BorderSide(
+                                                color: row == rowCount - 1
+                                                    ? Colors.transparent
+                                                    : _SmartColors.lineSoft,
+                                              ),
+                                            ),
+                                          ),
+                                          child: showCard
+                                              ? const _TimetableSkeletonLessonCard()
+                                              : const SizedBox.expand(),
+                                        ),
+                                      );
+                                    },
                                   ),
-                                ),
-                                child: const Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: <Widget>[
-                                    _TimetableSkeletonBox(
-                                      width: 30,
-                                      height: 12,
-                                      radius: 6,
-                                    ),
-                                    SizedBox(height: 8),
-                                    _TimetableSkeletonBox(
-                                      width: 66,
-                                      height: 10,
-                                      radius: 6,
-                                    ),
-                                  ],
                                 ),
                               );
                             }),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: Column(
-                          children: List<Widget>.generate(rowCount, (int row) {
-                            return SizedBox(
-                              height: _rowHeight,
-                              child: Row(
-                                children: List<Widget>.generate(columnCount,
-                                    (int column) {
-                                  final bool showCard = row == 0 ||
-                                      row == 2 &&
-                                          (column == 1 || column == 4) ||
-                                      row == 4 &&
-                                          (column == 0 || column == 5) ||
-                                      row == 6 && column == 3;
-                                  return Expanded(
-                                    child: Container(
-                                      padding: const EdgeInsets.all(6),
-                                      decoration: BoxDecoration(
-                                        color: Colors.white.withOpacity(.72),
-                                        border: Border(
-                                          right: BorderSide(
-                                            color: column == columnCount - 1
-                                                ? Colors.transparent
-                                                : _SmartColors.lineSoft,
-                                          ),
-                                          bottom: BorderSide(
-                                            color: row == rowCount - 1
-                                                ? Colors.transparent
-                                                : _SmartColors.lineSoft,
-                                          ),
-                                        ),
-                                      ),
-                                      child: showCard
-                                          ? const _TimetableSkeletonLessonCard()
-                                          : const SizedBox.expand(),
-                                    ),
-                                  );
-                                }),
-                              ),
-                            );
-                          }),
-                        ),
-                      ),
-                    ],
-                  ),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],

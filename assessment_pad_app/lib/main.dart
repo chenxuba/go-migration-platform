@@ -14,6 +14,7 @@ import 'home_client.dart';
 import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
 import 'pad_responsive.dart';
+import 'route_bootstrap.dart';
 import 'smart_timetable_page.dart';
 import 'timetable_client.dart';
 
@@ -2511,17 +2512,17 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadHomeData();
+    runAfterRouteEntrance(context, () => _loadHomeData(bootstrap: true));
   }
 
-  Future<void> _loadHomeData() async {
+  Future<void> _loadHomeData({bool bootstrap = false}) async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (token.trim().isEmpty) {
       await _logout();
       return;
     }
-    if (mounted) {
+    if (mounted && !bootstrap) {
       setState(() {
         _loading = true;
         _errorMessage = null;

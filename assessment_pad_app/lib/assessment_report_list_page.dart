@@ -12,6 +12,7 @@ import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'pep3_assessment_client.dart';
+import 'route_bootstrap.dart';
 import 'timetable_client.dart';
 
 class AssessmentReportListScreen extends StatefulWidget {
@@ -53,6 +54,7 @@ class _AssessmentReportListScreenState
   String _searchKey = '';
   bool _listLoading = true;
   bool _categoryLoading = true;
+  bool _bootstrapLoading = true;
   String _errorMessage = '';
   int _searchResetSeed = 0;
 
@@ -64,31 +66,106 @@ class _AssessmentReportListScreenState
       start: today.subtract(const Duration(days: 29)),
       end: today,
     );
-    _loadData();
+    runAfterRouteEntrance(context, () => _loadData(bootstrap: true));
   }
 
   Future<void> _loadData({
     String? selectedCategory,
     bool reloadCategories = false,
+    bool bootstrap = false,
   }) async {
     final bool shouldLoadCategories = reloadCategories || _categories.isEmpty;
     final bool shouldShowCategorySkeleton =
         shouldLoadCategories && _categories.isEmpty;
-    setState(() {
-      _listLoading = true;
-      if (shouldShowCategorySkeleton) {
-        _categoryLoading = true;
-      }
-      _errorMessage = '';
-      if (selectedCategory != null) {
-        _selectedCategory = selectedCategory;
-      }
-    });
+    if (!bootstrap) {
+      setState(() {
+        _listLoading = true;
+        if (shouldShowCategorySkeleton) {
+          _categoryLoading = true;
+        }
+        _errorMessage = '';
+        if (selectedCategory != null) {
+          _selectedCategory = selectedCategory;
+        }
+      });
+    } else if (selectedCategory != null) {
+      _selectedCategory = selectedCategory;
+    }
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
       final String dateBegin = _dateText(_range.start);
       final String dateEnd = _dateText(_range.end);
+      if (bootstrap) {
+        final Future<List<String>> categoriesFuture = shouldLoadCategories
+            ? widget.scaleClient.fetchCategories(token)
+            : Future<List<String>>.value(_categories);
+        final Future<Pep3RecordCategoryStats> statsFuture =
+            widget.recordClient.fetchRecordCategoryStats(
+          token,
+          assessmentCode: '',
+          searchKey: _searchKey,
+          assessmentDateBegin: dateBegin,
+          assessmentDateEnd: dateEnd,
+        );
+        final Pep3RecordPage page = await widget.recordClient.fetchRecordsPage(
+          token,
+          pageIndex: 1,
+          pageSize: 50,
+          assessmentCode: '',
+          scaleCategory: _selectedCategory,
+          searchKey: _searchKey,
+          assessmentDateBegin: dateBegin,
+          assessmentDateEnd: dateEnd,
+        );
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _page = page;
+          _bootstrapLoading = false;
+          _listLoading = false;
+        });
+        unawaited(() async {
+          try {
+            final List<dynamic> results = await Future.wait<dynamic>(
+              <Future<dynamic>>[categoriesFuture, statsFuture],
+            );
+            if (!mounted) {
+              return;
+            }
+            final List<String> categories =
+                List<String>.from(results[0] as List);
+            final Pep3RecordCategoryStats stats =
+                results[1] as Pep3RecordCategoryStats;
+            final Map<String, int> counts = <String, int>{
+              for (final String category in categories)
+                category: stats.categoryCounts[category] ?? 0,
+            };
+            setState(() {
+              if (shouldLoadCategories) {
+                _categories = categories;
+              }
+              _categoryCounts = counts;
+              _rangeTotal = stats.total;
+              _categoryLoading = false;
+            });
+          } on Object catch (error) {
+            if (!mounted) {
+              return;
+            }
+            setState(() {
+              if (shouldLoadCategories) {
+                _categoryLoading = false;
+              }
+              if (_errorMessage.isEmpty) {
+                _errorMessage = '$error';
+              }
+            });
+          }
+        }());
+        return;
+      }
       final Future<List<String>> categoriesFuture = shouldLoadCategories
           ? widget.scaleClient.fetchCategories(token)
           : Future<List<String>>.value(_categories);
@@ -133,6 +210,7 @@ class _AssessmentReportListScreenState
         _rangeTotal = stats.total;
         _categoryLoading = false;
         _page = page;
+        _bootstrapLoading = false;
         _listLoading = false;
       });
     } on Object catch (error) {
@@ -140,6 +218,7 @@ class _AssessmentReportListScreenState
         return;
       }
       setState(() {
+        _bootstrapLoading = false;
         _listLoading = false;
         if (shouldLoadCategories) {
           _categoryLoading = false;
@@ -207,6 +286,7 @@ class _AssessmentReportListScreenState
         rangeTotal: _rangeTotal,
         total: _page.total,
         range: _range,
+        bootstrapLoading: _bootstrapLoading && _listLoading,
         categoryLoading: _categoryLoading,
         listLoading: _listLoading,
         errorMessage: _errorMessage,
@@ -336,6 +416,7 @@ class _AssessmentReportListBody extends StatelessWidget {
     required this.rangeTotal,
     required this.total,
     required this.range,
+    required this.bootstrapLoading,
     required this.categoryLoading,
     required this.listLoading,
     required this.errorMessage,
@@ -356,6 +437,7 @@ class _AssessmentReportListBody extends StatelessWidget {
   final int rangeTotal;
   final int total;
   final DateTimeRange range;
+  final bool bootstrapLoading;
   final bool categoryLoading;
   final bool listLoading;
   final String errorMessage;
@@ -409,27 +491,31 @@ class _AssessmentReportListBody extends StatelessWidget {
                           children: <Widget>[
                             SizedBox(
                               width: sideWidth,
-                              child: _DomainPanel(
-                                categories: categories,
-                                counts: categoryCounts,
-                                selectedCategory: selectedCategory,
-                                total: rangeTotal,
-                                loading: categoryLoading,
-                                onSelected: onCategorySelected,
-                              ),
+                              child: bootstrapLoading
+                                  ? const _ReportBootstrapSidebar()
+                                  : _DomainPanel(
+                                      categories: categories,
+                                      counts: categoryCounts,
+                                      selectedCategory: selectedCategory,
+                                      total: rangeTotal,
+                                      loading: categoryLoading,
+                                      onSelected: onCategorySelected,
+                                    ),
                             ),
                             SizedBox(width: gap),
                             SizedBox(
                               width: listWidth,
-                              child: _ReportListPanel(
-                                records: records,
-                                total: total,
-                                loading: listLoading,
-                                errorMessage: errorMessage,
-                                onRetry: onReset,
-                                onViewReport: onViewReport,
-                                onConfigRecord: onConfigRecord,
-                              ),
+                              child: bootstrapLoading
+                                  ? const _ReportBootstrapPanel()
+                                  : _ReportListPanel(
+                                      records: records,
+                                      total: total,
+                                      loading: listLoading,
+                                      errorMessage: errorMessage,
+                                      onRetry: onReset,
+                                      onViewReport: onViewReport,
+                                      onConfigRecord: onConfigRecord,
+                                    ),
                             ),
                           ],
                         ),
@@ -763,22 +849,14 @@ class _DomainSkeletonList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final int rowCount = math.max(
-          8,
-          ((constraints.maxHeight + 7) / 54).ceil(),
-        );
-        return ListView.separated(
-          padding: EdgeInsets.zero,
-          physics: const NeverScrollableScrollPhysics(),
-          itemCount: rowCount,
-          separatorBuilder: (BuildContext context, int index) =>
-              const SizedBox(height: 7),
-          itemBuilder: (BuildContext context, int index) =>
-              const _DomainSkeletonRow(),
-        );
-      },
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 6,
+      separatorBuilder: (BuildContext context, int index) =>
+          const SizedBox(height: 7),
+      itemBuilder: (BuildContext context, int index) =>
+          const _DomainSkeletonRow(),
     );
   }
 }
@@ -909,7 +987,9 @@ class _ReportListPanel extends StatelessWidget {
             _ReportPanelHeader(total: total, loading: loading),
             const _ReportTableHeader(),
             if (loading)
-              for (int index = 0; index < 6; index++) const _ReportSkeletonRow()
+              const Expanded(
+                child: _ReportSkeletonList(),
+              )
             else if (errorMessage.isNotEmpty)
               Expanded(
                 child: _ReportState(
@@ -921,12 +1001,22 @@ class _ReportListPanel extends StatelessWidget {
             else if (records.isEmpty)
               const Expanded(child: _ReportState(message: '暂无评估报告'))
             else
-              for (final Pep3RecordSummary record in records)
-                _ReportRow(
-                  record: record,
-                  onViewReport: onViewReport,
-                  onConfigRecord: onConfigRecord,
+              Expanded(
+                child: ListView.builder(
+                  padding: EdgeInsets.zero,
+                  physics: const BouncingScrollPhysics(),
+                  itemCount: records.length,
+                  itemExtent: 73,
+                  itemBuilder: (BuildContext context, int index) {
+                    final Pep3RecordSummary record = records[index];
+                    return _ReportRow(
+                      record: record,
+                      onViewReport: onViewReport,
+                      onConfigRecord: onConfigRecord,
+                    );
+                  },
                 ),
+              ),
           ],
         ),
       ),
@@ -1167,6 +1257,22 @@ class _ReportSkeletonRow extends StatelessWidget {
   }
 }
 
+class _ReportSkeletonList extends StatelessWidget {
+  const _ReportSkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 4,
+      itemExtent: 73,
+      itemBuilder: (BuildContext context, int index) =>
+          const _ReportSkeletonRow(),
+    );
+  }
+}
+
 class _ChildInfoSkeleton extends StatelessWidget {
   const _ChildInfoSkeleton();
 
@@ -1237,6 +1343,166 @@ class _ReportColumns extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return child;
+  }
+}
+
+class _ReportBootstrapSidebar extends StatelessWidget {
+  const _ReportBootstrapSidebar();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 16, 12, 16),
+      decoration: BoxDecoration(
+        color: _ReportTheme.surface.withOpacity(.94),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _ReportTheme.line),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x12C26B3E),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Text(
+            '测评分类',
+            style: TextStyle(
+              color: _ReportTheme.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: Column(
+              children: <Widget>[
+                _DomainRow(
+                  item: const _DomainItem('全部分类', 0, _ReportTheme.orange, ''),
+                  selected: true,
+                  onTap: _noopReportAction,
+                ),
+                const SizedBox(height: 7),
+                const _DomainBootstrapPlaceholderRow(
+                  color: _ReportTheme.blue,
+                  width: 74,
+                ),
+                const SizedBox(height: 7),
+                const _DomainBootstrapPlaceholderRow(
+                  color: _ReportTheme.green,
+                  width: 82,
+                ),
+                const SizedBox(height: 7),
+                const _DomainBootstrapPlaceholderRow(
+                  color: _ReportTheme.amber,
+                  width: 68,
+                ),
+                const SizedBox(height: 7),
+                const _DomainBootstrapPlaceholderRow(
+                  color: _ReportTheme.rose,
+                  width: 78,
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ReportBootstrapPanel extends StatelessWidget {
+  const _ReportBootstrapPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: _ReportTheme.surface.withOpacity(.96),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _ReportTheme.line),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x12C26B3E),
+            blurRadius: 20,
+            offset: Offset(0, 10),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(20),
+        child: Column(
+          children: <Widget>[
+            Container(
+              height: 63,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              decoration: const BoxDecoration(
+                border: Border(bottom: BorderSide(color: _ReportTheme.line)),
+              ),
+              child: const Row(
+                children: <Widget>[
+                  Text(
+                    '评估报告列表',
+                    style: TextStyle(
+                      color: _ReportTheme.ink,
+                      fontSize: 19,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  SizedBox(width: 24),
+                  _MetricChip(label: '近一月', value: '0'),
+                ],
+              ),
+            ),
+            const _ReportTableHeader(),
+            const Expanded(child: _ReportSkeletonList()),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+void _noopReportAction() {}
+
+class _DomainBootstrapPlaceholderRow extends StatelessWidget {
+  const _DomainBootstrapPlaceholderRow({
+    required this.color,
+    required this.width,
+  });
+
+  final Color color;
+  final double width;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 47,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: Row(
+        children: <Widget>[
+          Container(
+            width: 10,
+            height: 10,
+            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+          ),
+          const SizedBox(width: 10),
+          _SkeletonBox(width: width, height: 14, radius: 7),
+          const Spacer(),
+          const Text(
+            '0',
+            style: TextStyle(
+              color: _ReportTheme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 }
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 const String defaultAssessmentEducationApiBaseUrl = String.fromEnvironment(
@@ -619,11 +620,11 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     return _handleResponse(response, fallbackMessage: '草稿数据加载失败');
   }
 
-  Object? _handleResponse(
+  Future<Object?> _handleResponse(
     http.Response response, {
     required String fallbackMessage,
-  }) {
-    final Object? decoded = _decodeResponse(response.body);
+  }) async {
+    final Object? decoded = await _decodeResponse(response.body);
     if (response.statusCode == 401) {
       throw AssessmentScaleApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -650,22 +651,29 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
   }
 }
 
+const int _assessmentScaleBackgroundDecodeThreshold = 24 * 1024;
+
 Uri _uri(String baseUrl, String path) {
   final String trimmedBase = baseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
   final String normalizedPath = path.startsWith('/') ? path : '/$path';
   return Uri.parse('$trimmedBase$normalizedPath');
 }
 
-Object? _decodeResponse(String body) {
+Future<Object?> _decodeResponse(String body) async {
   if (body.trim().isEmpty) {
     return null;
   }
   try {
-    return jsonDecode(body);
+    if (body.length >= _assessmentScaleBackgroundDecodeThreshold) {
+      return await compute(_decodeJsonPayload, body);
+    }
+    return _decodeJsonPayload(body);
   } on FormatException {
     return body;
   }
 }
+
+Object? _decodeJsonPayload(String body) => jsonDecode(body);
 
 String? _messageFromPayload(Object? payload) {
   if (payload is Map) {

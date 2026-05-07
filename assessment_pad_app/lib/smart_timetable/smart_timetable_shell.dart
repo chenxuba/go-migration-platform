@@ -63,6 +63,7 @@ class _SmartTimetableScreen extends StatelessWidget {
     required this.periodGroupDropdownOpen,
     required this.periodGroupDropdownLink,
     required this.schedulePanelOpen,
+    required this.bootstrapLoading,
     required this.loading,
     required this.scheduleMode,
     required this.selectedScheduleTarget,
@@ -141,6 +142,7 @@ class _SmartTimetableScreen extends StatelessWidget {
   final bool periodGroupDropdownOpen;
   final LayerLink periodGroupDropdownLink;
   final bool schedulePanelOpen;
+  final bool bootstrapLoading;
   final bool loading;
   final _ScheduleMode scheduleMode;
   final ScheduleTargetOption? selectedScheduleTarget;
@@ -222,80 +224,87 @@ class _SmartTimetableScreen extends StatelessWidget {
 
         final double teacherWidth = compact ? 190 : 224;
         final double primaryWidth = compact ? 104 : 110;
-        final Widget pageBody = loading
-            ? _TimetableLoadingScaffold(
+        final Widget pageBody = bootstrapLoading
+            ? _TimetableBootstrapScaffold(
                 compact: compact,
                 primaryWidth: primaryWidth,
                 teacherWidth: teacherWidth,
               )
-            : Column(
-                children: <Widget>[
-                  _TimetableTopBar(
+            : loading
+                ? _TimetableLoadingScaffold(
                     compact: compact,
-                    teacher: teacher,
-                    teacherDropdownOpen: teacherDropdownOpen,
-                    teacherWidth: teacherWidth,
                     primaryWidth: primaryWidth,
-                    dateRange: dateRange,
-                    isCurrentWeek: isCurrentWeek,
-                    onBack: onBack,
-                    onPrevWeek: onPrevWeek,
-                    onNextWeek: onNextWeek,
-                    onToday: onToday,
-                    onTeacherToggle: onTeacherToggle,
-                    onPrimaryScheduleTap: onPrimaryScheduleTap,
-                  ),
-                  const SizedBox(height: 10),
-                  _TimetableSubBar(
-                    compact: compact,
-                    scheduleMode: scheduleMode,
-                    selectedScheduleTarget: selectedScheduleTarget,
-                    schedulePanelOpen: schedulePanelOpen,
-                    availabilityLoading: availabilityLoading,
-                    availabilityMessage: availabilityMessage,
-                    periodGroups: periodGroups,
-                    periodGroupIndex: periodGroupIndex,
-                    periodGroupDropdownOpen: periodGroupDropdownOpen,
-                    periodGroupDropdownLink: periodGroupDropdownLink,
-                    errorMessage: errorMessage,
-                    openFilterKind: openFilterKind,
-                    studentFilterLabel: studentFilterLabel,
-                    courseFilterLabel: courseFilterLabel,
-                    callStatusFilterLabel: callStatusFilterLabel,
-                    onPeriodGroupToggle: onPeriodGroupToggle,
-                    onSchedulePanelToggle: onSchedulePanelToggle,
-                    onScheduleModeChanged: onScheduleModeChanged,
-                    onScheduleTargetCleared: onScheduleTargetCleared,
-                    onAvailabilityRefresh: onAvailabilityRefresh,
-                    onRefresh: onRefresh,
-                    onFilterToggle: onFilterToggle,
-                  ),
-                  const SizedBox(height: 4),
-                  _TimetableSummary(compact: compact, summary: summary),
-                  const SizedBox(height: 4),
-                  Expanded(
-                    child: _TimetableBoard(
-                      compact: compact,
-                      rows: scheduleRows,
-                      weekDays: weekDays,
-                      timeSlots: timeSlots,
-                      selectedTeacherId: teacher.id,
-                      scheduleTargetSelected: selectedScheduleTarget != null,
-                      availabilityLoading: availabilityLoading,
-                      slotAvailability: slotAvailability,
-                      dragSlotAvailability: dragSlotAvailability,
-                      dragCheckingSlotKeys: dragCheckingSlotKeys,
-                      dragValidationActive: dragValidationActive,
-                      creatingSlotKey: creatingSlotKey,
-                      onLessonTap: onLessonTap,
-                      onLessonMove: onLessonMove,
-                      onLessonDragStarted: onLessonDragStarted,
-                      onLessonDragEnded: onLessonDragEnded,
-                      onEmptySlotTap: onEmptySlotTap,
-                    ),
-                  ),
-                ],
-              );
+                    teacherWidth: teacherWidth,
+                  )
+                : Column(
+                    children: <Widget>[
+                      _TimetableTopBar(
+                        compact: compact,
+                        teacher: teacher,
+                        teacherDropdownOpen: teacherDropdownOpen,
+                        teacherWidth: teacherWidth,
+                        primaryWidth: primaryWidth,
+                        dateRange: dateRange,
+                        isCurrentWeek: isCurrentWeek,
+                        onBack: onBack,
+                        onPrevWeek: onPrevWeek,
+                        onNextWeek: onNextWeek,
+                        onToday: onToday,
+                        onTeacherToggle: onTeacherToggle,
+                        onPrimaryScheduleTap: onPrimaryScheduleTap,
+                      ),
+                      const SizedBox(height: 10),
+                      _TimetableSubBar(
+                        compact: compact,
+                        scheduleMode: scheduleMode,
+                        selectedScheduleTarget: selectedScheduleTarget,
+                        schedulePanelOpen: schedulePanelOpen,
+                        availabilityLoading: availabilityLoading,
+                        availabilityMessage: availabilityMessage,
+                        periodGroups: periodGroups,
+                        periodGroupIndex: periodGroupIndex,
+                        periodGroupDropdownOpen: periodGroupDropdownOpen,
+                        periodGroupDropdownLink: periodGroupDropdownLink,
+                        errorMessage: errorMessage,
+                        openFilterKind: openFilterKind,
+                        studentFilterLabel: studentFilterLabel,
+                        courseFilterLabel: courseFilterLabel,
+                        callStatusFilterLabel: callStatusFilterLabel,
+                        onPeriodGroupToggle: onPeriodGroupToggle,
+                        onSchedulePanelToggle: onSchedulePanelToggle,
+                        onScheduleModeChanged: onScheduleModeChanged,
+                        onScheduleTargetCleared: onScheduleTargetCleared,
+                        onAvailabilityRefresh: onAvailabilityRefresh,
+                        onRefresh: onRefresh,
+                        onFilterToggle: onFilterToggle,
+                      ),
+                      const SizedBox(height: 4),
+                      _TimetableSummary(compact: compact, summary: summary),
+                      const SizedBox(height: 4),
+                      Expanded(
+                        child: _TimetableBoard(
+                          compact: compact,
+                          rows: scheduleRows,
+                          weekDays: weekDays,
+                          timeSlots: timeSlots,
+                          selectedTeacherId: teacher.id,
+                          scheduleTargetSelected:
+                              selectedScheduleTarget != null,
+                          availabilityLoading: availabilityLoading,
+                          slotAvailability: slotAvailability,
+                          dragSlotAvailability: dragSlotAvailability,
+                          dragCheckingSlotKeys: dragCheckingSlotKeys,
+                          dragValidationActive: dragValidationActive,
+                          creatingSlotKey: creatingSlotKey,
+                          onLessonTap: onLessonTap,
+                          onLessonMove: onLessonMove,
+                          onLessonDragStarted: onLessonDragStarted,
+                          onLessonDragEnded: onLessonDragEnded,
+                          onEmptySlotTap: onEmptySlotTap,
+                        ),
+                      ),
+                    ],
+                  );
 
         return ColoredBox(
           color: _SmartColors.page,
@@ -541,6 +550,207 @@ class _TimetableLoadingScaffold extends StatelessWidget {
         const SizedBox(height: 4),
         const Expanded(child: _TimetableBoardSkeleton()),
       ],
+    );
+  }
+}
+
+class _TimetableBootstrapScaffold extends StatelessWidget {
+  const _TimetableBootstrapScaffold({
+    required this.compact,
+    required this.primaryWidth,
+    required this.teacherWidth,
+  });
+
+  final bool compact;
+  final double primaryWidth;
+  final double teacherWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final double panelRadius = compact ? 18 : 20;
+    final double periodGroupWidth = compact ? 126 : 136;
+    return Column(
+      key: const ValueKey<String>('smart-timetable-skeleton'),
+      children: <Widget>[
+        SizedBox(
+          height: 56,
+          child: Row(
+            children: <Widget>[
+              SizedBox(
+                width: compact ? 188 : 210,
+                child: Row(
+                  children: <Widget>[
+                    const _IconShell(
+                      size: 42,
+                      icon: Icons.chevron_left_rounded,
+                    ),
+                    const SizedBox(width: 14),
+                    const Expanded(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          '排课日程',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: _SmartColors.ink,
+                            fontSize: 25,
+                            height: 1.05,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Spacer(),
+              _DateSwitch(
+                width: compact ? 302 : 352,
+                dateRange: _dateRangeText(0),
+                isCurrentWeek: true,
+                onPrev: _noop,
+                onNext: _noop,
+              ),
+              const SizedBox(width: 10),
+              _ToolbarButton(
+                width: compact ? 74 : 82,
+                icon: Icons.format_list_bulleted_rounded,
+                label: '今天',
+                onTap: _noop,
+              ),
+              const SizedBox(width: 10),
+              _TimetableSkeletonBox(width: teacherWidth, height: 42),
+              const SizedBox(width: 10),
+              _PrimaryButton(
+                width: primaryWidth,
+                onTap: _noop,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 10),
+        SizedBox(
+          height: 44,
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: _ScheduleComposerBar(
+                  compact: compact,
+                  mode: _ScheduleMode.oneToOne,
+                  selectedTarget: null,
+                  panelOpen: false,
+                  availabilityLoading: false,
+                  availabilityMessage: null,
+                  onPanelToggle: _noop,
+                  onModeChanged: _noopScheduleModeChanged,
+                  onTargetCleared: _noop,
+                  onAvailabilityRefresh: _noop,
+                ),
+              ),
+              SizedBox(width: compact ? 8 : 10),
+              SizedBox(
+                width: periodGroupWidth,
+                child: const _TimetableFieldSkeleton(
+                  icon: Icons.view_week_outlined,
+                  lineWidth: 52,
+                ),
+              ),
+              const SizedBox(width: 8),
+              _FilterButton(
+                icon: Icons.person_outline_rounded,
+                label: '上课学员',
+                width: compact ? 118 : 130,
+                onTap: _noop,
+              ),
+              const SizedBox(width: 8),
+              _FilterButton(
+                icon: Icons.menu_book_outlined,
+                label: '全部课程',
+                width: compact ? 118 : 130,
+                onTap: _noop,
+              ),
+              const SizedBox(width: 8),
+              _FilterButton(
+                icon: Icons.fact_check_outlined,
+                label: '点名状态',
+                width: compact ? 110 : 122,
+                onTap: _noop,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 4),
+        _TimetableSummary(
+          compact: compact,
+          summary: const TimetableSummary(),
+        ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.90),
+              borderRadius: BorderRadius.circular(panelRadius),
+              border: Border.all(color: _SmartColors.line),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x12C07A4A),
+                  blurRadius: 22,
+                  offset: Offset(0, 10),
+                ),
+              ],
+            ),
+            child: const Padding(
+              padding: EdgeInsets.fromLTRB(16, 14, 16, 16),
+              child: _TimetableBoardSkeleton(),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+void _noop() {}
+
+void _noopScheduleModeChanged(_ScheduleMode _) {}
+
+class _TimetableFieldSkeleton extends StatelessWidget {
+  const _TimetableFieldSkeleton({
+    required this.icon,
+    required this.lineWidth,
+  });
+
+  final IconData icon;
+  final double lineWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    return _ShellBox(
+      height: 34,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      borderRadius: 11,
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: _SmartColors.text, size: 16),
+          const SizedBox(width: 7),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: _TimetableSkeletonBox(
+                width: lineWidth,
+                height: 10,
+                radius: 6,
+              ),
+            ),
+          ),
+          const SizedBox(width: 4),
+          const Icon(
+            Icons.keyboard_arrow_down_rounded,
+            color: _SmartColors.text,
+            size: 18,
+          ),
+        ],
+      ),
     );
   }
 }

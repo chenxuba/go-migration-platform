@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'home_client.dart';
@@ -554,9 +555,8 @@ class TimetableScheduleDetail {
       durationMinutes: _intFrom(json['durationMinutes']),
       callStatus: _intFrom(json['callStatus']),
       callStatusText: '${json['callStatusText'] ?? ''}',
-      canRollCall: json.containsKey('canRollCall')
-          ? json['canRollCall'] == true
-          : null,
+      canRollCall:
+          json.containsKey('canRollCall') ? json['canRollCall'] == true : null,
       rollCallDisabledReason: '${json['rollCallDisabledReason'] ?? ''}',
       remark: '${json['remark'] ?? ''}',
       batchMeta: json['batchMeta'] is Map
@@ -1332,7 +1332,7 @@ class ApiTimetableClient implements TimetableClient {
       throw TimetableApiException('无法连接排课日程接口：$error');
     }
 
-    final Object? decoded = _decodeResponse(response.body);
+    final Object? decoded = await _decodeResponse(response.body);
     if (response.statusCode == 401) {
       throw TimetableApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -1380,7 +1380,7 @@ class ApiTimetableClient implements TimetableClient {
       throw TimetableApiException('无法连接排课接口：$error');
     }
 
-    final Object? decoded = _decodeResponse(response.body);
+    final Object? decoded = await _decodeResponse(response.body);
     if (response.statusCode == 401) {
       throw TimetableApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -1412,6 +1412,8 @@ class ApiTimetableClient implements TimetableClient {
     return decoded;
   }
 }
+
+const int _timetableBackgroundDecodeThreshold = 24 * 1024;
 
 class _ScheduleUpdateContext {
   const _ScheduleUpdateContext({
@@ -1466,16 +1468,21 @@ Uri _uri(String baseUrl, String path) {
   return Uri.parse('$trimmedBase$normalizedPath');
 }
 
-Object? _decodeResponse(String body) {
+Future<Object?> _decodeResponse(String body) async {
   if (body.trim().isEmpty) {
     return null;
   }
   try {
-    return jsonDecode(body);
+    if (body.length >= _timetableBackgroundDecodeThreshold) {
+      return await compute(_decodeTimetableJsonPayload, body);
+    }
+    return _decodeTimetableJsonPayload(body);
   } on FormatException {
     return body;
   }
 }
+
+Object? _decodeTimetableJsonPayload(String body) => jsonDecode(body);
 
 String? _messageFromPayload(Object? payload) {
   if (payload is Map) {
