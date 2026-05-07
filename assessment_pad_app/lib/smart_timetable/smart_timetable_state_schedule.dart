@@ -176,7 +176,6 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
       _updateState(() {
         _availabilityLoading = true;
         _availabilityMessage = '检测中';
-        _slotAvailability = const <String, _SlotAvailability>{};
       });
     }
     try {

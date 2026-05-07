@@ -82,6 +82,11 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
     final _TeacherOption teacher = _teachers.isEmpty
         ? const _TeacherOption(id: '', name: '当前老师', label: '当前老师')
         : _teachers[_teacherIndex.clamp(0, _teachers.length - 1)];
+    final bool availabilityBusy =
+        _availabilityLoading || _dragCheckingSlotKeys.isNotEmpty;
+    final String? availabilityStatusMessage = _availabilityLoading
+        ? _availabilityMessage
+        : (_dragCheckingSlotKeys.isNotEmpty ? '检测中' : _availabilityMessage);
     final List<ScheduleStaffOption> currentGroupAssistantOptions =
         this._currentGroupAssistantOptions;
     final Set<String> currentGroupSelectedAssistantIds = _selectedAssistantIds
@@ -125,8 +130,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
           selectedStudentFilters: _selectedStudentFilters,
           selectedCourseFilters: _selectedCourseFilters,
           selectedCallStatusFilters: _selectedCallStatusFilters,
-          availabilityLoading: _availabilityLoading,
-          availabilityMessage: _availabilityMessage,
+          availabilityLoading: availabilityBusy,
+          availabilityMessage: availabilityStatusMessage,
           slotAvailability: _slotAvailability,
           dragSlotAvailability: _dragSlotAvailability,
           dragCheckingSlotKeys: _dragCheckingSlotKeys,

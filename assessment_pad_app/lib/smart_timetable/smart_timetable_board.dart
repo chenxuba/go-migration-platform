@@ -730,8 +730,6 @@ class _ScheduleGridRow extends StatelessWidget {
                     columnIndex: column,
                     availability: slotAvailability[availabilityKey],
                     dragAvailability: dragSlotAvailability[availabilityKey],
-                    dragChecking:
-                        dragCheckingSlotKeys.contains(availabilityKey),
                     dragValidationActive: dragValidationActive,
                     scheduleTargetSelected: scheduleTargetSelected,
                     availabilityLoading: availabilityLoading,
@@ -776,7 +774,6 @@ class _ScheduleGridCell extends StatelessWidget {
     required this.columnIndex,
     required this.availability,
     required this.dragAvailability,
-    required this.dragChecking,
     required this.dragValidationActive,
     required this.scheduleTargetSelected,
     required this.availabilityLoading,
@@ -795,7 +792,6 @@ class _ScheduleGridCell extends StatelessWidget {
   final int columnIndex;
   final _SlotAvailability? availability;
   final _SlotAvailability? dragAvailability;
-  final bool dragChecking;
   final bool dragValidationActive;
   final bool scheduleTargetSelected;
   final bool availabilityLoading;
@@ -863,10 +859,9 @@ class _ScheduleGridCell extends StatelessWidget {
                   columnIndex: columnIndex,
                   availability: availability,
                   dragAvailability: dragAvailability,
-                  dragChecking: dragChecking,
                   dragValidationActive: dragValidationActive,
                   scheduleTargetSelected: scheduleTargetSelected,
-                  checking: availabilityLoading && availability == null,
+                  checking: false,
                   creating: creating,
                   onTap: () => onEmptySlotTap(rowIndex, columnIndex),
                 )
@@ -891,7 +886,6 @@ class _EmptyScheduleSlot extends StatelessWidget {
     required this.columnIndex,
     required this.availability,
     required this.dragAvailability,
-    required this.dragChecking,
     required this.dragValidationActive,
     required this.scheduleTargetSelected,
     required this.checking,
@@ -903,7 +897,6 @@ class _EmptyScheduleSlot extends StatelessWidget {
   final int columnIndex;
   final _SlotAvailability? availability;
   final _SlotAvailability? dragAvailability;
-  final bool dragChecking;
   final bool dragValidationActive;
   final bool scheduleTargetSelected;
   final bool checking;
@@ -918,8 +911,6 @@ class _EmptyScheduleSlot extends StatelessWidget {
     }
     final _SlotAvailability? state =
         showingDragState ? dragAvailability : availability;
-    final bool checkingNow =
-        showingDragState ? dragChecking && state == null : checking;
     final bool valid = state?.valid == true;
     final bool invalid = state?.valid == false;
     final Color background = creating
@@ -945,9 +936,7 @@ class _EmptyScheduleSlot extends StatelessWidget {
             ? (showingDragState ? '可调课' : '空闲时段(可排)')
             : invalid
                 ? _invalidLabel(state!, drag: showingDragState)
-                : checkingNow
-                    ? '检测中'
-                    : '待检测';
+                : '';
 
     return Material(
       key: ValueKey<String>('empty-slot-$rowIndex-$columnIndex'),
@@ -966,7 +955,7 @@ class _EmptyScheduleSlot extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: <Widget>[
-              if (creating || checkingNow) ...<Widget>[
+              if (creating) ...<Widget>[
                 SizedBox(
                   width: 11,
                   height: 11,
@@ -977,19 +966,20 @@ class _EmptyScheduleSlot extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
               ],
-              Flexible(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: foreground,
-                    fontSize: valid ? 11.5 : 11,
-                    height: 1,
-                    fontWeight: valid ? FontWeight.w700 : FontWeight.w700,
+              if (label.isNotEmpty)
+                Flexible(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: foreground,
+                      fontSize: valid ? 11.5 : 11,
+                      height: 1,
+                      fontWeight: valid ? FontWeight.w700 : FontWeight.w700,
+                    ),
                   ),
                 ),
-              ),
             ],
           ),
         ),
