@@ -925,17 +925,17 @@ class _EmptyScheduleSlot extends StatelessWidget {
     final Color background = creating
         ? const Color(0xFFFFF1E8)
         : valid
-            ? const Color(0xFFEAF8EC)
+            ? const Color(0xFFF4FAF4)
             : invalid
                 ? const Color(0xFFFFECEC)
                 : const Color(0xFFFFF8EE);
     final Color border = valid
-        ? const Color(0xFFCDEDD1)
+        ? const Color(0xFFD9E7DB)
         : invalid
             ? const Color(0xFFF3B7B7)
             : const Color(0xFFF0DDC9);
     final Color foreground = valid
-        ? const Color(0xFF4B9A61)
+        ? const Color(0xFF5E846C)
         : invalid
             ? _SmartColors.danger
             : _SmartColors.orangeDeep;
@@ -984,9 +984,9 @@ class _EmptyScheduleSlot extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
                     color: foreground,
-                    fontSize: valid ? 12 : 11,
+                    fontSize: valid ? 11.5 : 11,
                     height: 1,
-                    fontWeight: valid ? FontWeight.w800 : FontWeight.w700,
+                    fontWeight: valid ? FontWeight.w700 : FontWeight.w700,
                   ),
                 ),
               ),
