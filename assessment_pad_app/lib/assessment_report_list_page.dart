@@ -1,3 +1,5 @@
+import 'dart:async';
+import 'dart:collection';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -1463,6 +1465,7 @@ class _ReportModuleOption {
     required this.value,
     required this.label,
     required this.pages,
+    required this.pageCount,
     required this.description,
     this.recommended = false,
   });
@@ -1470,6 +1473,7 @@ class _ReportModuleOption {
   final String value;
   final String label;
   final String pages;
+  final int pageCount;
   final String description;
   final bool recommended;
 }
@@ -1479,18 +1483,21 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
     value: 'test_score',
     label: '测验分数',
     pages: '第 1 页',
+    pageCount: 1,
     description: '导出首页测验分数汇总，适合快速归档总览。',
   ),
   _ReportModuleOption(
     value: 'development_profile',
     label: '发展表现图',
     pages: '第 19 页',
+    pageCount: 1,
     description: '只导出发展表现图，用于查看各领域发展曲线。',
   ),
   _ReportModuleOption(
     value: 'score_and_profile',
     label: '分数+表现图',
     pages: '第 1、19 页',
+    pageCount: 2,
     description: '包含测验分数汇总和发展表现图，适合简版报告。',
     recommended: true,
   ),
@@ -1498,9 +1505,12 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
     value: 'scoring_tables',
     label: '评分表',
     pages: '第 2-18 页',
+    pageCount: 17,
     description: '导出儿童表现记录、评分统计和照顾者评分表。',
   ),
 ];
+
+const double _reportPreviewRasterDpi = 96;
 
 class _ReportPreviewDialog extends StatefulWidget {
   const _ReportPreviewDialog({
@@ -1519,45 +1529,142 @@ class _ReportPreviewDialog extends StatefulWidget {
 
 class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   late _ReportModuleOption _activeOption;
+  late Pep3RecordSummary _displayRecord;
   Uint8List? _pdfBytes;
+  final Map<String, Uint8List> _modulePdfBytes = <String, Uint8List>{};
+  final Map<String, Future<Uint8List>> _modulePdfLoads =
+      <String, Future<Uint8List>>{};
   bool _loading = true;
+  bool _recordSyncing = false;
   String _errorMessage = '';
-  int _loadSerial = 0;
+  int _recordSyncSerial = 0;
 
   @override
   void initState() {
     super.initState();
+    _displayRecord = widget.record;
     _activeOption = _reportModuleOptions.firstWhere(
       (_ReportModuleOption option) => option.recommended,
       orElse: () => _reportModuleOptions.first,
     );
-    _loadPdf();
+    unawaited(_syncLatestRecord());
+    unawaited(_activateModule(_activeOption));
+    for (final _ReportModuleOption option in _reportModuleOptions) {
+      if (option.value != _activeOption.value) {
+        unawaited(_ensureModulePdf(option));
+      }
+    }
   }
 
-  Future<void> _loadPdf() async {
-    final int serial = ++_loadSerial;
-    setState(() {
-      _loading = true;
-      _errorMessage = '';
-      _pdfBytes = null;
-    });
-
+  Future<void> _syncLatestRecord() async {
     final String token = widget.token.trim();
     if (token.isEmpty) {
+      return;
+    }
+    final int serial = ++_recordSyncSerial;
+    setState(() => _recordSyncing = true);
+    try {
+      final Pep3RecordDetail detail = await widget.client.fetchRecordDetail(
+        token,
+        widget.record.id,
+      );
+      if (!mounted || serial != _recordSyncSerial) {
+        return;
+      }
       setState(() {
+        _displayRecord = detail;
+        _recordSyncing = false;
+      });
+    } on Object {
+      if (!mounted || serial != _recordSyncSerial) {
+        return;
+      }
+      setState(() => _recordSyncing = false);
+    }
+  }
+
+  void _retryPreview() {
+    unawaited(_syncLatestRecord());
+    unawaited(_activateModule(_activeOption, refresh: true));
+  }
+
+  Future<Uint8List> _ensureModulePdf(
+    _ReportModuleOption option, {
+    bool refresh = false,
+  }) {
+    final String key = option.value;
+    if (!refresh) {
+      final Uint8List? cached = _modulePdfBytes[key];
+      if (cached != null) {
+        return Future<Uint8List>.value(cached);
+      }
+      final Future<Uint8List>? pending = _modulePdfLoads[key];
+      if (pending != null) {
+        return pending;
+      }
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      return Future<Uint8List>.error(
+        const Pep3ApiException('请先登录后再查看评估报告'),
+      );
+    }
+    late final Future<Uint8List> future;
+    future = (() async {
+      try {
+        final Uint8List bytes = await widget.client.downloadRecordBookletPdf(
+          token,
+          widget.record.id,
+          dimension: key,
+        );
+        _modulePdfBytes[key] = bytes;
+        return bytes;
+      } finally {
+        if (identical(_modulePdfLoads[key], future)) {
+          _modulePdfLoads.remove(key);
+        }
+      }
+    })();
+    _modulePdfLoads[key] = future;
+    return future;
+  }
+
+  Future<void> _activateModule(
+    _ReportModuleOption option, {
+    bool refresh = false,
+  }) async {
+    final String key = option.value;
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _activeOption = option;
+      _errorMessage = '';
+    });
+
+    final Uint8List? cached = !refresh ? _modulePdfBytes[key] : null;
+    if (cached != null) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = cached;
         _loading = false;
-        _errorMessage = '请先登录后再查看评估报告';
       });
       return;
     }
 
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _pdfBytes = null;
+    });
+
     try {
-      final Uint8List bytes = await widget.client.downloadRecordBookletPdf(
-        token,
-        widget.record.id,
-        dimension: _activeOption.value,
-      );
-      if (!mounted || serial != _loadSerial) {
+      final Uint8List bytes = await _ensureModulePdf(option, refresh: refresh);
+      if (!mounted || _activeOption.value != key) {
         return;
       }
       setState(() {
@@ -1565,7 +1672,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         _loading = false;
       });
     } on Pep3ApiException catch (error) {
-      if (!mounted || serial != _loadSerial) {
+      if (!mounted || _activeOption.value != key) {
         return;
       }
       setState(() {
@@ -1574,7 +1681,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         _errorMessage = error.message;
       });
     } on Object catch (error) {
-      if (!mounted || serial != _loadSerial) {
+      if (!mounted || _activeOption.value != key) {
         return;
       }
       setState(() {
@@ -1586,11 +1693,10 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   }
 
   void _selectOption(_ReportModuleOption option) {
-    if (_activeOption.value == option.value || _loading) {
+    if (_activeOption.value == option.value) {
       return;
     }
-    setState(() => _activeOption = option);
-    _loadPdf();
+    unawaited(_activateModule(option));
   }
 
   @override
@@ -1630,6 +1736,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   }
 
   Widget _buildHeader(BuildContext context) {
+    final Pep3RecordSummary record = _displayRecord;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -1647,7 +1754,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
               ),
               const SizedBox(height: 7),
               Text(
-                '${widget.record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : widget.record.assessmentName}   ${_studentName(widget.record)} / ${_dateOnlyText(widget.record.assessmentDate)}',
+                '${record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -1656,6 +1763,17 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   fontWeight: FontWeight.w800,
                 ),
               ),
+              if (_recordSyncing) ...<Widget>[
+                const SizedBox(height: 6),
+                const Text(
+                  '正在同步最新记录...',
+                  style: TextStyle(
+                    color: _ReportTheme.blue,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ],
           ),
         ),
@@ -1773,7 +1891,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     if (_errorMessage.isNotEmpty) {
       return _ReportPreviewErrorState(
         message: _errorMessage,
-        onRetry: _loadPdf,
+        onRetry: _retryPreview,
       );
     }
     final Uint8List? bytes = _pdfBytes;
@@ -1788,43 +1906,257 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         border: Border.all(color: _ReportTheme.lineSoft),
       ),
       clipBehavior: Clip.antiAlias,
-      child: PdfPreview(
+      child: _LazyReportPdfPreview(
         key: ValueKey<String>(
-          'report-pdf-${widget.record.id}-${_activeOption.value}-${bytes.length}',
+          'report-pdf-${widget.record.id}-${widget.record.updatedTime}-${_activeOption.value}-${bytes.length}',
         ),
-        build: (_) async => bytes,
-        allowPrinting: false,
-        allowSharing: false,
-        useActions: false,
-        canChangePageFormat: false,
-        canChangeOrientation: false,
-        canDebug: false,
-        dynamicLayout: false,
-        shouldRepaint: true,
-        maxPageWidth: 860,
-        padding: const EdgeInsets.all(18),
-        previewPageMargin: const EdgeInsets.all(12),
-        scrollViewDecoration: const BoxDecoration(
-          color: Color(0xFFFDF8F3),
-        ),
-        pdfPreviewPageDecoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: const <BoxShadow>[
-            BoxShadow(
-              color: Color(0x11000000),
-              blurRadius: 12,
-              offset: Offset(0, 6),
+        bytes: bytes,
+        pageCount: _activeOption.pageCount,
+      ),
+    );
+  }
+}
+
+class _ReportPdfPageSnapshot {
+  const _ReportPdfPageSnapshot({
+    required this.raster,
+    required this.width,
+    required this.height,
+  });
+
+  final PdfRaster raster;
+  final int width;
+  final int height;
+
+  double get aspectRatio {
+    if (width <= 0 || height <= 0) {
+      return 0.76;
+    }
+    return width / height;
+  }
+}
+
+class _LazyReportPdfPreview extends StatefulWidget {
+  const _LazyReportPdfPreview({
+    required this.bytes,
+    required this.pageCount,
+    super.key,
+  });
+
+  final Uint8List bytes;
+  final int pageCount;
+
+  @override
+  State<_LazyReportPdfPreview> createState() => _LazyReportPdfPreviewState();
+}
+
+class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
+  static const int _pageCacheLimit = 6;
+
+  final Map<int, Future<_ReportPdfPageSnapshot>> _pendingPageFutures =
+      <int, Future<_ReportPdfPageSnapshot>>{};
+  final LinkedHashMap<int, _ReportPdfPageSnapshot> _pageCache =
+      LinkedHashMap<int, _ReportPdfPageSnapshot>();
+
+  @override
+  void initState() {
+    super.initState();
+    _warmAround(0);
+  }
+
+  Future<_ReportPdfPageSnapshot> _loadPage(int pageIndex) {
+    final _ReportPdfPageSnapshot? cached = _pageCache.remove(pageIndex);
+    if (cached != null) {
+      _pageCache[pageIndex] = cached;
+      return Future<_ReportPdfPageSnapshot>.value(cached);
+    }
+    final Future<_ReportPdfPageSnapshot>? pending =
+        _pendingPageFutures[pageIndex];
+    if (pending != null) {
+      return pending;
+    }
+    final Future<_ReportPdfPageSnapshot> future = (() async {
+      final PdfRaster raster = await Printing.raster(
+        widget.bytes,
+        pages: <int>[pageIndex],
+        dpi: _reportPreviewRasterDpi,
+      ).first;
+      final _ReportPdfPageSnapshot snapshot = _ReportPdfPageSnapshot(
+        raster: raster,
+        width: raster.width,
+        height: raster.height,
+      );
+      _pageCache[pageIndex] = snapshot;
+      while (_pageCache.length > _pageCacheLimit) {
+        _pageCache.remove(_pageCache.keys.first);
+      }
+      return snapshot;
+    })();
+    _pendingPageFutures[pageIndex] = future;
+    future.whenComplete(() {
+      if (identical(_pendingPageFutures[pageIndex], future)) {
+        _pendingPageFutures.remove(pageIndex);
+      }
+    });
+    return future;
+  }
+
+  void _warmAround(int pageIndex) {
+    if (pageIndex < 0 || pageIndex >= widget.pageCount) {
+      return;
+    }
+    _loadPage(pageIndex);
+    if (pageIndex + 1 < widget.pageCount) {
+      _loadPage(pageIndex + 1);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.builder(
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 20),
+      cacheExtent: 720,
+      itemCount: widget.pageCount,
+      itemBuilder: (BuildContext context, int index) {
+        _warmAround(index);
+        return _LazyReportPdfPageCard(
+          pageIndex: index,
+          pageCount: widget.pageCount,
+          pageFuture: _loadPage(index),
+        );
+      },
+    );
+  }
+}
+
+class _LazyReportPdfPageCard extends StatelessWidget {
+  const _LazyReportPdfPageCard({
+    required this.pageIndex,
+    required this.pageCount,
+    required this.pageFuture,
+  });
+
+  final int pageIndex;
+  final int pageCount;
+  final Future<_ReportPdfPageSnapshot> pageFuture;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsets.only(bottom: pageIndex == pageCount - 1 ? 0 : 18),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double cardWidth = math.min(constraints.maxWidth, 860);
+          return Center(
+            child: SizedBox(
+              width: cardWidth,
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(12),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x11000000),
+                      blurRadius: 12,
+                      offset: Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Row(
+                        children: <Widget>[
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF6EFE8),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              '第 ${pageIndex + 1} / $pageCount 页',
+                              style: const TextStyle(
+                                color: _ReportTheme.text,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      FutureBuilder<_ReportPdfPageSnapshot>(
+                        future: pageFuture,
+                        builder: (
+                          BuildContext context,
+                          AsyncSnapshot<_ReportPdfPageSnapshot> snapshot,
+                        ) {
+                          if (snapshot.hasError) {
+                            return _ReportPdfPagePlaceholder(
+                              child: Text(
+                                '第 ${pageIndex + 1} 页渲染失败：${snapshot.error}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(
+                                  color: _ReportTheme.text,
+                                  fontSize: 13,
+                                  height: 1.4,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            );
+                          }
+                          if (!snapshot.hasData) {
+                            return const _ReportPdfPagePlaceholder(
+                              child: _ReportPreviewLoadingState(
+                                message: '评估报告渲染中...',
+                              ),
+                            );
+                          }
+                          final _ReportPdfPageSnapshot data = snapshot.data!;
+                          return AspectRatio(
+                            aspectRatio: data.aspectRatio,
+                            child: Image(
+                              image: PdfRasterImage(data.raster),
+                              fit: BoxFit.contain,
+                              filterQuality: FilterQuality.medium,
+                              gaplessPlayback: true,
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                ),
+              ),
             ),
-          ],
-        ),
-        loadingWidget: const _ReportPreviewLoadingState(message: '评估报告渲染中...'),
-        onError: (BuildContext context, Object error) {
-          return _ReportPreviewErrorState(
-            message: '评估报告预览失败：$error',
-            onRetry: _loadPdf,
           );
         },
+      ),
+    );
+  }
+}
+
+class _ReportPdfPagePlaceholder extends StatelessWidget {
+  const _ReportPdfPagePlaceholder({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return AspectRatio(
+      aspectRatio: 0.76,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFBF7),
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: _ReportTheme.lineSoft),
+        ),
+        child: Center(child: child),
       ),
     );
   }

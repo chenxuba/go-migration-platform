@@ -22,7 +22,7 @@ func (svc *Service) GetScaleLibrary(userID int64, query model.ScaleLibraryQuery)
 		}
 		return model.ScaleLibraryVO{}, err
 	}
-	items, err := svc.repo.ListInstitutionScaleLibrary(ctx, instID, query, false)
+	items, err := svc.repo.ListInstitutionScaleLibrary(ctx, instID, query, true)
 	if err != nil {
 		return model.ScaleLibraryVO{}, err
 	}
