@@ -1,0 +1,15 @@
+{
+  "scale_code": "ERXIN2",
+  "scale_name": "0岁～6岁儿童发育行为评估量表（儿心量表-II）",
+  "scale_version": "WS-T-580-2017",
+  "source_pdf": "儿心.pdf",
+  "age_range_months": {
+    "min": 0,
+    "max": 84
+  },
+  "domain_count": 5,
+  "item_count": 261,
+  "source_standard": "WS/T 580-2017",
+  "release_date": "2017-10-12",
+  "implementation_date": "2018-04-01"
+}

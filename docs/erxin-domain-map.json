@@ -1,0 +1,27 @@
+[
+  {
+    "scale_code": "GM",
+    "scale_name": "大运动",
+    "sort_no": 1
+  },
+  {
+    "scale_code": "FM",
+    "scale_name": "精细动作",
+    "sort_no": 2
+  },
+  {
+    "scale_code": "AD",
+    "scale_name": "适应能力",
+    "sort_no": 3
+  },
+  {
+    "scale_code": "LANG",
+    "scale_name": "语言",
+    "sort_no": 4
+  },
+  {
+    "scale_code": "SOC",
+    "scale_name": "社会行为",
+    "sort_no": 5
+  }
+]
