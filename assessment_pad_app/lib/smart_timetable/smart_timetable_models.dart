@@ -71,6 +71,38 @@ class _ScheduleMovePreviewData {
   final String assistantLabel;
 }
 
+class _ScheduleCreatePreviewData {
+  const _ScheduleCreatePreviewData({
+    required this.typeLabel,
+    required this.titleLine,
+    required this.targetLabel,
+    required this.timeLabel,
+    required this.teacherLabel,
+    required this.assistantLabel,
+    required this.classroomLabel,
+    required this.groupLabel,
+  });
+
+  final String typeLabel;
+  final String titleLine;
+  final String targetLabel;
+  final String timeLabel;
+  final String teacherLabel;
+  final String assistantLabel;
+  final String classroomLabel;
+  final String groupLabel;
+}
+
+class _ScheduleCreateConfirmResult {
+  const _ScheduleCreateConfirmResult({
+    required this.confirmed,
+    required this.dontAskAgainToday,
+  });
+
+  final bool confirmed;
+  final bool dontAskAgainToday;
+}
+
 class _PeriodGroupOption {
   const _PeriodGroupOption({
     required this.id,

@@ -6,6 +6,65 @@ extension _SmartTimetableStateLoading on _SmartTimetablePageState {
     return prefs.getString(_timetableAuthTokenStorageKey) ?? '';
   }
 
+  Future<void> _loadFilterCatalogOptions() async {
+    final int sequence = ++_filterOptionsSequence;
+    final String token = await _readAuthToken();
+    if (token.trim().isEmpty) {
+      return;
+    }
+    if (mounted) {
+      _updateState(() {
+        _filterOptionsLoading = true;
+      });
+    }
+    try {
+      final List<dynamic> results = await Future.wait<dynamic>(
+        <Future<dynamic>>[
+          widget.timetableClient.fetchScheduleStudentOptions(token),
+          widget.timetableClient.fetchScheduleCourseOptions(token),
+        ],
+      );
+      if (!mounted || sequence != _filterOptionsSequence) {
+        return;
+      }
+      final List<ScheduleLookupOption> studentOptions =
+          List<ScheduleLookupOption>.from(results[0] as List<dynamic>);
+      final List<ScheduleLookupOption> courseOptions =
+          List<ScheduleLookupOption>.from(results[1] as List<dynamic>);
+      _updateState(() {
+        _studentCatalogOptions = studentOptions
+            .map(
+              (ScheduleLookupOption item) =>
+                  _TimetableFilterOption(id: item.id, label: item.label),
+            )
+            .toList();
+        _courseCatalogOptions = courseOptions
+            .map(
+              (ScheduleLookupOption item) =>
+                  _TimetableFilterOption(id: item.id, label: item.label),
+            )
+            .toList();
+        _filterOptionsLoading = false;
+        _filterOptionsLoaded = true;
+        _pruneQuickFilters();
+      });
+    } on TimetableApiException {
+      if (!mounted || sequence != _filterOptionsSequence) {
+        return;
+      }
+      _updateState(() {
+        _filterOptionsLoading = false;
+      });
+    } on Object catch (_) {
+      if (!mounted || sequence != _filterOptionsSequence) {
+        return;
+      }
+      _updateState(() {
+        _filterOptionsLoading = false;
+      });
+    }
+  }
+
   Future<void> _loadScheduleOptions() async {
     final int sequence = ++_scheduleOptionsSequence;
     final String token = await _readAuthToken();

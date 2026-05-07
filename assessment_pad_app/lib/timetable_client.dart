@@ -13,9 +13,17 @@ const String defaultOneToOneSelectionPath = String.fromEnvironment(
   'ONE_TO_ONE_SELECTION_PATH',
   defaultValue: '/api/v1/one-to-ones/selection-page',
 );
+const String defaultOneToOnePagePath = String.fromEnvironment(
+  'ONE_TO_ONE_PAGE_PATH',
+  defaultValue: '/api/v1/one-to-ones/page',
+);
 const String defaultGroupClassSelectionPath = String.fromEnvironment(
   'GROUP_CLASS_SELECTION_PATH',
   defaultValue: '/api/v1/group-classes/selection-page',
+);
+const String defaultCourseOptionsPath = String.fromEnvironment(
+  'COURSE_OPTIONS_PATH',
+  defaultValue: '/api/v1/courses/options',
 );
 const String defaultScheduleAssistantPath = String.fromEnvironment(
   'SCHEDULE_ASSISTANT_PATH',
@@ -473,6 +481,16 @@ class ScheduleTargetOption {
   final bool disabled;
 }
 
+class ScheduleLookupOption {
+  const ScheduleLookupOption({
+    required this.id,
+    required this.label,
+  });
+
+  final String id;
+  final String label;
+}
+
 class ScheduleStaffOption {
   const ScheduleStaffOption({
     required this.id,
@@ -629,6 +647,16 @@ abstract interface class TimetableClient {
     String keyword = '',
   });
 
+  Future<List<ScheduleLookupOption>> fetchScheduleStudentOptions(
+    String token, {
+    String keyword = '',
+  });
+
+  Future<List<ScheduleLookupOption>> fetchScheduleCourseOptions(
+    String token, {
+    String keyword = '',
+  });
+
   Future<List<ScheduleStaffOption>> fetchScheduleAssistants(
     String token, {
     String keyword = '',
@@ -680,7 +708,9 @@ class ApiTimetableClient implements TimetableClient {
     this.educationBaseUrl = defaultEducationApiBaseUrl,
     this.timetablePath = defaultPadTimetablePath,
     this.oneToOneSelectionPath = defaultOneToOneSelectionPath,
+    this.oneToOnePagePath = defaultOneToOnePagePath,
     this.groupClassSelectionPath = defaultGroupClassSelectionPath,
+    this.courseOptionsPath = defaultCourseOptionsPath,
     this.scheduleAssistantPath = defaultScheduleAssistantPath,
     this.scheduleClassroomPath = defaultScheduleClassroomPath,
     this.oneToOneValidatePath = defaultOneToOneValidatePath,
@@ -694,7 +724,9 @@ class ApiTimetableClient implements TimetableClient {
   final String educationBaseUrl;
   final String timetablePath;
   final String oneToOneSelectionPath;
+  final String oneToOnePagePath;
   final String groupClassSelectionPath;
+  final String courseOptionsPath;
   final String scheduleAssistantPath;
   final String scheduleClassroomPath;
   final String oneToOneValidatePath;
@@ -747,8 +779,9 @@ class ApiTimetableClient implements TimetableClient {
         },
         'pageRequestModel': <String, dynamic>{
           'needTotal': false,
-          'pageSize': 40,
+          'pageSize': 500,
           'pageIndex': 1,
+          'skipCount': 0,
         },
       },
     );
@@ -775,8 +808,9 @@ class ApiTimetableClient implements TimetableClient {
         },
         'pageRequestModel': <String, dynamic>{
           'needTotal': false,
-          'pageSize': 40,
+          'pageSize': 500,
           'pageIndex': 1,
+          'skipCount': 0,
         },
       },
     );
@@ -786,6 +820,64 @@ class ApiTimetableClient implements TimetableClient {
         })
         .where((ScheduleTargetOption item) => item.id.trim().isNotEmpty)
         .toList();
+  }
+
+  @override
+  Future<List<ScheduleLookupOption>> fetchScheduleStudentOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, oneToOnePagePath),
+      token,
+      <String, dynamic>{
+        'queryModel': <String, dynamic>{
+          'status': <int>[1],
+          if (keyword.trim().isNotEmpty) 'searchKey': keyword.trim(),
+        },
+        'pageRequestModel': <String, dynamic>{
+          'needTotal': false,
+          'pageSize': 500,
+          'pageIndex': 1,
+          'skipCount': 0,
+        },
+      },
+    );
+    final Map<String, ScheduleLookupOption> optionById =
+        <String, ScheduleLookupOption>{};
+    for (final Map<String, dynamic> item in _listPayload(data)) {
+      final String label =
+          '${item['studentName'] ?? item['name'] ?? ''}'.trim();
+      if (label.isEmpty) {
+        continue;
+      }
+      optionById[label] = ScheduleLookupOption(id: label, label: label);
+    }
+    return optionById.values.toList();
+  }
+
+  @override
+  Future<List<ScheduleLookupOption>> fetchScheduleCourseOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, courseOptionsPath),
+      token,
+      <String, dynamic>{
+        'searchKey': keyword.trim(),
+      },
+    );
+    final Map<String, ScheduleLookupOption> optionById =
+        <String, ScheduleLookupOption>{};
+    for (final Map<String, dynamic> item in _listPayload(data)) {
+      final String label = '${item['name'] ?? ''}'.trim();
+      if (label.isEmpty) {
+        continue;
+      }
+      optionById[label] = ScheduleLookupOption(id: label, label: label);
+    }
+    return optionById.values.toList();
   }
 
   @override

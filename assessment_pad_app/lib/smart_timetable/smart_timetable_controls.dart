@@ -541,6 +541,23 @@ class _ScheduleTargetSelector extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onClear;
 
+  String _targetLabel() {
+    if (target == null) {
+      return mode == _ScheduleMode.oneToOne ? '选择1v1' : '选择班课';
+    }
+    final String title = target!.title.trim();
+    final String subtitle = target!.subtitle.trim().isNotEmpty
+        ? target!.subtitle.trim()
+        : target!.lessonName.trim();
+    if (subtitle.isEmpty) {
+      return title.isEmpty ? '未命名排课对象' : title;
+    }
+    if (title.isEmpty) {
+      return subtitle;
+    }
+    return '$title-$subtitle';
+  }
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -563,8 +580,7 @@ class _ScheduleTargetSelector extends StatelessWidget {
             const SizedBox(width: 7),
             Expanded(
               child: Text(
-                target?.title ??
-                    (mode == _ScheduleMode.oneToOne ? '选择1v1' : '选择班课'),
+                _targetLabel(),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: TextStyle(

@@ -292,6 +292,322 @@ class _PeriodGroupDropdownItem extends StatelessWidget {
   }
 }
 
+class _ScheduleCreateConfirmDialog extends StatefulWidget {
+  const _ScheduleCreateConfirmDialog({
+    required this.data,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final _ScheduleCreatePreviewData data;
+  final VoidCallback onCancel;
+  final ValueChanged<bool> onConfirm;
+
+  @override
+  State<_ScheduleCreateConfirmDialog> createState() =>
+      _ScheduleCreateConfirmDialogState();
+}
+
+class _ScheduleCreateConfirmDialogState
+    extends State<_ScheduleCreateConfirmDialog> {
+  bool _dontAskAgainToday = false;
+
+  void _toggleDontAskAgainToday() {
+    setState(() {
+      _dontAskAgainToday = !_dontAskAgainToday;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      insetPadding: EdgeInsets.zero,
+      child: Container(
+        key: const ValueKey<String>('schedule-create-confirm-dialog'),
+        width: 760,
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(
+          color: _SmartColors.card,
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x24000000),
+              blurRadius: 30,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFFFF1E8),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.priority_high_rounded,
+                    color: _SmartColors.orangeDeep,
+                    size: 22,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    '确认排课',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: _SmartColors.ink,
+                      fontSize: 19,
+                      height: 1.1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: widget.onCancel,
+                  icon: const Icon(Icons.close_rounded),
+                  color: _SmartColors.muted,
+                  iconSize: 20,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints.tightFor(
+                    width: 34,
+                    height: 34,
+                  ),
+                  splashRadius: 18,
+                  tooltip: '关闭',
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                Container(
+                  constraints: const BoxConstraints(minWidth: 66),
+                  height: 34,
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: _SmartColors.orangeDeep,
+                    borderRadius: BorderRadius.circular(18),
+                  ),
+                  child: Text(
+                    widget.data.typeLabel,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Text(
+                    widget.data.titleLine,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _SmartColors.ink,
+                      fontSize: 16,
+                      height: 1.15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _SmartColors.lineSoft),
+              ),
+              child: Column(
+                children: <Widget>[
+                  _ScheduleCreateDetailLine(
+                    label: '排课对象',
+                    value: widget.data.targetLabel,
+                  ),
+                  const SizedBox(height: 14),
+                  _ScheduleCreateDetailLine(
+                    label: '上课时间',
+                    value: widget.data.timeLabel,
+                    highlight: true,
+                  ),
+                  const SizedBox(height: 14),
+                  _ScheduleCreateDetailLine(
+                    label: '上课老师',
+                    value: widget.data.teacherLabel,
+                  ),
+                  const SizedBox(height: 14),
+                  _ScheduleCreateDetailLine(
+                    label: '上课助教',
+                    value: widget.data.assistantLabel,
+                  ),
+                  const SizedBox(height: 14),
+                  _ScheduleCreateDetailLine(
+                    label: '上课教室',
+                    value: widget.data.classroomLabel,
+                  ),
+                  const SizedBox(height: 14),
+                  _ScheduleCreateDetailLine(
+                    label: '所在组别',
+                    value: widget.data.groupLabel,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF7F4F0),
+                borderRadius: BorderRadius.circular(14),
+              ),
+              child: const Text(
+                '确认后将立即创建日程并占用该时段；如果此时课表已被别人占用，系统会再次拦截。',
+                style: TextStyle(
+                  color: _SmartColors.text,
+                  fontSize: 12,
+                  height: 1.35,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                InkWell(
+                  key: const ValueKey<String>(
+                    'schedule-create-confirm-checkbox-row',
+                  ),
+                  onTap: _toggleDontAskAgainToday,
+                  borderRadius: BorderRadius.circular(12),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 4,
+                      vertical: 2,
+                    ),
+                    child: Row(
+                      children: <Widget>[
+                        Checkbox(
+                          key: const ValueKey<String>(
+                            'schedule-create-confirm-checkbox',
+                          ),
+                          value: _dontAskAgainToday,
+                          activeColor: _SmartColors.orangeDeep,
+                          side: const BorderSide(
+                            color: _SmartColors.muted,
+                            width: 1.4,
+                          ),
+                          visualDensity: VisualDensity.compact,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          onChanged: (_) => _toggleDontAskAgainToday(),
+                        ),
+                        const SizedBox(width: 6),
+                        const Text(
+                          '今日不再提示',
+                          style: TextStyle(
+                            color: _SmartColors.ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                SizedBox(
+                  key: const ValueKey<String>('schedule-create-confirm-cancel'),
+                  child: _ScheduleMoveActionButton(
+                    label: '再想想',
+                    filled: false,
+                    onTap: widget.onCancel,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                SizedBox(
+                  key: const ValueKey<String>('schedule-create-confirm-submit'),
+                  child: _ScheduleMoveActionButton(
+                    label: '确认排课',
+                    filled: true,
+                    onTap: () => widget.onConfirm(_dontAskAgainToday),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ScheduleCreateDetailLine extends StatelessWidget {
+  const _ScheduleCreateDetailLine({
+    required this.label,
+    required this.value,
+    this.highlight = false,
+  });
+
+  final String label;
+  final String value;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color valueColor =
+        highlight ? _SmartColors.orangeDeep : _SmartColors.ink;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        SizedBox(
+          width: 74,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _SmartColors.muted,
+              fontSize: 13,
+              height: 1.2,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(width: 18),
+        Expanded(
+          child: Text(
+            value,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: valueColor,
+              fontSize: 13,
+              height: 1.2,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ScheduleMoveConfirmDialog extends StatelessWidget {
   const _ScheduleMoveConfirmDialog({
     required this.before,

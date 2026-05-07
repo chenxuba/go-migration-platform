@@ -1,5 +1,8 @@
 part of '../smart_timetable_page.dart';
 
+const String _scheduleCreateConfirmSkipDateKey =
+    'smart_timetable_schedule_create_confirm_skip_date';
+
 extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
   void _toggleSchedulePanel() {
     _updateState(() {
@@ -289,6 +292,19 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
     if (_creatingSlotKey != null) {
       return;
     }
+    final bool skipConfirm = await _shouldSkipScheduleCreateConfirm();
+    if (!skipConfirm) {
+      final _ScheduleCreatePreviewData preview =
+          _buildScheduleCreatePreviewData(cell);
+      final _ScheduleCreateConfirmResult? result =
+          await _confirmScheduleCreation(preview);
+      if (!mounted || result == null || !result.confirmed) {
+        return;
+      }
+      if (result.dontAskAgainToday) {
+        await _rememberScheduleCreateConfirmSkipToday();
+      }
+    }
     final String token = await _readAuthToken();
     if (token.trim().isEmpty) {
       _showScheduleMessage('登录已失效，请重新登录');
@@ -334,6 +350,109 @@ extension _SmartTimetableStateSchedule on _SmartTimetablePageState {
         });
       }
     }
+  }
+
+  Future<bool> _shouldSkipScheduleCreateConfirm() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_scheduleCreateConfirmSkipDateKey) ==
+        _formatApiDate(DateTime.now());
+  }
+
+  Future<void> _rememberScheduleCreateConfirmSkipToday() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setString(
+      _scheduleCreateConfirmSkipDateKey,
+      _formatApiDate(DateTime.now()),
+    );
+  }
+
+  Future<_ScheduleCreateConfirmResult?> _confirmScheduleCreation(
+    _ScheduleCreatePreviewData preview,
+  ) async {
+    if (!mounted) {
+      return null;
+    }
+    return showDialog<_ScheduleCreateConfirmResult>(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withOpacity(.34),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ScheduleCreateConfirmDialog(
+            data: preview,
+            onCancel: () => Navigator.of(dialogContext).pop(),
+            onConfirm: (bool dontAskAgainToday) {
+              Navigator.of(dialogContext).pop(
+                _ScheduleCreateConfirmResult(
+                  confirmed: true,
+                  dontAskAgainToday: dontAskAgainToday,
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  _ScheduleCreatePreviewData _buildScheduleCreatePreviewData(
+    _ScheduleCellSlot cell,
+  ) {
+    final ScheduleTargetOption? target = _selectedScheduleTarget;
+    final String targetTitle = target?.title.trim().isNotEmpty == true
+        ? target!.title.trim()
+        : '未命名对象';
+    final String targetSubtitle = target?.subtitle.trim().isNotEmpty == true
+        ? target!.subtitle.trim()
+        : (target?.lessonName.trim().isNotEmpty == true
+            ? target!.lessonName.trim()
+            : '');
+    final String titleLine =
+        targetSubtitle.isEmpty ? targetTitle : '$targetTitle-$targetSubtitle';
+    final String teacherName = _teachers.isEmpty
+        ? '当前老师'
+        : _teachers[_teacherIndex.clamp(0, _teachers.length - 1)].name.trim();
+    final Map<String, String> assistantNameById = <String, String>{
+      for (final ScheduleStaffOption staff in _currentGroupAssistantOptions)
+        if (staff.id.trim().isNotEmpty && staff.name.trim().isNotEmpty)
+          staff.id.trim(): staff.name.trim(),
+      for (final _TeacherOption teacher in _teachers)
+        if (teacher.id.trim().isNotEmpty && teacher.name.trim().isNotEmpty)
+          teacher.id.trim(): teacher.name.trim(),
+    };
+    final List<String> assistantNames = <String>[];
+    for (final String id in _normalizedAssistantIds) {
+      final String name = assistantNameById[id.trim()] ?? '';
+      if (name.isNotEmpty && !assistantNames.contains(name)) {
+        assistantNames.add(name);
+      }
+    }
+    final String assistantLabel =
+        assistantNames.isEmpty ? '未安排' : assistantNames.join('、');
+    final String classroomLabel =
+        _selectedClassroom?.name.trim().isNotEmpty == true
+            ? _selectedClassroom!.name.trim()
+            : '未设置教室';
+    final String slotLabel = cell.row >= 0 && cell.row < _timeSlots.length
+        ? _timeSlots[cell.row].title.trim().isNotEmpty
+            ? _timeSlots[cell.row].title.trim()
+            : '第${cell.row + 1}节'
+        : '第${cell.row + 1}节';
+    final String dateLabel = _monthDayLabel(cell.date);
+    final String weekdayLabel = _weekdayShortLabel(cell.date);
+    final String timeLabel =
+        '$dateLabel $weekdayLabel $slotLabel · ${cell.startTime}-${cell.endTime}';
+    return _ScheduleCreatePreviewData(
+      typeLabel:
+          _scheduleTargetType == ScheduleTargetType.oneToOne ? '1v1' : '班课',
+      titleLine: titleLine,
+      targetLabel: targetTitle,
+      timeLabel: timeLabel,
+      teacherLabel: teacherName,
+      assistantLabel: assistantLabel,
+      classroomLabel: classroomLabel,
+      groupLabel: _selectedPeriodGroupName,
+    );
   }
 
   List<_ScheduleCellSlot> _emptyScheduleSlotsForCurrentWeek() {

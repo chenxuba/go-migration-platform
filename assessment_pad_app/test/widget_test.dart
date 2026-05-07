@@ -479,6 +479,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('张一鸣-个训课'), findsOneWidget);
     expect(timetableClient.validateCalls, greaterThan(0));
     expect(timetableClient.lastValidatedClassroomId, '101');
     expect(find.text('空闲时段(可排)'), findsWidgets);
@@ -500,6 +501,17 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('empty-slot-0-1')));
     await tester.pumpAndSettle();
 
+    expect(find.byKey(const ValueKey<String>('schedule-create-confirm-dialog')),
+        findsOneWidget);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-create-confirm-checkbox')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('schedule-create-confirm-submit')),
+    );
+    await tester.pumpAndSettle();
+
     expect(timetableClient.createCalls, 1);
     expect(timetableClient.lastCreatedClassroomId, '101');
     expect(find.byType(SnackBar), findsNothing);
@@ -507,6 +519,15 @@ void main() {
       find.byKey(const ValueKey<String>('schedule-top-message')),
       findsOneWidget,
     );
+
+    await tester.tap(find.byKey(const ValueKey<String>('empty-slot-0-2')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('schedule-create-confirm-dialog')),
+      findsNothing,
+    );
+    expect(timetableClient.createCalls, 2);
   });
 
   testWidgets('smart timetable loads schedule options lazily',
@@ -566,6 +587,55 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(timetableClient.createCalls, 0);
+  });
+
+  testWidgets('smart timetable loads full student and course filter options',
+      (WidgetTester tester) async {
+    final _FakeTimetableClient timetableClient = _FakeTimetableClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(timetableClient: timetableClient),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('smart-filter-student')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-student-王安全')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-student-张一鸣')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-student-孙吾空')),
+      findsOneWidget,
+    );
+
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byKey(const ValueKey<String>('smart-filter-course')));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-course-个训课')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-course-感统训练')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('smart-filter-option-course-社交沟通课')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('login page switches to qr login and back',
@@ -2576,6 +2646,8 @@ class _FakeTimetableClient implements TimetableClient {
   int updateCalls = 0;
   int oneToOneTargetCalls = 0;
   int groupClassTargetCalls = 0;
+  int studentFilterOptionCalls = 0;
+  int courseFilterOptionCalls = 0;
   int assistantOptionCalls = 0;
   int classroomOptionCalls = 0;
   String lastValidatedClassroomId = '';
@@ -2723,6 +2795,32 @@ class _FakeTimetableClient implements TimetableClient {
         subtitle: '语言认知课 · 5人',
         lessonName: '语言认知课',
       ),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleLookupOption>> fetchScheduleStudentOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    studentFilterOptionCalls += 1;
+    return const <ScheduleLookupOption>[
+      ScheduleLookupOption(id: '王安全', label: '王安全'),
+      ScheduleLookupOption(id: '张一鸣', label: '张一鸣'),
+      ScheduleLookupOption(id: '孙吾空', label: '孙吾空'),
+    ];
+  }
+
+  @override
+  Future<List<ScheduleLookupOption>> fetchScheduleCourseOptions(
+    String token, {
+    String keyword = '',
+  }) async {
+    courseFilterOptionCalls += 1;
+    return const <ScheduleLookupOption>[
+      ScheduleLookupOption(id: '个训课', label: '个训课'),
+      ScheduleLookupOption(id: '感统训练', label: '感统训练'),
+      ScheduleLookupOption(id: '社交沟通课', label: '社交沟通课'),
     ];
   }
 

@@ -42,6 +42,13 @@ extension _SmartTimetableStateSelectors on _SmartTimetablePageState {
   List<_TimetableFilterOption> get _studentFilterOptions {
     final Map<String, _TimetableFilterOption> options =
         <String, _TimetableFilterOption>{};
+    for (final _TimetableFilterOption option in _studentCatalogOptions) {
+      final String id = option.id.trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      options[id] = option;
+    }
     for (final TimetableItem item in _data.items) {
       final String value = _studentFilterValue(item);
       if (value.trim().isEmpty || options.containsKey(value)) {
@@ -55,6 +62,13 @@ extension _SmartTimetableStateSelectors on _SmartTimetablePageState {
   List<_TimetableFilterOption> get _courseFilterOptions {
     final Map<String, _TimetableFilterOption> options =
         <String, _TimetableFilterOption>{};
+    for (final _TimetableFilterOption option in _courseCatalogOptions) {
+      final String id = option.id.trim();
+      if (id.isEmpty) {
+        continue;
+      }
+      options[id] = option;
+    }
     for (final TimetableItem item in _data.items) {
       final String value = _courseFilterValue(item);
       if (value.trim().isEmpty || options.containsKey(value)) {
@@ -178,6 +192,15 @@ extension _SmartTimetableStateSelectors on _SmartTimetablePageState {
 
   String get _selectedClassroomId => _selectedClassroom?.id.trim() ?? '';
 
+  String get _selectedPeriodGroupName {
+    if (_periodGroups.isEmpty) {
+      return '默认时段组';
+    }
+    final int safeIndex = _periodGroupIndex.clamp(0, _periodGroups.length - 1);
+    final String name = _periodGroups[safeIndex].name.trim();
+    return name.isEmpty ? '默认时段组' : name;
+  }
+
   void _pruneSelectedAssistantsToCurrentGroup() {
     final Set<String> validAssistantIds = _currentGroupAssistantOptions
         .map((ScheduleStaffOption item) => item.id)
@@ -222,12 +245,20 @@ extension _SmartTimetableStateSelectors on _SmartTimetablePageState {
   }
 
   void _toggleFilterPanel(_TimetableFilterKind kind) {
+    final bool willOpen = _openFilterKind != kind;
     _updateState(() {
-      _openFilterKind = _openFilterKind == kind ? null : kind;
+      _openFilterKind = willOpen ? kind : null;
       _periodGroupDropdownOpen = false;
       _teacherDropdownOpen = false;
       _schedulePanelOpen = false;
     });
+    if (willOpen &&
+        (kind == _TimetableFilterKind.student ||
+            kind == _TimetableFilterKind.course) &&
+        !_filterOptionsLoaded &&
+        !_filterOptionsLoading) {
+      unawaited(_loadFilterCatalogOptions());
+    }
   }
 
   void _closeFilterPanel() {

@@ -6,6 +6,7 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   int _weekOffset = 0;
   int _loadSequence = 0;
   int _scheduleOptionsSequence = 0;
+  int _filterOptionsSequence = 0;
   int _availabilitySequence = 0;
   final LayerLink _periodGroupDropdownLink = LayerLink();
   bool _teacherDropdownOpen = false;
@@ -14,6 +15,8 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   _TimetableFilterKind? _openFilterKind;
   bool _scheduleOptionsLoading = false;
   bool _scheduleOptionsLoaded = false;
+  bool _filterOptionsLoading = false;
+  bool _filterOptionsLoaded = false;
   bool _availabilityLoading = false;
   bool _loading = true;
   String? _errorMessage;
@@ -28,6 +31,10 @@ class _SmartTimetablePageState extends State<SmartTimetablePage> {
   List<ScheduleTargetOption> _oneToOneTargets = const <ScheduleTargetOption>[];
   List<ScheduleTargetOption> _groupClassTargets =
       const <ScheduleTargetOption>[];
+  List<_TimetableFilterOption> _studentCatalogOptions =
+      const <_TimetableFilterOption>[];
+  List<_TimetableFilterOption> _courseCatalogOptions =
+      const <_TimetableFilterOption>[];
   List<ScheduleStaffOption> _assistantOptions = const <ScheduleStaffOption>[];
   List<ScheduleClassroomOption> _classroomOptions =
       const <ScheduleClassroomOption>[];
