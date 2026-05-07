@@ -17,6 +17,7 @@ import 'pad_responsive.dart';
 import 'route_bootstrap.dart';
 import 'smart_timetable_page.dart';
 import 'timetable_client.dart';
+import 'training_center_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -98,6 +99,17 @@ class AssessmentPadApp extends StatelessWidget {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (_) => SmartTimetablePage(timetableClient: timetableClient),
+        );
+      case '/training-center':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: TrainingCenterPage(
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
         );
       case '/assessment-reports':
         return MaterialPageRoute<void>(
@@ -2646,6 +2658,8 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.of(context).pushNamed('/smart-timetable'),
                 onReportTap: () =>
                     Navigator.of(context).pushNamed('/assessment-reports'),
+                onTrainingTap: () =>
+                    Navigator.of(context).pushNamed('/training-center'),
               ),
             ),
             Positioned(
@@ -4113,6 +4127,7 @@ class FeatureShortcutRow extends StatelessWidget {
     this.spacing = 14,
     this.onTimetableTap,
     this.onReportTap,
+    this.onTrainingTap,
     super.key,
   });
 
@@ -4120,6 +4135,7 @@ class FeatureShortcutRow extends StatelessWidget {
   final double spacing;
   final VoidCallback? onTimetableTap;
   final VoidCallback? onReportTap;
+  final VoidCallback? onTrainingTap;
 
   @override
   Widget build(BuildContext context) {
@@ -4185,6 +4201,7 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFF4D9C8E),
           bg: const Color(0xFFE8F7F3),
           width: cardWidth,
+          onTap: onTrainingTap,
         ),
       ],
     );

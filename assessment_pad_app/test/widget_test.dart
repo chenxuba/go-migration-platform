@@ -562,6 +562,39 @@ void main() {
     expect(lessonCount, 1);
   });
 
+  testWidgets('home shortcut opens training center page',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('训练中心'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('训练中心'), findsWidgets);
+    expect(find.text('推荐训练游戏'), findsOneWidget);
+    expect(find.text('游戏合集'), findsOneWidget);
+    expect(find.text('今日任务'), findsOneWidget);
+    expect(find.text('最近记录'), findsOneWidget);
+    expect(find.text('能力雷达'), findsNothing);
+  });
+
   testWidgets('smart timetable detects availability after target selection',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
