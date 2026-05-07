@@ -1,0 +1,278 @@
+<svg width="1366" height="768" viewBox="0 0 1366 768" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <filter id="shadowSoft" x="-40%" y="-40%" width="180%" height="180%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#B05F32" flood-opacity="0.10"/>
+    </filter>
+    <filter id="shadowCard" x="-30%" y="-30%" width="160%" height="160%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="8" stdDeviation="8" flood-color="#B05F32" flood-opacity="0.08"/>
+    </filter>
+    <linearGradient id="heroGrad" x1="278" y1="132" x2="760" y2="306" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#FFEAD7"/>
+      <stop offset="1" stop-color="#FFF7EC"/>
+    </linearGradient>
+    <linearGradient id="orangeGrad" x1="0" y1="0" x2="160" y2="80" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#F28D5D"/>
+      <stop offset="1" stop-color="#E96F43"/>
+    </linearGradient>
+    <clipPath id="screenClip">
+      <rect width="1366" height="768" rx="0"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#screenClip)">
+    <rect width="1366" height="768" fill="#FFF7EE"/>
+    <path d="M0 0H1366V166C1078 119 906 158 705 151C432 141 235 178 0 118V0Z" fill="#FFF4E6"/>
+    <path d="M0 662C201 611 370 686 561 641C782 589 970 671 1366 617V768H0V662Z" fill="#FFF9F0"/>
+
+    <!-- Header -->
+    <g transform="translate(86 38)">
+      <rect x="0" y="0" width="42" height="42" rx="14" fill="#FFFFFF" opacity="0.88" filter="url(#shadowCard)"/>
+      <path d="M25 13L17 21L25 29" stroke="#432B22" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      <g transform="translate(62 0)">
+        <rect x="0" y="0" width="56" height="56" rx="19" fill="#FFE1CF"/>
+        <path d="M19 32C19 23 25 17 34 17C40 17 45 21 45 27C45 35 38 40 29 40H17" stroke="#E96F43" stroke-width="4" stroke-linecap="round"/>
+        <circle cx="31" cy="29" r="4" fill="#E96F43"/>
+      </g>
+      <text x="132" y="24" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="26" font-weight="800">训练中心</text>
+      <text x="132" y="49" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="14" font-weight="600">训练游戏合集 · 选择合适模式开始互动练习</text>
+    </g>
+
+    <g transform="translate(944 40)">
+      <rect x="0" y="0" width="232" height="48" rx="16" fill="#FFFFFF" opacity="0.86" filter="url(#shadowCard)"/>
+      <circle cx="28" cy="24" r="14" fill="#EAF4E5"/>
+      <path d="M22 24H34M28 18V30" stroke="#8DB886" stroke-width="2.6" stroke-linecap="round"/>
+      <text x="52" y="21" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="800">今日训练</text>
+      <text x="52" y="38" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="600">6 个计划 · 42 分钟</text>
+      <rect x="248" y="6" width="36" height="36" rx="13" fill="#FFFFFF" opacity="0.9" filter="url(#shadowCard)"/>
+      <path d="M273 19C271 16 267 14 263 16C258 17 256 22 257 26C258 30 262 33 266 33C270 33 274 30 275 26" stroke="#432B22" stroke-width="2.2" stroke-linecap="round"/>
+      <path d="M276 16V24H268" stroke="#432B22" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+      <circle cx="324" cy="24" r="22" fill="#FFE1CF"/>
+      <text x="324" y="31" fill="#C95735" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">陈</text>
+    </g>
+
+    <!-- Mode switch -->
+    <g transform="translate(86 112)">
+      <rect x="0" y="0" width="1194" height="64" rx="22" fill="#FFFFFF" opacity="0.78" filter="url(#shadowSoft)"/>
+      <g transform="translate(20 11)">
+        <rect x="0" y="0" width="286" height="42" rx="15" fill="#FFF1E8"/>
+        <rect x="4" y="4" width="136" height="34" rx="12" fill="url(#orangeGrad)"/>
+        <path d="M30 17C34 13 41 13 45 17C49 21 49 28 45 32C41 36 34 36 30 32C26 28 26 21 30 17Z" fill="#FFFFFF" opacity="0.95"/>
+        <path d="M36 20V29L43 24.5L36 20Z" fill="#E96F43"/>
+        <text x="84" y="26" fill="#FFFFFF" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="800">自由模式</text>
+        <path d="M171 16H194M171 26H190M171 36H184" stroke="#C95735" stroke-width="2.2" stroke-linecap="round"/>
+        <text x="217" y="26" fill="#C95735" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="800">训练模式</text>
+      </g>
+      <g transform="translate(360 13)">
+        <rect width="300" height="38" rx="14" fill="#FFFFFB" stroke="#F0DACB"/>
+        <circle cx="24" cy="19" r="7" stroke="#BBA99C" stroke-width="2"/>
+        <path d="M29 24L36 31" stroke="#BBA99C" stroke-width="2" stroke-linecap="round"/>
+        <text x="52" y="25" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="600">搜索游戏名称、能力目标</text>
+      </g>
+      <g transform="translate(704 13)">
+        <rect width="118" height="38" rx="13" fill="#FFF5EA" stroke="#F0DACB"/>
+        <path d="M21 13H35M25 19H31M29 19V27" stroke="#E87952" stroke-width="2.2" stroke-linecap="round"/>
+        <text x="70" y="25" fill="#7F665A" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="800">难度筛选</text>
+      </g>
+      <g transform="translate(838 13)">
+        <rect width="112" height="38" rx="13" fill="#EAF4E5" stroke="#D7E8D0"/>
+        <circle cx="25" cy="19" r="8" fill="#8DB886"/>
+        <path d="M22 19H28M25 16V22" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round"/>
+        <text x="68" y="25" fill="#5E8C66" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="800">已收藏</text>
+      </g>
+      <g transform="translate(1032 13)">
+        <rect width="122" height="38" rx="13" fill="#FFF8F0" stroke="#F0DACB"/>
+        <path d="M20 17H36M20 25H36" stroke="#7F665A" stroke-width="2.2" stroke-linecap="round"/>
+        <text x="76" y="25" fill="#7F665A" text-anchor="middle" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="800">列表排序</text>
+      </g>
+    </g>
+
+    <!-- Left sidebar -->
+    <g transform="translate(86 202)">
+      <rect width="226" height="506" rx="18" fill="#FFFFFF" opacity="0.9" filter="url(#shadowSoft)"/>
+      <text x="24" y="35" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="18" font-weight="800">能力领域</text>
+      <text x="24" y="60" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">按儿童训练目标筛选</text>
+      <g transform="translate(16 84)">
+        <rect width="194" height="45" rx="14" fill="#FFE1CF"/>
+        <circle cx="25" cy="22.5" r="10" fill="#E96F43"/>
+        <text x="48" y="28" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="14" font-weight="900">全部训练</text>
+        <text x="163" y="28" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="900">28</text>
+      </g>
+      <g font-family="PingFang SC, Microsoft YaHei, Arial" font-size="14" font-weight="800">
+        <g transform="translate(16 141)">
+          <rect width="194" height="45" rx="14" fill="#FFFFFB"/>
+          <circle cx="25" cy="22.5" r="10" fill="#FFF0C7"/>
+          <text x="48" y="28" fill="#7F665A">认知理解</text><text x="168" y="28" fill="#BBA99C">8</text>
+        </g>
+        <g transform="translate(16 198)">
+          <rect width="194" height="45" rx="14" fill="#FFFFFB"/>
+          <circle cx="25" cy="22.5" r="10" fill="#EAF4E5"/>
+          <text x="48" y="28" fill="#7F665A">精细动作</text><text x="168" y="28" fill="#BBA99C">6</text>
+        </g>
+        <g transform="translate(16 255)">
+          <rect width="194" height="45" rx="14" fill="#FFFFFB"/>
+          <circle cx="25" cy="22.5" r="10" fill="#EDF5FF"/>
+          <text x="48" y="28" fill="#7F665A">语言表达</text><text x="168" y="28" fill="#BBA99C">5</text>
+        </g>
+        <g transform="translate(16 312)">
+          <rect width="194" height="45" rx="14" fill="#FFFFFB"/>
+          <circle cx="25" cy="22.5" r="10" fill="#F1EDFF"/>
+          <text x="48" y="28" fill="#7F665A">社交互动</text><text x="168" y="28" fill="#BBA99C">4</text>
+        </g>
+      </g>
+      <g transform="translate(18 384)">
+        <rect width="190" height="102" rx="16" fill="#FFF7EC" stroke="#F0DACB"/>
+        <text x="16" y="30" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">今日建议</text>
+        <text x="16" y="54" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">优先练习注意力与配对</text>
+        <rect x="16" y="72" width="104" height="12" rx="6" fill="#FFE1CF"/>
+        <rect x="16" y="72" width="64" height="12" rx="6" fill="#E96F43"/>
+        <text x="132" y="84" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="900">62%</text>
+      </g>
+    </g>
+
+    <!-- Main hero -->
+    <g transform="translate(334 202)">
+      <rect width="596" height="162" rx="20" fill="url(#heroGrad)" filter="url(#shadowSoft)"/>
+      <g transform="translate(24 24)">
+        <rect x="0" y="0" width="48" height="48" rx="16" fill="#FFFFFF" opacity="0.74"/>
+        <path d="M15 30C15 23 20 18 27 18H33C39 18 43 22 43 28C43 35 38 40 31 40H15V30Z" fill="#E96F43"/>
+        <circle cx="29" cy="28" r="4" fill="#FFFFFF"/>
+      </g>
+      <text x="88" y="48" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="21" font-weight="900">今日推荐训练</text>
+      <text x="88" y="75" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="700">基于近期评估结果，推荐从颜色配对、声音寻宝开始</text>
+      <g transform="translate(88 96)">
+        <rect width="86" height="30" rx="10" fill="#FFFFFF" opacity="0.8"/>
+        <text x="43" y="20" text-anchor="middle" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="900">12 个游戏</text>
+        <rect x="98" width="104" height="30" rx="10" fill="#FFFFFF" opacity="0.8"/>
+        <text x="150" y="20" text-anchor="middle" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="900">难度 2-4 星</text>
+        <rect x="214" width="112" height="30" rx="10" fill="#FFFFFF" opacity="0.8"/>
+        <text x="270" y="20" text-anchor="middle" fill="#5E8C66" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="900">Pad 互动适配</text>
+      </g>
+      <rect x="462" y="102" width="104" height="38" rx="14" fill="#E96F43"/>
+      <text x="514" y="127" text-anchor="middle" fill="#FFFFFF" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="14" font-weight="900">开始训练</text>
+
+      <g transform="translate(422 26)">
+        <rect x="0" y="38" width="80" height="66" rx="17" fill="#FFFFFF" opacity="0.65"/>
+        <rect x="34" y="12" width="76" height="92" rx="20" fill="#FFE1CF"/>
+        <circle cx="72" cy="42" r="18" fill="#E96F43"/>
+        <path d="M57 77H89" stroke="#C95735" stroke-width="7" stroke-linecap="round"/>
+        <rect x="114" y="46" width="52" height="58" rx="16" fill="#EAF4E5"/>
+        <path d="M128 67H152M140 55V79" stroke="#8DB886" stroke-width="7" stroke-linecap="round"/>
+      </g>
+    </g>
+
+    <!-- Right plan panel -->
+    <g transform="translate(952 202)">
+      <rect width="328" height="506" rx="18" fill="#FFFFFF" opacity="0.9" filter="url(#shadowSoft)"/>
+      <g transform="translate(24 24)">
+        <text x="0" y="18" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="18" font-weight="900">训练模式预设</text>
+        <text x="0" y="43" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">切换训练模式后按计划自动串联游戏</text>
+        <rect x="0" y="64" width="280" height="82" rx="16" fill="#FFF7EC" stroke="#F0DACB"/>
+        <circle cx="36" cy="105" r="23" fill="#FFE1CF"/>
+        <text x="36" y="112" text-anchor="middle" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">安</text>
+        <text x="76" y="98" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">安安 · 6岁2月</text>
+        <text x="76" y="122" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">注意力训练计划</text>
+        <rect x="196" y="91" width="64" height="28" rx="10" fill="#EAF4E5"/>
+        <text x="228" y="110" text-anchor="middle" fill="#5E8C66" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="900">进行中</text>
+      </g>
+      <g transform="translate(24 182)">
+        <text x="0" y="16" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">计划流程</text>
+        <g transform="translate(0 34)">
+          <circle cx="12" cy="12" r="9" fill="#E96F43"/>
+          <path d="M12 24V64" stroke="#FFE1CF" stroke-width="4" stroke-linecap="round"/>
+          <text x="34" y="17" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="900">颜色配对</text>
+          <text x="214" y="17" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="800">8 分钟</text>
+        </g>
+        <g transform="translate(0 82)">
+          <circle cx="12" cy="12" r="9" fill="#F6C45F"/>
+          <path d="M12 24V64" stroke="#FFF0C7" stroke-width="4" stroke-linecap="round"/>
+          <text x="34" y="17" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="900">声音寻宝</text>
+          <text x="214" y="17" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="800">6 分钟</text>
+        </g>
+        <g transform="translate(0 130)">
+          <circle cx="12" cy="12" r="9" fill="#8DB886"/>
+          <path d="M12 24V64" stroke="#EAF4E5" stroke-width="4" stroke-linecap="round"/>
+          <text x="34" y="17" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="900">记忆翻牌</text>
+          <text x="214" y="17" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="800">10 分钟</text>
+        </g>
+        <g transform="translate(0 178)">
+          <circle cx="12" cy="12" r="9" fill="#AAB7C3"/>
+          <text x="34" y="17" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="13" font-weight="900">动作模仿</text>
+          <text x="214" y="17" fill="#BBA99C" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="800">8 分钟</text>
+        </g>
+      </g>
+      <g transform="translate(24 431)">
+        <rect width="280" height="50" rx="15" fill="#E96F43"/>
+        <text x="140" y="32" text-anchor="middle" fill="#FFFFFF" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="15" font-weight="900">进入训练模式</text>
+      </g>
+    </g>
+
+    <!-- Game cards -->
+    <g transform="translate(334 386)">
+      <g>
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#FFF0C7"/>
+        <circle cx="39" cy="39" r="13" fill="#F6C45F"/>
+        <circle cx="55" cy="55" r="9" fill="#E96F43"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">颜色配对</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">认知 · 8 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#FFE1CF"/><rect x="18" y="130" width="56" height="8" rx="4" fill="#E96F43"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#FFF7EC"/>
+        <text x="140" y="39" text-anchor="middle" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">自由</text>
+      </g>
+      <g transform="translate(206 0)">
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#EAF4E5"/>
+        <circle cx="34" cy="43" r="9" fill="#8DB886"/><circle cx="56" cy="43" r="9" fill="#8DB886"/>
+        <path d="M34 57C42 64 51 64 59 57" stroke="#6FA477" stroke-width="4" stroke-linecap="round"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">表情识别</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">社交 · 6 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#EAF4E5"/><rect x="18" y="130" width="38" height="8" rx="4" fill="#8DB886"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#EAF4E5"/>
+        <text x="140" y="39" text-anchor="middle" fill="#5E8C66" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">推荐</text>
+      </g>
+      <g transform="translate(412 0)">
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#EDF5FF"/>
+        <path d="M34 46C41 35 50 35 58 46" stroke="#3F82D2" stroke-width="5" stroke-linecap="round"/>
+        <path d="M28 39C39 22 54 22 66 39" stroke="#AAB7C3" stroke-width="4" stroke-linecap="round"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">声音寻宝</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">语言 · 6 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#DCEBFA"/><rect x="18" y="130" width="48" height="8" rx="4" fill="#3F82D2"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#EDF5FF"/>
+        <text x="140" y="39" text-anchor="middle" fill="#3F82D2" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">训练</text>
+      </g>
+      <g transform="translate(0 176)">
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#F1EDFF"/>
+        <rect x="30" y="28" width="16" height="22" rx="5" fill="#8C6DD8"/><rect x="50" y="28" width="16" height="22" rx="5" fill="#B7A7EA"/>
+        <rect x="30" y="54" width="36" height="8" rx="4" fill="#8C6DD8"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">记忆翻牌</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">认知 · 10 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#EEE8FF"/><rect x="18" y="130" width="66" height="8" rx="4" fill="#8C6DD8"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#F1EDFF"/>
+        <text x="140" y="39" text-anchor="middle" fill="#8C6DD8" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">收藏</text>
+      </g>
+      <g transform="translate(206 176)">
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#FFF5EA"/>
+        <path d="M45 28V61M31 41H59" stroke="#E87B52" stroke-width="7" stroke-linecap="round"/>
+        <circle cx="45" cy="26" r="8" fill="#E87B52"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">动作模仿</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">感统 · 8 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#FFE1CF"/><rect x="18" y="130" width="44" height="8" rx="4" fill="#E87B52"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#FFF5EA"/>
+        <text x="140" y="39" text-anchor="middle" fill="#C95735" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">自由</text>
+      </g>
+      <g transform="translate(412 176)">
+        <rect width="184" height="154" rx="18" fill="#FFFFFF" opacity="0.92" filter="url(#shadowCard)"/>
+        <rect x="18" y="18" width="54" height="54" rx="16" fill="#F3F0EC"/>
+        <path d="M32 32H58M32 45H58M32 58H49" stroke="#7F665A" stroke-width="5" stroke-linecap="round"/>
+        <text x="18" y="94" fill="#432B22" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="16" font-weight="900">生活排序</text>
+        <text x="18" y="116" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="12" font-weight="700">自理 · 7 分钟</text>
+        <rect x="18" y="130" width="80" height="8" rx="4" fill="#EFE9E1"/><rect x="18" y="130" width="52" height="8" rx="4" fill="#AAB7C3"/>
+        <rect x="116" y="22" width="48" height="24" rx="9" fill="#F3F0EC"/>
+        <text x="140" y="39" text-anchor="middle" fill="#7F665A" font-family="PingFang SC, Microsoft YaHei, Arial" font-size="11" font-weight="900">训练</text>
+      </g>
+    </g>
+  </g>
+</svg>

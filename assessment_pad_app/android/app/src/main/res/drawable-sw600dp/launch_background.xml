@@ -2,8 +2,8 @@
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@drawable/normal_background" />
     <item
-        android:width="352dp"
-        android:height="233dp"
+        android:width="680dp"
+        android:height="450dp"
         android:gravity="center"
         android:drawable="@drawable/launch_branding" />
 </layer-list>

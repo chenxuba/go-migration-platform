@@ -262,12 +262,15 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         barrierDismissible: false,
         barrierColor: Colors.black.withOpacity(.32),
         builder: (BuildContext dialogContext) {
-          return PadDialogViewport(
-            child: _DraftResumeDialog(
-              draft: draft,
-              total: _totalCount,
-              onRestart: _restartWithoutDetectedDraft,
-              onContinue: () => _continueDetectedDraft(draft),
+          return PopScope(
+            canPop: false,
+            child: PadDialogViewport(
+              child: _DraftResumeDialog(
+                draft: draft,
+                total: _totalCount,
+                onRestart: _restartWithoutDetectedDraft,
+                onContinue: () => _continueDetectedDraft(draft),
+              ),
             ),
           );
         },
