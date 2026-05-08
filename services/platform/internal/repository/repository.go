@@ -835,6 +835,53 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		}
 	}
 
+	erxinScaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
+		Name:               "0岁～6岁儿童发育行为评估量表（儿心量表-II）",
+		Code:               "ERXIN2",
+		Category:           "标准化测评",
+		Scenario:           "现场测评",
+		AgeRange:           "0岁-6岁",
+		AgeMinMonths:       0,
+		AgeMaxMonths:       84,
+		Duration:           "20-40分钟",
+		DurationMinMinutes: 20,
+		DurationMaxMinutes: 40,
+		CurrentVersion:     "WS-T-580-2017",
+		ItemCount:          261,
+		DomainCount:        5,
+		InstitutionCount:   0,
+		MonthUsage:         0,
+		DataStatus:         "题库、评分规则和机构端接口已串联；Pad工作台待接入",
+		Summary:            "面向0岁至6岁儿童的发育行为评估量表，按主测月龄和前后追测规则计算智龄与发育商DQ。",
+		ExecutionEntry:     "机构端 /teacherCenter/scale-library",
+		APIPackage:         "/api/v1/assessments/erxin/*",
+		Sort:               2,
+	})
+	if err != nil {
+		return err
+	}
+	if err := repo.repairERXinScaleCatalog(ctx, erxinScaleID); err != nil {
+		return err
+	}
+	erxinReferences := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "中华人民共和国卫生行业标准 WS/T 580-2017：0岁～6岁儿童发育行为评估量表。",
+			Sort:    1,
+		},
+		{
+			Content: "儿心量表-II 结构化题库、能区、月龄段和评分规则。",
+			Sort:    2,
+		},
+	}
+	for _, item := range erxinReferences {
+		if err := repo.ensureScaleReferenceSeed(ctx, erxinScaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -851,6 +898,32 @@ func (repo *Repository) repairPep3ItemCount(ctx context.Context, scaleID int64) 
 		    update_time = NOW()
 		WHERE id = ? AND scale_code = 'PEP3' AND del_flag = 0
 		  AND (item_count <> 172 OR IFNULL(age_min_months, 0) <> 30 OR IFNULL(age_max_months, 0) <> 72 OR IFNULL(estimated_duration, '') = '' OR IFNULL(duration_min_minutes, 0) <> 45 OR IFNULL(duration_max_minutes, 0) <> 90)
+	`, scaleID)
+	return err
+}
+
+func (repo *Repository) repairERXinScaleCatalog(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET scale_name = '0岁～6岁儿童发育行为评估量表（儿心量表-II）',
+		    category = '标准化测评',
+		    scenario = '现场测评',
+		    age_range = '0岁-6岁',
+		    age_min_months = 0,
+		    age_max_months = 84,
+		    estimated_duration = '20-40分钟',
+		    duration_min_minutes = 20,
+		    duration_max_minutes = 40,
+		    current_version = 'WS-T-580-2017',
+		    item_count = 261,
+		    domain_count = 5,
+		    data_status = '题库、评分规则和机构端接口已串联；Pad工作台待接入',
+		    summary = '面向0岁至6岁儿童的发育行为评估量表，按主测月龄和前后追测规则计算智龄与发育商DQ。',
+		    execution_entry = '机构端 /teacherCenter/scale-library',
+		    api_package = '/api/v1/assessments/erxin/*',
+		    sort = 2,
+		    update_time = NOW()
+		WHERE id = ? AND scale_code = 'ERXIN2' AND del_flag = 0
 	`, scaleID)
 	return err
 }
