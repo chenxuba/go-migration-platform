@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -51,6 +53,10 @@ const String defaultErxinRecordUpdatePath = String.fromEnvironment(
 const String defaultErxinRecordConfigUpdatePath = String.fromEnvironment(
   'ERXIN_RECORD_CONFIG_UPDATE_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/config/update',
+);
+const String defaultErxinRecordReportPdfPath = String.fromEnvironment(
+  'ERXIN_RECORD_REPORT_PDF_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/report/pdf',
 );
 
 class ErxinAssessmentLaunchArgs {
@@ -115,6 +121,8 @@ abstract class ErxinAssessmentClient {
     required String examinerName,
     required String assessmentDate,
   });
+
+  Future<Uint8List> downloadRecordReportPdf(String token, int id);
 }
 
 class ApiErxinAssessmentClient extends ErxinAssessmentClient {
@@ -130,6 +138,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.recordDetailPath = defaultErxinRecordDetailPath,
     this.recordUpdatePath = defaultErxinRecordUpdatePath,
     this.recordConfigUpdatePath = defaultErxinRecordConfigUpdatePath,
+    this.recordReportPdfPath = defaultErxinRecordReportPdfPath,
     this.httpClient,
   });
 
@@ -144,6 +153,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String recordDetailPath;
   final String recordUpdatePath;
   final String recordConfigUpdatePath;
+  final String recordReportPdfPath;
   final http.Client? httpClient;
 
   @override
@@ -349,6 +359,48 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
       throw const AssessmentScaleApiException('评估配置返回格式不正确');
     }
     return ErxinRecordDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<Uint8List> downloadRecordReportPdf(String token, int id) async {
+    final http.Client client = httpClient ?? http.Client();
+    final Uri uri = _uri(
+      educationBaseUrl,
+      recordReportPdfPath,
+      <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await client
+          .get(
+            uri,
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const AssessmentScaleApiException('评估报告PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw AssessmentScaleApiException('无法连接评估报告PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final Object? decoded = response.body.trim().isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final Object? decoded = response.body.trim().isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '评估报告PDF加载失败',
+      );
+    }
+    return response.bodyBytes;
   }
 }
 

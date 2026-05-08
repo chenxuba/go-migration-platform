@@ -4008,6 +4008,11 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     );
   }
 
+  @override
+  Future<Uint8List> downloadRecordReportPdf(String token, int id) async {
+    return Uint8List.fromList(<int>[37, 80, 68, 70, 45, 49, 46, 52]);
+  }
+
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
 
   AssessmentDraftSummary _draftSummary(

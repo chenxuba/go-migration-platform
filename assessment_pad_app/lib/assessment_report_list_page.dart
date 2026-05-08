@@ -396,10 +396,6 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
-    if (!_supportsReportPreview(record)) {
-      _showMessage('儿心量表记录已接入列表，报告预览稍后补上');
-      return;
-    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
@@ -411,11 +407,17 @@ class _AssessmentReportListScreenState
       barrierColor: Colors.black.withOpacity(.28),
       builder: (BuildContext dialogContext) {
         return PadDialogViewport(
-          child: _ReportPreviewDialog(
-            record: record,
-            token: token,
-            client: widget.recordClient,
-          ),
+          child: _isErxinRecord(record)
+              ? _ErxinReportPreviewDialog(
+                  record: record,
+                  token: token,
+                  client: widget.erxinClient,
+                )
+              : _ReportPreviewDialog(
+                  record: record,
+                  token: token,
+                  client: widget.recordClient,
+                ),
         );
       },
     );
@@ -478,10 +480,6 @@ class _AssessmentReportListScreenState
       topMargin: 12,
       key: 'report-list-top-message',
     );
-  }
-
-  bool _supportsReportPreview(Pep3RecordSummary record) {
-    return record.assessmentCode.trim().toUpperCase() == 'PEP3';
   }
 
   bool _isErxinRecord(Pep3RecordSummary record) {
@@ -3398,6 +3396,7 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
 ];
 
 const double _reportPreviewRasterDpi = 96;
+const double _erxinReportPreviewRasterDpi = 216;
 
 class _ReportPreviewDialog extends StatefulWidget {
   const _ReportPreviewDialog({
@@ -3829,15 +3828,372 @@ class _ReportPdfPageSnapshot {
   }
 }
 
+class _ErxinReportPreviewDialog extends StatefulWidget {
+  const _ErxinReportPreviewDialog({
+    required this.record,
+    required this.token,
+    required this.client,
+  });
+
+  final Pep3RecordSummary record;
+  final String token;
+  final ErxinAssessmentClient client;
+
+  @override
+  State<_ErxinReportPreviewDialog> createState() =>
+      _ErxinReportPreviewDialogState();
+}
+
+class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
+  Pep3RecordSummary? _displayRecord;
+  Uint8List? _pdfBytes;
+  bool _loading = true;
+  String _errorMessage = '';
+  int _recordSyncSerial = 0;
+  Future<Uint8List>? _pdfLoad;
+
+  @override
+  void initState() {
+    super.initState();
+    _displayRecord = widget.record;
+    unawaited(_syncLatestRecord());
+    unawaited(_loadPdf());
+  }
+
+  Future<void> _syncLatestRecord() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      return;
+    }
+    final int serial = ++_recordSyncSerial;
+    try {
+      final ErxinRecordDetail detail = await widget.client.fetchRecordDetail(
+        token,
+        widget.record.id,
+      );
+      if (!mounted || serial != _recordSyncSerial) {
+        return;
+      }
+      setState(() {
+        _displayRecord = Pep3RecordSummary(
+          id: detail.id,
+          studentId: detail.studentId,
+          studentName: detail.studentName,
+          studentGender: detail.studentGender,
+          studentAvatar: detail.studentAvatar,
+          studentPhone: detail.studentPhone,
+          assessmentCode: detail.assessmentCode,
+          assessmentName: detail.assessmentName,
+          scaleCategory: detail.scaleCategory,
+          scaleVersion: detail.scaleVersion,
+          birthDate: detail.birthDate,
+          assessmentDate: detail.assessmentDate,
+          ageYears: detail.ageYears,
+          ageMonths: detail.ageMonths,
+          ageDays: detail.ageDays,
+          normAgeMonths: detail.normAgeMonths,
+          assessmentSequence: detail.assessmentSequence,
+          examinerName: detail.examinerName,
+          createdTime: detail.createdTime,
+          updatedTime: detail.updatedTime,
+        );
+      });
+    } on Object {
+      if (!mounted || serial != _recordSyncSerial) {
+        return;
+      }
+    }
+  }
+
+  Future<void> _loadPdf({bool refresh = false}) async {
+    if (!mounted) {
+      return;
+    }
+    if (!refresh && _pdfBytes != null && _pdfBytes!.isNotEmpty) {
+      setState(() {
+        _loading = false;
+        _errorMessage = '';
+      });
+      return;
+    }
+    setState(() {
+      _loading = true;
+      _errorMessage = '';
+      if (refresh) {
+        _pdfBytes = null;
+      }
+    });
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _loading = false;
+        _errorMessage = '请先登录后再查看评估报告';
+      });
+      return;
+    }
+    final Future<Uint8List> future =
+        widget.client.downloadRecordReportPdf(token, widget.record.id);
+    _pdfLoad = future;
+    try {
+      final Uint8List bytes = await future;
+      if (!mounted || !identical(_pdfLoad, future)) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = bytes;
+        _loading = false;
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted || !identical(_pdfLoad, future)) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = null;
+        _loading = false;
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || !identical(_pdfLoad, future)) {
+        return;
+      }
+      setState(() {
+        _pdfBytes = null;
+        _loading = false;
+        _errorMessage = '评估报告加载失败：$error';
+      });
+    }
+  }
+
+  void _retryPreview() {
+    unawaited(_syncLatestRecord());
+    unawaited(_loadPdf(refresh: true));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Pep3RecordSummary record = _displayRecord ?? widget.record;
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 980,
+            height: 654,
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _ReportTheme.line),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 34,
+                  offset: Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _buildHeader(context, record),
+                const SizedBox(height: 14),
+                _buildSummaryBar(record),
+                const SizedBox(height: 12),
+                Expanded(child: _buildContent(record)),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, Pep3RecordSummary record) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '评估报告',
+                style: TextStyle(
+                  color: _ReportTheme.ink,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                '${record.assessmentName.trim().isEmpty ? '儿心量表-II发育行为评估报告' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ReportTheme.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: () => Navigator.of(context).pop(),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8F2),
+                shape: BoxShape.circle,
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 22,
+                color: _ReportTheme.muted,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSummaryBar(Pep3RecordSummary record) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Wrap(
+              spacing: 16,
+              runSpacing: 8,
+              children: <Widget>[
+                _ReportFactChip(label: '量表', value: '儿心量表-II'),
+                _ReportFactChip(label: '儿童', value: _studentName(record)),
+                _ReportFactChip(
+                  label: '测查日期',
+                  value: _dateOnlyText(record.assessmentDate),
+                ),
+                _ReportFactChip(
+                  label: '测试员',
+                  value: record.examinerName.trim().isEmpty
+                      ? '-'
+                      : record.examinerName.trim(),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 12),
+          const Text(
+            '单页 PDF 预览',
+            style: TextStyle(
+              color: _ReportTheme.blue,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildContent(Pep3RecordSummary record) {
+    if (_loading) {
+      return const _ReportPreviewLoadingState(message: '评估报告加载中...');
+    }
+    if (_errorMessage.isNotEmpty) {
+      return _ReportPreviewErrorState(
+        message: _errorMessage,
+        onRetry: _retryPreview,
+      );
+    }
+    final Uint8List? bytes = _pdfBytes;
+    if (bytes == null || bytes.isEmpty) {
+      return const _ReportPreviewEmptyState(message: '暂无评估报告内容');
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF8F3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _LazyReportPdfPreview(
+        key: ValueKey<String>(
+          'erxin-report-pdf-${record.id}-${record.updatedTime}-${bytes.length}',
+        ),
+        bytes: bytes,
+        pageCount: 1,
+        dpi: _erxinReportPreviewRasterDpi,
+        maxPageWidth: 920,
+      ),
+    );
+  }
+}
+
+class _ReportFactChip extends StatelessWidget {
+  const _ReportFactChip({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return RichText(
+      text: TextSpan(
+        children: <InlineSpan>[
+          TextSpan(
+            text: '$label：',
+            style: const TextStyle(
+              color: _ReportTheme.muted,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          TextSpan(
+            text: value.trim().isEmpty ? '-' : value.trim(),
+            style: const TextStyle(
+              color: _ReportTheme.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _LazyReportPdfPreview extends StatefulWidget {
   const _LazyReportPdfPreview({
     required this.bytes,
     required this.pageCount,
+    this.dpi = _reportPreviewRasterDpi,
+    this.maxPageWidth = 860,
     super.key,
   });
 
   final Uint8List bytes;
   final int pageCount;
+  final double dpi;
+  final double maxPageWidth;
 
   @override
   State<_LazyReportPdfPreview> createState() => _LazyReportPdfPreviewState();
@@ -3872,7 +4228,7 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
       final PdfRaster raster = await Printing.raster(
         widget.bytes,
         pages: <int>[pageIndex],
-        dpi: _reportPreviewRasterDpi,
+        dpi: widget.dpi,
       ).first;
       final _ReportPdfPageSnapshot snapshot = _ReportPdfPageSnapshot(
         raster: raster,
@@ -3906,6 +4262,20 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.pageCount == 1) {
+      _warmAround(0);
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+        child: _LazyReportPdfPageCard(
+          pageIndex: 0,
+          pageCount: 1,
+          pageFuture: _loadPage(0),
+          maxPageWidth: widget.maxPageWidth,
+          badgeText: '第 1 / 1 页',
+          compact: true,
+        ),
+      );
+    }
     return ListView.builder(
       padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
       cacheExtent: 720,
@@ -3916,6 +4286,8 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
           pageIndex: index,
           pageCount: widget.pageCount,
           pageFuture: _loadPage(index),
+          maxPageWidth: widget.maxPageWidth,
+          badgeText: '第 ${index + 1} / ${widget.pageCount} 页',
         );
       },
     );
@@ -3927,36 +4299,47 @@ class _LazyReportPdfPageCard extends StatelessWidget {
     required this.pageIndex,
     required this.pageCount,
     required this.pageFuture,
+    required this.maxPageWidth,
+    required this.badgeText,
+    this.compact = false,
   });
 
   final int pageIndex;
   final int pageCount;
   final Future<_ReportPdfPageSnapshot> pageFuture;
+  final double maxPageWidth;
+  final String badgeText;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: EdgeInsets.only(bottom: pageIndex == pageCount - 1 ? 0 : 16),
+      padding: EdgeInsets.only(
+          bottom: compact || pageIndex == pageCount - 1 ? 0 : 16),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final double cardWidth = math.min(constraints.maxWidth, 860);
+          final double cardWidth = math.min(constraints.maxWidth, maxPageWidth);
           return Center(
             child: SizedBox(
               width: cardWidth,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   color: Colors.white,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x11000000),
-                      blurRadius: 12,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
+                  borderRadius: BorderRadius.circular(compact ? 10 : 12),
+                  boxShadow: compact
+                      ? const <BoxShadow>[]
+                      : const <BoxShadow>[
+                          BoxShadow(
+                            color: Color(0x11000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 6),
+                          ),
+                        ],
+                  border:
+                      compact ? Border.all(color: _ReportTheme.lineSoft) : null,
                 ),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
+                  padding: EdgeInsets.all(compact ? 8 : 12),
                   child: Stack(
                     children: <Widget>[
                       FutureBuilder<_ReportPdfPageSnapshot>(
@@ -4003,7 +4386,7 @@ class _LazyReportPdfPageCard extends StatelessWidget {
                         right: 10,
                         child: IgnorePointer(
                           child: _ReportPdfPageBadge(
-                            text: '第 ${pageIndex + 1} / $pageCount 页',
+                            text: badgeText,
                           ),
                         ),
                       ),
