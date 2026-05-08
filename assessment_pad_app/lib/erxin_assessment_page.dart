@@ -9,6 +9,24 @@ import 'erxin_assessment_client.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 
+const double _erxinDetailPanelHeight = 156;
+const double _erxinDetailPanelTopPadding = 8;
+const double _erxinDetailPanelBottomPadding = 12;
+const double _erxinDetailHeaderHeight = 28;
+const double _erxinDetailHeaderGap = 6;
+const double _erxinDetailContentHeight = _erxinDetailPanelHeight -
+    _erxinDetailPanelTopPadding -
+    _erxinDetailPanelBottomPadding -
+    _erxinDetailHeaderHeight -
+    _erxinDetailHeaderGap;
+const double _erxinRulePanelBottomPadding = 12;
+const double _erxinRightRemarkSectionHeight =
+    _erxinDetailPanelHeight - _erxinRulePanelBottomPadding;
+const double _erxinSidebarBottomPadding = 6;
+const double _erxinProgressSummaryHeight = 138;
+const double _erxinProgressSummaryBottomGap =
+    _erxinDetailPanelBottomPadding - _erxinSidebarBottomPadding;
+
 class ErxinAssessmentPage extends StatefulWidget {
   const ErxinAssessmentPage({
     required this.onBack,
@@ -244,9 +262,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
     return <int>[
       for (final int month in _visibleMonthsForDomain(domainCode))
-        if (_itemsFor(domainCode, month).isNotEmpty &&
-            !_ageMonthComplete(domainCode, month))
-          month,
+        if (_itemsFor(domainCode, month).isNotEmpty) month,
     ];
   }
 
@@ -433,11 +449,19 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                   onSelect: _selectDomain,
                 ),
                 Expanded(
-                  child: Column(
-                    children: <Widget>[
-                      Expanded(child: _buildWorkspace()),
-                      _buildDetailPanel(),
-                    ],
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      border: Border(
+                        left: BorderSide(color: _ErxinColors.line),
+                      ),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        Expanded(child: _buildWorkspace()),
+                        _buildDetailPanel(),
+                      ],
+                    ),
                   ),
                 ),
                 _buildRulePanel(),
@@ -507,7 +531,6 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                           items: _itemsFor(_selectedDomainCode, month),
                           itemPasses: _itemPasses,
                           selectedItemNo: _selectedItemNo,
-                          showOnlyPending: !reviewing,
                           onSelectItem: _selectItem,
                           onScore: _scoreItem,
                         ),
@@ -579,7 +602,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                 : null;
     return Container(
       width: 296,
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      padding: const EdgeInsets.fromLTRB(
+        14,
+        14,
+        14,
+        _erxinRulePanelBottomPadding,
+      ),
       decoration: const BoxDecoration(
         color: Color(0xFFFAFBFD),
         border: Border(left: BorderSide(color: _ErxinColors.line)),
@@ -682,7 +710,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
             ),
           ),
           const SizedBox(height: 10),
-          const _RightRemarkSection(),
+          const _RightRemarkSection(height: _erxinRightRemarkSectionHeight),
         ],
       ),
     );
@@ -693,8 +721,13 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final String fallbackTitle =
         summary == null ? '当前题目说明' : '${summary.itemNo} ${summary.itemTitle}';
     return Container(
-      height: 132,
-      padding: const EdgeInsets.fromLTRB(16, 7, 12, 8),
+      height: _erxinDetailPanelHeight,
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        _erxinDetailPanelTopPadding,
+        12,
+        _erxinDetailPanelBottomPadding,
+      ),
       decoration: const BoxDecoration(
         color: Colors.white,
         border: Border(top: BorderSide(color: _ErxinColors.line)),
@@ -743,7 +776,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                   ),
                 ],
               ),
-              const SizedBox(height: 6),
+              const SizedBox(height: _erxinDetailHeaderGap),
               Expanded(
                 child: Row(
                   children: <Widget>[
@@ -1521,15 +1554,25 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   int _firstCurrentItemNo(String domainCode) {
+    final int pendingItemNo = _firstPendingCurrentItemNo(domainCode);
+    if (pendingItemNo > 0) {
+      return pendingItemNo;
+    }
+    for (final int month in _centerMonthsForDomain(domainCode)) {
+      final int itemNo = _firstItemNoForMonth(domainCode, month);
+      if (itemNo > 0) {
+        return itemNo;
+      }
+    }
+    return 0;
+  }
+
+  int _firstPendingCurrentItemNo(String domainCode) {
     for (final int month in _centerMonthsForDomain(domainCode)) {
       for (final ErxinItemSummary item in _itemsFor(domainCode, month)) {
         if (!_itemPasses.containsKey(item.itemNo)) {
           return item.itemNo;
         }
-      }
-      final int itemNo = _firstItemNoForMonth(domainCode, month);
-      if (itemNo > 0) {
-        return itemNo;
       }
     }
     return 0;
@@ -1539,7 +1582,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     if (_reviewMonthByDomain.containsKey(domainCode)) {
       return fallbackItemNo;
     }
-    return _firstCurrentItemNo(domainCode);
+    final int pendingItemNo = _firstPendingCurrentItemNo(domainCode);
+    return pendingItemNo > 0 ? pendingItemNo : fallbackItemNo;
   }
 
   int _firstItemNoForMonth(String domainCode, int ageMonth) {
@@ -1934,7 +1978,12 @@ class _DomainSidebar extends StatelessWidget {
     final _DomainProgress selectedProgress = progressForDomain(selectedCode);
     return Container(
       width: 214,
-      padding: const EdgeInsets.fromLTRB(14, 16, 12, 12),
+      padding: const EdgeInsets.fromLTRB(
+        14,
+        16,
+        12,
+        _erxinSidebarBottomPadding,
+      ),
       color: const Color(0xFFFAFBFD),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -1955,6 +2004,22 @@ class _DomainSidebar extends StatelessWidget {
               progress: progressForDomain(domain.domainCode),
               onTap: () => onSelect(domain.domainCode),
             ),
+          SizedBox(
+            height: 28,
+            child: TextButton.icon(
+              onPressed: () {},
+              icon: const Icon(Icons.list_alt_rounded, size: 17),
+              label: const Text('查看全部题目'),
+              style: TextButton.styleFrom(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 6),
+                textStyle: const TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
           const Spacer(),
           _ProgressSummary(
             domainStatus: selectedProgress.answered >= selectedProgress.total &&
@@ -1962,18 +2027,10 @@ class _DomainSidebar extends StatelessWidget {
                 ? '本能区：当前可见完成'
                 : '本能区：测查中',
             scaleStatus: savedItemCount > 0
-                ? '$completedDomainCount/5 能区完成 · 已保存$savedItemCount题'
+                ? '$completedDomainCount/5 能区完成\n已保存$savedItemCount题'
                 : '$completedDomainCount/5 能区完成',
           ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 34,
-            child: TextButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.list_alt_rounded, size: 17),
-              label: const Text('查看全部题目'),
-            ),
-          ),
+          const SizedBox(height: _erxinProgressSummaryBottomGap),
         ],
       ),
     );
@@ -2081,7 +2138,6 @@ class _AgeMonthSection extends StatelessWidget {
     required this.items,
     required this.itemPasses,
     required this.selectedItemNo,
-    required this.showOnlyPending,
     required this.onSelectItem,
     required this.onScore,
   });
@@ -2090,18 +2146,12 @@ class _AgeMonthSection extends StatelessWidget {
   final List<ErxinItemSummary> items;
   final Map<int, bool> itemPasses;
   final int selectedItemNo;
-  final bool showOnlyPending;
   final ValueChanged<int> onSelectItem;
   final void Function(int itemNo, bool passed) onScore;
 
   @override
   Widget build(BuildContext context) {
-    final List<ErxinItemSummary> displayItems = showOnlyPending
-        ? items
-            .where(
-                (ErxinItemSummary item) => !itemPasses.containsKey(item.itemNo))
-            .toList()
-        : items;
+    final List<ErxinItemSummary> displayItems = items;
     final int answered = items
         .where((ErxinItemSummary item) => itemPasses.containsKey(item.itemNo))
         .length;
@@ -2311,7 +2361,7 @@ class _DetailTextBox extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+      padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
         color: const Color(0xFFF8FAFD),
         borderRadius: BorderRadius.circular(8),
@@ -2324,21 +2374,21 @@ class _DetailTextBox extends StatelessWidget {
             title,
             style: const TextStyle(
               color: _ErxinColors.ink,
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 3),
+          const SizedBox(height: 4),
           Expanded(
             child: Text(
               text.trim().isEmpty ? '暂无内容' : text.trim(),
-              maxLines: 3,
+              maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
                 color: _ErxinColors.body,
-                fontSize: 11.2,
-                height: 1.24,
-                fontWeight: FontWeight.w600,
+                fontSize: 13,
+                height: 1.28,
+                fontWeight: FontWeight.w700,
               ),
             ),
           ),
@@ -2349,26 +2399,40 @@ class _DetailTextBox extends StatelessWidget {
 }
 
 class _RightRemarkSection extends StatelessWidget {
-  const _RightRemarkSection();
+  const _RightRemarkSection({required this.height});
+
+  final double height;
 
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      height: 132,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: const <Widget>[
-          Text(
-            '题目备注',
-            style: TextStyle(
-              color: _ErxinColors.ink,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
+      height: height,
+      child: Padding(
+        padding: const EdgeInsets.only(top: _erxinDetailPanelTopPadding),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const <Widget>[
+            SizedBox(
+              height: _erxinDetailHeaderHeight,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  '题目备注',
+                  style: TextStyle(
+                    color: _ErxinColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
             ),
-          ),
-          SizedBox(height: 8),
-          Expanded(child: _RemarkBox()),
-        ],
+            SizedBox(height: _erxinDetailHeaderGap),
+            SizedBox(
+              height: _erxinDetailContentHeight,
+              child: _RemarkBox(),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2382,6 +2446,8 @@ class _RemarkBox extends StatelessWidget {
     return TextField(
       maxLines: null,
       expands: true,
+      textAlignVertical: TextAlignVertical.top,
+      onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
       style: const TextStyle(fontSize: 13, height: 1.25),
       decoration: InputDecoration(
         hintText: '添加本题备注',
@@ -2721,7 +2787,8 @@ class _ProgressSummary extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(14),
+      height: _erxinProgressSummaryHeight,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
@@ -2738,10 +2805,20 @@ class _ProgressSummary extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 8),
-          Text(domainStatus, style: _summaryStyle),
-          const SizedBox(height: 5),
-          Text('全量表：$scaleStatus', style: _summaryStyle),
+          const SizedBox(height: 6),
+          Text(
+            domainStatus,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: _summaryStyle,
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '全量表：$scaleStatus',
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: _summaryStyle,
+          ),
         ],
       ),
     );

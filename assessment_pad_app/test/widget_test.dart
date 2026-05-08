@@ -1412,11 +1412,16 @@ void main() {
       lessThan(tester.getTopLeft(find.text('36月龄')).dy),
     );
 
-    await _tapErxinScore(tester, '36月题', true);
-    await _tapErxinScore(tester, '42月题', false);
     await _tapErxinScore(tester, '48月题', true);
+    expect(find.textContaining('当前题目说明：142 42月题'), findsOneWidget);
+    await _tapErxinScore(tester, '42月题', false);
+    expect(find.textContaining('当前题目说明：136 36月题'), findsOneWidget);
+    await _tapErxinScore(tester, '36月题', true);
     await tester.pumpAndSettle();
 
+    expect(find.text('36月题'), findsOneWidget);
+    expect(find.text('42月题'), findsOneWidget);
+    expect(find.text('48月题'), findsOneWidget);
     expect(find.text('继续往前测查'), findsOneWidget);
     expect(find.textContaining('继续追加33月'), findsOneWidget);
 
@@ -1462,7 +1467,7 @@ void main() {
     await _tapErxinScore(tester, '48月题', true);
     await tester.pumpAndSettle();
 
-    expect(find.text('48月题'), findsNothing);
+    expect(find.text('48月题'), findsOneWidget);
     expect(find.text('前测基线'), findsOneWidget);
     expect(find.text('已建立'), findsOneWidget);
 
