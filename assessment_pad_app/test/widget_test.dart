@@ -146,6 +146,7 @@ void main() {
 
     final _FakeErxinAssessmentClient erxinClient = _FakeErxinAssessmentClient(
       interpretationDelay: const Duration(milliseconds: 180),
+      interpretationFetchDelay: const Duration(milliseconds: 80),
       reportPdfBytes: Uint8List(0),
     );
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -224,12 +225,29 @@ void main() {
     expect(find.text('重新生成解读'), findsOneWidget);
     expect(erxinClient.generateInterpretationCalls, 1);
 
+    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('查看'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('报告解读'));
+    await tester.pump();
+
+    expect(find.text('AI 正在生成报告解读'), findsNothing);
+    expect(find.text('AI 正在生成报告解读...'), findsNothing);
+    expect(find.textContaining('正在读取已保存的报告解读'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsOneWidget);
+    expect(erxinClient.fetchInterpretationCalls, 2);
+    expect(erxinClient.generateInterpretationCalls, 1);
+
     await tester.tap(find.text('评估结果记录'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('报告解读'));
     await tester.pumpAndSettle();
 
-    expect(erxinClient.fetchInterpretationCalls, 1);
+    expect(erxinClient.fetchInterpretationCalls, 2);
     expect(erxinClient.generateInterpretationCalls, 1);
 
     await tester.tap(find.text('重新生成解读'));
@@ -3759,6 +3777,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     this.saveDraftDelay = Duration.zero,
     this.draftDetailDelay = Duration.zero,
     this.interpretationDelay = Duration.zero,
+    this.interpretationFetchDelay = Duration.zero,
     ErxinReportInterpretation savedInterpretation =
         ErxinReportInterpretation.empty,
     Uint8List? reportPdfBytes,
@@ -3774,6 +3793,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   final Duration saveDraftDelay;
   final Duration draftDetailDelay;
   final Duration interpretationDelay;
+  final Duration interpretationFetchDelay;
   final Uint8List reportPdfBytes;
   final AssessmentDraftSummary? detectedDraft;
   final ErxinDraftDetail? draftDetail;
@@ -4140,6 +4160,9 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     int id,
   ) async {
     fetchInterpretationCalls += 1;
+    if (interpretationFetchDelay > Duration.zero) {
+      await Future<void>.delayed(interpretationFetchDelay);
+    }
     return _savedInterpretation;
   }
 

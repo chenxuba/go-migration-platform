@@ -3855,6 +3855,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   Future<ErxinReportInterpretation>? _interpretationLoad;
   bool _loading = true;
   bool _interpretationLoading = false;
+  bool _interpretationGenerating = false;
   bool _interpretationFetched = false;
   bool _showInterpretation = false;
   String _errorMessage = '';
@@ -4010,13 +4011,16 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       setState(() {
         _interpretationFetched = true;
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationErrorMessage = '请先登录后再查看报告解读';
       });
       return;
     }
     setState(() {
       _interpretationLoading = true;
+      _interpretationGenerating = false;
       _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
       _interpretationProgressMessage = '正在读取已保存的报告解读...';
     });
     final Future<ErxinReportInterpretation> future =
@@ -4034,6 +4038,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         _interpretation = interpretation;
         _interpretationFetched = true;
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationStreamingText = '';
         _interpretationProgressMessage =
             interpretation.isEmpty ? '报告解读尚未生成' : '已读取保存的报告解读';
@@ -4045,6 +4050,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       setState(() {
         _interpretationFetched = true;
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationErrorMessage = error.message;
       });
     } on Object catch (error) {
@@ -4054,6 +4060,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       setState(() {
         _interpretationFetched = true;
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationErrorMessage = '报告解读读取失败：$error';
       });
     }
@@ -4067,6 +4074,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     if (token.isEmpty) {
       setState(() {
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationErrorMessage = '请先登录后再生成报告解读';
       });
       return;
@@ -4074,6 +4082,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     final int serial = ++_interpretationGenerateSerial;
     setState(() {
       _interpretationLoading = true;
+      _interpretationGenerating = true;
       _interpretationFetched = true;
       _interpretationErrorMessage = '';
       _interpretationStreamingText = '';
@@ -4120,6 +4129,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
           setState(() {
             _interpretation = interpretation;
             _interpretationLoading = false;
+            _interpretationGenerating = false;
             _interpretationStreamingText = '';
             _interpretationProgressMessage = '报告解读已生成';
           });
@@ -4132,6 +4142,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       }
       setState(() {
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationErrorMessage = '报告解读生成中断，请重新生成';
       });
     } on AssessmentScaleApiException catch (error) {
@@ -4140,6 +4151,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       }
       setState(() {
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationStreamingText = '';
         _interpretationErrorMessage = error.message;
       });
@@ -4149,6 +4161,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       }
       setState(() {
         _interpretationLoading = false;
+        _interpretationGenerating = false;
         _interpretationStreamingText = '';
         _interpretationErrorMessage = '报告解读生成失败：$error';
       });
@@ -4283,7 +4296,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
           if (_showInterpretation)
             _ToolbarButton(
               label: _interpretationLoading
-                  ? '生成中'
+                  ? (_interpretationGenerating ? '生成中' : '读取中')
                   : (_interpretation == null || _interpretation!.isEmpty)
                       ? '生成解读'
                       : '重新生成解读',
@@ -4347,9 +4360,14 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
 
   Widget _buildInterpretationContent() {
     if (_interpretationLoading) {
-      return _ErxinInterpretationProgressState(
+      if (_interpretationGenerating) {
+        return _ErxinInterpretationProgressState(
+          message: _interpretationProgressMessage,
+          streamingText: _interpretationStreamingText,
+        );
+      }
+      return _ErxinInterpretationReadLoadingState(
         message: _interpretationProgressMessage,
-        streamingText: _interpretationStreamingText,
       );
     }
     if (_interpretationErrorMessage.isNotEmpty) {
@@ -4421,6 +4439,48 @@ class _ErxinReportTabChip extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationReadLoadingState extends StatelessWidget {
+  const _ErxinInterpretationReadLoadingState({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.4,
+                color: _ReportTheme.orange,
+              ),
+            ),
+            const SizedBox(width: 10),
+            Text(
+              message.trim().isEmpty ? '正在读取已保存的报告解读...' : message,
+              style: const TextStyle(
+                color: _ReportTheme.muted,
+                fontSize: 13,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );
