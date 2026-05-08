@@ -283,7 +283,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     });
   }
 
-  void _restartWithoutDetectedDraft() {
+  Future<void> _restartWithoutDetectedDraft() async {
     if (!mounted) {
       return;
     }
@@ -303,6 +303,17 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _autoSaveText = '已开始新的测评';
     });
     _prefetchSelectedItem();
+    final ErxinDraftDetail? detail = await _saveDraft(silent: true);
+    if (!mounted) {
+      return;
+    }
+    if (detail == null) {
+      _showMessage('新测评草稿创建失败，请手动保存草稿');
+      return;
+    }
+    setState(() {
+      _autoSaveText = '新草稿已创建';
+    });
   }
 
   Future<bool> _continueDetectedDraft(AssessmentDraftSummary draft) async {
@@ -634,7 +645,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return const Center(child: CircularProgressIndicator());
+      return _buildLoadingShell();
     }
     if (_errorMessage.trim().isNotEmpty) {
       return _ErrorView(message: _errorMessage, onBack: widget.onBack);
@@ -644,15 +655,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       child: Column(
         children: <Widget>[
           _Header(
-            args: ErxinAssessmentLaunchArgs(
-              studentId: _studentId,
-              studentName: _studentName,
-              studentAge: _resolvedStudentAgeText(),
-              birthDate: _dateOnlyText(_birthDate),
-              assessmentDate: _dateOnlyText(_assessmentDate),
-              examinerName: _examinerName,
-              scaleName: widget.args.scaleName,
-            ),
+            args: _headerArgs(),
             autoSaveText: _autoSaveText,
             saving: _savingDraft,
             submitting: _submitting,
@@ -692,6 +695,218 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                 ],
               ),
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  ErxinAssessmentLaunchArgs _headerArgs() {
+    return ErxinAssessmentLaunchArgs(
+      studentId: _studentId,
+      studentName: _studentName,
+      studentAge: _resolvedStudentAgeText(),
+      birthDate: _dateOnlyText(_birthDate),
+      assessmentDate: _dateOnlyText(_assessmentDate),
+      examinerName: _examinerName,
+      scaleName: widget.args.scaleName,
+    );
+  }
+
+  Widget _buildLoadingShell() {
+    return ColoredBox(
+      key: const ValueKey<String>('erxin-loading-shell'),
+      color: _ErxinColors.page,
+      child: Column(
+        children: <Widget>[
+          _Header(
+            args: _headerArgs(),
+            autoSaveText: '加载中...',
+            saving: false,
+            submitting: false,
+            actionsEnabled: false,
+            onBack: widget.onBack,
+            onSave: () {},
+            onSubmit: () {},
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _buildLoadingSidebar(),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: _erxinPanelDecoration(),
+                      child: Column(
+                        children: <Widget>[
+                          Expanded(child: _buildLoadingWorkspace()),
+                          const _ErxinLoadingDetailPanel(),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  _buildLoadingRulePanel(),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingSidebar() {
+    return Container(
+      key: const ValueKey<String>('erxin-loading-sidebar'),
+      width: 214,
+      padding: const EdgeInsets.fromLTRB(
+        14,
+        16,
+        12,
+        _erxinSidebarBottomPadding,
+      ),
+      decoration: _erxinPanelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const <Widget>[
+          Text(
+            '能区进度',
+            style: TextStyle(
+              color: _ErxinColors.ink,
+              fontSize: 17,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          SizedBox(height: 12),
+          _ErxinLoadingDomainRow(selected: true),
+          _ErxinLoadingDomainRow(selected: false),
+          _ErxinLoadingDomainRow(selected: false),
+          _ErxinLoadingDomainRow(selected: false),
+          _ErxinLoadingDomainRow(selected: false),
+          SizedBox(height: 2),
+          _AllItemsButton(),
+          Spacer(),
+          _ErxinLoadingProgressSummary(),
+          SizedBox(height: _erxinProgressSummaryBottomGap),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingWorkspace() {
+    final int mainAge = _mainAgeMonth;
+    return Container(
+      key: const ValueKey<String>('erxin-loading-workspace'),
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
+      color: Colors.white,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const _ErxinSkeletonBlock(width: 70, height: 20),
+              const Text(
+                ' · 当前测查',
+                style: TextStyle(
+                  color: _ErxinColors.ink,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              if (mainAge > 0)
+                _SmallBadge(text: '主测月龄 $mainAge月龄', strong: true)
+              else
+                const _ErxinSkeletonBlock(width: 118, height: 24, radius: 999),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Expanded(
+            child: ListView(
+              padding: EdgeInsets.zero,
+              physics: const NeverScrollableScrollPhysics(),
+              children: const <Widget>[
+                _ErxinLoadingMonthSection(rowCount: 3),
+                _ErxinLoadingMonthSection(rowCount: 2),
+                _ErxinLoadingMonthSection(rowCount: 2),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildLoadingRulePanel() {
+    return Container(
+      key: const ValueKey<String>('erxin-loading-rule'),
+      width: 296,
+      padding: const EdgeInsets.fromLTRB(
+        14,
+        14,
+        14,
+        _erxinRulePanelBottomPadding,
+      ),
+      clipBehavior: Clip.antiAlias,
+      decoration: _erxinPanelDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            '规则判断',
+            style: TextStyle(
+              color: _ErxinColors.ink,
+              fontSize: 20,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: const <Widget>[
+                _ErxinLoadingNextCard(),
+                SizedBox(height: 10),
+                Text(
+                  '测评记录',
+                  style: TextStyle(
+                    color: _ErxinColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 6),
+                Expanded(child: _ErxinLoadingRecordList()),
+                SizedBox(height: 12),
+                Text(
+                  '测查推进',
+                  style: TextStyle(
+                    color: _ErxinColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                SizedBox(height: 7),
+                _ErxinSkeletonBlock(height: 12),
+                SizedBox(height: 7),
+                _ErxinSkeletonBlock(widthFactor: .72, height: 12),
+                SizedBox(height: 8),
+                _ErxinSkeletonBlock(height: 38, radius: 8),
+              ],
+            ),
+          ),
+          const SizedBox(height: 10),
+          _RightRemarkSection(
+            height: _erxinRightRemarkSectionHeight,
+            itemNo: 0,
+            remark: '',
+            onChanged: _noopRemarkChange,
+            onEditingComplete: _noopRemarkComplete,
           ),
         ],
       ),
@@ -1181,6 +1396,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
     unawaited(_saveItem(itemNo));
   }
+
+  void _noopRemarkChange(int itemNo, String remark) {}
+
+  void _noopRemarkComplete(int itemNo) {}
 
   void _scoreItem(int itemNo, bool passed) {
     unawaited(_scoreItemInternal(itemNo, passed));
@@ -2207,7 +2426,7 @@ class _ErxinDraftResumeDialog extends StatefulWidget {
   });
 
   final AssessmentDraftSummary draft;
-  final VoidCallback onRestart;
+  final Future<void> Function() onRestart;
   final Future<bool> Function() onContinue;
 
   @override
@@ -2223,7 +2442,7 @@ class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
       return;
     }
     Navigator.of(context).pop();
-    widget.onRestart();
+    unawaited(widget.onRestart());
   }
 
   Future<void> _handleContinue() async {
@@ -2245,7 +2464,6 @@ class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
   @override
   Widget build(BuildContext context) {
     final int answered = widget.draft.answeredItemCount;
-    final int percent = widget.draft.completionPercentInt;
     return Dialog(
       insetPadding: const EdgeInsets.symmetric(horizontal: 32),
       backgroundColor: Colors.transparent,
@@ -2305,7 +2523,7 @@ class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
                       children: <Widget>[
                         _ErxinDraftResumeMeta(
                           label: '已记录',
-                          value: '$answered 题 · $percent%',
+                          value: '$answered 题',
                         ),
                         const SizedBox(height: 13),
                         _ErxinDraftResumeMeta(
@@ -2321,39 +2539,163 @@ class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
             const Divider(height: 1, color: _ErxinColors.line),
             Padding(
               padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
-              child: Align(
-                alignment: Alignment.centerRight,
-                child: SizedBox(
-                  height: 42,
-                  child: _continuing
-                      ? const SizedBox(
-                          width: 112,
-                          child: Center(
-                            child: SizedBox(
-                              width: 18,
-                              height: 18,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            ),
-                          ),
-                        )
-                      : Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: <Widget>[
-                            OutlinedButton(
-                              onPressed: _handleRestart,
-                              child: const Text('重新测评'),
-                            ),
-                            const SizedBox(width: 12),
-                            FilledButton(
-                              onPressed: _handleContinue,
-                              child: const Text('继续测评'),
-                            ),
-                          ],
-                        ),
-                ),
+              child: _ErxinDraftResumeActionArea(
+                continuing: _continuing,
+                onRestart: _handleRestart,
+                onContinue: _handleContinue,
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinDraftResumeActionArea extends StatelessWidget {
+  const _ErxinDraftResumeActionArea({
+    required this.continuing,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final bool continuing;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: SizedBox(
+        width: 236,
+        height: 42,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          reverseDuration: const Duration(milliseconds: 120),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          layoutBuilder: (
+            Widget? currentChild,
+            List<Widget> previousChildren,
+          ) {
+            return Stack(
+              alignment: Alignment.centerRight,
+              children: <Widget>[
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            );
+          },
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: continuing
+              ? const _ErxinDialogLoadingButton(
+                  key: ValueKey<String>('erxin-draft-resume-loading'),
+                )
+              : Row(
+                  key: const ValueKey<String>('erxin-draft-resume-actions'),
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    _ErxinDialogActionButton(
+                      label: '重新测评',
+                      filled: false,
+                      onTap: onRestart,
+                    ),
+                    const SizedBox(width: 12),
+                    _ErxinDialogActionButton(
+                      label: '继续测评',
+                      filled: true,
+                      onTap: onContinue,
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinDialogLoadingButton extends StatelessWidget {
+  const _ErxinDialogLoadingButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 236,
+      height: 42,
+      decoration: BoxDecoration(
+        color: _ErxinColors.orange,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _ErxinColors.orange),
+      ),
+      child: const Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              '题目填充中，请稍后...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinDialogActionButton extends StatelessWidget {
+  const _ErxinDialogActionButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          width: 112,
+          height: 42,
+          decoration: BoxDecoration(
+            color: filled ? _ErxinColors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: filled ? _ErxinColors.orange : _ErxinColors.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? Colors.white : _ErxinColors.ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
         ),
       ),
     );
@@ -2397,6 +2739,7 @@ class _Header extends StatelessWidget {
     required this.autoSaveText,
     required this.saving,
     required this.submitting,
+    this.actionsEnabled = true,
     required this.onBack,
     required this.onSave,
     required this.onSubmit,
@@ -2406,6 +2749,7 @@ class _Header extends StatelessWidget {
   final String autoSaveText;
   final bool saving;
   final bool submitting;
+  final bool actionsEnabled;
   final VoidCallback onBack;
   final VoidCallback onSave;
   final VoidCallback onSubmit;
@@ -2513,6 +2857,7 @@ class _Header extends StatelessWidget {
                 icon: Icons.save_outlined,
                 loading: saving,
                 filled: false,
+                enabled: actionsEnabled,
                 onTap: onSave,
               ),
               const SizedBox(width: 9),
@@ -2521,6 +2866,7 @@ class _Header extends StatelessWidget {
                 icon: Icons.fact_check_outlined,
                 loading: submitting,
                 filled: true,
+                enabled: actionsEnabled,
                 onTap: onSubmit,
               ),
             ],
@@ -2610,6 +2956,7 @@ class _TopActionButton extends StatelessWidget {
     required this.icon,
     required this.loading,
     required this.filled,
+    this.enabled = true,
     required this.onTap,
   });
 
@@ -2617,6 +2964,7 @@ class _TopActionButton extends StatelessWidget {
   final IconData icon;
   final bool loading;
   final bool filled;
+  final bool enabled;
   final VoidCallback onTap;
 
   @override
@@ -2624,21 +2972,31 @@ class _TopActionButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: loading ? null : onTap,
+        onTap: loading || !enabled ? null : onTap,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
           height: 36,
           padding: const EdgeInsets.symmetric(horizontal: 13),
           decoration: BoxDecoration(
-            color: filled ? _ErxinColors.orange : Colors.white,
+            color: filled
+                ? (enabled
+                    ? _ErxinColors.orange
+                    : _ErxinColors.orange.withOpacity(.45))
+                : (enabled ? Colors.white : Colors.white.withOpacity(.72)),
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: _ErxinColors.orange),
+            border: Border.all(
+              color: enabled
+                  ? _ErxinColors.orange
+                  : _ErxinColors.orange.withOpacity(.45),
+            ),
             boxShadow: filled
-                ? _erxinShadow(
-                    color: const Color(0x28E96F43),
-                    blur: 12,
-                    offset: const Offset(0, 5),
-                  )
+                ? enabled
+                    ? _erxinShadow(
+                        color: const Color(0x28E96F43),
+                        blur: 12,
+                        offset: const Offset(0, 5),
+                      )
+                    : null
                 : null,
           ),
           child: Row(
@@ -2650,14 +3008,22 @@ class _TopActionButton extends StatelessWidget {
                   height: 16,
                   child: CircularProgressIndicator(
                     strokeWidth: 2,
-                    color: filled ? Colors.white : _ErxinColors.orange,
+                    color: filled
+                        ? Colors.white
+                        : (enabled
+                            ? _ErxinColors.orange
+                            : _ErxinColors.orange.withOpacity(.45)),
                   ),
                 )
               else
                 Icon(
                   icon,
                   size: 17,
-                  color: filled ? Colors.white : _ErxinColors.orange,
+                  color: filled
+                      ? Colors.white
+                      : (enabled
+                          ? _ErxinColors.orange
+                          : _ErxinColors.orange.withOpacity(.45)),
                 ),
               const SizedBox(width: 7),
               Text(
@@ -2665,7 +3031,11 @@ class _TopActionButton extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 style: TextStyle(
-                  color: filled ? Colors.white : _ErxinColors.orangeDeep,
+                  color: filled
+                      ? Colors.white
+                      : (enabled
+                          ? _ErxinColors.orangeDeep
+                          : _ErxinColors.orangeDeep.withOpacity(.45)),
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
@@ -2674,6 +3044,372 @@ class _TopActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _ErxinLoadingDomainRow extends StatelessWidget {
+  const _ErxinLoadingDomainRow({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 9),
+      child: Container(
+        height: 66,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        decoration: BoxDecoration(
+          color: selected ? const Color(0xFFFFEEE5) : Colors.white,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _ErxinColors.line),
+        ),
+        child: Column(
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                _ErxinSkeletonBlock(
+                  width: 24,
+                  height: 24,
+                  radius: 7,
+                  highlight: selected,
+                ),
+                const SizedBox(width: 8),
+                const Expanded(
+                  child: _ErxinSkeletonBlock(height: 14),
+                ),
+                const SizedBox(width: 10),
+                const _ErxinSkeletonBlock(width: 34, height: 12, radius: 6),
+              ],
+            ),
+            const Spacer(),
+            Row(
+              children: const <Widget>[
+                Expanded(
+                  child: _ErxinSkeletonBlock(height: 4, radius: 2),
+                ),
+                SizedBox(width: 9),
+                _ErxinSkeletonBlock(width: 28, height: 12, radius: 6),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingProgressSummary extends StatelessWidget {
+  const _ErxinLoadingProgressSummary();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: _erxinProgressSummaryHeight,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _ErxinColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const <Widget>[
+          _ErxinSkeletonBlock(width: 96, height: 12, radius: 6),
+          SizedBox(height: 10),
+          _ErxinSkeletonBlock(widthFactor: .82, height: 12),
+          SizedBox(height: 8),
+          _ErxinSkeletonBlock(widthFactor: .6, height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingMonthSection extends StatelessWidget {
+  const _ErxinLoadingMonthSection({required this.rowCount});
+
+  final int rowCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      foregroundDecoration: BoxDecoration(
+        border: Border.all(color: _ErxinColors.line),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Column(
+        children: <Widget>[
+          Container(
+            height: 34,
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            decoration: const BoxDecoration(
+              color: Color(0xFFFFFAF5),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(8)),
+              border: Border(bottom: BorderSide(color: _ErxinColors.line)),
+            ),
+            child: const Row(
+              children: <Widget>[
+                _ErxinSkeletonBlock(width: 74, height: 14),
+                Spacer(),
+                _ErxinSkeletonBlock(width: 54, height: 12, radius: 6),
+              ],
+            ),
+          ),
+          for (int index = 0; index < rowCount; index++)
+            const _ErxinLoadingItemRow(),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingItemRow extends StatelessWidget {
+  const _ErxinLoadingItemRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: _ErxinColors.line)),
+      ),
+      child: Row(
+        children: const <Widget>[
+          SizedBox(
+            width: 42,
+            child: _ErxinSkeletonBlock(height: 14),
+          ),
+          Expanded(
+            child: _ErxinSkeletonBlock(height: 14),
+          ),
+          SizedBox(width: 8),
+          _ErxinSkeletonBlock(width: 64, height: 28, radius: 10),
+          SizedBox(width: 8),
+          _ErxinSkeletonBlock(width: 74, height: 28, radius: 10),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingNextCard extends StatelessWidget {
+  const _ErxinLoadingNextCard();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 108,
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _ErxinColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: const <Widget>[
+          _ErxinSkeletonBlock(width: 48, height: 12, radius: 6),
+          SizedBox(height: 10),
+          _ErxinSkeletonBlock(height: 14),
+          SizedBox(height: 8),
+          _ErxinSkeletonBlock(widthFactor: .76, height: 12),
+          SizedBox(height: 8),
+          _ErxinSkeletonBlock(widthFactor: .56, height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingRecordList extends StatelessWidget {
+  const _ErxinLoadingRecordList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView.separated(
+      padding: EdgeInsets.zero,
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 5,
+      separatorBuilder: (_, __) => const SizedBox(height: 8),
+      itemBuilder: (BuildContext context, int index) {
+        return _ErxinLoadingRecordRow(selected: index == 1);
+      },
+    );
+  }
+}
+
+class _ErxinLoadingRecordRow extends StatelessWidget {
+  const _ErxinLoadingRecordRow({required this.selected});
+
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 42,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFFFF3E8) : const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _ErxinColors.line),
+      ),
+      child: Row(
+        children: const <Widget>[
+          _ErxinSkeletonBlock(width: 16, height: 16, radius: 8),
+          SizedBox(width: 8),
+          Expanded(child: _ErxinSkeletonBlock(height: 12)),
+          SizedBox(width: 8),
+          _ErxinSkeletonBlock(width: 36, height: 12, radius: 6),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingDetailPanel extends StatelessWidget {
+  const _ErxinLoadingDetailPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey<String>('erxin-loading-detail'),
+      height: _erxinDetailPanelHeight,
+      padding: const EdgeInsets.fromLTRB(
+        16,
+        _erxinDetailPanelTopPadding,
+        12,
+        _erxinDetailPanelBottomPadding,
+      ),
+      decoration: const BoxDecoration(
+        color: Colors.white,
+        border: Border(top: BorderSide(color: _ErxinColors.line)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Expanded(
+                child: Text(
+                  '当前题目说明：',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _ErxinColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              SizedBox(
+                height: 28,
+                child: OutlinedButton(
+                  onPressed: null,
+                  child: const Text('完整说明'),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: _erxinDetailHeaderGap),
+          const Expanded(
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _ErxinLoadingTextPanel(title: '操作方法'),
+                ),
+                SizedBox(width: 10),
+                Expanded(
+                  child: _ErxinLoadingTextPanel(title: '通过标准'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinLoadingTextPanel extends StatelessWidget {
+  const _ErxinLoadingTextPanel({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: _ErxinColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: const TextStyle(
+              color: _ErxinColors.ink,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 8),
+          const _ErxinSkeletonBlock(height: 12),
+          const SizedBox(height: 7),
+          const _ErxinSkeletonBlock(widthFactor: .92, height: 12),
+          const SizedBox(height: 7),
+          const _ErxinSkeletonBlock(widthFactor: .7, height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinSkeletonBlock extends StatelessWidget {
+  const _ErxinSkeletonBlock({
+    this.width,
+    this.widthFactor = 1,
+    required this.height,
+    this.radius = 6,
+    this.highlight = false,
+  });
+
+  final double? width;
+  final double widthFactor;
+  final double height;
+  final double radius;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color fill =
+        highlight ? const Color(0xFFFFE5D3) : const Color(0xFFF3E3D8);
+    final Widget block = Container(
+      height: height,
+      decoration: BoxDecoration(
+        color: fill,
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+    if (width != null) {
+      return SizedBox(width: width, child: block);
+    }
+    return FractionallySizedBox(
+      widthFactor: widthFactor,
+      alignment: Alignment.centerLeft,
+      child: block,
     );
   }
 }

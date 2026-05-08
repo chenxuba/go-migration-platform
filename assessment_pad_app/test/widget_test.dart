@@ -1365,6 +1365,64 @@ void main() {
     expect(find.text('儿心量表-II 测评'), findsNothing);
   });
 
+  testWidgets('ERXin workbench shows structured loading shell while loading',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(
+              templateSummaryDelay: const Duration(milliseconds: 300),
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(
+      find.byKey(const ValueKey<String>('erxin-loading-shell')),
+      findsOneWidget,
+    );
+    expect(find.text('儿心量表-II 测评工作台'), findsOneWidget);
+    expect(find.text('能区进度'), findsOneWidget);
+    expect(find.text('规则判断'), findsOneWidget);
+    expect(find.text('当前题目说明：'), findsOneWidget);
+    expect(find.text('操作方法'), findsOneWidget);
+    expect(find.text('通过标准'), findsOneWidget);
+    expect(find.text('题目备注'), findsOneWidget);
+    expect(find.text('测评记录'), findsOneWidget);
+    expect(find.text('测查推进'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 350));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('erxin-loading-shell')),
+      findsNothing,
+    );
+    expect(find.textContaining('当前题目说明：'), findsOneWidget);
+  });
+
   testWidgets(
       'ERXin workbench continues backward when basal is not established',
       (WidgetTester tester) async {
@@ -1874,7 +1932,7 @@ void main() {
     expect(find.text('发现未完成草稿'), findsOneWidget);
     expect(find.text('继续测评'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(FilledButton, '继续测评'));
+    await tester.tap(find.text('继续测评'));
     await tester.pumpAndSettle();
 
     expect(find.text('发现未完成草稿'), findsNothing);
@@ -1952,6 +2010,10 @@ void main() {
         itemRemarks: <int, String>{142: '42题草稿备注'},
       ),
     );
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      detectedDraft: draft,
+      draftDetail: detail,
+    );
 
     await tester.pumpWidget(
       MaterialApp(
@@ -1964,10 +2026,7 @@ void main() {
               birthDate: '2022-05-11',
               assessmentDate: '2026-05-08',
             ),
-            client: _FakeErxinAssessmentClient(
-              detectedDraft: draft,
-              draftDetail: detail,
-            ),
+            client: client,
             onBack: () {},
           ),
         ),
@@ -1977,7 +2036,42 @@ void main() {
 
     expect(find.text('发现未完成草稿'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(OutlinedButton, '重新测评'));
+    await tester.tap(find.text('重新测评'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsNothing);
+    expect(find.textContaining('当前题目说明：148 48月题'), findsOneWidget);
+    expect(find.text('42题草稿备注'), findsNothing);
+    expect(client.saveDraftCalls, 1);
+    expect(client.saveDraftPayloads.single.containsKey('id'), isFalse);
+    expect(client.saveDraftPayloads.single['itemPassList'], isEmpty);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsOneWidget);
+    expect(find.textContaining('0 题', findRichText: true), findsOneWidget);
+
+    await tester.tap(find.text('继续测评'));
     await tester.pumpAndSettle();
 
     expect(find.text('发现未完成草稿'), findsNothing);
@@ -3552,6 +3646,7 @@ const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
 
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   _FakeErxinAssessmentClient({
+    this.templateSummaryDelay = Duration.zero,
     this.saveDraftDelay = Duration.zero,
     this.draftDetailDelay = Duration.zero,
     this.detectedDraft,
@@ -3559,6 +3654,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     List<ErxinAgeGroup>? groups,
   }) : groups = groups ?? _groups;
 
+  final Duration templateSummaryDelay;
   final Duration saveDraftDelay;
   final Duration draftDetailDelay;
   final AssessmentDraftSummary? detectedDraft;
@@ -3571,12 +3667,14 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   int fetchDraftsPageCalls = 0;
   int fetchDraftDetailCalls = 0;
   int nextDraftId = 21;
+  int _latestDraftId = 0;
   bool failNextDraftUpdateAsNotFound = false;
   final List<Map<String, dynamic>> saveDraftPayloads = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> saveDraftItemPayloads =
       <Map<String, dynamic>>[];
   final Map<int, bool> _savedItemPasses = <int, bool>{};
   final Map<int, String> _savedItemRemarks = <int, String>{};
+  AssessmentDraftSummary? _latestDraftSummary;
 
   static const ErxinDomain _domain = ErxinDomain(
     domainCode: 'GM',
@@ -3701,6 +3799,9 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
 
   @override
   Future<ErxinTemplateSummary> fetchTemplateSummary(String token) async {
+    if (templateSummaryDelay > Duration.zero) {
+      await Future<void>.delayed(templateSummaryDelay);
+    }
     final int itemCount = groups.fold<int>(
       0,
       (int total, ErxinAgeGroup group) => total + group.items.length,
@@ -3751,6 +3852,15 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     bool latestOnly = true,
   }) async {
     fetchDraftsPageCalls += 1;
+    final AssessmentDraftSummary? latest = _latestDraftSummary;
+    if (latest != null) {
+      return AssessmentDraftPage(
+        total: 1,
+        current: pageIndex,
+        size: pageSize,
+        items: <AssessmentDraftSummary>[latest],
+      );
+    }
     final AssessmentDraftSummary? draft = detectedDraft;
     if (draft == null) {
       return AssessmentDraftPage.empty;
@@ -3769,7 +3879,13 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     if (draftDetailDelay > Duration.zero) {
       await Future<void>.delayed(draftDetailDelay);
     }
-    return draftDetail ?? _draftDetail(id: id);
+    if (_latestDraftSummary != null && _latestDraftSummary!.id == id) {
+      return _draftDetail(id: id, input: _savedInput());
+    }
+    if (draftDetail != null && draftDetail!.id == id) {
+      return draftDetail!;
+    }
+    return _draftDetail(id: id);
   }
 
   @override
@@ -3789,11 +3905,19 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     }
     _replaceSavedInput(_inputFromPayload(payload));
     if (id is int && id > 0) {
-      return _draftDetail(id: id, input: _savedInput());
+      final ErxinDraftDetail detail =
+          _draftDetail(id: id, input: _savedInput());
+      _latestDraftId = id;
+      _latestDraftSummary = _draftSummary(id, detail);
+      return detail;
     }
     final int idToReturn = nextDraftId;
     nextDraftId += 1;
-    return _draftDetail(id: idToReturn, input: _savedInput());
+    final ErxinDraftDetail detail =
+        _draftDetail(id: idToReturn, input: _savedInput());
+    _latestDraftId = idToReturn;
+    _latestDraftSummary = _draftSummary(idToReturn, detail);
+    return detail;
   }
 
   @override
@@ -3816,7 +3940,15 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
         _savedItemRemarks[itemNo] = remark;
       }
     }
-    return _draftDetail(id: _lastDraftId, input: _savedInput());
+    final int draftId = _latestDraftId > 0 ? _latestDraftId : _lastDraftId;
+    final ErxinDraftDetail detail = _draftDetail(
+      id: draftId,
+      input: _savedInput(),
+    );
+    if (_latestDraftId > 0) {
+      _latestDraftSummary = _draftSummary(draftId, detail);
+    }
+    return detail;
   }
 
   @override
@@ -3825,6 +3957,26 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   }
 
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
+
+  AssessmentDraftSummary _draftSummary(
+    int id,
+    ErxinDraftDetail detail,
+  ) {
+    return AssessmentDraftSummary(
+      id: id,
+      studentName: detail.studentName,
+      assessmentCode: 'ERXIN2',
+      assessmentName: '儿心量表-II',
+      scaleVersion: 'WS-T-580-2017',
+      examinerName: detail.examinerName,
+      status: 'draft',
+      answeredItemCount: detail.answeredItemCount,
+      rawScoreCount: 0,
+      completionPercent: detail.completionPercent,
+      createdTime: detail.updatedTime,
+      updatedTime: detail.updatedTime,
+    );
+  }
 
   void _replaceSavedInput(ErxinDraftInput input) {
     _savedItemPasses
