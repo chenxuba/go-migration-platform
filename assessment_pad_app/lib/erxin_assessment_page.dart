@@ -471,7 +471,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     if (_errorMessage.trim().isNotEmpty) {
       return _ErrorView(message: _errorMessage, onBack: widget.onBack);
     }
-    return Container(
+    return ColoredBox(
       color: _ErxinColors.page,
       child: Column(
         children: <Widget>[
@@ -485,35 +485,36 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
             onSubmit: _submitDraft,
           ),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                _DomainSidebar(
-                  domains: _template.domains,
-                  selectedCode: _selectedDomainCode,
-                  progressForDomain: _domainProgress,
-                  completedDomainCount: _completedDomainCount(),
-                  savedItemCount: _draftProgress.answeredItemCount,
-                  onSelect: _selectDomain,
-                ),
-                Expanded(
-                  child: Container(
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      border: Border(
-                        left: BorderSide(color: _ErxinColors.line),
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _DomainSidebar(
+                    domains: _template.domains,
+                    selectedCode: _selectedDomainCode,
+                    progressForDomain: _domainProgress,
+                    completedDomainCount: _completedDomainCount(),
+                    savedItemCount: _draftProgress.answeredItemCount,
+                    onSelect: _selectDomain,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Container(
+                      clipBehavior: Clip.antiAlias,
+                      decoration: _erxinPanelDecoration(),
+                      child: Column(
+                        children: <Widget>[
+                          Expanded(child: _buildWorkspace()),
+                          _buildDetailPanel(),
+                        ],
                       ),
                     ),
-                    child: Column(
-                      children: <Widget>[
-                        Expanded(child: _buildWorkspace()),
-                        _buildDetailPanel(),
-                      ],
-                    ),
                   ),
-                ),
-                _buildRulePanel(),
-              ],
+                  const SizedBox(width: 10),
+                  _buildRulePanel(),
+                ],
+              ),
             ),
           ),
         ],
@@ -687,10 +688,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         14,
         _erxinRulePanelBottomPadding,
       ),
-      decoration: const BoxDecoration(
-        color: Color(0xFFFAFBFD),
-        border: Border(left: BorderSide(color: _ErxinColors.line)),
-      ),
+      clipBehavior: Clip.antiAlias,
+      decoration: _erxinPanelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -778,7 +777,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                     onPressed: actionHandler,
                     style: FilledButton.styleFrom(
                       backgroundColor: _ErxinColors.blue,
-                      disabledBackgroundColor: const Color(0xFFE1E5EA),
+                      disabledBackgroundColor: const Color(0xFFE2D6CE),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -1948,8 +1947,8 @@ class _Header extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: <Widget>[
-                    Expanded(
-                      flex: compact ? 2 : 3,
+                    SizedBox(
+                      width: compact ? 104 : 118,
                       child: _HeaderMeta(
                         label: '儿童',
                         value: args.studentName.trim().isEmpty
@@ -2201,7 +2200,7 @@ class _DomainSidebar extends StatelessWidget {
         12,
         _erxinSidebarBottomPadding,
       ),
-      color: const Color(0xFFFAFBFD),
+      decoration: _erxinPanelDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -2259,6 +2258,16 @@ class _DomainRow extends StatelessWidget {
         progress.total > 0 && progress.answered >= progress.total;
     final double percent =
         progress.total <= 0 ? 0 : progress.answered / progress.total;
+    final String status = complete
+        ? '已完成'
+        : progress.answered > 0
+            ? '测查中'
+            : '待测';
+    final Color statusColor = complete
+        ? _ErxinColors.green
+        : selected
+            ? _ErxinColors.blue
+            : _ErxinColors.muted;
     return Padding(
       padding: const EdgeInsets.only(bottom: 9),
       child: InkWell(
@@ -2268,7 +2277,7 @@ class _DomainRow extends StatelessWidget {
           height: 66,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? const Color(0xFFEAF2FF) : Colors.white,
+            color: selected ? const Color(0xFFFFEEE5) : Colors.white,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: _ErxinColors.line),
           ),
@@ -2294,23 +2303,6 @@ class _DomainRow extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    complete
-                        ? '已完成'
-                        : progress.answered > 0
-                            ? '测查中'
-                            : '待测',
-                    style: TextStyle(
-                      color: complete
-                          ? _ErxinColors.green
-                          : selected
-                              ? _ErxinColors.blue
-                              : _ErxinColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
                     '${progress.answered}/${progress.total}',
                     style: const TextStyle(
                       color: _ErxinColors.body,
@@ -2321,16 +2313,32 @@ class _DomainRow extends StatelessWidget {
                 ],
               ),
               const Spacer(),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(2),
-                child: LinearProgressIndicator(
-                  value: percent.clamp(0, 1),
-                  minHeight: 4,
-                  backgroundColor: const Color(0xFFE8EDF3),
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    complete ? _ErxinColors.green : _ErxinColors.blue,
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(2),
+                      child: LinearProgressIndicator(
+                        value: percent.clamp(0, 1),
+                        minHeight: 4,
+                        backgroundColor: const Color(0xFFF2E6DC),
+                        valueColor: AlwaysStoppedAnimation<Color>(
+                          complete ? _ErxinColors.green : _ErxinColors.blue,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
+                  const SizedBox(width: 9),
+                  Text(
+                    status,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 12,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
               ),
             ],
           ),
@@ -2352,7 +2360,7 @@ class _DomainIcon extends StatelessWidget {
       width: 24,
       height: 24,
       decoration: BoxDecoration(
-        color: selected ? _ErxinColors.blue : const Color(0xFFF1F5F9),
+        color: selected ? _ErxinColors.blue : const Color(0xFFFFF2EA),
         borderRadius: BorderRadius.circular(7),
       ),
       alignment: Alignment.center,
@@ -2400,9 +2408,9 @@ class _AllItemsButton extends StatelessWidget {
           height: 38,
           padding: const EdgeInsets.symmetric(horizontal: 12),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: const Color(0xFFFFFAF5),
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: const Color(0xFFD8E4F7)),
+            border: Border.all(color: _ErxinColors.line),
           ),
           child: Row(
             children: const <Widget>[
@@ -2482,7 +2490,7 @@ class _AgeMonthSection extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 12),
             decoration: BoxDecoration(
               color:
-                  isMainAge ? const Color(0xFFEAF2FF) : const Color(0xFFF8FAFD),
+                  isMainAge ? const Color(0xFFFFF1E8) : const Color(0xFFFFFAF5),
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(8),
               ),
@@ -2508,7 +2516,7 @@ class _AgeMonthSection extends StatelessWidget {
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(999),
-                      border: Border.all(color: const Color(0xFFBFD3F8)),
+                      border: Border.all(color: const Color(0xFFFFC8AD)),
                     ),
                     child: const Center(
                       child: Text(
@@ -2660,6 +2668,15 @@ class _ScoreButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final Color selectedFill = Color.alphaBlend(
+      color.withOpacity(.12),
+      Colors.white,
+    );
+    final Color selectedBorder = Color.alphaBlend(
+      color.withOpacity(.48),
+      Colors.white,
+    );
+    final Color contentColor = selected ? color : _ErxinColors.body;
     return SizedBox(
       width: label.length > 2 ? 104 : 88,
       height: 34,
@@ -2670,14 +2687,16 @@ class _ScoreButton extends StatelessWidget {
           borderRadius: BorderRadius.circular(8),
           child: Ink(
             decoration: BoxDecoration(
-              color: selected ? color : Colors.white,
+              color: selected ? selectedFill : Colors.white,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: selected ? color : _ErxinColors.line),
+              border: Border.all(
+                color: selected ? selectedBorder : _ErxinColors.line,
+              ),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: <Widget>[
-                Icon(icon, size: 17, color: selected ? Colors.white : color),
+                Icon(icon, size: 17, color: contentColor),
                 const SizedBox(width: 6),
                 Text(
                   label,
@@ -2685,7 +2704,7 @@ class _ScoreButton extends StatelessWidget {
                   softWrap: false,
                   overflow: TextOverflow.visible,
                   style: TextStyle(
-                    color: selected ? Colors.white : color,
+                    color: contentColor,
                     fontSize: 13,
                     height: 1,
                     fontWeight: FontWeight.w900,
@@ -2712,7 +2731,7 @@ class _DetailTextBox extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
-        color: const Color(0xFFF8FAFD),
+        color: const Color(0xFFFFFAF5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: _ErxinColors.line),
       ),
@@ -2839,7 +2858,7 @@ class _RemarkBox extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: const Color(0xFFF8FAFD),
+            color: const Color(0xFFFFFAF5),
             borderRadius: BorderRadius.circular(8),
             border: Border.all(color: _ErxinColors.line),
           ),
@@ -2992,7 +3011,7 @@ class _RemarkEditorDialogState extends State<_RemarkEditorDialog> {
                     decoration: InputDecoration(
                       hintText: '添加本题备注',
                       filled: true,
-                      fillColor: const Color(0xFFF8FAFD),
+                      fillColor: const Color(0xFFFFFAF5),
                       contentPadding: const EdgeInsets.all(10),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(8),
@@ -3277,7 +3296,7 @@ class _RuleChecklistRow extends StatelessWidget {
       color: highlighted
           ? const Color(0xFFFFF3BF)
           : row.selected
-              ? const Color(0xFFEAF2FF)
+              ? const Color(0xFFFFF1E8)
               : Colors.white,
       child: InkWell(
         onTap: row.month != null
@@ -3375,7 +3394,7 @@ class _CurrentItemsEmptyState extends StatelessWidget {
         width: 420,
         padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFD),
+          color: const Color(0xFFFFFAF5),
           borderRadius: BorderRadius.circular(8),
           border: Border.all(color: _ErxinColors.line),
         ),
@@ -3574,7 +3593,7 @@ class _SmallBadge extends StatelessWidget {
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 11),
       decoration: BoxDecoration(
-        color: strong ? const Color(0xFFEAF2FF) : const Color(0xFFF4F6FA),
+        color: strong ? const Color(0xFFFFF1E8) : const Color(0xFFFFFAF5),
         borderRadius: BorderRadius.circular(8),
         border: Border.all(
           color: strong ? _ErxinColors.blue : _ErxinColors.line,
@@ -3606,7 +3625,7 @@ class _MiniMarker extends StatelessWidget {
       width: 20,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: warning ? const Color(0xFFFFF2E8) : const Color(0xFFEAF2FF),
+        color: warning ? const Color(0xFFFFF2E8) : const Color(0xFFFFF1E8),
         borderRadius: BorderRadius.circular(10),
       ),
       child: Text(
@@ -3693,16 +3712,29 @@ class _DomainProgress {
 }
 
 class _ErxinColors {
-  static const Color page = Color(0xFFF5F7FA);
-  static const Color ink = Color(0xFF172033);
-  static const Color body = Color(0xFF566173);
-  static const Color muted = Color(0xFF98A2B3);
-  static const Color line = Color(0xFFE4E8EF);
+  static const Color page = Color(0xFFFFF7EE);
+  static const Color ink = Color(0xFF432B22);
+  static const Color body = Color(0xFF7F665A);
+  static const Color muted = Color(0xFFBBA99C);
+  static const Color line = Color(0xFFF0DACB);
   static const Color orange = Color(0xFFE96F43);
   static const Color orangeDeep = Color(0xFFC95D37);
-  static const Color blue = Color(0xFF2563EB);
-  static const Color green = Color(0xFF16A34A);
-  static const Color red = Color(0xFFDC2626);
+  static const Color blue = Color(0xFFE96F43);
+  static const Color green = Color(0xFF6F9F70);
+  static const Color red = Color(0xFFD94A42);
+}
+
+BoxDecoration _erxinPanelDecoration() {
+  return BoxDecoration(
+    color: Colors.white.withOpacity(.9),
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: _ErxinColors.line),
+    boxShadow: _erxinShadow(
+      color: const Color(0x12B05F32),
+      blur: 15,
+      offset: const Offset(0, 7),
+    ),
+  );
 }
 
 List<BoxShadow> _erxinShadow({
