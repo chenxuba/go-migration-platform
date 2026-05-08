@@ -3956,6 +3956,58 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     submitDraftCalls += 1;
   }
 
+  @override
+  Future<ErxinRecordDetail> fetchRecordDetail(String token, int id) async {
+    final ErxinDraftDetail detail = await fetchDraftDetail(token, id);
+    return ErxinRecordDetail(
+      id: detail.id,
+      studentId: detail.studentId,
+      studentName: detail.studentName,
+      assessmentCode: 'ERXIN2',
+      assessmentName: '儿心量表-II',
+      birthDate: detail.birthDate,
+      assessmentDate: detail.assessmentDate,
+      examinerName: detail.examinerName,
+      updatedTime: detail.updatedTime,
+      scaleVersion: 'WS-T-580-2017',
+      input: detail.input,
+    );
+  }
+
+  @override
+  Future<ErxinRecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  }) async {
+    final ErxinDraftInput current = _savedInput();
+    final ErxinDraftInput next = ErxinDraftInput(
+      studentId: 31,
+      studentName: '陈旭',
+      examinerName: examinerName,
+      remark: current.remark,
+      birthDate: '2022-05-11',
+      assessmentDate: assessmentDate,
+      itemPasses: Map<int, bool>.from(current.itemPasses),
+      itemRemarks: Map<int, String>.from(current.itemRemarks),
+    );
+    _replaceSavedInput(next);
+    return ErxinRecordDetail(
+      id: id,
+      studentId: 31,
+      studentName: '陈旭',
+      assessmentCode: 'ERXIN2',
+      assessmentName: '儿心量表-II',
+      birthDate: '2022-05-11',
+      assessmentDate: assessmentDate,
+      examinerName: examinerName,
+      updatedTime: '2026-05-08T10:00:00',
+      scaleVersion: 'WS-T-580-2017',
+      input: next,
+    );
+  }
+
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
 
   AssessmentDraftSummary _draftSummary(

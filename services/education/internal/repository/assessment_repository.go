@@ -1687,10 +1687,16 @@ func (repo *Repository) UpdateAssessmentDraftConfigIncludingSubmitted(ctx contex
 		UPDATE assessment_draft
 		SET examiner_name = ?,
 		    assessment_date = ?,
+		    input_json = JSON_SET(
+		        JSON_SET(input_json, '$.examinerName', ?),
+		        '$.assessmentDate', DATE_FORMAT(?, '%Y-%m-%d')
+		    ),
 		    update_id = ?,
 		    update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`,
+		strings.TrimSpace(examinerName),
+		assessmentDate,
 		strings.TrimSpace(examinerName),
 		assessmentDate,
 		operatorID,

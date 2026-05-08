@@ -25,6 +25,7 @@ class AssessmentReportListScreen extends StatefulWidget {
       recordsPagePath: defaultErxinRecordsPagePath,
       recordCategoryStatsPath: defaultErxinRecordCategoryStatsPath,
     ),
+    this.erxinClient = const ApiErxinAssessmentClient(),
     this.staffClient = const ApiTimetableClient(),
     super.key,
   });
@@ -33,6 +34,7 @@ class AssessmentReportListScreen extends StatefulWidget {
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient recordClient;
   final Pep3AssessmentClient erxinRecordClient;
+  final ErxinAssessmentClient erxinClient;
   final TimetableClient staffClient;
 
   @override
@@ -394,7 +396,7 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
-    if (!_supportsReportActions(record)) {
+    if (!_supportsReportPreview(record)) {
       _showMessage('儿心量表记录已接入列表，报告预览稍后补上');
       return;
     }
@@ -420,16 +422,12 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openConfigDialog(Pep3RecordSummary record) async {
-    if (!_supportsReportActions(record)) {
-      _showMessage('儿心量表记录已接入列表，评估配置稍后补上');
-      return;
-    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
       return;
     }
-    final Pep3RecordDetail? savedDetail = await showDialog<Pep3RecordDetail>(
+    final Pep3RecordSummary? savedDetail = await showDialog<Pep3RecordSummary>(
       context: context,
       barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(.28),
@@ -438,8 +436,9 @@ class _AssessmentReportListScreenState
           child: _ReportConfigDialog(
             record: record,
             token: token,
-            client: widget.recordClient,
             staffClient: widget.staffClient,
+            loadConfigDetail: _loadRecordConfigDetail,
+            saveConfig: _saveRecordConfig,
           ),
         );
       },
@@ -481,9 +480,98 @@ class _AssessmentReportListScreenState
     );
   }
 
-  bool _supportsReportActions(Pep3RecordSummary record) {
+  bool _supportsReportPreview(Pep3RecordSummary record) {
     return record.assessmentCode.trim().toUpperCase() == 'PEP3';
   }
+
+  bool _isErxinRecord(Pep3RecordSummary record) {
+    return record.assessmentCode.trim().toUpperCase() == 'ERXIN2';
+  }
+
+  Future<_RecordConfigDetail> _loadRecordConfigDetail(
+    String token,
+    Pep3RecordSummary record,
+  ) async {
+    if (_isErxinRecord(record)) {
+      final ErxinRecordDetail detail =
+          await widget.erxinClient.fetchRecordDetail(token, record.id);
+      return _RecordConfigDetail(
+        currentExaminerName: detail.examinerName,
+        currentAssessmentDate: detail.assessmentDate,
+        originalExaminerName: detail.input.examinerName,
+        originalAssessmentDate:
+            _originalAssessmentDateText(record) ?? record.assessmentDate,
+      );
+    }
+    final Pep3RecordDetail detail =
+        await widget.recordClient.fetchRecordDetail(token, record.id);
+    return _RecordConfigDetail(
+      currentExaminerName: detail.examinerName,
+      currentAssessmentDate: detail.assessmentDate,
+      originalExaminerName: detail.input.examinerName,
+      originalAssessmentDate:
+          _originalAssessmentDateText(record) ?? record.assessmentDate,
+    );
+  }
+
+  Future<Pep3RecordSummary> _saveRecordConfig(
+    String token,
+    Pep3RecordSummary record, {
+    required String examinerName,
+    required String assessmentDate,
+  }) async {
+    if (_isErxinRecord(record)) {
+      final ErxinRecordDetail detail =
+          await widget.erxinClient.updateRecordConfig(
+        token,
+        record.id,
+        examinerName: examinerName,
+        assessmentDate: assessmentDate,
+      );
+      return Pep3RecordSummary(
+        id: detail.id,
+        studentId: detail.studentId,
+        studentName: detail.studentName,
+        studentGender: detail.studentGender,
+        studentAvatar: detail.studentAvatar,
+        studentPhone: detail.studentPhone,
+        assessmentCode: detail.assessmentCode,
+        assessmentName: detail.assessmentName,
+        scaleCategory: detail.scaleCategory,
+        scaleVersion: detail.scaleVersion,
+        birthDate: detail.birthDate,
+        assessmentDate: detail.assessmentDate,
+        ageYears: detail.ageYears,
+        ageMonths: detail.ageMonths,
+        ageDays: detail.ageDays,
+        normAgeMonths: detail.normAgeMonths,
+        assessmentSequence: detail.assessmentSequence,
+        examinerName: detail.examinerName,
+        createdTime: detail.createdTime,
+        updatedTime: detail.updatedTime,
+      );
+    }
+    return widget.recordClient.updateRecordConfig(
+      token,
+      record.id,
+      examinerName: examinerName,
+      assessmentDate: assessmentDate,
+    );
+  }
+}
+
+class _RecordConfigDetail {
+  const _RecordConfigDetail({
+    required this.currentExaminerName,
+    required this.currentAssessmentDate,
+    required this.originalExaminerName,
+    required this.originalAssessmentDate,
+  });
+
+  final String currentExaminerName;
+  final String currentAssessmentDate;
+  final String originalExaminerName;
+  final String originalAssessmentDate;
 }
 
 int _compareRecordSummaryDesc(Pep3RecordSummary left, Pep3RecordSummary right) {
@@ -1959,14 +2047,24 @@ class _ReportConfigDialog extends StatefulWidget {
   const _ReportConfigDialog({
     required this.record,
     required this.token,
-    required this.client,
     required this.staffClient,
+    required this.loadConfigDetail,
+    required this.saveConfig,
   });
 
   final Pep3RecordSummary record;
   final String token;
-  final Pep3AssessmentClient client;
   final TimetableClient staffClient;
+  final Future<_RecordConfigDetail> Function(
+    String token,
+    Pep3RecordSummary record,
+  ) loadConfigDetail;
+  final Future<Pep3RecordSummary> Function(
+    String token,
+    Pep3RecordSummary record, {
+    required String examinerName,
+    required String assessmentDate,
+  }) saveConfig;
 
   @override
   State<_ReportConfigDialog> createState() => _ReportConfigDialogState();
@@ -1999,7 +2097,8 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
       _splitExaminerNames(widget.record.examinerName),
     );
     _originalExaminerName = widget.record.examinerName.trim();
-    _originalAssessmentDate = _configDateValue(widget.record.assessmentDate);
+    _originalAssessmentDate = _originalAssessmentDateValue(widget.record) ??
+        _configDateValue(widget.record.assessmentDate);
     _teacherOptions = _mergeTeacherOptions(const <ScheduleStaffOption>[]);
     unawaited(_loadTeacherOptions());
     unawaited(_hydrateOriginalDetail());
@@ -2023,25 +2122,25 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
       return;
     }
     try {
-      final Pep3RecordDetail detail = await widget.client.fetchRecordDetail(
+      final _RecordConfigDetail detail = await widget.loadConfigDetail(
         token,
-        widget.record.id,
+        widget.record,
       );
       if (!mounted) {
         return;
       }
       final String originalExaminerName =
-          detail.input.examinerName.trim().isNotEmpty
-              ? detail.input.examinerName.trim()
+          detail.originalExaminerName.trim().isNotEmpty
+              ? detail.originalExaminerName.trim()
               : widget.record.examinerName.trim();
       final DateTime? originalAssessmentDate =
-          _configDateValue(detail.input.assessmentDate) ??
+          _configDateValue(detail.originalAssessmentDate) ??
               _configDateValue(widget.record.assessmentDate);
       final List<String> currentExaminerNames = _uniqueExaminerNames(
-        _splitExaminerNames(detail.examinerName),
+        _splitExaminerNames(detail.currentExaminerName),
       );
       final DateTime? currentAssessmentDate =
-          _configDateValue(detail.assessmentDate);
+          _configDateValue(detail.currentAssessmentDate);
       setState(() {
         if (!_teacherSelectionTouched && currentExaminerNames.isNotEmpty) {
           _selectedExaminerNames = currentExaminerNames;
@@ -2069,7 +2168,7 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
               _dateOnly(DateTime.now());
         }
         _originalExaminerName = widget.record.examinerName.trim();
-        _originalAssessmentDate =
+        _originalAssessmentDate = _originalAssessmentDateValue(widget.record) ??
             _configDateValue(widget.record.assessmentDate);
         _teacherOptions = _mergeTeacherOptions(_teacherOptions);
         _detailHydrating = false;
@@ -2300,9 +2399,9 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
       _errorMessage = '';
     });
     try {
-      final Pep3RecordDetail detail = await widget.client.updateRecordConfig(
+      final Pep3RecordSummary detail = await widget.saveConfig(
         token,
-        widget.record.id,
+        widget.record,
         examinerName: examinerName,
         assessmentDate: _dateText(_assessmentDate),
       );
@@ -2311,6 +2410,14 @@ class _ReportConfigDialogState extends State<_ReportConfigDialog> {
       }
       Navigator.of(context).pop(detail);
     } on Pep3ApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _errorMessage = error.message;
+      });
+    } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;
       }
@@ -4247,6 +4354,22 @@ DateTime _dateOnly(DateTime value) =>
 DateTime? _configDateValue(String raw) {
   final DateTime? parsed = _parseDateTime(raw);
   return parsed == null ? null : _dateOnly(parsed.toLocal());
+}
+
+DateTime? _originalAssessmentDateValue(Pep3RecordSummary record) {
+  final DateTime? created = _configDateValue(record.createdTime);
+  if (created != null) {
+    return created;
+  }
+  return _configDateValue(record.assessmentDate);
+}
+
+String? _originalAssessmentDateText(Pep3RecordSummary record) {
+  final DateTime? value = _originalAssessmentDateValue(record);
+  if (value == null) {
+    return null;
+  }
+  return _dateText(value);
 }
 
 List<String> _splitExaminerNames(String raw) {

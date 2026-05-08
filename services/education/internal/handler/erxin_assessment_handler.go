@@ -61,6 +61,12 @@ type erxinAssessmentRecordCreateRequest struct {
 	ItemRemarkList []erxinItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
+type erxinAssessmentRecordConfigUpdateRequest struct {
+	ID             int64  `json:"id"`
+	ExaminerName   string `json:"examinerName"`
+	AssessmentDate string `json:"assessmentDate"`
+}
+
 type erxinAssessmentDraftItemSaveRequest struct {
 	DraftID int64   `json:"draftId"`
 	ItemNo  int     `json:"itemNo"`
@@ -321,6 +327,41 @@ func (handler *Handler) updateERXinAssessmentRecord(w http.ResponseWriter, r *ht
 		return
 	}
 	result, err := handler.service.UpdateERXinAssessmentRecord(claims.UserID, req.ID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updateERXinAssessmentRecordConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req erxinAssessmentRecordConfigUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	assessmentDate, err := parseERXinDate(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdateERXinAssessmentRecordConfig(claims.UserID, req.ID, service.ERXinAssessmentRecordConfigInput{
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		AssessmentDate: assessmentDate,
+	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

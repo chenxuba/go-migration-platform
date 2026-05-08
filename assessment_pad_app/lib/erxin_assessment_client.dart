@@ -40,6 +40,18 @@ const String defaultErxinRecordCategoryStatsPath = String.fromEnvironment(
   'ERXIN_RECORD_CATEGORY_STATS_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/category-stats',
 );
+const String defaultErxinRecordDetailPath = String.fromEnvironment(
+  'ERXIN_RECORD_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/detail',
+);
+const String defaultErxinRecordUpdatePath = String.fromEnvironment(
+  'ERXIN_RECORD_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/update',
+);
+const String defaultErxinRecordConfigUpdatePath = String.fromEnvironment(
+  'ERXIN_RECORD_CONFIG_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/config/update',
+);
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({
@@ -94,6 +106,15 @@ abstract class ErxinAssessmentClient {
   );
 
   Future<void> submitDraft(String token, int draftId);
+
+  Future<ErxinRecordDetail> fetchRecordDetail(String token, int id);
+
+  Future<ErxinRecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  });
 }
 
 class ApiErxinAssessmentClient extends ErxinAssessmentClient {
@@ -106,6 +127,9 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.draftDetailPath = defaultErxinDraftDetailPath,
     this.draftsPagePath = defaultErxinDraftsPagePath,
     this.draftSubmitPath = defaultErxinDraftSubmitPath,
+    this.recordDetailPath = defaultErxinRecordDetailPath,
+    this.recordUpdatePath = defaultErxinRecordUpdatePath,
+    this.recordConfigUpdatePath = defaultErxinRecordConfigUpdatePath,
     this.httpClient,
   });
 
@@ -117,6 +141,9 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String draftDetailPath;
   final String draftsPagePath;
   final String draftSubmitPath;
+  final String recordDetailPath;
+  final String recordUpdatePath;
+  final String recordConfigUpdatePath;
   final http.Client? httpClient;
 
   @override
@@ -273,6 +300,55 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
       response,
       fallbackMessage: '儿心量表正式记录提交失败',
     );
+  }
+
+  @override
+  Future<ErxinRecordDetail> fetchRecordDetail(String token, int id) async {
+    final http.Client client = httpClient ?? http.Client();
+    final Uri uri = _uri(
+      educationBaseUrl,
+      recordDetailPath,
+      <String, String>{'id': '$id'},
+    );
+    final http.Response response = await client.get(
+      uri,
+      headers: _authHeaders(token),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表记录详情加载失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('测评记录详情返回格式不正确');
+    }
+    return ErxinRecordDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ErxinRecordDetail> updateRecordConfig(
+    String token,
+    int id, {
+    required String examinerName,
+    required String assessmentDate,
+  }) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response = await client.post(
+      _uri(educationBaseUrl, recordConfigUpdatePath),
+      headers: _jsonHeaders(token),
+      body: jsonEncode(<String, dynamic>{
+        'id': id,
+        'examinerName': examinerName.trim(),
+        'assessmentDate': assessmentDate.trim(),
+      }),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表评估配置保存失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('评估配置返回格式不正确');
+    }
+    return ErxinRecordDetail.fromJson(Map<String, dynamic>.from(data));
   }
 }
 
@@ -491,6 +567,12 @@ class ErxinDraftDetail {
 
 class ErxinDraftInput {
   const ErxinDraftInput({
+    this.studentId = 0,
+    this.studentName = '',
+    this.examinerName = '',
+    this.remark = '',
+    this.birthDate = '',
+    this.assessmentDate = '',
     required this.itemPasses,
     required this.itemRemarks,
   });
@@ -549,18 +631,113 @@ class ErxinDraftInput {
     }
 
     return ErxinDraftInput(
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      examinerName: '${json['examinerName'] ?? ''}',
+      remark: '${json['remark'] ?? ''}',
+      birthDate: _dateOnlyFrom(json['birthDate']),
+      assessmentDate: _dateOnlyFrom(json['assessmentDate']),
       itemPasses: itemPasses,
       itemRemarks: itemRemarks,
     );
   }
 
   static const ErxinDraftInput empty = ErxinDraftInput(
+    studentId: 0,
+    studentName: '',
+    examinerName: '',
+    remark: '',
+    birthDate: '',
+    assessmentDate: '',
     itemPasses: <int, bool>{},
     itemRemarks: <int, String>{},
   );
 
+  final int studentId;
+  final String studentName;
+  final String examinerName;
+  final String remark;
+  final String birthDate;
+  final String assessmentDate;
   final Map<int, bool> itemPasses;
   final Map<int, String> itemRemarks;
+}
+
+class ErxinRecordDetail {
+  const ErxinRecordDetail({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.assessmentCode,
+    required this.assessmentName,
+    required this.birthDate,
+    required this.assessmentDate,
+    required this.examinerName,
+    required this.updatedTime,
+    this.studentGender = '',
+    this.studentAvatar = '',
+    this.studentPhone = '',
+    this.scaleCategory = '',
+    this.scaleVersion = '',
+    this.ageYears = 0,
+    this.ageMonths = 0,
+    this.ageDays = 0,
+    this.normAgeMonths = 0,
+    this.assessmentSequence = 0,
+    this.createdTime = '',
+    this.remark = '',
+    required this.input,
+  });
+
+  factory ErxinRecordDetail.fromJson(Map<String, dynamic> json) {
+    return ErxinRecordDetail(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      studentGender: '${json['studentGender'] ?? ''}',
+      studentAvatar: '${json['studentAvatar'] ?? ''}',
+      studentPhone: '${json['studentPhone'] ?? ''}',
+      assessmentCode: '${json['assessmentCode'] ?? ''}',
+      assessmentName: '${json['assessmentName'] ?? ''}',
+      scaleCategory: '${json['scaleCategory'] ?? ''}',
+      scaleVersion: '${json['scaleVersion'] ?? ''}',
+      birthDate: _dateOnlyFrom(json['birthDate']),
+      assessmentDate: _dateOnlyFrom(json['assessmentDate']),
+      ageYears: _intFrom(json['ageYears']),
+      ageMonths: _intFrom(json['ageMonths']),
+      ageDays: _intFrom(json['ageDays']),
+      normAgeMonths: _intFrom(json['normAgeMonths']),
+      assessmentSequence: _intFrom(json['assessmentSequence']),
+      examinerName: '${json['examinerName'] ?? ''}',
+      createdTime: '${json['createdTime'] ?? ''}',
+      updatedTime: '${json['updatedTime'] ?? ''}',
+      remark: '${json['remark'] ?? ''}',
+      input: ErxinDraftInput.fromJson(_mapFrom(json['input'])),
+    );
+  }
+
+  final int id;
+  final int studentId;
+  final String studentName;
+  final String studentGender;
+  final String studentAvatar;
+  final String studentPhone;
+  final String assessmentCode;
+  final String assessmentName;
+  final String scaleCategory;
+  final String scaleVersion;
+  final String birthDate;
+  final String assessmentDate;
+  final int ageYears;
+  final int ageMonths;
+  final int ageDays;
+  final int normAgeMonths;
+  final int assessmentSequence;
+  final String examinerName;
+  final String createdTime;
+  final String updatedTime;
+  final String remark;
+  final ErxinDraftInput input;
 }
 
 class ErxinDraftProgress {
