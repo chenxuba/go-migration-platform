@@ -98,10 +98,20 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
 
   ErxinTemplateSummary _template = ErxinTemplateSummary.empty;
   ErxinDraftProgress _draftProgress = ErxinDraftProgress.empty;
+  AssessmentDraftSummary? _detectedDraft;
+  Future<ErxinDraftDetail>? _detectedDraftDetailRequest;
   String _token = '';
+  String _studentName = '';
+  String _studentAge = '';
+  String _birthDate = '';
+  String _assessmentDate = '';
+  String _examinerName = '';
   String _selectedDomainCode = '';
   int _selectedItemNo = 0;
+  int _studentId = 0;
   int _draftId = 0;
+  int _detectedDraftDetailDraftId = 0;
+  bool _draftDialogShown = false;
   bool _loading = true;
   bool _savingDraft = false;
   bool _submitting = false;
@@ -111,6 +121,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   @override
   void initState() {
     super.initState();
+    _studentId = widget.args.studentId;
+    _studentName = widget.args.studentName;
+    _studentAge = widget.args.studentAge;
+    _birthDate = _dateOnlyText(widget.args.birthDate);
+    _assessmentDate = _dateOnlyText(widget.args.assessmentDate);
+    _examinerName = widget.args.examinerName;
     _initialize();
   }
 
@@ -140,15 +156,29 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       final String firstDomain = template.domains.isNotEmpty
           ? template.domains.first.domainCode
           : 'GM';
+      _token = token;
+      _template = template;
+      _selectedDomainCode = firstDomain;
+      if (widget.args.draftId > 0) {
+        final ErxinDraftDetail detail = await widget.client.fetchDraftDetail(
+          token,
+          widget.args.draftId,
+        );
+        _applyDraftDetail(detail);
+      } else {
+        _detectedDraft = await _findLatestDraft(token);
+        _prefetchDetectedDraftDetail(token, _detectedDraft);
+      }
+      _selectedItemNo = _firstCurrentItemNo(_selectedDomainCode);
+      if (_selectedItemNo <= 0) {
+        _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      }
       setState(() {
-        _token = token;
-        _template = template;
-        _selectedDomainCode = firstDomain;
-        _selectedItemNo = _firstVisibleItemNo(firstDomain);
         _loading = false;
         _autoSaveText = '已准备';
       });
       _prefetchSelectedItem();
+      _showDetectedDraftDialogIfNeeded();
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;
@@ -168,10 +198,148 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
   }
 
+  Future<AssessmentDraftSummary?> _findLatestDraft(String token) async {
+    if (_studentId <= 0) {
+      return null;
+    }
+    final AssessmentDraftPage page = await widget.client.fetchDraftsPage(
+      token,
+      studentId: _studentId,
+      pageSize: 1,
+      latestOnly: true,
+    );
+    if (page.items.isEmpty || page.items.first.id <= 0) {
+      return null;
+    }
+    return page.items.first;
+  }
+
+  void _prefetchDetectedDraftDetail(
+    String token,
+    AssessmentDraftSummary? draft,
+  ) {
+    if (draft == null || draft.id <= 0) {
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      return;
+    }
+    if (_detectedDraftDetailDraftId == draft.id &&
+        _detectedDraftDetailRequest != null) {
+      return;
+    }
+    final Future<ErxinDraftDetail> request =
+        widget.client.fetchDraftDetail(token, draft.id);
+    _detectedDraftDetailDraftId = draft.id;
+    _detectedDraftDetailRequest = request;
+    unawaited(
+      request.then<void>(
+        (ErxinDraftDetail _) {},
+        onError: (Object _, StackTrace __) {},
+      ),
+    );
+  }
+
+  Future<ErxinDraftDetail> _resolveDetectedDraftDetail(
+    AssessmentDraftSummary draft,
+  ) async {
+    final Future<ErxinDraftDetail>? prefetched = _detectedDraftDetailRequest;
+    if (_detectedDraftDetailDraftId == draft.id && prefetched != null) {
+      try {
+        return await prefetched;
+      } on Object {
+        // Retry below if the prefetch failed.
+      }
+    }
+    return widget.client.fetchDraftDetail(_token, draft.id);
+  }
+
+  void _showDetectedDraftDialogIfNeeded() {
+    final AssessmentDraftSummary? draft = _detectedDraft;
+    if (!mounted || _draftDialogShown || draft == null || draft.id <= 0) {
+      return;
+    }
+    _draftDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(.32),
+        builder: (BuildContext dialogContext) {
+          return PopScope(
+            canPop: false,
+            child: PadDialogViewport(
+              child: _ErxinDraftResumeDialog(
+                draft: draft,
+                onRestart: _restartWithoutDetectedDraft,
+                onContinue: () => _continueDetectedDraft(draft),
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  void _restartWithoutDetectedDraft() {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _detectedDraft = null;
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      _draftId = 0;
+      _draftProgress = ErxinDraftProgress.empty;
+      _itemPasses.clear();
+      _itemRemarks.clear();
+      _previousStartIndexByDomain.clear();
+      _futureEndIndexByDomain.clear();
+      _futureVisibleDomains.clear();
+      _reviewMonthByDomain.clear();
+      _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      _autoSaveText = '已开始新的测评';
+    });
+    _prefetchSelectedItem();
+  }
+
+  Future<bool> _continueDetectedDraft(AssessmentDraftSummary draft) async {
+    if (draft.id <= 0 || _token.trim().isEmpty) {
+      return false;
+    }
+    try {
+      final ErxinDraftDetail detail = await _resolveDetectedDraftDetail(draft);
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _applyDraftDetail(detail);
+        _detectedDraft = null;
+        _detectedDraftDetailDraftId = 0;
+        _detectedDraftDetailRequest = null;
+        _selectedItemNo = _firstCurrentItemNo(_selectedDomainCode);
+        if (_selectedItemNo <= 0) {
+          _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+        }
+        _autoSaveText = '已恢复最新草稿';
+      });
+      _prefetchSelectedItem();
+      _revealSelectedItem();
+      return true;
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('恢复草稿失败：$error');
+      }
+      return false;
+    }
+  }
+
   int get _mainAgeMonth {
     final double months = _actualAgeMonths(
-      widget.args.birthDate,
-      widget.args.assessmentDate,
+      _birthDate,
+      _assessmentDate,
     );
     if (months <= 0) {
       return 0;
@@ -476,7 +644,15 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       child: Column(
         children: <Widget>[
           _Header(
-            args: widget.args,
+            args: ErxinAssessmentLaunchArgs(
+              studentId: _studentId,
+              studentName: _studentName,
+              studentAge: _resolvedStudentAgeText(),
+              birthDate: _dateOnlyText(_birthDate),
+              assessmentDate: _dateOnlyText(_assessmentDate),
+              examinerName: _examinerName,
+              scaleName: widget.args.scaleName,
+            ),
             autoSaveText: _autoSaveText,
             saving: _savingDraft,
             submitting: _submitting,
@@ -662,24 +838,35 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final bool canEnterFuture = _canEnterFutureMonths;
     final bool canContinueFuture = _canContinueFutureMonths;
     final bool domainComplete = _domainStopRuleComplete(_selectedDomainCode);
+    final bool canLocateCurrentItem = !canContinuePrevious &&
+        !canEnterFuture &&
+        !canContinueFuture &&
+        !domainComplete &&
+        _firstPendingAssessmentItemNoForDomain(_selectedDomainCode) > 0;
     final String actionLabel = canContinuePrevious
         ? '继续往前测查'
         : canContinueFuture
             ? '继续往后测查'
-            : domainComplete
-                ? '本能区测查完成'
-                : futureShown
-                    ? _hasFutureCeiling
-                        ? '本能区测查完成'
-                        : '往后测查已展开'
-                    : '进入往后测查';
+            : canLocateCurrentItem
+                ? futureShown
+                    ? '往后测查已展开'
+                    : '往前测查已展开'
+                : domainComplete
+                    ? '本能区测查完成'
+                    : futureShown
+                        ? _hasFutureCeiling
+                            ? '本能区测查完成'
+                            : '往后测查已展开'
+                        : '进入往后测查';
     final VoidCallback? actionHandler = canContinuePrevious
         ? _continuePreviousMonths
         : canEnterFuture
             ? _enterFutureMonths
             : canContinueFuture
                 ? _continueFutureMonths
-                : null;
+                : canLocateCurrentItem
+                    ? _locateCurrentAssessmentItem
+                    : null;
     return Container(
       width: 296,
       padding: const EdgeInsets.fromLTRB(
@@ -713,9 +900,11 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                       ? Icons.keyboard_double_arrow_left_rounded
                       : canContinueFuture
                           ? Icons.keyboard_double_arrow_right_rounded
-                          : domainComplete
-                              ? Icons.check_circle_rounded
-                              : Icons.arrow_forward_rounded,
+                          : canLocateCurrentItem
+                              ? Icons.center_focus_strong_rounded
+                              : domainComplete
+                                  ? Icons.check_circle_rounded
+                                  : Icons.arrow_forward_rounded,
                   color: _ErxinColors.blue,
                 ),
                 const SizedBox(height: 10),
@@ -1056,6 +1245,23 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     _prefetchSelectedItem();
   }
 
+  void _locateCurrentAssessmentItem() {
+    setState(() {
+      _reviewMonthByDomain.remove(_selectedDomainCode);
+      final int pendingItemNo =
+          _firstPendingAssessmentItemNoForDomain(_selectedDomainCode);
+      _selectedItemNo = pendingItemNo > 0
+          ? pendingItemNo
+          : _firstCurrentItemNo(_selectedDomainCode);
+      if (_selectedItemNo <= 0) {
+        _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      }
+      _autoSaveText = '已定位当前题';
+    });
+    _prefetchSelectedItem();
+    _revealSelectedItem();
+  }
+
   Future<bool> _confirmHistoryChange({
     required int itemNo,
     required bool passed,
@@ -1145,7 +1351,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _showMessage('请先登录后再保存草稿');
       return null;
     }
-    if (widget.args.studentId <= 0 || widget.args.studentName.trim().isEmpty) {
+    if (_studentId <= 0 || _studentName.trim().isEmpty) {
       _showMessage('缺少儿童信息，无法保存草稿');
       return null;
     }
@@ -1342,11 +1548,11 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   Map<String, dynamic> _buildDraftPayload() {
     return <String, dynamic>{
       if (_draftId > 0) 'id': _draftId,
-      'studentId': widget.args.studentId,
-      'studentName': widget.args.studentName.trim(),
-      'examinerName': widget.args.examinerName.trim(),
-      'birthDate': widget.args.birthDate.trim(),
-      'assessmentDate': widget.args.assessmentDate.trim(),
+      'studentId': _studentId,
+      'studentName': _studentName.trim(),
+      'examinerName': _examinerName.trim(),
+      'birthDate': _dateOnlyText(_birthDate),
+      'assessmentDate': _dateOnlyText(_assessmentDate),
       'itemPassList': _itemPassList(),
       if (_itemRemarks.isNotEmpty) 'itemRemarkList': _itemRemarkList(),
     };
@@ -1376,12 +1582,92 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     ];
   }
 
+  void _applyDraftDetail(ErxinDraftDetail detail) {
+    _draftId = detail.id;
+    _draftProgress = detail.progress;
+    if (detail.studentId > 0) {
+      _studentId = detail.studentId;
+    }
+    if (detail.studentName.trim().isNotEmpty) {
+      _studentName = detail.studentName.trim();
+    }
+    if (detail.birthDate.trim().isNotEmpty) {
+      _birthDate = _dateOnlyText(detail.birthDate);
+    }
+    if (detail.assessmentDate.trim().isNotEmpty) {
+      _assessmentDate = _dateOnlyText(detail.assessmentDate);
+    }
+    if (detail.examinerName.trim().isNotEmpty) {
+      _examinerName = detail.examinerName.trim();
+    }
+    _itemPasses
+      ..clear()
+      ..addAll(detail.input.itemPasses);
+    _itemRemarks
+      ..clear()
+      ..addAll(detail.input.itemRemarks);
+    _restoreAssessmentWindowsFromAnswers();
+  }
+
+  void _restoreAssessmentWindowsFromAnswers() {
+    _previousStartIndexByDomain.clear();
+    _futureEndIndexByDomain.clear();
+    _futureVisibleDomains.clear();
+    _reviewMonthByDomain.clear();
+    final int mainIndex = _mainAgeIndex;
+    if (mainIndex < 0) {
+      return;
+    }
+    for (final ErxinDomain domain in _template.domains) {
+      final String domainCode = domain.domainCode;
+      int previousStart = _defaultPreviousStartIndex;
+      bool hasPreviousAnswer = false;
+      int futureEnd = math.min(_standardAgeMonths.length - 1, mainIndex + 2);
+      bool hasFutureAnswer = false;
+      for (final ErxinAgeGroup group in _template.ageGroups) {
+        final int ageIndex = _standardAgeMonths.indexOf(group.ageMonth);
+        if (ageIndex < 0) {
+          continue;
+        }
+        final bool hasAnsweredItem = group.items.any(
+          (ErxinItemSummary item) =>
+              item.domainCode == domainCode &&
+              _itemPasses.containsKey(item.itemNo),
+        );
+        if (!hasAnsweredItem) {
+          continue;
+        }
+        if (ageIndex < mainIndex) {
+          hasPreviousAnswer = true;
+          previousStart = math.min(previousStart, ageIndex);
+        } else if (ageIndex > mainIndex) {
+          hasFutureAnswer = true;
+          futureEnd = math.max(futureEnd, ageIndex);
+        }
+      }
+      if (hasPreviousAnswer) {
+        _previousStartIndexByDomain[domainCode] = previousStart;
+      }
+      if (hasFutureAnswer) {
+        _futureVisibleDomains.add(domainCode);
+        _futureEndIndexByDomain[domainCode] =
+            math.min(futureEnd, _standardAgeMonths.length - 1);
+      }
+      _trimPreviousWindowToActiveBaseline(domainCode);
+      if (_futureVisibleDomains.contains(domainCode)) {
+        _futureEndIndexByDomain[domainCode] = _trimFutureEndToActiveCeiling(
+          domainCode,
+          _futureEndIndexByDomain[domainCode] ?? futureEnd,
+        );
+      }
+    }
+  }
+
   String? _localSubmitBlocker() {
     if (_token.trim().isEmpty) {
       return '请先登录后再提交正式记录';
     }
-    if (widget.args.birthDate.trim().isEmpty ||
-        widget.args.assessmentDate.trim().isEmpty) {
+    if (_birthDate.trim().isEmpty || _assessmentDate.trim().isEmpty) {
       return '缺少出生日期或测查日期，不能提交正式记录';
     }
     for (final ErxinDomain domain in _template.domains) {
@@ -1783,6 +2069,17 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     return 0;
   }
 
+  int _firstPendingAssessmentItemNoForDomain(String domainCode) {
+    for (final int month in _visibleMonthsForDomain(domainCode)) {
+      for (final ErxinItemSummary item in _itemsFor(domainCode, month)) {
+        if (!_itemPasses.containsKey(item.itemNo)) {
+          return item.itemNo;
+        }
+      }
+    }
+    return 0;
+  }
+
   int _nextSelectedItemNoForDomain(String domainCode, int fallbackItemNo) {
     if (_reviewMonthByDomain.containsKey(domainCode)) {
       return fallbackItemNo;
@@ -1818,6 +2115,23 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
     }
     return domainCode;
+  }
+
+  String _resolvedStudentAgeText() {
+    final String explicit = _studentAge.trim();
+    if (explicit.isNotEmpty && explicit != '未知') {
+      return explicit;
+    }
+    final double months = _actualAgeMonths(_birthDate, _assessmentDate);
+    if (months <= 0) {
+      return '未知';
+    }
+    final int years = (months ~/ 12).clamp(0, 6);
+    final int remainingMonths = (months - years * 12).round().clamp(0, 11);
+    if (years > 0) {
+      return remainingMonths > 0 ? '$years岁$remainingMonths个月' : '$years岁';
+    }
+    return '$remainingMonths个月';
   }
 
   String _nextActionText() {
@@ -1882,6 +2196,198 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
               : '先完成当前可见的往前测查题目';
     }
     return '当前可见题目已完成';
+  }
+}
+
+class _ErxinDraftResumeDialog extends StatefulWidget {
+  const _ErxinDraftResumeDialog({
+    required this.draft,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final AssessmentDraftSummary draft;
+  final VoidCallback onRestart;
+  final Future<bool> Function() onContinue;
+
+  @override
+  State<_ErxinDraftResumeDialog> createState() =>
+      _ErxinDraftResumeDialogState();
+}
+
+class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
+  bool _continuing = false;
+
+  void _handleRestart() {
+    if (_continuing) {
+      return;
+    }
+    Navigator.of(context).pop();
+    widget.onRestart();
+  }
+
+  Future<void> _handleContinue() async {
+    if (_continuing) {
+      return;
+    }
+    setState(() => _continuing = true);
+    final bool restored = await widget.onContinue();
+    if (!mounted) {
+      return;
+    }
+    if (restored) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _continuing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int answered = widget.draft.answeredItemCount;
+    final int percent = widget.draft.completionPercentInt;
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 520,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: _erxinShadow(
+            color: const Color(0x33000000),
+            blur: 30,
+            offset: const Offset(0, 18),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Text(
+                '发现未完成草稿',
+                style: TextStyle(
+                  color: _ErxinColors.ink,
+                  fontSize: 19,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: _ErxinColors.line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 30, 30, 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    '当前儿童存在一份未提交的儿心量表测评草稿。',
+                    style: TextStyle(
+                      color: _ErxinColors.ink,
+                      fontSize: 15,
+                      height: 1.2,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBF7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _ErxinColors.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _ErxinDraftResumeMeta(
+                          label: '已记录',
+                          value: '$answered 题 · $percent%',
+                        ),
+                        const SizedBox(height: 13),
+                        _ErxinDraftResumeMeta(
+                          label: '更新时间',
+                          value: _formatErxinDateTime(widget.draft.updatedTime),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ErxinColors.line),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+              child: Align(
+                alignment: Alignment.centerRight,
+                child: SizedBox(
+                  height: 42,
+                  child: _continuing
+                      ? const SizedBox(
+                          width: 112,
+                          child: Center(
+                            child: SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                          ),
+                        )
+                      : Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            OutlinedButton(
+                              onPressed: _handleRestart,
+                              child: const Text('重新测评'),
+                            ),
+                            const SizedBox(width: 12),
+                            FilledButton(
+                              onPressed: _handleContinue,
+                              child: const Text('继续测评'),
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinDraftResumeMeta extends StatelessWidget {
+  const _ErxinDraftResumeMeta({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: '$label：'),
+          TextSpan(
+            text: value,
+            style: const TextStyle(
+              color: _ErxinColors.ink,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+      style: const TextStyle(
+        color: _ErxinColors.body,
+        fontSize: 14,
+        height: 1.2,
+        fontWeight: FontWeight.w800,
+      ),
+    );
   }
 }
 
@@ -3753,4 +4259,46 @@ double _actualAgeMonths(String birthDate, String assessmentDate) {
   }
   final int days = target.difference(birth).inDays;
   return days / 30.0;
+}
+
+String _dateOnlyText(String value) {
+  final String text = value.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  final RegExpMatch? match =
+      RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})').firstMatch(text);
+  if (match != null) {
+    final String year = match.group(1)!;
+    final String month = match.group(2)!.padLeft(2, '0');
+    final String day = match.group(3)!.padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+  final DateTime? parsed = DateTime.tryParse(text);
+  if (parsed == null) {
+    return text;
+  }
+  return '${parsed.year.toString().padLeft(4, '0')}-'
+      '${parsed.month.toString().padLeft(2, '0')}-'
+      '${parsed.day.toString().padLeft(2, '0')}';
+}
+
+String _formatErxinDateTime(String value) {
+  final String text = value.trim();
+  if (text.isEmpty) {
+    return '-';
+  }
+  final DateTime? parsed = DateTime.tryParse(text);
+  if (parsed == null) {
+    if (text.length >= 16) {
+      return text.substring(0, 16).replaceFirst('T', ' ');
+    }
+    return text;
+  }
+  final DateTime local = parsed.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }

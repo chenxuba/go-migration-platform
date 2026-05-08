@@ -20,6 +20,14 @@ const String defaultErxinDraftItemSavePath = String.fromEnvironment(
   'ERXIN_DRAFT_ITEM_SAVE_PATH',
   defaultValue: '/api/v1/assessments/erxin/drafts/item/save',
 );
+const String defaultErxinDraftDetailPath = String.fromEnvironment(
+  'ERXIN_DRAFT_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/erxin/drafts/detail',
+);
+const String defaultErxinDraftsPagePath = String.fromEnvironment(
+  'ERXIN_DRAFTS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/drafts/page',
+);
 const String defaultErxinDraftSubmitPath = String.fromEnvironment(
   'ERXIN_DRAFT_SUBMIT_PATH',
   defaultValue: '/api/v1/assessments/erxin/drafts/submit',
@@ -27,6 +35,7 @@ const String defaultErxinDraftSubmitPath = String.fromEnvironment(
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({
+    this.draftId = 0,
     this.studentId = 0,
     this.studentName = '',
     this.studentAge = '',
@@ -36,6 +45,7 @@ class ErxinAssessmentLaunchArgs {
     this.scaleName = '儿心量表-II',
   });
 
+  final int draftId;
   final int studentId;
   final String studentName;
   final String studentAge;
@@ -60,6 +70,16 @@ abstract class ErxinAssessmentClient {
     Map<String, dynamic> payload,
   );
 
+  Future<AssessmentDraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 1,
+    int studentId = 0,
+    bool latestOnly = true,
+  });
+
+  Future<ErxinDraftDetail> fetchDraftDetail(String token, int id);
+
   Future<ErxinDraftDetail> saveDraftItem(
     String token,
     Map<String, dynamic> payload,
@@ -75,6 +95,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.templateItemPath = defaultErxinTemplateItemPath,
     this.draftSavePath = defaultErxinDraftSavePath,
     this.draftItemSavePath = defaultErxinDraftItemSavePath,
+    this.draftDetailPath = defaultErxinDraftDetailPath,
+    this.draftsPagePath = defaultErxinDraftsPagePath,
     this.draftSubmitPath = defaultErxinDraftSubmitPath,
     this.httpClient,
   });
@@ -84,6 +106,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String templateItemPath;
   final String draftSavePath;
   final String draftItemSavePath;
+  final String draftDetailPath;
+  final String draftsPagePath;
   final String draftSubmitPath;
   final http.Client? httpClient;
 
@@ -147,6 +171,63 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     );
     if (data is! Map) {
       throw const AssessmentScaleApiException('草稿保存返回格式不正确');
+    }
+    return ErxinDraftDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<AssessmentDraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 1,
+    int studentId = 0,
+    bool latestOnly = true,
+  }) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response = await client.post(
+      _uri(educationBaseUrl, draftsPagePath),
+      headers: _jsonHeaders(token),
+      body: jsonEncode(<String, dynamic>{
+        'pageRequestModel': <String, int>{
+          'pageIndex': pageIndex,
+          'pageSize': pageSize,
+        },
+        'queryModel': <String, dynamic>{
+          'assessmentCode': 'ERXIN2',
+          if (studentId > 0) 'studentId': studentId,
+          if (latestOnly) 'latestOnly': true,
+        },
+        if (latestOnly) 'latestOnly': true,
+      }),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表草稿列表加载失败',
+    );
+    if (data is! Map) {
+      return AssessmentDraftPage.empty;
+    }
+    return AssessmentDraftPage.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ErxinDraftDetail> fetchDraftDetail(String token, int id) async {
+    final http.Client client = httpClient ?? http.Client();
+    final Uri uri = _uri(
+      educationBaseUrl,
+      draftDetailPath,
+      <String, String>{'id': '$id'},
+    );
+    final http.Response response = await client.get(
+      uri,
+      headers: _authHeaders(token),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表草稿详情加载失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('草稿详情返回格式不正确');
     }
     return ErxinDraftDetail.fromJson(Map<String, dynamic>.from(data));
   }
@@ -368,6 +449,7 @@ class ErxinDraftDetail {
     required this.completionPercent,
     required this.updatedTime,
     required this.progress,
+    required this.input,
   });
 
   factory ErxinDraftDetail.fromJson(Map<String, dynamic> json) {
@@ -375,13 +457,14 @@ class ErxinDraftDetail {
       id: _intFrom(json['id']),
       studentId: _intFrom(json['studentId']),
       studentName: '${json['studentName'] ?? ''}',
-      birthDate: '${json['birthDate'] ?? ''}',
-      assessmentDate: '${json['assessmentDate'] ?? ''}',
+      birthDate: _dateOnlyFrom(json['birthDate']),
+      assessmentDate: _dateOnlyFrom(json['assessmentDate']),
       examinerName: '${json['examinerName'] ?? ''}',
       answeredItemCount: _intFrom(json['answeredItemCount']),
       completionPercent: _doubleFrom(json['completionPercent']),
       updatedTime: '${json['updatedTime'] ?? ''}',
       progress: ErxinDraftProgress.fromJson(_mapFrom(json['progress'])),
+      input: ErxinDraftInput.fromJson(_mapFrom(json['input'])),
     );
   }
 
@@ -395,6 +478,81 @@ class ErxinDraftDetail {
   final double completionPercent;
   final String updatedTime;
   final ErxinDraftProgress progress;
+  final ErxinDraftInput input;
+}
+
+class ErxinDraftInput {
+  const ErxinDraftInput({
+    required this.itemPasses,
+    required this.itemRemarks,
+  });
+
+  factory ErxinDraftInput.fromJson(Map<String, dynamic> json) {
+    final Map<int, bool> itemPasses = <int, bool>{};
+    for (final MapEntry<String, dynamic> entry
+        in _mapFrom(json['itemPasses']).entries) {
+      final int itemNo = _intFrom(entry.key);
+      if (itemNo > 0 && entry.value is bool) {
+        itemPasses[itemNo] = entry.value as bool;
+      }
+    }
+    for (final Object? raw in _rawListFrom(json['itemPassList'])) {
+      if (raw is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> item = Map<String, dynamic>.from(raw);
+      final int itemNo = _intFrom(item['itemNo']);
+      final Object? passed = item['passed'];
+      if (itemNo > 0 && passed is bool) {
+        itemPasses[itemNo] = passed;
+      }
+    }
+
+    final Map<int, String> itemRemarks = <int, String>{};
+    for (final MapEntry<String, dynamic> entry
+        in _mapFrom(json['itemRemarks']).entries) {
+      final int itemNo = _intFrom(entry.key);
+      final String remark = '${entry.value ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
+      }
+    }
+    for (final Object? raw in _rawListFrom(json['itemRemarkList'])) {
+      if (raw is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> item = Map<String, dynamic>.from(raw);
+      final int itemNo = _intFrom(item['itemNo']);
+      final String remark = '${item['remark'] ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
+      }
+    }
+    for (final Object? raw in _rawListFrom(json['itemPassList'])) {
+      if (raw is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> item = Map<String, dynamic>.from(raw);
+      final int itemNo = _intFrom(item['itemNo']);
+      final String remark = '${item['remark'] ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
+      }
+    }
+
+    return ErxinDraftInput(
+      itemPasses: itemPasses,
+      itemRemarks: itemRemarks,
+    );
+  }
+
+  static const ErxinDraftInput empty = ErxinDraftInput(
+    itemPasses: <int, bool>{},
+    itemRemarks: <int, String>{},
+  );
+
+  final Map<int, bool> itemPasses;
+  final Map<int, String> itemRemarks;
 }
 
 class ErxinDraftProgress {
@@ -546,6 +704,28 @@ double _doubleFrom(Object? value) {
     return double.tryParse(value.trim()) ?? 0;
   }
   return 0;
+}
+
+String _dateOnlyFrom(Object? value) {
+  final String text = '${value ?? ''}'.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  final RegExpMatch? match =
+      RegExp(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})').firstMatch(text);
+  if (match != null) {
+    final String year = match.group(1)!;
+    final String month = match.group(2)!.padLeft(2, '0');
+    final String day = match.group(3)!.padLeft(2, '0');
+    return '$year-$month-$day';
+  }
+  final DateTime? parsed = DateTime.tryParse(text);
+  if (parsed == null) {
+    return text;
+  }
+  return '${parsed.year.toString().padLeft(4, '0')}-'
+      '${parsed.month.toString().padLeft(2, '0')}-'
+      '${parsed.day.toString().padLeft(2, '0')}';
 }
 
 String? _messageFromPayload(Object? payload) {

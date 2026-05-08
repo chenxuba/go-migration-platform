@@ -538,6 +538,20 @@ class _AssessmentScaleCategoryScreenState
   }
 
   void _openDraft(AssessmentDraftSummary draft) {
+    if (_isErxinDraft(draft)) {
+      _openErxinAssessment(
+        ErxinAssessmentLaunchArgs(
+          draftId: draft.id,
+          studentName: draft.studentName,
+          assessmentDate: _todayIsoDate(),
+          examinerName: draft.examinerName,
+          scaleName: draft.assessmentName.trim().isEmpty
+              ? '儿心量表-II'
+              : draft.assessmentName.trim(),
+        ),
+      );
+      return;
+    }
     if (_isPep3Draft(draft)) {
       _openPep3Assessment(
         Pep3AssessmentLaunchArgs(
@@ -2023,6 +2037,15 @@ bool _isErxinScale(AssessmentScaleItem scale) {
 
 bool _isPep3Draft(AssessmentDraftSummary draft) {
   return _isPep3Text(
+    <String>[
+      draft.assessmentCode,
+      draft.assessmentName,
+    ].join(' '),
+  );
+}
+
+bool _isErxinDraft(AssessmentDraftSummary draft) {
+  return _isErxinText(
     <String>[
       draft.assessmentCode,
       draft.assessmentName,

@@ -1734,6 +1734,359 @@ void main() {
     expect(find.text('60月龄'), findsOneWidget);
   });
 
+  testWidgets('ERXin expanded progress action locates next pending item',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('往前测查已展开'), findsOneWidget);
+    await tester.tap(find.text('往前36月龄'));
+    await tester.pumpAndSettle();
+    expect(find.text('大运动 · 36月龄记录'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '往前测查已展开'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 当前测查'), findsOneWidget);
+    expect(find.textContaining('当前题目说明：148 48月题'), findsOneWidget);
+
+    await _tapErxinScore(tester, '48月题', true);
+    await _tapErxinScore(tester, '42月题', true);
+    await _tapErxinScore(tester, '36月题', true);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '进入往后测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('往后测查已展开'), findsOneWidget);
+    await tester.tap(find.text('往前36月龄'));
+    await tester.pumpAndSettle();
+    expect(find.text('大运动 · 36月龄记录'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '往后测查已展开'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 当前测查'), findsOneWidget);
+    expect(find.textContaining('当前题目说明：154 54月题'), findsOneWidget);
+  });
+
+  testWidgets('ERXin workbench prompts and restores latest draft',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    const AssessmentDraftSummary draft = AssessmentDraftSummary(
+      id: 77,
+      studentName: '陈旭',
+      assessmentCode: 'ERXIN2',
+      assessmentName: '儿心量表-II',
+      scaleVersion: 'WS-T-580-2017',
+      examinerName: '陈老师',
+      status: 'draft',
+      answeredItemCount: 2,
+      rawScoreCount: 0,
+      completionPercent: .28,
+      createdTime: '2026-05-08T09:00:00',
+      updatedTime: '2026-05-08T10:00:00',
+    );
+    const ErxinDraftDetail detail = ErxinDraftDetail(
+      id: 77,
+      studentId: 31,
+      studentName: '陈旭',
+      birthDate: '2022-05-11T00:00:00+08:00',
+      assessmentDate: '2026-05-08T00:00:00+08:00',
+      examinerName: '陈老师',
+      answeredItemCount: 2,
+      completionPercent: .28,
+      updatedTime: '2026-05-08T10:00:00',
+      progress: ErxinDraftProgress(
+        itemCount: 7,
+        answeredItemCount: 2,
+        missingItemCount: 5,
+        completionPercent: .28,
+        complete: false,
+        canScore: false,
+        missingItemNos: <int>[136],
+      ),
+      input: ErxinDraftInput(
+        itemPasses: <int, bool>{148: true, 142: false},
+        itemRemarks: <int, String>{142: '42题草稿备注'},
+      ),
+    );
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      detectedDraft: draft,
+      draftDetail: detail,
+      draftDetailDelay: const Duration(milliseconds: 1),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(client.fetchDraftsPageCalls, 1);
+    expect(client.fetchDraftDetailCalls, 1);
+    expect(find.text('发现未完成草稿'), findsOneWidget);
+    expect(find.text('继续测评'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '继续测评'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsNothing);
+    expect(find.textContaining('当前题目说明：136 36月题'), findsOneWidget);
+    expect(
+      find.textContaining('出生日期：2022-05-11', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining('测查日期：2026-05-08', findRichText: true),
+      findsOneWidget,
+    );
+    expect(find.textContaining('T00:00:00', findRichText: true), findsNothing);
+    expect(find.text('往前42月龄'), findsOneWidget);
+
+    await tester.tap(find.text('往前42月龄'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 42月龄记录'), findsOneWidget);
+    expect(find.text('42题草稿备注'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(InkWell, '保存草稿'));
+    await tester.pumpAndSettle();
+
+    expect(client.saveDraftPayloads.last['birthDate'], '2022-05-11');
+    expect(client.saveDraftPayloads.last['assessmentDate'], '2026-05-08');
+  });
+
+  testWidgets('ERXin workbench can restart instead of applying detected draft',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    const AssessmentDraftSummary draft = AssessmentDraftSummary(
+      id: 77,
+      studentName: '陈旭',
+      assessmentCode: 'ERXIN2',
+      assessmentName: '儿心量表-II',
+      scaleVersion: 'WS-T-580-2017',
+      examinerName: '陈老师',
+      status: 'draft',
+      answeredItemCount: 2,
+      rawScoreCount: 0,
+      completionPercent: .28,
+      createdTime: '2026-05-08T09:00:00',
+      updatedTime: '2026-05-08T10:00:00',
+    );
+    const ErxinDraftDetail detail = ErxinDraftDetail(
+      id: 77,
+      studentId: 31,
+      studentName: '陈旭',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-08',
+      examinerName: '陈老师',
+      answeredItemCount: 2,
+      completionPercent: .28,
+      updatedTime: '2026-05-08T10:00:00',
+      progress: ErxinDraftProgress(
+        itemCount: 7,
+        answeredItemCount: 2,
+        missingItemCount: 5,
+        completionPercent: .28,
+        complete: false,
+        canScore: false,
+        missingItemNos: <int>[136],
+      ),
+      input: ErxinDraftInput(
+        itemPasses: <int, bool>{148: true, 142: false},
+        itemRemarks: <int, String>{142: '42题草稿备注'},
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(
+              detectedDraft: draft,
+              draftDetail: detail,
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '重新测评'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('发现未完成草稿'), findsNothing);
+    expect(find.textContaining('当前题目说明：148 48月题'), findsOneWidget);
+    expect(find.text('42题草稿备注'), findsNothing);
+  });
+
+  testWidgets('ERXin draft list opens the ERXin workbench',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    const AssessmentDraftPage draftPage = AssessmentDraftPage(
+      total: 1,
+      current: 1,
+      size: 5,
+      items: <AssessmentDraftSummary>[
+        AssessmentDraftSummary(
+          id: 77,
+          studentName: '陈旭',
+          assessmentCode: 'ERXIN2',
+          assessmentName: '儿心量表-II',
+          scaleVersion: 'WS-T-580-2017',
+          examinerName: '陈老师',
+          status: 'draft',
+          answeredItemCount: 2,
+          rawScoreCount: 0,
+          completionPercent: .28,
+          createdTime: '2026-05-08T09:00:00',
+          updatedTime: '2026-05-08T10:00:00',
+        ),
+      ],
+    );
+    const ErxinDraftDetail detail = ErxinDraftDetail(
+      id: 77,
+      studentId: 31,
+      studentName: '陈旭',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-08',
+      examinerName: '陈老师',
+      answeredItemCount: 2,
+      completionPercent: .28,
+      updatedTime: '2026-05-08T10:00:00',
+      progress: ErxinDraftProgress(
+        itemCount: 7,
+        answeredItemCount: 2,
+        missingItemCount: 5,
+        completionPercent: .28,
+        complete: false,
+        canScore: false,
+        missingItemNos: <int>[136],
+      ),
+      input: ErxinDraftInput(
+        itemPasses: <int, bool>{148: true, 142: false},
+        itemRemarks: <int, String>{},
+      ),
+    );
+    final _FakeErxinAssessmentClient erxinClient = _FakeErxinAssessmentClient(
+      draftDetail: detail,
+    );
+    ErxinAssessmentLaunchArgs? openedArgs;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(draftPage: draftPage),
+            onBack: () {},
+          ),
+        ),
+        onGenerateRoute: (RouteSettings settings) {
+          if (settings.name == '/erxin-assessment') {
+            final ErxinAssessmentLaunchArgs args =
+                settings.arguments! as ErxinAssessmentLaunchArgs;
+            openedArgs = args;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (BuildContext context) => Scaffold(
+                body: ErxinAssessmentPage(
+                  args: args,
+                  client: erxinClient,
+                  onBack: () => Navigator.of(context).maybePop(),
+                ),
+              ),
+            );
+          }
+          return null;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('继续草稿').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('陈旭 · 儿心量表-II'));
+    await tester.pumpAndSettle();
+
+    expect(openedArgs?.draftId, 77);
+    expect(find.text('儿心量表-II 测评工作台'), findsOneWidget);
+    expect(find.textContaining('当前题目说明：136 36月题'), findsOneWidget);
+    expect(erxinClient.fetchDraftDetailCalls, 1);
+  });
+
   testWidgets('ERXin save draft coalesces rapid taps',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -2949,6 +3302,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
   _FakeAssessmentScaleClient({
     this.categoriesDelay = Duration.zero,
     this.libraryDelay = Duration.zero,
+    AssessmentDraftPage? draftPage,
     List<AssessmentStudentCandidate>? studentCandidates,
     Map<int, List<AssessmentStudentCandidate>>? studentCandidatesByStatus,
     List<AssessmentScaleItem>? scaleItems,
@@ -2958,10 +3312,12 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
               AssessmentStudentStatuses.enrolled:
                   studentCandidates ?? _defaultStudentCandidates,
             },
-        scaleItems = scaleItems ?? _items;
+        scaleItems = scaleItems ?? _items,
+        draftPage = draftPage ?? _defaultDraftPage;
 
   final Duration categoriesDelay;
   final Duration libraryDelay;
+  final AssessmentDraftPage draftPage;
   final List<AssessmentScaleItem> scaleItems;
   final List<AssessmentStudentCandidate> studentCandidates;
   final Map<int, List<AssessmentStudentCandidate>> studentCandidatesByStatus;
@@ -3023,6 +3379,28 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
       apiPackage: 'oral',
     ),
   ];
+
+  static const AssessmentDraftPage _defaultDraftPage = AssessmentDraftPage(
+    total: 1,
+    current: 1,
+    size: 5,
+    items: <AssessmentDraftSummary>[
+      AssessmentDraftSummary(
+        id: 9,
+        studentName: '张一鸣',
+        assessmentCode: 'PEP3',
+        assessmentName: 'PEP-3',
+        scaleVersion: '2026',
+        examinerName: '陈老师',
+        status: 'draft',
+        answeredItemCount: 24,
+        rawScoreCount: 0,
+        completionPercent: .42,
+        createdTime: '2026-05-04T09:00:00Z',
+        updatedTime: '2026-05-04T10:00:00Z',
+      ),
+    ],
+  );
 
   @override
   Future<List<String>> fetchCategories(String token) async {
@@ -3093,27 +3471,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     int pageSize = 5,
     bool latestOnly = false,
   }) async {
-    return const AssessmentDraftPage(
-      total: 1,
-      current: 1,
-      size: 5,
-      items: <AssessmentDraftSummary>[
-        AssessmentDraftSummary(
-          id: 9,
-          studentName: '张一鸣',
-          assessmentCode: 'PEP3',
-          assessmentName: 'PEP-3',
-          scaleVersion: '2026',
-          examinerName: '陈老师',
-          status: 'draft',
-          answeredItemCount: 24,
-          rawScoreCount: 0,
-          completionPercent: .42,
-          createdTime: '2026-05-04T09:00:00Z',
-          updatedTime: '2026-05-04T10:00:00Z',
-        ),
-      ],
-    );
+    return draftPage;
   }
 
   @override
@@ -3195,20 +3553,30 @@ const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   _FakeErxinAssessmentClient({
     this.saveDraftDelay = Duration.zero,
+    this.draftDetailDelay = Duration.zero,
+    this.detectedDraft,
+    this.draftDetail,
     List<ErxinAgeGroup>? groups,
   }) : groups = groups ?? _groups;
 
   final Duration saveDraftDelay;
+  final Duration draftDetailDelay;
+  final AssessmentDraftSummary? detectedDraft;
+  final ErxinDraftDetail? draftDetail;
   final List<ErxinAgeGroup> groups;
 
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
   int submitDraftCalls = 0;
+  int fetchDraftsPageCalls = 0;
+  int fetchDraftDetailCalls = 0;
   int nextDraftId = 21;
   bool failNextDraftUpdateAsNotFound = false;
   final List<Map<String, dynamic>> saveDraftPayloads = <Map<String, dynamic>>[];
   final List<Map<String, dynamic>> saveDraftItemPayloads =
       <Map<String, dynamic>>[];
+  final Map<int, bool> _savedItemPasses = <int, bool>{};
+  final Map<int, String> _savedItemRemarks = <int, String>{};
 
   static const ErxinDomain _domain = ErxinDomain(
     domainCode: 'GM',
@@ -3375,6 +3743,36 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   }
 
   @override
+  Future<AssessmentDraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 1,
+    int studentId = 0,
+    bool latestOnly = true,
+  }) async {
+    fetchDraftsPageCalls += 1;
+    final AssessmentDraftSummary? draft = detectedDraft;
+    if (draft == null) {
+      return AssessmentDraftPage.empty;
+    }
+    return AssessmentDraftPage(
+      total: 1,
+      current: pageIndex,
+      size: pageSize,
+      items: <AssessmentDraftSummary>[draft],
+    );
+  }
+
+  @override
+  Future<ErxinDraftDetail> fetchDraftDetail(String token, int id) async {
+    fetchDraftDetailCalls += 1;
+    if (draftDetailDelay > Duration.zero) {
+      await Future<void>.delayed(draftDetailDelay);
+    }
+    return draftDetail ?? _draftDetail(id: id);
+  }
+
+  @override
   Future<ErxinDraftDetail> saveDraft(
     String token,
     Map<String, dynamic> payload,
@@ -3389,12 +3787,13 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       failNextDraftUpdateAsNotFound = false;
       throw const AssessmentScaleApiException('assessment draft not found');
     }
+    _replaceSavedInput(_inputFromPayload(payload));
     if (id is int && id > 0) {
-      return _draftDetail(id: id);
+      return _draftDetail(id: id, input: _savedInput());
     }
     final int idToReturn = nextDraftId;
     nextDraftId += 1;
-    return _draftDetail(id: idToReturn);
+    return _draftDetail(id: idToReturn, input: _savedInput());
   }
 
   @override
@@ -3404,7 +3803,20 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   ) async {
     saveDraftItemCalls += 1;
     saveDraftItemPayloads.add(Map<String, dynamic>.from(payload));
-    return _draftDetail(id: _lastDraftId);
+    final int itemNo = _fakeIntFrom(payload['itemNo']);
+    final Object? passed = payload['passed'];
+    if (itemNo > 0 && passed is bool) {
+      _savedItemPasses[itemNo] = passed;
+    }
+    final String remark = '${payload['remark'] ?? ''}'.trim();
+    if (itemNo > 0) {
+      if (remark.isEmpty) {
+        _savedItemRemarks.remove(itemNo);
+      } else {
+        _savedItemRemarks[itemNo] = remark;
+      }
+    }
+    return _draftDetail(id: _lastDraftId, input: _savedInput());
   }
 
   @override
@@ -3414,7 +3826,34 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
 
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
 
-  ErxinDraftDetail _draftDetail({required int id}) {
+  void _replaceSavedInput(ErxinDraftInput input) {
+    _savedItemPasses
+      ..clear()
+      ..addAll(input.itemPasses);
+    _savedItemRemarks
+      ..clear()
+      ..addAll(input.itemRemarks);
+  }
+
+  ErxinDraftInput _savedInput() {
+    return ErxinDraftInput(
+      itemPasses: Map<int, bool>.from(_savedItemPasses),
+      itemRemarks: Map<int, String>.from(_savedItemRemarks),
+    );
+  }
+
+  ErxinDraftInput _inputFromPayload(Map<String, dynamic> payload) {
+    return ErxinDraftInput.fromJson(<String, dynamic>{
+      'itemPassList': payload['itemPassList'],
+      'itemRemarkList': payload['itemRemarkList'],
+    });
+  }
+
+  ErxinDraftDetail _draftDetail({
+    required int id,
+    ErxinDraftInput input = ErxinDraftInput.empty,
+  }) {
+    final int answeredItemCount = input.itemPasses.length;
     return ErxinDraftDetail(
       id: id,
       studentId: 31,
@@ -3422,18 +3861,19 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       birthDate: '2022-05-11',
       assessmentDate: '2026-05-08',
       examinerName: '陈老师',
-      answeredItemCount: 1,
-      completionPercent: 10,
+      answeredItemCount: answeredItemCount,
+      completionPercent: answeredItemCount / 7,
       updatedTime: '2026-05-08T10:00:00',
-      progress: const ErxinDraftProgress(
+      progress: ErxinDraftProgress(
         itemCount: 7,
-        answeredItemCount: 1,
+        answeredItemCount: answeredItemCount,
         missingItemCount: 0,
-        completionPercent: 10,
+        completionPercent: answeredItemCount / 7,
         complete: false,
         canScore: false,
         missingItemNos: <int>[],
       ),
+      input: input,
     );
   }
 }
@@ -3923,6 +4363,16 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
 String _fakeNormalize(String value) {
   return value.trim().toLowerCase().replaceAll(RegExp(r'[\s\-/_.]'), '');
+}
+
+int _fakeIntFrom(Object? value) {
+  if (value is int) {
+    return value;
+  }
+  if (value is num) {
+    return value.toInt();
+  }
+  return int.tryParse('$value') ?? 0;
 }
 
 class _FakeTimetableClient implements TimetableClient {
