@@ -82,11 +82,11 @@ func (r erxinReportPDFRenderer) drawHeader(report model.ERXinReportVO) {
 func (r erxinReportPDFRenderer) drawOriginalResultTable(report model.ERXinReportVO) {
 	const (
 		left       = 67.0
-		top        = 130.0
+		top        = 122.0
 		labelWidth = 96.0
 		tableWidth = 450.0
 	)
-	rowHeights := []float64{45, 38, 38, 38, 45, 40, 40, 40, 40, 40, 40}
+	rowHeights := []float64{30, 25, 25, 25, 30, 27, 27, 27, 27, 27, 27}
 	totalHeight := 0.0
 	for _, height := range rowHeights {
 		totalHeight += height
@@ -117,28 +117,28 @@ func (r erxinReportPDFRenderer) drawOriginalResultTable(report model.ERXinReport
 		r.pdf.Line(x, resultRowTop, x, top+totalHeight)
 	}
 
-	r.drawOriginalCellText(left, top, labelWidth, rowHeights[0], "姓    名", 13, true)
-	r.drawOriginalCellText(left+labelWidth, top, 96, rowHeights[0], report.Record.StudentName, 12, true)
-	r.drawOriginalCellText(left+192, top, 64, rowHeights[0], "性    别", 13, true)
-	r.drawOriginalCellText(left+256, top, 64, rowHeights[0], erxinBlankDash(report.Record.StudentGender), 12, true)
-	r.drawOriginalCellText(left+320, top, 64, rowHeights[0], "民    族", 13, true)
+	r.drawOriginalCellText(left, top, labelWidth, rowHeights[0], "姓    名", 12, true)
+	r.drawOriginalCellText(left+labelWidth, top, 96, rowHeights[0], report.Record.StudentName, 11, true)
+	r.drawOriginalCellText(left+192, top, 64, rowHeights[0], "性    别", 12, true)
+	r.drawOriginalCellText(left+256, top, 64, rowHeights[0], erxinBlankDash(report.Record.StudentGender), 11, true)
+	r.drawOriginalCellText(left+320, top, 64, rowHeights[0], "民    族", 12, true)
 
 	dateRowTop := top + rowHeights[0]
-	r.drawOriginalCellText(left, dateRowTop, labelWidth, rowHeights[1], "测验日期", 13, true)
-	r.drawOriginalCellText(left+labelWidth, dateRowTop, tableWidth-labelWidth, rowHeights[1], erxinReportPDFDateText(report.Record.AssessmentDate), 12, true)
+	r.drawOriginalCellText(left, dateRowTop, labelWidth, rowHeights[1], "测验日期", 12, true)
+	r.drawOriginalCellText(left+labelWidth, dateRowTop, tableWidth-labelWidth, rowHeights[1], erxinReportPDFDateText(report.Record.AssessmentDate), 11, true)
 
 	birthRowTop := dateRowTop + rowHeights[1]
-	r.drawOriginalCellText(left, birthRowTop, labelWidth, rowHeights[2], "出生日期", 13, true)
-	r.drawOriginalCellText(left+labelWidth, birthRowTop, tableWidth-labelWidth, rowHeights[2], erxinReportPDFDateText(report.Record.BirthDate), 12, true)
+	r.drawOriginalCellText(left, birthRowTop, labelWidth, rowHeights[2], "出生日期", 12, true)
+	r.drawOriginalCellText(left+labelWidth, birthRowTop, tableWidth-labelWidth, rowHeights[2], erxinReportPDFDateText(report.Record.BirthDate), 11, true)
 
 	ageRowTop := birthRowTop + rowHeights[2]
-	r.drawOriginalCellText(left, ageRowTop, labelWidth, rowHeights[3], "实足年龄", 13, true)
-	r.drawOriginalCellText(left+labelWidth, ageRowTop, tableWidth-labelWidth, rowHeights[3], erxinActualAgeSummaryText(report.Record), 12, true)
+	r.drawOriginalCellText(left, ageRowTop, labelWidth, rowHeights[3], "实足年龄", 12, true)
+	r.drawOriginalCellText(left+labelWidth, ageRowTop, tableWidth-labelWidth, rowHeights[3], erxinActualAgeSummaryText(report.Record), 11, true)
 
 	headerRowTop := ageRowTop + rowHeights[3]
-	r.drawOriginalCellText(left, headerRowTop, labelWidth, rowHeights[4], "项    目", 13, true)
-	r.drawOriginalCellText(left+labelWidth, headerRowTop, resultColumns[1], rowHeights[4], "智  龄（月）", 13, true)
-	r.drawOriginalCellText(left+labelWidth+resultColumns[1], headerRowTop, resultColumns[2], rowHeights[4], "发育商（DQ）", 13, true)
+	r.drawOriginalCellText(left, headerRowTop, labelWidth, rowHeights[4], "项    目", 12, true)
+	r.drawOriginalCellText(left+labelWidth, headerRowTop, resultColumns[1], rowHeights[4], "智  龄（月）", 12, true)
+	r.drawOriginalCellText(left+labelWidth+resultColumns[1], headerRowTop, resultColumns[2], rowHeights[4], "发育商（DQ）", 12, true)
 
 	domains := []string{"大 运 动", "精细动作", "适应能力", "语    言", "社会行为"}
 	domainKeys := []string{"GM", "FM", "AD", "LANG", "SOC"}
@@ -146,15 +146,15 @@ func (r erxinReportPDFRenderer) drawOriginalResultTable(report model.ERXinReport
 	for index, label := range domains {
 		rowTop := headerRowTop + rowHeights[4] + float64(index)*rowHeights[5]
 		row := rowsByKey[domainKeys[index]]
-		r.drawOriginalCellText(left, rowTop, labelWidth, rowHeights[5], label, 13, true)
-		r.drawOriginalCellText(left+labelWidth, rowTop, resultColumns[1], rowHeights[5], erxinReportPDFMentalAgeText(row), 12, true)
-		r.drawOriginalCellText(left+labelWidth+resultColumns[1], rowTop, resultColumns[2], rowHeights[5], erxinReportPDFDQText(row.DQ), 12, true)
+		r.drawOriginalCellText(left, rowTop, labelWidth, rowHeights[5], label, 12, true)
+		r.drawOriginalCellText(left+labelWidth, rowTop, resultColumns[1], rowHeights[5], erxinReportPDFMentalAgeText(row), 11, true)
+		r.drawOriginalCellText(left+labelWidth+resultColumns[1], rowTop, resultColumns[2], rowHeights[5], erxinReportPDFDQText(row.DQ), 11, true)
 	}
 
 	totalRowTop := headerRowTop + rowHeights[4] + 5*rowHeights[5]
-	r.drawOriginalCellText(left, totalRowTop, labelWidth, rowHeights[10], "全 量 表", 13, true)
-	r.drawOriginalCellText(left+labelWidth, totalRowTop, resultColumns[1], rowHeights[10], erxinReportPDFSummaryMentalAgeText(report.Summary), 12, true)
-	r.drawOriginalCellText(left+labelWidth+resultColumns[1], totalRowTop, resultColumns[2], rowHeights[10], erxinReportPDFDQText(report.Summary.DQ), 12, true)
+	r.drawOriginalCellText(left, totalRowTop, labelWidth, rowHeights[10], "全 量 表", 12, true)
+	r.drawOriginalCellText(left+labelWidth, totalRowTop, resultColumns[1], rowHeights[10], erxinReportPDFSummaryMentalAgeText(report.Summary), 11, true)
+	r.drawOriginalCellText(left+labelWidth+resultColumns[1], totalRowTop, resultColumns[2], rowHeights[10], erxinReportPDFDQText(report.Summary.DQ), 11, true)
 }
 
 func (r erxinReportPDFRenderer) drawExaminer(report model.ERXinReportVO) {
@@ -164,7 +164,7 @@ func (r erxinReportPDFRenderer) drawExaminer(report model.ERXinReportVO) {
 	}
 	r.setTextColor(0, 0, 0)
 	r.setFont(13)
-	r.drawText(305, 594, text)
+	r.drawText(305, 456, text)
 }
 
 func (r erxinReportPDFRenderer) drawOriginalCellText(x, y, width, height float64, text string, size float64, center bool) {
