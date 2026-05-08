@@ -1441,6 +1441,72 @@ void main() {
     expect(find.text('33月龄'), findsOneWidget);
   });
 
+  testWidgets('ERXin backward progress reveals all newly added record months',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _tapErxinScore(tester, '48月题', true);
+    await _tapErxinScore(tester, '42月题', false);
+    await _tapErxinScore(tester, '36月题', false);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.widgetWithText(FilledButton, '继续往前测查'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    expect(find.text('33月龄'), findsOneWidget);
+    expect(find.text('30月龄'), findsOneWidget);
+    expect(find.text('往前33月龄'), findsOneWidget);
+    expect(find.text('往前30月龄'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('往前33月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('往前30月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('ERXin item remarks stay scoped by selected item',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -1818,6 +1884,71 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('本能区测查完成'), findsOneWidget);
+    expect(find.text('前测基线'), findsOneWidget);
+    expect(find.text('后测封顶'), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.text('前测基线'),
+        matching: find.byType(ListView),
+      ),
+      findsNothing,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('后测封顶'),
+        matching: find.byType(ListView),
+      ),
+      findsNothing,
+    );
+
+    await tester.tap(find.text('前测基线'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(
+      find.ancestor(
+        of: find.text('往前42月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('往前36月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.tap(find.text('后测封顶'));
+    await tester.pump(const Duration(milliseconds: 120));
+    expect(
+      find.ancestor(
+        of: find.text('往后54月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      find.ancestor(
+        of: find.text('往后60月龄'),
+        matching: find.byWidgetPredicate(
+          (Widget widget) =>
+              widget is Material && widget.color == const Color(0xFFFFF3BF),
+        ),
+      ),
+      findsOneWidget,
+    );
+
+    await tester.pump(const Duration(milliseconds: 900));
     await tester.tap(find.text('提交记录'));
     await tester.pumpAndSettle();
 

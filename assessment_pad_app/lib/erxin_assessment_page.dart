@@ -91,6 +91,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
   Future<ErxinDraftDetail?>? _saveDraftFuture;
+  List<int> _recordRevealMonths = const <int>[];
+  int _recordRevealSerial = 0;
   bool _saveDraftFutureSilent = false;
   bool _saveDraftJoinedByManual = false;
 
@@ -315,21 +317,24 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   bool _hasPreviousBaselineForDomain(String domainCode) {
-    final List<int> previous = _previousMonthsForDomain(domainCode);
-    for (int index = 0; index < previous.length - 1; index++) {
-      final int current = previous[index];
-      final int next = previous[index + 1];
-      final int currentIndex = _standardAgeMonths.indexOf(current);
-      final int nextIndex = _standardAgeMonths.indexOf(next);
-      if (nextIndex - currentIndex != 1) {
-        continue;
-      }
-      if (_ageMonthAllPassed(domainCode, current) &&
-          _ageMonthAllPassed(domainCode, next)) {
-        return true;
+    return _previousBaselineMonthsForDomain(domainCode).isNotEmpty;
+  }
+
+  List<int> _previousBaselineMonthsForDomain(String domainCode) {
+    final int mainIndex = _mainAgeIndex;
+    if (mainIndex <= 1) {
+      return const <int>[];
+    }
+    final int currentStart = _previousStartIndexForDomain(domainCode);
+    for (int index = mainIndex - 2; index >= currentStart; index--) {
+      final int lowerMonth = _standardAgeMonths[index];
+      final int upperMonth = _standardAgeMonths[index + 1];
+      if (_ageMonthAllPassed(domainCode, lowerMonth) &&
+          _ageMonthAllPassed(domainCode, upperMonth)) {
+        return <int>[upperMonth, lowerMonth];
       }
     }
-    return false;
+    return const <int>[];
   }
 
   bool _mainMonthCompleteForDomain(String domainCode) {
@@ -379,6 +384,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   bool _hasFutureCeilingForDomain(String domainCode) {
+    return _futureCeilingMonthsForDomain(domainCode).isNotEmpty;
+  }
+
+  List<int> _futureCeilingMonthsForDomain(String domainCode) {
     final List<int> future = _futureMonthsForDomain(domainCode);
     for (int index = 0; index < future.length - 1; index++) {
       final int current = future[index];
@@ -390,10 +399,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
       if (_ageMonthAllFailed(domainCode, current) &&
           _ageMonthAllFailed(domainCode, next)) {
-        return true;
+        return <int>[current, next];
       }
     }
-    return false;
+    return const <int>[];
   }
 
   bool get _canContinueFutureMonths {
@@ -553,6 +562,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   List<_RuleRow> _recordRowsForDomain(String domainCode) {
     final int mainAge = _mainAgeMonth;
     final int? reviewMonth = _reviewMonthByDomain[domainCode];
+    final List<int> baselineMonths = _previousBaselineMonthsForDomain(
+      domainCode,
+    );
+    final List<int> ceilingMonths = _futureCeilingMonthsForDomain(domainCode);
     final List<_RuleRow> rows = <_RuleRow>[
       for (final int month in _recordMonthsForDomain(domainCode))
         _RuleRow(
@@ -570,6 +583,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         label: '前测基线',
         value: _hasPreviousBaselineForDomain(domainCode) ? '已建立' : '未形成',
         done: _hasPreviousBaselineForDomain(domainCode),
+        targetMonths: baselineMonths,
       ),
     ];
     if (_futureVisibleDomains.contains(domainCode) ||
@@ -579,6 +593,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
           label: '后测封顶',
           value: _hasFutureCeilingForDomain(domainCode) ? '已建立' : '未形成',
           done: _hasFutureCeilingForDomain(domainCode),
+          targetMonths: ceilingMonths,
         ),
       );
     }
@@ -663,6 +678,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                 Expanded(
                   child: _RuleChecklist(
                     rows: _recordRowsForDomain(_selectedDomainCode),
+                    revealMonths: _recordRevealMonths,
+                    revealSerial: _recordRevealSerial,
                     onTapMonth: _openAssessmentRecord,
                   ),
                 ),
@@ -1367,6 +1384,14 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       if (_selectedItemNo <= 0) {
         _selectedItemNo = _firstVisibleItemNo(domainCode);
       }
+      final List<int> addedMonths = _standardAgeMonths
+          .sublist(start, currentStart)
+          .reversed
+          .toList(growable: false);
+      if (addedMonths.isNotEmpty) {
+        _recordRevealMonths = addedMonths;
+        _recordRevealSerial++;
+      }
       _autoSaveText = '已追加往前测查';
     });
     _prefetchSelectedItem();
@@ -1376,15 +1401,21 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   void _enterFutureMonths() {
     final int index = _mainAgeIndex;
     final String domainCode = _selectedDomainCode;
+    final int endIndex = math.min(_standardAgeMonths.length - 1, index + 2);
     setState(() {
       _reviewMonthByDomain.remove(domainCode);
       _futureVisibleDomains.add(domainCode);
-      _futureEndIndexByDomain[domainCode] =
-          math.min(_standardAgeMonths.length - 1, index + 2);
+      _futureEndIndexByDomain[domainCode] = endIndex;
       _selectedItemNo = _firstItemNoForMonth(
         domainCode,
         _standardAgeMonths[index + 1],
       );
+      _recordRevealMonths = _standardAgeMonths
+          .sublist(index + 1, endIndex + 1)
+          .toList(growable: false);
+      if (_recordRevealMonths.isNotEmpty) {
+        _recordRevealSerial++;
+      }
       _autoSaveText = '已进入往后测查';
     });
     _prefetchSelectedItem();
@@ -1418,6 +1449,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         domainCode,
         _standardAgeMonths[currentEnd + 1],
       );
+      _recordRevealMonths = _standardAgeMonths
+          .sublist(currentEnd + 1, nextEnd + 1)
+          .toList(growable: false);
+      if (_recordRevealMonths.isNotEmpty) {
+        _recordRevealSerial++;
+      }
       _autoSaveText = '已追加往后测查';
     });
     _prefetchSelectedItem();
@@ -2997,108 +3034,260 @@ class _RuleCard extends StatelessWidget {
   }
 }
 
-class _RuleChecklist extends StatelessWidget {
+class _RuleChecklist extends StatefulWidget {
   const _RuleChecklist({
     required this.rows,
+    required this.revealMonths,
+    required this.revealSerial,
     required this.onTapMonth,
   });
 
   final List<_RuleRow> rows;
+  final List<int> revealMonths;
+  final int revealSerial;
   final ValueChanged<int> onTapMonth;
 
   @override
+  State<_RuleChecklist> createState() => _RuleChecklistState();
+}
+
+class _RuleChecklistState extends State<_RuleChecklist> {
+  static const double _rowExtent = 41;
+
+  final ScrollController _scrollController = ScrollController();
+  final Set<int> _flashingMonths = <int>{};
+  Timer? _flashTimer;
+
+  @override
+  void dispose() {
+    _flashTimer?.cancel();
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RuleChecklist oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.revealSerial == widget.revealSerial ||
+        widget.revealMonths.isEmpty) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _revealMonths(widget.revealMonths);
+    });
+  }
+
+  void _revealTargetMonths(_RuleRow row) {
+    _revealMonths(row.targetMonths);
+  }
+
+  void _revealMonths(List<int> months) {
+    if (months.isEmpty) {
+      return;
+    }
+    final Set<int> targetMonths = months.toSet();
+    final List<_RuleRow> monthRows = widget.rows
+        .where((_RuleRow candidate) => candidate.month != null)
+        .toList(growable: false);
+    final int targetIndex = monthRows.indexWhere(
+      (_RuleRow candidate) => targetMonths.contains(candidate.month),
+    );
+    if (targetIndex < 0) {
+      return;
+    }
+
+    _flashTimer?.cancel();
+    setState(() {
+      _flashingMonths
+        ..clear()
+        ..addAll(targetMonths);
+    });
+    _flashTimer = Timer(const Duration(milliseconds: 900), () {
+      if (!mounted) {
+        return;
+      }
+      setState(_flashingMonths.clear);
+    });
+
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final double maxOffset = _scrollController.position.maxScrollExtent;
+    final double targetOffset = math.min(
+      maxOffset,
+      math.max(0, 6 + targetIndex * _rowExtent),
+    );
+    unawaited(
+      _scrollController.animateTo(
+        targetOffset,
+        duration: const Duration(milliseconds: 260),
+        curve: Curves.easeOutCubic,
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final List<_RuleRow> monthRows = widget.rows
+        .where((_RuleRow row) => row.month != null)
+        .toList(growable: false);
+    final List<_RuleRow> pinnedRows = widget.rows
+        .where((_RuleRow row) => row.month == null)
+        .toList(growable: false);
     return Container(
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: _ErxinColors.line),
       ),
-      child: ListView.separated(
-        padding: const EdgeInsets.symmetric(vertical: 6),
-        physics: const BouncingScrollPhysics(),
-        itemCount: rows.length,
-        separatorBuilder: (_, __) => const Divider(
-          height: 1,
-          thickness: 1,
-          color: _ErxinColors.line,
-        ),
-        itemBuilder: (BuildContext context, int index) {
-          final _RuleRow row = rows[index];
-          final bool clickable = row.month != null;
-          final bool unmetResult = _ruleRowHasUnmetResult(row);
-          return Material(
-            color: row.selected ? const Color(0xFFEAF2FF) : Colors.white,
-            child: InkWell(
-              onTap: clickable ? () => onTapMonth(row.month!) : null,
-              child: SizedBox(
-                height: 40,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 12),
-                  child: Row(
-                    children: <Widget>[
-                      Icon(
-                        row.done
-                            ? Icons.check_circle
-                            : unmetResult
-                                ? Icons.cancel_rounded
-                                : Icons.radio_button_unchecked,
-                        color: row.done
-                            ? _ErxinColors.green
-                            : unmetResult
-                                ? _ErxinColors.red
-                                : _ErxinColors.muted,
-                        size: 18,
-                      ),
-                      const SizedBox(width: 9),
-                      Expanded(
-                        child: Text(
-                          row.label,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: row.selected
-                                ? _ErxinColors.blue
-                                : _ErxinColors.ink,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Text(
-                        row.value,
-                        maxLines: 1,
-                        softWrap: false,
-                        style: TextStyle(
-                          color: row.done
-                              ? _ErxinColors.green
-                              : unmetResult
-                                  ? _ErxinColors.red
-                                  : _ErxinColors.body,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                      if (clickable) ...<Widget>[
-                        const SizedBox(width: 5),
-                        Icon(
-                          row.selected
-                              ? Icons.edit_note_rounded
-                              : Icons.history_rounded,
-                          color: row.selected
-                              ? _ErxinColors.blue
-                              : _ErxinColors.muted,
-                          size: 16,
-                        ),
-                      ],
-                    ],
+      child: Column(
+        children: <Widget>[
+          Expanded(
+            child: ListView.separated(
+              controller: _scrollController,
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              physics: const BouncingScrollPhysics(),
+              itemCount: monthRows.length,
+              separatorBuilder: (_, __) => const Divider(
+                height: 1,
+                thickness: 1,
+                color: _ErxinColors.line,
+              ),
+              itemBuilder: (BuildContext context, int index) {
+                final _RuleRow row = monthRows[index];
+                return _RuleChecklistRow(
+                  row: row,
+                  highlighted:
+                      row.month != null && _flashingMonths.contains(row.month),
+                  onTapMonth: widget.onTapMonth,
+                );
+              },
+            ),
+          ),
+          if (pinnedRows.isNotEmpty) ...<Widget>[
+            const Divider(height: 1, thickness: 1, color: _ErxinColors.line),
+            for (final MapEntry<int, _RuleRow> entry
+                in pinnedRows.asMap().entries) ...<Widget>[
+              _RuleChecklistRow(
+                row: entry.value,
+                onTapMonth: widget.onTapMonth,
+                onTapTargets: () => _revealTargetMonths(entry.value),
+              ),
+              if (entry.key < pinnedRows.length - 1)
+                const Divider(
+                  height: 1,
+                  thickness: 1,
+                  color: _ErxinColors.line,
+                ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _RuleChecklistRow extends StatelessWidget {
+  const _RuleChecklistRow({
+    required this.row,
+    required this.onTapMonth,
+    this.highlighted = false,
+    this.onTapTargets,
+  });
+
+  final _RuleRow row;
+  final ValueChanged<int> onTapMonth;
+  final bool highlighted;
+  final VoidCallback? onTapTargets;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool targetClickable =
+        row.month == null && row.done && row.targetMonths.isNotEmpty;
+    final bool clickable = row.month != null || targetClickable;
+    final bool unmetResult = _ruleRowHasUnmetResult(row);
+    return Material(
+      color: highlighted
+          ? const Color(0xFFFFF3BF)
+          : row.selected
+              ? const Color(0xFFEAF2FF)
+              : Colors.white,
+      child: InkWell(
+        onTap: row.month != null
+            ? () => onTapMonth(row.month!)
+            : targetClickable
+                ? onTapTargets
+                : null,
+        child: SizedBox(
+          height: 40,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  row.done
+                      ? Icons.check_circle
+                      : unmetResult
+                          ? Icons.cancel_rounded
+                          : Icons.radio_button_unchecked,
+                  color: row.done
+                      ? _ErxinColors.green
+                      : unmetResult
+                          ? _ErxinColors.red
+                          : _ErxinColors.muted,
+                  size: 18,
+                ),
+                const SizedBox(width: 9),
+                Expanded(
+                  child: Text(
+                    row.label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color:
+                          row.selected ? _ErxinColors.blue : _ErxinColors.ink,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                    ),
                   ),
                 ),
-              ),
+                const SizedBox(width: 8),
+                Text(
+                  row.value,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: row.done
+                        ? _ErxinColors.green
+                        : unmetResult
+                            ? _ErxinColors.red
+                            : _ErxinColors.body,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                if (clickable) ...<Widget>[
+                  const SizedBox(width: 5),
+                  Icon(
+                    targetClickable
+                        ? Icons.center_focus_strong_rounded
+                        : row.selected
+                            ? Icons.edit_note_rounded
+                            : Icons.history_rounded,
+                    color: targetClickable || row.selected
+                        ? _ErxinColors.blue
+                        : _ErxinColors.muted,
+                    size: 16,
+                  ),
+                ],
+              ],
             ),
-          );
-        },
+          ),
+        ),
       ),
     );
   }
@@ -3421,6 +3610,7 @@ class _RuleRow {
     required this.value,
     required this.done,
     this.month,
+    this.targetMonths = const <int>[],
     this.selected = false,
   });
 
@@ -3428,6 +3618,7 @@ class _RuleRow {
   final String value;
   final bool done;
   final int? month;
+  final List<int> targetMonths;
   final bool selected;
 }
 
