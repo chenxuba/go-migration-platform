@@ -133,6 +133,86 @@ void main() {
     expect(find.text('暂无评估报告内容'), findsOneWidget);
   });
 
+  testWidgets('erxin report preview keeps AI interpretation tab non-empty',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeErxinAssessmentClient erxinClient = _FakeErxinAssessmentClient(
+      interpretationDelay: const Duration(milliseconds: 180),
+      reportPdfBytes: Uint8List(0),
+    );
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: _FakePep3AssessmentClient(),
+              erxinRecordClient: _FakePep3AssessmentClient(
+                hasPreviousRecord: true,
+                previousRecord: const Pep3RecordSummary(
+                  id: 21,
+                  studentId: 31,
+                  studentName: '陈旭',
+                  assessmentCode: 'ERXIN2',
+                  assessmentName: '儿心量表-II',
+                  birthDate: '2022-05-11',
+                  assessmentDate: '2026-05-08',
+                  examinerName: '陈老师',
+                  updatedTime: '2026-05-08T10:00:00',
+                ),
+              ),
+              erxinClient: erxinClient,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('陈旭'), findsOneWidget);
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+
+    expect(find.text('评估结果记录'), findsOneWidget);
+    expect(find.text('报告解读'), findsOneWidget);
+
+    await tester.tap(find.text('报告解读'));
+    await tester.pump();
+
+    expect(find.text('正在读取评估结果，准备生成报告解读...'), findsOneWidget);
+    expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 240));
+
+    expect(find.text('AI 正在分析全量表与五大能区结果...'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsOneWidget);
+    expect(find.text('重新生成解读'), findsOneWidget);
+    expect(erxinClient.generateInterpretationCalls, 1);
+
+    await tester.tap(find.text('重新生成解读'));
+    await tester.pump();
+
+    expect(find.text('正在重新生成报告解读...'), findsOneWidget);
+
+    await tester.pumpAndSettle();
+
+    expect(erxinClient.generateInterpretationCalls, 2);
+  });
+
   testWidgets('home header fallback does not show a fake institution',
       (WidgetTester tester) async {
     final HomeSummary summary = HomeSummary.fallback();
@@ -3649,14 +3729,20 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     this.templateSummaryDelay = Duration.zero,
     this.saveDraftDelay = Duration.zero,
     this.draftDetailDelay = Duration.zero,
+    this.interpretationDelay = Duration.zero,
+    Uint8List? reportPdfBytes,
     this.detectedDraft,
     this.draftDetail,
     List<ErxinAgeGroup>? groups,
-  }) : groups = groups ?? _groups;
+  })  : reportPdfBytes =
+            reportPdfBytes ?? Uint8List.fromList(<int>[37, 80, 68, 70]),
+        groups = groups ?? _groups;
 
   final Duration templateSummaryDelay;
   final Duration saveDraftDelay;
   final Duration draftDetailDelay;
+  final Duration interpretationDelay;
+  final Uint8List reportPdfBytes;
   final AssessmentDraftSummary? detectedDraft;
   final ErxinDraftDetail? draftDetail;
   final List<ErxinAgeGroup> groups;
@@ -3666,6 +3752,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   int submitDraftCalls = 0;
   int fetchDraftsPageCalls = 0;
   int fetchDraftDetailCalls = 0;
+  int generateInterpretationCalls = 0;
   int nextDraftId = 21;
   int _latestDraftId = 0;
   bool failNextDraftUpdateAsNotFound = false;
@@ -4010,7 +4097,26 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
 
   @override
   Future<Uint8List> downloadRecordReportPdf(String token, int id) async {
-    return Uint8List.fromList(<int>[37, 80, 68, 70, 45, 49, 46, 52]);
+    return reportPdfBytes;
+  }
+
+  @override
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    generateInterpretationCalls += 1;
+    if (interpretationDelay > Duration.zero) {
+      await Future<void>.delayed(interpretationDelay);
+    }
+    return const ErxinReportInterpretation(
+      title: '报告解读',
+      generatedBy: 'rule',
+      summary: '本次测评显示儿童整体发育水平需结合日常观察综合判断。',
+      domainAnalysis: <String>['大运动表现相对稳定。'],
+      suggestions: <String>['建议持续关注语言和社会行为表现。'],
+      notes: <String>['本解读仅供参考。'],
+    );
   }
 
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
@@ -4191,6 +4297,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   _FakePep3AssessmentClient({
     this.hasDraft = false,
     this.hasPreviousRecord = false,
+    this.previousRecord,
     this.draftUpdatedTime = '2026-05-05T14:01:00',
     this.includeRecordField = false,
     this.includeTextRecordField = false,
@@ -4203,6 +4310,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
   final bool hasDraft;
   final bool hasPreviousRecord;
+  final Pep3RecordSummary? previousRecord;
   final String draftUpdatedTime;
   final bool includeRecordField;
   final bool includeTextRecordField;
@@ -4439,9 +4547,8 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
         size: 0,
       );
     }
-    return const Pep3RecordPage(
-      items: <Pep3RecordSummary>[
-        Pep3RecordSummary(
+    final Pep3RecordSummary record = previousRecord ??
+        const Pep3RecordSummary(
           id: 21,
           studentId: 3,
           studentName: '张一鸣',
@@ -4451,8 +4558,9 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
           assessmentDate: '2026-05-04',
           examinerName: '陈老师',
           updatedTime: '2026-05-04T16:00:00',
-        ),
-      ],
+        );
+    return Pep3RecordPage(
+      items: <Pep3RecordSummary>[record],
       total: 1,
       current: 1,
       size: 1,

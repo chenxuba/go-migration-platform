@@ -79,6 +79,10 @@ type erxinAssessmentDraftDeleteRequest struct {
 	ID int64 `json:"id"`
 }
 
+type erxinReportInterpretationGenerateRequest struct {
+	ID int64 `json:"id"`
+}
+
 func (handler *Handler) scoreERXin(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if r.Method != http.MethodPost {
@@ -440,6 +444,29 @@ func (handler *Handler) erxinAssessmentRecordReportPDF(w http.ResponseWriter, r 
 	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(filename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func (handler *Handler) erxinAssessmentRecordReportInterpretationAI(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req erxinReportInterpretationGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GenerateERXinReportInterpretation(r.Context(), claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
 func (handler *Handler) erxinAssessmentRecordsPage(w http.ResponseWriter, r *http.Request) {

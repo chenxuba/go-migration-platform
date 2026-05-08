@@ -58,6 +58,11 @@ const String defaultErxinRecordReportPdfPath = String.fromEnvironment(
   'ERXIN_RECORD_REPORT_PDF_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/report/pdf',
 );
+const String defaultErxinRecordReportInterpretationAiPath =
+    String.fromEnvironment(
+  'ERXIN_RECORD_REPORT_INTERPRETATION_AI_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/report/interpretation/ai',
+);
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({
@@ -123,6 +128,11 @@ abstract class ErxinAssessmentClient {
   });
 
   Future<Uint8List> downloadRecordReportPdf(String token, int id);
+
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  );
 }
 
 class ApiErxinAssessmentClient extends ErxinAssessmentClient {
@@ -139,6 +149,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.recordUpdatePath = defaultErxinRecordUpdatePath,
     this.recordConfigUpdatePath = defaultErxinRecordConfigUpdatePath,
     this.recordReportPdfPath = defaultErxinRecordReportPdfPath,
+    this.recordReportInterpretationAiPath =
+        defaultErxinRecordReportInterpretationAiPath,
     this.httpClient,
   });
 
@@ -154,6 +166,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String recordUpdatePath;
   final String recordConfigUpdatePath;
   final String recordReportPdfPath;
+  final String recordReportInterpretationAiPath;
   final http.Client? httpClient;
 
   @override
@@ -402,6 +415,86 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     }
     return response.bodyBytes;
   }
+
+  @override
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response;
+    try {
+      response = await client
+          .post(
+            _uri(educationBaseUrl, recordReportInterpretationAiPath),
+            headers: _jsonHeaders(token),
+            body: jsonEncode(<String, int>{'id': id}),
+          )
+          .timeout(const Duration(seconds: 190));
+    } on TimeoutException {
+      throw const AssessmentScaleApiException('报告解读生成超时，请稍后重试');
+    } on Object catch (error) {
+      throw AssessmentScaleApiException('无法连接报告解读接口：$error');
+    }
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '报告解读生成失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
+  }
+}
+
+class ErxinReportInterpretation {
+  const ErxinReportInterpretation({
+    required this.title,
+    required this.generatedBy,
+    required this.summary,
+    required this.domainAnalysis,
+    required this.suggestions,
+    required this.notes,
+    this.model = '',
+    this.generatedAt = '',
+  });
+
+  factory ErxinReportInterpretation.fromJson(Map<String, dynamic> json) {
+    return ErxinReportInterpretation(
+      title: '${json['title'] ?? ''}',
+      model: '${json['model'] ?? ''}',
+      generatedBy: '${json['generatedBy'] ?? ''}',
+      generatedAt: '${json['generatedAt'] ?? ''}',
+      summary: '${json['summary'] ?? ''}',
+      domainAnalysis: _stringListFrom(json['domainAnalysis']),
+      suggestions: _stringListFrom(json['suggestions']),
+      notes: _stringListFrom(json['notes']),
+    );
+  }
+
+  static const ErxinReportInterpretation empty = ErxinReportInterpretation(
+    title: '',
+    generatedBy: '',
+    summary: '',
+    domainAnalysis: <String>[],
+    suggestions: <String>[],
+    notes: <String>[],
+  );
+
+  final String title;
+  final String model;
+  final String generatedBy;
+  final String generatedAt;
+  final String summary;
+  final List<String> domainAnalysis;
+  final List<String> suggestions;
+  final List<String> notes;
+
+  bool get isEmpty =>
+      summary.trim().isEmpty &&
+      domainAnalysis.isEmpty &&
+      suggestions.isEmpty &&
+      notes.isEmpty;
 }
 
 class ErxinTemplateSummary {
@@ -905,6 +998,16 @@ List<Object?> _rawListFrom(Object? value) {
     return value;
   }
   return <Object?>[];
+}
+
+List<String> _stringListFrom(Object? value) {
+  if (value is List) {
+    return value
+        .map((Object? item) => '${item ?? ''}'.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+  }
+  return <String>[];
 }
 
 Map<String, dynamic> _mapFrom(Object? value) {

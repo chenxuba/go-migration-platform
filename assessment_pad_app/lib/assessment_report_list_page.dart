@@ -3847,8 +3847,14 @@ class _ErxinReportPreviewDialog extends StatefulWidget {
 class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   Pep3RecordSummary? _displayRecord;
   Uint8List? _pdfBytes;
+  ErxinReportInterpretation? _interpretation;
+  Future<ErxinReportInterpretation>? _interpretationLoad;
   bool _loading = true;
+  bool _interpretationLoading = false;
+  bool _showInterpretation = false;
   String _errorMessage = '';
+  String _interpretationErrorMessage = '';
+  String _interpretationProgressMessage = '准备生成报告解读...';
   int _recordSyncSerial = 0;
   Future<Uint8List>? _pdfLoad;
 
@@ -3969,6 +3975,89 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     unawaited(_loadPdf(refresh: true));
   }
 
+  void _selectResultTab() {
+    if (_showInterpretation) {
+      setState(() {
+        _showInterpretation = false;
+      });
+    }
+  }
+
+  void _selectInterpretationTab() {
+    if (!_showInterpretation) {
+      setState(() {
+        _showInterpretation = true;
+      });
+    }
+    if ((_interpretation == null || _interpretation!.isEmpty) &&
+        !_interpretationLoading) {
+      unawaited(_generateInterpretation());
+    }
+  }
+
+  Future<void> _generateInterpretation({bool regenerate = false}) async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationErrorMessage = '请先登录后再生成报告解读';
+      });
+      return;
+    }
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationErrorMessage = '';
+      _interpretationProgressMessage =
+          regenerate ? '正在重新生成报告解读...' : '正在读取评估结果，准备生成报告解读...';
+      if (regenerate) {
+        _interpretation = null;
+      }
+    });
+    await Future<void>.delayed(const Duration(milliseconds: 220));
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _interpretationProgressMessage = 'AI 正在分析全量表与五大能区结果...';
+    });
+    final Future<ErxinReportInterpretation> future =
+        widget.client.generateRecordReportInterpretation(
+      token,
+      widget.record.id,
+    );
+    _interpretationLoad = future;
+    try {
+      final ErxinReportInterpretation interpretation = await future;
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretation = interpretation;
+        _interpretationLoading = false;
+        _interpretationProgressMessage = '报告解读已生成';
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationErrorMessage = '报告解读生成失败：$error';
+      });
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final Pep3RecordSummary record = _displayRecord ?? widget.record;
@@ -3998,9 +4087,13 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
               children: <Widget>[
                 _buildHeader(context, record),
                 const SizedBox(height: 14),
-                _buildSummaryBar(record),
+                _buildTabBar(record),
                 const SizedBox(height: 12),
-                Expanded(child: _buildContent(record)),
+                Expanded(
+                  child: _showInterpretation
+                      ? _buildInterpretationContent()
+                      : _buildContent(record),
+                ),
               ],
             ),
           ),
@@ -4067,9 +4160,9 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     );
   }
 
-  Widget _buildSummaryBar(Pep3RecordSummary record) {
+  Widget _buildTabBar(Pep3RecordSummary record) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF8),
         borderRadius: BorderRadius.circular(16),
@@ -4077,9 +4170,21 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       ),
       child: Row(
         children: <Widget>[
+          _ErxinReportTabChip(
+            label: '评估结果记录',
+            active: !_showInterpretation,
+            onTap: _selectResultTab,
+          ),
+          const SizedBox(width: 8),
+          _ErxinReportTabChip(
+            label: '报告解读',
+            active: _showInterpretation,
+            onTap: _selectInterpretationTab,
+          ),
+          const SizedBox(width: 16),
           Expanded(
             child: Wrap(
-              spacing: 16,
+              spacing: 12,
               runSpacing: 8,
               children: <Widget>[
                 _ReportFactChip(label: '量表', value: '儿心量表-II'),
@@ -4098,14 +4203,24 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
             ),
           ),
           const SizedBox(width: 12),
-          const Text(
-            '单页 PDF 预览',
-            style: TextStyle(
-              color: _ReportTheme.blue,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+          if (_showInterpretation)
+            _ToolbarButton(
+              label: _interpretationLoading ? '生成中' : '重新生成解读',
+              icon: Icons.auto_awesome_rounded,
+              filled: true,
+              onTap: _interpretationLoading
+                  ? null
+                  : () => unawaited(_generateInterpretation(regenerate: true)),
+            )
+          else
+            const Text(
+              '单页 PDF 预览',
+              style: TextStyle(
+                color: _ReportTheme.blue,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
         ],
       ),
     );
@@ -4143,6 +4258,29 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       ),
     );
   }
+
+  Widget _buildInterpretationContent() {
+    if (_interpretationLoading) {
+      return _ErxinInterpretationProgressState(
+        message: _interpretationProgressMessage,
+      );
+    }
+    if (_interpretationErrorMessage.isNotEmpty) {
+      return _ReportPreviewErrorState(
+        message: _interpretationErrorMessage,
+        onRetry: () => unawaited(_generateInterpretation(regenerate: true)),
+      );
+    }
+    final ErxinReportInterpretation? interpretation = _interpretation;
+    if (interpretation == null || interpretation.isEmpty) {
+      return _ErxinInterpretationProgressState(
+        message: '报告解读尚未生成，正在准备...',
+        actionLabel: '立即生成',
+        onAction: () => unawaited(_generateInterpretation()),
+      );
+    }
+    return _ErxinInterpretationView(interpretation: interpretation);
+  }
 }
 
 class _ReportFactChip extends StatelessWidget {
@@ -4176,6 +4314,292 @@ class _ReportFactChip extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _ErxinReportTabChip extends StatelessWidget {
+  const _ErxinReportTabChip({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          height: 40,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFFF2F7FF) : Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active ? _ReportTheme.blue : _ReportTheme.lineSoft,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                active
+                    ? Icons.radio_button_checked_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                size: 16,
+                color: active ? _ReportTheme.blue : _ReportTheme.muted,
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? _ReportTheme.blue : _ReportTheme.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationProgressState extends StatelessWidget {
+  const _ErxinInterpretationProgressState({
+    required this.message,
+    this.actionLabel,
+    this.onAction,
+  });
+
+  final String message;
+  final String? actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const SizedBox(
+              width: 30,
+              height: 30,
+              child: CircularProgressIndicator(
+                strokeWidth: 3,
+                color: _ReportTheme.orange,
+              ),
+            ),
+            const SizedBox(height: 16),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _ReportTheme.text,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '生成完成后会自动展示，期间可切回评估结果记录查看 PDF。',
+              style: TextStyle(
+                color: _ReportTheme.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            if (actionLabel != null && onAction != null) ...<Widget>[
+              const SizedBox(height: 16),
+              _ToolbarButton(
+                label: actionLabel!,
+                filled: true,
+                icon: Icons.auto_awesome_rounded,
+                onTap: onAction,
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationView extends StatelessWidget {
+  const _ErxinInterpretationView({required this.interpretation});
+
+  final ErxinReportInterpretation interpretation;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.auto_awesome_rounded,
+                  size: 20,
+                  color: _ReportTheme.orangeDeep,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    interpretation.title.trim().isEmpty
+                        ? '报告解读'
+                        : interpretation.title.trim(),
+                    style: const TextStyle(
+                      color: _ReportTheme.ink,
+                      fontSize: 20,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+                _ErxinInterpretationSourceBadge(
+                  generatedBy: interpretation.generatedBy,
+                ),
+              ],
+            ),
+            const SizedBox(height: 14),
+            _ErxinInterpretationSection(
+              title: '综合解读',
+              paragraphs: <String>[interpretation.summary],
+            ),
+            _ErxinInterpretationSection(
+              title: '能区表现',
+              paragraphs: interpretation.domainAnalysis,
+              numbered: true,
+            ),
+            _ErxinInterpretationSection(
+              title: '发展建议',
+              paragraphs: interpretation.suggestions,
+              numbered: true,
+            ),
+            if (interpretation.notes.isNotEmpty)
+              _ErxinInterpretationSection(
+                title: '注意事项',
+                paragraphs: interpretation.notes,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationSourceBadge extends StatelessWidget {
+  const _ErxinInterpretationSourceBadge({required this.generatedBy});
+
+  final String generatedBy;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool ai = generatedBy.trim().toLowerCase() == 'ai';
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: ai ? const Color(0xFFF2F7FF) : const Color(0xFFFFF1E8),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(
+          color: ai ? const Color(0xFFD8E6FF) : const Color(0xFFFFD8BD),
+        ),
+      ),
+      child: Text(
+        ai ? 'AI生成' : '规则解读',
+        style: TextStyle(
+          color: ai ? _ReportTheme.blue : _ReportTheme.orangeDeep,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationSection extends StatelessWidget {
+  const _ErxinInterpretationSection({
+    required this.title,
+    required this.paragraphs,
+    this.numbered = false,
+  });
+
+  final String title;
+  final List<String> paragraphs;
+  final bool numbered;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> items = paragraphs
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 14),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _ReportTheme.lineSoft),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                title,
+                style: const TextStyle(
+                  color: _ReportTheme.orangeDeep,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 8),
+              for (int index = 0; index < items.length; index++) ...<Widget>[
+                Text(
+                  numbered ? '${index + 1}. ${items[index]}' : items[index],
+                  style: const TextStyle(
+                    color: _ReportTheme.text,
+                    fontSize: 14,
+                    height: 1.55,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                if (index != items.length - 1) const SizedBox(height: 6),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

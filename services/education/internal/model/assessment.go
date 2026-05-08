@@ -663,3 +663,18 @@ type ERXinReportDomainRow struct {
 	MissingItemNumbers  []int    `json:"missingItemNumbers,omitempty"`
 	Warnings            []string `json:"warnings,omitempty"`
 }
+
+type ERXinReportInterpretationGenerateRequest struct {
+	ID int64 `json:"id"`
+}
+
+type ERXinReportInterpretationVO struct {
+	Title          string   `json:"title"`
+	Model          string   `json:"model,omitempty"`
+	GeneratedBy    string   `json:"generatedBy"`
+	GeneratedAt    string   `json:"generatedAt,omitempty"`
+	Summary        string   `json:"summary"`
+	DomainAnalysis []string `json:"domainAnalysis"`
+	Suggestions    []string `json:"suggestions"`
+	Notes          []string `json:"notes,omitempty"`
+}
