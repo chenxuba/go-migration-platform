@@ -72,8 +72,8 @@ func TestScoreUsesBasalDefaultPassAndCeiling(t *testing.T) {
 	}
 
 	gm := findDomain(t, result, DomainGrossMotor)
-	if gm.BasalAgeMonth != 18 {
-		t.Fatalf("expected 18-month basal age, got %d", gm.BasalAgeMonth)
+	if gm.BasalAgeMonth != 15 {
+		t.Fatalf("expected 15-month basal age, got %d", gm.BasalAgeMonth)
 	}
 	if gm.CeilingAgeMonth != 27 {
 		t.Fatalf("expected 27-month ceiling age, got %d", gm.CeilingAgeMonth)
@@ -83,7 +83,6 @@ func TestScoreUsesBasalDefaultPassAndCeiling(t *testing.T) {
 	}
 	if !sameInts(gm.DefaultPassedItemNumbers, []int{
 		scoreFixtureItemNo(DomainGrossMotor, 12),
-		scoreFixtureItemNo(DomainGrossMotor, 15),
 	}) {
 		t.Fatalf("unexpected default-passed items: %v", gm.DefaultPassedItemNumbers)
 	}
@@ -98,15 +97,47 @@ func TestScoreUsesBasalDefaultPassAndCeiling(t *testing.T) {
 	}
 }
 
-func TestScoreUsesMainAgeMonthInCeilingSearch(t *testing.T) {
+func TestScoreDoesNotUseMainAgeMonthInBasalSearch(t *testing.T) {
+	engine, err := NewEngine(boundaryScoreFixtureItems())
+	if err != nil {
+		t.Fatalf("NewEngine returned error: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2021, 10, 1, 0, 0, 0, 0, time.UTC),
+		ItemPasses: boundaryScorePasses(map[int]bool{
+			11: true,
+			12: true,
+			15: false,
+			18: true,
+			21: true,
+			24: false,
+			27: false,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	gm := findDomain(t, result, DomainGrossMotor)
+	if gm.BasalAgeMonth != 11 {
+		t.Fatalf("expected basal to ignore main month and continue to 11 months, got %d", gm.BasalAgeMonth)
+	}
+	if !almostEqual(gm.MentalAgeMonths, 14.0) {
+		t.Fatalf("expected 14.0 mental age months, got %v", gm.MentalAgeMonths)
+	}
+}
+
+func TestScoreDoesNotUseMainAgeMonthInCeilingSearch(t *testing.T) {
 	engine, err := NewEngine(scoreFixtureItems())
 	if err != nil {
 		t.Fatalf("NewEngine returned error: %v", err)
 	}
 
-	passes := make(map[int]bool, len(DomainOrder)*7)
+	passes := make(map[int]bool, len(DomainOrder)*8)
 	for _, domainCode := range DomainOrder {
-		for _, ageMonth := range []int{12, 15, 18, 21, 24, 27, 30} {
+		for _, ageMonth := range []int{12, 15, 18, 21, 24, 27, 30, 33} {
 			passes[scoreFixtureItemNo(domainCode, ageMonth)] =
 				ageMonth == 15 || ageMonth == 18 || ageMonth == 27
 		}
@@ -125,17 +156,17 @@ func TestScoreUsesMainAgeMonthInCeilingSearch(t *testing.T) {
 	if gm.BasalAgeMonth != 15 {
 		t.Fatalf("expected 15-month basal age, got %d", gm.BasalAgeMonth)
 	}
-	if gm.CeilingAgeMonth != 24 {
-		t.Fatalf("expected main month to participate in ceiling search, got ceiling %d", gm.CeilingAgeMonth)
+	if gm.CeilingAgeMonth != 33 {
+		t.Fatalf("expected ceiling to ignore main month and continue to 33 months, got %d", gm.CeilingAgeMonth)
 	}
-	if !almostEqual(gm.MentalAgeMonths, 3.0) {
-		t.Fatalf("expected 3.0 mental age months, got %v", gm.MentalAgeMonths)
+	if !almostEqual(gm.MentalAgeMonths, 4.0) {
+		t.Fatalf("expected 4.0 mental age months, got %v", gm.MentalAgeMonths)
 	}
-	if !almostEqual(gm.DQ, 14.3) {
-		t.Fatalf("expected domain DQ 14.3, got %v", gm.DQ)
+	if !almostEqual(gm.DQ, 19.0) {
+		t.Fatalf("expected domain DQ 19.0, got %v", gm.DQ)
 	}
-	if containsInt(gm.PassedItemNumbers, scoreFixtureItemNo(DomainGrossMotor, 27)) {
-		t.Fatalf("passed item above ceiling was counted: %v", gm.PassedItemNumbers)
+	if !containsInt(gm.PassedItemNumbers, scoreFixtureItemNo(DomainGrossMotor, 27)) {
+		t.Fatalf("passed item before the actual ceiling was not counted: %v", gm.PassedItemNumbers)
 	}
 }
 
@@ -164,14 +195,14 @@ func TestScoreCompletesWhenBasalStopsAtMinimumBoundary(t *testing.T) {
 	}
 
 	gm := findDomain(t, result, DomainGrossMotor)
-	if !gm.Complete || !gm.BasalComplete || gm.BasalAgeMonth != 2 {
+	if !gm.Complete || !gm.BasalComplete || gm.BasalAgeMonth != 1 {
 		t.Fatalf("unexpected basal boundary domain result: %+v", gm)
 	}
-	if !sameInts(gm.DefaultPassedItemNumbers, []int{boundaryScoreItemNo(DomainGrossMotor, 1)}) {
+	if len(gm.DefaultPassedItemNumbers) != 0 {
 		t.Fatalf("unexpected default-passed lower item: %v", gm.DefaultPassedItemNumbers)
 	}
-	if len(gm.Warnings) != 0 {
-		t.Fatalf("did not expect minimum-boundary warning after basal was established: %v", gm.Warnings)
+	if !strings.Contains(strings.Join(gm.Warnings, "|"), "已测至最低月龄") {
+		t.Fatalf("expected minimum-boundary warning, got %v", gm.Warnings)
 	}
 }
 
@@ -337,9 +368,9 @@ func fixtureItems() []ItemDefinition {
 }
 
 func scoreFixtureItems() []ItemDefinition {
-	items := make([]ItemDefinition, 0, len(DomainOrder)*7)
+	items := make([]ItemDefinition, 0, len(DomainOrder)*8)
 	for _, domainCode := range DomainOrder {
-		for _, ageMonth := range []int{12, 15, 18, 21, 24, 27, 30} {
+		for _, ageMonth := range []int{12, 15, 18, 21, 24, 27, 30, 33} {
 			items = append(items, ItemDefinition{
 				ItemNo:       scoreFixtureItemNo(domainCode, ageMonth),
 				ItemTitle:    "fixture",

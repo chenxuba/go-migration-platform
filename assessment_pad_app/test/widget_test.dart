@@ -197,6 +197,11 @@ void main() {
 
     expect(find.text('报告解读尚未生成'), findsOneWidget);
     expect(find.text('生成解读'), findsWidgets);
+    final Finder emptyAction = find.byKey(
+      const ValueKey<String>('erxin-interpretation-empty-action'),
+    );
+    expect(emptyAction, findsOneWidget);
+    expect(tester.getSize(emptyAction).width, closeTo(236, 0.1));
     expect(erxinClient.fetchInterpretationCalls, 1);
     expect(erxinClient.generateInterpretationCalls, 0);
 

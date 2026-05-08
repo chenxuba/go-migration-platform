@@ -923,6 +923,7 @@ class _ToolbarButton extends StatelessWidget {
     this.icon,
     this.onTap,
     this.triggerOnTapDown = false,
+    super.key,
   });
 
   final String label;
@@ -933,41 +934,43 @@ class _ToolbarButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Widget button = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: triggerOnTapDown ? null : onTap,
-        borderRadius: BorderRadius.circular(13),
-        child: Container(
-          height: 42,
-          constraints: BoxConstraints(minWidth: filled ? 118 : 72),
-          alignment: Alignment.center,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
-          decoration: BoxDecoration(
-            color: filled ? _ReportTheme.orange : _ReportTheme.surface,
-            borderRadius: BorderRadius.circular(13),
-            border: filled ? null : Border.all(color: _ReportTheme.line),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              if (icon != null) ...<Widget>[
-                Icon(
-                  icon,
-                  color: filled ? Colors.white : _ReportTheme.text,
-                  size: 18,
+    final Widget button = IntrinsicWidth(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: triggerOnTapDown ? null : onTap,
+          borderRadius: BorderRadius.circular(13),
+          child: Container(
+            height: 42,
+            constraints: BoxConstraints(minWidth: filled ? 118 : 72),
+            alignment: Alignment.center,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: filled ? _ReportTheme.orange : _ReportTheme.surface,
+              borderRadius: BorderRadius.circular(13),
+              border: filled ? null : Border.all(color: _ReportTheme.line),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (icon != null) ...<Widget>[
+                  Icon(
+                    icon,
+                    color: filled ? Colors.white : _ReportTheme.text,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 7),
+                ],
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: filled ? Colors.white : _ReportTheme.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-                const SizedBox(width: 7),
               ],
-              Text(
-                label,
-                style: TextStyle(
-                  color: filled ? Colors.white : _ReportTheme.text,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
@@ -4491,11 +4494,17 @@ class _ErxinInterpretationEmptyState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            _ToolbarButton(
-              label: actionLabel,
-              filled: true,
-              icon: Icons.auto_awesome_rounded,
-              onTap: onAction,
+            SizedBox(
+              width: 236,
+              child: _ToolbarButton(
+                key: const ValueKey<String>(
+                  'erxin-interpretation-empty-action',
+                ),
+                label: actionLabel,
+                filled: true,
+                icon: Icons.auto_awesome_rounded,
+                onTap: onAction,
+              ),
             ),
           ],
         ),

@@ -345,7 +345,7 @@ type ageSearchResult struct {
 func (e *Engine) findBasal(ageResults map[int]AgeMonthResult, mainIndex int) ageSearchResult {
 	consecutivePass := 0
 	complete := true
-	startIndex := mainIndex
+	startIndex := mainIndex - 1
 	if startIndex < 0 {
 		return ageSearchResult{found: false, complete: true, index: 0}
 	}
@@ -372,7 +372,7 @@ func (e *Engine) findBasal(ageResults map[int]AgeMonthResult, mainIndex int) age
 func (e *Engine) findCeiling(ageResults map[int]AgeMonthResult, mainIndex int) ageSearchResult {
 	consecutiveFail := 0
 	complete := true
-	startIndex := mainIndex
+	startIndex := mainIndex + 1
 	if startIndex >= len(StandardAgeMonths) {
 		return ageSearchResult{found: false, complete: true, index: len(StandardAgeMonths) - 1}
 	}
