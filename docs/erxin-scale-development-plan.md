@@ -28,6 +28,7 @@ PDF 对应标准：`WS/T 580-2017 0岁～6岁儿童发育行为评估量表`，�
 5. 每个能区从主测月龄开始，先测主测月龄，再向前和向后各测 2 个月龄。
 6. 向前测查时，某能区连续 2 个月龄项目均通过，则向前结束；否则继续往前测，直到连续 2 个月龄均通过。
 7. 向后测查时，某能区连续 2 个月龄项目均不通过，则向后结束；否则继续往后测，直到连续 2 个月龄均不通过。
+8. 上述向前/向后连续 2 个月龄不包含主测月龄；主测月龄始终必测并参与计分。
 
 ## 3. 计分规则
 
@@ -153,8 +154,13 @@ DQ = 智龄 / 实际年龄 × 100
 | `POST /api/v1/assessments/erxin/drafts/item/save` | 单题即时保存 |
 | `GET /api/v1/assessments/erxin/drafts/detail` | 恢复草稿 |
 | `POST /api/v1/assessments/erxin/drafts/submit` | 草稿提交为正式记录 |
+| `POST /api/v1/assessments/erxin/records/create` | 直接创建正式测评记录 |
+| `POST /api/v1/assessments/erxin/records/update` | 更新正式测评记录评分输入和结果 |
+| `GET /api/v1/assessments/erxin/records/detail` | 正式测评记录详情 |
 | `POST /api/v1/assessments/erxin/records/page` | 测评记录列表 |
 | `GET /api/v1/assessments/erxin/records/report` | 结果报告 |
+| `POST /api/v1/assessments/erxin/records/category-stats` | 记录分类统计 |
+| `POST /api/v1/assessments/erxin/records/delete` | 删除正式测评记录 |
 
 建议量表编码：`ERXIN2`。
 
@@ -181,7 +187,7 @@ DQ = 智龄 / 实际年龄 × 100
 
 ### P4：报告
 
-MVP 报告先做结构化结果，不做复杂图形：
+MVP 报告先做结构化结果，不做复杂图形。后端已提供 `GET /api/v1/assessments/erxin/records/report`，返回基本信息、总分摘要、五大能区表格和提示信息：
 
 1. 基本信息：姓名、性别、出生日期、测验日期、实足年龄、主试者。
 2. 五个能区结果表：智龄、DQ、等级。
@@ -205,7 +211,23 @@ MVP 报告先做结构化结果，不做复杂图形：
 
 这样可以先把“算得对”固定住，再做界面和体验。
 
-## 8. 当前待确认点
+## 8. 当前实现状态
+
+已完成：
+
+1. PDF 资料结构化为 `docs/erxin-*.json`，并通过 `scripts/validate-erxin-data.py` 校验。
+2. `pkg/erxinscore` 评分引擎：年龄、主测月龄、基线/封顶、智龄、DQ、等级。
+3. 后端模板、评分、草稿保存、单题保存、草稿分页、草稿提交。
+4. 正式记录创建、更新、详情、分页、统计、删除。
+5. 结构化报告接口，输出总览、五大能区结果和评分提示。
+
+下一步：
+
+1. 在 Pad 端新增 ERXin 工作台页面和 API client。
+2. 把量表库 `ERXIN2` 的入口配置接到 Pad 工作台。
+3. 做报告页面渲染和必要的导出能力。
+
+## 9. 当前待确认点
 
 1. 量表库中是否使用编码 `ERXIN2`。
 2. 是否需要把附录 A 的图 A.1、图 A.2 作为 Pad 刺激材料展示。

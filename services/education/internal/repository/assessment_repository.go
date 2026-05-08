@@ -374,6 +374,70 @@ func (repo *Repository) UpdateAssessmentRecordInputAndResult(ctx context.Context
 	return nil
 }
 
+func (repo *Repository) UpdateAssessmentRecordBaseInputAndResult(ctx context.Context, entity AssessmentRecordEntity) error {
+	inputRaw, err := json.Marshal(entity.Input)
+	if err != nil {
+		return fmt.Errorf("marshal assessment input: %w", err)
+	}
+	resultRaw, err := json.Marshal(entity.Result)
+	if err != nil {
+		return fmt.Errorf("marshal assessment result: %w", err)
+	}
+
+	updateResult, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_record
+		SET student_id = ?,
+		    student_name = ?,
+		    assessment_name = ?,
+		    scale_version = ?,
+		    birth_date = ?,
+		    assessment_date = ?,
+		    age_years = ?,
+		    age_months = ?,
+		    age_days = ?,
+		    norm_age_months = ?,
+		    examiner_id = ?,
+		    examiner_name = ?,
+		    input_json = ?,
+		    result_json = ?,
+		    data_status = ?,
+		    remark = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND assessment_code = ? AND del_flag = 0
+	`,
+		entity.StudentID,
+		strings.TrimSpace(entity.StudentName),
+		strings.TrimSpace(entity.AssessmentName),
+		strings.TrimSpace(entity.ScaleVersion),
+		entity.BirthDate,
+		entity.AssessmentDate,
+		entity.AgeYears,
+		entity.AgeMonths,
+		entity.AgeDays,
+		entity.NormAgeMonths,
+		entity.ExaminerID,
+		strings.TrimSpace(entity.ExaminerName),
+		string(inputRaw),
+		string(resultRaw),
+		strings.TrimSpace(entity.DataStatus),
+		strings.TrimSpace(entity.Remark),
+		entity.ID,
+		entity.InstID,
+		strings.TrimSpace(entity.AssessmentCode),
+	)
+	if err != nil {
+		return err
+	}
+	affected, err := updateResult.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (repo *Repository) UpdateAssessmentRecordConfig(ctx context.Context, instID, recordID int64, examinerName string, assessmentDate time.Time) error {
 	updateResult, err := repo.db.ExecContext(ctx, `
 		UPDATE assessment_record

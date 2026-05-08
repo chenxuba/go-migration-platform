@@ -93,6 +93,8 @@ EXPECTED_PARENT_REPORT_ITEMS = {
     201,
 }
 
+HEADER_FRAGMENTS = ("附录", "测查项目", "操作方法", "测查通过要求")
+
 
 def load_json(name: str):
     path = DOCS / name
@@ -187,6 +189,17 @@ def validate_item_bank(items: list[dict], age_bands: dict[int, dict]) -> None:
         source_pages = item.get("source_pages")
         if item.get("source_pdf") != "儿心.pdf" or not isinstance(source_pages, list) or not source_pages:
             fail(f"item {item_no} must include source_pdf/source_pages")
+
+        method = str(item.get("method", "")).strip()
+        criteria = str(item.get("pass_criteria", "")).strip()
+        if not method:
+            fail(f"item {item_no} has empty method")
+        if not criteria:
+            fail(f"item {item_no} has empty pass_criteria")
+        if any(fragment in method for fragment in HEADER_FRAGMENTS):
+            fail(f"item {item_no} method contains header text")
+        if any(fragment in criteria for fragment in HEADER_FRAGMENTS):
+            fail(f"item {item_no} pass_criteria contains header text")
 
         weighted_totals[(age_month, domain_code)] += float(item.get("item_weight", 0))
 

@@ -502,3 +502,164 @@ type PEP3BookletPage struct {
 	Sections        []PEP3TemplateSection `json:"sections"`
 	Meta            map[string]any        `json:"meta,omitempty"`
 }
+
+type ERXinAssessmentFormTemplateVO struct {
+	TemplateCode    string                    `json:"templateCode"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Title           string                    `json:"title"`
+	ScaleCode       string                    `json:"scaleCode"`
+	ScaleVersion    string                    `json:"scaleVersion"`
+	SourceStandard  string                    `json:"sourceStandard,omitempty"`
+	SourcePDF       string                    `json:"sourcePdf,omitempty"`
+	DataStatus      string                    `json:"dataStatus,omitempty"`
+	Sources         []string                  `json:"sources,omitempty"`
+	ItemCount       int                       `json:"itemCount"`
+	AgeBands        []ERXinAgeBand            `json:"ageBands"`
+	ScoreOptions    []ERXinScoreOption        `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField `json:"basicFields"`
+	Domains         []ERXinAssessmentDomain   `json:"domains"`
+	AgeGroups       []ERXinAssessmentAgeGroup `json:"ageGroups"`
+	SubmitContract  ERXinSubmitContract       `json:"submitContract"`
+}
+
+type ERXinAssessmentFormTemplateSummaryVO struct {
+	TemplateCode    string                           `json:"templateCode"`
+	TemplateVersion string                           `json:"templateVersion"`
+	Title           string                           `json:"title"`
+	ScaleCode       string                           `json:"scaleCode"`
+	ScaleVersion    string                           `json:"scaleVersion"`
+	SourceStandard  string                           `json:"sourceStandard,omitempty"`
+	SourcePDF       string                           `json:"sourcePdf,omitempty"`
+	DataStatus      string                           `json:"dataStatus,omitempty"`
+	Sources         []string                         `json:"sources,omitempty"`
+	ItemCount       int                              `json:"itemCount"`
+	AgeBands        []ERXinAgeBand                   `json:"ageBands"`
+	ScoreOptions    []ERXinScoreOption               `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField        `json:"basicFields"`
+	Domains         []ERXinAssessmentDomain          `json:"domains"`
+	AgeGroups       []ERXinAssessmentAgeGroupSummary `json:"ageGroups"`
+	SubmitContract  ERXinSubmitContract              `json:"submitContract"`
+}
+
+type ERXinAgeBand struct {
+	AgeMonth         int     `json:"ageMonth"`
+	Segment          string  `json:"segment"`
+	DomainTotalScore float64 `json:"domainTotalScore"`
+}
+
+type ERXinAssessmentDomain struct {
+	DomainCode string `json:"domainCode"`
+	DomainName string `json:"domainName"`
+	SortNo     int    `json:"sortNo"`
+}
+
+type ERXinAssessmentAgeGroup struct {
+	GroupCode        string                `json:"groupCode"`
+	Title            string                `json:"title"`
+	AgeMonth         int                   `json:"ageMonth"`
+	Segment          string                `json:"segment"`
+	DomainTotalScore float64               `json:"domainTotalScore"`
+	Items            []ERXinAssessmentItem `json:"items"`
+}
+
+type ERXinAssessmentAgeGroupSummary struct {
+	GroupCode        string                       `json:"groupCode"`
+	Title            string                       `json:"title"`
+	AgeMonth         int                          `json:"ageMonth"`
+	Segment          string                       `json:"segment"`
+	DomainTotalScore float64                      `json:"domainTotalScore"`
+	Items            []ERXinAssessmentItemSummary `json:"items"`
+}
+
+type ERXinAssessmentItemSummary struct {
+	ItemNo              int    `json:"itemNo"`
+	ItemTitle           string `json:"itemTitle"`
+	TestItem            string `json:"testItem"`
+	AgeMonth            int    `json:"ageMonth"`
+	AgeSegment          string `json:"ageSegment"`
+	DomainCode          string `json:"domainCode"`
+	DomainName          string `json:"domainName"`
+	ParentReportAllowed bool   `json:"parentReportAllowed"`
+	AttentionIfFailed   bool   `json:"attentionIfFailed"`
+}
+
+type ERXinAssessmentItem struct {
+	ItemNo                int     `json:"itemNo"`
+	ItemTitle             string  `json:"itemTitle"`
+	TestItem              string  `json:"testItem"`
+	AgeMonth              int     `json:"ageMonth"`
+	AgeSegment            string  `json:"ageSegment"`
+	DomainCode            string  `json:"domainCode"`
+	DomainName            string  `json:"domainName"`
+	ParentReportAllowed   bool    `json:"parentReportAllowed"`
+	AttentionIfFailed     bool    `json:"attentionIfFailed"`
+	DomainMonthTotalScore float64 `json:"domainMonthTotalScore"`
+	ItemWeight            float64 `json:"itemWeight"`
+	Method                string  `json:"method"`
+	PassCriteria          string  `json:"passCriteria"`
+	SourcePDF             string  `json:"sourcePdf,omitempty"`
+	SourcePages           []int   `json:"sourcePages,omitempty"`
+	OCRStatus             string  `json:"ocrStatus,omitempty"`
+}
+
+type ERXinScoreOption struct {
+	Value       bool   `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+}
+
+type ERXinSubmitContract struct {
+	ScoreEndpoint         string   `json:"scoreEndpoint"`
+	CreateRecordEndpoint  string   `json:"createRecordEndpoint,omitempty"`
+	DateFormat            string   `json:"dateFormat"`
+	ItemPassListKey       string   `json:"itemPassListKey"`
+	RequiredBaseFields    []string `json:"requiredBaseFields"`
+	AllowedItemPassValues []bool   `json:"allowedItemPassValues"`
+}
+
+type ERXinAssessmentDraftSubmitVO struct {
+	DraftID     int64                    `json:"draftId"`
+	RecordID    int64                    `json:"recordId"`
+	DraftStatus string                   `json:"draftStatus"`
+	Record      AssessmentRecordDetailVO `json:"record"`
+}
+
+type ERXinReportVO struct {
+	Record          AssessmentRecordSummaryVO `json:"record"`
+	TemplateCode    string                    `json:"templateCode"`
+	TemplateVersion string                    `json:"templateVersion"`
+	Title           string                    `json:"title"`
+	ScaleCode       string                    `json:"scaleCode"`
+	ScaleVersion    string                    `json:"scaleVersion"`
+	SourceStandard  string                    `json:"sourceStandard,omitempty"`
+	SourcePDF       string                    `json:"sourcePdf,omitempty"`
+	DataStatus      string                    `json:"dataStatus,omitempty"`
+	Sources         []string                  `json:"sources,omitempty"`
+	Summary         ERXinReportSummary        `json:"summary"`
+	DomainRows      []ERXinReportDomainRow    `json:"domainRows"`
+	Sections        []PEP3TemplateSection     `json:"sections"`
+	Warnings        []string                  `json:"warnings,omitempty"`
+}
+
+type ERXinReportSummary struct {
+	MainAgeMonth            int     `json:"mainAgeMonth"`
+	MeanMentalAgeMonths     float64 `json:"meanMentalAgeMonths"`
+	MeanMentalAgeMonthsText string  `json:"meanMentalAgeMonthsText"`
+	DQ                      float64 `json:"dq"`
+	Level                   string  `json:"level"`
+	Complete                bool    `json:"complete"`
+}
+
+type ERXinReportDomainRow struct {
+	DomainCode          string   `json:"domainCode"`
+	DomainName          string   `json:"domainName"`
+	MentalAgeMonths     float64  `json:"mentalAgeMonths"`
+	MentalAgeMonthsText string   `json:"mentalAgeMonthsText"`
+	DQ                  float64  `json:"dq"`
+	Level               string   `json:"level"`
+	BasalAgeMonth       int      `json:"basalAgeMonth,omitempty"`
+	CeilingAgeMonth     int      `json:"ceilingAgeMonth,omitempty"`
+	Complete            bool     `json:"complete"`
+	MissingItemNumbers  []int    `json:"missingItemNumbers,omitempty"`
+	Warnings            []string `json:"warnings,omitempty"`
+}
