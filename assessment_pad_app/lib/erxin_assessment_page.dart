@@ -23,7 +23,8 @@ const double _erxinRulePanelBottomPadding = 12;
 const double _erxinRightRemarkSectionHeight =
     _erxinDetailPanelHeight - _erxinRulePanelBottomPadding;
 const double _erxinSidebarBottomPadding = 6;
-const double _erxinProgressSummaryHeight = 138;
+const double _erxinProgressSummaryHeight =
+    _erxinDetailPanelHeight - _erxinDetailPanelBottomPadding;
 const double _erxinProgressSummaryBottomGap =
     _erxinDetailPanelBottomPadding - _erxinSidebarBottomPadding;
 
@@ -81,6 +82,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       <int, ErxinAssessmentItem>{};
   final Map<int, Future<ErxinAssessmentItem>> _itemDetailFetches =
       <int, Future<ErxinAssessmentItem>>{};
+  final Map<int, GlobalKey> _itemRowKeys = <int, GlobalKey>{};
   final Map<String, int> _previousStartIndexByDomain = <String, int>{};
   final Map<String, int> _futureEndIndexByDomain = <String, int>{};
   final Set<String> _futureVisibleDomains = <String>{};
@@ -522,19 +524,23 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
           Expanded(
             child: months.isEmpty
                 ? const _CurrentItemsEmptyState(text: '请按右侧规则继续推进测查')
-                : ListView(
+                : SingleChildScrollView(
                     padding: EdgeInsets.zero,
-                    children: <Widget>[
-                      for (final int month in months)
-                        _AgeMonthSection(
-                          month: month,
-                          items: _itemsFor(_selectedDomainCode, month),
-                          itemPasses: _itemPasses,
-                          selectedItemNo: _selectedItemNo,
-                          onSelectItem: _selectItem,
-                          onScore: _scoreItem,
-                        ),
-                    ],
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        for (final int month in months)
+                          _AgeMonthSection(
+                            month: month,
+                            items: _itemsFor(_selectedDomainCode, month),
+                            itemPasses: _itemPasses,
+                            selectedItemNo: _selectedItemNo,
+                            itemKeyFor: _itemRowKeyFor,
+                            onSelectItem: _selectItem,
+                            onScore: _scoreItem,
+                          ),
+                      ],
+                    ),
                   ),
           ),
         ],
@@ -824,6 +830,37 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
   }
 
+  GlobalKey _itemRowKeyFor(int itemNo) {
+    return _itemRowKeys.putIfAbsent(
+      itemNo,
+      () => GlobalKey(debugLabel: 'erxin-item-row-$itemNo'),
+    );
+  }
+
+  void _revealSelectedItem() {
+    final int itemNo = _selectedItemNo;
+    if (itemNo <= 0) {
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || _selectedItemNo != itemNo) {
+        return;
+      }
+      final BuildContext? rowContext = _itemRowKeys[itemNo]?.currentContext;
+      if (rowContext == null) {
+        return;
+      }
+      unawaited(
+        Scrollable.ensureVisible(
+          rowContext,
+          alignment: 0.1,
+          duration: const Duration(milliseconds: 260),
+          curve: Curves.easeOutCubic,
+        ),
+      );
+    });
+  }
+
   void _selectDomain(String domainCode) {
     setState(() {
       _selectedDomainCode = domainCode;
@@ -864,15 +901,20 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     if (!mounted) {
       return;
     }
+    int revealedItemNo = itemNo;
     setState(() {
       _itemPasses[itemNo] = passed;
       _reconcileAfterScore(domainCode);
       _selectedDomainCode = domainCode;
       final int nextSelected = _nextSelectedItemNoForDomain(domainCode, itemNo);
       _selectedItemNo = nextSelected > 0 ? nextSelected : itemNo;
+      revealedItemNo = _selectedItemNo;
       _autoSaveText = _token.trim().isEmpty ? '本地已记录' : '自动保存中...';
     });
     _prefetchSelectedItem();
+    if (revealedItemNo != itemNo) {
+      _revealSelectedItem();
+    }
     if (_token.trim().isNotEmpty) {
       unawaited(_saveItem(itemNo));
     }
@@ -1260,6 +1302,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _autoSaveText = '已追加往前测查';
     });
     _prefetchSelectedItem();
+    _revealSelectedItem();
   }
 
   void _enterFutureMonths() {
@@ -1275,6 +1318,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _autoSaveText = '已进入往后测查';
     });
     _prefetchSelectedItem();
+    _revealSelectedItem();
   }
 
   void _continueFutureMonths() {
@@ -1305,6 +1349,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _autoSaveText = '已追加往后测查';
     });
     _prefetchSelectedItem();
+    _revealSelectedItem();
   }
 
   void _showFullItemDetail(
@@ -2138,6 +2183,7 @@ class _AgeMonthSection extends StatelessWidget {
     required this.items,
     required this.itemPasses,
     required this.selectedItemNo,
+    required this.itemKeyFor,
     required this.onSelectItem,
     required this.onScore,
   });
@@ -2146,6 +2192,7 @@ class _AgeMonthSection extends StatelessWidget {
   final List<ErxinItemSummary> items;
   final Map<int, bool> itemPasses;
   final int selectedItemNo;
+  final GlobalKey Function(int itemNo) itemKeyFor;
   final ValueChanged<int> onSelectItem;
   final void Function(int itemNo, bool passed) onScore;
 
@@ -2196,6 +2243,7 @@ class _AgeMonthSection extends StatelessWidget {
           ),
           for (final ErxinItemSummary item in displayItems)
             _ItemScoreRow(
+              key: itemKeyFor(item.itemNo),
               item: item,
               selected: item.itemNo == selectedItemNo,
               passed: itemPasses[item.itemNo],
@@ -2215,6 +2263,7 @@ class _ItemScoreRow extends StatelessWidget {
     required this.passed,
     required this.onTap,
     required this.onScore,
+    super.key,
   });
 
   final ErxinItemSummary item;
@@ -2360,6 +2409,7 @@ class _DetailTextBox extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final String normalizedText = _inlineDetailText(text);
     return Container(
       padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
       decoration: BoxDecoration(
@@ -2381,7 +2431,7 @@ class _DetailTextBox extends StatelessWidget {
           const SizedBox(height: 4),
           Expanded(
             child: Text(
-              text.trim().isEmpty ? '暂无内容' : text.trim(),
+              normalizedText.isEmpty ? '暂无内容' : normalizedText,
               maxLines: 4,
               overflow: TextOverflow.ellipsis,
               style: const TextStyle(
@@ -2396,6 +2446,18 @@ class _DetailTextBox extends StatelessWidget {
       ),
     );
   }
+}
+
+String _inlineDetailText(String value) {
+  return value
+      .trim()
+      .replaceAll(RegExp(r'[\r\n]+\s*'), '')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceAllMapped(
+        RegExp(r'([，。；、：！？])\s+'),
+        (Match match) => match.group(1) ?? '',
+      )
+      .trim();
 }
 
 class _RightRemarkSection extends StatelessWidget {
