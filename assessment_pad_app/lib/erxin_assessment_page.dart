@@ -631,88 +631,83 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints constraints) {
-                final double checklistHeight =
-                    math.max(200, math.min(300, constraints.maxHeight - 238));
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    _RuleCard(
-                      title: '下一步',
-                      body: nextText,
-                      icon: canContinuePrevious
-                          ? Icons.keyboard_double_arrow_left_rounded
-                          : canContinueFuture
-                              ? Icons.keyboard_double_arrow_right_rounded
-                              : Icons.arrow_forward_rounded,
-                      color: _ErxinColors.blue,
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: const <Widget>[
-                        Text(
-                          '测评记录',
-                          style: TextStyle(
-                            color: _ErxinColors.ink,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 6),
-                    _RuleChecklist(
-                      rows: _recordRowsForDomain(_selectedDomainCode),
-                      height: checklistHeight,
-                      onTapMonth: _openAssessmentRecord,
-                    ),
-                    const SizedBox(height: 12),
-                    const Text(
-                      '测查推进',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _RuleCard(
+                  title: '下一步',
+                  body: nextText,
+                  icon: canContinuePrevious
+                      ? Icons.keyboard_double_arrow_left_rounded
+                      : canContinueFuture
+                          ? Icons.keyboard_double_arrow_right_rounded
+                          : Icons.arrow_forward_rounded,
+                  color: _ErxinColors.blue,
+                ),
+                const SizedBox(height: 10),
+                Row(
+                  children: const <Widget>[
+                    Text(
+                      '测评记录',
                       style: TextStyle(
                         color: _ErxinColors.ink,
                         fontSize: 16,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 5),
-                    Text(
-                      _hasFutureCeiling
-                          ? '往后测查已形成连续两个标准月龄全不通过，本能区达到停止规则。'
-                          : _hasPreviousBaseline
-                              ? '前测已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
-                              : '前测尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _ErxinColors.muted,
-                        fontSize: 12,
-                        height: 1.28,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    SizedBox(
-                      width: double.infinity,
-                      height: 38,
-                      child: FilledButton(
-                        onPressed: actionHandler,
-                        style: FilledButton.styleFrom(
-                          backgroundColor: _ErxinColors.blue,
-                          disabledBackgroundColor: const Color(0xFFE1E5EA),
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                        ),
-                        child: Text(
-                          actionLabel,
-                          style: const TextStyle(fontWeight: FontWeight.w900),
-                        ),
-                      ),
-                    ),
                   ],
-                );
-              },
+                ),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: _RuleChecklist(
+                    rows: _recordRowsForDomain(_selectedDomainCode),
+                    onTapMonth: _openAssessmentRecord,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  '测查推进',
+                  style: TextStyle(
+                    color: _ErxinColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  _hasFutureCeiling
+                      ? '往后测查已形成连续两个标准月龄全不通过，本能区达到停止规则。'
+                      : _hasPreviousBaseline
+                          ? '前测已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
+                          : '前测尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _ErxinColors.muted,
+                    fontSize: 12,
+                    height: 1.28,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                SizedBox(
+                  width: double.infinity,
+                  height: 38,
+                  child: FilledButton(
+                    onPressed: actionHandler,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _ErxinColors.blue,
+                      disabledBackgroundColor: const Color(0xFFE1E5EA),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: Text(
+                      actionLabel,
+                      style: const TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
           const SizedBox(height: 10),
@@ -2049,22 +2044,8 @@ class _DomainSidebar extends StatelessWidget {
               progress: progressForDomain(domain.domainCode),
               onTap: () => onSelect(domain.domainCode),
             ),
-          SizedBox(
-            height: 28,
-            child: TextButton.icon(
-              onPressed: () {},
-              icon: const Icon(Icons.list_alt_rounded, size: 17),
-              label: const Text('查看全部题目'),
-              style: TextButton.styleFrom(
-                visualDensity: VisualDensity.compact,
-                padding: const EdgeInsets.symmetric(horizontal: 6),
-                textStyle: const TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
+          const SizedBox(height: 2),
+          const _AllItemsButton(),
           const Spacer(),
           _ProgressSummary(
             domainStatus: selectedProgress.answered >= selectedProgress.total &&
@@ -2102,13 +2083,13 @@ class _DomainRow extends StatelessWidget {
     final double percent =
         progress.total <= 0 ? 0 : progress.answered / progress.total;
     return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.only(bottom: 9),
       child: InkWell(
         borderRadius: BorderRadius.circular(8),
         onTap: onTap,
         child: Container(
-          height: 60,
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          height: 66,
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: selected ? const Color(0xFFEAF2FF) : Colors.white,
             borderRadius: BorderRadius.circular(8),
@@ -2157,7 +2138,7 @@ class _DomainRow extends StatelessWidget {
                   ),
                 ],
               ),
-              const SizedBox(height: 9),
+              const Spacer(),
               ClipRRect(
                 borderRadius: BorderRadius.circular(2),
                 child: LinearProgressIndicator(
@@ -2168,6 +2149,57 @@ class _DomainRow extends StatelessWidget {
                     complete ? _ErxinColors.green : _ErxinColors.blue,
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AllItemsButton extends StatelessWidget {
+  const _AllItemsButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {},
+        borderRadius: BorderRadius.circular(8),
+        child: Ink(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: const Color(0xFFD8E4F7)),
+          ),
+          child: Row(
+            children: const <Widget>[
+              Icon(
+                Icons.list_alt_rounded,
+                size: 17,
+                color: _ErxinColors.blue,
+              ),
+              SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  '查看全部题目',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _ErxinColors.blue,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: _ErxinColors.blue,
               ),
             ],
           ),
@@ -2204,8 +2236,12 @@ class _AgeMonthSection extends StatelessWidget {
         .length;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: Colors.white,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      foregroundDecoration: BoxDecoration(
         border: Border.all(color: _ErxinColors.line),
         borderRadius: BorderRadius.circular(8),
       ),
@@ -2241,14 +2277,16 @@ class _AgeMonthSection extends StatelessWidget {
               ],
             ),
           ),
-          for (final ErxinItemSummary item in displayItems)
+          for (final MapEntry<int, ErxinItemSummary> entry
+              in displayItems.asMap().entries)
             _ItemScoreRow(
-              key: itemKeyFor(item.itemNo),
-              item: item,
-              selected: item.itemNo == selectedItemNo,
-              passed: itemPasses[item.itemNo],
-              onTap: () => onSelectItem(item.itemNo),
-              onScore: (bool passed) => onScore(item.itemNo, passed),
+              key: itemKeyFor(entry.value.itemNo),
+              item: entry.value,
+              selected: entry.value.itemNo == selectedItemNo,
+              passed: itemPasses[entry.value.itemNo],
+              showBottomDivider: entry.key < displayItems.length - 1,
+              onTap: () => onSelectItem(entry.value.itemNo),
+              onScore: (bool passed) => onScore(entry.value.itemNo, passed),
             ),
         ],
       ),
@@ -2261,6 +2299,7 @@ class _ItemScoreRow extends StatelessWidget {
     required this.item,
     required this.selected,
     required this.passed,
+    required this.showBottomDivider,
     required this.onTap,
     required this.onScore,
     super.key,
@@ -2269,6 +2308,7 @@ class _ItemScoreRow extends StatelessWidget {
   final ErxinItemSummary item;
   final bool selected;
   final bool? passed;
+  final bool showBottomDivider;
   final VoidCallback onTap;
   final ValueChanged<bool> onScore;
 
@@ -2281,7 +2321,9 @@ class _ItemScoreRow extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 12),
         decoration: BoxDecoration(
           color: selected ? const Color(0xFFFFFBEB) : Colors.white,
-          border: const Border(bottom: BorderSide(color: _ErxinColors.line)),
+          border: showBottomDivider
+              ? const Border(bottom: BorderSide(color: _ErxinColors.line))
+              : null,
         ),
         child: Row(
           children: <Widget>[
@@ -2592,12 +2634,10 @@ class _RuleCard extends StatelessWidget {
 class _RuleChecklist extends StatelessWidget {
   const _RuleChecklist({
     required this.rows,
-    required this.height,
     required this.onTapMonth,
   });
 
   final List<_RuleRow> rows;
-  final double height;
   final ValueChanged<int> onTapMonth;
 
   @override
@@ -2608,87 +2648,82 @@ class _RuleChecklist extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: _ErxinColors.line),
       ),
-      child: SizedBox(
-        height: height,
-        child: ListView.separated(
-          padding: const EdgeInsets.symmetric(vertical: 6),
-          physics: const BouncingScrollPhysics(),
-          itemCount: rows.length,
-          separatorBuilder: (_, __) => const Divider(
-            height: 1,
-            thickness: 1,
-            color: _ErxinColors.line,
-          ),
-          itemBuilder: (BuildContext context, int index) {
-            final _RuleRow row = rows[index];
-            final bool clickable = row.month != null;
-            return Material(
-              color: row.selected ? const Color(0xFFEAF2FF) : Colors.white,
-              child: InkWell(
-                onTap: clickable ? () => onTapMonth(row.month!) : null,
-                child: SizedBox(
-                  height: 40,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 12),
-                    child: Row(
-                      children: <Widget>[
-                        Icon(
-                          row.done
-                              ? Icons.check_circle
-                              : Icons.radio_button_unchecked,
-                          color: row.done
-                              ? _ErxinColors.green
-                              : _ErxinColors.muted,
-                          size: 18,
-                        ),
-                        const SizedBox(width: 9),
-                        Expanded(
-                          child: Text(
-                            row.label,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              color: row.selected
-                                  ? _ErxinColors.blue
-                                  : _ErxinColors.ink,
-                              fontSize: 13,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          row.value,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        physics: const BouncingScrollPhysics(),
+        itemCount: rows.length,
+        separatorBuilder: (_, __) => const Divider(
+          height: 1,
+          thickness: 1,
+          color: _ErxinColors.line,
+        ),
+        itemBuilder: (BuildContext context, int index) {
+          final _RuleRow row = rows[index];
+          final bool clickable = row.month != null;
+          return Material(
+            color: row.selected ? const Color(0xFFEAF2FF) : Colors.white,
+            child: InkWell(
+              onTap: clickable ? () => onTapMonth(row.month!) : null,
+              child: SizedBox(
+                height: 40,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        row.done
+                            ? Icons.check_circle
+                            : Icons.radio_button_unchecked,
+                        color:
+                            row.done ? _ErxinColors.green : _ErxinColors.muted,
+                        size: 18,
+                      ),
+                      const SizedBox(width: 9),
+                      Expanded(
+                        child: Text(
+                          row.label,
                           maxLines: 1,
-                          softWrap: false,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: row.done
-                                ? _ErxinColors.green
-                                : _ErxinColors.body,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        if (clickable) ...<Widget>[
-                          const SizedBox(width: 5),
-                          Icon(
-                            row.selected
-                                ? Icons.edit_note_rounded
-                                : Icons.history_rounded,
                             color: row.selected
                                 ? _ErxinColors.blue
-                                : _ErxinColors.muted,
-                            size: 16,
+                                : _ErxinColors.ink,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w800,
                           ),
-                        ],
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        row.value,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: TextStyle(
+                          color:
+                              row.done ? _ErxinColors.green : _ErxinColors.body,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (clickable) ...<Widget>[
+                        const SizedBox(width: 5),
+                        Icon(
+                          row.selected
+                              ? Icons.edit_note_rounded
+                              : Icons.history_rounded,
+                          color: row.selected
+                              ? _ErxinColors.blue
+                              : _ErxinColors.muted,
+                          size: 16,
+                        ),
                       ],
-                    ),
+                    ],
                   ),
                 ),
               ),
-            );
-          },
-        ),
+            ),
+          );
+        },
       ),
     );
   }
