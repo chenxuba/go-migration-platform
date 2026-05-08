@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/chinese_ime_engine.dart';
+import 'package:assessment_pad_app/erxin_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -496,6 +497,26 @@ class _AssessmentScaleCategoryScreenState
     if (student == null || !scale.available) {
       return;
     }
+    if (_isErxinScale(scale)) {
+      final String? validationMessage = _validateErxinLaunch(scale, student);
+      if (validationMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(validationMessage)),
+        );
+        return;
+      }
+      _openErxinAssessment(
+        ErxinAssessmentLaunchArgs(
+          studentId: student.id,
+          studentName: student.displayName,
+          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          birthDate: student.birthDate,
+          assessmentDate: _todayIsoDate(),
+          scaleName: scale.name,
+        ),
+      );
+      return;
+    }
     if (_isPep3Scale(scale)) {
       _openPep3Assessment(
         Pep3AssessmentLaunchArgs(
@@ -538,6 +559,10 @@ class _AssessmentScaleCategoryScreenState
 
   void _openPep3Assessment(Pep3AssessmentLaunchArgs args) {
     Navigator.of(context).pushNamed('/pep3-assessment', arguments: args);
+  }
+
+  void _openErxinAssessment(ErxinAssessmentLaunchArgs args) {
+    Navigator.of(context).pushNamed('/erxin-assessment', arguments: args);
   }
 
   void _openSearchKeyboard() {
@@ -1985,6 +2010,17 @@ bool _isPep3Scale(AssessmentScaleItem scale) {
   );
 }
 
+bool _isErxinScale(AssessmentScaleItem scale) {
+  return _isErxinText(
+    <String>[
+      scale.executionEntry,
+      scale.apiPackage,
+      scale.code,
+      scale.name,
+    ].join(' '),
+  );
+}
+
 bool _isPep3Draft(AssessmentDraftSummary draft) {
   return _isPep3Text(
     <String>[
@@ -1998,6 +2034,49 @@ bool _isPep3Text(String value) {
   final String normalized =
       value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
   return normalized.contains('pep3');
+}
+
+bool _isErxinText(String value) {
+  final String normalized =
+      value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+  return normalized.contains('erxin2') || normalized.contains('erxin');
+}
+
+String? _validateErxinLaunch(
+  AssessmentScaleItem scale,
+  AssessmentStudentCandidate student,
+) {
+  const int erxinMaxSupportedAgeMonths = 72;
+  final String birthDate = student.birthDate.trim();
+  if (birthDate.isEmpty || birthDate == '未知') {
+    return '该量表需要儿童出生日期，缺少出生日期不能开始测评';
+  }
+  final DateTime? birth = DateTime.tryParse(birthDate);
+  if (birth == null) {
+    return '出生日期格式不正确，不能开始测评';
+  }
+  final DateTime assessmentDate = DateTime.parse(_todayIsoDate());
+  final int minMonths = scale.ageMinMonths;
+  final int maxMonths = scale.ageMaxMonths > 0
+      ? math.min(scale.ageMaxMonths, erxinMaxSupportedAgeMonths)
+      : erxinMaxSupportedAgeMonths;
+  final DateTime minDate = DateTime(
+    birth.year + (minMonths ~/ 12),
+    birth.month + (minMonths % 12),
+    birth.day,
+  );
+  final DateTime maxDate = DateTime(
+    birth.year + (maxMonths ~/ 12),
+    birth.month + (maxMonths % 12),
+    birth.day,
+  );
+  if (assessmentDate.isBefore(minDate)) {
+    return '当前年龄未达到${scale.name}适用范围，不能开始测评';
+  }
+  if (assessmentDate.isAfter(maxDate)) {
+    return '当前年龄已超过6岁，超出${scale.name}适用范围，不能开始测评';
+  }
+  return null;
 }
 
 String _todayIsoDate() {

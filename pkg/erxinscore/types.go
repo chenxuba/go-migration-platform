@@ -10,6 +10,7 @@ const (
 	DomainSocialBehavior   = "SOC"
 	ScaleCode              = "ERXIN2"
 	DefaultScaleVersion    = "WS-T-580-2017"
+	MaxSupportedAgeMonths  = 72
 	StandardAgeMonthCount  = 28
 	ExpectedItemDefinition = 261
 )

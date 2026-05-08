@@ -2,6 +2,8 @@ import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/assessment_scale_category_page.dart';
 import 'package:assessment_pad_app/assessment_report_list_page.dart';
+import 'package:assessment_pad_app/erxin_assessment_client.dart';
+import 'package:assessment_pad_app/erxin_assessment_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
@@ -1310,6 +1312,170 @@ void main() {
     expect(find.text('王安全 * 未知'), findsOneWidget);
   });
 
+  testWidgets('ERXin scale blocks launch when student is over six years old',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              scaleItems: const <AssessmentScaleItem>[_erxinScaleItem],
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 31,
+                  shortName: '陈',
+                  name: '陈超龄',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '7岁',
+                  birthDate: '2018-01-01',
+                  contactPhone: '妈妈 136****0031',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('陈超龄'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pump();
+
+    expect(find.textContaining('超过6岁'), findsOneWidget);
+    expect(find.text('儿心量表-II 测评'), findsNothing);
+  });
+
+  testWidgets(
+      'ERXin workbench continues backward when basal is not established',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('全部展开'), findsNothing);
+    expect(find.text('主测月龄 48月'), findsOneWidget);
+    expect(find.textContaining('当前可见：'), findsNothing);
+    expect(find.text('36月龄'), findsOneWidget);
+    expect(find.text('42月龄'), findsOneWidget);
+    expect(find.text('48月龄'), findsOneWidget);
+
+    await _tapErxinScore(tester, '36月题', true);
+    await _tapErxinScore(tester, '42月题', false);
+    await _tapErxinScore(tester, '48月题', true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续往前测查'), findsOneWidget);
+    expect(find.textContaining('继续追加33月'), findsOneWidget);
+
+    await tester.tap(find.text('继续往前测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('33月龄'), findsOneWidget);
+  });
+
+  testWidgets('ERXin workbench can continue future months and submit',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+              examinerName: '陈老师',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _tapErxinScore(tester, '36月题', true);
+    await _tapErxinScore(tester, '42月题', true);
+    await _tapErxinScore(tester, '48月题', true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续往前测查'), findsNothing);
+    expect(find.text('进入往后测查'), findsOneWidget);
+
+    await tester.tap(find.text('进入往后测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('54月龄'), findsOneWidget);
+    expect(find.text('60月龄'), findsOneWidget);
+
+    await _tapErxinScore(tester, '54月题', false);
+    await _tapErxinScore(tester, '60月题', false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('本能区测查完成'), findsOneWidget);
+    await tester.tap(find.text('提交记录'));
+    await tester.pumpAndSettle();
+
+    expect(client.submitDraftCalls, 1);
+  });
+
   testWidgets('selected PEP3 scale opens dedicated workbench',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -2183,15 +2349,18 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     this.libraryDelay = Duration.zero,
     List<AssessmentStudentCandidate>? studentCandidates,
     Map<int, List<AssessmentStudentCandidate>>? studentCandidatesByStatus,
+    List<AssessmentScaleItem>? scaleItems,
   })  : studentCandidates = studentCandidates ?? _defaultStudentCandidates,
         studentCandidatesByStatus = studentCandidatesByStatus ??
             <int, List<AssessmentStudentCandidate>>{
               AssessmentStudentStatuses.enrolled:
                   studentCandidates ?? _defaultStudentCandidates,
-            };
+            },
+        scaleItems = scaleItems ?? _items;
 
   final Duration categoriesDelay;
   final Duration libraryDelay;
+  final List<AssessmentScaleItem> scaleItems;
   final List<AssessmentStudentCandidate> studentCandidates;
   final Map<int, List<AssessmentStudentCandidate>> studentCandidatesByStatus;
   final List<int> requestedStudentStatuses = <int>[];
@@ -2271,7 +2440,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
       await Future<void>.delayed(libraryDelay);
     }
     final String normalizedKeyword = _fakeNormalize(keyword);
-    final List<AssessmentScaleItem> filtered = _items.where(
+    final List<AssessmentScaleItem> filtered = scaleItems.where(
       (AssessmentScaleItem item) {
         if (category.trim().isNotEmpty && item.category != category.trim()) {
           return false;
@@ -2294,9 +2463,11 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     ).toList();
     return AssessmentScaleLibrary(
       items: filtered,
-      summary: const AssessmentScaleLibrarySummary(
-        total: 2,
-        available: 2,
+      summary: AssessmentScaleLibrarySummary(
+        total: scaleItems.length,
+        available: scaleItems.where((AssessmentScaleItem item) {
+          return item.available;
+        }).length,
         unavailable: 0,
         monthUsage: 7,
         usageCount: 20,
@@ -2390,6 +2561,267 @@ const List<AssessmentStudentCandidate> _defaultStudentCandidates =
     latestAssessment: '未测评',
   ),
 ];
+
+const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
+  id: 3,
+  name: '0岁～6岁儿童发育行为评估量表（儿心量表-II）',
+  code: 'ERXIN2',
+  category: '标准化测评',
+  scenario: '现场测评',
+  ageRange: '0岁-6岁',
+  ageMinMonths: 0,
+  ageMaxMonths: 72,
+  duration: '20-40分钟',
+  durationMinMinutes: 20,
+  durationMaxMinutes: 40,
+  currentVersion: 'WS-T-580-2017',
+  itemCount: 261,
+  domainCount: 5,
+  monthUsage: 0,
+  usageCount: 0,
+  latestUse: '',
+  dataStatus: 'ready',
+  status: 'available',
+  statusText: '可用',
+  updatedAt: '2026-05-08 10:00:00',
+  summary: '儿心量表-II',
+  posterUrl: '',
+  executionEntry: 'erxin',
+  apiPackage: 'erxin',
+);
+
+class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
+  _FakeErxinAssessmentClient();
+
+  int saveDraftCalls = 0;
+  int saveDraftItemCalls = 0;
+  int submitDraftCalls = 0;
+
+  static const ErxinDomain _domain = ErxinDomain(
+    domainCode: 'GM',
+    domainName: '大运动',
+    sortNo: 1,
+  );
+
+  static const List<ErxinAgeGroup> _groups = <ErxinAgeGroup>[
+    ErxinAgeGroup(
+      ageMonth: 30,
+      title: '30月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 130,
+          itemTitle: '30月题',
+          testItem: '30月题',
+          ageMonth: 30,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 33,
+      title: '33月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 133,
+          itemTitle: '33月题',
+          testItem: '33月题',
+          ageMonth: 33,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 36,
+      title: '36月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 136,
+          itemTitle: '36月题',
+          testItem: '36月题',
+          ageMonth: 36,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 42,
+      title: '42月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 142,
+          itemTitle: '42月题',
+          testItem: '42月题',
+          ageMonth: 42,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 48,
+      title: '48月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 148,
+          itemTitle: '48月题',
+          testItem: '48月题',
+          ageMonth: 48,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 54,
+      title: '54月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 154,
+          itemTitle: '54月题',
+          testItem: '54月题',
+          ageMonth: 54,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+    ErxinAgeGroup(
+      ageMonth: 60,
+      title: '60月龄',
+      items: <ErxinItemSummary>[
+        ErxinItemSummary(
+          itemNo: 160,
+          itemTitle: '60月题',
+          testItem: '60月题',
+          ageMonth: 60,
+          domainCode: 'GM',
+          domainName: '大运动',
+          parentReportAllowed: false,
+          attentionIfFailed: false,
+        ),
+      ],
+    ),
+  ];
+
+  @override
+  Future<ErxinTemplateSummary> fetchTemplateSummary(String token) async {
+    return const ErxinTemplateSummary(
+      templateCode: 'ERXIN2_ASSESSMENT_FORM',
+      title: '儿心量表-II测评录入表',
+      scaleCode: 'ERXIN2',
+      scaleVersion: 'WS-T-580-2017',
+      itemCount: 5,
+      domains: <ErxinDomain>[_domain],
+      ageGroups: _groups,
+    );
+  }
+
+  @override
+  Future<ErxinAssessmentItem> fetchTemplateItem(
+    String token, {
+    required int itemNo,
+  }) async {
+    for (final ErxinAgeGroup group in _groups) {
+      for (final ErxinItemSummary item in group.items) {
+        if (item.itemNo == itemNo) {
+          return ErxinAssessmentItem(
+            itemNo: item.itemNo,
+            itemTitle: item.itemTitle,
+            testItem: item.testItem,
+            ageMonth: item.ageMonth,
+            domainCode: item.domainCode,
+            domainName: item.domainName,
+            parentReportAllowed: item.parentReportAllowed,
+            attentionIfFailed: item.attentionIfFailed,
+            method: '主试者示范后请儿童完成动作。',
+            passCriteria: '儿童可独立完成即通过。',
+          );
+        }
+      }
+    }
+    return ErxinAssessmentItem.empty;
+  }
+
+  @override
+  Future<ErxinDraftDetail> saveDraft(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    saveDraftCalls += 1;
+    return _draftDetail();
+  }
+
+  @override
+  Future<ErxinDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    saveDraftItemCalls += 1;
+    return _draftDetail();
+  }
+
+  @override
+  Future<void> submitDraft(String token, int draftId) async {
+    submitDraftCalls += 1;
+  }
+
+  ErxinDraftDetail _draftDetail() {
+    return const ErxinDraftDetail(
+      id: 21,
+      studentId: 31,
+      studentName: '陈旭',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-08',
+      examinerName: '陈老师',
+      answeredItemCount: 1,
+      completionPercent: 10,
+      updatedTime: '2026-05-08T10:00:00',
+      progress: ErxinDraftProgress(
+        itemCount: 7,
+        answeredItemCount: 1,
+        missingItemCount: 0,
+        completionPercent: 10,
+        complete: false,
+        canScore: false,
+        missingItemNos: <int>[],
+      ),
+    );
+  }
+}
+
+Future<void> _tapErxinScore(
+  WidgetTester tester,
+  String itemTitle,
+  bool passed,
+) async {
+  final Finder row = find.ancestor(
+    of: find.text(itemTitle),
+    matching: find.byWidgetPredicate(
+      (Widget widget) => widget.runtimeType.toString() == '_ItemScoreRow',
+    ),
+  );
+  expect(row, findsOneWidget);
+  final Rect rect = tester.getRect(row);
+  await tester.tapAt(
+    Offset(rect.right - (passed ? 156 : 48), rect.center.dy),
+  );
+  await tester.pumpAndSettle();
+}
 
 class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   _FakePep3AssessmentClient({

@@ -12,6 +12,18 @@ const String defaultErxinTemplateItemPath = String.fromEnvironment(
   'ERXIN_TEMPLATE_ITEM_PATH',
   defaultValue: '/api/v1/assessments/erxin/form-template/item',
 );
+const String defaultErxinDraftSavePath = String.fromEnvironment(
+  'ERXIN_DRAFT_SAVE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/drafts/save',
+);
+const String defaultErxinDraftItemSavePath = String.fromEnvironment(
+  'ERXIN_DRAFT_ITEM_SAVE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/drafts/item/save',
+);
+const String defaultErxinDraftSubmitPath = String.fromEnvironment(
+  'ERXIN_DRAFT_SUBMIT_PATH',
+  defaultValue: '/api/v1/assessments/erxin/drafts/submit',
+);
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({
@@ -42,6 +54,18 @@ abstract class ErxinAssessmentClient {
     String token, {
     required int itemNo,
   });
+
+  Future<ErxinDraftDetail> saveDraft(
+    String token,
+    Map<String, dynamic> payload,
+  );
+
+  Future<ErxinDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  );
+
+  Future<void> submitDraft(String token, int draftId);
 }
 
 class ApiErxinAssessmentClient extends ErxinAssessmentClient {
@@ -49,12 +73,18 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.educationBaseUrl = defaultAssessmentEducationApiBaseUrl,
     this.templateSummaryPath = defaultErxinTemplateSummaryPath,
     this.templateItemPath = defaultErxinTemplateItemPath,
+    this.draftSavePath = defaultErxinDraftSavePath,
+    this.draftItemSavePath = defaultErxinDraftItemSavePath,
+    this.draftSubmitPath = defaultErxinDraftSubmitPath,
     this.httpClient,
   });
 
   final String educationBaseUrl;
   final String templateSummaryPath;
   final String templateItemPath;
+  final String draftSavePath;
+  final String draftItemSavePath;
+  final String draftSubmitPath;
   final http.Client? httpClient;
 
   @override
@@ -71,7 +101,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     if (data == null) {
       return ErxinTemplateSummary.empty;
     }
-    return ErxinTemplateSummary.fromJson(Map<String, dynamic>.from(data as Map));
+    return ErxinTemplateSummary.fromJson(
+        Map<String, dynamic>.from(data as Map));
   }
 
   @override
@@ -97,6 +128,62 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
       return ErxinAssessmentItem.empty;
     }
     return ErxinAssessmentItem.fromJson(Map<String, dynamic>.from(data as Map));
+  }
+
+  @override
+  Future<ErxinDraftDetail> saveDraft(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response = await client.post(
+      _uri(educationBaseUrl, draftSavePath),
+      headers: _jsonHeaders(token),
+      body: jsonEncode(payload),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表草稿保存失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('草稿保存返回格式不正确');
+    }
+    return ErxinDraftDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ErxinDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response = await client.post(
+      _uri(educationBaseUrl, draftItemSavePath),
+      headers: _jsonHeaders(token),
+      body: jsonEncode(payload),
+    );
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '儿心量表单题保存失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('单题保存返回格式不正确');
+    }
+    return ErxinDraftDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<void> submitDraft(String token, int draftId) async {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Response response = await client.post(
+      _uri(educationBaseUrl, draftSubmitPath),
+      headers: _jsonHeaders(token),
+      body: jsonEncode(<String, int>{'id': draftId}),
+    );
+    _handleResponse(
+      response,
+      fallbackMessage: '儿心量表正式记录提交失败',
+    );
   }
 }
 
@@ -269,6 +356,92 @@ class ErxinAssessmentItem extends ErxinItemSummary {
   final String passCriteria;
 }
 
+class ErxinDraftDetail {
+  const ErxinDraftDetail({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.birthDate,
+    required this.assessmentDate,
+    required this.examinerName,
+    required this.answeredItemCount,
+    required this.completionPercent,
+    required this.updatedTime,
+    required this.progress,
+  });
+
+  factory ErxinDraftDetail.fromJson(Map<String, dynamic> json) {
+    return ErxinDraftDetail(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      birthDate: '${json['birthDate'] ?? ''}',
+      assessmentDate: '${json['assessmentDate'] ?? ''}',
+      examinerName: '${json['examinerName'] ?? ''}',
+      answeredItemCount: _intFrom(json['answeredItemCount']),
+      completionPercent: _doubleFrom(json['completionPercent']),
+      updatedTime: '${json['updatedTime'] ?? ''}',
+      progress: ErxinDraftProgress.fromJson(_mapFrom(json['progress'])),
+    );
+  }
+
+  final int id;
+  final int studentId;
+  final String studentName;
+  final String birthDate;
+  final String assessmentDate;
+  final String examinerName;
+  final int answeredItemCount;
+  final double completionPercent;
+  final String updatedTime;
+  final ErxinDraftProgress progress;
+}
+
+class ErxinDraftProgress {
+  const ErxinDraftProgress({
+    required this.itemCount,
+    required this.answeredItemCount,
+    required this.missingItemCount,
+    required this.completionPercent,
+    required this.complete,
+    required this.canScore,
+    required this.missingItemNos,
+  });
+
+  factory ErxinDraftProgress.fromJson(Map<String, dynamic> json) {
+    return ErxinDraftProgress(
+      itemCount: _intFrom(json['itemCount']),
+      answeredItemCount: _intFrom(json['answeredItemCount']),
+      missingItemCount: _intFrom(json['missingItemCount']),
+      completionPercent: _doubleFrom(json['completionPercent']),
+      complete: json['complete'] == true,
+      canScore: json['canScore'] == true,
+      missingItemNos: _rawListFrom(json['missingItemNos'])
+          .map(_intFrom)
+          .where((int itemNo) => itemNo > 0)
+          .toList(),
+    );
+  }
+
+  static const ErxinDraftProgress empty = ErxinDraftProgress(
+    itemCount: 0,
+    answeredItemCount: 0,
+    missingItemCount: 0,
+    completionPercent: 0,
+    complete: false,
+    canScore: false,
+    missingItemNos: <int>[],
+  );
+
+  final int itemCount;
+  final int answeredItemCount;
+  final int missingItemCount;
+  final double completionPercent;
+  final bool complete;
+  final bool canScore;
+  final List<int> missingItemNos;
+}
+
 Uri _uri(String base, String path, [Map<String, String>? query]) {
   final Uri baseUri = Uri.parse(base);
   final String normalizedPath = path.startsWith('/') ? path : '/$path';
@@ -282,6 +455,13 @@ Map<String, String> _authHeaders(String token) {
   return <String, String>{
     'Authorization': 'Bearer $token',
     'Accept': 'application/json',
+  };
+}
+
+Map<String, String> _jsonHeaders(String token) {
+  return <String, String>{
+    ..._authHeaders(token),
+    'Content-Type': 'application/json',
   };
 }
 
@@ -325,6 +505,20 @@ List<Map<String, dynamic>> _listFrom(Object? value) {
   return <Map<String, dynamic>>[];
 }
 
+List<Object?> _rawListFrom(Object? value) {
+  if (value is List) {
+    return value;
+  }
+  return <Object?>[];
+}
+
+Map<String, dynamic> _mapFrom(Object? value) {
+  if (value is Map) {
+    return Map<String, dynamic>.from(value);
+  }
+  return <String, dynamic>{};
+}
+
 int _intFrom(Object? value) {
   if (value is int) {
     return value;
@@ -334,6 +528,22 @@ int _intFrom(Object? value) {
   }
   if (value is String) {
     return int.tryParse(value.trim()) ?? 0;
+  }
+  return 0;
+}
+
+double _doubleFrom(Object? value) {
+  if (value is double) {
+    return value;
+  }
+  if (value is int) {
+    return value.toDouble();
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  if (value is String) {
+    return double.tryParse(value.trim()) ?? 0;
   }
   return 0;
 }

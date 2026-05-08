@@ -10,6 +10,8 @@ import 'assessment_scale_client.dart';
 import 'assessment_scale_category_page.dart';
 import 'assessment_report_list_page.dart';
 import 'auth_client.dart';
+import 'erxin_assessment_client.dart';
+import 'erxin_assessment_page.dart';
 import 'home_client.dart';
 import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
@@ -53,6 +55,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.homeClient = const ApiHomeClient(),
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.pep3Client = const ApiPep3AssessmentClient(),
+    this.erxinClient = const ApiErxinAssessmentClient(),
     this.timetableClient = const ApiTimetableClient(),
     super.key,
   });
@@ -61,6 +64,7 @@ class AssessmentPadApp extends StatelessWidget {
   final HomeClient homeClient;
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient pep3Client;
+  final ErxinAssessmentClient erxinClient;
   final TimetableClient timetableClient;
 
   @override
@@ -150,6 +154,24 @@ class AssessmentPadApp extends StatelessWidget {
                 args: args,
                 client: pep3Client,
                 homeClient: homeClient,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/erxin-assessment':
+        final Object? rawArgs = settings.arguments;
+        final ErxinAssessmentLaunchArgs args =
+            rawArgs is ErxinAssessmentLaunchArgs
+                ? rawArgs
+                : const ErxinAssessmentLaunchArgs();
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: ErxinAssessmentPage(
+                args: args,
+                client: erxinClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),

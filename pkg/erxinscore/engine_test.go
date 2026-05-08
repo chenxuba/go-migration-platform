@@ -4,6 +4,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,6 +92,22 @@ func TestScoreUsesBasalDefaultPassAndCeiling(t *testing.T) {
 		scoreFixtureItemNo(DomainGrossMotor, 27),
 	}) {
 		t.Fatalf("unexpected failed items: %v", gm.FailedItemNumbers)
+	}
+}
+
+func TestScoreRejectsChildrenOverSixYearsOld(t *testing.T) {
+	engine, err := NewEngine(scoreFixtureItems())
+	if err != nil {
+		t.Fatalf("NewEngine returned error: %v", err)
+	}
+
+	_, err = engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC),
+		ItemPasses:     scoreFixturePasses(),
+	})
+	if err == nil || !strings.Contains(err.Error(), "0-6 years") {
+		t.Fatalf("expected over-age error, got %v", err)
 	}
 }
 

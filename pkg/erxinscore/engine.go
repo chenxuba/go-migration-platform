@@ -133,6 +133,9 @@ func (e *Engine) Score(input AssessmentInput) (AssessmentResult, error) {
 	if age.TotalMonthsRounded <= 0 {
 		return AssessmentResult{}, fmt.Errorf("actual age must be greater than zero")
 	}
+	if age.TotalMonths > MaxSupportedAgeMonths {
+		return AssessmentResult{}, fmt.Errorf("actual age exceeds ERXin supported range 0-6 years")
+	}
 
 	mainAgeMonth, err := SelectMainAgeMonth(age.TotalMonthsRounded)
 	if err != nil {
