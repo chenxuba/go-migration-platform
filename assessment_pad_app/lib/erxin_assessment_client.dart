@@ -63,6 +63,12 @@ const String defaultErxinRecordReportInterpretationAiPath =
   'ERXIN_RECORD_REPORT_INTERPRETATION_AI_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/report/interpretation/ai',
 );
+const String defaultErxinRecordReportInterpretationAiStreamPath =
+    String.fromEnvironment(
+  'ERXIN_RECORD_REPORT_INTERPRETATION_AI_STREAM_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/report/interpretation/ai/stream',
+);
 const String defaultErxinRecordReportInterpretationPath =
     String.fromEnvironment(
   'ERXIN_RECORD_REPORT_INTERPRETATION_PATH',
@@ -143,6 +149,12 @@ abstract class ErxinAssessmentClient {
     String token,
     int id,
   );
+
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(
+    String token,
+    int id,
+  );
 }
 
 class ApiErxinAssessmentClient extends ErxinAssessmentClient {
@@ -163,6 +175,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
         defaultErxinRecordReportInterpretationPath,
     this.recordReportInterpretationAiPath =
         defaultErxinRecordReportInterpretationAiPath,
+    this.recordReportInterpretationAiStreamPath =
+        defaultErxinRecordReportInterpretationAiStreamPath,
     this.httpClient,
   });
 
@@ -180,6 +194,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String recordReportPdfPath;
   final String recordReportInterpretationPath;
   final String recordReportInterpretationAiPath;
+  final String recordReportInterpretationAiStreamPath;
   final http.Client? httpClient;
 
   @override
@@ -489,6 +504,50 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     }
     return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
   }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(String token, int id) async* {
+    final http.Client client = httpClient ?? http.Client();
+    final http.Request request = http.Request(
+      'POST',
+      _uri(educationBaseUrl, recordReportInterpretationAiStreamPath),
+    )
+      ..headers.addAll(<String, String>{
+        ..._jsonHeaders(token),
+        'Accept': 'text/event-stream',
+      })
+      ..body = jsonEncode(<String, int>{'id': id});
+    final http.StreamedResponse response;
+    try {
+      response =
+          await client.send(request).timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const AssessmentScaleApiException('报告解读生成连接超时，请稍后重试');
+    } on Object catch (error) {
+      throw AssessmentScaleApiException('无法连接报告解读流式接口：$error');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = await response.stream.bytesToString();
+      final Object? decoded = body.trim().isEmpty ? null : jsonDecode(body);
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = await response.stream.bytesToString();
+      final Object? decoded = body.trim().isEmpty ? null : jsonDecode(body);
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '报告解读生成失败',
+      );
+    }
+
+    await for (final ErxinReportInterpretationStreamEvent event
+        in _decodeErxinReportInterpretationSse(response.stream)) {
+      yield event;
+    }
+  }
 }
 
 class ErxinReportInterpretation {
@@ -539,6 +598,20 @@ class ErxinReportInterpretation {
       domainAnalysis.isEmpty &&
       suggestions.isEmpty &&
       notes.isEmpty;
+}
+
+class ErxinReportInterpretationStreamEvent {
+  const ErxinReportInterpretationStreamEvent({
+    required this.type,
+    this.message = '',
+    this.text = '',
+    this.data,
+  });
+
+  final String type;
+  final String message;
+  final String text;
+  final ErxinReportInterpretation? data;
 }
 
 class ErxinTemplateSummary {
@@ -1025,6 +1098,95 @@ Object? _handleResponse(
     );
   }
   return decoded;
+}
+
+Stream<ErxinReportInterpretationStreamEvent>
+    _decodeErxinReportInterpretationSse(Stream<List<int>> byteStream) async* {
+  final Stream<String> lines =
+      byteStream.transform(utf8.decoder).transform(const LineSplitter());
+  String eventName = 'message';
+  final StringBuffer dataBuffer = StringBuffer();
+
+  ErxinReportInterpretationStreamEvent? parseEvent(
+    String event,
+    String data,
+  ) {
+    final String trimmed = data.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final Object? decoded = jsonDecode(trimmed);
+    if (decoded is! Map) {
+      return null;
+    }
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+    final String type = '${payload['type'] ?? event}'.trim();
+    switch (type) {
+      case 'status':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'status',
+          message: '${payload['message'] ?? ''}',
+        );
+      case 'delta':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'delta',
+          text: '${payload['text'] ?? ''}',
+        );
+      case 'done':
+        final Object? data = payload['data'];
+        return ErxinReportInterpretationStreamEvent(
+          type: 'done',
+          data: data is Map
+              ? ErxinReportInterpretation.fromJson(
+                  Map<String, dynamic>.from(data),
+                )
+              : ErxinReportInterpretation.empty,
+        );
+      case 'error':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'error',
+          message: '${payload['message'] ?? '报告解读生成失败'}',
+        );
+      default:
+        return ErxinReportInterpretationStreamEvent(
+          type: type.isEmpty ? event : type,
+          message: '${payload['message'] ?? ''}',
+          text: '${payload['text'] ?? ''}',
+        );
+    }
+  }
+
+  await for (final String rawLine in lines) {
+    final String line = rawLine.trimRight();
+    if (line.isEmpty) {
+      final ErxinReportInterpretationStreamEvent? event =
+          parseEvent(eventName, dataBuffer.toString());
+      if (event != null) {
+        yield event;
+      }
+      eventName = 'message';
+      dataBuffer.clear();
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      eventName = line.substring(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      if (dataBuffer.isNotEmpty) {
+        dataBuffer.write('\n');
+      }
+      dataBuffer.write(line.substring(5).trimLeft());
+    }
+  }
+  final ErxinReportInterpretationStreamEvent? event =
+      parseEvent(eventName, dataBuffer.toString());
+  if (event != null) {
+    yield event;
+  }
 }
 
 List<Map<String, dynamic>> _listFrom(Object? value) {

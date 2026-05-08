@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:collection';
+import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -3859,6 +3860,8 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   String _errorMessage = '';
   String _interpretationErrorMessage = '';
   String _interpretationProgressMessage = '准备生成报告解读...';
+  String _interpretationStreamingText = '';
+  int _interpretationGenerateSerial = 0;
   int _recordSyncSerial = 0;
   Future<Uint8List>? _pdfLoad;
 
@@ -4031,6 +4034,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         _interpretation = interpretation;
         _interpretationFetched = true;
         _interpretationLoading = false;
+        _interpretationStreamingText = '';
         _interpretationProgressMessage =
             interpretation.isEmpty ? '报告解读尚未生成' : '已读取保存的报告解读';
       });
@@ -4067,53 +4071,85 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       });
       return;
     }
+    final int serial = ++_interpretationGenerateSerial;
     setState(() {
       _interpretationLoading = true;
       _interpretationFetched = true;
       _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
       _interpretationProgressMessage =
           regenerate ? '正在重新生成报告解读...' : '正在生成报告解读...';
       if (regenerate) {
         _interpretation = null;
       }
     });
-    await Future<void>.delayed(const Duration(milliseconds: 220));
-    if (!mounted) {
-      return;
-    }
-    setState(() {
-      _interpretationProgressMessage = 'AI 正在分析全量表与五大能区结果...';
-    });
-    final Future<ErxinReportInterpretation> future =
-        widget.client.generateRecordReportInterpretation(
-      token,
-      widget.record.id,
-    );
-    _interpretationLoad = future;
     try {
-      final ErxinReportInterpretation interpretation = await future;
-      if (!mounted || !identical(_interpretationLoad, future)) {
+      bool completed = false;
+      await for (final ErxinReportInterpretationStreamEvent event in widget
+          .client
+          .generateRecordReportInterpretationStream(token, widget.record.id)) {
+        if (!mounted || serial != _interpretationGenerateSerial) {
+          return;
+        }
+        if (event.type == 'status') {
+          setState(() {
+            _interpretationProgressMessage = event.message.trim().isEmpty
+                ? 'AI 正在分析全量表与五大能区结果...'
+                : event.message.trim();
+          });
+          continue;
+        }
+        if (event.type == 'delta') {
+          if (event.text.isEmpty) {
+            continue;
+          }
+          setState(() {
+            _interpretationStreamingText += event.text;
+            _interpretationProgressMessage = 'AI 正在生成报告解读...';
+          });
+          continue;
+        }
+        if (event.type == 'error') {
+          throw AssessmentScaleApiException(
+            event.message.trim().isEmpty ? '报告解读生成失败' : event.message.trim(),
+          );
+        }
+        if (event.type == 'done') {
+          final ErxinReportInterpretation interpretation =
+              event.data ?? ErxinReportInterpretation.empty;
+          setState(() {
+            _interpretation = interpretation;
+            _interpretationLoading = false;
+            _interpretationStreamingText = '';
+            _interpretationProgressMessage = '报告解读已生成';
+          });
+          completed = true;
+          break;
+        }
+      }
+      if (!mounted || serial != _interpretationGenerateSerial || completed) {
         return;
       }
       setState(() {
-        _interpretation = interpretation;
         _interpretationLoading = false;
-        _interpretationProgressMessage = '报告解读已生成';
+        _interpretationErrorMessage = '报告解读生成中断，请重新生成';
       });
     } on AssessmentScaleApiException catch (error) {
-      if (!mounted || !identical(_interpretationLoad, future)) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
         return;
       }
       setState(() {
         _interpretationLoading = false;
+        _interpretationStreamingText = '';
         _interpretationErrorMessage = error.message;
       });
     } on Object catch (error) {
-      if (!mounted || !identical(_interpretationLoad, future)) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
         return;
       }
       setState(() {
         _interpretationLoading = false;
+        _interpretationStreamingText = '';
         _interpretationErrorMessage = '报告解读生成失败：$error';
       });
     }
@@ -4313,6 +4349,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     if (_interpretationLoading) {
       return _ErxinInterpretationProgressState(
         message: _interpretationProgressMessage,
+        streamingText: _interpretationStreamingText,
       );
     }
     if (_interpretationErrorMessage.isNotEmpty) {
@@ -4390,56 +4427,380 @@ class _ErxinReportTabChip extends StatelessWidget {
   }
 }
 
-class _ErxinInterpretationProgressState extends StatelessWidget {
+class _ErxinInterpretationProgressState extends StatefulWidget {
   const _ErxinInterpretationProgressState({
     required this.message,
+    required this.streamingText,
   });
 
   final String message;
+  final String streamingText;
+
+  @override
+  State<_ErxinInterpretationProgressState> createState() =>
+      _ErxinInterpretationProgressStateState();
+}
+
+class _ErxinInterpretationProgressStateState
+    extends State<_ErxinInterpretationProgressState> {
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void didUpdateWidget(_ErxinInterpretationProgressState oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.streamingText != widget.streamingText) {
+      _scrollToBottom();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _scrollToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.animateTo(
+        _scrollController.position.maxScrollExtent,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOutCubic,
+      );
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
+    final _ErxinInterpretationStreamingPreview preview =
+        _erxinInterpretationStreamingPreview(widget.streamingText);
     return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF8),
         borderRadius: BorderRadius.circular(18),
         border: Border.all(color: _ReportTheme.lineSoft),
       ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const SizedBox(
-              width: 30,
-              height: 30,
-              child: CircularProgressIndicator(
-                strokeWidth: 3,
-                color: _ReportTheme.orange,
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 32,
+                height: 32,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF1E8),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFFFD8BD)),
+                ),
+                child: const Icon(
+                  Icons.auto_awesome_rounded,
+                  color: _ReportTheme.orangeDeep,
+                  size: 18,
+                ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _ReportTheme.text,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    const Text(
+                      'AI 正在生成报告解读',
+                      style: TextStyle(
+                        color: _ReportTheme.text,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      widget.message,
+                      style: const TextStyle(
+                        color: _ReportTheme.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '生成完成后会自动展示，期间可切回评估结果记录查看 PDF。',
-              style: TextStyle(
-                color: _ReportTheme.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w800,
-              ),
-            ),
-          ],
+              const _ErxinStreamingIndicator(),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Expanded(
+            child: preview.isEmpty
+                ? const Center(
+                    child: Text(
+                      '正在建立报告结构，稍后开始输出解读内容...',
+                      style: TextStyle(
+                        color: _ReportTheme.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  )
+                : SingleChildScrollView(
+                    controller: _scrollController,
+                    padding: const EdgeInsets.only(bottom: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _ErxinInterpretationStreamingSection(
+                          title: '综合解读',
+                          paragraphs: <String>[preview.summary],
+                        ),
+                        _ErxinInterpretationStreamingSection(
+                          title: '能区表现',
+                          paragraphs: preview.domainAnalysis,
+                        ),
+                        _ErxinInterpretationStreamingSection(
+                          title: '发展建议',
+                          paragraphs: preview.suggestions,
+                        ),
+                        _ErxinInterpretationStreamingSection(
+                          title: '注意事项',
+                          paragraphs: preview.notes,
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ErxinStreamingIndicator extends StatefulWidget {
+  const _ErxinStreamingIndicator();
+
+  @override
+  State<_ErxinStreamingIndicator> createState() =>
+      _ErxinStreamingIndicatorState();
+}
+
+class _ErxinStreamingIndicatorState extends State<_ErxinStreamingIndicator>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Opacity(
+          opacity: .45 + .45 * math.sin(_controller.value * math.pi),
+          child: child,
+        );
+      },
+      child: Container(
+        height: 24,
+        padding: const EdgeInsets.symmetric(horizontal: 9),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFF1E8),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: const Color(0xFFFFD8BD)),
+        ),
+        child: const Text(
+          '流式生成',
+          style: TextStyle(
+            color: _ReportTheme.orangeDeep,
+            fontSize: 11,
+            fontWeight: FontWeight.w900,
+          ),
         ),
       ),
     );
+  }
+}
+
+class _ErxinInterpretationStreamingSection extends StatelessWidget {
+  const _ErxinInterpretationStreamingSection({
+    required this.title,
+    required this.paragraphs,
+  });
+
+  final String title;
+  final List<String> paragraphs;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> items = paragraphs
+        .map((String item) => item.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+    if (items.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return _ErxinInterpretationSection(
+      title: title,
+      paragraphs: items,
+    );
+  }
+}
+
+class _ErxinInterpretationStreamingPreview {
+  const _ErxinInterpretationStreamingPreview({
+    required this.summary,
+    required this.domainAnalysis,
+    required this.suggestions,
+    required this.notes,
+  });
+
+  final String summary;
+  final List<String> domainAnalysis;
+  final List<String> suggestions;
+  final List<String> notes;
+
+  bool get isEmpty =>
+      summary.trim().isEmpty &&
+      domainAnalysis.isEmpty &&
+      suggestions.isEmpty &&
+      notes.isEmpty;
+}
+
+_ErxinInterpretationStreamingPreview _erxinInterpretationStreamingPreview(
+  String raw,
+) {
+  final String text = raw.trim();
+  if (text.isEmpty) {
+    return const _ErxinInterpretationStreamingPreview(
+      summary: '',
+      domainAnalysis: <String>[],
+      suggestions: <String>[],
+      notes: <String>[],
+    );
+  }
+  try {
+    final Object? decoded = jsonDecode(text);
+    if (decoded is Map) {
+      return _erxinInterpretationPreviewFromMap(
+        Map<String, dynamic>.from(decoded),
+      );
+    }
+  } on Object {
+    // Partial JSON while streaming. Fall through to lightweight extraction.
+  }
+  return _ErxinInterpretationStreamingPreview(
+    summary: _extractPartialJsonStringValue(text, 'summary') ?? '',
+    domainAnalysis: _extractPartialJsonArrayValues(text, 'domainAnalysis'),
+    suggestions: _extractPartialJsonArrayValues(text, 'suggestions'),
+    notes: _extractPartialJsonArrayValues(text, 'notes'),
+  );
+}
+
+_ErxinInterpretationStreamingPreview _erxinInterpretationPreviewFromMap(
+  Map<String, dynamic> json,
+) {
+  return _ErxinInterpretationStreamingPreview(
+    summary: '${json['summary'] ?? ''}'.trim(),
+    domainAnalysis: _previewStringListFrom(json['domainAnalysis']),
+    suggestions: _previewStringListFrom(json['suggestions']),
+    notes: _previewStringListFrom(json['notes']),
+  );
+}
+
+List<String> _previewStringListFrom(Object? value) {
+  if (value is List) {
+    return value
+        .map((Object? item) => '${item ?? ''}'.trim())
+        .where((String item) => item.isNotEmpty)
+        .toList();
+  }
+  return <String>[];
+}
+
+String? _extractPartialJsonStringValue(String text, String key) {
+  final RegExpMatch? match =
+      RegExp('"$key"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)').firstMatch(text);
+  if (match == null) {
+    return null;
+  }
+  return _decodePartialJsonString(match.group(1) ?? '');
+}
+
+List<String> _extractPartialJsonArrayValues(String text, String key) {
+  final int keyIndex = text.indexOf('"$key"');
+  if (keyIndex < 0) {
+    return const <String>[];
+  }
+  final int arrayStart = text.indexOf('[', keyIndex);
+  if (arrayStart < 0) {
+    return const <String>[];
+  }
+  final int arrayEnd = text.indexOf(']', arrayStart);
+  final String body = text.substring(
+    arrayStart + 1,
+    arrayEnd >= 0 ? arrayEnd : text.length,
+  );
+  final List<String> values = RegExp('"((?:\\\\.|[^"\\\\])*)"')
+      .allMatches(body)
+      .map(
+          (RegExpMatch match) => _decodePartialJsonString(match.group(1) ?? ''))
+      .where((String item) => item.trim().isNotEmpty)
+      .toList();
+  final String? trailing = _extractTrailingPartialJsonArrayString(body);
+  if (trailing != null && trailing.trim().isNotEmpty) {
+    values.add(trailing.trim());
+  }
+  return values;
+}
+
+String? _extractTrailingPartialJsonArrayString(String body) {
+  int quoteIndex = -1;
+  bool escaped = false;
+  bool inString = false;
+  for (int index = 0; index < body.length; index++) {
+    final String char = body[index];
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+    if (char == r'\') {
+      escaped = true;
+      continue;
+    }
+    if (char == '"') {
+      inString = !inString;
+      quoteIndex = index;
+    }
+  }
+  if (!inString || quoteIndex < 0 || quoteIndex >= body.length - 1) {
+    return null;
+  }
+  return _decodePartialJsonString(body.substring(quoteIndex + 1));
+}
+
+String _decodePartialJsonString(String value) {
+  try {
+    return jsonDecode('"$value"') as String;
+  } on Object {
+    return value
+        .replaceAll(r'\"', '"')
+        .replaceAll(r'\n', '\n')
+        .replaceAll(r'\\', r'\');
   }
 }
 

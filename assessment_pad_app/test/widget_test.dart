@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:assessment_pad_app/auth_client.dart';
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/assessment_scale_category_page.dart';
@@ -208,12 +210,13 @@ void main() {
     await tester.tap(find.text('生成解读').last);
     await tester.pump();
 
-    expect(find.text('正在生成报告解读...'), findsOneWidget);
+    expect(find.text('正在读取儿心评估结果'), findsOneWidget);
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
 
-    await tester.pump(const Duration(milliseconds: 240));
+    await tester.pump(const Duration(milliseconds: 70));
 
-    expect(find.text('AI 正在分析全量表与五大能区结果...'), findsOneWidget);
+    expect(find.text('AI 正在生成报告解读...'), findsOneWidget);
+    expect(find.textContaining('综合解读'), findsOneWidget);
 
     await tester.pumpAndSettle();
 
@@ -232,7 +235,7 @@ void main() {
     await tester.tap(find.text('重新生成解读'));
     await tester.pump();
 
-    expect(find.text('正在重新生成报告解读...'), findsOneWidget);
+    expect(find.text('正在读取儿心评估结果'), findsOneWidget);
 
     await tester.pumpAndSettle();
 
@@ -4158,6 +4161,44 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       notes: <String>['本解读仅供参考。'],
     );
     return _savedInterpretation;
+  }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(String token, int id) async* {
+    generateInterpretationCalls += 1;
+    yield const ErxinReportInterpretationStreamEvent(
+      type: 'status',
+      message: '正在读取儿心评估结果',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    final String json = jsonEncode(<String, Object>{
+      'title': '报告解读',
+      'generatedBy': 'ai',
+      'summary': '本次测评显示儿童整体发育水平需结合日常观察综合判断。',
+      'domainAnalysis': <String>['大运动表现相对稳定。'],
+      'suggestions': <String>['建议持续关注语言和社会行为表现。'],
+      'notes': <String>['本解读仅供参考。'],
+    });
+    final int splitIndex = json.indexOf('日常观察');
+    yield ErxinReportInterpretationStreamEvent(
+      type: 'delta',
+      text: json.substring(0, splitIndex),
+    );
+    if (interpretationDelay > Duration.zero) {
+      await Future<void>.delayed(interpretationDelay);
+    }
+    yield ErxinReportInterpretationStreamEvent(
+      type: 'delta',
+      text: json.substring(splitIndex),
+    );
+    _savedInterpretation = ErxinReportInterpretation.fromJson(
+      Map<String, dynamic>.from(jsonDecode(json) as Map),
+    );
+    yield ErxinReportInterpretationStreamEvent(
+      type: 'done',
+      data: _savedInterpretation,
+    );
   }
 
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;

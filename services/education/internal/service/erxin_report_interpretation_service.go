@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"crypto/sha256"
@@ -81,6 +82,10 @@ func (svc *Service) GetERXinReportInterpretation(userID, recordID int64) (model.
 }
 
 func (svc *Service) GenerateERXinReportInterpretation(ctx context.Context, userID, recordID int64) (model.ERXinReportInterpretationVO, error) {
+	return svc.GenerateERXinReportInterpretationStream(ctx, userID, recordID, nil)
+}
+
+func (svc *Service) GenerateERXinReportInterpretationStream(ctx context.Context, userID, recordID int64, onDelta func(string) error) (model.ERXinReportInterpretationVO, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -99,7 +104,7 @@ func (svc *Service) GenerateERXinReportInterpretation(ctx context.Context, userI
 		return model.ERXinReportInterpretationVO{}, err
 	}
 	payload := buildERXinReportInterpretationPromptPayload(report)
-	result, err := callDeepSeekERXinReportInterpretation(ctx, payload)
+	result, err := callDeepSeekERXinReportInterpretationStream(ctx, payload, onDelta)
 	if err != nil {
 		fallback := buildRuleBasedERXinReportInterpretation(report)
 		fallback.Notes = append(fallback.Notes, "AI解读生成失败，当前展示系统规则解读："+err.Error())
@@ -233,6 +238,10 @@ func callDeepSeekERXinReportInterpretation(ctx context.Context, payload erxinRep
 }
 
 func buildDeepSeekERXinReportInterpretationRequestBody(payload erxinReportInterpretationPromptPayload) ([]byte, error) {
+	return buildDeepSeekERXinReportInterpretationRequestBodyWithStream(payload, false)
+}
+
+func buildDeepSeekERXinReportInterpretationRequestBodyWithStream(payload erxinReportInterpretationPromptPayload, stream bool) ([]byte, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
@@ -258,7 +267,102 @@ func buildDeepSeekERXinReportInterpretationRequestBody(payload erxinReportInterp
 			"type": "json_object",
 		},
 		Thinking: &deepSeekThinking{Type: "disabled"},
+		Stream:   stream,
 	})
+}
+
+func callDeepSeekERXinReportInterpretationStream(ctx context.Context, payload erxinReportInterpretationPromptPayload, onDelta func(string) error) (model.ERXinReportInterpretationVO, error) {
+	if onDelta == nil {
+		return callDeepSeekERXinReportInterpretation(ctx, payload)
+	}
+	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
+	if apiKey == "" {
+		apiKey = deepSeekIEPPlanFallbackAPIKey
+	}
+	if apiKey == "" {
+		return model.ERXinReportInterpretationVO{}, errors.New("DEEPSEEK_API_KEY is not configured")
+	}
+	endpoint := strings.TrimSpace(os.Getenv("DEEPSEEK_API_BASE_URL"))
+	if endpoint == "" {
+		endpoint = deepSeekIEPPlanDefaultURL
+	}
+	body, err := buildDeepSeekERXinReportInterpretationRequestBodyWithStream(payload, true)
+	if err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	requestCtx, cancel := context.WithTimeout(ctx, deepSeekIEPPlanTimeout)
+	defer cancel()
+	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(body))
+	if err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	resp, err := (&http.Client{Timeout: deepSeekIEPPlanTimeout + 5*time.Second}).Do(req)
+	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
+			return model.ERXinReportInterpretationVO{}, fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
+		}
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		responseBody, _ := io.ReadAll(resp.Body)
+		return model.ERXinReportInterpretationVO{}, fmt.Errorf("DeepSeek API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	}
+
+	var content strings.Builder
+	var reasoning strings.Builder
+	scanner := bufio.NewScanner(resp.Body)
+	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, ":") || !strings.HasPrefix(line, "data:") {
+			continue
+		}
+		data := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+		if data == "" {
+			continue
+		}
+		if data == "[DONE]" {
+			break
+		}
+		var chunk deepSeekChatStreamChunk
+		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
+			return model.ERXinReportInterpretationVO{}, fmt.Errorf("parse DeepSeek stream chunk: %w", err)
+		}
+		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
+			return model.ERXinReportInterpretationVO{}, errors.New(chunk.Error.Message)
+		}
+		for _, choice := range chunk.Choices {
+			if text := choice.Delta.Content; text != "" {
+				content.WriteString(text)
+				if err := onDelta(text); err != nil {
+					return model.ERXinReportInterpretationVO{}, err
+				}
+			}
+			if text := strings.TrimSpace(choice.Delta.ReasoningContent); text != "" {
+				reasoning.WriteString(text)
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+
+	text := strings.TrimSpace(content.String())
+	if text == "" {
+		if strings.TrimSpace(reasoning.String()) != "" {
+			return model.ERXinReportInterpretationVO{}, errors.New("DeepSeek API 只返回了 reasoning_content，没有返回最终JSON内容，请重试")
+		}
+		return model.ERXinReportInterpretationVO{}, errors.New("DeepSeek API returned empty content")
+	}
+	var result model.ERXinReportInterpretationVO
+	if err := json.Unmarshal([]byte(extractJSONContent(text)), &result); err != nil {
+		return model.ERXinReportInterpretationVO{}, fmt.Errorf("parse DeepSeek ERXin report interpretation JSON: %w", err)
+	}
+	result.Model = deepSeekIEPPlanModel
+	return result, nil
 }
 
 func buildRuleBasedERXinReportInterpretation(report model.ERXinReportVO) model.ERXinReportInterpretationVO {
