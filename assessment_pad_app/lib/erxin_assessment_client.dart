@@ -63,6 +63,11 @@ const String defaultErxinRecordReportInterpretationAiPath =
   'ERXIN_RECORD_REPORT_INTERPRETATION_AI_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/report/interpretation/ai',
 );
+const String defaultErxinRecordReportInterpretationPath =
+    String.fromEnvironment(
+  'ERXIN_RECORD_REPORT_INTERPRETATION_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/report/interpretation',
+);
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({
@@ -129,6 +134,11 @@ abstract class ErxinAssessmentClient {
 
   Future<Uint8List> downloadRecordReportPdf(String token, int id);
 
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  );
+
   Future<ErxinReportInterpretation> generateRecordReportInterpretation(
     String token,
     int id,
@@ -149,6 +159,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.recordUpdatePath = defaultErxinRecordUpdatePath,
     this.recordConfigUpdatePath = defaultErxinRecordConfigUpdatePath,
     this.recordReportPdfPath = defaultErxinRecordReportPdfPath,
+    this.recordReportInterpretationPath =
+        defaultErxinRecordReportInterpretationPath,
     this.recordReportInterpretationAiPath =
         defaultErxinRecordReportInterpretationAiPath,
     this.httpClient,
@@ -166,6 +178,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String recordUpdatePath;
   final String recordConfigUpdatePath;
   final String recordReportPdfPath;
+  final String recordReportInterpretationPath;
   final String recordReportInterpretationAiPath;
   final http.Client? httpClient;
 
@@ -414,6 +427,37 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
       );
     }
     return response.bodyBytes;
+  }
+
+  @override
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final Uri uri = _uri(
+      educationBaseUrl,
+      recordReportInterpretationPath,
+      <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await client
+          .get(uri, headers: _authHeaders(token))
+          .timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const AssessmentScaleApiException('报告解读读取超时，请稍后重试');
+    } on Object catch (error) {
+      throw AssessmentScaleApiException('无法连接报告解读接口：$error');
+    }
+    final Object? data = _handleResponse(
+      response,
+      fallbackMessage: '报告解读读取失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
   }
 
   @override

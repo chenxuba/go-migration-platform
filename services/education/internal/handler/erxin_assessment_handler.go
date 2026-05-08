@@ -13,6 +13,7 @@ import (
 	"go-migration-platform/pkg/erxinscore"
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/service"
 )
 
@@ -76,10 +77,6 @@ type erxinAssessmentDraftItemSaveRequest struct {
 }
 
 type erxinAssessmentDraftDeleteRequest struct {
-	ID int64 `json:"id"`
-}
-
-type erxinReportInterpretationGenerateRequest struct {
 	ID int64 `json:"id"`
 }
 
@@ -446,6 +443,29 @@ func (handler *Handler) erxinAssessmentRecordReportPDF(w http.ResponseWriter, r 
 	_, _ = w.Write(content)
 }
 
+func (handler *Handler) erxinAssessmentRecordReportInterpretation(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid assessment record id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetERXinReportInterpretation(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) erxinAssessmentRecordReportInterpretationAI(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -456,7 +476,7 @@ func (handler *Handler) erxinAssessmentRecordReportInterpretationAI(w http.Respo
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	var req erxinReportInterpretationGenerateRequest
+	var req model.ERXinReportInterpretationGenerateRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
 		return

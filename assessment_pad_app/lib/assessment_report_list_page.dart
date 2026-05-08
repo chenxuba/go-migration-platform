@@ -3851,6 +3851,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   Future<ErxinReportInterpretation>? _interpretationLoad;
   bool _loading = true;
   bool _interpretationLoading = false;
+  bool _interpretationFetched = false;
   bool _showInterpretation = false;
   String _errorMessage = '';
   String _interpretationErrorMessage = '';
@@ -3989,9 +3990,65 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         _showInterpretation = true;
       });
     }
-    if ((_interpretation == null || _interpretation!.isEmpty) &&
-        !_interpretationLoading) {
-      unawaited(_generateInterpretation());
+    if (!_interpretationFetched && !_interpretationLoading) {
+      unawaited(_loadSavedInterpretation());
+    }
+  }
+
+  Future<void> _loadSavedInterpretation() async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationErrorMessage = '请先登录后再查看报告解读';
+      });
+      return;
+    }
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationErrorMessage = '';
+      _interpretationProgressMessage = '正在读取已保存的报告解读...';
+    });
+    final Future<ErxinReportInterpretation> future =
+        widget.client.fetchRecordReportInterpretation(
+      token,
+      widget.record.id,
+    );
+    _interpretationLoad = future;
+    try {
+      final ErxinReportInterpretation interpretation = await future;
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretation = interpretation;
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationProgressMessage =
+            interpretation.isEmpty ? '报告解读尚未生成' : '已读取保存的报告解读';
+      });
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationErrorMessage = '报告解读读取失败：$error';
+      });
     }
   }
 
@@ -4009,9 +4066,10 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     }
     setState(() {
       _interpretationLoading = true;
+      _interpretationFetched = true;
       _interpretationErrorMessage = '';
       _interpretationProgressMessage =
-          regenerate ? '正在重新生成报告解读...' : '正在读取评估结果，准备生成报告解读...';
+          regenerate ? '正在重新生成报告解读...' : '正在生成报告解读...';
       if (regenerate) {
         _interpretation = null;
       }
@@ -4087,7 +4145,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
               children: <Widget>[
                 _buildHeader(context, record),
                 const SizedBox(height: 14),
-                _buildTabBar(record),
+                _buildTabBar(),
                 const SizedBox(height: 12),
                 Expanded(
                   child: _showInterpretation
@@ -4160,7 +4218,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     );
   }
 
-  Widget _buildTabBar(Pep3RecordSummary record) {
+  Widget _buildTabBar() {
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
@@ -4181,36 +4239,25 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
             active: _showInterpretation,
             onTap: _selectInterpretationTab,
           ),
-          const SizedBox(width: 16),
-          Expanded(
-            child: Wrap(
-              spacing: 12,
-              runSpacing: 8,
-              children: <Widget>[
-                _ReportFactChip(label: '量表', value: '儿心量表-II'),
-                _ReportFactChip(label: '儿童', value: _studentName(record)),
-                _ReportFactChip(
-                  label: '测查日期',
-                  value: _dateOnlyText(record.assessmentDate),
-                ),
-                _ReportFactChip(
-                  label: '测试员',
-                  value: record.examinerName.trim().isEmpty
-                      ? '-'
-                      : record.examinerName.trim(),
-                ),
-              ],
-            ),
-          ),
+          const Spacer(),
           const SizedBox(width: 12),
           if (_showInterpretation)
             _ToolbarButton(
-              label: _interpretationLoading ? '生成中' : '重新生成解读',
+              label: _interpretationLoading
+                  ? '生成中'
+                  : (_interpretation == null || _interpretation!.isEmpty)
+                      ? '生成解读'
+                      : '重新生成解读',
               icon: Icons.auto_awesome_rounded,
               filled: true,
               onTap: _interpretationLoading
                   ? null
-                  : () => unawaited(_generateInterpretation(regenerate: true)),
+                  : () => unawaited(
+                        _generateInterpretation(
+                          regenerate: _interpretation != null &&
+                              !_interpretation!.isEmpty,
+                        ),
+                      ),
             )
           else
             const Text(
@@ -4273,49 +4320,14 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     }
     final ErxinReportInterpretation? interpretation = _interpretation;
     if (interpretation == null || interpretation.isEmpty) {
-      return _ErxinInterpretationProgressState(
-        message: '报告解读尚未生成，正在准备...',
-        actionLabel: '立即生成',
+      return _ErxinInterpretationEmptyState(
+        message: '报告解读尚未生成',
+        detail: '点击“生成解读”后，AI 会基于当前评估结果生成并保存。',
+        actionLabel: '生成解读',
         onAction: () => unawaited(_generateInterpretation()),
       );
     }
     return _ErxinInterpretationView(interpretation: interpretation);
-  }
-}
-
-class _ReportFactChip extends StatelessWidget {
-  const _ReportFactChip({
-    required this.label,
-    required this.value,
-  });
-
-  final String label;
-  final String value;
-
-  @override
-  Widget build(BuildContext context) {
-    return RichText(
-      text: TextSpan(
-        children: <InlineSpan>[
-          TextSpan(
-            text: '$label：',
-            style: const TextStyle(
-              color: _ReportTheme.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          TextSpan(
-            text: value.trim().isEmpty ? '-' : value.trim(),
-            style: const TextStyle(
-              color: _ReportTheme.text,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-        ],
-      ),
-    );
   }
 }
 
@@ -4378,13 +4390,9 @@ class _ErxinReportTabChip extends StatelessWidget {
 class _ErxinInterpretationProgressState extends StatelessWidget {
   const _ErxinInterpretationProgressState({
     required this.message,
-    this.actionLabel,
-    this.onAction,
   });
 
   final String message;
-  final String? actionLabel;
-  final VoidCallback? onAction;
 
   @override
   Widget build(BuildContext context) {
@@ -4425,15 +4433,70 @@ class _ErxinInterpretationProgressState extends StatelessWidget {
                 fontWeight: FontWeight.w800,
               ),
             ),
-            if (actionLabel != null && onAction != null) ...<Widget>[
-              const SizedBox(height: 16),
-              _ToolbarButton(
-                label: actionLabel!,
-                filled: true,
-                icon: Icons.auto_awesome_rounded,
-                onTap: onAction,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinInterpretationEmptyState extends StatelessWidget {
+  const _ErxinInterpretationEmptyState({
+    required this.message,
+    required this.detail,
+    required this.actionLabel,
+    required this.onAction,
+  });
+
+  final String message;
+  final String detail;
+  final String actionLabel;
+  final VoidCallback onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.auto_awesome_outlined,
+              size: 32,
+              color: _ReportTheme.orangeDeep,
+            ),
+            const SizedBox(height: 14),
+            Text(
+              message,
+              style: const TextStyle(
+                color: _ReportTheme.text,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
               ),
-            ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              detail,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _ReportTheme.muted,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            const SizedBox(height: 16),
+            _ToolbarButton(
+              label: actionLabel,
+              filled: true,
+              icon: Icons.auto_awesome_rounded,
+              onTap: onAction,
+            ),
           ],
         ),
       ),
@@ -4449,6 +4512,7 @@ class _ErxinInterpretationView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      width: double.infinity,
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF8),
         borderRadius: BorderRadius.circular(18),
@@ -4458,6 +4522,7 @@ class _ErxinInterpretationView extends StatelessWidget {
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
             Row(
@@ -4573,31 +4638,35 @@ class _ErxinInterpretationSection extends StatelessWidget {
         ),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Text(
-                title,
-                style: const TextStyle(
-                  color: _ReportTheme.orangeDeep,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 8),
-              for (int index = 0; index < items.length; index++) ...<Widget>[
+          child: SizedBox(
+            width: double.infinity,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
                 Text(
-                  numbered ? '${index + 1}. ${items[index]}' : items[index],
+                  title,
                   style: const TextStyle(
-                    color: _ReportTheme.text,
-                    fontSize: 14,
-                    height: 1.55,
-                    fontWeight: FontWeight.w700,
+                    color: _ReportTheme.orangeDeep,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
-                if (index != items.length - 1) const SizedBox(height: 6),
+                const SizedBox(height: 8),
+                for (int index = 0; index < items.length; index++) ...<Widget>[
+                  Text(
+                    numbered ? '${index + 1}. ${items[index]}' : items[index],
+                    style: const TextStyle(
+                      color: _ReportTheme.text,
+                      fontSize: 14,
+                      height: 1.55,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  if (index != items.length - 1) const SizedBox(height: 6),
+                ],
               ],
-            ],
+            ),
           ),
         ),
       ),

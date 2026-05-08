@@ -190,7 +190,20 @@ void main() {
     await tester.tap(find.text('报告解读'));
     await tester.pump();
 
-    expect(find.text('正在读取评估结果，准备生成报告解读...'), findsOneWidget);
+    expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
+    expect(erxinClient.generateInterpretationCalls, 0);
+
+    await tester.pumpAndSettle();
+
+    expect(find.text('报告解读尚未生成'), findsOneWidget);
+    expect(find.text('生成解读'), findsWidgets);
+    expect(erxinClient.fetchInterpretationCalls, 1);
+    expect(erxinClient.generateInterpretationCalls, 0);
+
+    await tester.tap(find.text('生成解读').last);
+    await tester.pump();
+
+    expect(find.text('正在生成报告解读...'), findsOneWidget);
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 240));
@@ -201,6 +214,14 @@ void main() {
 
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsOneWidget);
     expect(find.text('重新生成解读'), findsOneWidget);
+    expect(erxinClient.generateInterpretationCalls, 1);
+
+    await tester.tap(find.text('评估结果记录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('报告解读'));
+    await tester.pumpAndSettle();
+
+    expect(erxinClient.fetchInterpretationCalls, 1);
     expect(erxinClient.generateInterpretationCalls, 1);
 
     await tester.tap(find.text('重新生成解读'));
@@ -3730,11 +3751,14 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     this.saveDraftDelay = Duration.zero,
     this.draftDetailDelay = Duration.zero,
     this.interpretationDelay = Duration.zero,
+    ErxinReportInterpretation savedInterpretation =
+        ErxinReportInterpretation.empty,
     Uint8List? reportPdfBytes,
     this.detectedDraft,
     this.draftDetail,
     List<ErxinAgeGroup>? groups,
-  })  : reportPdfBytes =
+  })  : _savedInterpretation = savedInterpretation,
+        reportPdfBytes =
             reportPdfBytes ?? Uint8List.fromList(<int>[37, 80, 68, 70]),
         groups = groups ?? _groups;
 
@@ -3746,12 +3770,14 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   final AssessmentDraftSummary? detectedDraft;
   final ErxinDraftDetail? draftDetail;
   final List<ErxinAgeGroup> groups;
+  ErxinReportInterpretation _savedInterpretation;
 
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
   int submitDraftCalls = 0;
   int fetchDraftsPageCalls = 0;
   int fetchDraftDetailCalls = 0;
+  int fetchInterpretationCalls = 0;
   int generateInterpretationCalls = 0;
   int nextDraftId = 21;
   int _latestDraftId = 0;
@@ -4101,6 +4127,15 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   }
 
   @override
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    fetchInterpretationCalls += 1;
+    return _savedInterpretation;
+  }
+
+  @override
   Future<ErxinReportInterpretation> generateRecordReportInterpretation(
     String token,
     int id,
@@ -4109,7 +4144,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     if (interpretationDelay > Duration.zero) {
       await Future<void>.delayed(interpretationDelay);
     }
-    return const ErxinReportInterpretation(
+    _savedInterpretation = const ErxinReportInterpretation(
       title: '报告解读',
       generatedBy: 'rule',
       summary: '本次测评显示儿童整体发育水平需结合日常观察综合判断。',
@@ -4117,6 +4152,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       suggestions: <String>['建议持续关注语言和社会行为表现。'],
       notes: <String>['本解读仅供参考。'],
     );
+    return _savedInterpretation;
   }
 
   int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;

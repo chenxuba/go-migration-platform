@@ -75,6 +75,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/erxin/records/detail", handler.erxinAssessmentRecordDetail)
 	mux.HandleFunc("/api/v1/assessments/erxin/records/report", handler.erxinAssessmentRecordReport)
 	mux.HandleFunc("/api/v1/assessments/erxin/records/report/pdf", handler.erxinAssessmentRecordReportPDF)
+	mux.HandleFunc("/api/v1/assessments/erxin/records/report/interpretation", handler.erxinAssessmentRecordReportInterpretation)
 	mux.HandleFunc("/api/v1/assessments/erxin/records/report/interpretation/ai", handler.erxinAssessmentRecordReportInterpretationAI)
 	mux.HandleFunc("/api/v1/assessments/erxin/records/category-stats", handler.erxinAssessmentRecordCategoryStats)
 	mux.HandleFunc("/api/v1/assessments/erxin/records/page", handler.erxinAssessmentRecordsPage)

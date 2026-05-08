@@ -3,6 +3,8 @@ package service
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"time"
 
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 type erxinReportInterpretationPromptPayload struct {
@@ -44,12 +47,52 @@ type erxinReportInterpretationOutputRequest struct {
 	SafetyRules    string `json:"safetyRules"`
 }
 
+func (svc *Service) GetERXinReportInterpretation(userID, recordID int64) (model.ERXinReportInterpretationVO, error) {
+	if svc.repo == nil {
+		return model.ERXinReportInterpretationVO{}, errors.New("assessment repository is not configured")
+	}
+	if recordID <= 0 {
+		return model.ERXinReportInterpretationVO{}, errors.New("invalid assessment record id")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	report, err := svc.GetERXinAssessmentReport(userID, recordID)
+	if err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	sourceHash := erxinReportInterpretationSourceHash(report)
+	cached, err := svc.repo.GetAssessmentReportInterpretation(context.Background(), instID, recordID, erxinScaleCode)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.ERXinReportInterpretationVO{}, nil
+		}
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	if strings.TrimSpace(cached.SourceHash) != sourceHash {
+		return model.ERXinReportInterpretationVO{}, nil
+	}
+	normalized := normalizeERXinReportInterpretation(cached.Interpretation, report, cached.Interpretation.GeneratedBy)
+	if strings.TrimSpace(cached.Interpretation.GeneratedAt) != "" {
+		normalized.GeneratedAt = cached.Interpretation.GeneratedAt
+	}
+	return normalized, nil
+}
+
 func (svc *Service) GenerateERXinReportInterpretation(ctx context.Context, userID, recordID int64) (model.ERXinReportInterpretationVO, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	if svc.repo == nil {
+		return model.ERXinReportInterpretationVO{}, errors.New("assessment repository is not configured")
+	}
 	if recordID <= 0 {
 		return model.ERXinReportInterpretationVO{}, errors.New("invalid assessment record id")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return model.ERXinReportInterpretationVO{}, err
 	}
 	report, err := svc.GetERXinAssessmentReport(userID, recordID)
 	if err != nil {
@@ -60,9 +103,49 @@ func (svc *Service) GenerateERXinReportInterpretation(ctx context.Context, userI
 	if err != nil {
 		fallback := buildRuleBasedERXinReportInterpretation(report)
 		fallback.Notes = append(fallback.Notes, "AI解读生成失败，当前展示系统规则解读："+err.Error())
+		if saveErr := svc.saveERXinReportInterpretation(ctx, instID, userID, recordID, report, fallback); saveErr != nil {
+			return model.ERXinReportInterpretationVO{}, saveErr
+		}
 		return fallback, nil
 	}
-	return normalizeERXinReportInterpretation(result, report, "ai"), nil
+	normalized := normalizeERXinReportInterpretation(result, report, "ai")
+	if err := svc.saveERXinReportInterpretation(ctx, instID, userID, recordID, report, normalized); err != nil {
+		return model.ERXinReportInterpretationVO{}, err
+	}
+	return normalized, nil
+}
+
+func (svc *Service) saveERXinReportInterpretation(ctx context.Context, instID, userID, recordID int64, report model.ERXinReportVO, interpretation model.ERXinReportInterpretationVO) error {
+	return svc.repo.UpsertAssessmentReportInterpretation(ctx, repository.AssessmentReportInterpretationEntity{
+		InstID:         instID,
+		RecordID:       recordID,
+		AssessmentCode: erxinScaleCode,
+		SourceHash:     erxinReportInterpretationSourceHash(report),
+		Interpretation: interpretation,
+	}, userID)
+}
+
+func erxinReportInterpretationSourceHash(report model.ERXinReportVO) string {
+	raw, err := json.Marshal(struct {
+		RecordUpdatedTime *time.Time                   `json:"recordUpdatedTime,omitempty"`
+		Summary           model.ERXinReportSummary     `json:"summary"`
+		DomainRows        []model.ERXinReportDomainRow `json:"domainRows"`
+		Warnings          []string                     `json:"warnings,omitempty"`
+		AssessmentDate    string                       `json:"assessmentDate,omitempty"`
+		ExaminerName      string                       `json:"examinerName,omitempty"`
+	}{
+		RecordUpdatedTime: report.Record.UpdatedTime,
+		Summary:           report.Summary,
+		DomainRows:        report.DomainRows,
+		Warnings:          report.Warnings,
+		AssessmentDate:    erxinFormatDate(report.Record.AssessmentDate),
+		ExaminerName:      strings.TrimSpace(report.Record.ExaminerName),
+	})
+	if err != nil {
+		raw = []byte(fmt.Sprintf("%+v", report.Summary))
+	}
+	sum := sha256.Sum256(raw)
+	return fmt.Sprintf("%x", sum[:])
 }
 
 func buildERXinReportInterpretationPromptPayload(report model.ERXinReportVO) erxinReportInterpretationPromptPayload {

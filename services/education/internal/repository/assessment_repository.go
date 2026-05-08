@@ -72,6 +72,17 @@ type AssessmentCaregiverInviteEntity struct {
 	ExpiresAt              time.Time
 }
 
+type AssessmentReportInterpretationEntity struct {
+	ID             int64
+	InstID         int64
+	RecordID       int64
+	AssessmentCode string
+	SourceHash     string
+	Interpretation model.ERXinReportInterpretationVO
+	CreatedTime    *time.Time
+	UpdatedTime    *time.Time
+}
+
 func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS assessment_record (
@@ -211,6 +222,27 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 		)
 	`)
 	if err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `
+		CREATE TABLE IF NOT EXISTS assessment_report_interpretation (
+			id BIGINT PRIMARY KEY AUTO_INCREMENT,
+			inst_id BIGINT NOT NULL DEFAULT 0,
+			record_id BIGINT NOT NULL DEFAULT 0,
+			assessment_code VARCHAR(64) NOT NULL DEFAULT '',
+			source_hash VARCHAR(64) NOT NULL DEFAULT '',
+			content_json LONGTEXT NOT NULL,
+			model VARCHAR(100) NOT NULL DEFAULT '',
+			generated_by VARCHAR(32) NOT NULL DEFAULT '',
+			create_id BIGINT NOT NULL DEFAULT 0,
+			update_id BIGINT NOT NULL DEFAULT 0,
+			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			update_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+			del_flag TINYINT(1) NOT NULL DEFAULT 0,
+			UNIQUE KEY uk_assessment_report_interpretation_record (inst_id, record_id, assessment_code),
+			KEY idx_assessment_report_interpretation_update (inst_id, assessment_code, update_time)
+		)
+	`); err != nil {
 		return err
 	}
 	return ensureColumnsOnTable(ctx, db, "assessment_caregiver_invite", map[string]string{
@@ -807,6 +839,88 @@ func (repo *Repository) DeleteAssessmentRecord(ctx context.Context, instID, reco
 		return false, err
 	}
 	return affected > 0, nil
+}
+
+func (repo *Repository) GetAssessmentReportInterpretation(ctx context.Context, instID, recordID int64, assessmentCode string) (AssessmentReportInterpretationEntity, error) {
+	var (
+		entity    AssessmentReportInterpretationEntity
+		raw       string
+		createdAt sql.NullTime
+		updatedAt sql.NullTime
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, inst_id, record_id, assessment_code, source_hash, content_json, create_time, update_time
+		FROM assessment_report_interpretation
+		WHERE inst_id = ? AND record_id = ? AND assessment_code = ? AND del_flag = 0
+		LIMIT 1
+	`, instID, recordID, strings.TrimSpace(assessmentCode)).Scan(
+		&entity.ID,
+		&entity.InstID,
+		&entity.RecordID,
+		&entity.AssessmentCode,
+		&entity.SourceHash,
+		&raw,
+		&createdAt,
+		&updatedAt,
+	)
+	if err != nil {
+		return AssessmentReportInterpretationEntity{}, err
+	}
+	if err := json.Unmarshal([]byte(raw), &entity.Interpretation); err != nil {
+		return AssessmentReportInterpretationEntity{}, fmt.Errorf("decode assessment report interpretation: %w", err)
+	}
+	if createdAt.Valid {
+		t := createdAt.Time
+		entity.CreatedTime = &t
+	}
+	if updatedAt.Valid {
+		t := updatedAt.Time
+		entity.UpdatedTime = &t
+	}
+	return entity, nil
+}
+
+func (repo *Repository) UpsertAssessmentReportInterpretation(ctx context.Context, entity AssessmentReportInterpretationEntity, operatorID int64) error {
+	raw, err := json.Marshal(entity.Interpretation)
+	if err != nil {
+		return fmt.Errorf("marshal assessment report interpretation: %w", err)
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO assessment_report_interpretation (
+			inst_id, record_id, assessment_code, source_hash, content_json, model, generated_by,
+			create_id, update_id, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			source_hash = VALUES(source_hash),
+			content_json = VALUES(content_json),
+			model = VALUES(model),
+			generated_by = VALUES(generated_by),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		entity.InstID,
+		entity.RecordID,
+		strings.TrimSpace(entity.AssessmentCode),
+		strings.TrimSpace(entity.SourceHash),
+		string(raw),
+		strings.TrimSpace(entity.Interpretation.Model),
+		strings.TrimSpace(entity.Interpretation.GeneratedBy),
+		operatorID,
+		operatorID,
+	)
+	return err
+}
+
+func (repo *Repository) SoftDeleteAssessmentReportInterpretation(ctx context.Context, instID, recordID int64, assessmentCode string, operatorID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE assessment_report_interpretation
+		SET del_flag = 1,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE inst_id = ? AND record_id = ? AND assessment_code = ? AND del_flag = 0
+	`, operatorID, instID, recordID, strings.TrimSpace(assessmentCode))
+	return err
 }
 
 func (repo *Repository) SaveAssessmentDraft(
