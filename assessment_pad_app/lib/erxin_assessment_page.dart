@@ -925,6 +925,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final List<int> months = _centerMonths;
     final bool reviewing = _isReviewingRecord;
     final int? reviewMonth = _reviewMonth;
+    final List<int> previousMonths =
+        _previousMonthsForDomain(_selectedDomainCode);
+    final List<int> futureMonths = _futureMonthsForDomain(_selectedDomainCode);
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
       color: Colors.white,
@@ -976,22 +979,33 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
-                        for (final int month in months)
+                        for (final MapEntry<int, int> entry
+                            in months.asMap().entries) ...<Widget>[
+                          if (!reviewing &&
+                              entry.key == 1 &&
+                              previousMonths.isNotEmpty)
+                            const _WorkspaceMonthDivider(label: '往前测查'),
+                          if (!reviewing &&
+                              futureMonths.isNotEmpty &&
+                              entry.value == futureMonths.first)
+                            const _WorkspaceMonthDivider(label: '往后测查'),
                           _AgeMonthSection(
                             key: _monthSectionKeyFor(
                               _selectedDomainCode,
-                              month,
+                              entry.value,
                             ),
-                            month: month,
-                            isMainAge: month == _mainAgeMonth,
-                            flashing: _workspaceFlashMonths.contains(month),
-                            items: _itemsFor(_selectedDomainCode, month),
+                            month: entry.value,
+                            isMainAge: entry.value == _mainAgeMonth,
+                            flashing:
+                                _workspaceFlashMonths.contains(entry.value),
+                            items: _itemsFor(_selectedDomainCode, entry.value),
                             itemPasses: _itemPasses,
                             selectedItemNo: _selectedItemNo,
                             itemKeyFor: _itemRowKeyFor,
                             onSelectItem: _selectItem,
                             onScore: _scoreItem,
                           ),
+                        ],
                       ],
                     ),
                   ),
@@ -4668,6 +4682,52 @@ class _AgeMonthSection extends StatelessWidget {
               onTap: () => onSelectItem(entry.value.itemNo),
               onScore: (bool passed) => onScore(entry.value.itemNo, passed),
             ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceMonthDivider extends StatelessWidget {
+  const _WorkspaceMonthDivider({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 10),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Container(
+              height: 1,
+              color: const Color(0xFFE8D6C8),
+            ),
+          ),
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFAF5),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: _ErxinColors.line),
+            ),
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: _ErxinColors.body,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Container(
+              height: 1,
+              color: const Color(0xFFE8D6C8),
+            ),
+          ),
         ],
       ),
     );
