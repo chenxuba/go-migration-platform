@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
 import 'erxin_assessment_client.dart';
+import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 
 class ErxinAssessmentPage extends StatefulWidget {
@@ -65,8 +66,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   final Map<String, int> _previousStartIndexByDomain = <String, int>{};
   final Map<String, int> _futureEndIndexByDomain = <String, int>{};
   final Set<String> _futureVisibleDomains = <String>{};
+  final Map<String, int> _reviewMonthByDomain = <String, int>{};
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
+  Future<ErxinDraftDetail?>? _saveDraftFuture;
+  bool _saveDraftFutureSilent = false;
+  bool _saveDraftJoinedByManual = false;
 
   ErxinTemplateSummary _template = ErxinTemplateSummary.empty;
   ErxinDraftProgress _draftProgress = ErxinDraftProgress.empty;
@@ -180,21 +185,22 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         .clamp(0, index);
   }
 
-  List<int> _previousAndMainMonthsForDomain(String domainCode) {
+  List<int> _previousMonthsForDomain(String domainCode) {
     final int index = _mainAgeIndex;
     if (index < 0) {
       return <int>[];
     }
     final int start = _previousStartIndexForDomain(domainCode);
-    return _standardAgeMonths.sublist(start, index + 1);
+    return _standardAgeMonths.sublist(start, index);
   }
 
-  List<int> get _initialVisibleMonths {
-    return _previousAndMainMonthsForDomain(_selectedDomainCode);
-  }
-
-  List<int> get _futureMonths {
-    return _futureMonthsForDomain(_selectedDomainCode);
+  List<int> _visibleMonthsBeforeFutureForDomain(String domainCode) {
+    final int mainAge = _mainAgeMonth;
+    final List<int> previous = _previousMonthsForDomain(domainCode);
+    return <int>[
+      mainAge,
+      ...previous.reversed,
+    ];
   }
 
   List<int> _futureMonthsForDomain(String domainCode) {
@@ -216,22 +222,69 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
 
   List<int> _visibleMonthsForDomain(String domainCode) {
     return <int>[
-      ..._previousAndMainMonthsForDomain(domainCode),
+      ..._visibleMonthsBeforeFutureForDomain(domainCode),
       ..._futureMonthsForDomain(domainCode),
     ];
   }
 
   List<int> get _visibleMonths => _visibleMonthsForDomain(_selectedDomainCode);
 
+  bool get _isReviewingRecord {
+    return _reviewMonthByDomain.containsKey(_selectedDomainCode);
+  }
+
+  int? get _reviewMonth {
+    return _reviewMonthByDomain[_selectedDomainCode];
+  }
+
+  List<int> _centerMonthsForDomain(String domainCode) {
+    final int? reviewMonth = _reviewMonthByDomain[domainCode];
+    if (reviewMonth != null) {
+      return <int>[reviewMonth];
+    }
+    return <int>[
+      for (final int month in _visibleMonthsForDomain(domainCode))
+        if (_itemsFor(domainCode, month).isNotEmpty &&
+            !_ageMonthComplete(domainCode, month))
+          month,
+    ];
+  }
+
+  List<int> get _centerMonths => _centerMonthsForDomain(_selectedDomainCode);
+
+  List<int> _recordMonthsForDomain(String domainCode) {
+    final Set<int> months = <int>{..._visibleMonthsForDomain(domainCode)};
+    for (final ErxinAgeGroup group in _template.ageGroups) {
+      final bool hasAnsweredItem = group.items.any(
+        (ErxinItemSummary item) =>
+            item.domainCode == domainCode &&
+            _itemPasses.containsKey(item.itemNo),
+      );
+      if (hasAnsweredItem) {
+        months.add(group.ageMonth);
+      }
+    }
+
+    final int mainAge = _mainAgeMonth;
+    final List<int> previous = months
+        .where((int month) => month > 0 && month < mainAge)
+        .toList()
+      ..sort((int left, int right) => right.compareTo(left));
+    final List<int> future =
+        months.where((int month) => month > mainAge).toList()..sort();
+    return <int>[
+      if (months.contains(mainAge)) mainAge,
+      ...previous,
+      ...future,
+    ];
+  }
+
   bool get _previousMonthsComplete {
     return _previousMonthsCompleteForDomain(_selectedDomainCode);
   }
 
   bool _previousMonthsCompleteForDomain(String domainCode) {
-    final int mainAge = _mainAgeMonth;
-    final List<int> previous = _previousAndMainMonthsForDomain(domainCode)
-        .where((int month) => month != mainAge)
-        .toList();
+    final List<int> previous = _previousMonthsForDomain(domainCode);
     return previous.isNotEmpty &&
         previous.every(
           (int month) => _ageMonthComplete(domainCode, month),
@@ -243,10 +296,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   bool _hasPreviousBaselineForDomain(String domainCode) {
-    final int mainAge = _mainAgeMonth;
-    final List<int> previous = _previousAndMainMonthsForDomain(domainCode)
-        .where((int month) => month != mainAge)
-        .toList();
+    final List<int> previous = _previousMonthsForDomain(domainCode);
     for (int index = 0; index < previous.length - 1; index++) {
       final int current = previous[index];
       final int next = previous[index + 1];
@@ -261,10 +311,6 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
     }
     return false;
-  }
-
-  bool get _mainMonthComplete {
-    return _mainMonthCompleteForDomain(_selectedDomainCode);
   }
 
   bool _mainMonthCompleteForDomain(String domainCode) {
@@ -404,6 +450,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   Widget _buildWorkspace() {
+    final List<int> months = _centerMonths;
+    final bool reviewing = _isReviewingRecord;
+    final int? reviewMonth = _reviewMonth;
     return Container(
       padding: const EdgeInsets.fromLTRB(16, 10, 12, 6),
       color: Colors.white,
@@ -413,7 +462,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
           Row(
             children: <Widget>[
               Text(
-                '${_domainName(_selectedDomainCode)} · 当前测查',
+                reviewing && reviewMonth != null
+                    ? '${_domainName(_selectedDomainCode)} · ${reviewMonth}月龄记录'
+                    : '${_domainName(_selectedDomainCode)} · 当前测查',
                 style: const TextStyle(
                   color: _ErxinColors.ink,
                   fontSize: 20,
@@ -421,29 +472,86 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                 ),
               ),
               const Spacer(),
+              if (reviewing) ...<Widget>[
+                SizedBox(
+                  height: 30,
+                  child: OutlinedButton.icon(
+                    onPressed: _returnToCurrentAssessment,
+                    icon: const Icon(Icons.arrow_back_rounded, size: 14),
+                    label: const Text('返回当前测查'),
+                    style: OutlinedButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+              ],
               _SmallBadge(text: '主测月龄 $_mainAgeMonth月', strong: true),
             ],
           ),
           const SizedBox(height: 8),
           Expanded(
-            child: ListView(
-              padding: EdgeInsets.zero,
-              children: <Widget>[
-                for (final int month in _visibleMonths)
-                  _AgeMonthSection(
-                    month: month,
-                    items: _itemsFor(_selectedDomainCode, month),
-                    itemPasses: _itemPasses,
-                    selectedItemNo: _selectedItemNo,
-                    onSelectItem: _selectItem,
-                    onScore: _scoreItem,
+            child: months.isEmpty
+                ? const _CurrentItemsEmptyState(text: '请按右侧规则继续推进测查')
+                : ListView(
+                    padding: EdgeInsets.zero,
+                    children: <Widget>[
+                      for (final int month in months)
+                        _AgeMonthSection(
+                          month: month,
+                          items: _itemsFor(_selectedDomainCode, month),
+                          itemPasses: _itemPasses,
+                          selectedItemNo: _selectedItemNo,
+                          showOnlyPending: !reviewing,
+                          onSelectItem: _selectItem,
+                          onScore: _scoreItem,
+                        ),
+                    ],
                   ),
-              ],
-            ),
           ),
         ],
       ),
     );
+  }
+
+  List<_RuleRow> _recordRowsForDomain(String domainCode) {
+    final int mainAge = _mainAgeMonth;
+    final int? reviewMonth = _reviewMonthByDomain[domainCode];
+    final List<_RuleRow> rows = <_RuleRow>[
+      for (final int month in _recordMonthsForDomain(domainCode))
+        _RuleRow(
+          label: month == mainAge
+              ? '主测月龄$month月'
+              : month < mainAge
+                  ? '往前$month月'
+                  : '往后$month月',
+          value: _recordStatusText(domainCode, month),
+          done: _recordDone(domainCode, month),
+          month: month,
+          selected: reviewMonth == month,
+        ),
+      _RuleRow(
+        label: '前测基线',
+        value: _hasPreviousBaselineForDomain(domainCode) ? '已建立' : '未形成',
+        done: _hasPreviousBaselineForDomain(domainCode),
+      ),
+    ];
+    if (_futureVisibleDomains.contains(domainCode) ||
+        _hasAnsweredFutureMonth(domainCode)) {
+      rows.add(
+        _RuleRow(
+          label: '后测封顶',
+          value: _hasFutureCeilingForDomain(domainCode) ? '已建立' : '未形成',
+          done: _hasFutureCeilingForDomain(domainCode),
+        ),
+      );
+    }
+    return rows;
   }
 
   Widget _buildRulePanel() {
@@ -489,106 +597,88 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
           ),
           const SizedBox(height: 10),
           Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _RuleCard(
-                    title: '下一步',
-                    body: nextText,
-                    icon: canContinuePrevious
-                        ? Icons.keyboard_double_arrow_left_rounded
-                        : canContinueFuture
-                            ? Icons.keyboard_double_arrow_right_rounded
-                            : Icons.arrow_forward_rounded,
-                    color: _ErxinColors.blue,
-                  ),
-                  const SizedBox(height: 10),
-                  _RuleChecklist(
-                    rows: <_RuleRow>[
-                      _RuleRow(
-                        label: '主测月龄$_mainAgeMonth月',
-                        value: _mainMonthComplete ? '已完成' : '未完成',
-                        done: _mainMonthComplete,
-                      ),
-                      for (final int month in _initialVisibleMonths
-                          .where((int value) => value != _mainAgeMonth))
-                        _RuleRow(
-                          label: '往前$month月',
-                          value: _ageMonthAllPassed(_selectedDomainCode, month)
-                              ? '全通过'
-                              : _ageMonthComplete(_selectedDomainCode, month)
-                                  ? '未全通过'
-                                  : '未完成',
-                          done: _ageMonthAllPassed(_selectedDomainCode, month),
-                        ),
-                      _RuleRow(
-                        label: '前测基线',
-                        value: _hasPreviousBaseline ? '已建立' : '未形成',
-                        done: _hasPreviousBaseline,
-                      ),
-                      for (final int month in _futureMonths)
-                        _RuleRow(
-                          label: '往后$month月',
-                          value: _ageMonthAllFailed(_selectedDomainCode, month)
-                              ? '全不通过'
-                              : _ageMonthComplete(_selectedDomainCode, month)
-                                  ? '未全不通过'
-                                  : '未完成',
-                          done: _ageMonthAllFailed(_selectedDomainCode, month),
-                        ),
-                      if (futureShown)
-                        _RuleRow(
-                          label: '后测封顶',
-                          value: _hasFutureCeiling ? '已建立' : '未形成',
-                          done: _hasFutureCeiling,
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '测查推进',
-                    style: TextStyle(
-                      color: _ErxinColors.ink,
-                      fontSize: 16,
-                      fontWeight: FontWeight.w900,
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints constraints) {
+                final double checklistHeight =
+                    math.max(200, math.min(300, constraints.maxHeight - 238));
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _RuleCard(
+                      title: '下一步',
+                      body: nextText,
+                      icon: canContinuePrevious
+                          ? Icons.keyboard_double_arrow_left_rounded
+                          : canContinueFuture
+                              ? Icons.keyboard_double_arrow_right_rounded
+                              : Icons.arrow_forward_rounded,
+                      color: _ErxinColors.blue,
                     ),
-                  ),
-                  const SizedBox(height: 6),
-                  Text(
-                    _hasFutureCeiling
-                        ? '往后测查已形成连续两个标准月龄全不通过，本能区达到停止规则。'
-                        : _hasPreviousBaseline
-                            ? '往前测查已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
-                            : '当前往前测查尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
-                    style: const TextStyle(
-                      color: _ErxinColors.muted,
-                      fontSize: 12,
-                      height: 1.36,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  SizedBox(
-                    width: double.infinity,
-                    height: 38,
-                    child: FilledButton(
-                      onPressed: actionHandler,
-                      style: FilledButton.styleFrom(
-                        backgroundColor: _ErxinColors.blue,
-                        disabledBackgroundColor: const Color(0xFFE1E5EA),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(8),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: const <Widget>[
+                        Text(
+                          '测评记录',
+                          style: TextStyle(
+                            color: _ErxinColors.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w900,
+                          ),
                         ),
-                      ),
-                      child: Text(
-                        actionLabel,
-                        style: const TextStyle(fontWeight: FontWeight.w900),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    _RuleChecklist(
+                      rows: _recordRowsForDomain(_selectedDomainCode),
+                      height: checklistHeight,
+                      onTapMonth: _openAssessmentRecord,
+                    ),
+                    const SizedBox(height: 12),
+                    const Text(
+                      '测查推进',
+                      style: TextStyle(
+                        color: _ErxinColors.ink,
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                  ),
-                ],
-              ),
+                    const SizedBox(height: 5),
+                    Text(
+                      _hasFutureCeiling
+                          ? '往后测查已形成连续两个标准月龄全不通过，本能区达到停止规则。'
+                          : _hasPreviousBaseline
+                              ? '前测已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
+                              : '前测尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _ErxinColors.muted,
+                        fontSize: 12,
+                        height: 1.28,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      height: 38,
+                      child: FilledButton(
+                        onPressed: actionHandler,
+                        style: FilledButton.styleFrom(
+                          backgroundColor: _ErxinColors.blue,
+                          disabledBackgroundColor: const Color(0xFFE1E5EA),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(8),
+                          ),
+                        ),
+                        child: Text(
+                          actionLabel,
+                          style: const TextStyle(fontWeight: FontWeight.w900),
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             ),
           ),
           const SizedBox(height: 10),
@@ -704,7 +794,11 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   void _selectDomain(String domainCode) {
     setState(() {
       _selectedDomainCode = domainCode;
-      _selectedItemNo = _firstVisibleItemNo(domainCode);
+      _reviewMonthByDomain.remove(domainCode);
+      _selectedItemNo = _firstCurrentItemNo(domainCode);
+      if (_selectedItemNo <= 0) {
+        _selectedItemNo = _firstVisibleItemNo(domainCode);
+      }
     });
     _prefetchSelectedItem();
   }
@@ -715,15 +809,88 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   void _scoreItem(int itemNo, bool passed) {
+    unawaited(_scoreItemInternal(itemNo, passed));
+  }
+
+  Future<void> _scoreItemInternal(int itemNo, bool passed) async {
+    final ErxinItemSummary? summary = _summaryByNo(itemNo);
+    final String domainCode = summary?.domainCode ?? _selectedDomainCode;
+    final bool historyReview = _reviewMonthByDomain[domainCode] != null &&
+        summary?.ageMonth == _reviewMonthByDomain[domainCode];
+    final bool changedExisting =
+        _itemPasses.containsKey(itemNo) && _itemPasses[itemNo] != passed;
+    if (historyReview && changedExisting) {
+      final bool confirmed = await _confirmHistoryChange(
+        itemNo: itemNo,
+        passed: passed,
+      );
+      if (!confirmed || !mounted) {
+        return;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
     setState(() {
       _itemPasses[itemNo] = passed;
-      _selectedItemNo = itemNo;
+      _reconcileAfterScore(domainCode);
+      _selectedDomainCode = domainCode;
+      final int nextSelected = _nextSelectedItemNoForDomain(domainCode, itemNo);
+      _selectedItemNo = nextSelected > 0 ? nextSelected : itemNo;
       _autoSaveText = _token.trim().isEmpty ? '本地已记录' : '自动保存中...';
     });
     _prefetchSelectedItem();
     if (_token.trim().isNotEmpty) {
       unawaited(_saveItem(itemNo));
     }
+  }
+
+  void _openAssessmentRecord(int month) {
+    setState(() {
+      _reviewMonthByDomain[_selectedDomainCode] = month;
+      _selectedItemNo = _firstItemNoForMonth(_selectedDomainCode, month);
+      _autoSaveText = '正在查看历史记录';
+    });
+    _prefetchSelectedItem();
+  }
+
+  void _returnToCurrentAssessment() {
+    setState(() {
+      _reviewMonthByDomain.remove(_selectedDomainCode);
+      _selectedItemNo = _firstCurrentItemNo(_selectedDomainCode);
+      if (_selectedItemNo <= 0) {
+        _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      }
+      _autoSaveText = '返回当前测查';
+    });
+    _prefetchSelectedItem();
+  }
+
+  Future<bool> _confirmHistoryChange({
+    required int itemNo,
+    required bool passed,
+  }) async {
+    final ErxinItemSummary? summary = _summaryByNo(itemNo);
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(.24),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: Center(
+            child: _HistoryChangeConfirmDialog(
+              itemTitle: summary == null
+                  ? '第$itemNo题'
+                  : '${summary.itemNo} ${summary.itemTitle}',
+              nextStatus: passed ? '通过' : '不通过',
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+              onConfirm: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
   }
 
   void _showMessage(
@@ -742,10 +909,48 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     );
   }
 
-  Future<ErxinDraftDetail?> _saveDraft({bool silent = false}) async {
-    if (_savingDraft) {
-      return null;
+  Future<ErxinDraftDetail?> _saveDraft({bool silent = false}) {
+    final Future<ErxinDraftDetail?>? inFlight = _saveDraftFuture;
+    if (inFlight != null) {
+      if (!silent && _saveDraftFutureSilent && !_saveDraftJoinedByManual) {
+        _saveDraftJoinedByManual = true;
+        return _joinSilentDraftSave(inFlight);
+      }
+      return inFlight;
     }
+    late final Future<ErxinDraftDetail?> trackedFuture;
+    _saveDraftFutureSilent = silent;
+    _saveDraftJoinedByManual = false;
+    trackedFuture = _performSaveDraft(silent: silent).whenComplete(() {
+      if (identical(_saveDraftFuture, trackedFuture)) {
+        _saveDraftFuture = null;
+        _saveDraftFutureSilent = false;
+        _saveDraftJoinedByManual = false;
+      }
+    });
+    _saveDraftFuture = trackedFuture;
+    return trackedFuture;
+  }
+
+  Future<ErxinDraftDetail?> _joinSilentDraftSave(
+    Future<ErxinDraftDetail?> inFlight,
+  ) async {
+    if (mounted) {
+      setState(() => _autoSaveText = '草稿保存中...');
+    }
+    final ErxinDraftDetail? detail = await inFlight;
+    if (!mounted) {
+      return detail;
+    }
+    if (detail == null) {
+      _showMessage('保存草稿失败，请稍后重试');
+    } else {
+      _showMessage('草稿已保存', tone: PadMessageTone.success);
+    }
+    return detail;
+  }
+
+  Future<ErxinDraftDetail?> _performSaveDraft({required bool silent}) async {
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再保存草稿');
       return null;
@@ -756,10 +961,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
     setState(() => _savingDraft = true);
     try {
-      final ErxinDraftDetail detail = await widget.client.saveDraft(
-        _token,
-        _buildDraftPayload(),
-      );
+      final ErxinDraftDetail detail = await _sendSaveDraftWithRetry();
       if (!mounted) {
         return detail;
       }
@@ -786,6 +988,32 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
   }
 
+  Future<ErxinDraftDetail> _sendSaveDraftWithRetry() async {
+    final int attemptedDraftId = _draftId;
+    try {
+      return await widget.client.saveDraft(
+        _token,
+        _buildDraftPayload(),
+      );
+    } on Object catch (error) {
+      if (attemptedDraftId <= 0 || !_isDraftNotFoundError(error)) {
+        rethrow;
+      }
+      if (mounted) {
+        setState(() {
+          _draftId = 0;
+          _autoSaveText = '正在创建新草稿...';
+        });
+      } else {
+        _draftId = 0;
+      }
+      return widget.client.saveDraft(
+        _token,
+        _buildDraftPayload(),
+      );
+    }
+  }
+
   Future<void> _saveItem(int itemNo) async {
     if (itemNo <= 0 || !_itemPasses.containsKey(itemNo)) {
       return;
@@ -802,13 +1030,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _autoSaveText = '自动保存中...';
     });
     try {
-      final ErxinDraftDetail detail = await widget.client.saveDraftItem(
-        _token,
-        <String, dynamic>{
-          'draftId': draftId,
-          'itemNo': itemNo,
-          'passed': _itemPasses[itemNo],
-        },
+      final ErxinDraftDetail detail = await _sendSaveDraftItem(
+        itemNo: itemNo,
+        draftId: draftId,
       );
       if (!mounted) {
         return;
@@ -819,6 +1043,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         _autoSaveText = '已自动保存';
       });
     } on Object catch (error) {
+      if (_isDraftNotFoundError(error)) {
+        final bool retried = await _retrySaveItemAfterMissingDraft(itemNo);
+        if (retried) {
+          return;
+        }
+      }
       if (mounted) {
         setState(() {
           _autoSaveText = '保存失败';
@@ -826,6 +1056,59 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
       _showMessage('第$itemNo题自动保存失败：$error');
     }
+  }
+
+  Future<ErxinDraftDetail> _sendSaveDraftItem({
+    required int itemNo,
+    required int draftId,
+  }) {
+    return widget.client.saveDraftItem(
+      _token,
+      <String, dynamic>{
+        'draftId': draftId,
+        'itemNo': itemNo,
+        'passed': _itemPasses[itemNo],
+      },
+    );
+  }
+
+  Future<bool> _retrySaveItemAfterMissingDraft(int itemNo) async {
+    if (!mounted || itemNo <= 0 || !_itemPasses.containsKey(itemNo)) {
+      return false;
+    }
+    setState(() {
+      _draftId = 0;
+      _autoSaveText = '正在重建草稿...';
+    });
+    try {
+      final ErxinDraftDetail? created = await _saveDraft(silent: true);
+      final int retryDraftId = created?.id ?? _draftId;
+      if (retryDraftId <= 0 || !mounted) {
+        return false;
+      }
+      final ErxinDraftDetail detail = await _sendSaveDraftItem(
+        itemNo: itemNo,
+        draftId: retryDraftId,
+      );
+      if (!mounted) {
+        return true;
+      }
+      setState(() {
+        _draftId = detail.id;
+        _draftProgress = detail.progress;
+        _autoSaveText = '已自动保存';
+      });
+      return true;
+    } on Object {
+      return false;
+    }
+  }
+
+  bool _isDraftNotFoundError(Object error) {
+    return error
+        .toString()
+        .toLowerCase()
+        .contains('assessment draft not found');
   }
 
   Future<void> _submitDraft() async {
@@ -937,7 +1220,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     }
     setState(() {
       _previousStartIndexByDomain[_selectedDomainCode] = nextStart;
-      _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      _selectedItemNo = _firstItemNoForMonth(
+        _selectedDomainCode,
+        _standardAgeMonths[math.max(nextStart, currentStart - 1)],
+      );
       _autoSaveText = '已追加往前测查';
     });
     _prefetchSelectedItem();
@@ -949,7 +1235,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       _futureVisibleDomains.add(_selectedDomainCode);
       _futureEndIndexByDomain[_selectedDomainCode] =
           math.min(_standardAgeMonths.length - 1, index + 2);
-      _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      _selectedItemNo = _firstItemNoForMonth(
+        _selectedDomainCode,
+        _standardAgeMonths[index + 1],
+      );
       _autoSaveText = '已进入往后测查';
     });
     _prefetchSelectedItem();
@@ -976,7 +1265,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         math.min(_standardAgeMonths.length - 1, currentEnd + step);
     setState(() {
       _futureEndIndexByDomain[_selectedDomainCode] = nextEnd;
-      _selectedItemNo = _firstVisibleItemNo(_selectedDomainCode);
+      _selectedItemNo = _firstItemNoForMonth(
+        _selectedDomainCode,
+        _standardAgeMonths[currentEnd + 1],
+      );
       _autoSaveText = '已追加往后测查';
     });
     _prefetchSelectedItem();
@@ -993,31 +1285,36 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         : '${item.itemNo} ${item.itemTitle}';
     showDialog<void>(
       context: context,
+      barrierColor: Colors.black.withOpacity(.24),
       builder: (BuildContext context) {
-        return AlertDialog(
-          title: Text(title),
-          content: SizedBox(
-            width: 640,
-            child: SingleChildScrollView(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _DialogTextBlock(title: '操作方法', text: item?.method ?? ''),
-                  const SizedBox(height: 18),
-                  _DialogTextBlock(
-                    title: '通过标准',
-                    text: item?.passCriteria ?? '',
+        return PadDialogViewport(
+          child: Center(
+            child: AlertDialog(
+              title: Text(title),
+              content: SizedBox(
+                width: 640,
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _DialogTextBlock(title: '操作方法', text: item?.method ?? ''),
+                      const SizedBox(height: 18),
+                      _DialogTextBlock(
+                        title: '通过标准',
+                        text: item?.passCriteria ?? '',
+                      ),
+                    ],
                   ),
-                ],
+                ),
               ),
+              actions: <Widget>[
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: const Text('关闭'),
+                ),
+              ],
             ),
           ),
-          actions: <Widget>[
-            TextButton(
-              onPressed: () => Navigator.of(context).pop(),
-              child: const Text('关闭'),
-            ),
-          ],
         );
       },
     );
@@ -1064,6 +1361,123 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     return futureResolved;
   }
 
+  String _recordStatusText(String domainCode, int month) {
+    if (month == _mainAgeMonth) {
+      return _ageMonthComplete(domainCode, month) ? '已完成' : '未完成';
+    }
+    if (month < _mainAgeMonth) {
+      return _ageMonthAllPassed(domainCode, month)
+          ? '全通过'
+          : _ageMonthComplete(domainCode, month)
+              ? '未全通过'
+              : '未完成';
+    }
+    return _ageMonthAllFailed(domainCode, month)
+        ? '全不通过'
+        : _ageMonthComplete(domainCode, month)
+            ? '未全不通过'
+            : '未完成';
+  }
+
+  bool _recordDone(String domainCode, int month) {
+    if (month == _mainAgeMonth) {
+      return _ageMonthComplete(domainCode, month);
+    }
+    if (month < _mainAgeMonth) {
+      return _ageMonthAllPassed(domainCode, month);
+    }
+    return _ageMonthAllFailed(domainCode, month);
+  }
+
+  bool _hasAnsweredFutureMonth(String domainCode) {
+    return _highestAnsweredFutureIndex(domainCode) >= 0;
+  }
+
+  int _highestAnsweredFutureIndex(String domainCode) {
+    int highest = -1;
+    for (final ErxinAgeGroup group in _template.ageGroups) {
+      final int index = _standardAgeMonths.indexOf(group.ageMonth);
+      if (index <= _mainAgeIndex) {
+        continue;
+      }
+      final bool hasAnswered = group.items.any(
+        (ErxinItemSummary item) =>
+            item.domainCode == domainCode &&
+            _itemPasses.containsKey(item.itemNo),
+      );
+      if (hasAnswered) {
+        highest = math.max(highest, index);
+      }
+    }
+    return highest;
+  }
+
+  void _reconcileAfterScore(String domainCode) {
+    _trimPreviousWindowToActiveBaseline(domainCode);
+    final bool previousReady = _mainMonthCompleteForDomain(domainCode) &&
+        _previousMonthsCompleteForDomain(domainCode) &&
+        _hasPreviousBaselineForDomain(domainCode);
+    if (!previousReady) {
+      _futureVisibleDomains.remove(domainCode);
+      _futureEndIndexByDomain.remove(domainCode);
+      return;
+    }
+
+    final int highestAnsweredFuture = _highestAnsweredFutureIndex(domainCode);
+    if (!_futureVisibleDomains.contains(domainCode) &&
+        highestAnsweredFuture < 0) {
+      _futureEndIndexByDomain.remove(domainCode);
+      return;
+    }
+
+    _futureVisibleDomains.add(domainCode);
+    final int defaultEnd =
+        math.min(_standardAgeMonths.length - 1, _mainAgeIndex + 2);
+    final int existingEnd = _futureEndIndexByDomain[domainCode] ?? defaultEnd;
+    final int end = math.max(existingEnd, highestAnsweredFuture);
+    final int normalizedEnd =
+        math.max(defaultEnd, math.min(end, _standardAgeMonths.length - 1));
+    _futureEndIndexByDomain[domainCode] =
+        _trimFutureEndToActiveCeiling(domainCode, normalizedEnd);
+  }
+
+  void _trimPreviousWindowToActiveBaseline(String domainCode) {
+    final int mainIndex = _mainAgeIndex;
+    if (mainIndex <= 0) {
+      return;
+    }
+    final int currentStart = _previousStartIndexForDomain(domainCode);
+    int? bestStart;
+    for (int index = mainIndex - 2; index >= currentStart; index--) {
+      final int current = _standardAgeMonths[index];
+      final int next = _standardAgeMonths[index + 1];
+      if (_ageMonthAllPassed(domainCode, current) &&
+          _ageMonthAllPassed(domainCode, next)) {
+        bestStart = index;
+        break;
+      }
+    }
+    if (bestStart != null && bestStart != currentStart) {
+      _previousStartIndexByDomain[domainCode] = bestStart;
+    }
+  }
+
+  int _trimFutureEndToActiveCeiling(String domainCode, int endIndex) {
+    final int mainIndex = _mainAgeIndex;
+    if (mainIndex < 0 || endIndex <= mainIndex + 1) {
+      return endIndex;
+    }
+    for (int index = mainIndex + 1; index < endIndex; index++) {
+      final int current = _standardAgeMonths[index];
+      final int next = _standardAgeMonths[index + 1];
+      if (_ageMonthAllFailed(domainCode, current) &&
+          _ageMonthAllFailed(domainCode, next)) {
+        return index + 1;
+      }
+    }
+    return endIndex;
+  }
+
   List<ErxinItemSummary> _itemsFor(String domainCode, int ageMonth) {
     for (final ErxinAgeGroup group in _template.ageGroups) {
       if (group.ageMonth == ageMonth) {
@@ -1097,11 +1511,40 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   int _firstVisibleItemNo(String domainCode) {
-    for (final int month in _visibleMonths) {
-      final List<ErxinItemSummary> items = _itemsFor(domainCode, month);
-      if (items.isNotEmpty) {
-        return items.first.itemNo;
+    for (final int month in _visibleMonthsForDomain(domainCode)) {
+      final int itemNo = _firstItemNoForMonth(domainCode, month);
+      if (itemNo > 0) {
+        return itemNo;
       }
+    }
+    return 0;
+  }
+
+  int _firstCurrentItemNo(String domainCode) {
+    for (final int month in _centerMonthsForDomain(domainCode)) {
+      for (final ErxinItemSummary item in _itemsFor(domainCode, month)) {
+        if (!_itemPasses.containsKey(item.itemNo)) {
+          return item.itemNo;
+        }
+      }
+      final int itemNo = _firstItemNoForMonth(domainCode, month);
+      if (itemNo > 0) {
+        return itemNo;
+      }
+    }
+    return 0;
+  }
+
+  int _nextSelectedItemNoForDomain(String domainCode, int fallbackItemNo) {
+    if (_reviewMonthByDomain.containsKey(domainCode)) {
+      return fallbackItemNo;
+    }
+    return _firstCurrentItemNo(domainCode);
+  }
+
+  int _firstItemNoForMonth(String domainCode, int ageMonth) {
+    for (final ErxinItemSummary item in _itemsFor(domainCode, ageMonth)) {
+      return item.itemNo;
     }
     return 0;
   }
@@ -1223,16 +1666,20 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               SizedBox(
-                width: compact ? 212 : 252,
-                child: const Text(
-                  '儿心量表-II 测评工作台',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color: _ErxinColors.ink,
-                    fontSize: 22,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
+                width: compact ? 282 : 306,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: const Text(
+                    '儿心量表-II 测评工作台',
+                    maxLines: 1,
+                    softWrap: false,
+                    style: TextStyle(
+                      color: _ErxinColors.ink,
+                      fontSize: 22,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
@@ -1332,23 +1779,27 @@ class _HeaderMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _ErxinColors.line)),
       ),
-      child: Text.rich(
-        TextSpan(
-          children: <InlineSpan>[
-            TextSpan(text: '$label：'),
-            TextSpan(
-              text: value,
-              style: const TextStyle(fontWeight: FontWeight.w900),
-            ),
-          ],
-        ),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _ErxinColors.body,
-          fontSize: 13,
-          height: 1,
-          fontWeight: FontWeight.w700,
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: '$label：'),
+              TextSpan(
+                text: value,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          maxLines: 1,
+          softWrap: false,
+          style: const TextStyle(
+            color: _ErxinColors.body,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
     );
@@ -1630,6 +2081,7 @@ class _AgeMonthSection extends StatelessWidget {
     required this.items,
     required this.itemPasses,
     required this.selectedItemNo,
+    required this.showOnlyPending,
     required this.onSelectItem,
     required this.onScore,
   });
@@ -1638,11 +2090,18 @@ class _AgeMonthSection extends StatelessWidget {
   final List<ErxinItemSummary> items;
   final Map<int, bool> itemPasses;
   final int selectedItemNo;
+  final bool showOnlyPending;
   final ValueChanged<int> onSelectItem;
   final void Function(int itemNo, bool passed) onScore;
 
   @override
   Widget build(BuildContext context) {
+    final List<ErxinItemSummary> displayItems = showOnlyPending
+        ? items
+            .where(
+                (ErxinItemSummary item) => !itemPasses.containsKey(item.itemNo))
+            .toList()
+        : items;
     final int answered = items
         .where((ErxinItemSummary item) => itemPasses.containsKey(item.itemNo))
         .length;
@@ -1685,7 +2144,7 @@ class _AgeMonthSection extends StatelessWidget {
               ],
             ),
           ),
-          for (final ErxinItemSummary item in items)
+          for (final ErxinItemSummary item in displayItems)
             _ItemScoreRow(
               item: item,
               selected: item.itemNo == selectedItemNo,
@@ -2003,9 +2462,15 @@ class _RuleCard extends StatelessWidget {
 }
 
 class _RuleChecklist extends StatelessWidget {
-  const _RuleChecklist({required this.rows});
+  const _RuleChecklist({
+    required this.rows,
+    required this.height,
+    required this.onTapMonth,
+  });
 
   final List<_RuleRow> rows;
+  final double height;
+  final ValueChanged<int> onTapMonth;
 
   @override
   Widget build(BuildContext context) {
@@ -2016,7 +2481,7 @@ class _RuleChecklist extends StatelessWidget {
         border: Border.all(color: _ErxinColors.line),
       ),
       child: SizedBox(
-        height: 300,
+        height: height,
         child: ListView.separated(
           padding: const EdgeInsets.symmetric(vertical: 6),
           physics: const BouncingScrollPhysics(),
@@ -2028,49 +2493,215 @@ class _RuleChecklist extends StatelessWidget {
           ),
           itemBuilder: (BuildContext context, int index) {
             final _RuleRow row = rows[index];
-            return SizedBox(
-              height: 40,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Row(
-                  children: <Widget>[
-                    Icon(
-                      row.done
-                          ? Icons.check_circle
-                          : Icons.radio_button_unchecked,
-                      color: row.done ? _ErxinColors.green : _ErxinColors.muted,
-                      size: 18,
-                    ),
-                    const SizedBox(width: 9),
-                    Expanded(
-                      child: Text(
-                        row.label,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _ErxinColors.ink,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
+            final bool clickable = row.month != null;
+            return Material(
+              color: row.selected ? const Color(0xFFEAF2FF) : Colors.white,
+              child: InkWell(
+                onTap: clickable ? () => onTapMonth(row.month!) : null,
+                child: SizedBox(
+                  height: 40,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          row.done
+                              ? Icons.check_circle
+                              : Icons.radio_button_unchecked,
+                          color: row.done
+                              ? _ErxinColors.green
+                              : _ErxinColors.muted,
+                          size: 18,
                         ),
-                      ),
+                        const SizedBox(width: 9),
+                        Expanded(
+                          child: Text(
+                            row.label,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: row.selected
+                                  ? _ErxinColors.blue
+                                  : _ErxinColors.ink,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          row.value,
+                          maxLines: 1,
+                          softWrap: false,
+                          style: TextStyle(
+                            color: row.done
+                                ? _ErxinColors.green
+                                : _ErxinColors.body,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                        if (clickable) ...<Widget>[
+                          const SizedBox(width: 5),
+                          Icon(
+                            row.selected
+                                ? Icons.edit_note_rounded
+                                : Icons.history_rounded,
+                            color: row.selected
+                                ? _ErxinColors.blue
+                                : _ErxinColors.muted,
+                            size: 16,
+                          ),
+                        ],
+                      ],
                     ),
-                    const SizedBox(width: 8),
-                    Text(
-                      row.value,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        color:
-                            row.done ? _ErxinColors.green : _ErxinColors.body,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ),
             );
           },
+        ),
+      ),
+    );
+  }
+}
+
+class _CurrentItemsEmptyState extends StatelessWidget {
+  const _CurrentItemsEmptyState({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 420,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+        decoration: BoxDecoration(
+          color: const Color(0xFFF8FAFD),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: _ErxinColors.line),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.fact_check_outlined,
+              color: _ErxinColors.blue,
+              size: 34,
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '当前题目已完成',
+              style: TextStyle(
+                color: _ErxinColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              text,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _ErxinColors.body,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HistoryChangeConfirmDialog extends StatelessWidget {
+  const _HistoryChangeConfirmDialog({
+    required this.itemTitle,
+    required this.nextStatus,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final String itemTitle;
+  final String nextStatus;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: Container(
+        width: 438,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: _ErxinColors.line),
+          boxShadow: _erxinShadow(
+            color: const Color(0x24172033),
+            blur: 28,
+            offset: const Offset(0, 14),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              '确认修改历史记录',
+              style: TextStyle(
+                color: _ErxinColors.ink,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '$itemTitle 将改为“$nextStatus”。修改后会重新计算当前能区的前测基线、后测封顶和后续需测月龄。',
+              style: const TextStyle(
+                color: _ErxinColors.body,
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                SizedBox(
+                  height: 36,
+                  child: OutlinedButton(
+                    onPressed: onCancel,
+                    child: const Text('取消'),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  height: 36,
+                  child: FilledButton(
+                    onPressed: onConfirm,
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _ErxinColors.orange,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                    child: const Text(
+                      '确认修改',
+                      style: TextStyle(fontWeight: FontWeight.w900),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -2233,11 +2864,15 @@ class _RuleRow {
     required this.label,
     required this.value,
     required this.done,
+    this.month,
+    this.selected = false,
   });
 
   final String label;
   final String value;
   final bool done;
+  final int? month;
+  final bool selected;
 }
 
 class _DomainProgress {

@@ -2,7 +2,9 @@ package repository
 
 import (
 	"context"
+	"crypto/sha1"
 	"database/sql"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -56,6 +58,7 @@ type AssessmentDraftEntity struct {
 	Remark            string
 	CreatedBy         int64
 	UpdatedBy         int64
+	ReuseOpenDraft    bool
 }
 
 type AssessmentCaregiverInviteEntity struct {
@@ -128,6 +131,7 @@ func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 			del_flag TINYINT(1) NOT NULL DEFAULT 0,
 			KEY idx_assessment_draft_inst_code_date (inst_id, assessment_code, assessment_date, id),
 			KEY idx_assessment_draft_inst_student (inst_id, student_id, update_time, id),
+			KEY idx_assessment_draft_reuse_lookup (inst_id, student_id, assessment_code, assessment_date, submitted_record_id, del_flag, update_time, id),
 			KEY idx_assessment_draft_status (inst_id, assessment_code, status, update_time, id)
 		)
 	`); err != nil {
@@ -813,7 +817,37 @@ func (repo *Repository) SaveAssessmentDraft(
 	itemRecordValues map[int]map[string]any,
 	operatorID int64,
 ) (int64, error) {
-	tx, err := repo.db.BeginTx(ctx, nil)
+	if entity.ID <= 0 && entity.ReuseOpenDraft {
+		conn, err := repo.db.Conn(ctx)
+		if err != nil {
+			return 0, err
+		}
+		defer conn.Close()
+		releaseLock, err := acquireAssessmentDraftReuseLock(ctx, conn, assessmentDraftReuseLockKey(entity))
+		if err != nil {
+			return 0, err
+		}
+		defer releaseLock()
+		return saveAssessmentDraftInTransaction(ctx, conn, entity, itemScores, rawScores, itemRecordValues, operatorID, true)
+	}
+	return saveAssessmentDraftInTransaction(ctx, repo.db, entity, itemScores, rawScores, itemRecordValues, operatorID, false)
+}
+
+type assessmentDraftTxStarter interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}
+
+func saveAssessmentDraftInTransaction(
+	ctx context.Context,
+	txStarter assessmentDraftTxStarter,
+	entity AssessmentDraftEntity,
+	itemScores map[int]int,
+	rawScores map[string]int,
+	itemRecordValues map[int]map[string]any,
+	operatorID int64,
+	reuseOpenDraft bool,
+) (int64, error) {
+	tx, err := txStarter.BeginTx(ctx, nil)
 	if err != nil {
 		return 0, err
 	}
@@ -823,6 +857,15 @@ func (repo *Repository) SaveAssessmentDraft(
 			_ = tx.Rollback()
 		}
 	}()
+	if entity.ID <= 0 && reuseOpenDraft {
+		draftID, err := findReusableAssessmentDraftIDForUpdate(ctx, tx, entity)
+		if err != nil && err != sql.ErrNoRows {
+			return 0, err
+		}
+		if draftID > 0 {
+			entity.ID = draftID
+		}
+	}
 	draftID, err := saveAssessmentDraftWithExecutor(ctx, tx, entity)
 	if err != nil {
 		return 0, err
@@ -840,6 +883,95 @@ func (repo *Repository) SaveAssessmentDraft(
 		return 0, err
 	}
 	committed = true
+	return draftID, nil
+}
+
+func acquireAssessmentDraftReuseLock(ctx context.Context, conn *sql.Conn, lockKey string) (func(), error) {
+	var locked sql.NullInt64
+	if err := conn.QueryRowContext(ctx, `SELECT GET_LOCK(?, 5)`, lockKey).Scan(&locked); err != nil {
+		return nil, err
+	}
+	if !locked.Valid || locked.Int64 != 1 {
+		return nil, fmt.Errorf("assessment draft reuse lock timeout")
+	}
+	return func() {
+		releaseCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		var released sql.NullInt64
+		_ = conn.QueryRowContext(releaseCtx, `SELECT RELEASE_LOCK(?)`, lockKey).Scan(&released)
+	}, nil
+}
+
+func assessmentDraftReuseLockKey(entity AssessmentDraftEntity) string {
+	datePart := "null"
+	if entity.AssessmentDate != nil && !entity.AssessmentDate.IsZero() {
+		datePart = entity.AssessmentDate.Format("2006-01-02")
+	}
+	raw := fmt.Sprintf(
+		"%d:%d:%s:%s",
+		entity.InstID,
+		entity.StudentID,
+		strings.TrimSpace(entity.AssessmentCode),
+		datePart,
+	)
+	sum := sha1.Sum([]byte(raw))
+	return "assessment_draft_reuse:" + hex.EncodeToString(sum[:])
+}
+
+func findReusableAssessmentDraftIDForUpdate(
+	ctx context.Context,
+	tx *sql.Tx,
+	entity AssessmentDraftEntity,
+) (int64, error) {
+	if entity.InstID <= 0 || entity.StudentID <= 0 || strings.TrimSpace(entity.AssessmentCode) == "" {
+		return 0, sql.ErrNoRows
+	}
+	var (
+		query string
+		args  []any
+	)
+	baseArgs := []any{
+		entity.InstID,
+		entity.StudentID,
+		strings.TrimSpace(entity.AssessmentCode),
+	}
+	if entity.AssessmentDate == nil || entity.AssessmentDate.IsZero() {
+		query = `
+			SELECT id
+			FROM assessment_draft
+			WHERE inst_id = ?
+			  AND student_id = ?
+			  AND assessment_code = ?
+			  AND assessment_date IS NULL
+			  AND submitted_record_id = 0
+			  AND del_flag = 0
+			  AND status <> 'submitted'
+			ORDER BY update_time DESC, id DESC
+			LIMIT 1
+			FOR UPDATE
+		`
+		args = baseArgs
+	} else {
+		query = `
+			SELECT id
+			FROM assessment_draft
+			WHERE inst_id = ?
+			  AND student_id = ?
+			  AND assessment_code = ?
+			  AND assessment_date = ?
+			  AND submitted_record_id = 0
+			  AND del_flag = 0
+			  AND status <> 'submitted'
+			ORDER BY update_time DESC, id DESC
+			LIMIT 1
+			FOR UPDATE
+		`
+		args = append(baseArgs, nullableAssessmentDate(entity.AssessmentDate))
+	}
+	var draftID int64
+	if err := tx.QueryRowContext(ctx, query, args...).Scan(&draftID); err != nil {
+		return 0, err
+	}
 	return draftID, nil
 }
 

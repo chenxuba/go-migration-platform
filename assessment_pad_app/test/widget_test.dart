@@ -1403,6 +1403,14 @@ void main() {
     expect(find.text('36月龄'), findsOneWidget);
     expect(find.text('42月龄'), findsOneWidget);
     expect(find.text('48月龄'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('48月龄')).dy,
+      lessThan(tester.getTopLeft(find.text('42月龄')).dy),
+    );
+    expect(
+      tester.getTopLeft(find.text('42月龄')).dy,
+      lessThan(tester.getTopLeft(find.text('36月龄')).dy),
+    );
 
     await _tapErxinScore(tester, '36月题', true);
     await _tapErxinScore(tester, '42月题', false);
@@ -1412,10 +1420,170 @@ void main() {
     expect(find.text('继续往前测查'), findsOneWidget);
     expect(find.textContaining('继续追加33月'), findsOneWidget);
 
-    await tester.tap(find.text('继续往前测查'));
+    await tester.tap(find.widgetWithText(FilledButton, '继续往前测查'));
     await tester.pumpAndSettle();
 
     expect(find.text('33月龄'), findsOneWidget);
+  });
+
+  testWidgets('ERXin record rows open history and confirm edits',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _tapErxinScore(tester, '36月题', true);
+    await _tapErxinScore(tester, '42月题', true);
+    await _tapErxinScore(tester, '48月题', true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('48月题'), findsNothing);
+    expect(find.text('前测基线'), findsOneWidget);
+    expect(find.text('已建立'), findsOneWidget);
+
+    await tester.tap(find.text('往前42月'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 42月龄记录'), findsOneWidget);
+    expect(find.text('42月题'), findsOneWidget);
+
+    await _tapErxinScore(tester, '42月题', false);
+    expect(find.text('确认修改历史记录'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('已建立'), findsOneWidget);
+    await _tapErxinScore(tester, '42月题', false);
+    await tester.tap(find.widgetWithText(FilledButton, '确认修改'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('确认修改历史记录'), findsNothing);
+    expect(find.text('继续往前测查'), findsOneWidget);
+    expect(find.text('进入往后测查'), findsNothing);
+  });
+
+  testWidgets('ERXin save draft coalesces rapid taps',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      saveDraftDelay: const Duration(milliseconds: 120),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder saveButton = find.widgetWithText(InkWell, '保存草稿');
+    await tester.tap(saveButton);
+    await tester.tap(saveButton);
+    await tester.tap(saveButton);
+    await tester.pump(const Duration(milliseconds: 20));
+
+    expect(client.saveDraftCalls, 1);
+
+    await tester.pumpAndSettle();
+
+    expect(client.saveDraftCalls, 1);
+    expect(find.text('草稿已保存'), findsWidgets);
+  });
+
+  testWidgets('ERXin save draft recreates missing server draft',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      saveDraftDelay: const Duration(milliseconds: 120),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final Finder saveButton = find.widgetWithText(InkWell, '保存草稿');
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    client.failNextDraftUpdateAsNotFound = true;
+    await tester.tap(saveButton);
+    await tester.tap(saveButton);
+    await tester.pumpAndSettle();
+
+    expect(client.saveDraftCalls, 3);
+    expect(client.saveDraftPayloads[1]['id'], 21);
+    expect(client.saveDraftPayloads[2].containsKey('id'), isFalse);
+    expect(find.textContaining('assessment draft not found'), findsNothing);
+    expect(find.text('草稿已保存'), findsWidgets);
   });
 
   testWidgets('ERXin workbench can continue future months and submit',
@@ -1459,7 +1627,7 @@ void main() {
     expect(find.text('继续往前测查'), findsNothing);
     expect(find.text('进入往后测查'), findsOneWidget);
 
-    await tester.tap(find.text('进入往后测查'));
+    await tester.tap(find.widgetWithText(FilledButton, '进入往后测查'));
     await tester.pumpAndSettle();
 
     expect(find.text('54月龄'), findsOneWidget);
@@ -2591,11 +2759,16 @@ const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
 );
 
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
-  _FakeErxinAssessmentClient();
+  _FakeErxinAssessmentClient({this.saveDraftDelay = Duration.zero});
+
+  final Duration saveDraftDelay;
 
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
   int submitDraftCalls = 0;
+  int nextDraftId = 21;
+  bool failNextDraftUpdateAsNotFound = false;
+  final List<Map<String, dynamic>> saveDraftPayloads = <Map<String, dynamic>>[];
 
   static const ErxinDomain _domain = ErxinDomain(
     domainCode: 'GM',
@@ -2763,7 +2936,21 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     Map<String, dynamic> payload,
   ) async {
     saveDraftCalls += 1;
-    return _draftDetail();
+    saveDraftPayloads.add(Map<String, dynamic>.from(payload));
+    if (saveDraftDelay > Duration.zero) {
+      await Future<void>.delayed(saveDraftDelay);
+    }
+    final Object? id = payload['id'];
+    if (failNextDraftUpdateAsNotFound && id is int && id > 0) {
+      failNextDraftUpdateAsNotFound = false;
+      throw const AssessmentScaleApiException('assessment draft not found');
+    }
+    if (id is int && id > 0) {
+      return _draftDetail(id: id);
+    }
+    final int idToReturn = nextDraftId;
+    nextDraftId += 1;
+    return _draftDetail(id: idToReturn);
   }
 
   @override
@@ -2772,7 +2959,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     Map<String, dynamic> payload,
   ) async {
     saveDraftItemCalls += 1;
-    return _draftDetail();
+    return _draftDetail(id: _lastDraftId);
   }
 
   @override
@@ -2780,9 +2967,11 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     submitDraftCalls += 1;
   }
 
-  ErxinDraftDetail _draftDetail() {
-    return const ErxinDraftDetail(
-      id: 21,
+  int get _lastDraftId => nextDraftId <= 21 ? 21 : nextDraftId - 1;
+
+  ErxinDraftDetail _draftDetail({required int id}) {
+    return ErxinDraftDetail(
+      id: id,
       studentId: 31,
       studentName: '陈旭',
       birthDate: '2022-05-11',
@@ -2791,7 +2980,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       answeredItemCount: 1,
       completionPercent: 10,
       updatedTime: '2026-05-08T10:00:00',
-      progress: ErxinDraftProgress(
+      progress: const ErxinDraftProgress(
         itemCount: 7,
         answeredItemCount: 1,
         missingItemCount: 0,

@@ -79,6 +79,7 @@ func (svc *Service) SaveERXinAssessmentDraft(userID int64, input ERXinAssessment
 		Remark:            strings.TrimSpace(input.Remark),
 		CreatedBy:         examinerID,
 		UpdatedBy:         examinerID,
+		ReuseOpenDraft:    true,
 	}, erxinItemScoresFromPasses(input.ItemPasses), nil, nil, examinerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
