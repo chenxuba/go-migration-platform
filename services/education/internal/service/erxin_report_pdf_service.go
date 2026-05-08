@@ -63,6 +63,7 @@ func (r erxinReportPDFRenderer) draw(report model.ERXinReportVO) {
 	r.drawHeader(report)
 	r.drawOriginalResultTable(report)
 	r.drawExaminer(report)
+	r.drawDQReferenceRange()
 }
 
 func (r erxinReportPDFRenderer) drawHeader(report model.ERXinReportVO) {
@@ -165,6 +166,48 @@ func (r erxinReportPDFRenderer) drawExaminer(report model.ERXinReportVO) {
 	r.setTextColor(0, 0, 0)
 	r.setFont(13)
 	r.drawText(305, 456, text)
+}
+
+func (r erxinReportPDFRenderer) drawDQReferenceRange() {
+	const (
+		left        = 67.0
+		top         = 492.0
+		width       = 450.0
+		titleHeight = 21.0
+		cellHeight  = 37.0
+	)
+	items := []struct {
+		rangeText string
+		level     string
+	}{
+		{rangeText: "＞130", level: "优秀"},
+		{rangeText: "110～129", level: "良好"},
+		{rangeText: "80～109", level: "中等"},
+		{rangeText: "70～79", level: "临界偏低"},
+		{rangeText: "＜70", level: "智力发育障碍"},
+	}
+
+	totalHeight := titleHeight + cellHeight
+	cellWidth := width / float64(len(items))
+
+	r.setTextColor(0, 0, 0)
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.SetLineWidth(0.8)
+	r.pdf.RectFromUpperLeft(left, top, width, totalHeight)
+	r.pdf.Line(left, top+titleHeight, left+width, top+titleHeight)
+	for index := 1; index < len(items); index++ {
+		xPosition := left + float64(index)*cellWidth
+		r.pdf.Line(xPosition, top+titleHeight, xPosition, top+totalHeight)
+	}
+
+	r.drawOriginalCellText(left, top, width, titleHeight, "发育商（DQ）参考范围", 11, true)
+	for index, item := range items {
+		cellLeft := left + float64(index)*cellWidth
+		r.setFont(9.5)
+		r.centerText(cellLeft, top+titleHeight+12.5, cellWidth, item.rangeText)
+		r.setFont(10)
+		r.centerText(cellLeft, top+titleHeight+28.5, cellWidth, item.level)
+	}
 }
 
 func (r erxinReportPDFRenderer) drawOriginalCellText(x, y, width, height float64, text string, size float64, center bool) {
