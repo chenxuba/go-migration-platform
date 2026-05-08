@@ -84,6 +84,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   final Map<int, Future<ErxinAssessmentItem>> _itemDetailFetches =
       <int, Future<ErxinAssessmentItem>>{};
   final Map<int, GlobalKey> _itemRowKeys = <int, GlobalKey>{};
+  final Map<String, GlobalKey> _monthSectionKeys = <String, GlobalKey>{};
+  final ScrollController _workspaceScrollController = ScrollController();
   final Map<String, int> _previousStartIndexByDomain = <String, int>{};
   final Map<String, int> _futureEndIndexByDomain = <String, int>{};
   final Set<String> _futureVisibleDomains = <String>{};
@@ -92,7 +94,10 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       PadMessageOverlayController();
   Future<ErxinDraftDetail?>? _saveDraftFuture;
   List<int> _recordRevealMonths = const <int>[];
+  List<int> _workspaceFlashMonths = const <int>[];
   int _recordRevealSerial = 0;
+  int _workspaceFlashSerial = 0;
+  Timer? _workspaceFlashTimer;
   bool _saveDraftFutureSilent = false;
   bool _saveDraftJoinedByManual = false;
 
@@ -638,6 +643,8 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
 
   @override
   void dispose() {
+    _workspaceFlashTimer?.cancel();
+    _workspaceScrollController.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -964,14 +971,20 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
             child: months.isEmpty
                 ? const _CurrentItemsEmptyState(text: '请按右侧规则继续推进测查')
                 : SingleChildScrollView(
+                    controller: _workspaceScrollController,
                     padding: EdgeInsets.zero,
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: <Widget>[
                         for (final int month in months)
                           _AgeMonthSection(
+                            key: _monthSectionKeyFor(
+                              _selectedDomainCode,
+                              month,
+                            ),
                             month: month,
                             isMainAge: month == _mainAgeMonth,
+                            flashing: _workspaceFlashMonths.contains(month),
                             items: _itemsFor(_selectedDomainCode, month),
                             itemPasses: _itemPasses,
                             selectedItemNo: _selectedItemNo,
@@ -1143,6 +1156,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                     revealMonths: _recordRevealMonths,
                     revealSerial: _recordRevealSerial,
                     onTapMonth: _openAssessmentRecord,
+                    onRevealTargets: _revealWorkspaceMonths,
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -1321,6 +1335,89 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     return _itemRowKeys.putIfAbsent(
       itemNo,
       () => GlobalKey(debugLabel: 'erxin-item-row-$itemNo'),
+    );
+  }
+
+  GlobalKey _monthSectionKeyFor(String domainCode, int month) {
+    final String key = '$domainCode-$month';
+    return _monthSectionKeys.putIfAbsent(
+      key,
+      () => GlobalKey(debugLabel: 'erxin-month-section-$key'),
+    );
+  }
+
+  void _revealWorkspaceMonths(List<int> months) {
+    final Set<int> rawTargets = months.toSet();
+    if (rawTargets.isEmpty) {
+      return;
+    }
+    final bool reviewing =
+        _reviewMonthByDomain.containsKey(_selectedDomainCode);
+    if (reviewing) {
+      setState(() {
+        _reviewMonthByDomain.remove(_selectedDomainCode);
+      });
+    }
+    final List<int> targets = _centerMonths
+        .where((int month) => rawTargets.contains(month))
+        .toList(growable: false);
+    if (targets.isEmpty) {
+      return;
+    }
+    setState(() {
+      _workspaceFlashMonths = targets;
+      _workspaceFlashSerial++;
+    });
+    _scheduleWorkspaceFlashClear(_workspaceFlashSerial);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      _scrollWorkspaceMonthsIntoView(targets);
+    });
+  }
+
+  void _scheduleWorkspaceFlashClear(int serial) {
+    _workspaceFlashTimer?.cancel();
+    final List<int> targetMonths = _workspaceFlashMonths;
+    int ticks = 0;
+    _workspaceFlashTimer = Timer.periodic(const Duration(milliseconds: 220), (
+      Timer timer,
+    ) {
+      if (!mounted || serial != _workspaceFlashSerial) {
+        timer.cancel();
+        return;
+      }
+      ticks++;
+      setState(() {
+        _workspaceFlashMonths = ticks.isOdd ? const <int>[] : targetMonths;
+      });
+      if (ticks >= 6) {
+        timer.cancel();
+        if (mounted && serial == _workspaceFlashSerial) {
+          setState(() => _workspaceFlashMonths = const <int>[]);
+        }
+      }
+    });
+  }
+
+  void _scrollWorkspaceMonthsIntoView(List<int> months) {
+    if (!_workspaceScrollController.hasClients || months.isEmpty) {
+      return;
+    }
+    final int firstMonth = months.first;
+    final BuildContext? monthContext =
+        _monthSectionKeys['$_selectedDomainCode-$firstMonth']?.currentContext;
+    if (monthContext == null) {
+      return;
+    }
+    unawaited(
+      Scrollable.ensureVisible(
+        monthContext,
+        alignment: 0,
+        duration: const Duration(milliseconds: 240),
+        curve: Curves.easeOutCubic,
+      ),
     );
   }
 
@@ -4461,16 +4558,19 @@ class _AgeMonthSection extends StatelessWidget {
   const _AgeMonthSection({
     required this.month,
     required this.isMainAge,
+    required this.flashing,
     required this.items,
     required this.itemPasses,
     required this.selectedItemNo,
     required this.itemKeyFor,
     required this.onSelectItem,
     required this.onScore,
+    super.key,
   });
 
   final int month;
   final bool isMainAge;
+  final bool flashing;
   final List<ErxinItemSummary> items;
   final Map<int, bool> itemPasses;
   final int selectedItemNo;
@@ -4488,11 +4588,14 @@ class _AgeMonthSection extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 6),
       clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: flashing ? const Color(0xFFFFF3BF) : Colors.white,
         borderRadius: BorderRadius.circular(8),
       ),
       foregroundDecoration: BoxDecoration(
-        border: Border.all(color: _ErxinColors.line),
+        border: Border.all(
+          color: flashing ? _ErxinColors.orange : _ErxinColors.line,
+          width: flashing ? 1.4 : 1,
+        ),
         borderRadius: BorderRadius.circular(8),
       ),
       child: Column(
@@ -5134,12 +5237,14 @@ class _RuleChecklist extends StatefulWidget {
     required this.revealMonths,
     required this.revealSerial,
     required this.onTapMonth,
+    required this.onRevealTargets,
   });
 
   final List<_RuleRow> rows;
   final List<int> revealMonths;
   final int revealSerial;
   final ValueChanged<int> onTapMonth;
+  final ValueChanged<List<int>> onRevealTargets;
 
   @override
   State<_RuleChecklist> createState() => _RuleChecklistState();
@@ -5176,6 +5281,7 @@ class _RuleChecklistState extends State<_RuleChecklist> {
 
   void _revealTargetMonths(_RuleRow row) {
     _revealMonths(row.targetMonths);
+    widget.onRevealTargets(row.targetMonths);
   }
 
   void _revealMonths(List<int> months) {
