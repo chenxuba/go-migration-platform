@@ -253,6 +253,21 @@ void main() {
     await tester.tap(find.text('重新生成解读'));
     await tester.pump();
 
+    expect(find.text('确认重新生成解读'), findsOneWidget);
+    expect(find.text('正在读取儿心评估结果'), findsNothing);
+    expect(erxinClient.generateInterpretationCalls, 1);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('确认重新生成解读'), findsNothing);
+    expect(erxinClient.generateInterpretationCalls, 1);
+
+    await tester.tap(find.text('重新生成解读'));
+    await tester.pump();
+    await tester.tap(find.text('确认重新生成'));
+    await tester.pump();
+
     expect(find.text('正在读取儿心评估结果'), findsOneWidget);
 
     await tester.pumpAndSettle();

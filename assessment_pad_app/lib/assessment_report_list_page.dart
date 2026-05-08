@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -3858,6 +3860,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   bool _interpretationGenerating = false;
   bool _interpretationFetched = false;
   bool _showInterpretation = false;
+  bool _printing = false;
   String _errorMessage = '';
   String _interpretationErrorMessage = '';
   String _interpretationProgressMessage = '准备生成报告解读...';
@@ -4168,6 +4171,134 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     }
   }
 
+  Future<void> _printCurrentTab() async {
+    if (_printing) {
+      return;
+    }
+    if (_showInterpretation) {
+      await _printInterpretation();
+      return;
+    }
+    await _printResultRecord();
+  }
+
+  Future<void> _printResultRecord() async {
+    Uint8List? bytes = _pdfBytes;
+    if (bytes == null || bytes.isEmpty) {
+      await _loadPdf();
+      bytes = _pdfBytes;
+    }
+    if (!mounted) {
+      return;
+    }
+    if (bytes == null || bytes.isEmpty) {
+      setState(() {
+        _errorMessage = '暂无可打印的评估结果记录';
+      });
+      return;
+    }
+    setState(() {
+      _printing = true;
+      _errorMessage = '';
+    });
+    try {
+      final Pep3RecordSummary record = _displayRecord ?? widget.record;
+      await Printing.layoutPdf(
+        name: _erxinPrintFileName(record, '评估结果记录'),
+        onLayout: (_) async => bytes!,
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _errorMessage = '评估结果记录打印失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _printing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _printInterpretation() async {
+    ErxinReportInterpretation? interpretation = _interpretation;
+    if (interpretation == null || interpretation.isEmpty) {
+      if (!_interpretationFetched && !_interpretationLoading) {
+        await _loadSavedInterpretation();
+        interpretation = _interpretation;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    if (interpretation == null || interpretation.isEmpty) {
+      setState(() {
+        _interpretationErrorMessage = '请先生成报告解读后再打印';
+      });
+      return;
+    }
+    setState(() {
+      _printing = true;
+      _interpretationErrorMessage = '';
+    });
+    try {
+      final Pep3RecordSummary record = _displayRecord ?? widget.record;
+      await Printing.layoutPdf(
+        name: _erxinPrintFileName(record, '报告解读'),
+        onLayout: (PdfPageFormat format) =>
+            _buildErxinInterpretationPrintPdf(record, interpretation!, format),
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _interpretationErrorMessage = '报告解读打印失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _printing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleInterpretationGenerateTap() async {
+    final bool regenerate =
+        _interpretation != null && !_interpretation!.isEmpty;
+    if (!regenerate) {
+      await _generateInterpretation();
+      return;
+    }
+    final bool confirmed = await _confirmRegenerateInterpretation();
+    if (!mounted || !confirmed) {
+      return;
+    }
+    await _generateInterpretation(regenerate: true);
+  }
+
+  Future<bool> _confirmRegenerateInterpretation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: Center(
+            child: _ErxinRegenerateInterpretationConfirmDialog(
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+              onConfirm: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final Pep3RecordSummary record = _displayRecord ?? widget.record;
@@ -4304,22 +4435,18 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
               filled: true,
               onTap: _interpretationLoading
                   ? null
-                  : () => unawaited(
-                        _generateInterpretation(
-                          regenerate: _interpretation != null &&
-                              !_interpretation!.isEmpty,
-                        ),
-                      ),
-            )
-          else
-            const Text(
-              '单页 PDF 预览',
-              style: TextStyle(
-                color: _ReportTheme.blue,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              ),
+                  : () => unawaited(_handleInterpretationGenerateTap()),
             ),
+          if (_showInterpretation) const SizedBox(width: 8),
+          _ToolbarButton(
+            label: _printing ? '打印中' : '打印',
+            icon: Icons.print_rounded,
+            onTap: (_printing ||
+                    (!_showInterpretation && _loading) ||
+                    (_showInterpretation && _interpretationLoading))
+                ? null
+                : () => unawaited(_printCurrentTab()),
+          ),
         ],
       ),
     );
@@ -4439,6 +4566,87 @@ class _ErxinReportTabChip extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ErxinRegenerateInterpretationConfirmDialog extends StatelessWidget {
+  const _ErxinRegenerateInterpretationConfirmDialog({
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 430,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _ReportTheme.line),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x24000000),
+              blurRadius: 30,
+              offset: Offset(0, 14),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Text(
+              '确认重新生成解读',
+              style: TextStyle(
+                color: _ReportTheme.ink,
+                fontSize: 20,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const Text(
+              '重新生成会覆盖当前已保存的报告解读，确认继续吗？',
+              style: TextStyle(
+                color: _ReportTheme.text,
+                fontSize: 14,
+                height: 1.45,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                SizedBox(
+                  width: 92,
+                  child: _ToolbarButton(
+                    label: '取消',
+                    onTap: onCancel,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 122,
+                  child: _ToolbarButton(
+                    label: '确认重新生成',
+                    filled: true,
+                    onTap: onConfirm,
+                  ),
+                ),
+              ],
+            ),
+          ],
         ),
       ),
     );
@@ -5102,6 +5310,185 @@ class _ErxinInterpretationSection extends StatelessWidget {
       ),
     );
   }
+}
+
+Future<Uint8List> _buildErxinInterpretationPrintPdf(
+  Pep3RecordSummary record,
+  ErxinReportInterpretation interpretation,
+  PdfPageFormat format,
+) async {
+  final pw.Font baseFont =
+      await fontFromAssetBundle('assets/fonts/NotoSansSC-Regular.ttf');
+  final PdfPageFormat pageFormat = format.copyWith(
+    marginLeft: 28,
+    marginTop: 28,
+    marginRight: 28,
+    marginBottom: 28,
+  );
+  final pw.Document document = pw.Document(
+    theme: pw.ThemeData.withFont(
+      base: baseFont,
+      bold: baseFont,
+      fontFallback: <pw.Font>[baseFont],
+    ),
+  );
+  const PdfColor ink = PdfColor.fromInt(0xff172033);
+  const PdfColor orange = PdfColor.fromInt(0xfff57c00);
+  const PdfColor orangeSoft = PdfColor.fromInt(0xfffffcf8);
+  const PdfColor border = PdfColor.fromInt(0xffead8c8);
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: pageFormat,
+      build: (pw.Context context) => <pw.Widget>[
+        pw.Container(
+          width: double.infinity,
+          alignment: pw.Alignment.center,
+          child: pw.Text(
+            '0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读',
+            textAlign: pw.TextAlign.center,
+            style: pw.TextStyle(
+              color: ink,
+              fontSize: 16,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ),
+        pw.SizedBox(height: 20),
+        _erxinInterpretationPrintSection(
+          title: '综合解读',
+          paragraphs: <String>[interpretation.summary],
+          orange: orange,
+          orangeSoft: orangeSoft,
+          border: border,
+          ink: ink,
+        ),
+        _erxinInterpretationPrintSection(
+          title: '能区表现',
+          paragraphs: interpretation.domainAnalysis,
+          numbered: true,
+          orange: orange,
+          orangeSoft: orangeSoft,
+          border: border,
+          ink: ink,
+        ),
+        _erxinInterpretationPrintSection(
+          title: '发展建议',
+          paragraphs: interpretation.suggestions,
+          numbered: true,
+          orange: orange,
+          orangeSoft: orangeSoft,
+          border: border,
+          ink: ink,
+        ),
+        _erxinInterpretationPrintSection(
+          title: '注意事项',
+          paragraphs: interpretation.notes,
+          orange: orange,
+          orangeSoft: orangeSoft,
+          border: border,
+          ink: ink,
+        ),
+      ],
+    ),
+  );
+  return document.save();
+}
+
+pw.Widget _erxinInterpretationPrintSection({
+  required String title,
+  required List<String> paragraphs,
+  required PdfColor orange,
+  required PdfColor orangeSoft,
+  required PdfColor border,
+  required PdfColor ink,
+  bool numbered = false,
+}) {
+  final List<String> items = paragraphs
+      .map((String item) => item.trim())
+      .where((String item) => item.isNotEmpty)
+      .toList();
+  if (items.isEmpty) {
+    return pw.SizedBox();
+  }
+  return pw.Container(
+    width: double.infinity,
+    margin: const pw.EdgeInsets.only(bottom: 14),
+    padding: const pw.EdgeInsets.fromLTRB(10, 8, 10, 8),
+    decoration: pw.BoxDecoration(
+      color: orangeSoft,
+      borderRadius: pw.BorderRadius.circular(12),
+      border: pw.Border.all(color: border),
+    ),
+    child: pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.start,
+      children: <pw.Widget>[
+        pw.Text(
+          title,
+          style: pw.TextStyle(
+            color: orange,
+            fontSize: 11.5,
+            fontWeight: pw.FontWeight.bold,
+          ),
+        ),
+        pw.SizedBox(height: 4),
+        for (int index = 0; index < items.length; index++) ...<pw.Widget>[
+          if (numbered)
+            pw.Row(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: <pw.Widget>[
+                pw.SizedBox(
+                  width: 15,
+                  child: pw.Text(
+                    '${index + 1}.',
+                    style: pw.TextStyle(
+                      color: ink,
+                      fontSize: 9.8,
+                      fontWeight: pw.FontWeight.bold,
+                    ),
+                  ),
+                ),
+                pw.Expanded(
+                  child: pw.Text(
+                    _erxinStripLeadingNumber(items[index]),
+                    style: pw.TextStyle(
+                      color: ink,
+                      fontSize: 9.8,
+                      lineSpacing: 2,
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            pw.Text(
+              items[index],
+              style: pw.TextStyle(
+                color: ink,
+                fontSize: 9.8,
+                lineSpacing: 2,
+              ),
+            ),
+          if (index != items.length - 1) pw.SizedBox(height: 2),
+        ],
+      ],
+    ),
+  );
+}
+
+String _erxinStripLeadingNumber(String value) {
+  return value
+      .trim()
+      .replaceFirst(RegExp(r'^(?:\d+|[一二三四五六七八九十]+)[\.．、:：]?\s*'), '')
+      .trim();
+}
+
+String _erxinPrintFileName(Pep3RecordSummary record, String suffix) {
+  final String name = _studentName(record).trim().isEmpty
+      ? '未命名儿童'
+      : _studentName(record).trim();
+  final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
+  return '$name-儿心量表-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
 }
 
 class _LazyReportPdfPreview extends StatefulWidget {
