@@ -32,6 +32,14 @@ const String defaultErxinDraftSubmitPath = String.fromEnvironment(
   'ERXIN_DRAFT_SUBMIT_PATH',
   defaultValue: '/api/v1/assessments/erxin/drafts/submit',
 );
+const String defaultErxinRecordsPagePath = String.fromEnvironment(
+  'ERXIN_RECORDS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/page',
+);
+const String defaultErxinRecordCategoryStatsPath = String.fromEnvironment(
+  'ERXIN_RECORD_CATEGORY_STATS_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/category-stats',
+);
 
 class ErxinAssessmentLaunchArgs {
   const ErxinAssessmentLaunchArgs({

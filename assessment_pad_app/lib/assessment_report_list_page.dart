@@ -8,6 +8,7 @@ import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
+import 'erxin_assessment_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
@@ -20,6 +21,10 @@ class AssessmentReportListScreen extends StatefulWidget {
     required this.onBack,
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.recordClient = const ApiPep3AssessmentClient(),
+    this.erxinRecordClient = const ApiPep3AssessmentClient(
+      recordsPagePath: defaultErxinRecordsPagePath,
+      recordCategoryStatsPath: defaultErxinRecordCategoryStatsPath,
+    ),
     this.staffClient = const ApiTimetableClient(),
     super.key,
   });
@@ -27,6 +32,7 @@ class AssessmentReportListScreen extends StatefulWidget {
   final VoidCallback onBack;
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient recordClient;
+  final Pep3AssessmentClient erxinRecordClient;
   final TimetableClient staffClient;
 
   @override
@@ -101,18 +107,16 @@ class _AssessmentReportListScreenState
             ? widget.scaleClient.fetchCategories(token)
             : Future<List<String>>.value(_categories);
         final Future<Pep3RecordCategoryStats> statsFuture =
-            widget.recordClient.fetchRecordCategoryStats(
+            _fetchRecordCategoryStats(
           token,
-          assessmentCode: '',
           searchKey: _searchKey,
           assessmentDateBegin: dateBegin,
           assessmentDateEnd: dateEnd,
         );
-        final Pep3RecordPage page = await widget.recordClient.fetchRecordsPage(
+        final Pep3RecordPage page = await _fetchRecordsPage(
           token,
           pageIndex: 1,
           pageSize: 50,
-          assessmentCode: '',
           scaleCategory: _selectedCategory,
           searchKey: _searchKey,
           assessmentDateBegin: dateBegin,
@@ -172,19 +176,17 @@ class _AssessmentReportListScreenState
       final List<dynamic> results = await Future.wait<dynamic>(
         <Future<dynamic>>[
           categoriesFuture,
-          widget.recordClient.fetchRecordsPage(
+          _fetchRecordsPage(
             token,
             pageIndex: 1,
             pageSize: 50,
-            assessmentCode: '',
             scaleCategory: _selectedCategory,
             searchKey: _searchKey,
             assessmentDateBegin: dateBegin,
             assessmentDateEnd: dateEnd,
           ),
-          widget.recordClient.fetchRecordCategoryStats(
+          _fetchRecordCategoryStats(
             token,
-            assessmentCode: '',
             searchKey: _searchKey,
             assessmentDateBegin: dateBegin,
             assessmentDateEnd: dateEnd,
@@ -226,6 +228,94 @@ class _AssessmentReportListScreenState
         _errorMessage = '$error';
       });
     }
+  }
+
+  Future<Pep3RecordPage> _fetchRecordsPage(
+    String token, {
+    required int pageIndex,
+    required int pageSize,
+    required String scaleCategory,
+    required String searchKey,
+    required String assessmentDateBegin,
+    required String assessmentDateEnd,
+  }) async {
+    final List<Pep3RecordPage> pages = await Future.wait<Pep3RecordPage>(
+      <Future<Pep3RecordPage>>[
+        widget.recordClient.fetchRecordsPage(
+          token,
+          pageIndex: pageIndex,
+          pageSize: pageSize,
+          assessmentCode: '',
+          scaleCategory: scaleCategory,
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+        widget.erxinRecordClient.fetchRecordsPage(
+          token,
+          pageIndex: pageIndex,
+          pageSize: pageSize,
+          assessmentCode: '',
+          scaleCategory: scaleCategory,
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+      ],
+    );
+    final List<Pep3RecordSummary> items = <Pep3RecordSummary>[
+      ...pages[0].items,
+      ...pages[1].items,
+    ]..sort(_compareRecordSummaryDesc);
+    final List<Pep3RecordSummary> visibleItems =
+        items.take(pageSize).toList(growable: false);
+    return Pep3RecordPage(
+      items: visibleItems,
+      total: pages.fold<int>(
+          0, (int sum, Pep3RecordPage page) => sum + page.total),
+      current: pageIndex,
+      size: visibleItems.length,
+    );
+  }
+
+  Future<Pep3RecordCategoryStats> _fetchRecordCategoryStats(
+    String token, {
+    required String searchKey,
+    required String assessmentDateBegin,
+    required String assessmentDateEnd,
+  }) async {
+    final List<Pep3RecordCategoryStats> statsList =
+        await Future.wait<Pep3RecordCategoryStats>(
+      <Future<Pep3RecordCategoryStats>>[
+        widget.recordClient.fetchRecordCategoryStats(
+          token,
+          assessmentCode: '',
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+        widget.erxinRecordClient.fetchRecordCategoryStats(
+          token,
+          assessmentCode: '',
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+      ],
+    );
+    final Map<String, int> counts = <String, int>{};
+    for (final Pep3RecordCategoryStats stats in statsList) {
+      stats.categoryCounts.forEach((String category, int count) {
+        counts[category] = (counts[category] ?? 0) + count;
+      });
+    }
+    return Pep3RecordCategoryStats(
+      total: statsList.fold<int>(
+        0,
+        (int sum, Pep3RecordCategoryStats stats) => sum + stats.total,
+      ),
+      categoryCounts: counts,
+    );
   }
 
   Future<void> _selectRange() async {
@@ -304,6 +394,10 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
+    if (!_supportsReportActions(record)) {
+      _showMessage('儿心量表记录已接入列表，报告预览稍后补上');
+      return;
+    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
@@ -326,6 +420,10 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openConfigDialog(Pep3RecordSummary record) async {
+    if (!_supportsReportActions(record)) {
+      _showMessage('儿心量表记录已接入列表，评估配置稍后补上');
+      return;
+    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
@@ -382,6 +480,46 @@ class _AssessmentReportListScreenState
       key: 'report-list-top-message',
     );
   }
+
+  bool _supportsReportActions(Pep3RecordSummary record) {
+    return record.assessmentCode.trim().toUpperCase() == 'PEP3';
+  }
+}
+
+int _compareRecordSummaryDesc(Pep3RecordSummary left, Pep3RecordSummary right) {
+  final DateTime rightTime = _recordSortTime(right);
+  final DateTime leftTime = _recordSortTime(left);
+  final int timeCompare = rightTime.compareTo(leftTime);
+  if (timeCompare != 0) {
+    return timeCompare;
+  }
+  return right.id.compareTo(left.id);
+}
+
+DateTime _recordSortTime(Pep3RecordSummary record) {
+  final DateTime? updatedTime = _tryParseRecordDateTime(record.updatedTime);
+  if (updatedTime != null) {
+    return updatedTime;
+  }
+  final DateTime? createdTime = _tryParseRecordDateTime(record.createdTime);
+  if (createdTime != null) {
+    return createdTime;
+  }
+  final DateTime? assessmentDate =
+      _tryParseRecordDateTime(record.assessmentDate);
+  if (assessmentDate != null) {
+    return assessmentDate;
+  }
+  return DateTime.fromMillisecondsSinceEpoch(0);
+}
+
+DateTime? _tryParseRecordDateTime(String raw) {
+  final String value = raw.trim();
+  if (value.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(value) ??
+      DateTime.tryParse(value.replaceFirst(' ', 'T'));
 }
 
 class _ReportTheme extends InheritedWidget {
