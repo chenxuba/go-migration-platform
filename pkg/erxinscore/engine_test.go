@@ -95,6 +95,78 @@ func TestScoreUsesBasalDefaultPassAndCeiling(t *testing.T) {
 	}
 }
 
+func TestScoreCompletesWhenBasalStopsAtMinimumBoundary(t *testing.T) {
+	engine, err := NewEngine(boundaryScoreFixtureItems())
+	if err != nil {
+		t.Fatalf("NewEngine returned error: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2020, 4, 1, 0, 0, 0, 0, time.UTC),
+		ItemPasses: boundaryScorePasses(map[int]bool{
+			1: false,
+			2: true,
+			3: true,
+			4: false,
+			5: false,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if result.MainAgeMonth != 3 || !result.Complete {
+		t.Fatalf("expected complete 3-month boundary result, got main=%d warnings=%v", result.MainAgeMonth, result.Warnings)
+	}
+
+	gm := findDomain(t, result, DomainGrossMotor)
+	if !gm.Complete || !gm.BasalComplete || gm.BasalAgeMonth != 1 {
+		t.Fatalf("unexpected basal boundary domain result: %+v", gm)
+	}
+	if len(gm.DefaultPassedItemNumbers) != 0 {
+		t.Fatalf("minimum-boundary basal must not default-pass lower items: %v", gm.DefaultPassedItemNumbers)
+	}
+	if !strings.Contains(strings.Join(gm.Warnings, "|"), "已测至最低月龄") {
+		t.Fatalf("expected minimum-boundary warning, got %v", gm.Warnings)
+	}
+}
+
+func TestScoreCompletesWhenCeilingStopsAtMaximumBoundary(t *testing.T) {
+	engine, err := NewEngine(boundaryScoreFixtureItems())
+	if err != nil {
+		t.Fatalf("NewEngine returned error: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		BirthDate:      time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
+		ItemPasses: boundaryScorePasses(map[int]bool{
+			60: true,
+			66: true,
+			72: true,
+			78: true,
+			84: true,
+		}),
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if result.MainAgeMonth != 72 || !result.Complete {
+		t.Fatalf("expected complete 72-month boundary result, got main=%d warnings=%v", result.MainAgeMonth, result.Warnings)
+	}
+
+	gm := findDomain(t, result, DomainGrossMotor)
+	if !gm.Complete || !gm.CeilingComplete || gm.CeilingAgeMonth != 84 {
+		t.Fatalf("unexpected ceiling boundary domain result: %+v", gm)
+	}
+	if !containsInt(gm.PassedItemNumbers, boundaryScoreItemNo(DomainGrossMotor, 84)) {
+		t.Fatalf("expected measured 84-month item to participate in scoring: %v", gm.PassedItemNumbers)
+	}
+	if !strings.Contains(strings.Join(gm.Warnings, "|"), "已测至最高月龄") {
+		t.Fatalf("expected maximum-boundary warning, got %v", gm.Warnings)
+	}
+}
+
 func TestScoreRejectsChildrenOverSixYearsOld(t *testing.T) {
 	engine, err := NewEngine(scoreFixtureItems())
 	if err != nil {
@@ -254,6 +326,45 @@ func scoreFixtureItemNo(domainCode string, ageMonth int) int {
 	for idx, code := range DomainOrder {
 		if code == domainCode {
 			return (idx+1)*100 + ageMonth
+		}
+	}
+	return ageMonth
+}
+
+func boundaryScoreFixtureItems() []ItemDefinition {
+	items := make([]ItemDefinition, 0, len(DomainOrder)*len(StandardAgeMonths))
+	for _, domainCode := range DomainOrder {
+		for _, ageMonth := range StandardAgeMonths {
+			items = append(items, ItemDefinition{
+				ItemNo:       boundaryScoreItemNo(domainCode, ageMonth),
+				ItemTitle:    "fixture",
+				TestItem:     "fixture",
+				AgeMonth:     ageMonth,
+				DomainCode:   domainCode,
+				DomainName:   domainCode,
+				ItemWeight:   1,
+				Method:       "method",
+				PassCriteria: "criteria",
+			})
+		}
+	}
+	return items
+}
+
+func boundaryScorePasses(passesByAge map[int]bool) map[int]bool {
+	passes := make(map[int]bool, len(DomainOrder)*len(passesByAge))
+	for _, domainCode := range DomainOrder {
+		for ageMonth, passed := range passesByAge {
+			passes[boundaryScoreItemNo(domainCode, ageMonth)] = passed
+		}
+	}
+	return passes
+}
+
+func boundaryScoreItemNo(domainCode string, ageMonth int) int {
+	for idx, code := range DomainOrder {
+		if code == domainCode {
+			return (idx+1)*1000 + ageMonth
 		}
 	}
 	return ageMonth

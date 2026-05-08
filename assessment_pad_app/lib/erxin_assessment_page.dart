@@ -362,9 +362,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
 
   bool _canEnterFutureMonthsForDomain(String domainCode) {
     return !_futureVisibleDomains.contains(domainCode) &&
-        _hasPreviousBaselineForDomain(domainCode) &&
-        _previousMonthsCompleteForDomain(domainCode) &&
-        _mainMonthCompleteForDomain(domainCode);
+        _mainAgeIndex < _standardAgeMonths.length - 1 &&
+        _mainMonthCompleteForDomain(domainCode) &&
+        _previousSearchResolvedForDomain(domainCode);
   }
 
   bool get _futureMonthsComplete {
@@ -419,6 +419,42 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final int end = _futureEndIndexByDomain[domainCode] ??
         math.min(_standardAgeMonths.length - 1, index + 2);
     return end < _standardAgeMonths.length - 1;
+  }
+
+  bool _previousBoundaryStopForDomain(String domainCode) {
+    if (_hasPreviousBaselineForDomain(domainCode) ||
+        _previousStartIndexForDomain(domainCode) > 0) {
+      return false;
+    }
+    final List<int> previous = _previousMonthsForDomain(domainCode);
+    return previous.isEmpty || _previousMonthsCompleteForDomain(domainCode);
+  }
+
+  bool _previousSearchResolvedForDomain(String domainCode) {
+    return _hasPreviousBaselineForDomain(domainCode) ||
+        _previousBoundaryStopForDomain(domainCode);
+  }
+
+  bool _futureBoundaryStopForDomain(String domainCode) {
+    final int mainIndex = _mainAgeIndex;
+    if (mainIndex < 0) {
+      return false;
+    }
+    if (!_futureVisibleDomains.contains(domainCode)) {
+      return mainIndex >= _standardAgeMonths.length - 1;
+    }
+    if (!_futureMonthsCompleteForDomain(domainCode)) {
+      return false;
+    }
+    final int end = _futureEndIndexByDomain[domainCode] ??
+        math.min(_standardAgeMonths.length - 1, mainIndex + 2);
+    return end >= _standardAgeMonths.length - 1 &&
+        !_hasFutureCeilingForDomain(domainCode);
+  }
+
+  bool _futureSearchResolvedForDomain(String domainCode) {
+    return _hasFutureCeilingForDomain(domainCode) ||
+        _futureBoundaryStopForDomain(domainCode);
   }
 
   @override
@@ -566,6 +602,14 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       domainCode,
     );
     final List<int> ceilingMonths = _futureCeilingMonthsForDomain(domainCode);
+    final bool previousBoundaryStop = _previousBoundaryStopForDomain(
+      domainCode,
+    );
+    final bool previousResolved =
+        _hasPreviousBaselineForDomain(domainCode) || previousBoundaryStop;
+    final bool futureBoundaryStop = _futureBoundaryStopForDomain(domainCode);
+    final bool futureResolved =
+        _hasFutureCeilingForDomain(domainCode) || futureBoundaryStop;
     final List<_RuleRow> rows = <_RuleRow>[
       for (final int month in _recordMonthsForDomain(domainCode))
         _RuleRow(
@@ -581,18 +625,27 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         ),
       _RuleRow(
         label: '前测基线',
-        value: _hasPreviousBaselineForDomain(domainCode) ? '已建立' : '未形成',
-        done: _hasPreviousBaselineForDomain(domainCode),
+        value: _hasPreviousBaselineForDomain(domainCode)
+            ? '已建立'
+            : previousBoundaryStop
+                ? '已到最低月龄'
+                : '未形成',
+        done: previousResolved,
         targetMonths: baselineMonths,
       ),
     ];
     if (_futureVisibleDomains.contains(domainCode) ||
-        _hasAnsweredFutureMonth(domainCode)) {
+        _hasAnsweredFutureMonth(domainCode) ||
+        futureBoundaryStop) {
       rows.add(
         _RuleRow(
           label: '后测封顶',
-          value: _hasFutureCeilingForDomain(domainCode) ? '已建立' : '未形成',
-          done: _hasFutureCeilingForDomain(domainCode),
+          value: _hasFutureCeilingForDomain(domainCode)
+              ? '已建立'
+              : futureBoundaryStop
+                  ? '已到最高月龄'
+                  : '未形成',
+          done: futureResolved,
           targetMonths: ceilingMonths,
         ),
       );
@@ -607,15 +660,18 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final bool canContinuePrevious = _canContinuePreviousMonths;
     final bool canEnterFuture = _canEnterFutureMonths;
     final bool canContinueFuture = _canContinueFutureMonths;
+    final bool domainComplete = _domainStopRuleComplete(_selectedDomainCode);
     final String actionLabel = canContinuePrevious
         ? '继续往前测查'
         : canContinueFuture
             ? '继续往后测查'
-            : futureShown
-                ? _hasFutureCeiling
-                    ? '本能区测查完成'
-                    : '往后测查已展开'
-                : '进入往后测查';
+            : domainComplete
+                ? '本能区测查完成'
+                : futureShown
+                    ? _hasFutureCeiling
+                        ? '本能区测查完成'
+                        : '往后测查已展开'
+                    : '进入往后测查';
     final VoidCallback? actionHandler = canContinuePrevious
         ? _continuePreviousMonths
         : canEnterFuture
@@ -658,7 +714,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                       ? Icons.keyboard_double_arrow_left_rounded
                       : canContinueFuture
                           ? Icons.keyboard_double_arrow_right_rounded
-                          : Icons.arrow_forward_rounded,
+                          : domainComplete
+                              ? Icons.check_circle_rounded
+                              : Icons.arrow_forward_rounded,
                   color: _ErxinColors.blue,
                 ),
                 const SizedBox(height: 10),
@@ -696,9 +754,14 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                 Text(
                   _hasFutureCeiling
                       ? '往后测查已形成连续两个标准月龄全不通过，本能区达到停止规则。'
-                      : _hasPreviousBaseline
-                          ? '前测已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
-                          : '前测尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
+                      : _futureBoundaryStopForDomain(_selectedDomainCode)
+                          ? '已测至最高标准月龄，仍未形成后测封顶，按边界规则强行停止。'
+                          : _hasPreviousBaseline
+                              ? '前测已形成连续两个标准月龄全通过，继续往后寻找连续两个标准月龄全不通过。'
+                              : _previousBoundaryStopForDomain(
+                                      _selectedDomainCode)
+                                  ? '已测至最低标准月龄，仍未形成前测基线，按边界规则进入往后测查。'
+                                  : '前测尚未形成连续两个标准月龄全通过，需继续向更低月龄追测。',
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
@@ -1338,7 +1401,9 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
       if (_canEnterFutureMonthsForDomain(code)) {
         _selectDomain(code);
-        return '${_domainName(code)}已建立前测基线，请先进入往后测查';
+        return _hasPreviousBaselineForDomain(code)
+            ? '${_domainName(code)}已建立前测基线，请先进入往后测查'
+            : '${_domainName(code)}已测至最低月龄，请先进入往后测查';
       }
       if (_canContinueFutureMonthsForDomain(code)) {
         _selectDomain(code);
@@ -1527,25 +1592,13 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   }
 
   bool _domainStopRuleComplete(String domainCode) {
-    if (!_previousMonthsCompleteForDomain(domainCode) ||
-        !_mainMonthCompleteForDomain(domainCode)) {
+    if (!_mainMonthCompleteForDomain(domainCode)) {
       return false;
     }
-    final bool previousResolved = _hasPreviousBaselineForDomain(domainCode) ||
-        _previousStartIndexForDomain(domainCode) <= 0;
-    if (!previousResolved) {
+    if (!_previousSearchResolvedForDomain(domainCode)) {
       return false;
     }
-    if (!_futureVisibleDomains.contains(domainCode)) {
-      return false;
-    }
-    final bool futureResolved = _hasFutureCeilingForDomain(domainCode) ||
-        (_futureMonthsCompleteForDomain(domainCode) &&
-            (_futureEndIndexByDomain[domainCode] ??
-                    math.min(
-                        _standardAgeMonths.length - 1, _mainAgeIndex + 2)) >=
-                _standardAgeMonths.length - 1);
-    return futureResolved;
+    return _futureSearchResolvedForDomain(domainCode);
   }
 
   String _recordStatusText(String domainCode, int month) {
@@ -1602,8 +1655,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   void _reconcileAfterScore(String domainCode) {
     _trimPreviousWindowToActiveBaseline(domainCode);
     final bool previousReady = _mainMonthCompleteForDomain(domainCode) &&
-        _previousMonthsCompleteForDomain(domainCode) &&
-        _hasPreviousBaselineForDomain(domainCode);
+        _previousSearchResolvedForDomain(domainCode);
     if (!previousReady) {
       _futureVisibleDomains.remove(domainCode);
       _futureEndIndexByDomain.remove(domainCode);
@@ -1779,7 +1831,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       }
     }
     if (_canEnterFutureMonths) {
-      return '前测已达标，可以进入往后测查';
+      return _hasPreviousBaseline ? '前测已达标，可以进入往后测查' : '已到最低月龄，前测强行停止，可进入往后测查';
     }
     if (_canContinuePreviousMonths) {
       final int currentStart =
@@ -1812,12 +1864,23 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     if (_hasFutureCeiling) {
       return '当前能区停止规则已满足，可切换下一个能区或提交';
     }
+    if (_domainStopRuleComplete(_selectedDomainCode)) {
+      return '当前能区边界停止，可切换下一个能区或提交';
+    }
     if (_futureVisibleDomains.contains(_selectedDomainCode) &&
         !_hasFutureCeiling) {
-      return _futureMonthsComplete ? '已到最高可追测月龄，仍未形成连续全不通过' : '先完成当前可见的往后测查题目';
+      return _futureBoundaryStopForDomain(_selectedDomainCode)
+          ? '已到最高月龄，后测强行停止'
+          : _futureMonthsComplete
+              ? '已到最高可追测月龄，仍未形成连续全不通过'
+              : '先完成当前可见的往后测查题目';
     }
     if (!_hasPreviousBaseline) {
-      return _previousMonthsComplete ? '已到最低可追测月龄，仍未形成连续全通过' : '先完成当前可见的往前测查题目';
+      return _previousBoundaryStopForDomain(_selectedDomainCode)
+          ? '已到最低可追测月龄，仍未形成连续全通过'
+          : _previousMonthsComplete
+              ? '已到最低可追测月龄，仍未形成连续全通过'
+              : '先完成当前可见的往前测查题目';
     }
     return '当前可见题目已完成';
   }

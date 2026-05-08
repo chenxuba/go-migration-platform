@@ -1955,6 +1955,129 @@ void main() {
     expect(client.submitDraftCalls, 1);
   });
 
+  testWidgets('ERXin lower boundary stop allows entering future search',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      groups: _erxinBoundaryGroups(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3个月',
+              birthDate: '2026-02-08',
+              assessmentDate: '2026-05-08',
+              examinerName: '陈老师',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('主测月龄 3月龄'), findsOneWidget);
+    await _tapErxinScore(tester, '3月题', true);
+    await _tapErxinScore(tester, '2月题', true);
+    await _tapErxinScore(tester, '1月题', false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('继续往前测查'), findsNothing);
+    expect(find.text('已到最低月龄'), findsOneWidget);
+    expect(find.text('进入往后测查'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '进入往后测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('4月龄'), findsOneWidget);
+    expect(find.text('5月龄'), findsOneWidget);
+
+    await _tapErxinScore(tester, '4月题', false);
+    await _tapErxinScore(tester, '5月题', false);
+    await tester.pumpAndSettle();
+
+    expect(find.text('本能区测查完成'), findsOneWidget);
+    await tester.tap(find.text('提交记录'));
+    await tester.pumpAndSettle();
+
+    expect(client.submitDraftCalls, 1);
+  });
+
+  testWidgets('ERXin upper boundary stop completes future search',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient(
+      groups: _erxinBoundaryGroups(),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '6岁',
+              birthDate: '2020-05-08',
+              assessmentDate: '2026-05-08',
+              examinerName: '陈老师',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('主测月龄 72月龄'), findsOneWidget);
+    await _tapErxinScore(tester, '72月题', true);
+    await _tapErxinScore(tester, '66月题', true);
+    await _tapErxinScore(tester, '60月题', true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('进入往后测查'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '进入往后测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('78月龄'), findsOneWidget);
+    expect(find.text('84月龄'), findsOneWidget);
+
+    await _tapErxinScore(tester, '78月题', true);
+    await _tapErxinScore(tester, '84月题', true);
+    await tester.pumpAndSettle();
+
+    expect(find.text('已到最高月龄'), findsOneWidget);
+    expect(find.text('本能区测查完成'), findsOneWidget);
+
+    await tester.tap(find.text('提交记录'));
+    await tester.pumpAndSettle();
+
+    expect(client.submitDraftCalls, 1);
+  });
+
   testWidgets('selected PEP3 scale opens dedicated workbench',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -3070,9 +3193,13 @@ const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
 );
 
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
-  _FakeErxinAssessmentClient({this.saveDraftDelay = Duration.zero});
+  _FakeErxinAssessmentClient({
+    this.saveDraftDelay = Duration.zero,
+    List<ErxinAgeGroup>? groups,
+  }) : groups = groups ?? _groups;
 
   final Duration saveDraftDelay;
+  final List<ErxinAgeGroup> groups;
 
   int saveDraftCalls = 0;
   int saveDraftItemCalls = 0;
@@ -3206,14 +3333,18 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
 
   @override
   Future<ErxinTemplateSummary> fetchTemplateSummary(String token) async {
-    return const ErxinTemplateSummary(
+    final int itemCount = groups.fold<int>(
+      0,
+      (int total, ErxinAgeGroup group) => total + group.items.length,
+    );
+    return ErxinTemplateSummary(
       templateCode: 'ERXIN2_ASSESSMENT_FORM',
       title: '儿心量表-II测评录入表',
       scaleCode: 'ERXIN2',
       scaleVersion: 'WS-T-580-2017',
-      itemCount: 5,
-      domains: <ErxinDomain>[_domain],
-      ageGroups: _groups,
+      itemCount: itemCount,
+      domains: const <ErxinDomain>[_domain],
+      ageGroups: groups,
     );
   }
 
@@ -3222,7 +3353,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     String token, {
     required int itemNo,
   }) async {
-    for (final ErxinAgeGroup group in _groups) {
+    for (final ErxinAgeGroup group in groups) {
       for (final ErxinItemSummary item in group.items) {
         if (item.itemNo == itemNo) {
           return ErxinAssessmentItem(
@@ -3305,6 +3436,59 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
       ),
     );
   }
+}
+
+const List<int> _erxinBoundaryAgeMonths = <int>[
+  1,
+  2,
+  3,
+  4,
+  5,
+  6,
+  7,
+  8,
+  9,
+  10,
+  11,
+  12,
+  15,
+  18,
+  21,
+  24,
+  27,
+  30,
+  33,
+  36,
+  42,
+  48,
+  54,
+  60,
+  66,
+  72,
+  78,
+  84,
+];
+
+List<ErxinAgeGroup> _erxinBoundaryGroups() {
+  return <ErxinAgeGroup>[
+    for (final int month in _erxinBoundaryAgeMonths)
+      ErxinAgeGroup(
+        ageMonth: month,
+        title: '$month月龄',
+        items: <ErxinItemSummary>[
+          ErxinItemSummary(
+            itemNo: 1000 + month,
+            itemTitle: '$month月题',
+            testItem: '$month月题',
+            ageMonth: month,
+            domainCode: 'GM',
+            domainName: '大运动',
+            parentReportAllowed: false,
+            attentionIfFailed: false,
+          ),
+        ],
+      ),
+  ];
 }
 
 Future<void> _tapErxinScore(
