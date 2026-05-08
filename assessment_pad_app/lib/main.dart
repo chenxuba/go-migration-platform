@@ -168,6 +168,7 @@ class AssessmentPadApp extends StatelessWidget {
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (BuildContext context) => Scaffold(
+            resizeToAvoidBottomInset: false,
             body: PadViewport(
               child: ErxinAssessmentPage(
                 args: args,

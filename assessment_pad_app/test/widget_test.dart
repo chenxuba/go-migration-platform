@@ -1398,7 +1398,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('全部展开'), findsNothing);
-    expect(find.text('主测月龄 48月'), findsOneWidget);
+    expect(find.text('主测月龄 48月龄'), findsOneWidget);
+    expect(find.text('主测月龄48月龄'), findsOneWidget);
+    expect(find.text('主测月龄'), findsOneWidget);
     expect(find.textContaining('当前可见：'), findsNothing);
     expect(find.text('36月龄'), findsOneWidget);
     expect(find.text('42月龄'), findsOneWidget);
@@ -1424,10 +1426,18 @@ void main() {
     expect(find.text('48月题'), findsOneWidget);
     expect(find.text('继续往前测查'), findsOneWidget);
     expect(find.textContaining('继续追加33月'), findsOneWidget);
+    expect(find.text('往前42月龄'), findsOneWidget);
+    expect(find.text('往前36月龄'), findsOneWidget);
+
+    await tester.tap(find.text('往前36月龄'));
+    await tester.pumpAndSettle();
+    expect(find.text('大运动 · 36月龄记录'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(FilledButton, '继续往前测查'));
     await tester.pumpAndSettle();
 
+    expect(find.text('大运动 · 当前测查'), findsOneWidget);
+    expect(find.text('大运动 · 36月龄记录'), findsNothing);
     expect(find.text('33月龄'), findsOneWidget);
   });
 
@@ -1463,15 +1473,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.enterText(find.byType(TextFormField), '48题备注');
-    await tester.pump();
+    await _enterErxinRemark(tester, '48题备注');
     expect(find.text('48题备注'), findsOneWidget);
 
     await _tapErxinItemRow(tester, '42月题');
     expect(find.text('48题备注'), findsNothing);
 
-    await tester.enterText(find.byType(TextFormField), '42题备注');
-    await tester.pump();
+    await _enterErxinRemark(tester, '42题备注');
     await _tapErxinItemRow(tester, '48月题');
 
     expect(find.text('48题备注'), findsOneWidget);
@@ -1491,6 +1499,52 @@ void main() {
         ),
       ),
     );
+  });
+
+  testWidgets('ERXin remark editor opens above keyboard area',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+      tester.view.resetViewInsets();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          resizeToAvoidBottomInset: false,
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('添加本题备注').last);
+    await tester.pumpAndSettle();
+    expect(
+      tester.getTopLeft(find.byType(TextField).last).dy,
+      lessThan(384),
+    );
+
+    tester.view.viewInsets = const FakeViewPadding(bottom: 320);
+    await tester.pumpAndSettle();
+    final Rect editorRect = tester.getRect(find.byType(TextField).last);
+    expect(editorRect.bottom, lessThan(448));
   });
 
   testWidgets('ERXin record rows open history and confirm edits',
@@ -1533,7 +1587,10 @@ void main() {
     expect(find.text('前测基线'), findsOneWidget);
     expect(find.text('已建立'), findsOneWidget);
 
-    await tester.tap(find.text('往前42月'));
+    expect(find.text('往前42月龄'), findsOneWidget);
+    expect(find.text('往前42月'), findsNothing);
+
+    await tester.tap(find.text('往前42月龄'));
     await tester.pumpAndSettle();
 
     expect(find.text('大运动 · 42月龄记录'), findsOneWidget);
@@ -1553,6 +1610,62 @@ void main() {
     expect(find.text('确认修改历史记录'), findsNothing);
     expect(find.text('继续往前测查'), findsOneWidget);
     expect(find.text('进入往后测查'), findsNothing);
+
+    await tester.tap(find.widgetWithText(FilledButton, '继续往前测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 当前测查'), findsOneWidget);
+    expect(find.textContaining('当前题目说明：133 33月题'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('33月题')).dy, lessThan(560));
+  });
+
+  testWidgets('ERXin progress action leaves selected history month',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: _FakeErxinAssessmentClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await _tapErxinScore(tester, '36月题', true);
+    await _tapErxinScore(tester, '42月题', true);
+    await _tapErxinScore(tester, '48月题', true);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('往前36月龄'));
+    await tester.pumpAndSettle();
+    expect(find.text('大运动 · 36月龄记录'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(FilledButton, '进入往后测查'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('大运动 · 当前测查'), findsOneWidget);
+    expect(find.text('大运动 · 36月龄记录'), findsNothing);
+    expect(find.text('54月龄'), findsOneWidget);
+    expect(find.text('60月龄'), findsOneWidget);
   });
 
   testWidgets('ERXin save draft coalesces rapid taps',
@@ -3094,6 +3207,19 @@ Future<void> _tapErxinItemRow(
   );
   expect(row, findsOneWidget);
   await tester.tap(row);
+  await tester.pumpAndSettle();
+}
+
+Future<void> _enterErxinRemark(
+  WidgetTester tester,
+  String remark,
+) async {
+  await tester.tap(find.text('添加本题备注').last);
+  await tester.pumpAndSettle();
+  expect(find.text('题目备注'), findsWidgets);
+  await tester.enterText(find.byType(TextField).last, remark);
+  await tester.pump();
+  await tester.tap(find.widgetWithText(FilledButton, '完成'));
   await tester.pumpAndSettle();
 }
 
