@@ -78,6 +78,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   ];
 
   final Map<int, bool> _itemPasses = <int, bool>{};
+  final Map<int, String> _itemRemarks = <int, String>{};
   final Map<int, ErxinAssessmentItem> _itemDetailCache =
       <int, ErxinAssessmentItem>{};
   final Map<int, Future<ErxinAssessmentItem>> _itemDetailFetches =
@@ -711,7 +712,12 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
             ),
           ),
           const SizedBox(height: 10),
-          const _RightRemarkSection(height: _erxinRightRemarkSectionHeight),
+          _RightRemarkSection(
+            height: _erxinRightRemarkSectionHeight,
+            itemNo: _selectedItemNo,
+            remark: _itemRemarks[_selectedItemNo] ?? '',
+            onChanged: _updateItemRemark,
+          ),
         ],
       ),
     );
@@ -871,6 +877,18 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
   void _selectItem(int itemNo) {
     setState(() => _selectedItemNo = itemNo);
     _prefetchSelectedItem();
+  }
+
+  void _updateItemRemark(int itemNo, String remark) {
+    if (itemNo <= 0) {
+      return;
+    }
+    final String normalized = remark.trim();
+    if (normalized.isEmpty) {
+      _itemRemarks.remove(itemNo);
+    } else {
+      _itemRemarks[itemNo] = normalized;
+    }
   }
 
   void _scoreItem(int itemNo, bool passed) {
@@ -1138,6 +1156,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
         'draftId': draftId,
         'itemNo': itemNo,
         'passed': _itemPasses[itemNo],
+        'remark': _itemRemarks[itemNo]?.trim() ?? '',
       },
     );
   }
@@ -1227,6 +1246,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
       'birthDate': widget.args.birthDate.trim(),
       'assessmentDate': widget.args.assessmentDate.trim(),
       'itemPassList': _itemPassList(),
+      if (_itemRemarks.isNotEmpty) 'itemRemarkList': _itemRemarkList(),
     };
   }
 
@@ -1234,7 +1254,23 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
     final List<int> itemNos = _itemPasses.keys.toList()..sort();
     return <Map<String, dynamic>>[
       for (final int itemNo in itemNos)
-        <String, dynamic>{'itemNo': itemNo, 'passed': _itemPasses[itemNo]},
+        <String, dynamic>{
+          'itemNo': itemNo,
+          'passed': _itemPasses[itemNo],
+          'remark': _itemRemarks[itemNo]?.trim() ?? '',
+        },
+    ];
+  }
+
+  List<Map<String, dynamic>> _itemRemarkList() {
+    final List<int> itemNos = _itemRemarks.keys.toList()..sort();
+    return <Map<String, dynamic>>[
+      for (final int itemNo in itemNos)
+        if ((_itemRemarks[itemNo] ?? '').trim().isNotEmpty)
+          <String, dynamic>{
+            'itemNo': itemNo,
+            'remark': (_itemRemarks[itemNo] ?? '').trim(),
+          },
     ];
   }
 
@@ -2099,6 +2135,11 @@ class _DomainRow extends StatelessWidget {
             children: <Widget>[
               Row(
                 children: <Widget>[
+                  _DomainIcon(
+                    icon: _domainIconFor(domain),
+                    selected: selected,
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       domain.domainName,
@@ -2156,6 +2197,52 @@ class _DomainRow extends StatelessWidget {
       ),
     );
   }
+}
+
+class _DomainIcon extends StatelessWidget {
+  const _DomainIcon({required this.icon, required this.selected});
+
+  final IconData icon;
+  final bool selected;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 24,
+      height: 24,
+      decoration: BoxDecoration(
+        color: selected ? _ErxinColors.blue : const Color(0xFFF1F5F9),
+        borderRadius: BorderRadius.circular(7),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        icon,
+        size: 15,
+        color: selected ? Colors.white : _ErxinColors.body,
+      ),
+    );
+  }
+}
+
+IconData _domainIconFor(ErxinDomain domain) {
+  final String code = domain.domainCode.toUpperCase();
+  final String name = domain.domainName;
+  if (code == 'GM' || name.contains('大运动')) {
+    return Icons.directions_run_rounded;
+  }
+  if (code == 'FM' || name.contains('精细')) {
+    return Icons.gesture_rounded;
+  }
+  if (code == 'AD' || name.contains('适应')) {
+    return Icons.psychology_alt_rounded;
+  }
+  if (code == 'LANG' || name.contains('语言')) {
+    return Icons.record_voice_over_rounded;
+  }
+  if (code == 'SOC' || name.contains('社会') || name.contains('社交')) {
+    return Icons.groups_2_rounded;
+  }
+  return Icons.extension_rounded;
 }
 
 class _AllItemsButton extends StatelessWidget {
@@ -2503,9 +2590,17 @@ String _inlineDetailText(String value) {
 }
 
 class _RightRemarkSection extends StatelessWidget {
-  const _RightRemarkSection({required this.height});
+  const _RightRemarkSection({
+    required this.height,
+    required this.itemNo,
+    required this.remark,
+    required this.onChanged,
+  });
 
   final double height;
+  final int itemNo;
+  final String remark;
+  final void Function(int itemNo, String remark) onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -2515,8 +2610,8 @@ class _RightRemarkSection extends StatelessWidget {
         padding: const EdgeInsets.only(top: _erxinDetailPanelTopPadding),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
-          children: const <Widget>[
-            SizedBox(
+          children: <Widget>[
+            const SizedBox(
               height: _erxinDetailHeaderHeight,
               child: Align(
                 alignment: Alignment.centerLeft,
@@ -2530,10 +2625,14 @@ class _RightRemarkSection extends StatelessWidget {
                 ),
               ),
             ),
-            SizedBox(height: _erxinDetailHeaderGap),
+            const SizedBox(height: _erxinDetailHeaderGap),
             SizedBox(
               height: _erxinDetailContentHeight,
-              child: _RemarkBox(),
+              child: _RemarkBox(
+                itemNo: itemNo,
+                remark: remark,
+                onChanged: onChanged,
+              ),
             ),
           ],
         ),
@@ -2543,18 +2642,31 @@ class _RightRemarkSection extends StatelessWidget {
 }
 
 class _RemarkBox extends StatelessWidget {
-  const _RemarkBox();
+  const _RemarkBox({
+    required this.itemNo,
+    required this.remark,
+    required this.onChanged,
+  });
+
+  final int itemNo;
+  final String remark;
+  final void Function(int itemNo, String remark) onChanged;
 
   @override
   Widget build(BuildContext context) {
-    return TextField(
+    final bool enabled = itemNo > 0;
+    return TextFormField(
+      key: ValueKey<int>(itemNo),
+      initialValue: remark,
       maxLines: null,
       expands: true,
       textAlignVertical: TextAlignVertical.top,
+      enabled: enabled,
+      onChanged: enabled ? (String value) => onChanged(itemNo, value) : null,
       onTapOutside: (_) => FocusManager.instance.primaryFocus?.unfocus(),
       style: const TextStyle(fontSize: 13, height: 1.25),
       decoration: InputDecoration(
-        hintText: '添加本题备注',
+        hintText: enabled ? '添加本题备注' : '选择题目后添加备注',
         filled: true,
         fillColor: const Color(0xFFF8FAFD),
         contentPadding: const EdgeInsets.all(9),
@@ -2660,6 +2772,7 @@ class _RuleChecklist extends StatelessWidget {
         itemBuilder: (BuildContext context, int index) {
           final _RuleRow row = rows[index];
           final bool clickable = row.month != null;
+          final bool unmetResult = _ruleRowHasUnmetResult(row);
           return Material(
             color: row.selected ? const Color(0xFFEAF2FF) : Colors.white,
             child: InkWell(
@@ -2673,9 +2786,14 @@ class _RuleChecklist extends StatelessWidget {
                       Icon(
                         row.done
                             ? Icons.check_circle
-                            : Icons.radio_button_unchecked,
-                        color:
-                            row.done ? _ErxinColors.green : _ErxinColors.muted,
+                            : unmetResult
+                                ? Icons.cancel_rounded
+                                : Icons.radio_button_unchecked,
+                        color: row.done
+                            ? _ErxinColors.green
+                            : unmetResult
+                                ? _ErxinColors.red
+                                : _ErxinColors.muted,
                         size: 18,
                       ),
                       const SizedBox(width: 9),
@@ -2699,8 +2817,11 @@ class _RuleChecklist extends StatelessWidget {
                         maxLines: 1,
                         softWrap: false,
                         style: TextStyle(
-                          color:
-                              row.done ? _ErxinColors.green : _ErxinColors.body,
+                          color: row.done
+                              ? _ErxinColors.green
+                              : unmetResult
+                                  ? _ErxinColors.red
+                                  : _ErxinColors.body,
                           fontSize: 13,
                           fontWeight: FontWeight.w900,
                         ),
@@ -2727,6 +2848,13 @@ class _RuleChecklist extends StatelessWidget {
       ),
     );
   }
+}
+
+bool _ruleRowHasUnmetResult(_RuleRow row) {
+  if (row.done || row.month == null) {
+    return false;
+  }
+  return row.value.contains('未全') || row.value.contains('未通过');
 }
 
 class _CurrentItemsEmptyState extends StatelessWidget {

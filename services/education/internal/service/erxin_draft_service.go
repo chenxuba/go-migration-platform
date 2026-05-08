@@ -32,16 +32,25 @@ type ERXinAssessmentDraftItemSaveInput struct {
 	DraftID int64
 	ItemNo  int
 	Passed  *bool
+	Remark  *string
 }
 
 type erxinSavedInputSnapshot struct {
-	ItemPasses   map[int]bool         `json:"itemPasses,omitempty"`
-	ItemPassList []erxinSavedItemPass `json:"itemPassList,omitempty"`
+	ItemPasses     map[int]bool           `json:"itemPasses,omitempty"`
+	ItemPassList   []erxinSavedItemPass   `json:"itemPassList,omitempty"`
+	ItemRemarks    map[int]string         `json:"itemRemarks,omitempty"`
+	ItemRemarkList []erxinSavedItemRemark `json:"itemRemarkList,omitempty"`
 }
 
 type erxinSavedItemPass struct {
-	ItemNo int  `json:"itemNo"`
-	Passed bool `json:"passed"`
+	ItemNo int    `json:"itemNo"`
+	Passed bool   `json:"passed"`
+	Remark string `json:"remark,omitempty"`
+}
+
+type erxinSavedItemRemark struct {
+	ItemNo int    `json:"itemNo"`
+	Remark string `json:"remark"`
 }
 
 func (svc *Service) SaveERXinAssessmentDraft(userID int64, input ERXinAssessmentDraftSaveInput) (model.AssessmentDraftDetailVO, error) {
@@ -121,12 +130,24 @@ func (svc *Service) SaveERXinAssessmentDraftItem(userID int64, input ERXinAssess
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	itemRemarks, err := decodeSavedERXinInputRemarks(draft.InputJSON)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	itemPasses[input.ItemNo] = *input.Passed
+	if input.Remark != nil {
+		normalizedRemark := strings.TrimSpace(*input.Remark)
+		if normalizedRemark == "" {
+			delete(itemRemarks, input.ItemNo)
+		} else {
+			itemRemarks[input.ItemNo] = normalizedRemark
+		}
+	}
 	progress, err := buildERXinAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemPasses)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	inputSnapshot, err := mergeERXinDraftInputSnapshot(draft.InputJSON, itemPasses)
+	inputSnapshot, err := mergeERXinDraftInputSnapshot(draft.InputJSON, itemPasses, itemRemarks)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -405,7 +426,34 @@ func decodeSavedERXinInputPasses(raw json.RawMessage) (map[int]bool, error) {
 	return out, nil
 }
 
-func mergeERXinDraftInputSnapshot(raw json.RawMessage, itemPasses map[int]bool) (any, error) {
+func decodeSavedERXinInputRemarks(raw json.RawMessage) (map[int]string, error) {
+	var snapshot erxinSavedInputSnapshot
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &snapshot)
+	}
+	out := make(map[int]string, len(snapshot.ItemRemarks)+len(snapshot.ItemRemarkList)+len(snapshot.ItemPassList))
+	for itemNo, remark := range snapshot.ItemRemarks {
+		normalized := strings.TrimSpace(remark)
+		if itemNo > 0 && normalized != "" {
+			out[itemNo] = normalized
+		}
+	}
+	for _, item := range snapshot.ItemRemarkList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	for _, item := range snapshot.ItemPassList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	return out, nil
+}
+
+func mergeERXinDraftInputSnapshot(raw json.RawMessage, itemPasses map[int]bool, itemRemarks map[int]string) (any, error) {
 	var snapshot map[string]any
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &snapshot)
@@ -414,11 +462,18 @@ func mergeERXinDraftInputSnapshot(raw json.RawMessage, itemPasses map[int]bool) 
 		snapshot = map[string]any{}
 	}
 	snapshot["itemPasses"] = itemPasses
-	snapshot["itemPassList"] = erxinSavedItemPassListFromMap(itemPasses)
+	snapshot["itemPassList"] = erxinSavedItemPassListFromMap(itemPasses, itemRemarks)
+	if len(itemRemarks) > 0 {
+		snapshot["itemRemarks"] = itemRemarks
+		snapshot["itemRemarkList"] = erxinSavedItemRemarkListFromMap(itemRemarks)
+	} else {
+		delete(snapshot, "itemRemarks")
+		delete(snapshot, "itemRemarkList")
+	}
 	return snapshot, nil
 }
 
-func erxinSavedItemPassListFromMap(itemPasses map[int]bool) []erxinSavedItemPass {
+func erxinSavedItemPassListFromMap(itemPasses map[int]bool, itemRemarks map[int]string) []erxinSavedItemPass {
 	if len(itemPasses) == 0 {
 		return nil
 	}
@@ -429,7 +484,40 @@ func erxinSavedItemPassListFromMap(itemPasses map[int]bool) []erxinSavedItemPass
 	sort.Ints(itemNos)
 	out := make([]erxinSavedItemPass, 0, len(itemNos))
 	for _, itemNo := range itemNos {
-		out = append(out, erxinSavedItemPass{ItemNo: itemNo, Passed: itemPasses[itemNo]})
+		out = append(out, erxinSavedItemPass{
+			ItemNo: itemNo,
+			Passed: itemPasses[itemNo],
+			Remark: strings.TrimSpace(itemRemarks[itemNo]),
+		})
+	}
+	return out
+}
+
+func erxinSavedItemRemarkListFromMap(itemRemarks map[int]string) []erxinSavedItemRemark {
+	if len(itemRemarks) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemRemarks))
+	for itemNo, remark := range itemRemarks {
+		if itemNo <= 0 || strings.TrimSpace(remark) == "" {
+			continue
+		}
+		itemNos = append(itemNos, itemNo)
+	}
+	if len(itemNos) == 0 {
+		return nil
+	}
+	sort.Ints(itemNos)
+	out := make([]erxinSavedItemRemark, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		remark := strings.TrimSpace(itemRemarks[itemNo])
+		if remark == "" {
+			continue
+		}
+		out = append(out, erxinSavedItemRemark{ItemNo: itemNo, Remark: remark})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

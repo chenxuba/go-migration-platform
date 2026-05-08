@@ -1431,6 +1431,68 @@ void main() {
     expect(find.text('33月龄'), findsOneWidget);
   });
 
+  testWidgets('ERXin item remarks stay scoped by selected item',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeErxinAssessmentClient client = _FakeErxinAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ErxinAssessmentPage(
+            args: const ErxinAssessmentLaunchArgs(
+              studentId: 31,
+              studentName: '陈旭',
+              studentAge: '3岁11个月',
+              birthDate: '2022-05-11',
+              assessmentDate: '2026-05-08',
+            ),
+            client: client,
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byType(TextFormField), '48题备注');
+    await tester.pump();
+    expect(find.text('48题备注'), findsOneWidget);
+
+    await _tapErxinItemRow(tester, '42月题');
+    expect(find.text('48题备注'), findsNothing);
+
+    await tester.enterText(find.byType(TextFormField), '42题备注');
+    await tester.pump();
+    await _tapErxinItemRow(tester, '48月题');
+
+    expect(find.text('48题备注'), findsOneWidget);
+    expect(find.text('42题备注'), findsNothing);
+
+    await tester.tap(find.widgetWithText(InkWell, '保存草稿'));
+    await tester.pumpAndSettle();
+
+    final List<dynamic> itemRemarkList =
+        client.saveDraftPayloads.last['itemRemarkList'] as List<dynamic>;
+    expect(
+      itemRemarkList,
+      contains(
+        allOf(
+          containsPair('itemNo', 148),
+          containsPair('remark', '48题备注'),
+        ),
+      ),
+    );
+  });
+
   testWidgets('ERXin record rows open history and confirm edits',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -2774,6 +2836,8 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   int nextDraftId = 21;
   bool failNextDraftUpdateAsNotFound = false;
   final List<Map<String, dynamic>> saveDraftPayloads = <Map<String, dynamic>>[];
+  final List<Map<String, dynamic>> saveDraftItemPayloads =
+      <Map<String, dynamic>>[];
 
   static const ErxinDomain _domain = ErxinDomain(
     domainCode: 'GM',
@@ -2964,6 +3028,7 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
     Map<String, dynamic> payload,
   ) async {
     saveDraftItemCalls += 1;
+    saveDraftItemPayloads.add(Map<String, dynamic>.from(payload));
     return _draftDetail(id: _lastDraftId);
   }
 
@@ -3014,6 +3079,21 @@ Future<void> _tapErxinScore(
   await tester.tapAt(
     Offset(rect.right - (passed ? 156 : 48), rect.center.dy),
   );
+  await tester.pumpAndSettle();
+}
+
+Future<void> _tapErxinItemRow(
+  WidgetTester tester,
+  String itemTitle,
+) async {
+  final Finder row = find.ancestor(
+    of: find.text(itemTitle),
+    matching: find.byWidgetPredicate(
+      (Widget widget) => widget.runtimeType.toString() == '_ItemScoreRow',
+    ),
+  );
+  expect(row, findsOneWidget);
+  await tester.tap(row);
   await tester.pumpAndSettle();
 }
 

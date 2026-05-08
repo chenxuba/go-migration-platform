@@ -23,38 +23,49 @@ type erxinScoreRequest struct {
 }
 
 type erxinItemPassRequest struct {
-	ItemNo int  `json:"itemNo"`
-	Passed bool `json:"passed"`
+	ItemNo int    `json:"itemNo"`
+	Passed bool   `json:"passed"`
+	Remark string `json:"remark,omitempty"`
+}
+
+type erxinItemRemarkRequest struct {
+	ItemNo int    `json:"itemNo"`
+	Remark string `json:"remark"`
 }
 
 type erxinAssessmentDraftSaveRequest struct {
-	ID             int64                  `json:"id,omitempty"`
-	StudentID      int64                  `json:"studentId,omitempty"`
-	StudentName    string                 `json:"studentName,omitempty"`
-	ExaminerName   string                 `json:"examinerName,omitempty"`
-	Remark         string                 `json:"remark,omitempty"`
-	BirthDate      string                 `json:"birthDate,omitempty"`
-	AssessmentDate string                 `json:"assessmentDate,omitempty"`
-	ItemPasses     map[int]bool           `json:"itemPasses,omitempty"`
-	ItemPassList   []erxinItemPassRequest `json:"itemPassList,omitempty"`
+	ID             int64                    `json:"id,omitempty"`
+	StudentID      int64                    `json:"studentId,omitempty"`
+	StudentName    string                   `json:"studentName,omitempty"`
+	ExaminerName   string                   `json:"examinerName,omitempty"`
+	Remark         string                   `json:"remark,omitempty"`
+	BirthDate      string                   `json:"birthDate,omitempty"`
+	AssessmentDate string                   `json:"assessmentDate,omitempty"`
+	ItemPasses     map[int]bool             `json:"itemPasses,omitempty"`
+	ItemPassList   []erxinItemPassRequest   `json:"itemPassList,omitempty"`
+	ItemRemarks    map[int]string           `json:"itemRemarks,omitempty"`
+	ItemRemarkList []erxinItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type erxinAssessmentRecordCreateRequest struct {
-	ID             int64                  `json:"id,omitempty"`
-	StudentID      int64                  `json:"studentId,omitempty"`
-	StudentName    string                 `json:"studentName,omitempty"`
-	ExaminerName   string                 `json:"examinerName,omitempty"`
-	Remark         string                 `json:"remark,omitempty"`
-	BirthDate      string                 `json:"birthDate"`
-	AssessmentDate string                 `json:"assessmentDate"`
-	ItemPasses     map[int]bool           `json:"itemPasses,omitempty"`
-	ItemPassList   []erxinItemPassRequest `json:"itemPassList,omitempty"`
+	ID             int64                    `json:"id,omitempty"`
+	StudentID      int64                    `json:"studentId,omitempty"`
+	StudentName    string                   `json:"studentName,omitempty"`
+	ExaminerName   string                   `json:"examinerName,omitempty"`
+	Remark         string                   `json:"remark,omitempty"`
+	BirthDate      string                   `json:"birthDate"`
+	AssessmentDate string                   `json:"assessmentDate"`
+	ItemPasses     map[int]bool             `json:"itemPasses,omitempty"`
+	ItemPassList   []erxinItemPassRequest   `json:"itemPassList,omitempty"`
+	ItemRemarks    map[int]string           `json:"itemRemarks,omitempty"`
+	ItemRemarkList []erxinItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type erxinAssessmentDraftItemSaveRequest struct {
-	DraftID int64 `json:"draftId"`
-	ItemNo  int   `json:"itemNo"`
-	Passed  *bool `json:"passed"`
+	DraftID int64   `json:"draftId"`
+	ItemNo  int     `json:"itemNo"`
+	Passed  *bool   `json:"passed"`
+	Remark  *string `json:"remark,omitempty"`
 }
 
 type erxinAssessmentDraftDeleteRequest struct {
@@ -148,6 +159,7 @@ func (handler *Handler) saveERXinAssessmentDraftItem(w http.ResponseWriter, r *h
 		DraftID: req.DraftID,
 		ItemNo:  req.ItemNo,
 		Passed:  req.Passed,
+		Remark:  req.Remark,
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
@@ -536,7 +548,7 @@ func (req erxinAssessmentDraftSaveRequest) toDraftSaveInput() (service.ERXinAsse
 		BirthDate:      birthDate,
 		AssessmentDate: assessmentDate,
 		ItemPasses:     itemPasses,
-		InputSnapshot:  req.normalizedSnapshot(itemPasses),
+		InputSnapshot:  req.normalizedSnapshot(itemPasses, normalizeERXinItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemPassList)),
 	}, nil
 }
 
@@ -547,12 +559,15 @@ func (req erxinAssessmentRecordCreateRequest) toRecordSaveInput() (service.ERXin
 		return service.ERXinAssessmentRecordSaveInput{}, err
 	}
 	return service.ERXinAssessmentRecordSaveInput{
-		StudentID:     req.StudentID,
-		StudentName:   strings.TrimSpace(req.StudentName),
-		ExaminerName:  strings.TrimSpace(req.ExaminerName),
-		Remark:        strings.TrimSpace(req.Remark),
-		ScoreInput:    scoreInput,
-		InputSnapshot: req.normalizedSnapshot(scoreInput.ItemPasses),
+		StudentID:    req.StudentID,
+		StudentName:  strings.TrimSpace(req.StudentName),
+		ExaminerName: strings.TrimSpace(req.ExaminerName),
+		Remark:       strings.TrimSpace(req.Remark),
+		ScoreInput:   scoreInput,
+		InputSnapshot: req.normalizedSnapshot(
+			scoreInput.ItemPasses,
+			normalizeERXinItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemPassList),
+		),
 	}, nil
 }
 
@@ -565,17 +580,24 @@ func (req erxinAssessmentRecordCreateRequest) toScoreRequest() erxinScoreRequest
 	}
 }
 
-func (req erxinAssessmentDraftSaveRequest) normalizedSnapshot(itemPasses map[int]bool) any {
+func (req erxinAssessmentDraftSaveRequest) normalizedSnapshot(
+	itemPasses map[int]bool,
+	itemRemarks map[int]string,
+) any {
+	normalizedPassList := erxinItemPassListFromMap(itemPasses, itemRemarks)
+	normalizedRemarkList := erxinItemRemarkListFromMap(itemRemarks)
 	return struct {
-		ID             int64                  `json:"id,omitempty"`
-		StudentID      int64                  `json:"studentId,omitempty"`
-		StudentName    string                 `json:"studentName,omitempty"`
-		ExaminerName   string                 `json:"examinerName,omitempty"`
-		Remark         string                 `json:"remark,omitempty"`
-		BirthDate      string                 `json:"birthDate,omitempty"`
-		AssessmentDate string                 `json:"assessmentDate,omitempty"`
-		ItemPasses     map[int]bool           `json:"itemPasses,omitempty"`
-		ItemPassList   []erxinItemPassRequest `json:"itemPassList,omitempty"`
+		ID             int64                    `json:"id,omitempty"`
+		StudentID      int64                    `json:"studentId,omitempty"`
+		StudentName    string                   `json:"studentName,omitempty"`
+		ExaminerName   string                   `json:"examinerName,omitempty"`
+		Remark         string                   `json:"remark,omitempty"`
+		BirthDate      string                   `json:"birthDate,omitempty"`
+		AssessmentDate string                   `json:"assessmentDate,omitempty"`
+		ItemPasses     map[int]bool             `json:"itemPasses,omitempty"`
+		ItemPassList   []erxinItemPassRequest   `json:"itemPassList,omitempty"`
+		ItemRemarks    map[int]string           `json:"itemRemarks,omitempty"`
+		ItemRemarkList []erxinItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
 		ID:             req.ID,
 		StudentID:      req.StudentID,
@@ -585,21 +607,64 @@ func (req erxinAssessmentDraftSaveRequest) normalizedSnapshot(itemPasses map[int
 		BirthDate:      strings.TrimSpace(req.BirthDate),
 		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
 		ItemPasses:     itemPasses,
-		ItemPassList:   erxinItemPassListFromMap(itemPasses),
+		ItemPassList:   normalizedPassList,
+		ItemRemarks:    itemRemarks,
+		ItemRemarkList: normalizedRemarkList,
 	}
 }
 
-func (req erxinAssessmentRecordCreateRequest) normalizedSnapshot(itemPasses map[int]bool) any {
+func normalizeERXinItemRemarks(
+	itemRemarks map[int]string,
+	itemRemarkList []erxinItemRemarkRequest,
+	itemPassList []erxinItemPassRequest,
+) map[int]string {
+	out := make(map[int]string, len(itemRemarks)+len(itemRemarkList)+len(itemPassList))
+	for itemNo, remark := range itemRemarks {
+		normalized := strings.TrimSpace(remark)
+		if itemNo > 0 && normalized != "" {
+			out[itemNo] = normalized
+		}
+	}
+	for _, item := range itemRemarkList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	for _, item := range itemPassList {
+		if item.ItemNo <= 0 {
+			continue
+		}
+		remark := strings.TrimSpace(item.Remark)
+		if remark == "" {
+			continue
+		}
+		out[item.ItemNo] = remark
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (req erxinAssessmentRecordCreateRequest) normalizedSnapshot(
+	itemPasses map[int]bool,
+	itemRemarks map[int]string,
+) any {
+	normalizedPassList := erxinItemPassListFromMap(itemPasses, itemRemarks)
+	normalizedRemarkList := erxinItemRemarkListFromMap(itemRemarks)
 	return struct {
-		ID             int64                  `json:"id,omitempty"`
-		StudentID      int64                  `json:"studentId,omitempty"`
-		StudentName    string                 `json:"studentName,omitempty"`
-		ExaminerName   string                 `json:"examinerName,omitempty"`
-		Remark         string                 `json:"remark,omitempty"`
-		BirthDate      string                 `json:"birthDate"`
-		AssessmentDate string                 `json:"assessmentDate"`
-		ItemPasses     map[int]bool           `json:"itemPasses,omitempty"`
-		ItemPassList   []erxinItemPassRequest `json:"itemPassList,omitempty"`
+		ID             int64                    `json:"id,omitempty"`
+		StudentID      int64                    `json:"studentId,omitempty"`
+		StudentName    string                   `json:"studentName,omitempty"`
+		ExaminerName   string                   `json:"examinerName,omitempty"`
+		Remark         string                   `json:"remark,omitempty"`
+		BirthDate      string                   `json:"birthDate"`
+		AssessmentDate string                   `json:"assessmentDate"`
+		ItemPasses     map[int]bool             `json:"itemPasses,omitempty"`
+		ItemPassList   []erxinItemPassRequest   `json:"itemPassList,omitempty"`
+		ItemRemarks    map[int]string           `json:"itemRemarks,omitempty"`
+		ItemRemarkList []erxinItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
 		ID:             req.ID,
 		StudentID:      req.StudentID,
@@ -609,7 +674,9 @@ func (req erxinAssessmentRecordCreateRequest) normalizedSnapshot(itemPasses map[
 		BirthDate:      strings.TrimSpace(req.BirthDate),
 		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
 		ItemPasses:     itemPasses,
-		ItemPassList:   erxinItemPassListFromMap(itemPasses),
+		ItemPassList:   normalizedPassList,
+		ItemRemarks:    itemRemarks,
+		ItemRemarkList: normalizedRemarkList,
 	}
 }
 
@@ -654,7 +721,7 @@ func normalizeERXinItemPasses(itemPasses map[int]bool, itemPassList []erxinItemP
 	return normalized, nil
 }
 
-func erxinItemPassListFromMap(itemPasses map[int]bool) []erxinItemPassRequest {
+func erxinItemPassListFromMap(itemPasses map[int]bool, itemRemarks map[int]string) []erxinItemPassRequest {
 	if len(itemPasses) == 0 {
 		return nil
 	}
@@ -665,7 +732,40 @@ func erxinItemPassListFromMap(itemPasses map[int]bool) []erxinItemPassRequest {
 	sort.Ints(itemNos)
 	out := make([]erxinItemPassRequest, 0, len(itemNos))
 	for _, itemNo := range itemNos {
-		out = append(out, erxinItemPassRequest{ItemNo: itemNo, Passed: itemPasses[itemNo]})
+		out = append(out, erxinItemPassRequest{
+			ItemNo: itemNo,
+			Passed: itemPasses[itemNo],
+			Remark: strings.TrimSpace(itemRemarks[itemNo]),
+		})
+	}
+	return out
+}
+
+func erxinItemRemarkListFromMap(itemRemarks map[int]string) []erxinItemRemarkRequest {
+	if len(itemRemarks) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemRemarks))
+	for itemNo, remark := range itemRemarks {
+		if itemNo <= 0 || strings.TrimSpace(remark) == "" {
+			continue
+		}
+		itemNos = append(itemNos, itemNo)
+	}
+	if len(itemNos) == 0 {
+		return nil
+	}
+	sort.Ints(itemNos)
+	out := make([]erxinItemRemarkRequest, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		remark := strings.TrimSpace(itemRemarks[itemNo])
+		if remark == "" {
+			continue
+		}
+		out = append(out, erxinItemRemarkRequest{ItemNo: itemNo, Remark: remark})
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }
