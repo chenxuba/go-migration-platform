@@ -596,6 +596,95 @@ func (handler *Handler) pep3AssessmentRecordReport(w http.ResponseWriter, r *htt
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) pep3AssessmentRecordReportInterpretation(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid assessment record id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetPEP3ReportInterpretation(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordReportInterpretationAI(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ERXinReportInterpretationGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GeneratePEP3ReportInterpretation(r.Context(), claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordReportInterpretationAIStream(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ERXinReportInterpretationGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, http.StatusInternalServerError, "streaming is not supported", ctx.RequestID)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	writeEvent := func(event string, payload any) error {
+		return writePEP3IEPPlanSSE(w, flusher, event, payload)
+	}
+	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在读取PEP-3评估结果"}); err != nil {
+		return
+	}
+	result, err := handler.service.GeneratePEP3ReportInterpretationStream(r.Context(), claims.UserID, req.ID, func(text string) error {
+		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
+	})
+	if err != nil {
+		_ = writeEvent("error", map[string]any{"type": "error", "message": err.Error()})
+		return
+	}
+	_ = writeEvent("done", map[string]any{"type": "done", "data": result})
+}
+
 func (handler *Handler) pep3AssessmentRecordBooklet(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

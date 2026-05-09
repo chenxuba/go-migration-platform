@@ -613,6 +613,27 @@ export interface PEP3Report extends PEP3NormDataInfo {
   sections: PEP3TemplateSection[]
 }
 
+export interface PEP3ReportInterpretation {
+  title: string
+  model?: string
+  generatedBy: string
+  generatedAt?: string
+  summary: string
+  domainAnalysis: string[]
+  suggestions: string[]
+  notes?: string[]
+}
+
+export interface PEP3ReportInterpretationStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: PEP3ReportInterpretation) => void
+}
+
+export interface PEP3ReportInterpretationStreamOptions {
+  signal?: AbortSignal
+}
+
 export interface PEP3BookletPage {
   pageNo: number
   sourcePdfPageNo: number
@@ -727,6 +748,105 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
       'Accept-Language': 'zh-CN',
     },
   })
+}
+
+export function getPEP3AssessmentRecordReportInterpretationApi(id: number) {
+  return useGet<PEP3ReportInterpretation>('/api/v1/assessments/pep3/records/report/interpretation', { id }, { silentError: true })
+}
+
+export function generatePEP3AssessmentRecordReportInterpretationApi(id: number) {
+  return usePost<PEP3ReportInterpretation>('/api/v1/assessments/pep3/records/report/interpretation/ai', { id }, {
+    loading: false,
+    silentError: true,
+    timeout: 190000,
+  })
+}
+
+function pep3StreamHeaders(accept = 'text/event-stream') {
+  const token = useAuthorization()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+    Accept: accept,
+  }
+  if (typeof window !== 'undefined')
+    headers['X-Tenant-Domain'] = window.location.hostname.toLowerCase()
+  return headers
+}
+
+export async function generatePEP3AssessmentRecordReportInterpretationStreamApi(
+  id: number,
+  handlers: PEP3ReportInterpretationStreamHandlers = {},
+  options: PEP3ReportInterpretationStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/pep3/records/report/interpretation/ai/stream', {
+    method: 'POST',
+    headers: pep3StreamHeaders(),
+    body: JSON.stringify({ id }),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || '报告解读生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalInterpretation: PEP3ReportInterpretation | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalInterpretation = payload.data
+      if (finalInterpretation)
+        handlers.onDone?.(finalInterpretation)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || '报告解读生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('报告解读生成已取消', 'AbortError')
+  if (!finalInterpretation)
+    throw new Error('报告解读生成未返回结果')
+  return finalInterpretation
 }
 
 export function downloadPEP3IEPPlanWordApi(params: { id?: number | string, duration?: number | string, plan?: PEP3IEPPlanAIResult } = {}) {

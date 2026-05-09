@@ -8,6 +8,8 @@ import GenerateIepModal from './components/generate-iep-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
+  generatePEP3AssessmentRecordReportInterpretationStreamApi,
+  getPEP3AssessmentRecordReportInterpretationApi,
   pagePEP3AssessmentRecordsApi,
 } from '@/api/edu-center/pep3-assessment'
 import {
@@ -39,7 +41,7 @@ const configTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
-const erxinReportTab = ref('result')
+const reportTab = ref('result')
 const interpretation = ref(null)
 const interpretationLoading = ref(false)
 const interpretationGenerating = ref(false)
@@ -348,6 +350,14 @@ function reportFrameTitle() {
   return currentReportIsERXin() ? '儿心量表评估报告PDF预览' : 'PEP-3记录册PDF预览'
 }
 
+function reportInterpretationDefaultTitle(record = currentReport.value?.record) {
+  return isERXinRecord(record) ? '儿心量表报告解读' : 'PEP-3报告解读'
+}
+
+function reportInterpretationGeneratingHint(record = currentReport.value?.record) {
+  return isERXinRecord(record) ? '正在分析全量表与五大能区结果...' : '正在分析PEP-3评估结果...'
+}
+
 function stringList(value) {
   if (!Array.isArray(value))
     return []
@@ -482,7 +492,7 @@ function resetInterpretationState() {
     interpretationScrollFrame = 0
   }
   interpretationProgressAnchored = false
-  erxinReportTab.value = 'result'
+  reportTab.value = 'result'
   interpretation.value = null
   interpretationLoading.value = false
   interpretationGenerating.value = false
@@ -633,7 +643,7 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
   if (!row?.id || exportingId.value)
     return
   if (isERXinRecord(row)) {
-    openExportModal(row, erxinReportTab.value === 'interpretation' ? 'erxin_interpretation' : 'erxin_result')
+    openExportModal(row, reportTab.value === 'interpretation' ? 'erxin_interpretation' : 'erxin_result')
     return
   }
   const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`
@@ -782,6 +792,7 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
 function selectReportModule(value) {
   if (currentReportIsERXin())
     return
+  reportTab.value = 'result'
   if (activeReportModule.value === value)
     return
   activeReportModule.value = value
@@ -804,15 +815,15 @@ function closeReportModal() {
   resetInterpretationState()
 }
 
-function selectERXinReportTab(tab) {
-  erxinReportTab.value = tab
+function selectReportTab(tab) {
+  reportTab.value = tab
   if (tab === 'interpretation' && !interpretationFetched.value && !interpretationLoading.value)
     loadSavedInterpretation()
 }
 
 async function loadSavedInterpretation() {
   const row = currentReport.value?.record
-  if (!isERXinRecord(row) || !row?.id)
+  if (!row?.id)
     return
   interpretationLoading.value = true
   interpretationGenerating.value = false
@@ -821,7 +832,9 @@ async function loadSavedInterpretation() {
   interpretationProgress.value = '正在读取已保存的报告解读...'
   interpretationStreamingText.value = ''
   try {
-    const res = await getERXinAssessmentRecordReportInterpretationApi(row.id)
+    const res = isERXinRecord(row)
+      ? await getERXinAssessmentRecordReportInterpretationApi(row.id)
+      : await getPEP3AssessmentRecordReportInterpretationApi(row.id)
     const data = normalizeInterpretation(unwrap(res))
     interpretation.value = data
     interpretationProgress.value = interpretationIsEmpty(data) ? '报告解读尚未生成' : '已读取保存的报告解读'
@@ -852,7 +865,7 @@ function handleGenerateInterpretation() {
 
 async function generateInterpretation(regenerate = false) {
   const row = currentReport.value?.record
-  if (!isERXinRecord(row) || !row?.id)
+  if (!row?.id)
     return
   if (interpretationAbortController)
     interpretationAbortController.abort()
@@ -869,7 +882,10 @@ async function generateInterpretation(regenerate = false) {
     interpretation.value = null
   scrollInterpretationProgressIntoView()
   try {
-    const data = await generateERXinAssessmentRecordReportInterpretationStreamApi(
+    const generateStreamApi = isERXinRecord(row)
+      ? generateERXinAssessmentRecordReportInterpretationStreamApi
+      : generatePEP3AssessmentRecordReportInterpretationStreamApi
+    const data = await generateStreamApi(
       row.id,
       {
         onStatus: (message) => {
@@ -1137,6 +1153,20 @@ onBeforeUnmount(() => {
             <div class="report-subtitle">
               {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
             </div>
+            <div v-if="!isERXinRecord(currentReport.record)" class="report-inline-summary">
+              <strong>{{ reportTab === 'interpretation' ? '报告解读' : reportModulePages(activeReportModule) }}</strong>
+              <span>{{ reportTab === 'interpretation' ? '查看或生成PEP-3报告解读。' : reportModuleDesc(activeReportModule) }}</span>
+              <a-button
+                v-if="reportTab === 'interpretation'"
+                type="primary"
+                size="small"
+                :loading="interpretationGenerating"
+                :disabled="interpretationLoading && !interpretationGenerating"
+                @click="handleGenerateInterpretation"
+              >
+                {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+              </a-button>
+            </div>
           </div>
           <div class="report-head__actions">
             <a-button
@@ -1160,14 +1190,14 @@ onBeforeUnmount(() => {
             </a-tooltip>
           </div>
         </div>
-        <div v-if="!isERXinRecord(currentReport.record)" class="report-module-area">
+        <div v-if="!isERXinRecord(currentReport.record)" class="report-module-area pep3-report-tabs">
           <div class="report-module-grid">
             <button
               v-for="option in reportModuleOptions"
               :key="option.value"
               type="button"
               class="report-module-chip"
-              :class="{ 'report-module-chip--active': activeReportModule === option.value }"
+              :class="{ 'report-module-chip--active': reportTab === 'result' && activeReportModule === option.value }"
               :title="option.title"
               @click="selectReportModule(option.value)"
             >
@@ -1175,10 +1205,15 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__text">{{ reportModuleShortTitle(option.value) }}</span>
               <span v-if="option.recommended" class="report-module-chip__tag">推荐</span>
             </button>
-          </div>
-          <div class="report-module-summary">
-            <strong>{{ reportModulePages(activeReportModule) }}</strong>
-            <span>{{ reportModuleDesc(activeReportModule) }}</span>
+            <button
+              type="button"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': reportTab === 'interpretation' }"
+              @click="selectReportTab('interpretation')"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">报告解读</span>
+            </button>
           </div>
         </div>
         <div v-else class="report-module-area erxin-report-tabs">
@@ -1186,8 +1221,8 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="report-module-chip"
-              :class="{ 'report-module-chip--active': erxinReportTab === 'result' }"
-              @click="selectERXinReportTab('result')"
+              :class="{ 'report-module-chip--active': reportTab === 'result' }"
+              @click="selectReportTab('result')"
             >
               <span class="report-module-chip__dot" />
               <span class="report-module-chip__text">评估结果记录</span>
@@ -1195,18 +1230,18 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="report-module-chip"
-              :class="{ 'report-module-chip--active': erxinReportTab === 'interpretation' }"
-              @click="selectERXinReportTab('interpretation')"
+              :class="{ 'report-module-chip--active': reportTab === 'interpretation' }"
+              @click="selectReportTab('interpretation')"
             >
               <span class="report-module-chip__dot" />
               <span class="report-module-chip__text">报告解读</span>
             </button>
           </div>
           <div class="report-module-summary erxin-report-tabs__summary">
-            <strong>{{ erxinReportTab === 'interpretation' ? '报告解读' : 'PDF报告' }}</strong>
-            <span>{{ erxinReportTab === 'interpretation' ? '查看或生成儿心量表报告解读。' : '查看儿心量表评估结果记录。' }}</span>
+            <strong>{{ reportTab === 'interpretation' ? '报告解读' : 'PDF报告' }}</strong>
+            <span>{{ reportTab === 'interpretation' ? '查看或生成儿心量表报告解读。' : '查看儿心量表评估结果记录。' }}</span>
             <a-button
-              v-if="erxinReportTab === 'interpretation'"
+              v-if="reportTab === 'interpretation'"
               type="primary"
               size="small"
               :loading="interpretationGenerating"
@@ -1219,7 +1254,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="report-module-content">
-          <div v-if="!isERXinRecord(currentReport.record) || erxinReportTab === 'result'" class="report-pdf-shell">
+          <div v-if="reportTab === 'result'" class="report-pdf-shell">
             <iframe
               v-if="reportPreviewUrl"
               :key="reportPreviewUrl"
@@ -1247,7 +1282,7 @@ onBeforeUnmount(() => {
                 <span class="erxin-interpretation-progress__icon">AI</span>
                 <div class="erxin-interpretation-progress__title">
                   <strong>AI 正在生成报告解读</strong>
-                  <span>{{ interpretationProgress || '正在分析全量表与五大能区结果...' }}</span>
+                  <span>{{ interpretationProgress || reportInterpretationGeneratingHint() }}</span>
                 </div>
                 <em class="erxin-streaming-indicator">流式生成</em>
               </div>
@@ -1316,7 +1351,7 @@ onBeforeUnmount(() => {
             </div>
             <div v-else-if="!interpretationLoading" class="erxin-interpretation-content">
               <div class="erxin-interpretation-title">
-                <strong>{{ interpretation.title || '儿心量表报告解读' }}</strong>
+                <strong>{{ interpretation.title || reportInterpretationDefaultTitle() }}</strong>
                 <span v-if="interpretation.generatedAt || interpretation.generatedBy">
                   {{ interpretation.generatedBy || 'AI' }} {{ interpretation.generatedAt ? `· ${formatDateTime(interpretation.generatedAt)}` : '' }}
                 </span>
@@ -1544,7 +1579,7 @@ onBeforeUnmount(() => {
 
 .report-info {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   flex: 1 1 auto;
   gap: 10px;
   min-width: 0;
@@ -1567,6 +1602,44 @@ onBeforeUnmount(() => {
   font-size: 13px;
   line-height: 20px;
   white-space: nowrap;
+}
+
+.report-inline-summary {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  gap: 8px;
+  min-width: 120px;
+  padding-left: 12px;
+  overflow: hidden;
+  border-left: 1px solid #e6edf6;
+
+  strong {
+    flex: 0 0 auto;
+    color: var(--pro-ant-color-primary);
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    white-space: nowrap;
+  }
+
+  span {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    color: #687386;
+    font-size: 12px;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  :deep(.ant-btn) {
+    flex: 0 0 auto;
+    height: 26px;
+    padding: 0 10px;
+    font-size: 12px;
+  }
 }
 
 .report-head__actions {
@@ -1711,6 +1784,14 @@ onBeforeUnmount(() => {
     text-overflow: ellipsis;
     white-space: nowrap;
   }
+}
+
+.pep3-report-tabs {
+  align-items: center;
+}
+
+.pep3-report-tabs .report-module-grid {
+  width: 100%;
 }
 
 .erxin-report-tabs__summary {
