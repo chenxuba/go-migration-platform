@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
+import 'erxin_assessment_client.dart';
 import 'home_client.dart';
 
 const String defaultPep3TemplateSummaryPath = String.fromEnvironment(
@@ -57,6 +58,21 @@ const String defaultPep3RecordConfigUpdatePath = String.fromEnvironment(
 const String defaultPep3RecordBookletPdfPath = String.fromEnvironment(
   'PEP3_RECORD_BOOKLET_PDF_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/booklet/pdf',
+);
+const String defaultPep3RecordReportInterpretationPath = String.fromEnvironment(
+  'PEP3_RECORD_REPORT_INTERPRETATION_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/report/interpretation',
+);
+const String defaultPep3RecordReportInterpretationAiPath =
+    String.fromEnvironment(
+  'PEP3_RECORD_REPORT_INTERPRETATION_AI_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/report/interpretation/ai',
+);
+const String defaultPep3RecordReportInterpretationAiStreamPath =
+    String.fromEnvironment(
+  'PEP3_RECORD_REPORT_INTERPRETATION_AI_STREAM_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/report/interpretation/ai/stream',
 );
 
 class Pep3AssessmentLaunchArgs {
@@ -843,6 +859,22 @@ abstract interface class Pep3AssessmentClient {
     int id, {
     String dimension = 'score_and_profile',
   });
+
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  );
+
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  );
+
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(
+    String token,
+    int id,
+  );
 }
 
 class ApiPep3AssessmentClient implements Pep3AssessmentClient {
@@ -861,6 +893,12 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.recordDetailPath = defaultPep3RecordDetailPath,
     this.recordConfigUpdatePath = defaultPep3RecordConfigUpdatePath,
     this.recordBookletPdfPath = defaultPep3RecordBookletPdfPath,
+    this.recordReportInterpretationPath =
+        defaultPep3RecordReportInterpretationPath,
+    this.recordReportInterpretationAiPath =
+        defaultPep3RecordReportInterpretationAiPath,
+    this.recordReportInterpretationAiStreamPath =
+        defaultPep3RecordReportInterpretationAiStreamPath,
   });
 
   final String educationBaseUrl;
@@ -877,6 +915,9 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String recordDetailPath;
   final String recordConfigUpdatePath;
   final String recordBookletPdfPath;
+  final String recordReportInterpretationPath;
+  final String recordReportInterpretationAiPath;
+  final String recordReportInterpretationAiStreamPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1152,6 +1193,87 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     return _normalizeReportPdfBytes(response.bodyBytes);
   }
 
+  @override
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(recordReportInterpretationPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final Object? data = await _getJson(uri, token);
+    if (data is! Map) {
+      throw const Pep3ApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            _uri(recordReportInterpretationAiPath),
+            headers: _headers(token),
+            body: jsonEncode(<String, int>{'id': id}),
+          )
+          .timeout(const Duration(seconds: 190));
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读生成超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读接口：$error');
+    }
+    final Object? data = await _handleResponse(response);
+    if (data is! Map) {
+      throw const Pep3ApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(String token, int id) async* {
+    final http.Request request = http.Request(
+      'POST',
+      _uri(recordReportInterpretationAiStreamPath),
+    )
+      ..headers.addAll(<String, String>{
+        ..._headers(token),
+        'Accept': 'text/event-stream',
+      })
+      ..body = jsonEncode(<String, int>{'id': id});
+    final http.StreamedResponse response;
+    try {
+      response = await request.send().timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读生成连接超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读流式接口：$error');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '报告解读生成失败',
+      );
+    }
+
+    await for (final ErxinReportInterpretationStreamEvent event
+        in _decodePep3ReportInterpretationSse(response.stream)) {
+      yield event;
+    }
+  }
+
   Uri _uri(String path) {
     final String trimmedBase =
         educationBaseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -1230,6 +1352,93 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
       }
     }
     return decoded;
+  }
+}
+
+Stream<ErxinReportInterpretationStreamEvent> _decodePep3ReportInterpretationSse(
+  Stream<List<int>> byteStream,
+) async* {
+  final Stream<String> lines =
+      byteStream.transform(utf8.decoder).transform(const LineSplitter());
+  String eventName = 'message';
+  final StringBuffer dataBuffer = StringBuffer();
+
+  ErxinReportInterpretationStreamEvent? parseEvent(String event, String data) {
+    final String trimmed = data.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final Object? decoded = jsonDecode(trimmed);
+    if (decoded is! Map) {
+      return null;
+    }
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+    final String type = '${payload['type'] ?? event}'.trim();
+    switch (type) {
+      case 'status':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'status',
+          message: '${payload['message'] ?? ''}',
+        );
+      case 'delta':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'delta',
+          text: '${payload['text'] ?? ''}',
+        );
+      case 'done':
+        final Object? data = payload['data'];
+        return ErxinReportInterpretationStreamEvent(
+          type: 'done',
+          data: data is Map
+              ? ErxinReportInterpretation.fromJson(
+                  Map<String, dynamic>.from(data),
+                )
+              : ErxinReportInterpretation.empty,
+        );
+      case 'error':
+        return ErxinReportInterpretationStreamEvent(
+          type: 'error',
+          message: '${payload['message'] ?? '报告解读生成失败'}',
+        );
+      default:
+        return ErxinReportInterpretationStreamEvent(
+          type: type.isEmpty ? event : type,
+          message: '${payload['message'] ?? ''}',
+          text: '${payload['text'] ?? ''}',
+        );
+    }
+  }
+
+  await for (final String rawLine in lines) {
+    final String line = rawLine.trimRight();
+    if (line.isEmpty) {
+      final ErxinReportInterpretationStreamEvent? event =
+          parseEvent(eventName, dataBuffer.toString());
+      if (event != null) {
+        yield event;
+      }
+      eventName = 'message';
+      dataBuffer.clear();
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      eventName = line.substring(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      if (dataBuffer.isNotEmpty) {
+        dataBuffer.write('\n');
+      }
+      dataBuffer.write(line.substring(5).trimLeft());
+    }
+  }
+  final ErxinReportInterpretationStreamEvent? event =
+      parseEvent(eventName, dataBuffer.toString());
+  if (event != null) {
+    yield event;
   }
 }
 

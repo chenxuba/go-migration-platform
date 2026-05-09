@@ -1,0 +1,57 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://go-migration-platform.local/docs/llm-wiki/wiki-entry.schema.json",
+  "title": "LLM Wiki Entry",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "status", "sources", "lastReviewed"],
+  "properties": {
+    "title": {
+      "type": "string",
+      "minLength": 1
+    },
+    "status": {
+      "type": "string",
+      "enum": ["draft", "reviewed", "stale", "deprecated"]
+    },
+    "lastReviewed": {
+      "type": "string",
+      "description": "ISO date, for example 2026-05-09"
+    },
+    "owner": {
+      "type": "string"
+    },
+    "sources": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type", "location"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["repo-file", "url", "screenshot", "command-output", "manual-note"]
+          },
+          "location": {
+            "type": "string"
+          },
+          "note": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "related": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "openQuestions": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  }
+}

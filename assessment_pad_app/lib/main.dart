@@ -135,6 +135,7 @@ class AssessmentPadApp extends StatelessWidget {
             body: PadViewport(
               child: AssessmentScaleCategoryScreen(
                 scaleClient: scaleClient,
+                erxinClient: erxinClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),

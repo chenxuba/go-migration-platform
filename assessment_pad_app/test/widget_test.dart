@@ -69,6 +69,7 @@ void main() {
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
         scaleClient: _FakeAssessmentScaleClient(),
+        erxinClient: _FakeErxinAssessmentClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -88,6 +89,7 @@ void main() {
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
         scaleClient: _FakeAssessmentScaleClient(),
+        erxinClient: _FakeErxinAssessmentClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -119,6 +121,7 @@ void main() {
               onBack: () {},
               scaleClient: _FakeAssessmentScaleClient(),
               recordClient: _FakePep3AssessmentClient(hasPreviousRecord: true),
+              erxinRecordClient: _FakePep3AssessmentClient(),
             ),
           ),
         ),
@@ -132,7 +135,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('分数+表现图'), findsOneWidget);
+    expect(find.text('报告解读'), findsOneWidget);
     expect(find.text('暂无评估报告内容'), findsOneWidget);
+
+    await tester.tap(find.text('报告解读'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('报告解读尚未生成'), findsOneWidget);
+    expect(find.text('生成解读'), findsWidgets);
   });
 
   testWidgets('erxin report preview keeps AI interpretation tab non-empty',
@@ -2278,6 +2288,7 @@ void main() {
       ),
     );
     final _FakeErxinAssessmentClient erxinClient = _FakeErxinAssessmentClient(
+      detectedDraft: draftPage.items.first,
       draftDetail: detail,
     );
     ErxinAssessmentLaunchArgs? openedArgs;
@@ -2286,7 +2297,10 @@ void main() {
       MaterialApp(
         home: Scaffold(
           body: AssessmentScaleCategoryScreen(
-            scaleClient: _FakeAssessmentScaleClient(draftPage: draftPage),
+            scaleClient: _FakeAssessmentScaleClient(
+              draftPage: AssessmentDraftPage.empty,
+            ),
+            erxinClient: erxinClient,
             onBack: () {},
           ),
         ),
@@ -2320,6 +2334,7 @@ void main() {
     expect(openedArgs?.draftId, 77);
     expect(find.text('儿心量表-II 测评工作台'), findsOneWidget);
     expect(find.textContaining('当前题目说明：136 36月题'), findsOneWidget);
+    expect(erxinClient.fetchDraftsPageCalls, greaterThanOrEqualTo(1));
     expect(erxinClient.fetchDraftDetailCalls, 1);
   });
 
@@ -2685,6 +2700,7 @@ void main() {
         homeClient: _FakeHomeClient(),
         scaleClient: _FakeAssessmentScaleClient(),
         pep3Client: _FakePep3AssessmentClient(),
+        erxinClient: _FakeErxinAssessmentClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -4769,6 +4785,49 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     String dimension = 'score_and_profile',
   }) async {
     return Uint8List(0);
+  }
+
+  @override
+  Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    return ErxinReportInterpretation.empty;
+  }
+
+  @override
+  Future<ErxinReportInterpretation> generateRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    return const ErxinReportInterpretation(
+      title: 'PEP-3报告解读',
+      generatedBy: 'ai',
+      summary: 'PEP-3测评结果显示当前整体发展表现可作为教学计划参考。',
+      domainAnalysis: <String>['沟通领域表现较稳定。'],
+      suggestions: <String>['建议结合日常训练持续观察。'],
+      notes: <String>['本解读仅供参考。'],
+    );
+  }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateRecordReportInterpretationStream(String token, int id) async* {
+    yield const ErxinReportInterpretationStreamEvent(
+      type: 'status',
+      message: '正在读取PEP-3评估结果',
+    );
+    yield const ErxinReportInterpretationStreamEvent(
+      type: 'done',
+      data: ErxinReportInterpretation(
+        title: 'PEP-3报告解读',
+        generatedBy: 'ai',
+        summary: 'PEP-3测评结果显示当前整体发展表现可作为教学计划参考。',
+        domainAnalysis: <String>['沟通领域表现较稳定。'],
+        suggestions: <String>['建议结合日常训练持续观察。'],
+        notes: <String>['本解读仅供参考。'],
+      ),
+    );
   }
 
   Pep3DraftDetail _draftDetail({required int id}) {

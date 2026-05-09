@@ -3428,12 +3428,22 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   late _ReportModuleOption _activeOption;
   late Pep3RecordSummary _displayRecord;
   Uint8List? _pdfBytes;
+  ErxinReportInterpretation? _interpretation;
+  Future<ErxinReportInterpretation>? _interpretationLoad;
   final Map<String, Uint8List> _modulePdfBytes = <String, Uint8List>{};
   final Map<String, Future<Uint8List>> _modulePdfLoads =
       <String, Future<Uint8List>>{};
   bool _loading = true;
+  bool _interpretationLoading = false;
+  bool _interpretationGenerating = false;
+  bool _interpretationFetched = false;
+  bool _showInterpretation = false;
   bool _printing = false;
   String _errorMessage = '';
+  String _interpretationErrorMessage = '';
+  String _interpretationProgressMessage = '准备生成报告解读...';
+  String _interpretationStreamingText = '';
+  int _interpretationGenerateSerial = 0;
   int _recordSyncSerial = 0;
 
   @override
@@ -3480,6 +3490,191 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   void _retryPreview() {
     unawaited(_syncLatestRecord());
     unawaited(_refreshPreviewModules());
+  }
+
+  void _selectResultTab() {
+    if (_showInterpretation) {
+      setState(() {
+        _showInterpretation = false;
+      });
+    }
+  }
+
+  void _selectInterpretationTab() {
+    if (!_showInterpretation) {
+      setState(() {
+        _showInterpretation = true;
+      });
+    }
+    if (!_interpretationFetched && !_interpretationLoading) {
+      unawaited(_loadSavedInterpretation());
+    }
+  }
+
+  Future<void> _loadSavedInterpretation() async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '请先登录后再查看报告解读';
+      });
+      return;
+    }
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationGenerating = false;
+      _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
+      _interpretationProgressMessage = '正在读取已保存的报告解读...';
+    });
+    final Future<ErxinReportInterpretation> future =
+        widget.client.fetchRecordReportInterpretation(
+      token,
+      widget.record.id,
+    );
+    _interpretationLoad = future;
+    try {
+      final ErxinReportInterpretation interpretation = await future;
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretation = interpretation;
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationProgressMessage =
+            interpretation.isEmpty ? '报告解读尚未生成' : '已读取保存的报告解读';
+      });
+    } on Pep3ApiException catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '报告解读读取失败：$error';
+      });
+    }
+  }
+
+  Future<void> _generateInterpretation({bool regenerate = false}) async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '请先登录后再生成报告解读';
+      });
+      return;
+    }
+    final int serial = ++_interpretationGenerateSerial;
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationGenerating = true;
+      _interpretationFetched = true;
+      _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
+      _interpretationProgressMessage =
+          regenerate ? '正在重新生成报告解读...' : '正在生成报告解读...';
+      if (regenerate) {
+        _interpretation = null;
+      }
+    });
+    try {
+      bool completed = false;
+      await for (final ErxinReportInterpretationStreamEvent event in widget
+          .client
+          .generateRecordReportInterpretationStream(token, widget.record.id)) {
+        if (!mounted || serial != _interpretationGenerateSerial) {
+          return;
+        }
+        if (event.type == 'status') {
+          setState(() {
+            _interpretationProgressMessage = event.message.trim().isEmpty
+                ? 'AI 正在分析PEP-3评估结果...'
+                : event.message.trim();
+          });
+          continue;
+        }
+        if (event.type == 'delta') {
+          if (event.text.isEmpty) {
+            continue;
+          }
+          setState(() {
+            _interpretationStreamingText += event.text;
+            _interpretationProgressMessage = 'AI 正在生成报告解读...';
+          });
+          continue;
+        }
+        if (event.type == 'error') {
+          throw Pep3ApiException(
+            event.message.trim().isEmpty ? '报告解读生成失败' : event.message.trim(),
+          );
+        }
+        if (event.type == 'done') {
+          final ErxinReportInterpretation interpretation =
+              event.data ?? ErxinReportInterpretation.empty;
+          setState(() {
+            _interpretation = interpretation;
+            _interpretationLoading = false;
+            _interpretationGenerating = false;
+            _interpretationStreamingText = '';
+            _interpretationProgressMessage = '报告解读已生成';
+          });
+          completed = true;
+          break;
+        }
+      }
+      if (!mounted || serial != _interpretationGenerateSerial || completed) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '报告解读生成中断，请重新生成';
+      });
+    } on Pep3ApiException catch (error) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationErrorMessage = '报告解读生成失败：$error';
+      });
+    }
   }
 
   Future<void> _refreshPreviewModules() async {
@@ -3659,6 +3854,97 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     }
   }
 
+  Future<void> _printCurrentTab() async {
+    if (_printing) {
+      return;
+    }
+    if (_showInterpretation) {
+      await _printInterpretation();
+      return;
+    }
+    await _printCurrentModule();
+  }
+
+  Future<void> _printInterpretation() async {
+    ErxinReportInterpretation? interpretation = _interpretation;
+    if (interpretation == null || interpretation.isEmpty) {
+      if (!_interpretationFetched && !_interpretationLoading) {
+        await _loadSavedInterpretation();
+        interpretation = _interpretation;
+      }
+    }
+    if (!mounted) {
+      return;
+    }
+    if (interpretation == null || interpretation.isEmpty) {
+      setState(() {
+        _interpretationErrorMessage = '请先生成报告解读后再打印';
+      });
+      return;
+    }
+    setState(() {
+      _printing = true;
+      _interpretationErrorMessage = '';
+    });
+    try {
+      await Printing.layoutPdf(
+        name: _pep3PrintFileName(_displayRecord, '报告解读'),
+        onLayout: (PdfPageFormat format) => _buildErxinInterpretationPrintPdf(
+          _displayRecord,
+          interpretation!,
+          format,
+          title: 'PEP-3测试员记录册报告解读',
+          domainSectionTitle: '领域表现',
+        ),
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _interpretationErrorMessage = '报告解读打印失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _printing = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _handleInterpretationGenerateTap() async {
+    final bool regenerate =
+        _interpretation != null && !_interpretation!.isEmpty;
+    if (!regenerate) {
+      await _generateInterpretation();
+      return;
+    }
+    final bool confirmed = await _confirmRegenerateInterpretation();
+    if (!mounted || !confirmed) {
+      return;
+    }
+    await _generateInterpretation(regenerate: true);
+  }
+
+  Future<bool> _confirmRegenerateInterpretation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: Center(
+            child: _ErxinRegenerateInterpretationConfirmDialog(
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+              onConfirm: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -3687,9 +3973,13 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
               children: <Widget>[
                 _buildHeader(context),
                 const SizedBox(height: 14),
-                _buildModuleBar(),
+                _buildTabBar(),
                 const SizedBox(height: 12),
-                Expanded(child: _buildContent()),
+                Expanded(
+                  child: _showInterpretation
+                      ? _buildInterpretationContent()
+                      : _buildContent(),
+                ),
               ],
             ),
           ),
@@ -3724,7 +4014,9 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                           '${record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}   ',
                     ),
                     TextSpan(
-                      text: _reportModuleInlineDescription(_activeOption),
+                      text: _showInterpretation
+                          ? '报告解读：AI 会基于PEP-3评估结果生成并保存。'
+                          : _reportModuleInlineDescription(_activeOption),
                       style: const TextStyle(color: _ReportTheme.blue),
                     ),
                   ],
@@ -3768,29 +4060,63 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     );
   }
 
-  Widget _buildModuleBar() {
+  Widget _buildTabBar() {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool stackMeta = constraints.maxWidth < 820;
+        final bool stackMeta = constraints.maxWidth < 900;
         final Widget chips = Wrap(
           spacing: 8,
           runSpacing: 8,
-          children: _reportModuleOptions
-              .map(
-                (_ReportModuleOption option) => _ReportModuleChip(
+          children: <Widget>[
+            _ErxinReportTabChip(
+              label: '测试员记录册',
+              active: !_showInterpretation,
+              onTap: _selectResultTab,
+            ),
+            _ErxinReportTabChip(
+              label: '报告解读',
+              active: _showInterpretation,
+              onTap: _selectInterpretationTab,
+            ),
+            if (!_showInterpretation)
+              for (final _ReportModuleOption option in _reportModuleOptions)
+                _ReportModuleChip(
                   option: option,
                   active: option.value == _activeOption.value,
                   onTap: () => _selectOption(option),
                 ),
-              )
-              .toList(),
+          ],
+        );
+        final Widget generateButton = _ToolbarButton(
+          label: _interpretationLoading
+              ? (_interpretationGenerating ? '生成中' : '读取中')
+              : (_interpretation == null || _interpretation!.isEmpty)
+                  ? '生成解读'
+                  : '重新生成解读',
+          icon: Icons.auto_awesome_rounded,
+          filled: true,
+          onTap: _interpretationLoading
+              ? null
+              : () => unawaited(_handleInterpretationGenerateTap()),
         );
         final Widget printButton = _ToolbarButton(
           label: _printing ? '打印中' : '打印',
           icon: Icons.print_rounded,
-          onTap: (_printing || _loading)
+          onTap: (_printing ||
+                  (!_showInterpretation && _loading) ||
+                  (_showInterpretation && _interpretationLoading))
               ? null
-              : () => unawaited(_printCurrentModule()),
+              : () => unawaited(_printCurrentTab()),
+        );
+        final Widget actions = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            if (_showInterpretation) ...<Widget>[
+              generateButton,
+              const SizedBox(width: 8),
+            ],
+            printButton,
+          ],
         );
 
         return Container(
@@ -3808,7 +4134,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                     const SizedBox(height: 8),
                     Align(
                       alignment: Alignment.centerRight,
-                      child: printButton,
+                      child: actions,
                     ),
                   ],
                 )
@@ -3817,7 +4143,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   children: <Widget>[
                     Expanded(child: chips),
                     const SizedBox(width: 14),
-                    printButton,
+                    actions,
                   ],
                 ),
         );
@@ -3854,6 +4180,40 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         bytes: bytes,
         pageCount: _activeOption.pageCount,
       ),
+    );
+  }
+
+  Widget _buildInterpretationContent() {
+    if (_interpretationLoading) {
+      if (_interpretationGenerating) {
+        return _ErxinInterpretationProgressState(
+          message: _interpretationProgressMessage,
+          streamingText: _interpretationStreamingText,
+          domainSectionTitle: '领域表现',
+        );
+      }
+      return _ErxinInterpretationReadLoadingState(
+        message: _interpretationProgressMessage,
+      );
+    }
+    if (_interpretationErrorMessage.isNotEmpty) {
+      return _ReportPreviewErrorState(
+        message: _interpretationErrorMessage,
+        onRetry: () => unawaited(_generateInterpretation(regenerate: true)),
+      );
+    }
+    final ErxinReportInterpretation? interpretation = _interpretation;
+    if (interpretation == null || interpretation.isEmpty) {
+      return _ErxinInterpretationEmptyState(
+        message: '报告解读尚未生成',
+        detail: '点击“生成解读”后，AI 会基于当前评估结果生成并保存。',
+        actionLabel: '生成解读',
+        onAction: () => unawaited(_generateInterpretation()),
+      );
+    }
+    return _ErxinInterpretationView(
+      interpretation: interpretation,
+      domainSectionTitle: '领域表现',
     );
   }
 }
@@ -4742,10 +5102,12 @@ class _ErxinInterpretationProgressState extends StatefulWidget {
   const _ErxinInterpretationProgressState({
     required this.message,
     required this.streamingText,
+    this.domainSectionTitle = '能区表现',
   });
 
   final String message;
   final String streamingText;
+  final String domainSectionTitle;
 
   @override
   State<_ErxinInterpretationProgressState> createState() =>
@@ -4867,7 +5229,7 @@ class _ErxinInterpretationProgressStateState
                           paragraphs: <String>[preview.summary],
                         ),
                         _ErxinInterpretationStreamingSection(
-                          title: '能区表现',
+                          title: widget.domainSectionTitle,
                           paragraphs: preview.domainAnalysis,
                         ),
                         _ErxinInterpretationStreamingSection(
@@ -5186,9 +5548,13 @@ class _ErxinInterpretationEmptyState extends StatelessWidget {
 }
 
 class _ErxinInterpretationView extends StatelessWidget {
-  const _ErxinInterpretationView({required this.interpretation});
+  const _ErxinInterpretationView({
+    required this.interpretation,
+    this.domainSectionTitle = '能区表现',
+  });
 
   final ErxinReportInterpretation interpretation;
+  final String domainSectionTitle;
 
   @override
   Widget build(BuildContext context) {
@@ -5237,7 +5603,7 @@ class _ErxinInterpretationView extends StatelessWidget {
               paragraphs: <String>[interpretation.summary],
             ),
             _ErxinInterpretationSection(
-              title: '能区表现',
+              title: domainSectionTitle,
               paragraphs: interpretation.domainAnalysis,
               numbered: true,
             ),
@@ -5358,8 +5724,10 @@ class _ErxinInterpretationSection extends StatelessWidget {
 Future<Uint8List> _buildErxinInterpretationPrintPdf(
   Pep3RecordSummary record,
   ErxinReportInterpretation interpretation,
-  PdfPageFormat format,
-) async {
+  PdfPageFormat format, {
+  String title = '0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读',
+  String domainSectionTitle = '能区表现',
+}) async {
   final pw.Font baseFont =
       await fontFromAssetBundle('assets/fonts/NotoSansSC-Regular.ttf');
   final PdfPageFormat pageFormat = format.copyWith(
@@ -5388,7 +5756,7 @@ Future<Uint8List> _buildErxinInterpretationPrintPdf(
           width: double.infinity,
           alignment: pw.Alignment.center,
           child: pw.Text(
-            '0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读',
+            title,
             textAlign: pw.TextAlign.center,
             style: pw.TextStyle(
               color: ink,
@@ -5407,7 +5775,7 @@ Future<Uint8List> _buildErxinInterpretationPrintPdf(
           ink: ink,
         ),
         _erxinInterpretationPrintSection(
-          title: '能区表现',
+          title: domainSectionTitle,
           paragraphs: interpretation.domainAnalysis,
           numbered: true,
           orange: orange,

@@ -30,7 +30,7 @@ const openModal = computed({
 })
 
 const assessmentAdapter = computed(() => resolveIEPPlanAssessmentAdapter(props.record))
-const planDuration = ref('3')
+const planDuration = ref('6')
 const activeDomainKey = ref('language')
 const exportingWord = ref(false)
 const aiGenerating = ref(false)
@@ -2349,7 +2349,7 @@ function resetIepState() {
     executionPlanStreamAbortController.value.abort()
   executionPlanStreamAbortController.value = null
   hidePlanLoadingOverlay()
-  setPlanDurationWithoutLoading('3')
+  setPlanDurationWithoutLoading('6')
   exportingWord.value = false
   aiGenerating.value = false
   generatingExecutionPlan.value = false
@@ -2409,7 +2409,7 @@ async function loadFirstAvailableIepPlan(requestKey) {
   clearDisplayedPlanState()
   scrollPlanViewToTop()
   try {
-    for (const durationKey of ['3', '6']) {
+    for (const durationKey of ['6', '3']) {
       const response = await assessmentAdapter.value.getIepPlan(props.record.id, durationKey)
       if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
         return
@@ -2422,7 +2422,7 @@ async function loadFirstAvailableIepPlan(requestKey) {
       await scrollPlanViewToTop()
       return
     }
-    setPlanDurationWithoutLoading('3')
+    setPlanDurationWithoutLoading('6')
     clearDisplayedPlanState()
     await scrollPlanViewToTop()
   }
@@ -2733,14 +2733,14 @@ watch(planDuration, async (durationMonths, previousDuration) => {
   if (!props.open)
     return
   if (aiGenerating.value || generatingExecutionPlan.value) {
-    setPlanDurationWithoutLoading(previousDuration || '3')
+    setPlanDurationWithoutLoading(previousDuration || '6')
     return
   }
   loadPlanRequestKey += 1
   const requestKey = loadPlanRequestKey
   const loaded = await loadSavedIepPlan(requestKey, durationMonths, { preserveCurrentState: true })
   if (!loaded && requestKey === loadPlanRequestKey && planDuration.value === durationMonths)
-    setPlanDurationWithoutLoading(previousDuration || '3')
+    setPlanDurationWithoutLoading(previousDuration || '6')
 })
 
 watch(

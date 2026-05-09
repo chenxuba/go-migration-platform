@@ -26,6 +26,7 @@
 ```text
 configs/                  # 示例租户配置
 docs/                     # 架构说明
+docs/llm-wiki             # 面向 Codex/LLM 的项目知识库
 pkg/config                # 服务配置加载
 pkg/customization         # 租户配置、功能开关、规则包
 pkg/httpx                 # 统一响应
@@ -36,6 +37,10 @@ services/
   platform/
   education/
 ```
+
+## LLM Wiki
+
+项目内嵌了一个面向 Codex/LLM 的知识库，入口在 `docs/llm-wiki/wiki/index.md`。它按“稳定 wiki 摘要 + 来源登记 + 原始资料”的方式维护，方便后续让 LLM 快速理解项目上下文，同时保留可追溯证据。
 
 ## 启动
 

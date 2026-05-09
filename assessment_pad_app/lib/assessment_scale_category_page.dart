@@ -16,11 +16,13 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({
     required this.onBack,
     this.scaleClient = const ApiAssessmentScaleClient(),
+    this.erxinClient,
     super.key,
   });
 
   final VoidCallback onBack;
   final AssessmentScaleClient scaleClient;
+  final ErxinAssessmentClient? erxinClient;
 
   @override
   State<AssessmentScaleCategoryScreen> createState() =>
@@ -273,14 +275,26 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     try {
-      final AssessmentDraftPage drafts = await widget.scaleClient
+      final AssessmentDraftPage pep3Drafts = await widget.scaleClient
           .fetchDraftsPage(token, pageSize: 100, latestOnly: true);
+      final AssessmentDraftPage erxinDrafts = widget.erxinClient == null
+          ? AssessmentDraftPage.empty
+          : await widget.erxinClient!.fetchDraftsPage(
+              token,
+              pageSize: 100,
+              latestOnly: true,
+            );
+      final List<AssessmentDraftSummary> mergedDrafts =
+          <AssessmentDraftSummary>[
+        ...pep3Drafts.items,
+        ...erxinDrafts.items,
+      ]..sort(_compareDraftUpdatedDesc);
       if (!mounted) {
         return;
       }
       setState(() {
-        _drafts = drafts.items;
-        _draftCount = drafts.total;
+        _drafts = mergedDrafts;
+        _draftCount = pep3Drafts.total + erxinDrafts.total;
         _draftsLoading = false;
         _draftErrorMessage = null;
       });
@@ -2051,6 +2065,25 @@ bool _isErxinDraft(AssessmentDraftSummary draft) {
       draft.assessmentName,
     ].join(' '),
   );
+}
+
+int _compareDraftUpdatedDesc(
+  AssessmentDraftSummary left,
+  AssessmentDraftSummary right,
+) {
+  final int timeDiff = _draftSortTime(right).compareTo(_draftSortTime(left));
+  if (timeDiff != 0) {
+    return timeDiff;
+  }
+  return right.id.compareTo(left.id);
+}
+
+int _draftSortTime(AssessmentDraftSummary draft) {
+  final String raw = draft.updatedTime.trim().isNotEmpty
+      ? draft.updatedTime.trim()
+      : draft.createdTime.trim();
+  final DateTime? parsed = DateTime.tryParse(raw);
+  return parsed?.millisecondsSinceEpoch ?? 0;
 }
 
 bool _isPep3Text(String value) {

@@ -469,10 +469,11 @@ func buildPEP3ReportInterpretationPDF(_ model.PEP3ReportVO, interpretation model
 	}
 
 	renderer := erxinInterpretationPDFRenderer{
-		pdf:             &pdf,
-		currentFontSize: 11,
-		headerTitle:     "PEP-3测试员记录册报告解读",
-		footerText:      "本报告解读基于PEP-3结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
+		pdf:                &pdf,
+		currentFontSize:    11,
+		headerTitle:        "PEP-3测试员记录册报告解读",
+		domainSectionTitle: "领域表现",
+		footerText:         "本报告解读基于PEP-3结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
 	}
 	renderer.draw(interpretation)
 	return pdf.GetBytesPdfReturnErr()
@@ -510,19 +511,20 @@ func buildERXinCombinedReportPDF(report model.ERXinReportVO, interpretation mode
 }
 
 type erxinInterpretationPDFRenderer struct {
-	pdf             *gopdf.GoPdf
-	currentFontSize float64
-	y               float64
-	pageNumber      int
-	headerTitle     string
-	footerText      string
+	pdf                *gopdf.GoPdf
+	currentFontSize    float64
+	y                  float64
+	pageNumber         int
+	headerTitle        string
+	domainSectionTitle string
+	footerText         string
 }
 
 func (r *erxinInterpretationPDFRenderer) draw(interpretation model.ERXinReportInterpretationVO) {
 	r.beginPage()
 	r.drawCoverHeader()
 	r.drawSection("综合解读", []string{interpretation.Summary}, false)
-	r.drawSection("能区表现", interpretation.DomainAnalysis, true)
+	r.drawSection(nonEmptyString(r.domainSectionTitle, "能区表现"), interpretation.DomainAnalysis, true)
 	r.drawSection("发展建议", interpretation.Suggestions, true)
 	if len(compactNonEmptyStrings(interpretation.Notes)) > 0 {
 		r.drawSection("注意事项", interpretation.Notes, true)

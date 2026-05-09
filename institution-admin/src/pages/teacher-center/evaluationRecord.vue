@@ -359,6 +359,10 @@ function reportInterpretationGeneratingHint(record = currentReport.value?.record
   return isERXinRecord(record) ? '正在分析全量表与五大能区结果...' : '正在分析PEP-3评估结果...'
 }
 
+function reportInterpretationDomainSectionTitle(record = currentReport.value?.record) {
+  return isERXinRecord(record) ? '能区表现' : '领域表现'
+}
+
 function stringList(value) {
   if (!Array.isArray(value))
     return []
@@ -1324,7 +1328,7 @@ onBeforeUnmount(() => {
                     <p>{{ streamingInterpretationPreview.summary }}</p>
                   </section>
                   <section v-if="streamingInterpretationPreview.domainAnalysis.length" class="erxin-interpretation-section erxin-interpretation-section--streaming">
-                    <h4>能区表现</h4>
+                    <h4>{{ reportInterpretationDomainSectionTitle() }}</h4>
                     <ol>
                       <li v-for="(item, index) in streamingInterpretationPreview.domainAnalysis" :key="`stream-domain-${index}`">
                         {{ item }}
@@ -1389,7 +1393,7 @@ onBeforeUnmount(() => {
                 <p>{{ interpretation.summary || '-' }}</p>
               </section>
               <section class="erxin-interpretation-section">
-                <h4>能区表现</h4>
+                <h4>{{ reportInterpretationDomainSectionTitle() }}</h4>
                 <ol>
                   <li v-for="(item, index) in interpretationSectionItems(interpretation, 'domainAnalysis')" :key="`domain-${index}`">
                     {{ item }}
