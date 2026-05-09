@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -27,6 +28,48 @@ func (svc *Service) GenerateERXinAssessmentReportPDF(userID, recordID int64) (st
 	}
 	name := nonEmptyString(report.Record.StudentName, "未命名儿童")
 	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-儿心量表评估报告-%s.pdf", name, time.Now().Format("20060102150405")))
+	return filename, content, nil
+}
+
+func (svc *Service) GenerateERXinReportInterpretationPDF(userID, recordID int64) (string, []byte, error) {
+	report, err := svc.GetERXinAssessmentReport(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	interpretation, err := svc.GetERXinReportInterpretation(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	if erxinReportInterpretationIsEmpty(interpretation) {
+		return "", nil, errors.New("请先生成报告解读后再导出")
+	}
+	content, err := buildERXinReportInterpretationPDF(report, interpretation)
+	if err != nil {
+		return "", nil, err
+	}
+	name := nonEmptyString(report.Record.StudentName, "未命名儿童")
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-儿心量表报告解读-%s.pdf", name, time.Now().Format("20060102150405")))
+	return filename, content, nil
+}
+
+func (svc *Service) GenerateERXinCombinedReportPDF(userID, recordID int64) (string, []byte, error) {
+	report, err := svc.GetERXinAssessmentReport(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	interpretation, err := svc.GetERXinReportInterpretation(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	if erxinReportInterpretationIsEmpty(interpretation) {
+		return "", nil, errors.New("请先生成报告解读后再导出")
+	}
+	content, err := buildERXinCombinedReportPDF(report, interpretation)
+	if err != nil {
+		return "", nil, err
+	}
+	name := nonEmptyString(report.Record.StudentName, "未命名儿童")
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-儿心量表记录+报告-%s.pdf", name, time.Now().Format("20060102150405")))
 	return filename, content, nil
 }
 
@@ -361,4 +404,223 @@ func erxinMonthNumberText(value float64) string {
 
 func erxinTrimMonthUnit(value string) string {
 	return strings.TrimSuffix(strings.TrimSpace(value), "个月")
+}
+
+func buildERXinReportInterpretationPDF(report model.ERXinReportVO, interpretation model.ERXinReportInterpretationVO) ([]byte, error) {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight},
+	})
+	pdf.AddPage()
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return nil, fmt.Errorf("load ERXin interpretation PDF font: %w", err)
+	}
+
+	renderer := erxinInterpretationPDFRenderer{
+		pdf:             &pdf,
+		currentFontSize: 11,
+	}
+	renderer.draw(report, interpretation)
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func buildERXinCombinedReportPDF(report model.ERXinReportVO, interpretation model.ERXinReportInterpretationVO) ([]byte, error) {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight},
+	})
+	pdf.AddPage()
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return nil, fmt.Errorf("load ERXin combined PDF font: %w", err)
+	}
+
+	resultRenderer := erxinReportPDFRenderer{
+		pdf:             &pdf,
+		currentFontSize: 11,
+	}
+	resultRenderer.draw(report)
+
+	pdf.AddPage()
+	interpretationRenderer := erxinInterpretationPDFRenderer{
+		pdf:             &pdf,
+		currentFontSize: 11,
+	}
+	interpretationRenderer.draw(report, interpretation)
+	return pdf.GetBytesPdfReturnErr()
+}
+
+type erxinInterpretationPDFRenderer struct {
+	pdf             *gopdf.GoPdf
+	currentFontSize float64
+	y               float64
+	pageNumber      int
+}
+
+func (r *erxinInterpretationPDFRenderer) draw(report model.ERXinReportVO, interpretation model.ERXinReportInterpretationVO) {
+	r.beginPage()
+	r.drawCoverHeader()
+	r.drawSection("综合解读", []string{interpretation.Summary}, false)
+	r.drawSection("能区表现", interpretation.DomainAnalysis, true)
+	r.drawSection("发展建议", interpretation.Suggestions, true)
+	if len(compactNonEmptyStrings(interpretation.Notes)) > 0 {
+		r.drawSection("注意事项", interpretation.Notes, true)
+	}
+	r.drawFooter()
+}
+
+func (r *erxinInterpretationPDFRenderer) beginPage() {
+	r.pageNumber++
+	r.y = 58
+	r.drawPageBackground()
+}
+
+func (r *erxinInterpretationPDFRenderer) drawPageBackground() {
+	r.pdf.SetFillColor(255, 255, 255)
+	r.pdf.RectFromUpperLeftWithStyle(0, 0, erxinReportPDFPageWidth, erxinReportPDFPageHeight, "F")
+}
+
+func (r *erxinInterpretationPDFRenderer) drawCoverHeader() {
+	r.setTextColor(15, 23, 42)
+	r.setFont(17)
+	r.centerText(64, r.y, erxinReportPDFPageWidth-128, "0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读")
+	r.y += 48
+}
+
+func (r *erxinInterpretationPDFRenderer) drawSection(title string, items []string, numbered bool) {
+	items = compactNonEmptyStrings(items)
+	if len(items) == 0 {
+		return
+	}
+	left := 64.0
+	width := erxinReportPDFPageWidth - 128
+	r.ensureSpace(54)
+	r.setTextColor(15, 23, 42)
+	r.setFont(13)
+	r.drawText(left, r.y, title)
+	r.pdf.SetStrokeColor(59, 130, 246)
+	r.pdf.SetLineWidth(1)
+	r.pdf.Line(left, r.y+8, left+64, r.y+8)
+	r.y += 24
+
+	for index, item := range items {
+		prefix := ""
+		if numbered {
+			prefix = fmt.Sprintf("%d. ", index+1)
+			item = stripERXinInterpretationLeadingNumber(item)
+		}
+		r.drawParagraph(prefix+item, left+2, width-4, 10.5, 17, 10)
+	}
+	r.y += 8
+}
+
+func (r *erxinInterpretationPDFRenderer) drawParagraph(text string, x, width, size, lineHeight, bottomGap float64) {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		return
+	}
+	r.setFont(size)
+	lines, err := r.pdf.SplitText(value, width)
+	if err != nil || len(lines) == 0 {
+		lines = []string{value}
+	}
+	for _, line := range lines {
+		r.ensureSpace(lineHeight + 4)
+		r.setTextColor(51, 65, 85)
+		r.drawText(x, r.y, strings.TrimSpace(line))
+		r.y += lineHeight
+	}
+	r.y += bottomGap
+}
+
+func (r *erxinInterpretationPDFRenderer) drawFooter() {
+	footer := "本报告解读基于结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。"
+	r.setTextColor(100, 116, 139)
+	r.setFont(8.5)
+	r.centerText(64, erxinReportPDFPageHeight-54, erxinReportPDFPageWidth-128, footer)
+}
+
+func (r *erxinInterpretationPDFRenderer) ensureSpace(height float64) {
+	if r.y+height <= erxinReportPDFPageHeight-88 {
+		return
+	}
+	r.drawFooter()
+	r.pdf.AddPage()
+	r.beginPage()
+}
+
+func (r *erxinInterpretationPDFRenderer) drawText(x, y float64, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	_ = r.pdf.SetFont(erxinReportPDFFontFamily, "", r.currentFontSize)
+	r.pdf.SetX(x)
+	r.pdf.SetY(y)
+	_ = r.pdf.Text(value)
+}
+
+func (r *erxinInterpretationPDFRenderer) centerText(x, y, width float64, text string) {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		return
+	}
+	textWidth, _ := r.pdf.MeasureTextWidth(value)
+	r.drawText(x+(width-textWidth)/2, y, value)
+}
+
+func (r *erxinInterpretationPDFRenderer) setTextColor(red, green, blue uint8) {
+	r.pdf.SetTextColor(red, green, blue)
+}
+
+func (r *erxinInterpretationPDFRenderer) setFont(size float64) {
+	r.currentFontSize = size
+	_ = r.pdf.SetFont(erxinReportPDFFontFamily, "", size)
+}
+
+func erxinReportInterpretationIsEmpty(value model.ERXinReportInterpretationVO) bool {
+	return strings.TrimSpace(value.Summary) == "" &&
+		len(compactNonEmptyStrings(value.DomainAnalysis)) == 0 &&
+		len(compactNonEmptyStrings(value.Suggestions)) == 0 &&
+		len(compactNonEmptyStrings(value.Notes)) == 0
+}
+
+func erxinInterpretationGeneratedText(value model.ERXinReportInterpretationVO) string {
+	parts := make([]string, 0, 2)
+	if generatedBy := strings.TrimSpace(value.GeneratedBy); generatedBy != "" {
+		parts = append(parts, generatedBy)
+	}
+	if generatedAt := strings.TrimSpace(value.GeneratedAt); generatedAt != "" {
+		parts = append(parts, generatedAt)
+	}
+	if len(parts) == 0 {
+		return "-"
+	}
+	return strings.Join(parts, " · ")
+}
+
+func stripERXinInterpretationLeadingNumber(value string) string {
+	text := strings.TrimSpace(value)
+	runes := []rune(text)
+	index := 0
+	for index < len(runes) && ((runes[index] >= '0' && runes[index] <= '9') || strings.ContainsRune("一二三四五六七八九十", runes[index])) {
+		index++
+	}
+	if index == 0 || index >= len(runes) {
+		return text
+	}
+	for index < len(runes) && strings.ContainsRune(".．、:： \t", runes[index]) {
+		index++
+	}
+	return strings.TrimSpace(string(runes[index:]))
 }

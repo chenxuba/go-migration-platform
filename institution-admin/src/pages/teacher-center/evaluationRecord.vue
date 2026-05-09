@@ -12,6 +12,8 @@ import {
 } from '@/api/edu-center/pep3-assessment'
 import {
   deleteERXinAssessmentRecordApi,
+  downloadERXinAssessmentRecordReportCombinedPdfApi,
+  downloadERXinAssessmentRecordReportInterpretationPdfApi,
   downloadERXinAssessmentRecordReportPdfApi,
   generateERXinAssessmentRecordReportInterpretationStreamApi,
   getERXinAssessmentRecordReportInterpretationApi,
@@ -101,12 +103,38 @@ const exportDimensionOptions = [
     pages: '第 1-26 页',
   },
 ]
+const erxinExportDimensionOptions = [
+  {
+    value: 'erxin_result',
+    title: '评估记录',
+    badge: '01',
+    desc: '导出儿心量表评估结果记录PDF。',
+    pages: '记录',
+    recommended: true,
+  },
+  {
+    value: 'erxin_interpretation',
+    title: '报告解读',
+    badge: '02',
+    desc: '导出已生成的报告解读内容。',
+    pages: '报告',
+  },
+  {
+    value: 'erxin_combined',
+    title: '记录+报告',
+    badge: '03',
+    desc: '合并导出评估记录和报告解读。',
+    pages: '记录+报告',
+  },
+]
 const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
 const selectedExportDimension = ref(defaultExportDimension)
 const reportModuleValues = ['test_score', 'development_profile', 'score_and_profile', 'scoring_tables']
 const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleValues.includes(item.value))
 const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
 const activeReportModule = ref(defaultReportModule)
+const activeExportDimensionOptions = computed(() => isERXinRecord(exportTargetRecord.value) ? erxinExportDimensionOptions : exportDimensionOptions)
+const exportModalWidth = computed(() => isERXinRecord(exportTargetRecord.value) ? 760 : 700)
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -206,6 +234,20 @@ function unwrap(res) {
 
 function getErrorMessage(error, fallback) {
   return error?.response?.data?.message || error?.message || fallback
+}
+
+async function getDownloadErrorMessage(error, fallback) {
+  const blobText = await error?.response?.data?.text?.()
+  if (blobText) {
+    try {
+      const payload = JSON.parse(blobText)
+      return payload?.message || fallback
+    }
+    catch {
+      return blobText || fallback
+    }
+  }
+  return getErrorMessage(error, fallback)
 }
 
 function formatDate(value) {
@@ -491,15 +533,34 @@ function scrollInterpretationProgressIntoView() {
 }
 
 function exportDimensionTitle(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
+  return activeExportDimensionOptions.value.find(item => item.value === value)?.title || '全维度导出'
 }
 
 function exportDimensionPages(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.pages || '第 1-26 页'
+  return activeExportDimensionOptions.value.find(item => item.value === value)?.pages || '第 1-26 页'
 }
 
 function exportDimensionDesc(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
+  return activeExportDimensionOptions.value.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
+}
+
+function exportModalTitle() {
+  return isERXinRecord(exportTargetRecord.value) ? '导出儿心报告' : '导出记录册'
+}
+
+function exportModalHint() {
+  return isERXinRecord(exportTargetRecord.value) ? '选择本次导出的报告内容' : '选择本次导出的内容范围'
+}
+
+function defaultExportDimensionForRecord(record) {
+  if (isERXinRecord(record))
+    return erxinExportDimensionOptions.find(item => item.recommended)?.value || erxinExportDimensionOptions[0]?.value || 'erxin_result'
+  return defaultExportDimension
+}
+
+function normalizeSelectedExportDimension() {
+  if (!activeExportDimensionOptions.value.some(item => item.value === selectedExportDimension.value))
+    selectedExportDimension.value = defaultExportDimensionForRecord(exportTargetRecord.value)
 }
 
 function reportModuleTitle(value) {
@@ -571,9 +632,11 @@ function confirmAssessmentRecordAction(record = currentReport.value?.record) {
 function confirmReportExport(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id || exportingId.value)
     return
-  const content = isERXinRecord(row)
-    ? `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的评估报告PDF。`
-    : `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`
+  if (isERXinRecord(row)) {
+    openExportModal(row, erxinReportTab.value === 'interpretation' ? 'erxin_interpretation' : 'erxin_result')
+    return
+  }
+  const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`
   Modal.confirm({
     title: '确认导出评估报告？',
     content,
@@ -694,7 +757,9 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
   previewLoading.value = true
   try {
     const response = isERXinRecord(row)
-      ? await downloadERXinAssessmentRecordReportPdfApi(row.id)
+      ? (dimension === 'erxin_interpretation'
+          ? await downloadERXinAssessmentRecordReportInterpretationPdfApi(row.id)
+          : await downloadERXinAssessmentRecordReportPdfApi(row.id))
       : await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
     const nextUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     if (requestKey !== reportPreviewRequestKey.value) {
@@ -840,15 +905,12 @@ async function generateInterpretation(regenerate = false) {
   }
 }
 
-function openExportModal(row) {
+function openExportModal(row, dimension) {
   if (!row || exportingId.value)
     return
-  if (isERXinRecord(row)) {
-    confirmReportExport(row)
-    return
-  }
   exportTargetRecord.value = row
-  selectedExportDimension.value = defaultExportDimension
+  selectedExportDimension.value = dimension || defaultExportDimensionForRecord(row)
+  normalizeSelectedExportDimension()
   exportModalOpen.value = true
 }
 
@@ -897,19 +959,27 @@ function closeExportModal() {
   exportModalOpen.value = false
 }
 
+async function downloadERXinExportPdf(recordId, dimension) {
+  if (dimension === 'erxin_interpretation')
+    return downloadERXinAssessmentRecordReportInterpretationPdfApi(recordId)
+  if (dimension === 'erxin_combined')
+    return downloadERXinAssessmentRecordReportCombinedPdfApi(recordId)
+  return downloadERXinAssessmentRecordReportPdfApi(recordId)
+}
+
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
   exportingId.value = recordActionKey(row)
   try {
     const response = isERXinRecord(row)
-      ? await downloadERXinAssessmentRecordReportPdfApi(row.id)
+      ? await downloadERXinExportPdf(row.id, dimension)
       : await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
     const fallbackName = isERXinRecord(row)
-      ? `${row.studentName || '学员'}-${row.assessmentName || '儿心量表评估报告'}-${formatDate(row.assessmentDate)}.pdf`
+      ? `${row.studentName || '学员'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
       : `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
     link.click()
@@ -918,7 +988,7 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
       exportModalOpen.value = false
   }
   catch (error) {
-    messageService.error(getErrorMessage(error, '导出评估记录失败'))
+    messageService.error(await getDownloadErrorMessage(error, '导出评估记录失败'))
   }
   finally {
     exportingId.value = undefined
@@ -1287,7 +1357,7 @@ onBeforeUnmount(() => {
 
     <a-modal
       v-model:open="exportModalOpen"
-      width="700px"
+      :width="exportModalWidth"
       :centered="true"
       :footer="null"
       wrap-class-name="pep3-export-dimension-modal"
@@ -1296,11 +1366,11 @@ onBeforeUnmount(() => {
     >
       <template #title>
         <div class="export-modal-title">
-          <span>导出记录册</span>
-          <small>选择本次导出的内容范围</small>
+          <span>{{ exportModalTitle() }}</span>
+          <small>{{ exportModalHint() }}</small>
         </div>
       </template>
-      <div class="export-dimension">
+      <div class="export-dimension" :class="{ 'export-dimension--erxin': isERXinRecord(exportTargetRecord) }">
         <div class="export-dimension__summary">
           <div class="export-dimension__file">
             PDF
@@ -1315,13 +1385,35 @@ onBeforeUnmount(() => {
           </div>
           <div class="export-dimension__current">
             <span>可选范围</span>
-            <strong>{{ exportDimensionOptions.length }} 项</strong>
+            <strong>{{ activeExportDimensionOptions.length }} 项</strong>
           </div>
         </div>
-        <div class="export-dimension__chooser">
+        <div v-if="isERXinRecord(exportTargetRecord)" class="erxin-export-card-list">
+          <button
+            v-for="option in activeExportDimensionOptions"
+            :key="option.value"
+            type="button"
+            class="erxin-export-card"
+            :class="{ 'erxin-export-card--active': selectedExportDimension === option.value }"
+            :aria-pressed="selectedExportDimension === option.value"
+            :disabled="!!exportingId"
+            @click="selectedExportDimension = option.value"
+          >
+            <span class="erxin-export-card__check" />
+            <span class="erxin-export-card__body">
+              <span class="erxin-export-card__head">
+                <strong>{{ option.title }}</strong>
+                <em v-if="option.recommended">推荐</em>
+              </span>
+              <span class="erxin-export-card__desc">{{ option.desc }}</span>
+              <span class="erxin-export-card__pages">{{ option.pages }}</span>
+            </span>
+          </button>
+        </div>
+        <div v-else class="export-dimension__chooser">
           <div class="export-dimension__matrix">
             <button
-              v-for="option in exportDimensionOptions"
+              v-for="option in activeExportDimensionOptions"
               :key="option.value"
               type="button"
               class="export-dimension-chip"
@@ -2370,6 +2462,144 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.export-dimension--erxin {
+  padding-top: 14px;
+
+  .export-dimension__summary {
+    margin-bottom: 12px;
+  }
+
+  .export-dimension__file {
+    width: 38px;
+    height: 38px;
+    font-size: 12px;
+  }
+
+  .export-dimension__current {
+    min-width: 82px;
+  }
+
+  .export-dimension__footer {
+    margin-top: 14px;
+  }
+}
+
+.erxin-export-card-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.erxin-export-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
+  min-height: 116px;
+  padding: 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+
+  &:hover {
+    background: #fbfdff;
+    border-color: #c9ddf7;
+  }
+
+  &:focus-visible {
+    outline: 2px solid rgba(24, 144, 255, 0.2);
+    outline-offset: 2px;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.72;
+  }
+}
+
+.erxin-export-card--active {
+  background: #f7fbff;
+  border-color: #8dc6ff;
+  box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+}
+
+.erxin-export-card__check {
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  background: #cbd5e1;
+  border: 4px solid #f1f5f9;
+  border-radius: 50%;
+}
+
+.erxin-export-card--active .erxin-export-card__check {
+  background: var(--pro-ant-color-primary);
+  border-color: #dcecff;
+}
+
+.erxin-export-card__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.erxin-export-card__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  em {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    color: var(--pro-ant-color-primary);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 18px;
+    background: #eef6ff;
+    border-radius: 999px;
+  }
+}
+
+.erxin-export-card__desc {
+  display: -webkit-box;
+  min-height: 40px;
+  margin-top: 6px;
+  overflow: hidden;
+  color: #687386;
+  font-size: 12px;
+  line-height: 20px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.erxin-export-card__pages {
+  align-self: flex-start;
+  margin-top: auto;
+  color: #1677ff;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 @media (max-width: 760px) {
