@@ -12,9 +12,10 @@ import (
 )
 
 const (
-	erxinReportPDFPageWidth  = 595.28
-	erxinReportPDFPageHeight = 841.89
-	erxinReportPDFFontFamily = "erxin-cjk"
+	erxinReportPDFPageWidth      = 595.28
+	erxinReportPDFPageHeight     = 841.89
+	erxinReportPDFFontFamily     = "erxin-cjk"
+	erxinInterpretationPDFMargin = 48.0
 )
 
 func (svc *Service) GenerateERXinAssessmentReportPDF(userID, recordID int64) (string, []byte, error) {
@@ -494,7 +495,7 @@ func (r *erxinInterpretationPDFRenderer) drawPageBackground() {
 func (r *erxinInterpretationPDFRenderer) drawCoverHeader() {
 	r.setTextColor(15, 23, 42)
 	r.setFont(17)
-	r.centerText(64, r.y, erxinReportPDFPageWidth-128, "0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读")
+	r.centerText(erxinInterpretationPDFMargin, r.y, erxinReportPDFPageWidth-erxinInterpretationPDFMargin*2, "0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读")
 	r.y += 48
 }
 
@@ -503,15 +504,16 @@ func (r *erxinInterpretationPDFRenderer) drawSection(title string, items []strin
 	if len(items) == 0 {
 		return
 	}
-	left := 64.0
-	width := erxinReportPDFPageWidth - 128
+	left := erxinInterpretationPDFMargin
+	width := erxinReportPDFPageWidth - erxinInterpretationPDFMargin*2
 	r.ensureSpace(54)
 	r.setTextColor(15, 23, 42)
 	r.setFont(13)
 	r.drawText(left, r.y, title)
 	r.pdf.SetStrokeColor(59, 130, 246)
 	r.pdf.SetLineWidth(1)
-	r.pdf.Line(left, r.y+8, left+64, r.y+8)
+	titleWidth, _ := r.pdf.MeasureTextWidth(title)
+	r.pdf.Line(left, r.y+5, left+titleWidth, r.y+5)
 	r.y += 24
 
 	for index, item := range items {
@@ -548,7 +550,7 @@ func (r *erxinInterpretationPDFRenderer) drawFooter() {
 	footer := "本报告解读基于结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。"
 	r.setTextColor(100, 116, 139)
 	r.setFont(8.5)
-	r.centerText(64, erxinReportPDFPageHeight-54, erxinReportPDFPageWidth-128, footer)
+	r.centerText(erxinInterpretationPDFMargin, erxinReportPDFPageHeight-54, erxinReportPDFPageWidth-erxinInterpretationPDFMargin*2, footer)
 }
 
 func (r *erxinInterpretationPDFRenderer) ensureSpace(height float64) {
