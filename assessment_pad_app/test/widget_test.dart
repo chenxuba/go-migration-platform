@@ -775,6 +775,38 @@ void main() {
     expect(find.text('能力雷达'), findsNothing);
   });
 
+  testWidgets('home shortcut opens IEP center static page',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('学员IEP队列'), findsOneWidget);
+    expect(find.text('康复教学季度计划'), findsOneWidget);
+    expect(find.text('开始上课'), findsOneWidget);
+    expect(find.text('计划参与者'), findsWidgets);
+    expect(find.text('实施者'), findsWidgets);
+  });
+
   testWidgets('smart timetable detects availability after target selection',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();

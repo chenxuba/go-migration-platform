@@ -13,6 +13,7 @@ import 'auth_client.dart';
 import 'erxin_assessment_client.dart';
 import 'erxin_assessment_page.dart';
 import 'home_client.dart';
+import 'iep_center_page.dart';
 import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
 import 'pad_responsive.dart';
@@ -110,6 +111,17 @@ class AssessmentPadApp extends StatelessWidget {
           builder: (BuildContext context) => Scaffold(
             body: PadViewport(
               child: TrainingCenterPage(
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/iep-center':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: IepCenterPage(
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -2682,6 +2694,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     Navigator.of(context).pushNamed('/smart-timetable'),
                 onReportTap: () =>
                     Navigator.of(context).pushNamed('/assessment-reports'),
+                onIepTap: () => Navigator.of(context).pushNamed('/iep-center'),
                 onTrainingTap: () =>
                     Navigator.of(context).pushNamed('/training-center'),
               ),
@@ -4151,6 +4164,7 @@ class FeatureShortcutRow extends StatelessWidget {
     this.spacing = 14,
     this.onTimetableTap,
     this.onReportTap,
+    this.onIepTap,
     this.onTrainingTap,
     super.key,
   });
@@ -4159,6 +4173,7 @@ class FeatureShortcutRow extends StatelessWidget {
   final double spacing;
   final VoidCallback? onTimetableTap;
   final VoidCallback? onReportTap;
+  final VoidCallback? onIepTap;
   final VoidCallback? onTrainingTap;
 
   @override
@@ -4194,6 +4209,7 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFFE87952),
           bg: const Color(0xFFFFF0E6),
           width: cardWidth,
+          onTap: onIepTap,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
