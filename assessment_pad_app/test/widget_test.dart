@@ -817,6 +817,12 @@ void main() {
       tester.widget<Text>(find.text('IEP总计划')).style?.color,
       const Color(0xFF72594D),
     );
+
+    await tester.tap(find.text('5月 W1'));
+    await tester.pump();
+
+    expect(tester.widget<Text>(find.text('5月')).style?.color, Colors.white);
+    expect(tester.widget<Text>(find.text('5月 W1')).style?.color, Colors.white);
   });
 
   testWidgets('smart timetable detects availability after target selection',

@@ -287,40 +287,6 @@ class _SearchBox extends StatelessWidget {
   }
 }
 
-class _GhostActionButton extends StatelessWidget {
-  const _GhostActionButton({required this.icon, required this.label});
-
-  final IconData icon;
-  final String label;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.92),
-        borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: _IepColors.line),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: _IepColors.ink, size: 19),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: _IepColors.ink,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 class _SoftActionButton extends StatelessWidget {
   const _SoftActionButton({required this.icon, required this.label});
 
@@ -899,47 +865,62 @@ class _WorkspaceHeader extends StatelessWidget {
               ),
             ),
           ),
-          const _HeaderMetaPill(icon: Icons.verified_rounded, text: '已确认'),
+          const _HeaderMetaPill(
+            icon: Icons.verified_rounded,
+            text: '已确认',
+            iconColor: _IepColors.green,
+          ),
           const SizedBox(width: 10),
           const _HeaderMetaPill(
             icon: Icons.date_range_rounded,
             text: '2026.05.01-2026.07.31',
           ),
-          const SizedBox(width: 12),
-          Container(
-            height: 36,
-            padding: const EdgeInsets.fromLTRB(12, 0, 6, 0),
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF6EE),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: const Color(0xFFFFD3BA)),
-            ),
-            child: Row(
-              children: const <Widget>[
-                Text(
-                  '第2月 · 第1周',
-                  style: TextStyle(
-                    color: _IepColors.orangeDeep,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                SizedBox(width: 9),
-                _StartClassButton(),
-              ],
-            ),
-          ),
+          const SizedBox(width: 10),
+          const _ClassContextPill(),
+          const SizedBox(width: 10),
+          const _StartClassButton(),
         ],
       ),
     );
   }
 }
 
+class _ClassContextPill extends StatelessWidget {
+  const _ClassContextPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6EE),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFFFD3BA)),
+      ),
+      child: const Text(
+        '第2月 · 第1周',
+        style: TextStyle(
+          color: _IepColors.orangeDeep,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
 class _HeaderMetaPill extends StatelessWidget {
-  const _HeaderMetaPill({required this.icon, required this.text});
+  const _HeaderMetaPill({
+    required this.icon,
+    required this.text,
+    this.iconColor = _IepColors.muted,
+  });
 
   final IconData icon;
   final String text;
+  final Color iconColor;
 
   @override
   Widget build(BuildContext context) {
@@ -953,7 +934,7 @@ class _HeaderMetaPill extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          Icon(icon, size: 15, color: _IepColors.muted),
+          Icon(icon, size: 15, color: iconColor),
           const SizedBox(width: 5),
           Text(
             text,
@@ -976,21 +957,26 @@ class _StartClassButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 28,
-      padding: const EdgeInsets.symmetric(horizontal: 11),
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
       decoration: BoxDecoration(
         color: _IepColors.orange,
-        borderRadius: BorderRadius.circular(14),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _iepShadow(
+          color: const Color(0x32E96F43),
+          blur: 12,
+          offset: const Offset(0, 5),
+        ),
       ),
       child: Row(
         children: const <Widget>[
-          Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 17),
-          SizedBox(width: 5),
+          Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 19),
+          SizedBox(width: 6),
           Text(
             '开始上课',
             style: TextStyle(
               color: Colors.white,
-              fontSize: 12,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -1044,8 +1030,9 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   late final Animation<double> _hintOffset;
   bool _showLeftHint = false;
   bool _showRightHint = false;
-  String _selectedPlan = 'iep';
+  String _selectedSection = 'iep';
   String _selectedMonth = '5月';
+  int? _selectedWeek;
 
   @override
   void initState() {
@@ -1083,15 +1070,25 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
 
   void _selectPlan(String plan) {
     setState(() {
-      _selectedPlan = plan;
+      _selectedSection = plan;
+      _selectedWeek = null;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
 
   void _selectMonth(String month) {
     setState(() {
-      _selectedPlan = month;
+      _selectedSection = 'month';
       _selectedMonth = month;
+      _selectedWeek = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _selectWeek(int weekNumber) {
+    setState(() {
+      _selectedSection = 'week';
+      _selectedWeek = weekNumber;
     });
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
@@ -1127,26 +1124,29 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                     children: <Widget>[
                       _PlanTab(
                         text: 'IEP总计划',
-                        active: _selectedPlan == 'iep',
+                        active: _selectedSection == 'iep',
                         width: 92,
                         onTap: () => _selectPlan('iep'),
                       ),
                       const _PlanNavLabel(text: '月计划'),
                       _PlanTab(
                         text: '5月',
-                        active: _selectedPlan == '5月',
+                        active:
+                            _selectedSection != 'iep' && _selectedMonth == '5月',
                         width: 54,
                         onTap: () => _selectMonth('5月'),
                       ),
                       _PlanTab(
                         text: '6月',
-                        active: _selectedPlan == '6月',
+                        active:
+                            _selectedSection != 'iep' && _selectedMonth == '6月',
                         width: 54,
                         onTap: () => _selectMonth('6月'),
                       ),
                       _PlanTab(
                         text: '7月',
-                        active: _selectedPlan == '7月',
+                        active:
+                            _selectedSection != 'iep' && _selectedMonth == '7月',
                         width: 54,
                         onTap: () => _selectMonth('7月'),
                       ),
@@ -1156,11 +1156,11 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                         return _PlanTab(
                           text: '${_selectedMonth} W$weekNumber',
                           width: 68,
-                          active:
-                              _selectedPlan == '$_selectedMonth-W$weekNumber',
+                          active: _selectedSection == 'week' &&
+                              _selectedWeek == weekNumber,
+                          activeTone: _PlanTabTone.week,
                           rightGap: weekNumber == 5 ? 2 : 6,
-                          onTap: () =>
-                              _selectPlan('$_selectedMonth-W$weekNumber'),
+                          onTap: () => _selectWeek(weekNumber),
                         );
                       }),
                     ],
@@ -1366,11 +1366,14 @@ class _TableTinyAction extends StatelessWidget {
   }
 }
 
+enum _PlanTabTone { primary, week }
+
 class _PlanTab extends StatelessWidget {
   const _PlanTab({
     required this.text,
     required this.width,
     this.active = false,
+    this.activeTone = _PlanTabTone.primary,
     this.rightGap = 6,
     this.onTap,
   });
@@ -1378,11 +1381,24 @@ class _PlanTab extends StatelessWidget {
   final String text;
   final double width;
   final bool active;
+  final _PlanTabTone activeTone;
   final double rightGap;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final Color activeBg =
+        activeTone == _PlanTabTone.week ? _IepColors.orange : _IepColors.ink;
+    final Color inactiveBg = activeTone == _PlanTabTone.week
+        ? const Color(0xFFFFF3EC)
+        : const Color(0xFFFFFAF6);
+    final Color inactiveText = activeTone == _PlanTabTone.week
+        ? _IepColors.orangeDeep
+        : _IepColors.text;
+    final Color borderColor = activeTone == _PlanTabTone.week
+        ? const Color(0xFFFFD8C3)
+        : _IepColors.lightLine;
+
     return Padding(
       padding: EdgeInsets.only(right: rightGap),
       child: Material(
@@ -1396,15 +1412,15 @@ class _PlanTab extends StatelessWidget {
             height: 30,
             alignment: Alignment.center,
             decoration: BoxDecoration(
-              color: active ? _IepColors.ink : const Color(0xFFFFFAF6),
+              color: active ? activeBg : inactiveBg,
               borderRadius: BorderRadius.circular(15),
-              border: active ? null : Border.all(color: _IepColors.lightLine),
+              border: active ? null : Border.all(color: borderColor),
             ),
             child: Text(
               text,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: active ? Colors.white : _IepColors.text,
+                color: active ? Colors.white : inactiveText,
                 fontSize: 11,
                 fontWeight: FontWeight.w900,
               ),
