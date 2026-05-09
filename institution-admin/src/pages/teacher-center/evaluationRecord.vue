@@ -1105,7 +1105,7 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
-                  <a v-if="!isERXinRecord(record)" @click="openIepModal(record)">{{ iepActionText(record) }}</a>
+                  <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
             </template>

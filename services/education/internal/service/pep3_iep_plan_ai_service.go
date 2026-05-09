@@ -295,6 +295,10 @@ func buildPEP3IEPPlanPromptRehabRecords(rows []repository.RehabRecordWordExportR
 }
 
 func callDeepSeekIEPPlan(ctx context.Context, payload pep3IEPPlanPromptPayload) (model.PEP3IEPPlanAIResult, error) {
+	return callDeepSeekIEPPlanWithPrompt(ctx, payload, pep3IEPPlanSystemPrompt())
+}
+
+func callDeepSeekIEPPlanWithPrompt(ctx context.Context, payload any, systemPrompt string) (model.PEP3IEPPlanAIResult, error) {
 	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 	if apiKey == "" {
 		apiKey = deepSeekIEPPlanFallbackAPIKey
@@ -307,7 +311,7 @@ func callDeepSeekIEPPlan(ctx context.Context, payload pep3IEPPlanPromptPayload) 
 		endpoint = deepSeekIEPPlanDefaultURL
 	}
 
-	requestBody, err := buildDeepSeekIEPPlanRequestBody(payload, false)
+	requestBody, err := buildDeepSeekIEPPlanRequestBodyWithPrompt(payload, systemPrompt, false)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
 	}
@@ -369,26 +373,24 @@ func callDeepSeekIEPPlan(ctx context.Context, payload pep3IEPPlanPromptPayload) 
 }
 
 func buildDeepSeekIEPPlanRequestBody(payload pep3IEPPlanPromptPayload, stream bool) ([]byte, error) {
+	return buildDeepSeekIEPPlanRequestBodyWithPrompt(payload, pep3IEPPlanSystemPrompt(), stream)
+}
+
+func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string, stream bool) ([]byte, error) {
 	payloadJSON, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
+	}
+	systemPrompt = strings.TrimSpace(systemPrompt)
+	if systemPrompt == "" {
+		systemPrompt = pep3IEPPlanSystemPrompt()
 	}
 	return json.Marshal(deepSeekChatRequest{
 		Model: deepSeekIEPPlanModel,
 		Messages: []deepSeekChatMessage{
 			{
-				Role: "system",
-				Content: strings.Join([]string{
-					"你是儿童康复机构的IEP计划生成助手。",
-					"根据PEP-3评估结果和近期儿童训练记录，生成可落地的康复教学计划。",
-					"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
-					"表格结构只能是：康复领域、长期目标、短期目标、课程形式、起止日期。",
-					"不要输出家庭干预计划。长期目标和短期目标要具体、可训练、可观察。",
-					"每个康复领域至少输出3行短期目标，一行只能放1条短期目标。",
-					"同一康复领域的longGoal要写成同一个字符串，至少包含2条长期目标，用\\n分隔并编号；同领域每行longGoal保持完全相同，便于合并成一个单元格。",
-					"courseForm要根据近期儿童训练记录、目标场景和实际干预组织方式判断；一对一、个训、个别训练写个训；集体、小组、融合、团体场景写集体课；不能所有目标无依据地统一写同一种课程形式。",
-					"起止日期要按自然月份阶段划分：3个月计划分3段，每段1个月；6个月计划分3段，每段2个月；不要把每条短期目标都写成生成当天到半年后。",
-				}, "\n"),
+				Role:    "system",
+				Content: systemPrompt,
 			},
 			{
 				Role:    "user",
@@ -405,7 +407,25 @@ func buildDeepSeekIEPPlanRequestBody(payload pep3IEPPlanPromptPayload, stream bo
 	})
 }
 
+func pep3IEPPlanSystemPrompt() string {
+	return strings.Join([]string{
+		"你是儿童康复机构的IEP计划生成助手。",
+		"根据PEP-3评估结果和近期儿童训练记录，生成可落地的康复教学计划。",
+		"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
+		"表格结构只能是：康复领域、长期目标、短期目标、课程形式、起止日期。",
+		"不要输出家庭干预计划。长期目标和短期目标要具体、可训练、可观察。",
+		"每个康复领域至少输出3行短期目标，一行只能放1条短期目标。",
+		"同一康复领域的longGoal要写成同一个字符串，至少包含2条长期目标，用\\n分隔并编号；同领域每行longGoal保持完全相同，便于合并成一个单元格。",
+		"courseForm要根据近期儿童训练记录、目标场景和实际干预组织方式判断；一对一、个训、个别训练写个训；集体、小组、融合、团体场景写集体课；不能所有目标无依据地统一写同一种课程形式。",
+		"起止日期要按自然月份阶段划分：3个月计划分3段，每段1个月；6个月计划分3段，每段2个月；不要把每条短期目标都写成生成当天到半年后。",
+	}, "\n")
+}
+
 func callDeepSeekIEPPlanStream(ctx context.Context, payload pep3IEPPlanPromptPayload, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
+	return callDeepSeekIEPPlanStreamWithPrompt(ctx, payload, pep3IEPPlanSystemPrompt(), onDelta)
+}
+
+func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, systemPrompt string, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
 	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 	if apiKey == "" {
 		apiKey = deepSeekIEPPlanFallbackAPIKey
@@ -418,7 +438,7 @@ func callDeepSeekIEPPlanStream(ctx context.Context, payload pep3IEPPlanPromptPay
 		endpoint = deepSeekIEPPlanDefaultURL
 	}
 
-	requestBody, err := buildDeepSeekIEPPlanRequestBody(payload, true)
+	requestBody, err := buildDeepSeekIEPPlanRequestBodyWithPrompt(payload, systemPrompt, true)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
 	}

@@ -1,7 +1,21 @@
 import axios from 'axios'
 import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
-import type { PageRequestModel, PageResult, PEP3AssessmentDraftProgress, PEP3AssessmentRecordDetail, PEP3AssessmentRecordQueryModel, PEP3AssessmentRecordSummary } from './pep3-assessment'
+import type {
+  PageRequestModel,
+  PageResult,
+  PEP3AssessmentDraftProgress,
+  PEP3AssessmentRecordDetail,
+  PEP3AssessmentRecordQueryModel,
+  PEP3AssessmentRecordSummary,
+  PEP3ExecutionPlanSavedVO,
+  PEP3IEPPlanAIResult,
+  PEP3IEPPlanAIStreamHandlers,
+  PEP3IEPPlanAIStreamOptions,
+  PEP3IEPPlanSavedVO,
+  PEP3MonthlyPlanAIResult,
+  PEP3WeeklyPlanAIResult,
+} from './pep3-assessment'
 
 export type ERXinScaleCode = 'ERXIN2' | string
 
@@ -213,6 +227,12 @@ export interface ERXinReportInterpretationStreamOptions {
   signal?: AbortSignal
 }
 
+export interface ERXinExecutionPlanAIStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult) => void
+}
+
 function normalizeERXinPageRequest<T extends ERXinDraftPageRequest | ERXinRecordPageRequest>(data: T): T {
   const normalized = {
     ...data,
@@ -414,4 +434,272 @@ export async function generateERXinAssessmentRecordReportInterpretationStreamApi
   if (!finalInterpretation)
     throw new Error('报告解读生成未返回结果')
   return finalInterpretation
+}
+
+export function downloadERXinIEPPlanWordApi(params: { id?: number | string, duration?: number | string, plan?: PEP3IEPPlanAIResult } = {}) {
+  const token = useAuthorization()
+  const headers = {
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+  }
+  if (params.plan) {
+    return axios.post('/api/v1/assessments/erxin/records/iep-plan/word', {
+      id: Number(params.id || 0),
+      durationMonths: Number(params.duration || 0),
+      plan: params.plan,
+    }, {
+      responseType: 'blob',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+    })
+  }
+  return axios.get('/api/v1/assessments/erxin/records/iep-plan/word', {
+    params,
+    responseType: 'blob',
+    headers,
+  })
+}
+
+export function getERXinIEPPlanApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3IEPPlanSavedVO>('/api/v1/assessments/erxin/records/iep-plan/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function saveERXinIEPPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  status?: string
+  plan: PEP3IEPPlanAIResult
+}) {
+  return usePost<PEP3IEPPlanSavedVO>('/api/v1/assessments/erxin/records/iep-plan/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
+}
+
+export async function generateERXinIEPPlanAIStreamApi(
+  data: { id?: number | string, durationMonths?: number | string },
+  handlers: PEP3IEPPlanAIStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/erxin/records/iep-plan/ai/stream', {
+    method: 'POST',
+    headers: erxinStreamHeaders(),
+    body: JSON.stringify(data),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || 'AI生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalPlan: PEP3IEPPlanAIResult | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalPlan = payload.data
+      if (finalPlan)
+        handlers.onDone?.(finalPlan)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || 'AI生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('AI生成已取消', 'AbortError')
+  if (!finalPlan)
+    throw new Error('AI生成未返回计划数据')
+  return finalPlan
+}
+
+export async function generateERXinExecutionPlanAIStreamApi(
+  data: {
+    id?: number | string
+    durationMonths?: number | string
+    planType: 'monthly' | 'weekly'
+    targetMonthIndex?: number | string
+    targetWeekIndex?: number | string
+    sourcePlan: PEP3IEPPlanAIResult
+    monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  },
+  handlers: ERXinExecutionPlanAIStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/erxin/records/iep-plan/execution/ai/stream', {
+    method: 'POST',
+    headers: erxinStreamHeaders(),
+    body: JSON.stringify({
+      ...data,
+      id: Number(data.id || 0),
+      durationMonths: Number(data.durationMonths || 0),
+      targetMonthIndex: Number(data.targetMonthIndex || 0),
+      targetWeekIndex: Number(data.targetWeekIndex || 0),
+    }),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || 'AI生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalPlan: PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalPlan = payload.data
+      if (finalPlan)
+        handlers.onDone?.(finalPlan)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || 'AI生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('AI生成已取消', 'AbortError')
+  if (!finalPlan)
+    throw new Error('AI生成未返回计划数据')
+  return finalPlan
+}
+
+export function downloadERXinExecutionPlanWordApi(data: {
+  id?: number | string
+  planType: 'monthly' | 'weekly'
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+}) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/assessments/erxin/records/iep-plan/execution/word', {
+    ...data,
+    id: Number(data.id || 0),
+  }, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+      'Content-Type': 'application/json',
+    },
+  })
+}
+
+export function getERXinExecutionPlansApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/erxin/records/iep-plan/execution/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function saveERXinExecutionPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  planType: 'monthly' | 'weekly'
+  targetMonthIndex?: number | string
+  targetWeekIndex?: number | string
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+  preserveWeeklyPlans?: boolean
+}) {
+  return usePost<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/erxin/records/iep-plan/execution/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    targetMonthIndex: Number(data.targetMonthIndex || 0),
+    targetWeekIndex: Number(data.targetWeekIndex || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
 }

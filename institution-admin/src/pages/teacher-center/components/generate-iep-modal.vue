@@ -6,7 +6,7 @@ import {
 } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { downloadPEP3ExecutionPlanWordApi, downloadPEP3IEPPlanWordApi, generatePEP3ExecutionPlanAIStreamApi, generatePEP3IEPPlanAIStreamApi, getPEP3ExecutionPlansApi, getPEP3IEPPlanApi, savePEP3ExecutionPlanApi, savePEP3IEPPlanApi } from '@/api/edu-center/pep3-assessment'
+import { resolveIEPPlanAssessmentAdapter } from './iep-plan-adapters'
 import { useUserStore } from '@/stores/user'
 import messageService from '@/utils/messageService'
 
@@ -29,6 +29,7 @@ const openModal = computed({
   set: value => emit('update:open', value),
 })
 
+const assessmentAdapter = computed(() => resolveIEPPlanAssessmentAdapter(props.record))
 const planDuration = ref('3')
 const activeDomainKey = ref('language')
 const exportingWord = ref(false)
@@ -555,7 +556,7 @@ const generationOverlayDescription = computed(() => {
       return aiStreamTail.value
     return `DeepSeek正在根据当前${planTitle.value}${monthlyPlan.value?.rows?.length && executionPlanGeneratingType.value === 'weekly' ? '和月度计划' : ''}生成${executionPlanGeneratingLabel.value}，接收到内容后会同步渲染到A4表格。`
   }
-  return aiStreamTail.value || '正在读取评估测评和儿童训练记录，并生成可编辑的IEP表格。'
+  return aiStreamTail.value || assessmentAdapter.value.generationDescription
 })
 
 const generationOverlayWarning = computed(() => {
@@ -563,6 +564,9 @@ const generationOverlayWarning = computed(() => {
     return '执行计划生成过程中请不要刷新页面或关闭弹窗，否则本次返回结果无法展示。'
   return '生成过程中请不要刷新页面或关闭弹窗；如需离开，请先确认取消本次生成。'
 })
+
+const generationSourceText = computed(() => assessmentAdapter.value.generationSourceText || assessmentAdapter.value.generationBasisText)
+const fallbackGenerationBasisText = computed(() => assessmentAdapter.value.generationFallbackBasisText || assessmentAdapter.value.generationBasisText)
 
 const generationOverlayPercent = computed(() => {
   if (generatingExecutionPlan.value)
@@ -1015,7 +1019,7 @@ async function generateMonthlyPlan(options = {}) {
   clearSelectedMonthWeeklyPlans()
   executionPlanView.value = 'monthly'
   try {
-    const result = await generatePEP3ExecutionPlanAIStreamApi(
+    const result = await assessmentAdapter.value.generateExecutionPlanStream(
       {
         id: props.record?.id,
         durationMonths: planDuration.value,
@@ -1094,7 +1098,7 @@ function confirmRegenerateMonthlyPlan() {
 function confirmGenerateMonthlyPlan() {
   Modal.confirm({
     title: `生成${selectedExecutionMonthLabel.value}计划`,
-    content: `将基于 pep-3教研IEP库v3.0、当前评估结果、儿童训练记录和当前IEP总计划，生成${selectedExecutionMonthLabel.value}月度计划。确认要继续吗？`,
+    content: `将基于${generationSourceText.value}和当前IEP总计划，生成${selectedExecutionMonthLabel.value}月度计划。确认要继续吗？`,
     okText: '确认生成',
     cancelText: '先不生成',
     okButtonProps: { type: 'primary' },
@@ -1108,7 +1112,7 @@ function confirmGenerateMonthlyPlan() {
 
 function confirmRegenerateIepPlan() {
   if (!planRows.value.length) {
-    generateAIPlan()
+    confirmGenerateIepPlan()
     return
   }
   Modal.confirm({
@@ -1125,17 +1129,50 @@ function confirmRegenerateIepPlan() {
   })
 }
 
-function confirmGenerateIepPlan() {
+async function resolveGeneratePreConfirm() {
+  try {
+    return await assessmentAdapter.value.shouldConfirmBeforeGenerate?.(props.record)
+  }
+  catch (error) {
+    console.error('check iep generation context failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '报告解读状态读取失败，请稍后重试')
+    return false
+  }
+}
+
+function showGeneratePreConfirm(confirmConfig, options = {}) {
+  Modal.confirm({
+    title: confirmConfig.title || '确认生成IEP计划？',
+    content: confirmConfig.content || '确认继续生成IEP计划吗？',
+    okText: confirmConfig.okText || '确定',
+    cancelText: confirmConfig.cancelText || '取消',
+    okButtonProps: { type: 'primary' },
+    closable: true,
+    centered: true,
+    onOk() {
+      runAfterConfirmClosed(() => generateAIPlan({ skipPrecheck: true, fallbackSource: !!options.fallbackSource }))
+    },
+  })
+}
+
+async function confirmGenerateIepPlan() {
+  const preConfirm = await resolveGeneratePreConfirm()
+  if (preConfirm === false)
+    return
+  if (preConfirm) {
+    showGeneratePreConfirm(preConfirm, { fallbackSource: true })
+    return
+  }
   Modal.confirm({
     title: 'AI智能生成IEP计划',
-    content: `将基于 pep-3教研IEP库v3.0、当前评估结果和儿童训练记录生成IEP计划。确认要继续吗？`,
+    content: `将基于${generationSourceText.value}生成IEP计划。确认要继续吗？`,
     okText: '确认生成',
     cancelText: '先不生成',
     okButtonProps: { type: 'primary' },
     closable: true,
     centered: true,
     onOk() {
-      runAfterConfirmClosed(() => generateAIPlan())
+      runAfterConfirmClosed(() => generateAIPlan({ skipPrecheck: true }))
     },
   })
 }
@@ -1193,7 +1230,7 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
   weeklyPlan.value = null
   executionPlanView.value = 'weekly'
   try {
-    const result = await generatePEP3ExecutionPlanAIStreamApi(
+    const result = await assessmentAdapter.value.generateExecutionPlanStream(
       {
         id: props.record?.id,
         durationMonths: planDuration.value,
@@ -1317,7 +1354,7 @@ async function persistExecutionPlan(planType, plan, options = {}) {
   if (!props.record?.id || !plan)
     return false
   try {
-    const response = await savePEP3ExecutionPlanApi({
+    const response = await assessmentAdapter.value.saveExecutionPlan({
       id: props.record.id,
       durationMonths: planDuration.value,
       planType,
@@ -1360,7 +1397,7 @@ async function loadSavedExecutionPlans(durationMonths = planDuration.value) {
   if (!props.record?.id)
     return
   try {
-    const response = await getPEP3ExecutionPlansApi(props.record.id, durationMonths)
+    const response = await assessmentAdapter.value.getExecutionPlans(props.record.id, durationMonths)
     applySavedExecutionPlansData(unwrapResponse(response))
   }
   catch (error) {
@@ -2338,7 +2375,7 @@ async function loadSavedIepPlan(requestKey, durationMonths = planDuration.value,
     schedulePlanLoadingOverlay(requestKey)
   }
   try {
-    const response = await getPEP3IEPPlanApi(props.record.id, durationKey)
+    const response = await assessmentAdapter.value.getIepPlan(props.record.id, durationKey)
     if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
       return false
     if (planDuration.value !== durationKey)
@@ -2373,7 +2410,7 @@ async function loadFirstAvailableIepPlan(requestKey) {
   scrollPlanViewToTop()
   try {
     for (const durationKey of ['3', '6']) {
-      const response = await getPEP3IEPPlanApi(props.record.id, durationKey)
+      const response = await assessmentAdapter.value.getIepPlan(props.record.id, durationKey)
       if (requestKey !== undefined && requestKey !== loadPlanRequestKey)
         return
       const data = unwrapResponse(response)
@@ -2419,7 +2456,7 @@ async function persistIepPlan(status, options = {}) {
   else
     savingDraft.value = true
   try {
-    const response = await savePEP3IEPPlanApi({
+    const response = await assessmentAdapter.value.saveIepPlan({
       id: props.record.id,
       durationMonths: planDuration.value,
       status,
@@ -2508,7 +2545,7 @@ async function exportIepWord() {
   const studentName = props.record?.studentName || '张一鸣'
   exportingWord.value = true
   try {
-    const response = await downloadPEP3IEPPlanWordApi({
+    const response = await assessmentAdapter.value.downloadIepPlanWord({
       id: props.record?.id,
       duration: planDuration.value,
       plan: planPayloadForSave(),
@@ -2550,7 +2587,7 @@ async function exportExecutionPlanWord() {
   }
   exportingWord.value = true
   try {
-    const response = await downloadPEP3ExecutionPlanWordApi({
+    const response = await assessmentAdapter.value.downloadExecutionPlanWord({
       id: props.record?.id,
       planType: isMonthly ? 'monthly' : 'weekly',
       monthlyPlan: isMonthly ? monthlyPlan.value : null,
@@ -2578,19 +2615,29 @@ async function exportExecutionPlanWord() {
   }
 }
 
-async function generateAIPlan() {
+async function generateAIPlan(options = {}) {
   if (aiGenerating.value)
     return
   if (!props.record?.id) {
     messageService.warning('请先选择评估记录')
     return
   }
+  if (!options.skipPrecheck) {
+    const preConfirm = await resolveGeneratePreConfirm()
+    if (preConfirm === false)
+      return
+    if (preConfirm) {
+      showGeneratePreConfirm(preConfirm, { fallbackSource: true })
+      return
+    }
+  }
+  const generationBasisText = options.fallbackSource ? fallbackGenerationBasisText.value : assessmentAdapter.value.generationBasisText
   const requestKey = aiGenerationRequestKey + 1
   aiGenerationRequestKey = requestKey
   const abortController = new AbortController()
   aiStreamAbortController.value = abortController
   aiGenerating.value = true
-  aiStreamStatus.value = '正在准备评估和训练记录'
+  aiStreamStatus.value = `正在准备${generationBasisText}`
   aiStreamText.value = ''
   streamingPlan.value = null
   generatedPlan.value = null
@@ -2603,7 +2650,7 @@ async function generateAIPlan() {
   weeklyPlans.value = {}
   editingPlanView.value = ''
   try {
-    const plan = await generatePEP3IEPPlanAIStreamApi(
+    const plan = await assessmentAdapter.value.generateIepPlanStream(
       {
         id: Number(props.record.id),
         durationMonths: Number(planDuration.value),
@@ -2817,7 +2864,7 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="iep-preview-toolbar__actions">
-          <a-tooltip v-if="isIepPreview && !planRows.length" title="基于 pep-3教研IEP库v3.0">
+          <a-tooltip v-if="isIepPreview && !planRows.length" :title="`基于${generationSourceText}`">
             <span class="iep-toolbar-tooltip-target">
               <a-button
                 size="small"
@@ -3197,7 +3244,7 @@ onBeforeUnmount(() => {
                 <tr v-if="!planDisplayRows.length" class="plan-empty-row">
                   <td colspan="8">
                     <strong>{{ loadingSavedPlan ? '正在读取IEP计划' : '暂无IEP计划内容' }}</strong>
-                    <span>{{ loadingSavedPlan ? '正在读取已保存的草稿或确认计划。' : '点击“AI智能生成”后，系统会根据评估结果和近期训练记录实时生成表格。' }}</span>
+                    <span>{{ loadingSavedPlan ? '正在读取已保存的草稿或确认计划。' : assessmentAdapter.emptyDescription }}</span>
                   </td>
                 </tr>
               </tbody>
