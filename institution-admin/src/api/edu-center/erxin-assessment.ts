@@ -188,6 +188,10 @@ export interface ERXinRecordConfigUpdateRequest {
   assessmentDate: string
 }
 
+export interface ERXinRecordUpdateRequest extends ERXinDraftSaveRequest {
+  id: number
+}
+
 export interface ERXinReportInterpretation {
   title: string
   model?: string
@@ -264,6 +268,10 @@ export function getERXinAssessmentRecordDetailApi(id: number) {
 
 export function updateERXinAssessmentRecordConfigApi(data: ERXinRecordConfigUpdateRequest) {
   return usePost<ERXinAssessmentRecordDetail>('/api/v1/assessments/erxin/records/config/update', data)
+}
+
+export function updateERXinAssessmentRecordApi(data: ERXinRecordUpdateRequest) {
+  return usePost<ERXinAssessmentRecordDetail>('/api/v1/assessments/erxin/records/update', data)
 }
 
 export function deleteERXinAssessmentRecordApi(id: number) {

@@ -537,6 +537,8 @@ function assessmentRecordActionText(record) {
 }
 
 function assessmentRecordActionTip(record) {
+  if (isERXinRecord(record))
+    return ''
   return hasIepPlan(record)
     ? '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
     : ''
@@ -547,6 +549,8 @@ function assessmentRecordConfirmTitle(record) {
 }
 
 function assessmentRecordConfirmContent(record) {
+  if (isERXinRecord(record))
+    return '修改并重新提交后会覆盖当前儿心评估记录和报告数据，请确认后继续。'
   if (hasIepPlan(record))
     return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
   return '修改并重新提交后会覆盖当前评估记录和报告数据，请确认后继续。'
@@ -866,14 +870,17 @@ function editAssessmentRecord(row = currentReport.value?.record) {
   if (!row?.id)
     return
   const recordMode = hasIepPlan(row) ? 'reuse' : 'edit'
+  const path = isERXinRecord(row)
+    ? '/teacherCenter/erxin-assessment-workbench'
+    : '/teacherCenter/scale-assessment-workbench'
   closeReportModal()
   void router.push({
-    path: '/teacherCenter/scale-assessment-workbench',
+    path,
     query: {
       recordId: row.id,
       recordMode,
-      scaleName: row.assessmentName || 'PEP-3',
-      scaleCode: row.assessmentCode || 'PEP3',
+      scaleName: row.assessmentName || (isERXinRecord(row) ? '儿心量表-II' : 'PEP-3'),
+      scaleCode: row.assessmentCode || (isERXinRecord(row) ? 'ERXIN2' : 'PEP3'),
       childId: row.studentId,
       childName: row.studentName,
       childAge: formatAge(row),
@@ -1071,7 +1078,7 @@ onBeforeUnmount(() => {
             >
               导出
             </a-button>
-            <a-tooltip v-if="!isERXinRecord(currentReport.record)" :title="assessmentRecordActionTip(currentReport.record)" placement="top">
+            <a-tooltip :title="assessmentRecordActionTip(currentReport.record)" placement="top">
               <a-button
                 size="small"
                 class="report-edit-btn"
@@ -1889,12 +1896,28 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  min-height: 520px;
+  justify-content: flex-start;
+  min-height: 360px;
+  padding-top: 88px;
   color: #7a8494;
 
+  :deep(.ant-empty) {
+    margin-bottom: 8px;
+  }
+
+  :deep(.ant-empty-image) {
+    height: 48px;
+    margin-bottom: 8px;
+  }
+
+  :deep(.ant-empty-description) {
+    color: #b7beca;
+    font-size: 14px;
+    line-height: 22px;
+  }
+
   p {
-    margin: 4px 0 14px;
+    margin: 0 0 12px;
     color: #7a8494;
     font-size: 13px;
     line-height: 20px;

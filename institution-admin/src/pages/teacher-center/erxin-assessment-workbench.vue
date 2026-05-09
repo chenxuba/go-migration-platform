@@ -29,10 +29,12 @@ import {
   getERXinAssessmentDraftDetailApi,
   getERXinAssessmentFormTemplateItemApi,
   getERXinAssessmentFormTemplateSummaryApi,
+  getERXinAssessmentRecordDetailApi,
   pageERXinAssessmentDraftsApi,
   saveERXinAssessmentDraftApi,
   saveERXinAssessmentDraftItemApi,
   submitERXinAssessmentDraftApi,
+  updateERXinAssessmentRecordApi,
   type ERXinAssessmentAgeGroupSummary,
   type ERXinAssessmentDomain,
   type ERXinAssessmentDraftDetail,
@@ -40,6 +42,7 @@ import {
   type ERXinAssessmentFormTemplateSummary,
   type ERXinAssessmentItem,
   type ERXinAssessmentItemSummary,
+  type ERXinAssessmentRecordDetail,
   type ERXinDraftInput,
   type ERXinDraftSaveRequest,
 } from '@/api/edu-center/erxin-assessment'
@@ -64,6 +67,12 @@ const templateLoading = ref(false)
 const itemLoading = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
+const editingRecordId = ref(numberFromQuery('recordId') || 0)
+const recordMode = computed(() => {
+  const raw = route.query.recordMode
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return String(value || '').trim().toLowerCase()
+})
 const draftResumeModalOpen = ref(false)
 const detailModalOpen = ref(false)
 const allItemsModalOpen = ref(false)
@@ -128,6 +137,9 @@ const workspacePreviousMonths = computed(() => previousMonthsForDomain(selectedD
 const workspaceFutureMonths = computed(() => futureMonthsForDomain(selectedDomainCode.value))
 const reviewMonth = computed(() => reviewMonthByDomain[selectedDomainCode.value])
 const isReviewingRecord = computed(() => reviewMonthByDomain[selectedDomainCode.value] !== undefined)
+const isRecordReuseMode = computed(() => editingRecordId.value > 0 && recordMode.value === 'reuse')
+const isSubmittedRecordMode = computed(() => editingRecordId.value > 0)
+const isRecordEditMode = computed(() => editingRecordId.value > 0 && !isRecordReuseMode.value)
 const completedDomainCount = computed(() => domains.value.filter(domain => domainStopRuleComplete(domain.domainCode)).length)
 const savedItemCount = computed(() => Object.keys(itemPasses).length)
 const selectedDomainProgress = computed(() => domainProgress(selectedDomainCode.value))
@@ -281,6 +293,10 @@ function normalizeText(value?: string, fallback = '-') {
 
 async function initializeWorkbench() {
   await fetchTemplate()
+  if (isSubmittedRecordMode.value) {
+    await fetchRecordForEdit(editingRecordId.value)
+    return
+  }
   if (editor.id) {
     await fetchDraftDetail(editor.id)
     await hydrateStudentBirthDate()
@@ -296,6 +312,33 @@ async function initializeWorkbench() {
     return
   }
   await startNewAssessment()
+}
+
+async function fetchRecordForEdit(recordId: number) {
+  if (!recordId)
+    return
+  try {
+    const res = await getERXinAssessmentRecordDetailApi(recordId)
+    const detail = unwrap<ERXinAssessmentRecordDetail>(res)
+    const reuseAssessmentDate = dayjs().format('YYYY-MM-DD')
+    editor.id = undefined
+    editor.studentId = detail.studentId || editor.studentId
+    editor.studentName = detail.studentName || editor.studentName
+    editor.examinerName = detail.examinerName || editor.examinerName
+    editor.birthDate = normalizeDateText(detail.birthDate || detail.input?.birthDate) || editor.birthDate
+    editor.assessmentDate = isRecordReuseMode.value ? reuseAssessmentDate : normalizeDateText(detail.assessmentDate || detail.input?.assessmentDate) || editor.assessmentDate
+    editor.remark = detail.remark || detail.input?.remark || ''
+    applyDraftInput(detail.input)
+    restoreAssessmentWindowsFromAnswers()
+    if (isRecordReuseMode.value)
+      editor.assessmentDate = reuseAssessmentDate
+    selectInitialItem()
+    messageService.info(isRecordReuseMode.value ? '当前正在复用已提交的儿心测评，提交后会生成新的正式记录' : '当前正在编辑已提交的儿心测评记录，修改后请重新提交')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '获取儿心测评记录失败'))
+    void router.push('/teacherCenter/evaluationRecord')
+  }
 }
 
 async function fetchTemplate() {
@@ -539,6 +582,8 @@ async function ensureDraftForItemSave() {
 }
 
 async function saveItem(itemNo: number) {
+  if (isSubmittedRecordMode.value)
+    return
   if (itemNo <= 0 || !hasPass(itemNo))
     return
   draftItemSaveStatus.value = { ...draftItemSaveStatus.value, [itemNo]: 'saving' }
@@ -567,6 +612,10 @@ async function saveItem(itemNo: number) {
 }
 
 async function submitDraft() {
+  if (isRecordEditMode.value) {
+    await submitRecordEdit()
+    return
+  }
   const blocker = localSubmitBlocker()
   if (blocker) {
     messageService.warning(blocker)
@@ -586,6 +635,31 @@ async function submitDraft() {
   }
   catch (error: any) {
     messageService.error(getErrorMessage(error, '提交儿心测评记录失败'))
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
+async function submitRecordEdit() {
+  const blocker = localSubmitBlocker()
+  if (blocker) {
+    messageService.warning(blocker)
+    return
+  }
+  submitting.value = true
+  try {
+    const res = await updateERXinAssessmentRecordApi({
+      ...buildPayload(),
+      id: editingRecordId.value,
+    })
+    const result = unwrap<ERXinAssessmentRecordDetail>(res)
+    messageService.success('已重新提交，并生成新的儿心评估报告')
+    if (result?.id)
+      await router.push('/teacherCenter/evaluationRecord')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '重新提交儿心测评记录失败'))
   }
   finally {
     submitting.value = false
