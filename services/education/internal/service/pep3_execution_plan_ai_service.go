@@ -375,25 +375,34 @@ func buildExecutionPlanTarget(sourcePlan model.PEP3IEPPlanAIResult, durationMont
 	if start.IsZero() {
 		start = time.Now()
 	}
-	planStart := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.Local)
-	monthStart := planStart.AddDate(0, targetMonthIndex-1, 0)
-	monthEnd := time.Date(start.Year(), start.Month()+1, 0, 0, 0, 0, 0, time.Local)
-	monthEnd = time.Date(monthStart.Year(), monthStart.Month()+1, 0, 0, 0, 0, 0, time.Local)
-	daysInMonth := int(monthEnd.Sub(monthStart).Hours()/24) + 1
-	weekCount := (daysInMonth + 5) / 6
+	planStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	monthStart := planStart
+	if targetMonthIndex > 1 {
+		monthStart = time.Date(planStart.Year(), planStart.Month()+time.Month(targetMonthIndex-1), 1, 0, 0, 0, 0, time.Local)
+	}
+	planEnd := planStart.AddDate(0, durationMonths, 0).AddDate(0, 0, -1)
+	monthEnd := time.Date(monthStart.Year(), monthStart.Month()+1, 0, 0, 0, 0, 0, time.Local)
+	if monthEnd.After(planEnd) {
+		monthEnd = planEnd
+	}
+	weekRanges := calendarWeekRangesForDateRange(monthStart, monthEnd)
+	weekCount := len(weekRanges)
+	if weekCount <= 0 {
+		weekRanges = []pep3ExecutionWeekRange{{Start: monthStart, End: monthStart}}
+		weekCount = 1
+	}
 	if targetWeekIndex < 1 {
 		targetWeekIndex = 1
 	}
 	if targetWeekIndex > weekCount {
 		targetWeekIndex = weekCount
 	}
-	weekStart := monthStart.AddDate(0, 0, (targetWeekIndex-1)*6)
-	weekEnd := weekStart.AddDate(0, 0, 5)
-	if weekEnd.After(monthEnd) {
-		weekEnd = monthEnd
-	}
+	weekRange := weekRanges[targetWeekIndex-1]
 	weekDates := make([]string, 0, 6)
-	for current := weekStart; !current.After(weekEnd); current = current.AddDate(0, 0, 1) {
+	for current := weekRange.Start; !current.After(weekRange.End); current = current.AddDate(0, 0, 1) {
+		if current.Weekday() == time.Sunday {
+			continue
+		}
 		weekDates = append(weekDates, current.Format("2006-01-02"))
 	}
 	return pep3ExecutionPlanTarget{
@@ -515,7 +524,15 @@ func normalizePEP3WeeklyExecutionPlan(result model.PEP3WeeklyPlanAIResult, sourc
 	result.CourseName = firstNonEmptyExportValue(strings.TrimSpace(result.CourseName), sourceTitle)
 	trainingDate := ""
 	if len(target.WeekDates) > 0 {
-		trainingDate = target.WeekDates[0] + " 至 " + target.WeekDates[len(target.WeekDates)-1]
+		visibleWeekDates := make([]string, 0, len(target.WeekDates))
+		for _, date := range target.WeekDates {
+			if strings.TrimSpace(date) != "" {
+				visibleWeekDates = append(visibleWeekDates, strings.TrimSpace(date))
+			}
+		}
+		if len(visibleWeekDates) > 0 {
+			trainingDate = visibleWeekDates[0] + " 至 " + visibleWeekDates[len(visibleWeekDates)-1]
+		}
 	}
 	result.TrainingDate = trainingDate
 	result.Preparation = firstNonEmptyExportValue(strings.TrimSpace(result.Preparation), "依据"+sourceTitle+"准备训练材料、强化物和提示卡，明确本周训练目标与记录方式。")
@@ -549,6 +566,52 @@ func normalizePEP3WeeklyExecutionPlan(result model.PEP3WeeklyPlanAIResult, sourc
 	}
 	result.Rows = rows
 	return result
+}
+
+type pep3ExecutionWeekRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+func calendarWeekRangesForDateRange(start, end time.Time) []pep3ExecutionWeekRange {
+	if start.IsZero() || end.IsZero() || end.Before(start) {
+		return nil
+	}
+	ranges := make([]pep3ExecutionWeekRange, 0)
+	cursor := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	normalizedEnd := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.Local)
+	for !cursor.After(normalizedEnd) {
+		rawWeekEnd := cursor.AddDate(0, 0, 6-int(cursor.Weekday()))
+		weekEnd := rawWeekEnd
+		if weekEnd.After(normalizedEnd) {
+			weekEnd = normalizedEnd
+		}
+		visibleStart, okStart := firstNonSundayBetweenDates(cursor, weekEnd)
+		visibleEnd, okEnd := lastNonSundayBetweenDates(weekEnd, cursor)
+		if okStart && okEnd && !visibleEnd.Before(visibleStart) {
+			ranges = append(ranges, pep3ExecutionWeekRange{Start: visibleStart, End: visibleEnd})
+		}
+		cursor = weekEnd.AddDate(0, 0, 1)
+	}
+	return ranges
+}
+
+func firstNonSundayBetweenDates(start, end time.Time) (time.Time, bool) {
+	for current := start; !current.After(end); current = current.AddDate(0, 0, 1) {
+		if current.Weekday() != time.Sunday {
+			return current, true
+		}
+	}
+	return time.Time{}, false
+}
+
+func lastNonSundayBetweenDates(start, end time.Time) (time.Time, bool) {
+	for current := start; !current.Before(end); current = current.AddDate(0, 0, -1) {
+		if current.Weekday() != time.Sunday {
+			return current, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func inferExecutionPlanCourseForm(sourcePlan model.PEP3IEPPlanAIResult, monthlyPlan *model.PEP3MonthlyPlanAIResult) string {

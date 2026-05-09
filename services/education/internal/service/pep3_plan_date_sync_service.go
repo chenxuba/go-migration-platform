@@ -162,7 +162,7 @@ func parseIEPPlanPeriodStart(startDate, startMonth string) (time.Time, error) {
 		value = strings.TrimSpace(startMonth)
 	}
 	if value == "" {
-		return time.Time{}, errors.New("请选择计划开始月份")
+		return time.Time{}, errors.New("请选择计划开始日期")
 	}
 	if len(value) >= len("2006-01") && len(value) < len("2006-01-02") {
 		value = value[:len("2006-01")] + "-01"
@@ -171,9 +171,9 @@ func parseIEPPlanPeriodStart(startDate, startMonth string) (time.Time, error) {
 	}
 	parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
 	if err != nil {
-		return time.Time{}, errors.New("计划开始月份格式应为YYYY-MM")
+		return time.Time{}, errors.New("计划开始日期格式应为YYYY-MM-DD")
 	}
-	return time.Date(parsed.Year(), parsed.Month(), 1, 0, 0, 0, 0, time.Local), nil
+	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local), nil
 }
 
 func syncPEP3IEPPlanPeriodDates(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, currentTeacherName string, durationMonths int, periodStart time.Time) model.PEP3IEPPlanAIResult {
@@ -200,7 +200,7 @@ func iepPlanWholeMonthDateRangeFromStart(start time.Time, durationMonths int) (s
 	if durationMonths <= 0 {
 		durationMonths = 6
 	}
-	normalizedStart := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.Local)
+	normalizedStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	end := normalizedStart.AddDate(0, durationMonths, 0).AddDate(0, 0, -1)
 	return normalizedStart.Format("2006-01-02"), end.Format("2006-01-02")
 }
@@ -213,7 +213,7 @@ func iepPlanStageDateRangesFromStart(start time.Time, durationMonths int) []stri
 	monthBase := durationMonths / stageCount
 	monthRemainder := durationMonths % stageCount
 	ranges := make([]string, 0, stageCount)
-	current := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.Local)
+	current := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	for index := 0; index < stageCount; index++ {
 		months := monthBase
 		if index < monthRemainder {

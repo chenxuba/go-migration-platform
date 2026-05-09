@@ -44,7 +44,7 @@ const confirmingPlan = ref(false)
 const savingExecutionPlan = ref(false)
 const syncingPlanPeriod = ref(false)
 const periodEditorOpen = ref(false)
-const periodDraftStartMonth = ref('')
+const periodDraftStartDate = ref('')
 const showPlanLoadingOverlay = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
@@ -412,15 +412,15 @@ const assessmentPlanDate = computed(() => {
 })
 
 const fallbackPlanStartDate = computed(() => {
-  return firstDayOfMonth(assessmentPlanDate.value || formatDate(new Date()))
+  return formatDate(assessmentPlanDate.value || new Date())
 })
 
 const normalizedPlanStartDate = computed(() => {
   return normalizePlanStartDate(planStartDate.value) || fallbackPlanStartDate.value
 })
 
-const planStartMonthValue = computed(() => {
-  return normalizedPlanStartDate.value.slice(0, 7)
+const planStartDateValue = computed(() => {
+  return normalizedPlanStartDate.value
 })
 
 const defaultPlanDateRange = computed(() => {
@@ -714,7 +714,7 @@ const periodEditorDisabled = computed(() => {
   return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || syncingPlanPeriod.value || isAnyPlanEditable.value
 })
 const periodDraftDateRangeText = computed(() => {
-  const start = parsePlanStartMonth(periodDraftStartMonth.value) || normalizedPlanStartDate.value
+  const start = parsePlanStartDateValue(periodDraftStartDate.value) || normalizedPlanStartDate.value
   const duration = Number(planDuration.value)
   return `${start} 至 ${lastDayAfterMonths(start, duration)}`
 })
@@ -838,9 +838,9 @@ const periodHint = computed(() => {
   if (planDateSyncDirty.value)
     return '起止日期待同步保存'
   if (isConfirmedPlan.value)
-    return '只能改开始月份，结束日期自动计算'
+    return '只能改开始日期，结束日期自动计算'
   if (savedPlanStatus.value === 'draft')
-    return '草稿日期会随开始月份同步'
+    return '草稿日期会随开始日期同步'
   if (hasPlanContent.value)
     return '表格日期按周期自动生成'
   return '周期仅支持3个月或6个月'
@@ -874,13 +874,11 @@ function normalizePlanStartDate(value) {
   const text = formatDate(value)
   if (!isValidDateText(text))
     return ''
-  return firstDayOfMonth(text)
+  return text
 }
 
-function parsePlanStartMonth(value) {
+function parsePlanStartDateValue(value) {
   const text = String(value || '').trim()
-  if (/^\d{4}-\d{2}$/.test(text))
-    return normalizePlanStartDate(`${text}-01`)
   return normalizePlanStartDate(text)
 }
 
@@ -912,6 +910,13 @@ function addMonths(dateText, months) {
   return date.toISOString().slice(0, 10)
 }
 
+function addDays(dateText, days) {
+  const date = new Date(`${dateText}T00:00:00`)
+  if (Number.isNaN(date.getTime()))
+    return ''
+  return formatLocalDate(new Date(date.getFullYear(), date.getMonth(), date.getDate() + Number(days || 0)))
+}
+
 function formatLocalDate(date) {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
@@ -932,14 +937,21 @@ function executionMonthDateForIndex(monthIndex) {
   const date = new Date(`${startText}T00:00:00`)
   if (Number.isNaN(date.getTime()))
     return null
-  return new Date(date.getFullYear(), date.getMonth() + clampExecutionMonth(monthIndex) - 1, 1)
+  const index = clampExecutionMonth(monthIndex)
+  if (index === 1)
+    return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  return new Date(date.getFullYear(), date.getMonth() + index - 1, 1)
 }
 
 function executionMonthRangeForIndex(monthIndex) {
   const start = executionMonthDateForIndex(monthIndex)
   if (!start)
     return { start: defaultPlanDateRange.value.start, end: defaultPlanDateRange.value.end }
-  const end = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+  const periodEnd = new Date(`${defaultPlanDateRange.value.end}T00:00:00`)
+  const rawEnd = new Date(start.getFullYear(), start.getMonth() + 1, 0)
+  const end = !Number.isNaN(periodEnd.getTime()) && rawEnd > periodEnd ? periodEnd : rawEnd
+  if (end < start)
+    return { start: formatLocalDate(start), end: formatLocalDate(start) }
   return {
     start: formatLocalDate(start),
     end: formatLocalDate(end),
@@ -947,12 +959,7 @@ function executionMonthRangeForIndex(monthIndex) {
 }
 
 function weekCountForRange(range = {}) {
-  const start = new Date(`${range.start}T00:00:00`)
-  const end = new Date(`${range.end}T00:00:00`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
-    return 1
-  const days = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
-  return Math.max(1, Math.ceil(days / 6))
+  return Math.max(1, calendarWeekRangesForRange(range).length)
 }
 
 function clampExecutionWeek(value) {
@@ -968,18 +975,50 @@ function executionWeekRangeForIndex(weekIndex) {
 
 function executionWeekRangeForMonth(monthIndex, weekIndex) {
   const monthRange = executionMonthRangeForIndex(monthIndex)
-  const start = new Date(`${monthRange.start}T00:00:00`)
-  const end = new Date(`${monthRange.end}T00:00:00`)
-  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
+  const weekRanges = calendarWeekRangesForRange(monthRange)
+  if (!weekRanges.length)
     return { start: monthRange.start, end: monthRange.end }
-  const index = Math.max(1, Math.min(weekCountForRange(monthRange), Number(weekIndex || 1)))
-  const weekStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + (index - 1) * 6)
-  const rawWeekEnd = new Date(weekStart.getFullYear(), weekStart.getMonth(), weekStart.getDate() + 5)
-  const weekEnd = rawWeekEnd > end ? end : rawWeekEnd
-  return {
-    start: formatLocalDate(weekStart),
-    end: formatLocalDate(weekEnd),
+  const index = Math.max(1, Math.min(weekRanges.length, Number(weekIndex || 1)))
+  return weekRanges[index - 1]
+}
+
+function calendarWeekRangesForRange(range = {}) {
+  const start = new Date(`${range.start}T00:00:00`)
+  const end = new Date(`${range.end}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
+    return []
+  const ranges = []
+  let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate())
+  while (cursor <= end) {
+    const rawWeekEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + (6 - cursor.getDay()))
+    const weekEnd = rawWeekEnd > end ? end : rawWeekEnd
+    const visibleStart = firstNonSundayBetween(cursor, weekEnd)
+    const visibleEnd = lastNonSundayBetween(weekEnd, cursor)
+    if (visibleStart && visibleEnd && visibleEnd >= visibleStart) {
+      ranges.push({
+        start: formatLocalDate(visibleStart),
+        end: formatLocalDate(visibleEnd),
+      })
+    }
+    cursor = new Date(weekEnd.getFullYear(), weekEnd.getMonth(), weekEnd.getDate() + 1)
   }
+  return ranges
+}
+
+function firstNonSundayBetween(start, end) {
+  for (let current = new Date(start.getFullYear(), start.getMonth(), start.getDate()); current <= end; current = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1)) {
+    if (current.getDay() !== 0)
+      return current
+  }
+  return null
+}
+
+function lastNonSundayBetween(start, end) {
+  for (let current = new Date(start.getFullYear(), start.getMonth(), start.getDate()); current >= end; current = new Date(current.getFullYear(), current.getMonth(), current.getDate() - 1)) {
+    if (current.getDay() !== 0)
+      return current
+  }
+  return null
 }
 
 function formatNavigatorDateRange(start, end) {
@@ -1001,18 +1040,11 @@ function executionMonthLabelForIndex(monthIndex) {
   return `${date.getMonth() + 1}月`
 }
 
-function firstDayOfMonth(dateText) {
-  const date = new Date(`${dateText}T00:00:00`)
-  if (Number.isNaN(date.getTime()))
-    return dateText
-  return formatLocalDate(new Date(date.getFullYear(), date.getMonth(), 1))
-}
-
 function lastDayAfterMonths(dateText, months) {
   const date = new Date(`${dateText}T00:00:00`)
   if (Number.isNaN(date.getTime()))
-    return addMonths(dateText, months)
-  return formatLocalDate(new Date(date.getFullYear(), date.getMonth() + months, 0))
+    return addDays(addMonths(dateText, months), -1)
+  return formatLocalDate(new Date(date.getFullYear(), date.getMonth() + months, date.getDate() - 1))
 }
 
 function dateRangeForMonthlyItem(startText, endText, itemIndex, itemCount) {
@@ -1038,10 +1070,10 @@ function buildStageDateRanges(startDate, durationMonths) {
   const baseMonths = Math.floor(durationMonths / stageCount)
   const remainder = durationMonths % stageCount
   const ranges = []
-  let current = new Date(date.getFullYear(), date.getMonth(), 1)
+  let current = new Date(date.getFullYear(), date.getMonth(), date.getDate())
   for (let index = 0; index < stageCount; index++) {
     const months = Math.max(1, baseMonths + (index < remainder ? 1 : 0))
-    const end = new Date(current.getFullYear(), current.getMonth() + months, 0)
+    const end = new Date(current.getFullYear(), current.getMonth() + months, current.getDate() - 1)
     ranges.push(`${formatLocalDate(current)} - ${formatLocalDate(end)}`)
     current = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1)
   }
@@ -1815,7 +1847,7 @@ function buildStreamingWeeklyPlanFromText(text) {
     },
     teacherName: currentTeacherName.value,
     courseName: extractJsonStringField(content, 'courseName') || (monthlyPlan.value?.title || planTitle.value),
-    trainingDate: `${weekDates[0]} 至 ${weekDates[weekDates.length - 1]}`,
+    trainingDate: weekTrainingDateText(weekDates),
     preparation: extractJsonStringField(content, 'preparation') || '正在生成训练前准备内容。',
     weekDates,
     rows: rows.map(row => ({
@@ -1865,7 +1897,7 @@ function normalizeWeeklyPlanDatesForKey(plan = {}, key = executionWeekStorageKey
   const nextPlan = deepClone(plan)
   return {
     ...nextPlan,
-    trainingDate: `${startDate} 至 ${endDate}`,
+    trainingDate: weekTrainingDateText(weekDates, startDate, endDate),
     weekDates,
     rows: (Array.isArray(nextPlan.rows) ? nextPlan.rows : []).map(row => ({
       ...row,
@@ -1875,14 +1907,28 @@ function normalizeWeeklyPlanDatesForKey(plan = {}, key = executionWeekStorageKey
   }
 }
 
+function weekTrainingDateText(weekDates = [], fallbackStart = '', fallbackEnd = '') {
+  const visibleDates = (Array.isArray(weekDates) ? weekDates : []).filter(Boolean)
+  const startDate = visibleDates[0] || fallbackStart
+  const endDate = visibleDates[visibleDates.length - 1] || fallbackEnd || startDate
+  return [startDate, endDate].filter(Boolean).join(' 至 ')
+}
+
 function buildWeekDatesForRange(range = {}) {
   const base = new Date(`${range.start || defaultPlanDateRange.value.start || formatDate(new Date())}T00:00:00`)
   const end = new Date(`${range.end || range.start}T00:00:00`)
   const start = Number.isNaN(base.getTime()) ? new Date() : base
-  return Array.from({ length: 6 }, (_, index) => {
+  const dates = []
+  for (let index = 0; index < 7; index++) {
     const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
-    return !Number.isNaN(end.getTime()) && day > end ? '' : formatLocalDate(day)
-  })
+    if (!Number.isNaN(end.getTime()) && day > end)
+      break
+    if (day.getDay() !== 0)
+      dates.push(formatLocalDate(day))
+  }
+  while (dates.length < 6)
+    dates.push('')
+  return dates.slice(0, 6)
 }
 
 function normalizeCompletionValues(completion = [], targetLength = 6) {
@@ -2021,14 +2067,14 @@ function applyPlanDateRangeToDisplayedPlans(options = {}) {
 function openPeriodEditor() {
   if (periodEditorDisabled.value)
     return
-  periodDraftStartMonth.value = planStartMonthValue.value
+  periodDraftStartDate.value = planStartDateValue.value
   periodEditorOpen.value = true
 }
 
 async function confirmPeriodEditorChange() {
-  const nextStart = parsePlanStartMonth(periodDraftStartMonth.value)
+  const nextStart = parsePlanStartDateValue(periodDraftStartDate.value)
   if (!nextStart) {
-    messageService.warning('请选择有效的计划开始月份')
+    messageService.warning('请选择有效的计划开始日期')
     return
   }
   if (!props.record?.id) {
@@ -3861,12 +3907,11 @@ onBeforeUnmount(() => {
       >
         <div class="period-editor">
           <label class="period-editor__field">
-            <span>开始月份</span>
+            <span>开始日期</span>
             <a-date-picker
-              v-model:value="periodDraftStartMonth"
-              picker="month"
-              format="YYYY年MM月"
-              value-format="YYYY-MM"
+              v-model:value="periodDraftStartDate"
+              format="YYYY年MM月DD日"
+              value-format="YYYY-MM-DD"
               :allow-clear="false"
               class="period-editor__month-picker"
             />
@@ -3875,7 +3920,7 @@ onBeforeUnmount(() => {
             <strong>同步后的实施起止日期</strong>
             <span>{{ periodDraftDateRangeText }}</span>
           </div>
-          <p>只能修改当前查看周期的开始月份，结束日期会自动计算。确认后会同步当前 IEP 表格、已生成月计划和周计划的日期。</p>
+          <p>只能修改当前查看周期的开始日期，结束日期会按3个月或6个月自动计算。确认后会同步当前 IEP 表格、已生成月计划和周计划的真实日期。</p>
         </div>
       </a-modal>
 
