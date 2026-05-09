@@ -8,6 +8,7 @@ import {
   getPEP3IEPPlanApi,
   savePEP3ExecutionPlanApi,
   savePEP3IEPPlanApi,
+  syncPEP3IEPPlanPeriodApi,
 } from '@/api/edu-center/pep3-assessment'
 import {
   downloadERXinExecutionPlanWordApi,
@@ -19,6 +20,7 @@ import {
   getERXinIEPPlanApi,
   saveERXinExecutionPlanApi,
   saveERXinIEPPlanApi,
+  syncERXinIEPPlanPeriodApi,
 } from '@/api/edu-center/erxin-assessment'
 
 const pep3MissingInterpretationConfirm = {
@@ -40,6 +42,7 @@ const pep3Adapter = {
   emptyDescription: '点击“AI智能生成”后，系统会根据PEP-3测评结果、报告解读和近期训练记录实时生成表格。',
   getIepPlan: getPEP3IEPPlanApi,
   saveIepPlan: savePEP3IEPPlanApi,
+  syncIepPlanPeriod: syncPEP3IEPPlanPeriodApi,
   generateIepPlanStream: generatePEP3IEPPlanAIStreamApi,
   downloadIepPlanWord: downloadPEP3IEPPlanWordApi,
   getExecutionPlans: getPEP3ExecutionPlansApi,
@@ -81,6 +84,7 @@ const erxinAdapter = {
   },
   getIepPlan: getERXinIEPPlanApi,
   saveIepPlan: saveERXinIEPPlanApi,
+  syncIepPlanPeriod: syncERXinIEPPlanPeriodApi,
   generateIepPlanStream: generateERXinIEPPlanAIStreamApi,
   downloadIepPlanWord: downloadERXinIEPPlanWordApi,
   getExecutionPlans: getERXinExecutionPlansApi,

@@ -12,6 +12,7 @@ import type {
   PEP3IEPPlanAIResult,
   PEP3IEPPlanAIStreamHandlers,
   PEP3IEPPlanAIStreamOptions,
+  PEP3IEPPlanPeriodSyncVO,
   PEP3IEPPlanSavedVO,
   PEP3MonthlyPlanAIResult,
   PEP3WeeklyPlanAIResult,
@@ -483,6 +484,25 @@ export function saveERXinIEPPlanApi(data: {
     ...data,
     id: Number(data.id || 0),
     durationMonths: Number(data.durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
+}
+
+export function syncERXinIEPPlanPeriodApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  sourceDurationMonths?: number | string
+  startDate?: string
+  startMonth?: string
+}) {
+  return usePost<PEP3IEPPlanPeriodSyncVO>('/api/v1/assessments/erxin/records/iep-plan/period/sync', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    sourceDurationMonths: Number(data.sourceDurationMonths || 0),
   }, {
     loading: false,
     silentError: true,

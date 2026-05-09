@@ -1,5 +1,6 @@
 <script setup>
 import {
+  CalendarOutlined,
   CloseOutlined,
   DeleteOutlined,
   PlusOutlined,
@@ -31,6 +32,7 @@ const openModal = computed({
 
 const assessmentAdapter = computed(() => resolveIEPPlanAssessmentAdapter(props.record))
 const planDuration = ref('6')
+const planStartDate = ref('')
 const activeDomainKey = ref('language')
 const exportingWord = ref(false)
 const aiGenerating = ref(false)
@@ -40,6 +42,8 @@ const loadingSavedPlan = ref(false)
 const savingDraft = ref(false)
 const confirmingPlan = ref(false)
 const savingExecutionPlan = ref(false)
+const periodEditorOpen = ref(false)
+const periodDraftStartMonth = ref('')
 const showPlanLoadingOverlay = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
@@ -89,6 +93,8 @@ let executionPlanRequestKey = 0
 let loadPlanRequestKey = 0
 let ignoreNextPlanDurationWatch = false
 let planLoadingOverlayTimer = 0
+const planDateSyncDirty = ref(false)
+const planDateSyncSourceDuration = ref('6')
 
 const domains = [
   { key: 'language', name: '语言沟通', icon: '语', longCount: 3, shortCount: 6 },
@@ -404,11 +410,26 @@ const assessmentPlanDate = computed(() => {
   return formatDate(props.record?.assessmentDate) || formatDate(new Date())
 })
 
+const fallbackPlanStartDate = computed(() => {
+  return firstDayOfMonth(assessmentPlanDate.value || formatDate(new Date()))
+})
+
+const normalizedPlanStartDate = computed(() => {
+  return normalizePlanStartDate(planStartDate.value) || fallbackPlanStartDate.value
+})
+
+const planStartMonthValue = computed(() => {
+  return normalizedPlanStartDate.value.slice(0, 7)
+})
+
 const defaultPlanDateRange = computed(() => {
-  const baseDate = assessmentPlanDate.value || '2026-05-01'
-  const start = firstDayOfMonth(baseDate)
+  const start = normalizedPlanStartDate.value
   const end = lastDayAfterMonths(start, Number(planDuration.value || 6))
   return { start, end }
+})
+
+const planDateRangeText = computed(() => {
+  return `${defaultPlanDateRange.value.start} 至 ${defaultPlanDateRange.value.end}`
 })
 
 const planTitle = computed(() => {
@@ -660,14 +681,6 @@ const activePreviewTitle = computed(() => {
   return planSheet.value.title
 })
 
-const activePreviewCountText = computed(() => {
-  if (executionPlanView.value === 'monthly')
-    return `${monthlyDisplayRows.value.length || 0}条训练内容`
-  if (executionPlanView.value === 'weekly')
-    return `${weeklyPlan.value?.rows?.length || 0}项训练`
-  return `${planRows.value.length}条计划`
-})
-
 const canExportActivePreview = computed(() => {
   if (generatingExecutionPlan.value)
     return false
@@ -692,6 +705,20 @@ const canEditActivePreview = computed(() => {
   if (executionPlanView.value === 'weekly')
     return !!weeklyPlan.value?.rows?.length
   return !!planRows.value.length
+})
+const canPersistDateRangeChange = computed(() => {
+  return planDateSyncDirty.value && hasPlanContent.value && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value && !savingDraft.value && !confirmingPlan.value && !savingExecutionPlan.value
+})
+const durationSwitchDisabled = computed(() => {
+  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value || planDateSyncDirty.value
+})
+const periodEditorDisabled = computed(() => {
+  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value
+})
+const periodDraftDateRangeText = computed(() => {
+  const start = parsePlanStartMonth(periodDraftStartMonth.value) || normalizedPlanStartDate.value
+  const duration = Number(planDuration.value)
+  return `${start} 至 ${lastDayAfterMonths(start, duration)}`
 })
 const activeEditingLabel = computed(() => {
   if (executionPlanView.value === 'monthly')
@@ -758,10 +785,7 @@ function normalizeMonthlyTrainingItems(row = {}) {
 
   const startDate = monthlyPlan.value?.meta?.startDate || defaultPlanDateRange.value.start
   const endDate = monthlyPlan.value?.meta?.endDate || lastDayAfterMonths(startDate, 1)
-  return items.map((item, index) => ({
-    content: item.content,
-    startEndDate: item.startEndDate || dateRangeForMonthlyItem(startDate, endDate, index, items.length) || '',
-  }))
+  return normalizeMonthlyTrainingItemsForRange(items, startDate, endDate)
 }
 
 const executionPlanSourceText = computed(() => {
@@ -806,8 +830,6 @@ const modalTitleText = computed(() => {
 const headerPlanMeta = computed(() => {
   if (aiGenerating.value)
     return '正在生成IEP计划'
-  if (!hasPlanContent.value)
-    return ''
   const date = formatDate(props.record?.assessmentDate)
   return date ? `评估日期：${date}` : ''
 })
@@ -815,13 +837,15 @@ const headerPlanMeta = computed(() => {
 const periodHint = computed(() => {
   if (aiGenerating.value)
     return '正在按周期生成计划行和起止日期'
+  if (planDateSyncDirty.value)
+    return '起止日期已同步，请保存计划'
   if (isConfirmedPlan.value)
-    return '当前周期已确认，另一个周期独立保存'
+    return '只能改开始月份，结束日期自动计算'
   if (savedPlanStatus.value === 'draft')
-    return '当前周期是草稿，另一个周期独立保存'
+    return '草稿日期会随开始月份同步'
   if (hasPlanContent.value)
-    return '已生成，可直接编辑表格'
-  return '每个周期单独生成和保存'
+    return '表格日期按周期自动生成'
+  return '周期仅支持3个月或6个月'
 })
 
 const headerPlanStatusText = computed(() => {
@@ -838,6 +862,38 @@ function formatDate(value) {
   if (value instanceof Date && !Number.isNaN(value.getTime()))
     return value.toISOString().slice(0, 10)
   return String(value).slice(0, 10)
+}
+
+function isValidDateText(value) {
+  const text = String(value || '').trim()
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text))
+    return false
+  const date = new Date(`${text}T00:00:00`)
+  return !Number.isNaN(date.getTime()) && formatLocalDate(date) === text
+}
+
+function normalizePlanStartDate(value) {
+  const text = formatDate(value)
+  if (!isValidDateText(text))
+    return ''
+  return firstDayOfMonth(text)
+}
+
+function parsePlanStartMonth(value) {
+  const text = String(value || '').trim()
+  if (/^\d{4}-\d{2}$/.test(text))
+    return normalizePlanStartDate(`${text}-01`)
+  return normalizePlanStartDate(text)
+}
+
+function ensurePlanStartDateFromPlan(plan = {}) {
+  const start = normalizePlanStartDate(plan?.meta?.startDate)
+  if (start) {
+    planStartDate.value = start
+    return
+  }
+  if (!planStartDate.value)
+    planStartDate.value = fallbackPlanStartDate.value
 }
 
 function formatMonthDayDate(value) {
@@ -1365,7 +1421,7 @@ async function persistExecutionPlan(planType, plan, options = {}) {
       preserveWeeklyPlans: !!options.preserveWeeklyPlans,
     })
     applySavedExecutionPlansData(unwrapResponse(response))
-    if (options.successMessage)
+    if (String(options.successMessage || '').trim())
       messageService.success(options.successMessage)
     return true
   }
@@ -1383,11 +1439,11 @@ function applySavedExecutionPlansData(data) {
   const weeklyItems = data?.weeklyPlans || []
   monthlyItems.forEach((item) => {
     if (item?.targetMonthIndex && item.plan)
-      nextMonthlyPlans[String(clampExecutionMonth(item.targetMonthIndex))] = applyAssessmentPlanDateToMonthlyPlan(item.plan)
+      nextMonthlyPlans[String(clampExecutionMonth(item.targetMonthIndex))] = normalizeMonthlyPlanDatesForIndex(applyAssessmentPlanDateToMonthlyPlan(item.plan), item.targetMonthIndex)
   })
   weeklyItems.forEach((item) => {
     if (item?.targetMonthIndex && item?.targetWeekIndex && item.plan)
-      nextWeeklyPlans[`${clampExecutionMonth(item.targetMonthIndex)}-${Math.max(1, Number(item.targetWeekIndex || 1))}`] = item.plan
+      nextWeeklyPlans[`${clampExecutionMonth(item.targetMonthIndex)}-${Math.max(1, Number(item.targetWeekIndex || 1))}`] = normalizeWeeklyPlanDatesForKey(item.plan, `${item.targetMonthIndex}-${item.targetWeekIndex}`)
   })
   monthlyPlans.value = nextMonthlyPlans
   weeklyPlans.value = nextWeeklyPlans
@@ -1622,14 +1678,7 @@ function buildStreamingPlanFromText(text) {
 }
 
 function buildExecutionPreviewWeekDates() {
-  const range = selectedExecutionWeekRange.value
-  const base = new Date(`${range.start || selectedExecutionMonthRange.value.start || defaultPlanDateRange.value.start || formatDate(new Date())}T00:00:00`)
-  const end = new Date(`${range.end || range.start}T00:00:00`)
-  const start = Number.isNaN(base.getTime()) ? new Date() : base
-  return Array.from({ length: 6 }, (_, index) => {
-    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
-    return !Number.isNaN(end.getTime()) && day > end ? '' : formatLocalDate(day)
-  })
+  return buildWeekDatesForRange(selectedExecutionWeekRange.value)
 }
 
 function buildStreamingMonthlyPlanFromText(text) {
@@ -1701,6 +1750,36 @@ function normalizeStreamingMonthlyPlanPreview(plan = {}) {
     rows: Array.isArray(plan.rows) ? plan.rows : [],
     model: plan.model || 'AI生成中',
   }
+}
+
+function normalizeMonthlyPlanDatesForIndex(plan = {}, monthIndex = selectedExecutionMonth.value) {
+  const range = executionMonthRangeForIndex(monthIndex)
+  const nextPlan = deepClone(plan)
+  nextPlan.meta = {
+    ...(nextPlan.meta || {}),
+    planDate: assessmentPlanDate.value || nextPlan.meta?.planDate || range.start,
+    startDate: range.start,
+    endDate: range.end,
+    monthLabel: executionMonthLabelForIndex(monthIndex),
+    sourceTitle: nextPlan.meta?.sourceTitle || planTitle.value,
+  }
+  nextPlan.rows = (Array.isArray(nextPlan.rows) ? nextPlan.rows : []).map((row) => {
+    const items = normalizeMonthlyTrainingItemsForRange(row.trainingItems, range.start, range.end)
+    return {
+      ...row,
+      trainingItems: items,
+    }
+  })
+  return nextPlan
+}
+
+function normalizeMonthlyTrainingItemsForRange(rawItems = [], startDate, endDate) {
+  const sourceItems = Array.isArray(rawItems) && rawItems.length ? rawItems : [{ content: '', startEndDate: '' }]
+  return sourceItems.map((item, index) => ({
+    ...(item || {}),
+    content: String(item?.content || '').trim(),
+    startEndDate: dateRangeForMonthlyItem(startDate, endDate, index, sourceItems.length) || '',
+  }))
 }
 
 function buildStreamingWeeklyPlanFromText(text) {
@@ -1776,6 +1855,45 @@ function normalizeStreamingWeeklyPlanPreview(plan = {}) {
   }
 }
 
+function normalizeWeeklyPlanDatesForKey(plan = {}, key = executionWeekStorageKey.value) {
+  const [monthText, weekText] = String(key || '').split('-')
+  const monthIndex = clampExecutionMonth(monthText || selectedExecutionMonth.value)
+  const weekIndex = Math.max(1, Number(weekText || selectedExecutionWeekValue.value || 1))
+  const range = executionWeekRangeForMonth(monthIndex, weekIndex)
+  const weekDates = buildWeekDatesForRange(range)
+  const visibleDates = weekDates.filter(Boolean)
+  const startDate = visibleDates[0] || range.start
+  const endDate = visibleDates[visibleDates.length - 1] || range.end || startDate
+  const nextPlan = deepClone(plan)
+  return {
+    ...nextPlan,
+    trainingDate: `${startDate} 至 ${endDate}`,
+    weekDates,
+    rows: (Array.isArray(nextPlan.rows) ? nextPlan.rows : []).map(row => ({
+      ...row,
+      completion: normalizeCompletionValues(row.completion, weekDates.length),
+    })),
+    sourceTitle: nextPlan.sourceTitle || (monthlyPlans.value[String(monthIndex)]?.title || planTitle.value),
+  }
+}
+
+function buildWeekDatesForRange(range = {}) {
+  const base = new Date(`${range.start || defaultPlanDateRange.value.start || formatDate(new Date())}T00:00:00`)
+  const end = new Date(`${range.end || range.start}T00:00:00`)
+  const start = Number.isNaN(base.getTime()) ? new Date() : base
+  return Array.from({ length: 6 }, (_, index) => {
+    const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
+    return !Number.isNaN(end.getTime()) && day > end ? '' : formatLocalDate(day)
+  })
+}
+
+function normalizeCompletionValues(completion = [], targetLength = 6) {
+  const values = Array.isArray(completion) ? completion.slice(0, targetLength) : []
+  while (values.length < targetLength)
+    values.push('')
+  return values
+}
+
 function extractCompleteJsonContent(text) {
   const start = text.indexOf('{')
   const end = text.lastIndexOf('}')
@@ -1810,6 +1928,27 @@ function deepClone(value) {
   return JSON.parse(JSON.stringify(value || {}))
 }
 
+function syncIepPlanDateRange(plan = {}, options = {}) {
+  const nextPlan = deepClone(plan)
+  const { start, end } = defaultPlanDateRange.value
+  const originalRows = Array.isArray(nextPlan.rows) ? nextPlan.rows : []
+  const rows = options.preserveRows === false
+    ? normalizePlanRows(originalRows)
+    : originalRows
+  const stageRanges = buildStageDateRanges(start, Number(planDuration.value || 6))
+  nextPlan.title = normalizePlanSheetTitle(nextPlan.title)
+  nextPlan.meta = {
+    ...(nextPlan.meta || {}),
+    startDate: start,
+    endDate: end,
+  }
+  nextPlan.rows = rows.map((row, index) => ({
+    ...row,
+    startEndDate: stageDateForGoal(stageRanges, index, rows.length) || row.startEndDate || `${start} - ${end}`,
+  }))
+  return nextPlan
+}
+
 function createPlanSheetFromPlan(plan = {}, options = {}) {
   const { start, end } = defaultPlanDateRange.value
   const rows = options.preserveRows
@@ -1827,16 +1966,81 @@ function createPlanSheetFromPlan(plan = {}, options = {}) {
       planDate: assessmentPlanDate.value || plan.meta?.planDate || start,
       participant: currentTeacherName.value,
       implementer: plan.meta?.implementer || currentTeacherName.value,
-      startDate: plan.meta?.startDate || start,
-      endDate: plan.meta?.endDate || end,
+      startDate: start,
+      endDate: end,
     },
-    rows,
+    rows: syncIepPlanDateRange({ rows }, { preserveRows: true }).rows,
     model: options.model ?? plan.model ?? '',
   }
 }
 
 function createEditablePlanFromPlan(plan = {}, preserveRows = true) {
   return deepClone(createPlanSheetFromPlan(plan, { preserveRows, model: plan.model || 'AI草案' }))
+}
+
+function syncMonthlyPlansDateRange(plans = monthlyPlans.value) {
+  const count = Number(planDuration.value) === 6 ? 6 : 3
+  const nextPlans = {}
+  Object.entries(plans || {}).forEach(([key, plan]) => {
+    const monthIndex = clampExecutionMonth(key)
+    if (monthIndex < 1 || monthIndex > count || !plan)
+      return
+    nextPlans[String(monthIndex)] = normalizeMonthlyPlanDatesForIndex(plan, monthIndex)
+  })
+  return nextPlans
+}
+
+function syncWeeklyPlansDateRange(plans = weeklyPlans.value) {
+  const count = Number(planDuration.value) === 6 ? 6 : 3
+  const nextPlans = {}
+  Object.entries(plans || {}).forEach(([key, plan]) => {
+    const [monthText, weekText] = String(key).split('-')
+    const monthIndex = clampExecutionMonth(monthText)
+    if (monthIndex < 1 || monthIndex > count || !plan)
+      return
+    const weekCount = weekCountForRange(executionMonthRangeForIndex(monthIndex))
+    const weekIndex = Math.max(1, Math.min(weekCount, Number(weekText || 1)))
+    nextPlans[`${monthIndex}-${weekIndex}`] = normalizeWeeklyPlanDatesForKey(plan, `${monthIndex}-${weekIndex}`)
+  })
+  return nextPlans
+}
+
+function applyPlanDateRangeToDisplayedPlans(options = {}) {
+  if (editablePlan.value)
+    editablePlan.value = syncIepPlanDateRange(editablePlan.value, { preserveRows: true })
+  if (generatedPlan.value)
+    generatedPlan.value = syncIepPlanDateRange(generatedPlan.value, { preserveRows: true })
+  if (streamingPlan.value)
+    streamingPlan.value = syncIepPlanDateRange(streamingPlan.value, { preserveRows: true })
+  monthlyPlans.value = syncMonthlyPlansDateRange()
+  weeklyPlans.value = syncWeeklyPlansDateRange()
+  selectedExecutionMonth.value = clampExecutionMonth(selectedExecutionMonth.value)
+  selectedExecutionWeek.value = clampExecutionWeek(selectedExecutionWeek.value)
+  if (options.markDirty !== false)
+    planDateSyncDirty.value = true
+}
+
+function openPeriodEditor() {
+  if (periodEditorDisabled.value)
+    return
+  periodDraftStartMonth.value = planStartMonthValue.value
+  periodEditorOpen.value = true
+}
+
+function applyPeriodEditorChange() {
+  const nextStart = parsePlanStartMonth(periodDraftStartMonth.value)
+  if (!nextStart) {
+    messageService.warning('请选择有效的计划开始月份')
+    return
+  }
+  const startChanged = planStartDate.value !== nextStart
+  if (!startChanged) {
+    periodEditorOpen.value = false
+    return
+  }
+  planStartDate.value = nextStart
+  applyPlanDateRangeToDisplayedPlans()
+  periodEditorOpen.value = false
 }
 
 function applyAssessmentPlanDateToMonthlyPlan(plan = {}) {
@@ -2112,15 +2316,16 @@ function updateWeeklyRow(rowIndex, patch = {}) {
 
 function planPayloadForSave() {
   const plan = createPlanSheetFromPlan(planSheet.value, { preserveRows: true, model: planSheet.value.model || '' })
-  plan.rows = sanitizeEditablePlanRows(plan.rows)
-  return deepClone(plan)
+  const syncedPlan = syncIepPlanDateRange(plan, { preserveRows: true })
+  syncedPlan.rows = sanitizeEditablePlanRows(syncedPlan.rows)
+  return deepClone(syncedPlan)
 }
 
 function executionPlanPayloadForSave(planType) {
   const plan = planType === 'monthly' ? monthlyPlan.value : weeklyPlan.value
   if (planType === 'monthly')
-    return applyAssessmentPlanDateToMonthlyPlan(plan)
-  return deepClone(plan)
+    return normalizeMonthlyPlanDatesForIndex(applyAssessmentPlanDateToMonthlyPlan(plan), selectedExecutionMonth.value)
+  return normalizeWeeklyPlanDatesForKey(plan, executionWeekStorageKey.value)
 }
 
 async function saveActiveExecutionPlan() {
@@ -2147,6 +2352,8 @@ async function saveActiveExecutionPlan() {
       preserveWeeklyPlans: isMonthly,
       successMessage: isMonthly ? `${selectedExecutionMonthLabel.value}计划修改已保存` : `${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划修改已保存`,
     })
+    if (success)
+      planDateSyncDirty.value = false
     return success
   }
   finally {
@@ -2337,9 +2544,12 @@ function applySavedIepPlanData(data) {
     editablePlan.value = null
     return false
   }
+  ensurePlanStartDateFromPlan(data.plan)
   savedPlanStatus.value = data.status || 'draft'
   generatedPlan.value = data.plan
   editablePlan.value = createEditablePlanFromPlan(data.plan, true)
+  if (!planDateSyncDirty.value && data.durationMonths)
+    planDateSyncSourceDuration.value = normalizePlanDurationValue(data.durationMonths)
   return true
 }
 
@@ -2350,6 +2560,9 @@ function resetIepState() {
   executionPlanStreamAbortController.value = null
   hidePlanLoadingOverlay()
   setPlanDurationWithoutLoading('6')
+  planStartDate.value = fallbackPlanStartDate.value
+  planDateSyncDirty.value = false
+  planDateSyncSourceDuration.value = '6'
   exportingWord.value = false
   aiGenerating.value = false
   generatingExecutionPlan.value = false
@@ -2382,6 +2595,8 @@ async function loadSavedIepPlan(requestKey, durationMonths = planDuration.value,
       return false
     const data = unwrapResponse(response)
     clearDisplayedPlanState()
+    planDateSyncDirty.value = false
+    planDateSyncSourceDuration.value = durationKey
     if (applySavedIepPlanData(data))
       await loadSavedExecutionPlans(durationKey)
     await scrollPlanViewToTop()
@@ -2467,6 +2682,7 @@ async function persistIepPlan(status, options = {}) {
       setPlanDurationWithoutLoading(data.durationMonths)
     savedPlanStatus.value = data?.status || status
     if (data?.plan) {
+      planDateSyncDirty.value = false
       generatedPlan.value = data.plan
       editablePlan.value = createEditablePlanFromPlan(data.plan, true)
     }
@@ -2509,6 +2725,40 @@ async function saveEditablePlan() {
     successMessage: status === 'confirmed' ? '修改已保存' : '草稿已保存',
   })
   return success
+}
+
+async function savePlanDateRangeChange() {
+  if (!canPersistDateRangeChange.value)
+    return
+  if (!props.record?.id) {
+    messageService.warning('请先选择评估记录')
+    return
+  }
+  savingDraft.value = true
+  try {
+    const response = await assessmentAdapter.value.syncIepPlanPeriod({
+      id: props.record.id,
+      durationMonths: planDuration.value,
+      sourceDurationMonths: planDateSyncSourceDuration.value,
+      startDate: defaultPlanDateRange.value.start,
+    })
+    const data = unwrapResponse(response)
+    if (data?.iepPlan?.durationMonths && normalizePlanDurationValue(data.iepPlan.durationMonths) !== planDuration.value)
+      setPlanDurationWithoutLoading(data.iepPlan.durationMonths)
+    applySavedIepPlanData(data?.iepPlan)
+    applySavedExecutionPlansData(data?.executionPlans)
+    planDateSyncDirty.value = false
+    planDateSyncSourceDuration.value = planDuration.value
+    emit('saved', data?.iepPlan)
+    messageService.success('计划周期和关联月/周计划日期已同步保存')
+  }
+  catch (error) {
+    console.error('sync iep plan period failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '同步计划周期失败')
+  }
+  finally {
+    savingDraft.value = false
+  }
 }
 
 function parseAttachmentFilename(headerValue) {
@@ -2740,7 +2990,7 @@ watch(planDuration, async (durationMonths, previousDuration) => {
   const requestKey = loadPlanRequestKey
   const loaded = await loadSavedIepPlan(requestKey, durationMonths, { preserveCurrentState: true })
   if (!loaded && requestKey === loadPlanRequestKey && planDuration.value === durationMonths)
-    setPlanDurationWithoutLoading(previousDuration || '6')
+    applyPlanDateRangeToDisplayedPlans({ markDirty: false })
 })
 
 watch(
@@ -2821,17 +3071,16 @@ onBeforeUnmount(() => {
           <div class="iep-header-meta">
             <span class="iep-header-meta__student">{{ studentMeta }}</span>
             <span v-if="headerPlanMeta" class="iep-header-meta__plan">{{ headerPlanMeta }}</span>
-            <div class="period-switch">
-              <span>计划周期</span>
+            <div class="duration-switch">
+              <span>查看周期</span>
               <a-segmented
                 v-model:value="planDuration"
+                :disabled="durationSwitchDisabled"
                 :options="[
                   { label: '3个月', value: '3' },
                   { label: '6个月', value: '6' },
                 ]"
-                :disabled="aiGenerating || generatingExecutionPlan || savingDraft || confirmingPlan || savingExecutionPlan"
               />
-              <em>{{ periodHint }}</em>
             </div>
             <div class="summary-count">
               {{ headerPlanStatusText }}
@@ -2858,10 +3107,22 @@ onBeforeUnmount(() => {
             <strong>{{ activePreviewTitle }}</strong>
           </div>
           <div class="iep-preview-toolbar__meta">
-            <span>{{ activePreviewCountText }}</span>
             <span v-if="executionPlanSourceText">{{ executionPlanSourceText }}</span>
             <span v-if="isAnyPlanEditable" class="iep-preview-toolbar__editing">正在编辑：{{ activeEditingLabel }}</span>
           </div>
+        </div>
+        <div class="iep-preview-toolbar__period">
+          <span>实施周期</span>
+          <button
+            type="button"
+            class="period-summary-button"
+            :disabled="periodEditorDisabled"
+            @click="openPeriodEditor"
+          >
+            <CalendarOutlined />
+            <strong>{{ planDateRangeText }}</strong>
+          </button>
+          <em>{{ periodHint }}</em>
         </div>
         <div class="iep-preview-toolbar__actions">
           <a-tooltip v-if="isIepPreview && !planRows.length" :title="`基于${generationSourceText}`">
@@ -2906,6 +3167,15 @@ onBeforeUnmount(() => {
             @click="saveEditablePlan"
           >
             保存修改
+          </a-button>
+          <a-button
+            v-else-if="canPersistDateRangeChange"
+            size="small"
+            type="primary"
+            :loading="savingExecutionPlan || savingDraft || confirmingPlan"
+            @click="savePlanDateRangeChange"
+          >
+            保存周期
           </a-button>
           <a-button
             v-if="isAnyPlanEditable"
@@ -3341,8 +3611,8 @@ onBeforeUnmount(() => {
                   <span>起止日期</span>
                   <a-input
                     :value="selectedPlanRow.startEndDate"
+                    disabled
                     placeholder="YYYY-MM-DD - YYYY-MM-DD"
-                    @update:value="value => updateSelectedPlanRow({ startEndDate: value })"
                   />
                 </label>
               </div>
@@ -3405,14 +3675,14 @@ onBeforeUnmount(() => {
                   <span>开始日期</span>
                   <a-input
                     :value="monthlyPlan.meta.startDate"
-                    @update:value="value => updateMonthlyPlanMeta({ startDate: value })"
+                    disabled
                   />
                 </label>
                 <label class="iep-edit-field">
                   <span>结束日期</span>
                   <a-input
                     :value="monthlyPlan.meta.endDate"
-                    @update:value="value => updateMonthlyPlanMeta({ endDate: value })"
+                    disabled
                   />
                 </label>
               </div>
@@ -3472,7 +3742,7 @@ onBeforeUnmount(() => {
                   <span>起止日期</span>
                   <a-input
                     :value="selectedMonthlyDisplayRow.trainingStartEndDate"
-                    @update:value="value => updateMonthlyTrainingItem(selectedMonthlyDisplayRow.rowIndex, selectedMonthlyDisplayRow.contentIndex, { startEndDate: value })"
+                    disabled
                   />
                 </label>
               </div>
@@ -3527,7 +3797,7 @@ onBeforeUnmount(() => {
                 <span>训练日期</span>
                 <a-input
                   :value="weeklyPlan.trainingDate"
-                  @update:value="value => updateWeeklyPlanField({ trainingDate: value })"
+                  disabled
                 />
               </label>
               <label class="iep-edit-field">
@@ -3589,6 +3859,36 @@ onBeforeUnmount(() => {
           />
         </div>
       </div>
+
+      <a-modal
+        v-model:open="periodEditorOpen"
+        :title="`调整${planDuration}个月计划周期`"
+        :centered="true"
+        :width="420"
+        :mask-closable="false"
+        ok-text="确认同步"
+        cancel-text="取消"
+        @ok="applyPeriodEditorChange"
+      >
+        <div class="period-editor">
+          <label class="period-editor__field">
+            <span>开始月份</span>
+            <a-date-picker
+              v-model:value="periodDraftStartMonth"
+              picker="month"
+              format="YYYY年MM月"
+              value-format="YYYY-MM"
+              :allow-clear="false"
+              class="period-editor__month-picker"
+            />
+          </label>
+          <div class="period-editor__result">
+            <strong>同步后的实施起止日期</strong>
+            <span>{{ periodDraftDateRangeText }}</span>
+          </div>
+          <p>只能修改当前查看周期的开始月份，结束日期会自动计算。确认后会同步当前 IEP 表格、已生成月计划和周计划的日期。</p>
+        </div>
+      </a-modal>
 
       <footer class="iep-modal__footer">
         <div class="footer-hint">
@@ -3678,7 +3978,7 @@ onBeforeUnmount(() => {
 
 .iep-header-meta__student {
   flex: 0 1 auto;
-  min-width: 0;
+  max-width: 420px;
   overflow: hidden;
   color: #5f6b7a;
   text-overflow: ellipsis;
@@ -3687,7 +3987,10 @@ onBeforeUnmount(() => {
 
 .iep-header-meta__plan {
   flex: 0 0 auto;
+  max-width: 220px;
+  overflow: hidden;
   color: #5f6b7a;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -3701,7 +4004,7 @@ onBeforeUnmount(() => {
   font-size: 18px;
 }
 
-.period-switch {
+.duration-switch {
   display: flex;
   flex: 0 0 auto;
   gap: 8px;
@@ -3730,6 +4033,107 @@ onBeforeUnmount(() => {
   :deep(.ant-segmented-item) {
     min-height: 28px;
     line-height: 28px;
+  }
+}
+
+.duration-switch {
+  :deep(.ant-segmented) {
+    background: #eef2f7;
+  }
+}
+
+.period-summary-button {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  height: 30px;
+  padding: 0 10px;
+  color: #1f2937;
+  cursor: pointer;
+  background: #f8fafc;
+  border: 1px solid #dbe4f0;
+  border-radius: 6px;
+  transition: all 0.16s ease;
+
+  &:hover:not(:disabled) {
+    color: #1677ff;
+    border-color: #9ec5ff;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+  }
+
+  strong {
+    flex: 0 0 auto;
+    font-size: 13px;
+    font-weight: 650;
+    line-height: 28px;
+  }
+
+  .anticon {
+    color: inherit;
+    font-size: 14px;
+  }
+}
+
+.period-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+
+  p {
+    margin: 0;
+    color: #667085;
+    font-size: 12px;
+    line-height: 20px;
+  }
+}
+
+.period-editor__field {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+
+  > span {
+    color: #374151;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  :deep(.ant-picker),
+  :deep(.ant-segmented) {
+    border-radius: 6px;
+  }
+}
+
+.period-editor__month-picker {
+  width: 100%;
+}
+
+.period-editor__result {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 8px 10px;
+  background: #f8fafc;
+  border: 1px solid #e5eaf3;
+  border-radius: 6px;
+
+  strong {
+    color: #374151;
+    font-size: 13px;
+    font-weight: 650;
+  }
+
+  span {
+    color: #1677ff;
+    font-size: 13px;
+    font-weight: 650;
   }
 }
 
@@ -3790,7 +4194,7 @@ onBeforeUnmount(() => {
 
 .iep-preview-toolbar {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(220px, 0.9fr) minmax(360px, 1.4fr) auto;
   gap: 14px;
   align-items: center;
   padding: 10px 22px;
@@ -3801,6 +4205,33 @@ onBeforeUnmount(() => {
 .iep-preview-toolbar__info {
   grid-column: 1;
   min-width: 0;
+}
+
+.iep-preview-toolbar__period {
+  grid-column: 2;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-self: stretch;
+  min-width: 0;
+
+  > span {
+    flex: 0 0 auto;
+    color: #374151;
+    font-size: 13px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  em {
+    min-width: 0;
+    overflow: hidden;
+    color: #6b7280;
+    font-size: 12px;
+    font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .iep-preview-toolbar__title {
@@ -3853,7 +4284,7 @@ onBeforeUnmount(() => {
 }
 
 .iep-preview-toolbar__actions {
-  grid-column: 2;
+  grid-column: 3;
   display: flex;
   gap: 6px;
   align-items: center;

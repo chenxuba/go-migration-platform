@@ -80,6 +80,47 @@ func (repo *Repository) SavePEP3ExecutionPlan(ctx context.Context, entity PEP3Ex
 	return err
 }
 
+func savePEP3ExecutionPlanTx(ctx context.Context, tx *sql.Tx, entity PEP3ExecutionPlanEntity) error {
+	if entity.DurationMonths <= 0 {
+		entity.DurationMonths = 3
+	}
+	_, err := tx.ExecContext(ctx, `
+		INSERT INTO assessment_iep_execution_plan (
+			inst_id, record_id, duration_months, plan_type, target_month_index, target_week_index, plan_json,
+			create_id, update_id, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			plan_json = VALUES(plan_json),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		entity.InstID,
+		entity.RecordID,
+		entity.DurationMonths,
+		entity.PlanType,
+		entity.TargetMonthIndex,
+		entity.TargetWeekIndex,
+		string(entity.PlanJSON),
+		entity.CreatedBy,
+		entity.UpdatedBy,
+	)
+	return err
+}
+
+func deletePEP3ExecutionPlansForDurationTx(ctx context.Context, tx *sql.Tx, instID, recordID int64, durationMonths int) error {
+	if durationMonths <= 0 {
+		durationMonths = 3
+	}
+	_, err := tx.ExecContext(ctx, `
+		DELETE FROM assessment_iep_execution_plan
+		WHERE inst_id = ?
+		  AND record_id = ?
+		  AND duration_months = ?
+	`, instID, recordID, durationMonths)
+	return err
+}
+
 func (repo *Repository) ListPEP3ExecutionPlans(ctx context.Context, instID, recordID int64, durationMonths int) ([]PEP3ExecutionPlanEntity, error) {
 	if durationMonths <= 0 {
 		durationMonths = 3

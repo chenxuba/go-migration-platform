@@ -91,6 +91,84 @@ func (repo *Repository) SavePEP3IEPPlan(ctx context.Context, entity PEP3IEPPlanE
 	return err
 }
 
+func (repo *Repository) SavePEP3IEPPlanWithExecutionPlans(ctx context.Context, plan PEP3IEPPlanEntity, executionPlans []PEP3ExecutionPlanEntity, replacedDurationMonths int) error {
+	tx, err := repo.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if replacedDurationMonths > 0 && replacedDurationMonths != plan.DurationMonths {
+		if err := deletePEP3IEPPlanForDurationTx(ctx, tx, plan.InstID, plan.RecordID, replacedDurationMonths); err != nil {
+			return err
+		}
+		if err := deletePEP3ExecutionPlansForDurationTx(ctx, tx, plan.InstID, plan.RecordID, replacedDurationMonths); err != nil {
+			return err
+		}
+	}
+	if err := savePEP3IEPPlanTx(ctx, tx, plan); err != nil {
+		return err
+	}
+	if err := deletePEP3ExecutionPlansForDurationTx(ctx, tx, plan.InstID, plan.RecordID, plan.DurationMonths); err != nil {
+		return err
+	}
+	for _, executionPlan := range executionPlans {
+		if err := savePEP3ExecutionPlanTx(ctx, tx, executionPlan); err != nil {
+			return err
+		}
+	}
+	return tx.Commit()
+}
+
+func deletePEP3IEPPlanForDurationTx(ctx context.Context, tx *sql.Tx, instID, recordID int64, durationMonths int) error {
+	if durationMonths <= 0 {
+		durationMonths = 3
+	}
+	_, err := tx.ExecContext(ctx, `
+		DELETE FROM assessment_iep_plan
+		WHERE inst_id = ?
+		  AND record_id = ?
+		  AND duration_months = ?
+	`, instID, recordID, durationMonths)
+	return err
+}
+
+func savePEP3IEPPlanTx(ctx context.Context, tx *sql.Tx, entity PEP3IEPPlanEntity) error {
+	raw, err := json.Marshal(entity.Plan)
+	if err != nil {
+		return fmt.Errorf("marshal iep plan: %w", err)
+	}
+	status := strings.TrimSpace(entity.Status)
+	if status == "" {
+		status = "draft"
+	}
+	if entity.DurationMonths <= 0 {
+		entity.DurationMonths = 3
+	}
+	_, err = tx.ExecContext(ctx, `
+		INSERT INTO assessment_iep_plan (
+			inst_id, record_id, duration_months, status, plan_json,
+			create_id, update_id, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			duration_months = VALUES(duration_months),
+			status = VALUES(status),
+			plan_json = VALUES(plan_json),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		entity.InstID,
+		entity.RecordID,
+		entity.DurationMonths,
+		status,
+		string(raw),
+		entity.CreatedBy,
+		entity.UpdatedBy,
+	)
+	return err
+}
+
 func (repo *Repository) GetPEP3IEPPlan(ctx context.Context, instID, recordID int64, durationMonths int) (PEP3IEPPlanEntity, bool, error) {
 	var (
 		entity      PEP3IEPPlanEntity

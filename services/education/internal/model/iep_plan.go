@@ -66,6 +66,19 @@ type PEP3IEPPlanSaveRequest struct {
 	Plan           PEP3IEPPlanAIResult `json:"plan"`
 }
 
+type PEP3IEPPlanPeriodSyncRequest struct {
+	ID                   int64  `json:"id"`
+	DurationMonths       int    `json:"durationMonths"`
+	SourceDurationMonths int    `json:"sourceDurationMonths,omitempty"`
+	StartDate            string `json:"startDate,omitempty"`
+	StartMonth           string `json:"startMonth,omitempty"`
+}
+
+type PEP3IEPPlanPeriodSyncVO struct {
+	IEPPlan        PEP3IEPPlanSavedVO       `json:"iepPlan"`
+	ExecutionPlans PEP3ExecutionPlanSavedVO `json:"executionPlans"`
+}
+
 type PEP3IEPPlanSavedVO struct {
 	Exists         bool                 `json:"exists"`
 	Status         string               `json:"status,omitempty"`
