@@ -257,8 +257,11 @@ function confirmStartAssessment() {
   if (!activeScale.value || !selectedChild.value)
     return
   startModalOpen.value = false
+  const targetPath = isERXinScale(activeScale.value)
+    ? '/teacherCenter/erxin-assessment-workbench'
+    : '/teacherCenter/scale-assessment-workbench'
   void router.push({
-    path: '/teacherCenter/scale-assessment-workbench',
+    path: targetPath,
     query: {
       scaleName: activeScale.value.name,
       scaleCode: activeScale.value.code,
@@ -268,6 +271,11 @@ function confirmStartAssessment() {
       childBirthDate: selectedChild.value.birthDate,
     },
   })
+}
+
+function isERXinScale(scale: ScaleLibraryItem) {
+  const code = String(scale.code || '').trim().toUpperCase()
+  return code === 'ERXIN2' || code === 'ERXIN'
 }
 
 onMounted(() => {

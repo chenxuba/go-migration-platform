@@ -680,6 +680,7 @@ class _ErxinAssessmentPageState extends State<ErxinAssessmentPage> {
                     domains: _template.domains,
                     selectedCode: _selectedDomainCode,
                     progressForDomain: _domainProgress,
+                    domainCompleteForDomain: _domainStopRuleComplete,
                     completedDomainCount: _completedDomainCount(),
                     savedItemCount: _draftProgress.answeredItemCount,
                     onSelect: _selectDomain,
@@ -4296,6 +4297,7 @@ class _DomainSidebar extends StatelessWidget {
     required this.domains,
     required this.selectedCode,
     required this.progressForDomain,
+    required this.domainCompleteForDomain,
     required this.completedDomainCount,
     required this.savedItemCount,
     required this.onSelect,
@@ -4305,6 +4307,7 @@ class _DomainSidebar extends StatelessWidget {
   final List<ErxinDomain> domains;
   final String selectedCode;
   final _DomainProgress Function(String domainCode) progressForDomain;
+  final bool Function(String domainCode) domainCompleteForDomain;
   final int completedDomainCount;
   final int savedItemCount;
   final ValueChanged<String> onSelect;
@@ -4313,6 +4316,10 @@ class _DomainSidebar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final _DomainProgress selectedProgress = progressForDomain(selectedCode);
+    final bool selectedComplete = domainCompleteForDomain(selectedCode);
+    final bool selectedVisibleComplete =
+        selectedProgress.total > 0 &&
+        selectedProgress.answered >= selectedProgress.total;
     return Container(
       width: 214,
       padding: const EdgeInsets.fromLTRB(
@@ -4339,16 +4346,20 @@ class _DomainSidebar extends StatelessWidget {
               domain: domain,
               selected: domain.domainCode == selectedCode,
               progress: progressForDomain(domain.domainCode),
+              complete: domainCompleteForDomain(domain.domainCode),
               onTap: () => onSelect(domain.domainCode),
             ),
           const SizedBox(height: 2),
           _AllItemsButton(onTap: onShowAllItems),
           const Spacer(),
           _ProgressSummary(
-            domainStatus: selectedProgress.answered >= selectedProgress.total &&
-                    selectedProgress.total > 0
-                ? '本能区：当前可见完成'
-                : '本能区：测查中',
+            domainStatus: selectedComplete
+                ? '本能区：已完成'
+                : selectedVisibleComplete
+                    ? '本能区：当前可见完成（待推进）'
+                    : selectedProgress.answered > 0
+                        ? '本能区：测查中'
+                        : '本能区：待测',
             scaleStatus: savedItemCount > 0
                 ? '$completedDomainCount/5 能区完成\n已保存$savedItemCount题'
                 : '$completedDomainCount/5 能区完成',
@@ -4365,28 +4376,32 @@ class _DomainRow extends StatelessWidget {
     required this.domain,
     required this.selected,
     required this.progress,
+    required this.complete,
     required this.onTap,
   });
 
   final ErxinDomain domain;
   final bool selected;
   final _DomainProgress progress;
+  final bool complete;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final bool complete =
+    final bool visibleComplete =
         progress.total > 0 && progress.answered >= progress.total;
     final double percent =
         progress.total <= 0 ? 0 : progress.answered / progress.total;
     final String status = complete
         ? '已完成'
-        : progress.answered > 0
+        : visibleComplete
+            ? '待推进'
+            : progress.answered > 0
             ? '测查中'
             : '待测';
     final Color statusColor = complete
         ? _ErxinColors.green
-        : selected
+        : (selected || visibleComplete)
             ? _ErxinColors.blue
             : _ErxinColors.muted;
     return Padding(

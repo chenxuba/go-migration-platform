@@ -269,6 +269,18 @@ export default [
         },
       },
       {
+        path: '/teacherCenter/erxin-assessment-workbench',
+        name: 'ERXinAssessmentWorkbench',
+        component: () => import('~/pages/teacher-center/erxin-assessment-workbench.vue'),
+        meta: {
+          title: '儿心测评工作台',
+          access: [AccessEnum.teacher_scale],
+          hideInMenu: true,
+          purePage: true,
+          parentKeys: ['/teacherCenter/scale-library'],
+        },
+      },
+      {
         path: '/teacherCenter/evaluationRecord',
         name: 'EvaluationRecord',
         component: () => import('~/pages/teacher-center/evaluationRecord.vue'),
