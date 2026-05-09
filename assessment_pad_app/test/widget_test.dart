@@ -798,7 +798,8 @@ void main() {
     await tester.pumpAndSettle();
 
     await tester.tap(find.text('IEP中心'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
 
     expect(find.text('学员IEP队列'), findsOneWidget);
     expect(find.text('康复教学季度计划'), findsOneWidget);

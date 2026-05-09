@@ -171,7 +171,7 @@ class _IepTopBar extends StatelessWidget {
               icon: Icons.file_download_outlined, label: '导出Word'),
           const SizedBox(width: 10),
           const _PrimaryActionButton(
-              icon: Icons.auto_fix_high_rounded, label: '生成IEP'),
+              icon: Icons.check_circle_rounded, label: '确认IEP'),
         ],
       ),
     );
@@ -1014,43 +1014,215 @@ class _PlanToolbar extends StatelessWidget {
         border: Border.all(color: _IepColors.lightLine),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           const _PeriodSwitch(),
           const _ToolbarDivider(),
-          Expanded(
-            child: SingleChildScrollView(
-              scrollDirection: Axis.horizontal,
-              physics: const ClampingScrollPhysics(),
-              child: Row(
-                children: const <Widget>[
-                  _PlanTab(text: 'IEP总计划', active: true, width: 92),
-                  _PlanNavLabel(text: '月计划'),
-                  _PlanTab(text: '5月', width: 54),
-                  _PlanTab(text: '6月', width: 54),
-                  _PlanTab(text: '7月', width: 54),
-                  _PlanNavLabel(text: '周计划'),
-                  _PlanTab(text: 'W1', width: 48),
-                  _PlanTab(text: 'W2', width: 48),
-                  _PlanTab(text: 'W3', width: 48),
-                  _PlanTab(text: 'W4', width: 48),
-                  _PlanTab(text: 'W5', width: 48),
-                  _PlanTab(text: 'W6', width: 48),
-                  _PlanTab(text: 'W7', width: 48),
-                  _PlanTab(text: 'W8', width: 48),
-                  _PlanTab(text: 'W9', width: 48),
-                  _PlanTab(text: 'W10', width: 52),
-                  _PlanTab(text: 'W11', width: 52),
-                  _PlanTab(text: 'W12', width: 52),
+          const Expanded(child: _ScrollablePlanNav()),
+          const _ToolbarDivider(),
+          const _TableTinyAction(
+              icon: Icons.edit_calendar_rounded, label: '编辑周期'),
+          const SizedBox(width: 8),
+          const _TableTinyAction(icon: Icons.refresh_rounded, label: '重新生成'),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScrollablePlanNav extends StatefulWidget {
+  const _ScrollablePlanNav();
+
+  @override
+  State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
+}
+
+class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
+    with SingleTickerProviderStateMixin {
+  late final ScrollController _scrollController;
+  late final AnimationController _hintController;
+  late final Animation<double> _hintOffset;
+  bool _showLeftHint = false;
+  bool _showRightHint = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_syncHints);
+    _hintController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 760),
+    )..repeat(reverse: true);
+    _hintOffset = CurvedAnimation(
+      parent: _hintController,
+      curve: Curves.easeInOutCubic,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _syncHints() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    final bool canScroll = position.maxScrollExtent > 1;
+    final bool nextLeft = canScroll && position.pixels > 1;
+    final bool nextRight =
+        canScroll && position.pixels < position.maxScrollExtent - 1;
+    if (_showLeftHint == nextLeft && _showRightHint == nextRight) {
+      return;
+    }
+    setState(() {
+      _showLeftHint = nextLeft;
+      _showRightHint = nextRight;
+    });
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_syncHints);
+    _scrollController.dispose();
+    _hintController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: SizedBox(
+        height: 34,
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Center(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(
+                  parent: ClampingScrollPhysics(),
+                ),
+                padding: const EdgeInsets.only(right: 2),
+                child: SizedBox(
+                  height: 34,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: const <Widget>[
+                      _PlanTab(text: 'IEP总计划', active: true, width: 92),
+                      _PlanNavLabel(text: '月计划'),
+                      _PlanTab(text: '5月', width: 54),
+                      _PlanTab(text: '6月', width: 54),
+                      _PlanTab(text: '7月', width: 54),
+                      _PlanNavLabel(text: '周计划'),
+                      _PlanTab(text: 'W1', width: 48),
+                      _PlanTab(text: 'W2', width: 48),
+                      _PlanTab(text: 'W3', width: 48),
+                      _PlanTab(text: 'W4', width: 48),
+                      _PlanTab(text: 'W5', width: 48),
+                      _PlanTab(text: 'W6', width: 48),
+                      _PlanTab(text: 'W7', width: 48),
+                      _PlanTab(text: 'W8', width: 48),
+                      _PlanTab(text: 'W9', width: 48),
+                      _PlanTab(text: 'W10', width: 52),
+                      _PlanTab(text: 'W11', width: 52),
+                      _PlanTab(text: 'W12', width: 52, rightGap: 2),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _PlanScrollHint(
+                visible: _showLeftHint,
+                alignment: Alignment.centerLeft,
+                direction: AxisDirection.left,
+                animation: _hintOffset,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _PlanScrollHint(
+                visible: _showRightHint,
+                alignment: Alignment.centerRight,
+                direction: AxisDirection.right,
+                animation: _hintOffset,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanScrollHint extends StatelessWidget {
+  const _PlanScrollHint({
+    required this.visible,
+    required this.alignment,
+    required this.direction,
+    required this.animation,
+  });
+
+  final bool visible;
+  final Alignment alignment;
+  final AxisDirection direction;
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool right = direction == AxisDirection.right;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        child: Container(
+          width: 62,
+          height: 34,
+          alignment: alignment,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: right ? Alignment.centerLeft : Alignment.centerRight,
+              end: right ? Alignment.centerRight : Alignment.centerLeft,
+              colors: const <Color>[
+                Color(0x00FFFAF5),
+                Color(0xEFFFFAF5),
+                Color(0xFFFFFAF5),
+              ],
+            ),
+          ),
+          child: AnimatedBuilder(
+            animation: animation,
+            builder: (BuildContext context, Widget? child) {
+              final double dx = (animation.value * 5 + 1) * (right ? 1 : -1);
+              return Transform.translate(
+                offset: Offset(dx, 0),
+                child: child,
+              );
+            },
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: right ? 0 : 4,
+                right: right ? 4 : 0,
+              ),
+              child: Icon(
+                right
+                    ? Icons.chevron_right_rounded
+                    : Icons.chevron_left_rounded,
+                size: 27,
+                color: _IepColors.orangeDeep.withOpacity(.86),
+                shadows: const <Shadow>[
+                  Shadow(
+                    color: Color(0x22E96F43),
+                    blurRadius: 5,
+                    offset: Offset(0, 2),
+                  ),
                 ],
               ),
             ),
           ),
-          const _ToolbarDivider(),
-          const _TableTinyAction(
-              icon: Icons.edit_calendar_rounded, label: '周期'),
-          const SizedBox(width: 8),
-          const _TableTinyAction(icon: Icons.save_alt_rounded, label: '保存'),
-        ],
+        ),
       ),
     );
   }
@@ -1070,6 +1242,7 @@ class _PeriodSwitch extends StatelessWidget {
         border: Border.all(color: _IepColors.line),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: const <Widget>[
           _PeriodOption(text: '3个月', active: true),
           _PeriodOption(text: '6个月'),
@@ -1138,6 +1311,7 @@ class _TableTinyAction extends StatelessWidget {
         border: Border.all(color: _IepColors.line),
       ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
           Icon(icon, color: _IepColors.text, size: 16),
           const SizedBox(width: 5),
@@ -1160,18 +1334,20 @@ class _PlanTab extends StatelessWidget {
     required this.text,
     required this.width,
     this.active = false,
+    this.rightGap = 6,
   });
 
   final String text;
   final double width;
   final bool active;
+  final double rightGap;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       width: width,
       height: 30,
-      margin: const EdgeInsets.only(right: 6),
+      margin: EdgeInsets.only(right: rightGap),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: active ? _IepColors.ink : const Color(0xFFFFFAF6),
@@ -1224,15 +1400,7 @@ class _IepTablePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _IepColors.line),
       ),
-      child: Column(
-        children: const <Widget>[
-          Expanded(
-            child: _WordTableFrame(),
-          ),
-          SizedBox(height: 10),
-          _TableFooterBar(),
-        ],
-      ),
+      child: const _WordTableFrame(),
     );
   }
 }
@@ -1682,40 +1850,6 @@ class _DocMergedCell extends StatelessWidget {
       ),
       rowLast: rowLast,
       verticalPadding: 6,
-    );
-  }
-}
-
-class _TableFooterBar extends StatelessWidget {
-  const _TableFooterBar();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 30,
-      child: Row(
-        children: const <Widget>[
-          Icon(Icons.edit_note_rounded, color: _IepColors.orange, size: 17),
-          SizedBox(width: 6),
-          Text(
-            '当前选中：大肌肉 / 短期目标 1',
-            style: TextStyle(
-              color: _IepColors.text,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          Spacer(),
-          Text(
-            'Word表格预览',
-            style: TextStyle(
-              color: _IepColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }
