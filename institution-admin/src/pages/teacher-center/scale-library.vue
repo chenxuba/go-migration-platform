@@ -2,7 +2,6 @@
 import {
   AppstoreOutlined,
   BarsOutlined,
-  BookOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
   ExperimentOutlined,
@@ -250,8 +249,8 @@ function openDetailModal(scale: ScaleLibraryItem) {
   detailModalOpen.value = true
 }
 
-function openIepLibrary(scale: ScaleLibraryItem) {
-  messageService.info(`${scale.name} 的 IEP 库入口已预留`)
+function scaleDescription(scale: ScaleLibraryItem) {
+  return scale.summary || scale.dataStatus || '暂无量表说明'
 }
 
 function confirmStartAssessment() {
@@ -391,8 +390,10 @@ onBeforeUnmount(() => {
             <div v-if="library.items.length" class="scale-card-grid">
               <article v-for="scale in library.items" :key="scale.id" class="scale-card">
               <div class="scale-card__head">
-                <div>
-                  <h2>{{ scale.name }}</h2>
+                <div class="scale-card__main">
+                  <a-tooltip :title="scale.name" placement="topLeft">
+                    <h2>{{ scale.name }}</h2>
+                  </a-tooltip>
                   <div class="tag-list">
                     <span v-if="scale.category" :class="tagClass(0)">{{ scale.category }}</span>
                     <span v-if="scale.ageRange" :class="tagClass(1)">{{ scale.ageRange }}</span>
@@ -406,10 +407,6 @@ onBeforeUnmount(() => {
                     </span>
                   </div>
                   <div class="card-side-actions">
-                    <button type="button" class="iep-trigger" @click="openIepLibrary(scale)">
-                      <BookOutlined />
-                      <span>IEP库</span>
-                    </button>
                     <a-popover placement="bottomRight" trigger="hover" overlay-class-name="reference-popover">
                       <template #content>
                         <div class="reference-popover-content">
@@ -447,7 +444,9 @@ onBeforeUnmount(() => {
                 </div>
               </div>
 
-              <p class="scale-desc">{{ scale.summary || scale.dataStatus || '暂无量表说明' }}</p>
+              <a-tooltip :title="scaleDescription(scale)" placement="topLeft">
+                <p class="scale-desc">{{ scaleDescription(scale) }}</p>
+              </a-tooltip>
 
               <div class="scale-meta">
                 <div><FileTextOutlined /><span>题目数量</span><b>{{ scale.itemCount }}题</b></div>
@@ -998,7 +997,15 @@ onBeforeUnmount(() => {
     font-size: 16px;
     font-weight: 700;
     line-height: 26px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
+}
+
+.scale-card__main {
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .card-side {
@@ -1021,28 +1028,6 @@ onBeforeUnmount(() => {
   align-items: center;
   flex: 0 0 auto;
   color: #667085;
-}
-
-.iep-trigger {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  height: 26px;
-  padding: 0 10px;
-  color: #127a3d;
-  background: #eefaf2;
-  border: 1px solid #cfe9d8;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  line-height: 1;
-
-  &:hover {
-    color: #0d6b33;
-    background: #e5f6eb;
-    border-color: #9fd5b2;
-  }
 }
 
 .reference-trigger {
@@ -1210,6 +1195,9 @@ onBeforeUnmount(() => {
   color: #475467;
   font-size: 14px;
   line-height: 23px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scale-meta {

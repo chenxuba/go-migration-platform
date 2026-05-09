@@ -84,6 +84,9 @@ export default ({ mode }: ConfigEnv): UserConfig => {
       noCacheOptimizedDeps(),
       ...createVitePlugins({ ...env, VITE_APP_PUBLIC_PATH: publicBase }),
     ],
+    optimizeDeps: {
+      include: ['dayjs/locale/zh-cn'],
+    },
     resolve: {
       alias: [
         {
