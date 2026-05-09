@@ -165,10 +165,10 @@ class _IepTopBar extends StatelessWidget {
           ],
           _SearchBox(width: metrics.compact ? 194 : 224),
           const SizedBox(width: 12),
-          const _GhostActionButton(icon: Icons.tune_rounded, label: '筛选'),
-          const SizedBox(width: 12),
           const _SoftActionButton(
               icon: Icons.file_download_outlined, label: '导出Word'),
+          const SizedBox(width: 10),
+          const _SoftActionButton(icon: Icons.print_rounded, label: '打印'),
           const SizedBox(width: 10),
           const _PrimaryActionButton(
               icon: Icons.check_circle_rounded, label: '确认IEP'),
@@ -1044,6 +1044,8 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   late final Animation<double> _hintOffset;
   bool _showLeftHint = false;
   bool _showRightHint = false;
+  String _selectedPlan = 'iep';
+  String _selectedMonth = '5月';
 
   @override
   void initState() {
@@ -1079,6 +1081,21 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
     });
   }
 
+  void _selectPlan(String plan) {
+    setState(() {
+      _selectedPlan = plan;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _selectMonth(String month) {
+    setState(() {
+      _selectedPlan = month;
+      _selectedMonth = month;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
   @override
   void dispose() {
     _scrollController.removeListener(_syncHints);
@@ -1107,25 +1124,45 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                   height: 34,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.center,
-                    children: const <Widget>[
-                      _PlanTab(text: 'IEP总计划', active: true, width: 92),
-                      _PlanNavLabel(text: '月计划'),
-                      _PlanTab(text: '5月', width: 54),
-                      _PlanTab(text: '6月', width: 54),
-                      _PlanTab(text: '7月', width: 54),
-                      _PlanNavLabel(text: '周计划'),
-                      _PlanTab(text: 'W1', width: 48),
-                      _PlanTab(text: 'W2', width: 48),
-                      _PlanTab(text: 'W3', width: 48),
-                      _PlanTab(text: 'W4', width: 48),
-                      _PlanTab(text: 'W5', width: 48),
-                      _PlanTab(text: 'W6', width: 48),
-                      _PlanTab(text: 'W7', width: 48),
-                      _PlanTab(text: 'W8', width: 48),
-                      _PlanTab(text: 'W9', width: 48),
-                      _PlanTab(text: 'W10', width: 52),
-                      _PlanTab(text: 'W11', width: 52),
-                      _PlanTab(text: 'W12', width: 52, rightGap: 2),
+                    children: <Widget>[
+                      _PlanTab(
+                        text: 'IEP总计划',
+                        active: _selectedPlan == 'iep',
+                        width: 92,
+                        onTap: () => _selectPlan('iep'),
+                      ),
+                      const _PlanNavLabel(text: '月计划'),
+                      _PlanTab(
+                        text: '5月',
+                        active: _selectedPlan == '5月',
+                        width: 54,
+                        onTap: () => _selectMonth('5月'),
+                      ),
+                      _PlanTab(
+                        text: '6月',
+                        active: _selectedPlan == '6月',
+                        width: 54,
+                        onTap: () => _selectMonth('6月'),
+                      ),
+                      _PlanTab(
+                        text: '7月',
+                        active: _selectedPlan == '7月',
+                        width: 54,
+                        onTap: () => _selectMonth('7月'),
+                      ),
+                      const _PlanNavLabel(text: '周计划'),
+                      ...List<Widget>.generate(5, (int index) {
+                        final int weekNumber = index + 1;
+                        return _PlanTab(
+                          text: '${_selectedMonth} W$weekNumber',
+                          width: 68,
+                          active:
+                              _selectedPlan == '$_selectedMonth-W$weekNumber',
+                          rightGap: weekNumber == 5 ? 2 : 6,
+                          onTap: () =>
+                              _selectPlan('$_selectedMonth-W$weekNumber'),
+                        );
+                      }),
                     ],
                   ),
                 ),
@@ -1335,32 +1372,44 @@ class _PlanTab extends StatelessWidget {
     required this.width,
     this.active = false,
     this.rightGap = 6,
+    this.onTap,
   });
 
   final String text;
   final double width;
   final bool active;
   final double rightGap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 30,
-      margin: EdgeInsets.only(right: rightGap),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active ? _IepColors.ink : const Color(0xFFFFFAF6),
+    return Padding(
+      padding: EdgeInsets.only(right: rightGap),
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(15),
-        border: active ? null : Border.all(color: _IepColors.lightLine),
-      ),
-      child: Text(
-        text,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: active ? Colors.white : _IepColors.text,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(15),
+          child: Container(
+            width: width,
+            height: 30,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? _IepColors.ink : const Color(0xFFFFFAF6),
+              borderRadius: BorderRadius.circular(15),
+              border: active ? null : Border.all(color: _IepColors.lightLine),
+            ),
+            child: Text(
+              text,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: active ? Colors.white : _IepColors.text,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
         ),
       ),
     );

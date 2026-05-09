@@ -806,6 +806,17 @@ void main() {
     expect(find.text('开始上课'), findsOneWidget);
     expect(find.text('计划参与者'), findsWidgets);
     expect(find.text('实施者'), findsWidgets);
+
+    await tester.tap(find.text('5月'));
+    await tester.pump();
+
+    expect(find.text('5月 W1'), findsOneWidget);
+    expect(find.text('5月 W5'), findsOneWidget);
+    expect(find.text('W6'), findsNothing);
+    expect(
+      tester.widget<Text>(find.text('IEP总计划')).style?.color,
+      const Color(0xFF72594D),
+    );
   });
 
   testWidgets('smart timetable detects availability after target selection',
