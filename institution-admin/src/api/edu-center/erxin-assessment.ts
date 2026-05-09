@@ -1,3 +1,5 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
 import { useGet, usePost } from '~/utils/request'
 import type { PageRequestModel, PageResult, PEP3AssessmentDraftProgress, PEP3AssessmentRecordDetail, PEP3AssessmentRecordQueryModel, PEP3AssessmentRecordSummary } from './pep3-assessment'
 
@@ -174,6 +176,39 @@ export interface ERXinRecordPageRequest {
   queryModel: PEP3AssessmentRecordQueryModel
 }
 
+export type ERXinAssessmentRecordSummary = PEP3AssessmentRecordSummary
+
+export interface ERXinAssessmentRecordDetail extends ERXinAssessmentRecordSummary {
+  input?: ERXinDraftInput
+}
+
+export interface ERXinRecordConfigUpdateRequest {
+  id: number
+  examinerName: string
+  assessmentDate: string
+}
+
+export interface ERXinReportInterpretation {
+  title: string
+  model?: string
+  generatedBy: string
+  generatedAt?: string
+  summary: string
+  domainAnalysis: string[]
+  suggestions: string[]
+  notes?: string[]
+}
+
+export interface ERXinReportInterpretationStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: ERXinReportInterpretation) => void
+}
+
+export interface ERXinReportInterpretationStreamOptions {
+  signal?: AbortSignal
+}
+
 function normalizeERXinPageRequest<T extends ERXinDraftPageRequest | ERXinRecordPageRequest>(data: T): T {
   const normalized = {
     ...data,
@@ -221,4 +256,128 @@ export function submitERXinAssessmentDraftApi(id: number) {
 
 export function pageERXinAssessmentRecordsApi(data: ERXinRecordPageRequest) {
   return usePost<PageResult<PEP3AssessmentRecordSummary>>('/api/v1/assessments/erxin/records/page', normalizeERXinPageRequest(data), { silentError: true })
+}
+
+export function getERXinAssessmentRecordDetailApi(id: number) {
+  return useGet<ERXinAssessmentRecordDetail>('/api/v1/assessments/erxin/records/detail', { id })
+}
+
+export function updateERXinAssessmentRecordConfigApi(data: ERXinRecordConfigUpdateRequest) {
+  return usePost<ERXinAssessmentRecordDetail>('/api/v1/assessments/erxin/records/config/update', data)
+}
+
+export function deleteERXinAssessmentRecordApi(id: number) {
+  return usePost<boolean>('/api/v1/assessments/erxin/records/delete', { id })
+}
+
+export function downloadERXinAssessmentRecordReportPdfApi(id: number) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/assessments/erxin/records/report/pdf', {
+    params: { id },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
+export function getERXinAssessmentRecordReportInterpretationApi(id: number) {
+  return useGet<ERXinReportInterpretation>('/api/v1/assessments/erxin/records/report/interpretation', { id }, { silentError: true })
+}
+
+export function generateERXinAssessmentRecordReportInterpretationApi(id: number) {
+  return usePost<ERXinReportInterpretation>('/api/v1/assessments/erxin/records/report/interpretation/ai', { id }, {
+    loading: false,
+    silentError: true,
+    timeout: 190000,
+  })
+}
+
+function erxinStreamHeaders() {
+  const token = useAuthorization()
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+    Accept: 'text/event-stream',
+  }
+  if (typeof window !== 'undefined')
+    headers['X-Tenant-Domain'] = window.location.hostname.toLowerCase()
+  return headers
+}
+
+export async function generateERXinAssessmentRecordReportInterpretationStreamApi(
+  id: number,
+  handlers: ERXinReportInterpretationStreamHandlers = {},
+  options: ERXinReportInterpretationStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/erxin/records/report/interpretation/ai/stream', {
+    method: 'POST',
+    headers: erxinStreamHeaders(),
+    body: JSON.stringify({ id }),
+    signal: options.signal,
+  })
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || '报告解读生成失败'
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalInterpretation: ERXinReportInterpretation | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalInterpretation = payload.data
+      if (finalInterpretation)
+        handlers.onDone?.(finalInterpretation)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || '报告解读生成失败')
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('报告解读生成已取消', 'AbortError')
+  if (!finalInterpretation)
+    throw new Error('报告解读生成未返回结果')
+  return finalInterpretation
 }

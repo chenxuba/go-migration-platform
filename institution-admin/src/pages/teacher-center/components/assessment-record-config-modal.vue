@@ -5,6 +5,10 @@ import {
   getPEP3AssessmentRecordDetailApi,
   updatePEP3AssessmentRecordConfigApi,
 } from '@/api/edu-center/pep3-assessment'
+import {
+  getERXinAssessmentRecordDetailApi,
+  updateERXinAssessmentRecordConfigApi,
+} from '@/api/edu-center/erxin-assessment'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 
 const props = defineProps({
@@ -54,6 +58,11 @@ function normalizeDateValue(value) {
     return ''
   const parsed = dayjs(value)
   return parsed.isValid() ? parsed.format('YYYY-MM-DD') : ''
+}
+
+function isERXinRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'ERXIN' || source.startsWith('ERXIN')
 }
 
 function splitExaminerNames(value) {
@@ -174,10 +183,13 @@ async function initializeConfig() {
   fetchTeacherOptions()
 
   const recordId = row.id
+  const recordSource = isERXinRecord(row) ? 'ERXIN' : 'PEP3'
   detailLoading.value = true
   try {
-    const detail = unwrap(await getPEP3AssessmentRecordDetailApi(recordId))
-    if (props.record?.id !== recordId || !props.open)
+    const detail = unwrap(await (recordSource === 'ERXIN'
+      ? getERXinAssessmentRecordDetailApi(recordId)
+      : getPEP3AssessmentRecordDetailApi(recordId)))
+    if (props.record?.id !== recordId || !props.open || (isERXinRecord(props.record) ? 'ERXIN' : 'PEP3') !== recordSource)
       return
     const originalExaminerName = getInputField(detail?.input, 'examinerName') || row.examinerName || ''
     const originalAssessmentDate = normalizeDateValue(getInputField(detail?.input, 'assessmentDate')) || normalizeDateValue(row.assessmentDate)
@@ -239,11 +251,15 @@ async function saveConfig() {
   }
   submitting.value = true
   try {
-    await updatePEP3AssessmentRecordConfigApi({
+    const payload = {
       id: row.id,
       examinerName,
       assessmentDate: dayjs(form.assessmentDate).format('YYYY-MM-DD'),
-    })
+    }
+    if (isERXinRecord(row))
+      await updateERXinAssessmentRecordConfigApi(payload)
+    else
+      await updatePEP3AssessmentRecordConfigApi(payload)
     messageService.success('评估配置已保存')
     modalOpen.value = false
     emit('saved')

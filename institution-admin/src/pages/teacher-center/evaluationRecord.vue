@@ -10,6 +10,13 @@ import {
   downloadPEP3AssessmentBookletPdfApi,
   pagePEP3AssessmentRecordsApi,
 } from '@/api/edu-center/pep3-assessment'
+import {
+  deleteERXinAssessmentRecordApi,
+  downloadERXinAssessmentRecordReportPdfApi,
+  generateERXinAssessmentRecordReportInterpretationStreamApi,
+  getERXinAssessmentRecordReportInterpretationApi,
+  pageERXinAssessmentRecordsApi,
+} from '@/api/edu-center/erxin-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
 
 const displayArray = ref(['scaleCategory', 'createTime'])
@@ -30,9 +37,24 @@ const configTargetRecord = ref(null)
 const reportPreviewUrl = ref('')
 const reportPreviewRequestKey = ref(0)
 const reportPdfReady = ref(false)
+const erxinReportTab = ref('result')
+const interpretation = ref(null)
+const interpretationLoading = ref(false)
+const interpretationGenerating = ref(false)
+const interpretationFetched = ref(false)
+const interpretationError = ref('')
+const interpretationProgress = ref('')
+const interpretationStreamingText = ref('')
+const interpretationStreamRef = ref(null)
+const interpretationShellRef = ref(null)
+const interpretationProgressRef = ref(null)
+const streamingInterpretationPreview = computed(() => interpretationPreviewFromText(interpretationStreamingText.value))
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const router = useRouter()
 let reportPdfReadyTimer = 0
+let interpretationAbortController = null
+let interpretationScrollFrame = 0
+let interpretationProgressAnchored = false
 
 const exportDimensionOptions = [
   {
@@ -231,6 +253,243 @@ function formatCurrentAge(row) {
   return parts.join('')
 }
 
+function isERXinRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'ERXIN' || source.startsWith('ERXIN')
+}
+
+function recordActionKey(record) {
+  if (!record?.id)
+    return ''
+  return `${isERXinRecord(record) ? 'ERXIN' : 'PEP3'}-${record.id}`
+}
+
+function markRecordSource(record, source) {
+  return {
+    ...record,
+    _recordSource: source,
+  }
+}
+
+function recordSortValue(record) {
+  const values = [record?.updatedTime, record?.createdTime, record?.assessmentDate]
+  for (const value of values) {
+    const parsed = dayjs(value)
+    if (parsed.isValid())
+      return parsed.valueOf()
+  }
+  return 0
+}
+
+function compareRecordDesc(left, right) {
+  const timeDiff = recordSortValue(right) - recordSortValue(left)
+  if (timeDiff)
+    return timeDiff
+  return Number(right?.id || 0) - Number(left?.id || 0)
+}
+
+function currentReportIsERXin() {
+  return isERXinRecord(currentReport.value?.record)
+}
+
+function reportTitleForRecord(record) {
+  return isERXinRecord(record)
+    ? (record?.assessmentName || '儿心量表-II发育行为评估报告')
+    : 'PEP-3测试员记录册'
+}
+
+function reportModalHint() {
+  return currentReportIsERXin() ? '查看儿心量表评估报告内容' : '按记录册导出维度查看报告内容'
+}
+
+function reportFrameTitle() {
+  return currentReportIsERXin() ? '儿心量表评估报告PDF预览' : 'PEP-3记录册PDF预览'
+}
+
+function stringList(value) {
+  if (!Array.isArray(value))
+    return []
+  return value.map(item => String(item || '').trim()).filter(Boolean)
+}
+
+function normalizeInterpretation(value) {
+  const data = value || {}
+  return {
+    title: String(data.title || ''),
+    model: String(data.model || ''),
+    generatedBy: String(data.generatedBy || ''),
+    generatedAt: String(data.generatedAt || ''),
+    summary: String(data.summary || ''),
+    domainAnalysis: stringList(data.domainAnalysis),
+    suggestions: stringList(data.suggestions),
+    notes: stringList(data.notes),
+  }
+}
+
+function previewInterpretationFromMap(value) {
+  const data = value || {}
+  return {
+    summary: String(data.summary || '').trim(),
+    domainAnalysis: stringList(data.domainAnalysis),
+    suggestions: stringList(data.suggestions),
+    notes: stringList(data.notes),
+  }
+}
+
+function interpretationPreviewFromText(raw) {
+  const text = String(raw || '').trim()
+  if (!text)
+    return previewInterpretationFromMap({})
+  try {
+    const decoded = JSON.parse(text)
+    if (decoded && typeof decoded === 'object')
+      return previewInterpretationFromMap(decoded)
+  }
+  catch {
+  }
+  return {
+    summary: extractPartialJsonStringValue(text, 'summary') || '',
+    domainAnalysis: extractPartialJsonArrayValues(text, 'domainAnalysis'),
+    suggestions: extractPartialJsonArrayValues(text, 'suggestions'),
+    notes: extractPartialJsonArrayValues(text, 'notes'),
+  }
+}
+
+function interpretationIsEmpty(value = interpretation.value) {
+  if (!value)
+    return true
+  return !String(value.summary || '').trim()
+    && !stringList(value.domainAnalysis).length
+    && !stringList(value.suggestions).length
+    && !stringList(value.notes).length
+}
+
+function streamingPreviewIsEmpty(value = streamingInterpretationPreview.value) {
+  return !String(value?.summary || '').trim()
+    && !stringList(value?.domainAnalysis).length
+    && !stringList(value?.suggestions).length
+    && !stringList(value?.notes).length
+}
+
+function extractPartialJsonStringValue(text, key) {
+  const match = new RegExp(`"${key}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)`).exec(text)
+  return match ? decodePartialJsonString(match[1] || '') : ''
+}
+
+function extractPartialJsonArrayValues(text, key) {
+  const keyIndex = text.indexOf(`"${key}"`)
+  if (keyIndex < 0)
+    return []
+  const arrayStart = text.indexOf('[', keyIndex)
+  if (arrayStart < 0)
+    return []
+  const arrayEnd = text.indexOf(']', arrayStart)
+  const body = text.slice(arrayStart + 1, arrayEnd >= 0 ? arrayEnd : text.length)
+  const values = Array.from(body.matchAll(/"((?:\\.|[^"\\])*)"/g))
+    .map(match => decodePartialJsonString(match[1] || '').trim())
+    .filter(Boolean)
+  const trailing = extractTrailingPartialJsonArrayString(body)
+  if (trailing)
+    values.push(trailing)
+  return values
+}
+
+function extractTrailingPartialJsonArrayString(body) {
+  let quoteIndex = -1
+  let escaped = false
+  let inString = false
+  for (let index = 0; index < body.length; index += 1) {
+    const char = body[index]
+    if (escaped) {
+      escaped = false
+      continue
+    }
+    if (char === '\\') {
+      escaped = true
+      continue
+    }
+    if (char === '"') {
+      inString = !inString
+      quoteIndex = index
+    }
+  }
+  if (!inString || quoteIndex < 0 || quoteIndex >= body.length - 1)
+    return ''
+  return decodePartialJsonString(body.slice(quoteIndex + 1)).trim()
+}
+
+function decodePartialJsonString(value) {
+  try {
+    return JSON.parse(`"${value}"`)
+  }
+  catch {
+    return String(value || '')
+      .replace(/\\"/g, '"')
+      .replace(/\\n/g, '\n')
+      .replace(/\\\\/g, '\\')
+  }
+}
+
+function resetInterpretationState() {
+  if (interpretationAbortController) {
+    interpretationAbortController.abort()
+    interpretationAbortController = null
+  }
+  if (interpretationScrollFrame) {
+    window.cancelAnimationFrame(interpretationScrollFrame)
+    interpretationScrollFrame = 0
+  }
+  interpretationProgressAnchored = false
+  erxinReportTab.value = 'result'
+  interpretation.value = null
+  interpretationLoading.value = false
+  interpretationGenerating.value = false
+  interpretationFetched.value = false
+  interpretationError.value = ''
+  interpretationProgress.value = ''
+  interpretationStreamingText.value = ''
+}
+
+function interpretationSectionItems(value, key) {
+  return stringList(value?.[key])
+}
+
+function scrollInterpretationStreamToBottom() {
+  if (!interpretationGenerating.value)
+    return
+  if (interpretationScrollFrame)
+    window.cancelAnimationFrame(interpretationScrollFrame)
+  interpretationScrollFrame = window.requestAnimationFrame(() => {
+    interpretationScrollFrame = 0
+    const streamElement = interpretationStreamRef.value
+    if (streamElement)
+      streamElement.scrollTo({ top: streamElement.scrollHeight, behavior: 'smooth' })
+  })
+}
+
+watch([interpretationStreamingText, streamingInterpretationPreview], () => {
+  nextTick(scrollInterpretationStreamToBottom)
+})
+
+function scrollInterpretationProgressIntoView() {
+  if (interpretationProgressAnchored)
+    return
+  nextTick(() => {
+    const progressElement = interpretationProgressRef.value
+    const modalBodyElement = progressElement?.closest('.ant-modal-body')
+    if (!progressElement || !modalBodyElement)
+      return
+    const progressRect = progressElement.getBoundingClientRect()
+    const bodyRect = modalBodyElement.getBoundingClientRect()
+    const targetTop = modalBodyElement.scrollTop + progressRect.top - bodyRect.top - 16
+    modalBodyElement.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: 'smooth',
+    })
+    interpretationProgressAnchored = true
+  })
+}
+
 function exportDimensionTitle(value) {
   return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
 }
@@ -308,9 +567,12 @@ function confirmAssessmentRecordAction(record = currentReport.value?.record) {
 function confirmReportExport(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id || exportingId.value)
     return
+  const content = isERXinRecord(row)
+    ? `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的评估报告PDF。`
+    : `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`
   Modal.confirm({
     title: '确认导出评估报告？',
-    content: `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`,
+    content,
     okText: '确认导出',
     cancelText: '取消',
     onOk: () => exportReport(row, dimension),
@@ -349,10 +611,11 @@ async function fetchScaleCategories() {
 async function fetchRecords() {
   loading.value = true
   try {
-    const res = await pagePEP3AssessmentRecordsApi({
+    const pageSize = Math.max(pagination.current * pagination.pageSize, pagination.pageSize)
+    const request = {
       pageRequestModel: {
-        pageIndex: pagination.current,
-        pageSize: pagination.pageSize,
+        pageIndex: 1,
+        pageSize,
       },
       queryModel: {
         scaleCategory: queryModel.scaleCategory,
@@ -360,10 +623,20 @@ async function fetchRecords() {
         assessmentDateBegin: queryModel.assessmentDateBegin,
         assessmentDateEnd: queryModel.assessmentDateEnd,
       },
-    })
-    const data = unwrap(res)
-    dataSource.value = data?.items || []
-    pagination.total = data?.total || 0
+    }
+    const [pep3Res, erxinRes] = await Promise.all([
+      pagePEP3AssessmentRecordsApi(request),
+      pageERXinAssessmentRecordsApi(request),
+    ])
+    const pep3Data = unwrap(pep3Res)
+    const erxinData = unwrap(erxinRes)
+    const merged = [
+      ...(pep3Data?.items || []).map(item => markRecordSource(item, 'PEP3')),
+      ...(erxinData?.items || []).map(item => markRecordSource(item, 'ERXIN')),
+    ].sort(compareRecordDesc)
+    const start = (pagination.current - 1) * pagination.pageSize
+    dataSource.value = merged.slice(start, start + pagination.pageSize)
+    pagination.total = Number(pep3Data?.total || 0) + Number(erxinData?.total || 0)
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '获取评估记录失败'))
@@ -382,9 +655,10 @@ function handleTableChange(page) {
 async function viewReport(row) {
   if (!row)
     return
+  resetInterpretationState()
   activeReportModule.value = defaultReportModule
   currentReport.value = {
-    title: 'PEP-3测试员记录册',
+    title: reportTitleForRecord(row),
     record: row,
   }
   reportModalOpen.value = true
@@ -415,7 +689,9 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
   resetReportPdfReady()
   previewLoading.value = true
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+    const response = isERXinRecord(row)
+      ? await downloadERXinAssessmentRecordReportPdfApi(row.id)
+      : await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
     const nextUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     if (requestKey !== reportPreviewRequestKey.value) {
       URL.revokeObjectURL(nextUrl)
@@ -435,6 +711,8 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
 }
 
 function selectReportModule(value) {
+  if (currentReportIsERXin())
+    return
   if (activeReportModule.value === value)
     return
   activeReportModule.value = value
@@ -454,11 +732,117 @@ function closeReportModal() {
   reportPreviewRequestKey.value += 1
   previewLoading.value = false
   revokeReportPreviewUrl()
+  resetInterpretationState()
+}
+
+function selectERXinReportTab(tab) {
+  erxinReportTab.value = tab
+  if (tab === 'interpretation' && !interpretationFetched.value && !interpretationLoading.value)
+    loadSavedInterpretation()
+}
+
+async function loadSavedInterpretation() {
+  const row = currentReport.value?.record
+  if (!isERXinRecord(row) || !row?.id)
+    return
+  interpretationLoading.value = true
+  interpretationGenerating.value = false
+  interpretationFetched.value = true
+  interpretationError.value = ''
+  interpretationProgress.value = '正在读取已保存的报告解读...'
+  interpretationStreamingText.value = ''
+  try {
+    const res = await getERXinAssessmentRecordReportInterpretationApi(row.id)
+    const data = normalizeInterpretation(unwrap(res))
+    interpretation.value = data
+    interpretationProgress.value = interpretationIsEmpty(data) ? '报告解读尚未生成' : '已读取保存的报告解读'
+  }
+  catch (error) {
+    interpretationError.value = getErrorMessage(error, '报告解读读取失败')
+  }
+  finally {
+    interpretationLoading.value = false
+  }
+}
+
+function handleGenerateInterpretation() {
+  if (!interpretationIsEmpty()) {
+    Modal.confirm({
+      title: '重新生成报告解读？',
+      content: '重新生成会覆盖当前已保存的报告解读，确认继续吗？',
+      okText: '重新生成',
+      cancelText: '取消',
+      onOk: () => {
+        generateInterpretation(true)
+      },
+    })
+    return
+  }
+  generateInterpretation(false)
+}
+
+async function generateInterpretation(regenerate = false) {
+  const row = currentReport.value?.record
+  if (!isERXinRecord(row) || !row?.id)
+    return
+  if (interpretationAbortController)
+    interpretationAbortController.abort()
+  const controller = new AbortController()
+  interpretationAbortController = controller
+  interpretationLoading.value = true
+  interpretationGenerating.value = true
+  interpretationFetched.value = true
+  interpretationError.value = ''
+  interpretationProgress.value = regenerate ? '正在重新生成报告解读...' : '正在生成报告解读...'
+  interpretationStreamingText.value = ''
+  interpretationProgressAnchored = false
+  if (regenerate)
+    interpretation.value = null
+  scrollInterpretationProgressIntoView()
+  try {
+    const data = await generateERXinAssessmentRecordReportInterpretationStreamApi(
+      row.id,
+      {
+        onStatus: (message) => {
+          interpretationProgress.value = message || 'AI 正在分析评估结果...'
+          scrollInterpretationProgressIntoView()
+        },
+        onDelta: (text) => {
+          if (text)
+            interpretationStreamingText.value += text
+          interpretationProgress.value = 'AI 正在生成报告解读...'
+          nextTick(scrollInterpretationStreamToBottom)
+        },
+        onDone: (data) => {
+          interpretation.value = normalizeInterpretation(data)
+        },
+      },
+      { signal: controller.signal },
+    )
+    interpretation.value = normalizeInterpretation(data)
+    interpretationProgress.value = '报告解读已生成'
+    interpretationStreamingText.value = ''
+  }
+  catch (error) {
+    if (error?.name !== 'AbortError')
+      interpretationError.value = getErrorMessage(error, '报告解读生成失败')
+  }
+  finally {
+    if (interpretationAbortController === controller) {
+      interpretationLoading.value = false
+      interpretationGenerating.value = false
+      interpretationAbortController = null
+    }
+  }
 }
 
 function openExportModal(row) {
   if (!row || exportingId.value)
     return
+  if (isERXinRecord(row)) {
+    confirmReportExport(row)
+    return
+  }
   exportTargetRecord.value = row
   selectedExportDimension.value = defaultExportDimension
   exportModalOpen.value = true
@@ -509,13 +893,17 @@ function closeExportModal() {
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
-  exportingId.value = row.id
+  exportingId.value = recordActionKey(row)
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+    const response = isERXinRecord(row)
+      ? await downloadERXinAssessmentRecordReportPdfApi(row.id)
+      : await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
+    const fallbackName = isERXinRecord(row)
+      ? `${row.studentName || '学员'}-${row.assessmentName || '儿心量表评估报告'}-${formatDate(row.assessmentDate)}.pdf`
+      : `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -531,9 +919,12 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
 }
 
 async function deleteRecord(row) {
-  deletingId.value = row.id
+  deletingId.value = recordActionKey(row)
   try {
-    await deletePEP3AssessmentRecordApi(row.id)
+    if (isERXinRecord(row))
+      await deleteERXinAssessmentRecordApi(row.id)
+    else
+      await deletePEP3AssessmentRecordApi(row.id)
     messageService.success('评估记录已删除')
     if (dataSource.value.length === 1 && pagination.current > 1)
       pagination.current -= 1
@@ -555,6 +946,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   revokeReportPreviewUrl()
   resetReportPdfReady()
+  resetInterpretationState()
 })
 </script>
 
@@ -593,7 +985,7 @@ onBeforeUnmount(() => {
             :columns="filteredColumns"
             :loading="loading"
             :scroll="{ x: totalWidth }"
-            row-key="id"
+            :row-key="recordActionKey"
             size="small"
             @change="handleTableChange"
           >
@@ -633,10 +1025,10 @@ onBeforeUnmount(() => {
                   <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
                   <a @click="openConfigModal(record)">配置</a>
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
-                    <a :class="{ disabled: deletingId === record.id }">删除</a>
+                    <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
-                  <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
-                  <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
+                  <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
+                  <a v-if="!isERXinRecord(record)" @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
             </template>
@@ -656,7 +1048,7 @@ onBeforeUnmount(() => {
       <template #title>
         <div class="report-modal-title">
           <span>评估报告</span>
-          <small>按记录册导出维度查看报告内容</small>
+          <small>{{ reportModalHint() }}</small>
         </div>
       </template>
       <div v-if="currentReport" class="report-preview">
@@ -674,16 +1066,16 @@ onBeforeUnmount(() => {
               type="primary"
               size="small"
               class="report-export-btn"
-              :loading="exportingId === currentReport.record?.id"
+              :loading="exportingId === recordActionKey(currentReport.record)"
               @click="confirmReportExport(currentReport.record, activeReportModule)"
             >
               导出
             </a-button>
-            <a-tooltip :title="assessmentRecordActionTip(currentReport.record)" placement="top">
+            <a-tooltip v-if="!isERXinRecord(currentReport.record)" :title="assessmentRecordActionTip(currentReport.record)" placement="top">
               <a-button
                 size="small"
                 class="report-edit-btn"
-                :disabled="exportingId === currentReport.record?.id"
+                :disabled="exportingId === recordActionKey(currentReport.record)"
                 @click="confirmAssessmentRecordAction(currentReport.record)"
               >
                 {{ assessmentRecordActionText(currentReport.record) }}
@@ -691,7 +1083,7 @@ onBeforeUnmount(() => {
             </a-tooltip>
           </div>
         </div>
-        <div class="report-module-area">
+        <div v-if="!isERXinRecord(currentReport.record)" class="report-module-area">
           <div class="report-module-grid">
             <button
               v-for="option in reportModuleOptions"
@@ -712,16 +1104,52 @@ onBeforeUnmount(() => {
             <span>{{ reportModuleDesc(activeReportModule) }}</span>
           </div>
         </div>
+        <div v-else class="report-module-area erxin-report-tabs">
+          <div class="report-module-grid">
+            <button
+              type="button"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': erxinReportTab === 'result' }"
+              @click="selectERXinReportTab('result')"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">评估结果记录</span>
+            </button>
+            <button
+              type="button"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': erxinReportTab === 'interpretation' }"
+              @click="selectERXinReportTab('interpretation')"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">报告解读</span>
+            </button>
+          </div>
+          <div class="report-module-summary erxin-report-tabs__summary">
+            <strong>{{ erxinReportTab === 'interpretation' ? '报告解读' : 'PDF报告' }}</strong>
+            <span>{{ erxinReportTab === 'interpretation' ? '查看或生成儿心量表报告解读。' : '查看儿心量表评估结果记录。' }}</span>
+            <a-button
+              v-if="erxinReportTab === 'interpretation'"
+              type="primary"
+              size="small"
+              :loading="interpretationGenerating"
+              :disabled="interpretationLoading && !interpretationGenerating"
+              @click="handleGenerateInterpretation"
+            >
+              {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+            </a-button>
+          </div>
+        </div>
 
         <div class="report-module-content">
-          <div class="report-pdf-shell">
+          <div v-if="!isERXinRecord(currentReport.record) || erxinReportTab === 'result'" class="report-pdf-shell">
             <iframe
               v-if="reportPreviewUrl"
               :key="reportPreviewUrl"
               class="report-pdf-frame"
               :class="{ 'report-pdf-frame--ready': reportPdfReady }"
               :src="`${reportPreviewUrl}#toolbar=0&navpanes=0`"
-              title="PEP-3记录册PDF预览"
+              :title="reportFrameTitle()"
               @load="handleReportPdfFrameLoad"
             />
             <div v-if="previewLoading || (reportPreviewUrl && !reportPdfReady)" class="report-pdf-loading">
@@ -735,6 +1163,116 @@ onBeforeUnmount(() => {
               :image="simpleEmptyImage"
               :image-style="{ height: '48px' }"
             />
+          </div>
+          <div v-else ref="interpretationShellRef" class="erxin-interpretation-shell">
+            <div v-if="interpretationLoading && interpretationGenerating" ref="interpretationProgressRef" class="erxin-interpretation-progress">
+              <div class="erxin-interpretation-progress__header">
+                <span class="erxin-interpretation-progress__icon">AI</span>
+                <div class="erxin-interpretation-progress__title">
+                  <strong>AI 正在生成报告解读</strong>
+                  <span>{{ interpretationProgress || '正在分析全量表与五大能区结果...' }}</span>
+                </div>
+                <em class="erxin-streaming-indicator">流式生成</em>
+              </div>
+              <div ref="interpretationStreamRef" class="erxin-interpretation-stream">
+                <div v-if="streamingPreviewIsEmpty()" class="erxin-interpretation-stream__empty">
+                  正在建立报告结构，稍后开始输出解读内容...
+                </div>
+                <template v-else>
+                  <section v-if="streamingInterpretationPreview.summary" class="erxin-interpretation-section erxin-interpretation-section--streaming">
+                    <h4>综合解读</h4>
+                    <p>{{ streamingInterpretationPreview.summary }}</p>
+                  </section>
+                  <section v-if="streamingInterpretationPreview.domainAnalysis.length" class="erxin-interpretation-section erxin-interpretation-section--streaming">
+                    <h4>能区表现</h4>
+                    <ol>
+                      <li v-for="(item, index) in streamingInterpretationPreview.domainAnalysis" :key="`stream-domain-${index}`">
+                        {{ item }}
+                      </li>
+                    </ol>
+                  </section>
+                  <section v-if="streamingInterpretationPreview.suggestions.length" class="erxin-interpretation-section erxin-interpretation-section--streaming">
+                    <h4>发展建议</h4>
+                    <ol>
+                      <li v-for="(item, index) in streamingInterpretationPreview.suggestions" :key="`stream-suggestion-${index}`">
+                        {{ item }}
+                      </li>
+                    </ol>
+                  </section>
+                  <section v-if="streamingInterpretationPreview.notes.length" class="erxin-interpretation-section erxin-interpretation-section--streaming">
+                    <h4>注意事项</h4>
+                    <ol>
+                      <li v-for="(item, index) in streamingInterpretationPreview.notes" :key="`stream-note-${index}`">
+                        {{ item }}
+                      </li>
+                    </ol>
+                  </section>
+                </template>
+              </div>
+            </div>
+            <div v-else-if="interpretationLoading" class="erxin-interpretation-read-loading">
+              <a-spin size="small" />
+              <strong>报告解读读取中</strong>
+              <span>{{ interpretationProgress || '正在读取已保存的报告解读...' }}</span>
+            </div>
+            <div v-else-if="!interpretationLoading && interpretationError" class="erxin-interpretation-state">
+              <a-empty
+                description="报告解读加载失败"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <p>{{ interpretationError }}</p>
+              <a-button size="small" type="primary" @click="generateInterpretation(true)">
+                重新生成
+              </a-button>
+            </div>
+            <div v-else-if="!interpretationLoading && interpretationIsEmpty()" class="erxin-interpretation-state">
+              <a-empty
+                description="报告解读尚未生成"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <p>点击“生成解读”后，AI 会基于当前评估结果生成并保存。</p>
+              <a-button size="small" type="primary" @click="generateInterpretation(false)">
+                生成解读
+              </a-button>
+            </div>
+            <div v-else-if="!interpretationLoading" class="erxin-interpretation-content">
+              <div class="erxin-interpretation-title">
+                <strong>{{ interpretation.title || '儿心量表报告解读' }}</strong>
+                <span v-if="interpretation.generatedAt || interpretation.generatedBy">
+                  {{ interpretation.generatedBy || 'AI' }} {{ interpretation.generatedAt ? `· ${formatDateTime(interpretation.generatedAt)}` : '' }}
+                </span>
+              </div>
+              <section class="erxin-interpretation-section">
+                <h4>综合解读</h4>
+                <p>{{ interpretation.summary || '-' }}</p>
+              </section>
+              <section class="erxin-interpretation-section">
+                <h4>能区表现</h4>
+                <ol>
+                  <li v-for="(item, index) in interpretationSectionItems(interpretation, 'domainAnalysis')" :key="`domain-${index}`">
+                    {{ item }}
+                  </li>
+                </ol>
+              </section>
+              <section class="erxin-interpretation-section">
+                <h4>发展建议</h4>
+                <ol>
+                  <li v-for="(item, index) in interpretationSectionItems(interpretation, 'suggestions')" :key="`suggestion-${index}`">
+                    {{ item }}
+                  </li>
+                </ol>
+              </section>
+              <section v-if="interpretationSectionItems(interpretation, 'notes').length" class="erxin-interpretation-section">
+                <h4>注意事项</h4>
+                <ol>
+                  <li v-for="(item, index) in interpretationSectionItems(interpretation, 'notes')" :key="`note-${index}`">
+                    {{ item }}
+                  </li>
+                </ol>
+              </section>
+            </div>
           </div>
         </div>
       </div>
@@ -1076,6 +1614,15 @@ onBeforeUnmount(() => {
   }
 }
 
+.erxin-report-tabs__summary {
+  :deep(.ant-btn) {
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
 .report-module-content {
   padding: 16px 0 22px;
 }
@@ -1162,6 +1709,322 @@ onBeforeUnmount(() => {
     color: #6b7280;
     font-size: 14px;
     line-height: 22px;
+  }
+}
+
+.erxin-interpretation-shell {
+  min-height: 620px;
+  padding: 18px;
+  overflow-y: auto;
+  background: #fbfdff;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    border-radius: 999px;
+  }
+
+  &::-webkit-scrollbar-thumb:hover {
+    background: #aebccc;
+  }
+}
+
+.erxin-interpretation-progress {
+  display: flex;
+  flex-direction: column;
+  height: min(66vh, 620px);
+  min-height: 540px;
+  padding: 16px 18px 18px;
+  background: #fff;
+  border: 1px solid #e6edf6;
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+.erxin-interpretation-progress__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 0 0 auto;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  color: #64748b;
+  border-bottom: 1px solid #edf1f6;
+}
+
+.erxin-interpretation-progress__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  color: var(--pro-ant-color-primary);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  background: #eef6ff;
+  border: 1px solid #d8eaff;
+  border-radius: 10px;
+}
+
+.erxin-interpretation-progress__title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+
+  strong {
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    min-width: 0;
+    overflow: hidden;
+    color: #7a8494;
+    font-size: 12px;
+    font-weight: 500;
+    line-height: 18px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+}
+
+.erxin-streaming-indicator {
+  flex: 0 0 auto;
+  padding: 0 9px;
+  color: var(--pro-ant-color-primary);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 600;
+  line-height: 24px;
+  background: #eef6ff;
+  border: 1px solid #d8eaff;
+  border-radius: 999px;
+  animation: erxin-stream-pulse 0.9s ease-in-out infinite;
+}
+
+.erxin-interpretation-read-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 540px;
+  color: #7a8494;
+  font-size: 13px;
+
+  strong {
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 22px;
+  }
+
+  span {
+    color: #7a8494;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.erxin-interpretation-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding: 2px 2px 4px;
+  overflow-y: auto;
+  background: transparent;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    border-radius: 999px;
+  }
+}
+
+.erxin-interpretation-stream__empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 430px;
+  color: #8a94a6;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 22px;
+  background: #f8fafc;
+  border: 1px dashed #dbe7f5;
+  border-radius: 8px;
+}
+
+.erxin-interpretation-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 520px;
+  color: #7a8494;
+
+  p {
+    margin: 4px 0 14px;
+    color: #7a8494;
+    font-size: 13px;
+    line-height: 20px;
+  }
+}
+
+.erxin-interpretation-content {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 0;
+}
+
+.erxin-interpretation-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: #8a94a6;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.erxin-interpretation-section {
+  padding: 14px 16px;
+  background: #fff;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+
+  h4 {
+    position: relative;
+    margin: 0 0 10px;
+    padding-left: 10px;
+    color: var(--pro-ant-color-primary);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 22px;
+
+    &::before {
+      position: absolute;
+      top: 5px;
+      left: 0;
+      width: 3px;
+      height: 12px;
+      content: "";
+      background: var(--pro-ant-color-primary);
+      border-radius: 999px;
+    }
+  }
+
+  p {
+    margin: 0;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 24px;
+  }
+
+  ol {
+    padding-left: 18px;
+    margin: 0;
+    color: #334155;
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 24px;
+  }
+
+  li + li {
+    margin-top: 6px;
+  }
+}
+
+.erxin-interpretation-section--streaming {
+  position: relative;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.03);
+  animation: erxin-stream-card-in 0.18s ease-out;
+
+  &::after {
+    position: absolute;
+    right: 12px;
+    bottom: 10px;
+    width: 6px;
+    height: 6px;
+    content: "";
+    background: var(--pro-ant-color-primary);
+    border-radius: 50%;
+    opacity: 0.55;
+    animation: erxin-stream-pulse 1s ease-in-out infinite;
+  }
+}
+
+@keyframes erxin-stream-pulse {
+  0%,
+  100% {
+    opacity: 0.45;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes erxin-stream-card-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 
