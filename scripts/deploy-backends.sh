@@ -239,6 +239,18 @@ run_go_backend() {
   )
 }
 
+copy_education_static_docs() {
+  local docs=()
+  while IFS= read -r -d '' file; do
+    docs+=("$file")
+  done < <(find "$ROOT_DIR/docs" -maxdepth 1 -type f \( -name 'pep3*.json' -o -name 'erxin*.json' \) -print0)
+  if [[ "${#docs[@]}" -gt 0 ]]; then
+    log "copy education static docs"
+    mkdir -p "$PACKAGE_DIR/docs"
+    cp "${docs[@]}" "$PACKAGE_DIR/docs/"
+  fi
+}
+
 write_remote_script() {
   cat > "$REMOTE_SCRIPT_LOCAL" <<'EOF'
 #!/usr/bin/env bash
@@ -335,6 +347,11 @@ mkdir -p "$staging_dir"
 log "extract backend package: $release_id"
 tar -xzf "$archive" -C "$staging_dir"
 mkdir -p "$current_dir/bin"
+if [[ -d "$staging_dir/docs" ]]; then
+  log "sync static docs"
+  mkdir -p "$current_dir/docs"
+  cp -a "$staging_dir/docs/." "$current_dir/docs/"
+fi
 
 list="$selected_backends,"
 while [[ -n "$list" ]]; do
@@ -572,6 +589,7 @@ if should_include_backend platform; then
 fi
 if should_include_backend education; then
   run_go_backend education
+  copy_education_static_docs
 fi
 
 write_remote_script

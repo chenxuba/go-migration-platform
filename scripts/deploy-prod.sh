@@ -220,9 +220,14 @@ copy_configs() {
   if [[ -f "$ROOT_DIR/configs/tenants.json" ]]; then
     cp "$ROOT_DIR/configs/tenants.json" "$PACKAGE_DIR/configs/tenants.json"
   fi
-  if compgen -G "$ROOT_DIR/docs/pep3*.json" >/dev/null; then
+
+  local docs=()
+  while IFS= read -r -d '' file; do
+    docs+=("$file")
+  done < <(find "$ROOT_DIR/docs" -maxdepth 1 -type f \( -name 'pep3*.json' -o -name 'erxin*.json' \) -print0)
+  if [[ "${#docs[@]}" -gt 0 ]]; then
     mkdir -p "$PACKAGE_DIR/docs"
-    cp "$ROOT_DIR"/docs/pep3*.json "$PACKAGE_DIR/docs/"
+    cp "${docs[@]}" "$PACKAGE_DIR/docs/"
   fi
 }
 

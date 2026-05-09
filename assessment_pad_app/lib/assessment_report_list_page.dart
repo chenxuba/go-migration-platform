@@ -3404,6 +3404,11 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
 const double _reportPreviewRasterDpi = 96;
 const double _erxinReportPreviewRasterDpi = 216;
 
+String _reportModuleInlineDescription(_ReportModuleOption option) {
+  final String pages = option.pages.replaceAll(RegExp(r'\s+'), '');
+  return '$pages：${option.description}';
+}
+
 class _ReportPreviewDialog extends StatefulWidget {
   const _ReportPreviewDialog({
     required this.record,
@@ -3427,6 +3432,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   final Map<String, Future<Uint8List>> _modulePdfLoads =
       <String, Future<Uint8List>>{};
   bool _loading = true;
+  bool _printing = false;
   String _errorMessage = '';
   int _recordSyncSerial = 0;
 
@@ -3605,6 +3611,54 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     unawaited(_activateModule(option));
   }
 
+  Future<void> _printCurrentModule() async {
+    if (_printing) {
+      return;
+    }
+    final _ReportModuleOption option = _activeOption;
+    setState(() {
+      _printing = true;
+      _errorMessage = '';
+    });
+    try {
+      final Uint8List bytes =
+          _pdfBytes ?? await _ensureModulePdf(option, refresh: false);
+      if (!mounted || _activeOption.value != option.value) {
+        return;
+      }
+      if (bytes.isEmpty) {
+        setState(() {
+          _errorMessage = '暂无可打印的评估报告';
+        });
+        return;
+      }
+      await Printing.layoutPdf(
+        name: _pep3PrintFileName(_displayRecord, option.label),
+        onLayout: (_) async => bytes,
+      );
+    } on Pep3ApiException catch (error) {
+      if (!mounted || _activeOption.value != option.value) {
+        return;
+      }
+      setState(() {
+        _errorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || _activeOption.value != option.value) {
+        return;
+      }
+      setState(() {
+        _errorMessage = '评估报告打印失败：$error';
+      });
+    } finally {
+      if (mounted) {
+        setState(() {
+          _printing = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return PopScope(
@@ -3662,8 +3716,19 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                 ),
               ),
               const SizedBox(height: 7),
-              Text(
-                '${record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
+              Text.rich(
+                TextSpan(
+                  children: <InlineSpan>[
+                    TextSpan(
+                      text:
+                          '${record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}   ',
+                    ),
+                    TextSpan(
+                      text: _reportModuleInlineDescription(_activeOption),
+                      style: const TextStyle(color: _ReportTheme.blue),
+                    ),
+                  ],
+                ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -3720,37 +3785,12 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
               )
               .toList(),
         );
-        final Widget meta = ConstrainedBox(
-          constraints: const BoxConstraints(
-            minWidth: 240,
-            maxWidth: 300,
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Text(
-                _activeOption.pages,
-                style: const TextStyle(
-                  color: _ReportTheme.blue,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                _activeOption.description,
-                maxLines: stackMeta ? 2 : 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _ReportTheme.muted,
-                  fontSize: 11,
-                  height: 1.2,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
+        final Widget printButton = _ToolbarButton(
+          label: _printing ? '打印中' : '打印',
+          icon: Icons.print_rounded,
+          onTap: (_printing || _loading)
+              ? null
+              : () => unawaited(_printCurrentModule()),
         );
 
         return Container(
@@ -3766,7 +3806,10 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   children: <Widget>[
                     chips,
                     const SizedBox(height: 8),
-                    meta,
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: printButton,
+                    ),
                   ],
                 )
               : Row(
@@ -3774,7 +3817,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   children: <Widget>[
                     Expanded(child: chips),
                     const SizedBox(width: 14),
-                    meta,
+                    printButton,
                   ],
                 ),
         );
@@ -5489,6 +5532,14 @@ String _erxinPrintFileName(Pep3RecordSummary record, String suffix) {
       : _studentName(record).trim();
   final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
   return '$name-儿心量表-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
+}
+
+String _pep3PrintFileName(Pep3RecordSummary record, String suffix) {
+  final String name = _studentName(record).trim().isEmpty
+      ? '未命名儿童'
+      : _studentName(record).trim();
+  final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
+  return '$name-PEP3-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
 }
 
 class _LazyReportPdfPreview extends StatefulWidget {
