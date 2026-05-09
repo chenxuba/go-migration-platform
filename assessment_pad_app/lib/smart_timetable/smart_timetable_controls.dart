@@ -414,6 +414,7 @@ class _ScheduleComposerBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double targetWidth = compact ? 150 : 198;
     return Row(
       children: <Widget>[
         _ScheduleModeSwitch(
@@ -423,7 +424,7 @@ class _ScheduleComposerBar extends StatelessWidget {
         ),
         SizedBox(width: compact ? 7 : 8),
         SizedBox(
-          width: compact ? 184 : 230,
+          width: targetWidth,
           child: _ScheduleTargetSelector(
             mode: mode,
             target: selectedTarget,
@@ -435,7 +436,7 @@ class _ScheduleComposerBar extends StatelessWidget {
         if (!compact) ...<Widget>[
           const SizedBox(width: 8),
           SizedBox(
-            width: 168,
+            width: 138,
             child: selectedTarget == null &&
                     availabilityMessage == null &&
                     !availabilityLoading

@@ -196,11 +196,13 @@ class _TimetableSubBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final double periodGroupWidth = compact ? 126 : 136;
+    final double statusWidth = compact ? 96 : 128;
     return SizedBox(
       height: 44,
       child: Row(
         children: <Widget>[
-          Expanded(
+          Flexible(
+            fit: FlexFit.loose,
             child: _ScheduleComposerBar(
               compact: compact,
               mode: scheduleMode,
@@ -227,7 +229,13 @@ class _TimetableSubBar extends StatelessWidget {
           ),
           SizedBox(width: compact ? 8 : 10),
           if (errorMessage != null)
-            _TimetableLoadStatus(message: errorMessage!, onRefresh: onRefresh),
+            SizedBox(
+              width: statusWidth,
+              child: _TimetableLoadStatus(
+                message: errorMessage!,
+                onRefresh: onRefresh,
+              ),
+            ),
           if (errorMessage != null) const SizedBox(width: 10),
           _FilterButton(
             key: const ValueKey<String>('smart-filter-student'),

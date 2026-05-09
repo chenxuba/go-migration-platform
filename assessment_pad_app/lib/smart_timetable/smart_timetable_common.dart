@@ -1204,43 +1204,40 @@ class _TimetableLoadStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: const BoxConstraints(maxWidth: 230),
-      child: InkWell(
-        onTap: onRefresh,
-        borderRadius: BorderRadius.circular(999),
-        child: Container(
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
-          decoration: BoxDecoration(
-            color: const Color(0xFFFFEFEA),
-            border: Border.all(color: const Color(0xFFF4C8BB)),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const Icon(
-                Icons.refresh_rounded,
-                color: _SmartColors.orangeDeep,
-                size: 15,
-              ),
-              const SizedBox(width: 5),
-              Flexible(
-                child: Text(
-                  message,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _SmartColors.orangeDeep,
-                    fontSize: 11,
-                    height: 1,
-                    fontWeight: FontWeight.w800,
-                  ),
+    return InkWell(
+      onTap: onRefresh,
+      borderRadius: BorderRadius.circular(999),
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.symmetric(horizontal: 10),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFEFEA),
+          border: Border.all(color: const Color(0xFFF4C8BB)),
+          borderRadius: BorderRadius.circular(999),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            const Icon(
+              Icons.refresh_rounded,
+              color: _SmartColors.orangeDeep,
+              size: 15,
+            ),
+            const SizedBox(width: 5),
+            Flexible(
+              child: Text(
+                message,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _SmartColors.orangeDeep,
+                  fontSize: 11,
+                  height: 1,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

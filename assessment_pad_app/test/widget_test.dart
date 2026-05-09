@@ -425,6 +425,32 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('smart timetable error status does not overflow on wide viewport',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SmartTimetablePage(
+          timetableClient: _FakeTimetableClient(
+            timetableErrorMessage: '排课日程接口响应超时，请检查网络',
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('排课日程接口响应超时，请检查网络'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('smart timetable opens schedule detail dialog on lesson tap',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -4875,10 +4901,12 @@ class _FakeTimetableClient implements TimetableClient {
   _FakeTimetableClient({
     this.availabilityValid = true,
     this.timetableDelay = Duration.zero,
+    this.timetableErrorMessage,
   });
 
   final bool availabilityValid;
   final Duration timetableDelay;
+  final String? timetableErrorMessage;
   int validateCalls = 0;
   int createCalls = 0;
   int updateCalls = 0;
@@ -4910,6 +4938,9 @@ class _FakeTimetableClient implements TimetableClient {
   }) async {
     if (timetableDelay > Duration.zero) {
       await Future<void>.delayed(timetableDelay);
+    }
+    if (timetableErrorMessage != null) {
+      throw TimetableApiException(timetableErrorMessage!);
     }
     final String selectedGroupId =
         periodGroupId.trim().isEmpty ? 'group-a' : periodGroupId.trim();
