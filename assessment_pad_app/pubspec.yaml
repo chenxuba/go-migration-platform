@@ -54,6 +54,7 @@ flutter:
   uses-material-design: true
   assets:
     - assets/fonts/NotoSansSC-Regular.ttf
+    - assets/avatars/
 
   # To add assets to your application, add an assets section, like this:
   # assets:

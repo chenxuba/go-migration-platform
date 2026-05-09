@@ -160,8 +160,6 @@ class _IepTopBar extends StatelessWidget {
           ),
           const Spacer(),
           if (!metrics.compact) ...<Widget>[
-            const _TopSelector(label: '全部校区', width: 126),
-            const SizedBox(width: 10),
             const _TopSelector(label: '近30天', width: 108),
             const SizedBox(width: 12),
           ],
@@ -608,6 +606,7 @@ class _QueueList extends StatelessWidget {
       statusBg: _IepColors.greenSoft,
       assessment: '儿心量表 · 2026-05-07',
       period: '05.01-07.31',
+      avatarAsset: 'assets/avatars/student_chenxu.png',
       active: true,
     ),
     _QueueStudent(
@@ -618,6 +617,7 @@ class _QueueList extends StatelessWidget {
       statusBg: _IepColors.yellowSoft,
       assessment: '儿心量表 · 2026-05-02',
       period: '05.02-08.01',
+      avatarAsset: 'assets/avatars/student_chenxiaoyu.png',
     ),
     _QueueStudent(
       name: '林一诺',
@@ -627,6 +627,7 @@ class _QueueList extends StatelessWidget {
       statusBg: _IepColors.orangeSoft,
       assessment: 'PEP-3 · 2026-04-29',
       period: '待确认周期',
+      avatarAsset: 'assets/avatars/student_linyinuo.png',
     ),
     _QueueStudent(
       name: '周书言',
@@ -636,6 +637,7 @@ class _QueueList extends StatelessWidget {
       statusBg: _IepColors.greenSoft,
       assessment: 'PEP-3 · 2026-04-26',
       period: '04.26-07.25',
+      avatarAsset: 'assets/avatars/student_zhoushuyan.png',
     ),
     _QueueStudent(
       name: '唐沐辰',
@@ -645,13 +647,14 @@ class _QueueList extends StatelessWidget {
       statusBg: _IepColors.yellowSoft,
       assessment: '儿心量表 · 2026-04-21',
       period: '04.21-07.20',
+      avatarAsset: 'assets/avatars/student_tangmuchen.png',
     ),
   ];
 
   @override
   Widget build(BuildContext context) {
     return ListView.separated(
-      physics: const NeverScrollableScrollPhysics(),
+      physics: const ClampingScrollPhysics(),
       padding: EdgeInsets.zero,
       itemCount: _students.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
@@ -671,6 +674,7 @@ class _QueueStudent {
     required this.statusBg,
     required this.assessment,
     required this.period,
+    required this.avatarAsset,
     this.active = false,
   });
 
@@ -681,6 +685,7 @@ class _QueueStudent {
   final Color statusBg;
   final String assessment;
   final String period;
+  final String avatarAsset;
   final bool active;
 }
 
@@ -692,8 +697,8 @@ class _QueueStudentCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 88,
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 9),
+      height: 80,
+      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
       decoration: BoxDecoration(
         color: student.active ? const Color(0xFFFFF3EB) : Colors.white,
         borderRadius: BorderRadius.circular(14),
@@ -705,7 +710,7 @@ class _QueueStudentCard extends StatelessWidget {
       ),
       child: Row(
         children: <Widget>[
-          _QueueAvatar(name: student.name, active: student.active),
+          _QueueAvatar(asset: student.avatarAsset, active: student.active),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
@@ -719,7 +724,7 @@ class _QueueStudentCard extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: _IepColors.ink,
-                          fontSize: 14,
+                          fontSize: 13,
                           fontWeight: FontWeight.w900,
                         ),
                       ),
@@ -731,7 +736,7 @@ class _QueueStudentCard extends StatelessWidget {
                     ),
                   ],
                 ),
-                const Spacer(),
+                const SizedBox(height: 6),
                 Text(
                   student.assessment,
                   overflow: TextOverflow.ellipsis,
@@ -742,7 +747,7 @@ class _QueueStudentCard extends StatelessWidget {
                     height: 1,
                   ),
                 ),
-                const Spacer(),
+                const SizedBox(height: 6),
                 Row(
                   children: <Widget>[
                     const Icon(
@@ -775,33 +780,39 @@ class _QueueStudentCard extends StatelessWidget {
 }
 
 class _QueueAvatar extends StatelessWidget {
-  const _QueueAvatar({required this.name, required this.active});
+  const _QueueAvatar({required this.asset, required this.active});
 
-  final String name;
+  final String asset;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: 42,
-      height: 42,
-      alignment: Alignment.center,
+      width: 44,
+      height: 44,
+      padding: const EdgeInsets.all(2),
       decoration: BoxDecoration(
         shape: BoxShape.circle,
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: active
-              ? const <Color>[Color(0xFFFFC69F), Color(0xFFFF8955)]
-              : const <Color>[Color(0xFFFFE2C7), Color(0xFFFFB17B)],
+        color: Colors.white,
+        border: Border.all(
+          color: active ? const Color(0xFFFFA878) : const Color(0xFFFFDFC8),
+          width: active ? 2 : 1.4,
         ),
+        boxShadow: active
+            ? _iepShadow(
+                color: const Color(0x22E96F43),
+                blur: 10,
+                offset: const Offset(0, 4),
+              )
+            : const <BoxShadow>[],
       ),
-      child: Text(
-        name.characters.first,
-        style: const TextStyle(
-          color: Colors.white,
-          fontSize: 17,
-          fontWeight: FontWeight.w900,
+      child: ClipOval(
+        child: Image.asset(
+          asset,
+          width: 40,
+          height: 40,
+          fit: BoxFit.cover,
+          filterQuality: FilterQuality.medium,
         ),
       ),
     );
@@ -1042,12 +1053,23 @@ class _PlanToolbar extends StatelessWidget {
           _ToolbarInfo(
               icon: Icons.event_available_rounded,
               label: '制定日期',
-              value: '2026.05.07'),
-          _ToolbarDivider(),
-          _ToolbarInfo(icon: Icons.group_rounded, label: '计划参与者', value: '陈瑞'),
+              value: '2026.05.07',
+              minWidth: 118,
+              maxWidth: 118),
           _ToolbarDivider(),
           _ToolbarInfo(
-              icon: Icons.person_pin_circle_rounded, label: '实施者', value: '陈瑞'),
+              icon: Icons.group_rounded,
+              label: '计划参与者',
+              value: '陈瑞',
+              minWidth: 132,
+              maxWidth: 220),
+          _ToolbarDivider(),
+          _ToolbarInfo(
+              icon: Icons.person_pin_circle_rounded,
+              label: '实施者',
+              value: '陈瑞',
+              minWidth: 94,
+              maxWidth: 140),
           Spacer(),
           _TableTinyAction(icon: Icons.edit_calendar_rounded, label: '调整周期'),
           SizedBox(width: 8),
@@ -1063,21 +1085,26 @@ class _ToolbarInfo extends StatelessWidget {
     required this.icon,
     required this.label,
     required this.value,
+    required this.minWidth,
+    required this.maxWidth,
   });
 
   final IconData icon;
   final String label;
   final String value;
+  final double minWidth;
+  final double maxWidth;
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: 182,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
       child: Row(
+        mainAxisSize: MainAxisSize.min,
         children: <Widget>[
           Icon(icon, color: _IepColors.orange, size: 18),
           const SizedBox(width: 7),
-          Expanded(
+          Flexible(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -1091,7 +1118,7 @@ class _ToolbarInfo extends StatelessWidget {
                     fontWeight: FontWeight.w700,
                   ),
                 ),
-                const SizedBox(height: 4),
+                const SizedBox(height: 1),
                 Text(
                   value,
                   overflow: TextOverflow.ellipsis,
@@ -1292,62 +1319,56 @@ class _WordTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      clipBehavior: Clip.hardEdge,
-      decoration: BoxDecoration(
-        color: Colors.white,
-      ),
-      child: Column(
-        children: const <Widget>[
-          _WordTableTitle(),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '姓名', columns: 1, bold: true),
-              _DocCellData(text: '陈旭', columns: 1),
-              _DocCellData(text: '性别', columns: 1, bold: true),
-              _DocCellData(text: '-', columns: 1),
-              _DocCellData(text: '出生年月', columns: 1, bold: true),
-              _DocCellData(text: '2022-05-11', columns: 3, last: true),
-            ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '制定日期', columns: 1, bold: true),
-              _DocCellData(text: '2026-05-07', columns: 3),
-              _DocCellData(text: '计划参与者', columns: 1, bold: true),
-              _DocCellData(text: '陈瑞', columns: 3, last: true),
-            ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '实施者', columns: 1, bold: true),
-              _DocCellData(text: '陈瑞', columns: 3),
-              _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
-              _DocCellData(
-                  text: '2026-05-01 至 2026-07-31',
-                  columns: 3,
-                  noWrap: true,
-                  last: true),
-            ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '康复\n领域', columns: 1, bold: true),
-              _DocCellData(text: '长期目标', columns: 3, bold: true),
-              _DocCellData(text: '短期目标', columns: 2, bold: true),
-              _DocCellData(text: '课程\n形式', columns: 1, bold: true),
-              _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
-            ],
-          ),
-          Expanded(
-            child: _DocPlanRows(),
-          ),
-        ],
-      ),
+    return Column(
+      children: const <Widget>[
+        _WordTableTitle(),
+        _DocTableRow(
+          height: 42,
+          cells: <_DocCellData>[
+            _DocCellData(text: '姓名', columns: 1, bold: true),
+            _DocCellData(text: '陈旭', columns: 1),
+            _DocCellData(text: '性别', columns: 1, bold: true),
+            _DocCellData(text: '-', columns: 1),
+            _DocCellData(text: '出生年月', columns: 1, bold: true),
+            _DocCellData(text: '2022-05-11', columns: 3, last: true),
+          ],
+        ),
+        _DocTableRow(
+          height: 42,
+          cells: <_DocCellData>[
+            _DocCellData(text: '制定日期', columns: 1, bold: true),
+            _DocCellData(text: '2026-05-07', columns: 3),
+            _DocCellData(text: '计划参与者', columns: 1, bold: true),
+            _DocCellData(text: '陈瑞', columns: 3, last: true),
+          ],
+        ),
+        _DocTableRow(
+          height: 42,
+          cells: <_DocCellData>[
+            _DocCellData(text: '实施者', columns: 1, bold: true),
+            _DocCellData(text: '陈瑞', columns: 3),
+            _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
+            _DocCellData(
+                text: '2026-05-01 至 2026-07-31',
+                columns: 3,
+                noWrap: true,
+                last: true),
+          ],
+        ),
+        _DocTableRow(
+          height: 42,
+          cells: <_DocCellData>[
+            _DocCellData(text: '康复\n领域', columns: 1, bold: true),
+            _DocCellData(text: '长期目标', columns: 3, bold: true),
+            _DocCellData(text: '短期目标', columns: 2, bold: true),
+            _DocCellData(text: '课程\n形式', columns: 1, bold: true),
+            _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
+          ],
+        ),
+        Expanded(
+          child: _DocPlanRows(),
+        ),
+      ],
     );
   }
 }
@@ -1365,10 +1386,10 @@ class _WordTableFrame extends StatelessWidget {
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFFB98A71), width: 1.4),
+        border: Border.all(color: const Color(0xFFB98A71), width: 1.2),
       ),
       child: const Padding(
-        padding: EdgeInsets.all(1.4),
+        padding: EdgeInsets.all(1.2),
         child: SingleChildScrollView(
           physics: ClampingScrollPhysics(),
           child: SizedBox(height: 820, child: _WordTable()),
