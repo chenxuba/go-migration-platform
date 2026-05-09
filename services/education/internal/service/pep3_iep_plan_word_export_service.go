@@ -96,7 +96,7 @@ func (svc *Service) ExportPEP3IEPPlanWordFromAIResult(userID int64, recordID int
 		if err != nil {
 			return "", "", nil, err
 		}
-		planResult = syncPEP3IEPPlanDateForDisplay(planResult, record)
+		planResult = applyPEP3IEPPlanHeaderValues(planResult, pep3IEPPlanHeaderValuesForRecord(record))
 	}
 
 	plan := buildPEP3IEPPlanWordExportFromAIResult(planResult, durationMonths)

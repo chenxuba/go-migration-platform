@@ -13,42 +13,8 @@ import (
 	"go-migration-platform/services/education/internal/repository"
 )
 
-func (svc *Service) syncPEP3SavedPlanDatesWithAssessmentDate(ctx context.Context, instID, recordID int64, assessmentDate time.Time, userID int64) error {
-	planDate := strings.TrimSpace(assessmentDate.Format("2006-01-02"))
-	if assessmentDate.IsZero() || planDate == "" {
-		return nil
-	}
-	for _, durationMonths := range []int{3, 6} {
-		if err := svc.syncPEP3SavedIEPPlanDate(ctx, instID, recordID, durationMonths, planDate, userID); err != nil {
-			return err
-		}
-		if err := svc.syncPEP3SavedMonthlyPlanDates(ctx, instID, recordID, durationMonths, planDate, userID); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
 func pep3AssessmentPlanDate(record model.AssessmentRecordDetailVO) string {
 	return strings.TrimSpace(formatIEPPlanDate(record.AssessmentDate))
-}
-
-func syncPEP3IEPPlanDateForDisplay(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO) model.PEP3IEPPlanAIResult {
-	if planDate := pep3AssessmentPlanDate(record); planDate != "" {
-		plan.Meta.PlanDate = planDate
-	} else if strings.TrimSpace(plan.Meta.PlanDate) == "" {
-		plan.Meta.PlanDate = time.Now().Format("2006-01-02")
-	}
-	return plan
-}
-
-func syncPEP3MonthlyPlanDateForDisplay(plan model.PEP3MonthlyPlanAIResult, record model.AssessmentRecordDetailVO) model.PEP3MonthlyPlanAIResult {
-	if planDate := pep3AssessmentPlanDate(record); planDate != "" {
-		plan.Meta.PlanDate = planDate
-	} else if strings.TrimSpace(plan.Meta.PlanDate) == "" {
-		plan.Meta.PlanDate = time.Now().Format("2006-01-02")
-	}
-	return plan
 }
 
 func (svc *Service) SyncPEP3IEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodSyncRequest) (model.PEP3IEPPlanPeriodSyncVO, error) {
@@ -116,7 +82,7 @@ func (svc *Service) syncIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodS
 	}
 
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
-	nextPlan := syncPEP3IEPPlanPeriodDates(planEntity.Plan, record, currentTeacherName, durationMonths, periodStart)
+	nextPlan := syncPEP3IEPPlanPeriodDates(planEntity.Plan, record, durationMonths, periodStart)
 	executionPlans, err := svc.buildPEP3PeriodExecutionPlanEntities(ctx, instID, req.ID, durationMonths, sourceDurationMonths, nextPlan, currentTeacherName, userID)
 	if err != nil {
 		return model.PEP3IEPPlanPeriodSyncVO{}, err
@@ -176,16 +142,14 @@ func parseIEPPlanPeriodStart(startDate, startMonth string) (time.Time, error) {
 	return time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local), nil
 }
 
-func syncPEP3IEPPlanPeriodDates(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, currentTeacherName string, durationMonths int, periodStart time.Time) model.PEP3IEPPlanAIResult {
+func syncPEP3IEPPlanPeriodDates(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, durationMonths int, periodStart time.Time) model.PEP3IEPPlanAIResult {
 	startDate, endDate := iepPlanWholeMonthDateRangeFromStart(periodStart, durationMonths)
 	stageRanges := iepPlanStageDateRangesFromStart(periodStart, durationMonths)
 	plan.Title = iepPlanTitle(durationMonths)
 	plan.Student.Name = firstNonEmptyExportValue(strings.TrimSpace(plan.Student.Name), strings.TrimSpace(record.StudentName))
 	plan.Student.Gender = firstNonEmptyExportValue(strings.TrimSpace(plan.Student.Gender), strings.TrimSpace(record.StudentGender))
 	plan.Student.BirthDate = firstNonEmptyExportValue(strings.TrimSpace(plan.Student.BirthDate), formatIEPPlanDate(record.BirthDate))
-	plan = syncPEP3IEPPlanDateForDisplay(plan, record)
-	plan.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.Participant), strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))
-	plan.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.Implementer), strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))
+	plan = applyPEP3IEPPlanHeaderValues(plan, pep3IEPPlanHeaderValuesForRecord(record))
 	plan.Meta.StartDate = startDate
 	plan.Meta.EndDate = endDate
 	for index := range plan.Rows {
@@ -343,57 +307,4 @@ func syncPEP3MonthlyPlanPeriodDates(plan model.PEP3MonthlyPlanAIResult, sourcePl
 		plan.Rows[rowIndex].TrainingItems = items
 	}
 	return plan
-}
-
-func (svc *Service) syncPEP3SavedIEPPlanDate(ctx context.Context, instID, recordID int64, durationMonths int, planDate string, userID int64) error {
-	entity, exists, err := svc.repo.GetPEP3IEPPlan(ctx, instID, recordID, durationMonths)
-	if err != nil || !exists {
-		return err
-	}
-	if strings.TrimSpace(entity.Plan.Meta.PlanDate) == planDate {
-		return nil
-	}
-	entity.Plan.Meta.PlanDate = planDate
-	return svc.repo.SavePEP3IEPPlan(ctx, repository.PEP3IEPPlanEntity{
-		InstID:         instID,
-		RecordID:       recordID,
-		DurationMonths: durationMonths,
-		Status:         entity.Status,
-		Plan:           entity.Plan,
-		CreatedBy:      userID,
-		UpdatedBy:      userID,
-	})
-}
-
-func (svc *Service) syncPEP3SavedMonthlyPlanDates(ctx context.Context, instID, recordID int64, durationMonths int, planDate string, userID int64) error {
-	entities, err := svc.repo.ListPEP3ExecutionPlans(ctx, instID, recordID, durationMonths)
-	if err != nil {
-		return err
-	}
-	for _, entity := range entities {
-		if strings.ToLower(strings.TrimSpace(entity.PlanType)) != pep3ExecutionPlanTypeMonthly {
-			continue
-		}
-		var plan model.PEP3MonthlyPlanAIResult
-		if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
-			return err
-		}
-		if strings.TrimSpace(plan.Meta.PlanDate) == planDate {
-			continue
-		}
-		plan.Meta.PlanDate = planDate
-		if err := svc.repo.SavePEP3ExecutionPlan(ctx, repository.PEP3ExecutionPlanEntity{
-			InstID:           instID,
-			RecordID:         recordID,
-			DurationMonths:   durationMonths,
-			PlanType:         entity.PlanType,
-			TargetMonthIndex: entity.TargetMonthIndex,
-			TargetWeekIndex:  entity.TargetWeekIndex,
-			CreatedBy:        userID,
-			UpdatedBy:        userID,
-		}, plan); err != nil {
-			return err
-		}
-	}
-	return nil
 }

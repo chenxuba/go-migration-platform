@@ -407,6 +407,23 @@ const currentTeacherName = computed(() => {
   return String(userStore.nickname || userStore.userInfo?.nickName || props.record?.examinerName || '当前老师').trim()
 })
 
+const planParticipantName = computed(() => {
+  return String(props.record?.examinerName || currentTeacherName.value).trim()
+})
+
+function firstExaminerName(value) {
+  return String(value || '')
+    .split(/[、,，;；]/)
+    .map(item => item.trim())
+    .find(Boolean) || ''
+}
+
+const planImplementerName = computed(() => {
+  return firstExaminerName(props.record?.input?.examinerName)
+    || firstExaminerName(props.record?.examinerName)
+    || currentTeacherName.value
+})
+
 const assessmentPlanDate = computed(() => {
   return formatDate(props.record?.assessmentDate) || formatDate(new Date())
 })
@@ -500,8 +517,8 @@ const planSheet = computed(() => {
     },
     meta: {
       planDate: assessmentPlanDate.value || start,
-      participant: currentTeacherName.value,
-      implementer: currentTeacherName.value,
+      participant: planParticipantName.value,
+      implementer: planImplementerName.value,
       startDate: start,
       endDate: end,
     },
@@ -1697,8 +1714,8 @@ function buildStreamingPlanFromText(text) {
     },
     meta: {
       planDate: assessmentPlanDate.value || defaultPlanDateRange.value.start,
-      participant: currentTeacherName.value,
-      implementer: currentTeacherName.value,
+      participant: planParticipantName.value,
+      implementer: planImplementerName.value,
       startDate: defaultPlanDateRange.value.start,
       endDate: defaultPlanDateRange.value.end,
     },
@@ -1745,8 +1762,8 @@ function buildStreamingMonthlyPlanFromText(text) {
     },
     meta: {
       planDate: assessmentPlanDate.value || defaultPlanDateRange.value.start,
-      participant: currentTeacherName.value,
-      implementer: currentTeacherName.value,
+      participant: planParticipantName.value,
+      implementer: planImplementerName.value,
       startDate: selectedExecutionMonthRange.value.start,
       endDate: selectedExecutionMonthRange.value.end,
       monthLabel: selectedExecutionMonthLabel.value,
@@ -1770,8 +1787,8 @@ function normalizeStreamingMonthlyPlanPreview(plan = {}) {
     meta: {
       ...(plan.meta || {}),
       planDate: assessmentPlanDate.value || plan.meta?.planDate || range.start,
-      participant: plan.meta?.participant || currentTeacherName.value,
-      implementer: plan.meta?.implementer || currentTeacherName.value,
+      participant: plan.meta?.participant || planParticipantName.value,
+      implementer: plan.meta?.implementer || planImplementerName.value,
       startDate: plan.meta?.startDate || range.start,
       endDate: plan.meta?.endDate || range.end,
       monthLabel: plan.meta?.monthLabel || selectedExecutionMonthLabel.value,
@@ -2008,8 +2025,8 @@ function createPlanSheetFromPlan(plan = {}, options = {}) {
     meta: {
       ...(plan.meta || {}),
       planDate: assessmentPlanDate.value || plan.meta?.planDate || start,
-      participant: currentTeacherName.value,
-      implementer: plan.meta?.implementer || currentTeacherName.value,
+      participant: planParticipantName.value,
+      implementer: planImplementerName.value,
       startDate: start,
       endDate: end,
     },

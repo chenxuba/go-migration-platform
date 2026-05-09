@@ -313,7 +313,7 @@ onBeforeUnmount(() => {
           class="config-alert"
           type="info"
           show-icon
-          message="仅修改评估老师和评估日期的展示信息，不重新计算测评结果，也不影响已生成IEP。"
+          message="仅同步评估老师、评估日期等表头信息；IEP目标内容不重新生成、不改动。已生成IEP的计划参与者/实施者会随保存同步。"
         />
         <a-form layout="vertical">
           <a-form-item label="评估老师" required>

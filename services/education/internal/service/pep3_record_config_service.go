@@ -49,7 +49,7 @@ func (svc *Service) UpdatePEP3AssessmentRecordConfig(userID, recordID int64, inp
 	if err := svc.syncPEP3SubmittedDraftRecordConfig(instID, operatorID, recordID, examinerName, assessmentDate); err != nil {
 		return model.AssessmentRecordDetailVO{}, err
 	}
-	if err := svc.syncPEP3SavedPlanDatesWithAssessmentDate(context.Background(), instID, recordID, assessmentDate, userID); err != nil {
+	if err := svc.syncPEP3SavedPlanHeadersWithRecordConfig(context.Background(), instID, recordID, pep3IEPPlanHeaderValuesForRecordConfig(record, examinerName, assessmentDate), userID); err != nil {
 		return model.AssessmentRecordDetailVO{}, err
 	}
 	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)

@@ -561,11 +561,7 @@ func normalizePEP3IEPPlanAIResult(result model.PEP3IEPPlanAIResult, record model
 	if strings.TrimSpace(result.Student.BirthDate) == "" {
 		result.Student.BirthDate = formatIEPPlanDate(record.BirthDate)
 	}
-	result = syncPEP3IEPPlanDateForDisplay(result, record)
-	result.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(currentTeacherName), strings.TrimSpace(result.Meta.Participant), strings.TrimSpace(record.ExaminerName))
-	if strings.TrimSpace(result.Meta.Implementer) == "" {
-		result.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))
-	}
+	result = applyPEP3IEPPlanHeaderValues(result, pep3IEPPlanHeaderValuesForRecord(record))
 	startDate, endDate := iepPlanWholeMonthDateRange(record, durationMonths)
 	result.Meta.StartDate = startDate
 	result.Meta.EndDate = endDate

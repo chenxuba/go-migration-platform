@@ -44,7 +44,7 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 		if req.MonthlyPlan == nil || len(req.MonthlyPlan.Rows) == 0 {
 			return model.PEP3ExecutionPlanSavedVO{}, errors.New("暂无可保存的月度计划")
 		}
-		monthlyPlan := syncPEP3MonthlyPlanDateForDisplay(*req.MonthlyPlan, record)
+		monthlyPlan := applyPEP3MonthlyPlanHeaderValues(*req.MonthlyPlan, pep3IEPPlanHeaderValuesForRecord(record))
 		plan = monthlyPlan
 	case pep3ExecutionPlanTypeWeekly:
 		if req.WeeklyPlan == nil || len(req.WeeklyPlan.Rows) == 0 {
@@ -105,7 +105,7 @@ func (svc *Service) GetPEP3ExecutionPlans(userID, recordID int64, durationMonths
 			if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
 				return model.PEP3ExecutionPlanSavedVO{}, err
 			}
-			plan = syncPEP3MonthlyPlanDateForDisplay(plan, record)
+			plan = applyPEP3MonthlyPlanHeaderValues(plan, pep3IEPPlanHeaderValuesForRecord(record))
 			result.MonthlyPlans = append(result.MonthlyPlans, model.PEP3MonthlyExecutionPlanSaved{
 				TargetMonthIndex: entity.TargetMonthIndex,
 				Plan:             plan,

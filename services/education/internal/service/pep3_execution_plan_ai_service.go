@@ -337,8 +337,7 @@ func normalizeExecutionSourceIEPPlan(plan model.PEP3IEPPlanAIResult, record mode
 	} else {
 		plan.Meta.PlanDate = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.PlanDate), time.Now().Format("2006-01-02"))
 	}
-	plan.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.Participant), strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))
-	plan.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.Implementer), strings.TrimSpace(currentTeacherName), strings.TrimSpace(record.ExaminerName))
+	plan = applyPEP3IEPPlanHeaderValues(plan, pep3IEPPlanHeaderValuesForRecord(record))
 	startDate, endDate := iepPlanWholeMonthDateRange(record, durationMonths)
 	plan.Meta.StartDate = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.StartDate), startDate)
 	plan.Meta.EndDate = firstNonEmptyExportValue(strings.TrimSpace(plan.Meta.EndDate), endDate)
@@ -436,8 +435,8 @@ func normalizePEP3MonthlyExecutionPlan(result model.PEP3MonthlyPlanAIResult, sou
 	result.Student.Gender = firstNonEmptyExportValue(strings.TrimSpace(result.Student.Gender), strings.TrimSpace(sourcePlan.Student.Gender))
 	result.Student.BirthDate = firstNonEmptyExportValue(strings.TrimSpace(result.Student.BirthDate), strings.TrimSpace(sourcePlan.Student.BirthDate))
 	result.Meta.PlanDate = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.PlanDate), strings.TrimSpace(result.Meta.PlanDate), time.Now().Format("2006-01-02"))
-	result.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(result.Meta.Participant), strings.TrimSpace(sourcePlan.Meta.Participant), currentTeacherName)
-	result.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(result.Meta.Implementer), strings.TrimSpace(sourcePlan.Meta.Implementer), currentTeacherName)
+	result.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.Participant), strings.TrimSpace(result.Meta.Participant), currentTeacherName)
+	result.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.Implementer), strings.TrimSpace(result.Meta.Implementer), currentTeacherName)
 	result.Meta.StartDate = firstNonEmptyExportValue(strings.TrimSpace(result.Meta.StartDate), target.StartDate)
 	result.Meta.EndDate = firstNonEmptyExportValue(strings.TrimSpace(result.Meta.EndDate), target.EndDate)
 	result.Meta.MonthLabel = firstNonEmptyExportValue(strings.TrimSpace(result.Meta.MonthLabel), target.MonthLabel)

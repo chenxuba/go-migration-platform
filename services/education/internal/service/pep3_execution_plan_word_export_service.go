@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -10,20 +11,30 @@ import (
 )
 
 func (svc *Service) ExportPEP3ExecutionPlanWord(userID int64, req model.PEP3ExecutionPlanWordExportRequest) (string, string, []byte, error) {
-	if _, err := svc.rollCallInstID(userID); err != nil {
+	instID, err := svc.rollCallInstID(userID)
+	if err != nil {
 		return "", "", nil, err
+	}
+	var record model.AssessmentRecordDetailVO
+	if req.ID > 0 {
+		record, err = svc.repo.GetAssessmentRecord(context.Background(), instID, req.ID)
+		if err != nil {
+			return "", "", nil, err
+		}
 	}
 	planType := strings.ToLower(strings.TrimSpace(req.PlanType))
 	var (
 		title       string
 		studentName string
 		data        []byte
-		err         error
 	)
 	switch planType {
 	case "monthly":
 		if req.MonthlyPlan == nil {
 			return "", "", nil, errors.New("暂无可导出的月度计划")
+		}
+		if req.ID > 0 {
+			*req.MonthlyPlan = applyPEP3MonthlyPlanHeaderValues(*req.MonthlyPlan, pep3IEPPlanHeaderValuesForRecord(record))
 		}
 		title = firstNonEmptyExportValue(strings.TrimSpace(req.MonthlyPlan.Title), "康复教学月计划表")
 		studentName = firstNonEmptyExportValue(strings.TrimSpace(req.MonthlyPlan.Student.Name), "学员")

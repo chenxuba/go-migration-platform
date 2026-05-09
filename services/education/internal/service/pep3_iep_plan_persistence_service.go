@@ -35,8 +35,7 @@ func (svc *Service) SavePEP3IEPPlan(userID int64, req model.PEP3IEPPlanSaveReque
 	if err != nil {
 		return model.PEP3IEPPlanSavedVO{}, err
 	}
-	currentTeacherName := svc.currentIEPPlanTeacherName(context.Background(), userID)
-	plan := normalizePEP3IEPPlanForSave(req.Plan, record, currentTeacherName, durationMonths)
+	plan := normalizePEP3IEPPlanForSave(req.Plan, record, durationMonths)
 	if len(plan.Rows) == 0 {
 		return model.PEP3IEPPlanSavedVO{}, errors.New("请先生成或填写IEP计划")
 	}
@@ -78,7 +77,7 @@ func (svc *Service) GetPEP3IEPPlan(userID, recordID int64, durationMonths int) (
 		return model.PEP3IEPPlanSavedVO{Exists: false, DurationMonths: durationMonths}, nil
 	}
 	plan := entity.Plan
-	plan = syncPEP3IEPPlanDateForDisplay(plan, record)
+	plan = applyPEP3IEPPlanHeaderValues(plan, pep3IEPPlanHeaderValuesForRecord(record))
 	return model.PEP3IEPPlanSavedVO{
 		Exists:         true,
 		Status:         entity.Status,
@@ -106,14 +105,12 @@ func normalizePEP3IEPPlanDuration(durationMonths int) int {
 	return 3
 }
 
-func normalizePEP3IEPPlanForSave(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, currentTeacherName string, durationMonths int) model.PEP3IEPPlanAIResult {
+func normalizePEP3IEPPlanForSave(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, durationMonths int) model.PEP3IEPPlanAIResult {
 	plan.Title = iepPlanTitle(durationMonths)
 	plan.Student.Name = firstNonEmptyExportValue(record.StudentName, plan.Student.Name)
 	plan.Student.Gender = firstNonEmptyExportValue(record.StudentGender, plan.Student.Gender)
 	plan.Student.BirthDate = firstNonEmptyExportValue(formatIEPPlanDate(record.BirthDate), plan.Student.BirthDate)
-	plan = syncPEP3IEPPlanDateForDisplay(plan, record)
-	plan.Meta.Participant = firstNonEmptyExportValue(currentTeacherName, record.ExaminerName, plan.Meta.Participant)
-	plan.Meta.Implementer = firstNonEmptyExportValue(plan.Meta.Implementer, currentTeacherName, record.ExaminerName)
+	plan = applyPEP3IEPPlanHeaderValues(plan, pep3IEPPlanHeaderValuesForRecord(record))
 	defaultStartDate, defaultEndDate := iepPlanWholeMonthDateRange(record, durationMonths)
 	plan.Meta.StartDate = firstNonEmptyExportValue(plan.Meta.StartDate, defaultStartDate)
 	plan.Meta.EndDate = firstNonEmptyExportValue(plan.Meta.EndDate, defaultEndDate)
