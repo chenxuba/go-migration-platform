@@ -77,10 +77,11 @@ type deepSeekChatStreamChunk struct {
 }
 
 type pep3IEPPlanPromptPayload struct {
-	Student       pep3IEPPlanPromptStudent       `json:"student"`
-	Assessment    pep3IEPPlanPromptAssessment    `json:"assessment"`
-	RehabRecords  []pep3IEPPlanPromptRehabRecord `json:"rehabRecords"`
-	OutputRequest pep3IEPPlanPromptOutput        `json:"outputRequest"`
+	Student        pep3IEPPlanPromptStudent           `json:"student"`
+	Assessment     pep3IEPPlanPromptAssessment        `json:"assessment"`
+	Interpretation *model.ERXinReportInterpretationVO `json:"interpretation,omitempty"`
+	RehabRecords   []pep3IEPPlanPromptRehabRecord     `json:"rehabRecords"`
+	OutputRequest  pep3IEPPlanPromptOutput            `json:"outputRequest"`
 }
 
 type pep3IEPPlanPromptStudent struct {
@@ -151,7 +152,11 @@ func (svc *Service) GeneratePEP3IEPPlanWithAI(userID int64, recordID int64, dura
 		rehabRows = buildPEP3IEPPlanPromptRehabRecords(rows)
 	}
 
-	payload := buildPEP3IEPPlanPromptPayload(record, rehabRows, durationMonths)
+	interpretation, err := svc.GetPEP3ReportInterpretation(userID, recordID)
+	if err != nil {
+		return model.PEP3IEPPlanAIResult{}, err
+	}
+	payload := buildPEP3IEPPlanPromptPayload(record, interpretation, rehabRows, durationMonths)
 	result, err := callDeepSeekIEPPlan(context.Background(), payload)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
@@ -189,7 +194,11 @@ func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID 
 		rehabRows = buildPEP3IEPPlanPromptRehabRecords(rows)
 	}
 
-	payload := buildPEP3IEPPlanPromptPayload(record, rehabRows, durationMonths)
+	interpretation, err := svc.GetPEP3ReportInterpretation(userID, recordID)
+	if err != nil {
+		return model.PEP3IEPPlanAIResult{}, err
+	}
+	payload := buildPEP3IEPPlanPromptPayload(record, interpretation, rehabRows, durationMonths)
 	result, err := callDeepSeekIEPPlanStream(ctx, payload, onDelta)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
@@ -197,8 +206,8 @@ func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID 
 	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), nil
 }
 
-func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, rehabRecords []pep3IEPPlanPromptRehabRecord, durationMonths int) pep3IEPPlanPromptPayload {
-	return pep3IEPPlanPromptPayload{
+func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, interpretation model.ERXinReportInterpretationVO, rehabRecords []pep3IEPPlanPromptRehabRecord, durationMonths int) pep3IEPPlanPromptPayload {
+	payload := pep3IEPPlanPromptPayload{
 		Student: pep3IEPPlanPromptStudent{
 			Name:      strings.TrimSpace(record.StudentName),
 			Gender:    strings.TrimSpace(record.StudentGender),
@@ -218,6 +227,10 @@ func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, rehabR
 			RequiredSchema: "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate}, rows[{domain,longGoal,shortGoal,courseForm,startEndDate}]。rows是表格行，不要输出家庭干预计划。每个康复领域至少3行rows；每行shortGoal只能放1条短期目标；同一领域longGoal必须完全相同，写成至少2条编号长期目标并用\\n分隔；courseForm必须根据评估结果和近期训练记录判断，常见值为个训、集体课；startEndDate按自然月份阶段填写，不能每行都写整个计划周期。",
 		},
 	}
+	if !erxinReportInterpretationIsEmpty(interpretation) {
+		payload.Interpretation = &interpretation
+	}
+	return payload
 }
 
 func (svc *Service) currentIEPPlanTeacherName(ctx context.Context, userID int64) string {
@@ -410,7 +423,7 @@ func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string,
 func pep3IEPPlanSystemPrompt() string {
 	return strings.Join([]string{
 		"你是儿童康复机构的IEP计划生成助手。",
-		"根据PEP-3评估结果和近期儿童训练记录，生成可落地的康复教学计划。",
+		"根据PEP-3评估结果、可用的报告解读和近期儿童训练记录，生成可落地的康复教学计划；如果没有报告解读，就只依据测评结果和训练记录生成。",
 		"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
 		"表格结构只能是：康复领域、长期目标、短期目标、课程形式、起止日期。",
 		"不要输出家庭干预计划。长期目标和短期目标要具体、可训练、可观察。",

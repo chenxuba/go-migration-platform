@@ -53,6 +53,27 @@ func (svc *Service) GenerateERXinReportInterpretationPDF(userID, recordID int64)
 	return filename, content, nil
 }
 
+func (svc *Service) GeneratePEP3ReportInterpretationPDF(userID, recordID int64) (string, []byte, error) {
+	report, err := svc.GetPEP3AssessmentReport(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	interpretation, err := svc.GetPEP3ReportInterpretation(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	if erxinReportInterpretationIsEmpty(interpretation) {
+		return "", nil, errors.New("请先生成报告解读后再导出")
+	}
+	content, err := buildPEP3ReportInterpretationPDF(report, interpretation)
+	if err != nil {
+		return "", nil, err
+	}
+	name := nonEmptyString(report.Record.StudentName, "未命名儿童")
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-PEP3报告解读-%s.pdf", name, time.Now().Format("20060102150405")))
+	return filename, content, nil
+}
+
 func (svc *Service) GenerateERXinCombinedReportPDF(userID, recordID int64) (string, []byte, error) {
 	report, err := svc.GetERXinAssessmentReport(userID, recordID)
 	if err != nil {
@@ -427,7 +448,33 @@ func buildERXinReportInterpretationPDF(report model.ERXinReportVO, interpretatio
 		pdf:             &pdf,
 		currentFontSize: 11,
 	}
-	renderer.draw(report, interpretation)
+	renderer.draw(interpretation)
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func buildPEP3ReportInterpretationPDF(_ model.PEP3ReportVO, interpretation model.ERXinReportInterpretationVO) ([]byte, error) {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight},
+	})
+	pdf.AddPage()
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return nil, fmt.Errorf("load PEP3 interpretation PDF font: %w", err)
+	}
+
+	renderer := erxinInterpretationPDFRenderer{
+		pdf:             &pdf,
+		currentFontSize: 11,
+		headerTitle:     "PEP-3测试员记录册报告解读",
+		footerText:      "本报告解读基于PEP-3结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
+	}
+	renderer.draw(interpretation)
 	return pdf.GetBytesPdfReturnErr()
 }
 
@@ -458,7 +505,7 @@ func buildERXinCombinedReportPDF(report model.ERXinReportVO, interpretation mode
 		pdf:             &pdf,
 		currentFontSize: 11,
 	}
-	interpretationRenderer.draw(report, interpretation)
+	interpretationRenderer.draw(interpretation)
 	return pdf.GetBytesPdfReturnErr()
 }
 
@@ -467,9 +514,11 @@ type erxinInterpretationPDFRenderer struct {
 	currentFontSize float64
 	y               float64
 	pageNumber      int
+	headerTitle     string
+	footerText      string
 }
 
-func (r *erxinInterpretationPDFRenderer) draw(report model.ERXinReportVO, interpretation model.ERXinReportInterpretationVO) {
+func (r *erxinInterpretationPDFRenderer) draw(interpretation model.ERXinReportInterpretationVO) {
 	r.beginPage()
 	r.drawCoverHeader()
 	r.drawSection("综合解读", []string{interpretation.Summary}, false)
@@ -495,7 +544,8 @@ func (r *erxinInterpretationPDFRenderer) drawPageBackground() {
 func (r *erxinInterpretationPDFRenderer) drawCoverHeader() {
 	r.setTextColor(15, 23, 42)
 	r.setFont(17)
-	r.centerText(erxinInterpretationPDFMargin, r.y, erxinReportPDFPageWidth-erxinInterpretationPDFMargin*2, "0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读")
+	title := nonEmptyString(r.headerTitle, "0岁～6岁儿童发育行为评估量表（儿心量表-II）报告解读")
+	r.centerText(erxinInterpretationPDFMargin, r.y, erxinReportPDFPageWidth-erxinInterpretationPDFMargin*2, title)
 	r.y += 48
 }
 
@@ -547,7 +597,7 @@ func (r *erxinInterpretationPDFRenderer) drawParagraph(text string, x, width, si
 }
 
 func (r *erxinInterpretationPDFRenderer) drawFooter() {
-	footer := "本报告解读基于结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。"
+	footer := nonEmptyString(r.footerText, "本报告解读基于结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。")
 	r.setTextColor(100, 116, 139)
 	r.setFont(8.5)
 	r.centerText(erxinInterpretationPDFMargin, erxinReportPDFPageHeight-54, erxinReportPDFPageWidth-erxinInterpretationPDFMargin*2, footer)

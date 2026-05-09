@@ -8,6 +8,7 @@ import GenerateIepModal from './components/generate-iep-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
+  downloadPEP3AssessmentRecordReportInterpretationPdfApi,
   generatePEP3AssessmentRecordReportInterpretationStreamApi,
   getPEP3AssessmentRecordReportInterpretationApi,
   pagePEP3AssessmentRecordsApi,
@@ -543,14 +544,20 @@ function scrollInterpretationProgressIntoView() {
 }
 
 function exportDimensionTitle(value) {
+  if (value === 'pep3_interpretation')
+    return '报告解读'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.title || '全维度导出'
 }
 
 function exportDimensionPages(value) {
+  if (value === 'pep3_interpretation')
+    return '报告'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.pages || '第 1-26 页'
 }
 
 function exportDimensionDesc(value) {
+  if (value === 'pep3_interpretation')
+    return '导出已生成的PEP-3报告解读内容。'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
 }
 
@@ -593,6 +600,20 @@ function reportModuleDesc(value) {
 
 function reportModulePages(value) {
   return reportModuleOptions.find(item => item.value === value)?.pages || ''
+}
+
+function reportExportDimension(row, dimension = activeReportModule.value) {
+  if (!isERXinRecord(row) && reportTab.value === 'interpretation')
+    return 'pep3_interpretation'
+  return dimension
+}
+
+function reportExportTitle(row, dimension) {
+  if (!isERXinRecord(row) && dimension === 'pep3_interpretation')
+    return '报告解读'
+  if (!isERXinRecord(row))
+    return reportModuleTitle(dimension)
+  return exportDimensionTitle(dimension)
 }
 
 function iepActionText(record) {
@@ -642,17 +663,18 @@ function confirmAssessmentRecordAction(record = currentReport.value?.record) {
 function confirmReportExport(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id || exportingId.value)
     return
+  const exportDimension = reportExportDimension(row, dimension)
   if (isERXinRecord(row)) {
     openExportModal(row, reportTab.value === 'interpretation' ? 'erxin_interpretation' : 'erxin_result')
     return
   }
-  const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportModuleTitle(dimension)}PDF。`
+  const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
   Modal.confirm({
     title: '确认导出评估报告？',
     content,
     okText: '确认导出',
     cancelText: '取消',
-    onOk: () => exportReport(row, dimension),
+    onOk: () => exportReport(row, exportDimension),
   })
 }
 
@@ -983,6 +1005,12 @@ async function downloadERXinExportPdf(recordId, dimension) {
   return downloadERXinAssessmentRecordReportPdfApi(recordId)
 }
 
+async function downloadPEP3ExportPdf(recordId, dimension) {
+  if (dimension === 'pep3_interpretation')
+    return downloadPEP3AssessmentRecordReportInterpretationPdfApi(recordId)
+  return downloadPEP3AssessmentBookletPdfApi(recordId, dimension)
+}
+
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
@@ -990,7 +1018,7 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   try {
     const response = isERXinRecord(row)
       ? await downloadERXinExportPdf(row.id, dimension)
-      : await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+      : await downloadPEP3ExportPdf(row.id, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url

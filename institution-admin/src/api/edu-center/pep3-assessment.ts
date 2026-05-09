@@ -750,6 +750,19 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
   })
 }
 
+export function downloadPEP3AssessmentRecordReportInterpretationPdfApi(id: number) {
+  const token = useAuthorization()
+  return axios.get('/api/v1/assessments/pep3/records/report/interpretation/pdf', {
+    params: { id },
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
 export function getPEP3AssessmentRecordReportInterpretationApi(id: number) {
   return useGet<PEP3ReportInterpretation>('/api/v1/assessments/pep3/records/report/interpretation', { id }, { silentError: true })
 }
