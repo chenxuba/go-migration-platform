@@ -868,11 +868,9 @@ class _IepWorkspace extends StatelessWidget {
       child: Column(
         children: const <Widget>[
           _WorkspaceHeader(),
-          SizedBox(height: 12),
+          SizedBox(height: 10),
           _PlanToolbar(),
           SizedBox(height: 10),
-          _PlanTabs(),
-          SizedBox(height: 12),
           Expanded(child: _IepTablePreview()),
         ],
       ),
@@ -901,10 +899,6 @@ class _WorkspaceHeader extends StatelessWidget {
               ),
             ),
           ),
-          const _PeriodPill(text: '3个月', active: true),
-          const SizedBox(width: 8),
-          const _PeriodPill(text: '6个月'),
-          const SizedBox(width: 10),
           const _HeaderMetaPill(icon: Icons.verified_rounded, text: '已确认'),
           const SizedBox(width: 10),
           const _HeaderMetaPill(
@@ -936,35 +930,6 @@ class _WorkspaceHeader extends StatelessWidget {
             ),
           ),
         ],
-      ),
-    );
-  }
-}
-
-class _PeriodPill extends StatelessWidget {
-  const _PeriodPill({required this.text, this.active = false});
-
-  final String text;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active ? _IepColors.orange : const Color(0xFFFFF8F2),
-        borderRadius: BorderRadius.circular(15),
-        border: active ? null : Border.all(color: _IepColors.lightLine),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: active ? Colors.white : _IepColors.text,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
-        ),
       ),
     );
   }
@@ -1041,97 +1006,102 @@ class _PlanToolbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFAF5),
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _IepColors.lightLine),
       ),
       child: Row(
-        children: const <Widget>[
-          _ToolbarInfo(
-              icon: Icons.event_available_rounded,
-              label: '制定日期',
-              value: '2026.05.07',
-              minWidth: 118,
-              maxWidth: 118),
-          _ToolbarDivider(),
-          _ToolbarInfo(
-              icon: Icons.group_rounded,
-              label: '计划参与者',
-              value: '陈瑞',
-              minWidth: 132,
-              maxWidth: 220),
-          _ToolbarDivider(),
-          _ToolbarInfo(
-              icon: Icons.person_pin_circle_rounded,
-              label: '实施者',
-              value: '陈瑞',
-              minWidth: 94,
-              maxWidth: 140),
-          Spacer(),
-          _TableTinyAction(icon: Icons.edit_calendar_rounded, label: '调整周期'),
-          SizedBox(width: 8),
-          _TableTinyAction(icon: Icons.save_alt_rounded, label: '保存草稿'),
+        children: <Widget>[
+          const _PeriodSwitch(),
+          const _ToolbarDivider(),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: Row(
+                children: const <Widget>[
+                  _PlanTab(text: 'IEP总计划', active: true, width: 92),
+                  _PlanNavLabel(text: '月计划'),
+                  _PlanTab(text: '5月', width: 54),
+                  _PlanTab(text: '6月', width: 54),
+                  _PlanTab(text: '7月', width: 54),
+                  _PlanNavLabel(text: '周计划'),
+                  _PlanTab(text: 'W1', width: 48),
+                  _PlanTab(text: 'W2', width: 48),
+                  _PlanTab(text: 'W3', width: 48),
+                  _PlanTab(text: 'W4', width: 48),
+                  _PlanTab(text: 'W5', width: 48),
+                  _PlanTab(text: 'W6', width: 48),
+                  _PlanTab(text: 'W7', width: 48),
+                  _PlanTab(text: 'W8', width: 48),
+                  _PlanTab(text: 'W9', width: 48),
+                  _PlanTab(text: 'W10', width: 52),
+                  _PlanTab(text: 'W11', width: 52),
+                  _PlanTab(text: 'W12', width: 52),
+                ],
+              ),
+            ),
+          ),
+          const _ToolbarDivider(),
+          const _TableTinyAction(
+              icon: Icons.edit_calendar_rounded, label: '周期'),
+          const SizedBox(width: 8),
+          const _TableTinyAction(icon: Icons.save_alt_rounded, label: '保存'),
         ],
       ),
     );
   }
 }
 
-class _ToolbarInfo extends StatelessWidget {
-  const _ToolbarInfo({
-    required this.icon,
-    required this.label,
-    required this.value,
-    required this.minWidth,
-    required this.maxWidth,
-  });
-
-  final IconData icon;
-  final String label;
-  final String value;
-  final double minWidth;
-  final double maxWidth;
+class _PeriodSwitch extends StatelessWidget {
+  const _PeriodSwitch();
 
   @override
   Widget build(BuildContext context) {
-    return ConstrainedBox(
-      constraints: BoxConstraints(minWidth: minWidth, maxWidth: maxWidth),
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: _IepColors.line),
+      ),
       child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          Icon(icon, color: _IepColors.orange, size: 18),
-          const SizedBox(width: 7),
-          Flexible(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  label,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _IepColors.muted,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-                const SizedBox(height: 1),
-                Text(
-                  value,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _IepColors.ink,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ],
-            ),
-          ),
+        children: const <Widget>[
+          _PeriodOption(text: '3个月', active: true),
+          _PeriodOption(text: '6个月'),
         ],
+      ),
+    );
+  }
+}
+
+class _PeriodOption extends StatelessWidget {
+  const _PeriodOption({required this.text, this.active = false});
+
+  final String text;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 26,
+      width: 50,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: active ? _IepColors.orange : Colors.transparent,
+        borderRadius: BorderRadius.circular(13),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: active ? Colors.white : _IepColors.text,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
@@ -1144,8 +1114,8 @@ class _ToolbarDivider extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: 1,
-      height: 26,
-      margin: const EdgeInsets.only(right: 14),
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
       color: _IepColors.lightLine,
     );
   }
@@ -1161,7 +1131,7 @@ class _TableTinyAction extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      padding: const EdgeInsets.symmetric(horizontal: 9),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(15),
@@ -1175,36 +1145,10 @@ class _TableTinyAction extends StatelessWidget {
             label,
             style: const TextStyle(
               color: _IepColors.text,
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w900,
             ),
           ),
-        ],
-      ),
-    );
-  }
-}
-
-class _PlanTabs extends StatelessWidget {
-  const _PlanTabs();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      height: 36,
-      child: Row(
-        children: const <Widget>[
-          _PlanTab(text: 'IEP总计划', active: true, width: 96),
-          SizedBox(width: 8),
-          _PlanTab(text: '第1个月', width: 78),
-          SizedBox(width: 8),
-          _PlanTab(text: '第2个月', width: 78),
-          SizedBox(width: 8),
-          _PlanTab(text: '第3个月', width: 78),
-          SizedBox(width: 8),
-          _PlanTab(text: '周计划', width: 74),
-          Spacer(),
-          _CollapseNavButton(),
         ],
       ),
     );
@@ -1226,11 +1170,12 @@ class _PlanTab extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       width: width,
-      height: 34,
+      height: 30,
+      margin: const EdgeInsets.only(right: 6),
       alignment: Alignment.center,
       decoration: BoxDecoration(
         color: active ? _IepColors.ink : const Color(0xFFFFFAF6),
-        borderRadius: BorderRadius.circular(17),
+        borderRadius: BorderRadius.circular(15),
         border: active ? null : Border.all(color: _IepColors.lightLine),
       ),
       child: Text(
@@ -1238,7 +1183,7 @@ class _PlanTab extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
         style: TextStyle(
           color: active ? Colors.white : _IepColors.text,
-          fontSize: 12,
+          fontSize: 11,
           fontWeight: FontWeight.w900,
         ),
       ),
@@ -1246,33 +1191,22 @@ class _PlanTab extends StatelessWidget {
   }
 }
 
-class _CollapseNavButton extends StatelessWidget {
-  const _CollapseNavButton();
+class _PlanNavLabel extends StatelessWidget {
+  const _PlanNavLabel({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 34,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFAF6),
-        borderRadius: BorderRadius.circular(17),
-        border: Border.all(color: _IepColors.lightLine),
-      ),
-      child: Row(
-        children: const <Widget>[
-          Icon(Icons.keyboard_double_arrow_left_rounded,
-              size: 17, color: _IepColors.muted),
-          SizedBox(width: 4),
-          Text(
-            '折叠导航',
-            style: TextStyle(
-              color: _IepColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-        ],
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, right: 6),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: _IepColors.muted,
+          fontSize: 11,
+          fontWeight: FontWeight.w900,
+        ),
       ),
     );
   }
