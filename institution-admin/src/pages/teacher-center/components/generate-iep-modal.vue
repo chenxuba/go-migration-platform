@@ -42,6 +42,7 @@ const loadingSavedPlan = ref(false)
 const savingDraft = ref(false)
 const confirmingPlan = ref(false)
 const savingExecutionPlan = ref(false)
+const syncingPlanPeriod = ref(false)
 const periodEditorOpen = ref(false)
 const periodDraftStartMonth = ref('')
 const showPlanLoadingOverlay = ref(false)
@@ -698,7 +699,7 @@ const isMonthlyPlanEditable = computed(() => executionPlanView.value === 'monthl
 const isWeeklyPlanEditable = computed(() => executionPlanView.value === 'weekly' && editingPreviewView.value === 'weekly' && !!weeklyPlan.value?.rows?.length && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value)
 const isAnyPlanEditable = computed(() => isPlanEditable.value || isMonthlyPlanEditable.value || isWeeklyPlanEditable.value)
 const modalWidth = computed(() => (isAnyPlanEditable.value ? 1388 : 1180))
-const navigationDisabled = computed(() => aiGenerating.value || loadingSavedPlan.value || generatingExecutionPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value)
+const navigationDisabled = computed(() => aiGenerating.value || loadingSavedPlan.value || generatingExecutionPlan.value || savingExecutionPlan.value || syncingPlanPeriod.value || isAnyPlanEditable.value)
 const canEditActivePreview = computed(() => {
   if (executionPlanView.value === 'monthly')
     return !!monthlyPlan.value?.rows?.length
@@ -706,14 +707,11 @@ const canEditActivePreview = computed(() => {
     return !!weeklyPlan.value?.rows?.length
   return !!planRows.value.length
 })
-const canPersistDateRangeChange = computed(() => {
-  return planDateSyncDirty.value && hasPlanContent.value && !aiGenerating.value && !generatingExecutionPlan.value && !loadingSavedPlan.value && !savingDraft.value && !confirmingPlan.value && !savingExecutionPlan.value
-})
 const durationSwitchDisabled = computed(() => {
-  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value || planDateSyncDirty.value
+  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || syncingPlanPeriod.value || isAnyPlanEditable.value || planDateSyncDirty.value
 })
 const periodEditorDisabled = computed(() => {
-  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || isAnyPlanEditable.value
+  return aiGenerating.value || generatingExecutionPlan.value || loadingSavedPlan.value || savingDraft.value || confirmingPlan.value || savingExecutionPlan.value || syncingPlanPeriod.value || isAnyPlanEditable.value
 })
 const periodDraftDateRangeText = computed(() => {
   const start = parsePlanStartMonth(periodDraftStartMonth.value) || normalizedPlanStartDate.value
@@ -838,7 +836,7 @@ const periodHint = computed(() => {
   if (aiGenerating.value)
     return '正在按周期生成计划行和起止日期'
   if (planDateSyncDirty.value)
-    return '起止日期已同步，请保存计划'
+    return '起止日期待同步保存'
   if (isConfirmedPlan.value)
     return '只能改开始月份，结束日期自动计算'
   if (savedPlanStatus.value === 'draft')
@@ -2027,10 +2025,18 @@ function openPeriodEditor() {
   periodEditorOpen.value = true
 }
 
-function applyPeriodEditorChange() {
+async function confirmPeriodEditorChange() {
   const nextStart = parsePlanStartMonth(periodDraftStartMonth.value)
   if (!nextStart) {
     messageService.warning('请选择有效的计划开始月份')
+    return
+  }
+  if (!props.record?.id) {
+    messageService.warning('请先选择评估记录')
+    return
+  }
+  if (!hasPlanContent.value) {
+    messageService.warning('请先生成IEP计划后再调整周期')
     return
   }
   const startChanged = planStartDate.value !== nextStart
@@ -2038,9 +2044,33 @@ function applyPeriodEditorChange() {
     periodEditorOpen.value = false
     return
   }
-  planStartDate.value = nextStart
-  applyPlanDateRangeToDisplayedPlans()
-  periodEditorOpen.value = false
+  syncingPlanPeriod.value = true
+  try {
+    const response = await assessmentAdapter.value.syncIepPlanPeriod({
+      id: props.record.id,
+      durationMonths: planDuration.value,
+      sourceDurationMonths: planDateSyncSourceDuration.value,
+      startDate: nextStart,
+    })
+    const data = unwrapResponse(response)
+    if (data?.iepPlan?.durationMonths && normalizePlanDurationValue(data.iepPlan.durationMonths) !== planDuration.value)
+      setPlanDurationWithoutLoading(data.iepPlan.durationMonths)
+    planStartDate.value = nextStart
+    applySavedIepPlanData(data?.iepPlan)
+    applySavedExecutionPlansData(data?.executionPlans)
+    planDateSyncDirty.value = false
+    planDateSyncSourceDuration.value = planDuration.value
+    periodEditorOpen.value = false
+    emit('saved', data?.iepPlan)
+    messageService.success('计划周期和关联月/周计划日期已同步保存')
+  }
+  catch (error) {
+    console.error('sync iep plan period failed', error)
+    messageService.error(error?.response?.data?.message || error?.message || '同步计划周期失败')
+  }
+  finally {
+    syncingPlanPeriod.value = false
+  }
 }
 
 function applyAssessmentPlanDateToMonthlyPlan(plan = {}) {
@@ -2571,6 +2601,7 @@ function resetIepState() {
   savingDraft.value = false
   confirmingPlan.value = false
   savingExecutionPlan.value = false
+  syncingPlanPeriod.value = false
   clearDisplayedPlanState()
 }
 
@@ -2725,40 +2756,6 @@ async function saveEditablePlan() {
     successMessage: status === 'confirmed' ? '修改已保存' : '草稿已保存',
   })
   return success
-}
-
-async function savePlanDateRangeChange() {
-  if (!canPersistDateRangeChange.value)
-    return
-  if (!props.record?.id) {
-    messageService.warning('请先选择评估记录')
-    return
-  }
-  savingDraft.value = true
-  try {
-    const response = await assessmentAdapter.value.syncIepPlanPeriod({
-      id: props.record.id,
-      durationMonths: planDuration.value,
-      sourceDurationMonths: planDateSyncSourceDuration.value,
-      startDate: defaultPlanDateRange.value.start,
-    })
-    const data = unwrapResponse(response)
-    if (data?.iepPlan?.durationMonths && normalizePlanDurationValue(data.iepPlan.durationMonths) !== planDuration.value)
-      setPlanDurationWithoutLoading(data.iepPlan.durationMonths)
-    applySavedIepPlanData(data?.iepPlan)
-    applySavedExecutionPlansData(data?.executionPlans)
-    planDateSyncDirty.value = false
-    planDateSyncSourceDuration.value = planDuration.value
-    emit('saved', data?.iepPlan)
-    messageService.success('计划周期和关联月/周计划日期已同步保存')
-  }
-  catch (error) {
-    console.error('sync iep plan period failed', error)
-    messageService.error(error?.response?.data?.message || error?.message || '同步计划周期失败')
-  }
-  finally {
-    savingDraft.value = false
-  }
 }
 
 function parseAttachmentFilename(headerValue) {
@@ -3162,25 +3159,16 @@ onBeforeUnmount(() => {
             v-if="isAnyPlanEditable"
             size="small"
             type="primary"
-            :loading="savingExecutionPlan || savingDraft || confirmingPlan"
-            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan"
+            :loading="savingExecutionPlan || savingDraft || confirmingPlan || syncingPlanPeriod"
+            :disabled="loadingSavedPlan || aiGenerating || generatingExecutionPlan || syncingPlanPeriod"
             @click="saveEditablePlan"
           >
             保存修改
           </a-button>
           <a-button
-            v-else-if="canPersistDateRangeChange"
-            size="small"
-            type="primary"
-            :loading="savingExecutionPlan || savingDraft || confirmingPlan"
-            @click="savePlanDateRangeChange"
-          >
-            保存周期
-          </a-button>
-          <a-button
             v-if="isAnyPlanEditable"
             size="small"
-            :disabled="savingExecutionPlan || savingDraft || confirmingPlan || aiGenerating || generatingExecutionPlan"
+            :disabled="savingExecutionPlan || savingDraft || confirmingPlan || syncingPlanPeriod || aiGenerating || generatingExecutionPlan"
             @click="finishEditPlan"
           >
             退出编辑
@@ -3866,9 +3854,10 @@ onBeforeUnmount(() => {
         :centered="true"
         :width="420"
         :mask-closable="false"
+        :confirm-loading="syncingPlanPeriod"
         ok-text="确认同步"
         cancel-text="取消"
-        @ok="applyPeriodEditorChange"
+        @ok="confirmPeriodEditorChange"
       >
         <div class="period-editor">
           <label class="period-editor__field">
