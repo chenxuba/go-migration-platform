@@ -529,11 +529,10 @@ String _formatIepStreamTextIncrementally(String raw) {
     lastWasNewline = value.endsWith('\n');
   }
 
-  void writeFieldPrefix(String key) {
+  void startVisibleField() {
     if (output.isNotEmpty && !lastWasNewline) {
       writeText('\n');
     }
-    writeText('${_iepReadableLabel(key)}：');
   }
 
   void writeEscaped(String char) {
@@ -574,7 +573,7 @@ String _formatIepStreamTextIncrementally(String raw) {
           token.clear();
           if (expectingValue) {
             if (_isIepReadableField(currentKey)) {
-              writeFieldPrefix(currentKey);
+              startVisibleField();
               mode = _IepReadableJsonMode.visibleValue;
             } else {
               mode = _IepReadableJsonMode.hiddenValue;
@@ -655,48 +654,6 @@ bool _isIepReadableField(String key) {
     'preparation',
     'monthLabel',
   }.contains(key);
-}
-
-String _iepReadableLabel(String key) {
-  switch (key) {
-    case 'title':
-      return '计划';
-    case 'domain':
-      return '领域';
-    case 'longGoal':
-      return '长期目标';
-    case 'shortGoal':
-      return '短期目标';
-    case 'courseForm':
-      return '课程形式';
-    case 'startEndDate':
-      return '起止日期';
-    case 'participant':
-      return '计划参与者';
-    case 'implementer':
-      return '实施者';
-    case 'planDate':
-      return '制定日期';
-    case 'startDate':
-      return '开始日期';
-    case 'endDate':
-      return '结束日期';
-    case 'project':
-      return '训练项目';
-    case 'content':
-      return '训练内容';
-    case 'teacherName':
-      return '老师';
-    case 'courseName':
-      return '课程';
-    case 'trainingDate':
-      return '训练日期';
-    case 'preparation':
-      return '课前准备';
-    case 'monthLabel':
-      return '月份';
-  }
-  return key;
 }
 
 int _gridFlex(List<int> columns, int start, int span) {
