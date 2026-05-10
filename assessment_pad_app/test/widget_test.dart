@@ -40,7 +40,9 @@ void main() {
     await _enterWithCustomKeyboard(tester, 0, 'chenrui');
     await _enterWithCustomKeyboard(tester, 1, '123456');
     await tester.tap(find.text('登 录'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('开始测评'), findsOneWidget);
@@ -49,13 +51,17 @@ void main() {
     expect(homeClient.fetchSummaryCalls, 1);
 
     await tester.tap(find.byTooltip('刷新首页'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(homeClient.fetchCurrentSessionCalls, 2);
     expect(homeClient.fetchSummaryCalls, 2);
 
     await tester.binding.handlePopRoute();
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
@@ -75,7 +81,9 @@ void main() {
         timetableClient: _FakeTimetableClient(),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.textContaining('启明成长中心'), findsOneWidget);
     expect(find.text('机构账号登录'), findsNothing);
@@ -95,10 +103,14 @@ void main() {
         timetableClient: _FakeTimetableClient(),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     await tester.tap(find.text('开始测评'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
   });
@@ -130,18 +142,24 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('张一鸣'), findsOneWidget);
     await tester.tap(find.text('查看'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('分数+表现图'), findsOneWidget);
     expect(find.text('报告解读'), findsOneWidget);
     expect(find.text('暂无评估报告内容'), findsOneWidget);
 
     await tester.tap(find.text('报告解读'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.text('报告解读尚未生成'), findsOneWidget);
     expect(find.text('生成解读'), findsWidgets);
@@ -193,7 +211,9 @@ void main() {
       ),
     );
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('陈旭'), findsOneWidget);
     await tester.tap(find.text('查看'));
@@ -208,7 +228,9 @@ void main() {
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
     expect(erxinClient.generateInterpretationCalls, 0);
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
 
     expect(find.text('报告解读尚未生成'), findsOneWidget);
     expect(find.text('生成解读'), findsWidgets);
@@ -231,16 +253,22 @@ void main() {
     expect(find.text('AI 正在生成报告解读...'), findsOneWidget);
     expect(find.textContaining('综合解读'), findsOneWidget);
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsOneWidget);
     expect(find.text('重新生成解读'), findsOneWidget);
     expect(erxinClient.generateInterpretationCalls, 1);
 
     await tester.tap(find.byIcon(Icons.close_rounded).last);
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
     await tester.tap(find.text('查看'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
     await tester.tap(find.text('报告解读'));
     await tester.pump();
 
@@ -248,16 +276,22 @@ void main() {
     expect(find.text('AI 正在生成报告解读...'), findsNothing);
     expect(find.textContaining('正在读取已保存的报告解读'), findsOneWidget);
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsOneWidget);
     expect(erxinClient.fetchInterpretationCalls, 2);
     expect(erxinClient.generateInterpretationCalls, 1);
 
     await tester.tap(find.text('评估结果记录'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
     await tester.tap(find.text('报告解读'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(erxinClient.fetchInterpretationCalls, 2);
     expect(erxinClient.generateInterpretationCalls, 1);
@@ -270,7 +304,9 @@ void main() {
     expect(erxinClient.generateInterpretationCalls, 1);
 
     await tester.tap(find.text('取消'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.text('确认重新生成解读'), findsNothing);
     expect(erxinClient.generateInterpretationCalls, 1);
@@ -282,7 +318,9 @@ void main() {
 
     expect(find.text('正在读取儿心评估结果'), findsOneWidget);
 
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(erxinClient.generateInterpretationCalls, 2);
   });
@@ -356,7 +394,9 @@ void main() {
     expect(find.text('陈思语老师'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 350));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(
       find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
@@ -379,7 +419,9 @@ void main() {
       ),
     );
     await tester.pump(const Duration(milliseconds: 350));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
         findsNothing);
@@ -387,7 +429,9 @@ void main() {
 
     await tester
         .tap(find.byKey(const ValueKey<String>('period-group-dropdown')));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
     await tester.tap(
       find.byKey(const ValueKey<String>('period-group-option-group-c')),
     );
@@ -399,7 +443,9 @@ void main() {
     expect(find.text('陈思语老师'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 350));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.byKey(const ValueKey<String>('smart-timetable-skeleton')),
         findsNothing);
@@ -422,7 +468,9 @@ void main() {
         home: SmartTimetablePage(timetableClient: _FakeTimetableClient()),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
     expect(tester.takeException(), isNull);
   });
@@ -447,7 +495,9 @@ void main() {
         ),
       ),
     );
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
 
     expect(find.text('排课日程接口响应超时，请检查网络'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -1056,6 +1106,134 @@ void main() {
     expect(iepPlanClient.savePlanCalls, 0);
     expect(find.text('待确认'), findsWidgets);
     expect(find.text('确认IEP'), findsOneWidget);
+  });
+
+  testWidgets('IEP center hides regenerate by default for empty month and week',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: _FakeIepPlanClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('重新生成'), findsOneWidget);
+
+    await tester.tap(find.text('6月'));
+    await tester.pumpAndSettle();
+    expect(find.text('重新生成'), findsNothing);
+
+    await tester.tap(find.text('5月 W2'));
+    await tester.pumpAndSettle();
+    expect(find.text('重新生成'), findsNothing);
+  });
+
+  testWidgets('IEP center generates month plan from month tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeIepPlanClient iepPlanClient = _FakeIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.text('6月'));
+    await tester.pumpAndSettle();
+    expect(find.text('6月计划未生成'), findsOneWidget);
+
+    await tester.tap(find.text('AI生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    await tester.pumpAndSettle();
+
+    expect(iepPlanClient.generateMonthlyPlanCalls, 1);
+    expect(iepPlanClient.saveMonthlyPlanCalls, 1);
+    expect(find.text('康复教学5月计划'), findsOneWidget);
+  });
+
+  testWidgets('IEP center generates week plan from week tab',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeIepPlanClient iepPlanClient = _FakeIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.text('5月 W2'));
+    await tester.pumpAndSettle();
+    expect(find.text('5月 W2 周计划未生成'), findsOneWidget);
+
+    await tester.tap(find.text('AI生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 260));
+    await tester.pumpAndSettle();
+
+    expect(iepPlanClient.generateWeeklyPlanCalls, 1);
+    expect(iepPlanClient.saveWeeklyPlanCalls, 1);
+    expect(find.text('康复教学周计划日记录卡5月第1周'), findsOneWidget);
   });
 
   testWidgets('IEP center confirms before regenerating plan',
@@ -4496,10 +4674,16 @@ class _FakeIepPlanClient implements IepPlanClient {
   DateTime _startDate = DateTime(2026, 5);
   int savePlanCalls = 0;
   int generatePlanCalls = 0;
+  int generateMonthlyPlanCalls = 0;
+  int generateWeeklyPlanCalls = 0;
+  int saveMonthlyPlanCalls = 0;
+  int saveWeeklyPlanCalls = 0;
   int createTaskCalls = 0;
   int fetchTaskCalls = 0;
   int watchTaskCalls = 0;
   IepPlan? lastSavedPlan;
+  IepMonthlyPlan? lastSavedMonthlyPlan;
+  IepWeeklyPlan? lastSavedWeeklyPlan;
 
   @override
   Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
@@ -4805,6 +4989,178 @@ class _FakeIepPlanClient implements IepPlanClient {
       durationMonths: durationMonths,
       plan: plan,
       updatedTime: '2026-05-10T09:30:00Z',
+    );
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<IepMonthlyPlan>> generateMonthlyPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required IepPlan sourcePlan,
+  }) async* {
+    generateMonthlyPlanCalls += 1;
+    final int monthNumber = 4 + targetMonthIndex;
+    final String monthLabel = '${monthNumber}月';
+    final String monthValue = monthNumber.toString().padLeft(2, '0');
+    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.status('正在准备月度计划生成上下文');
+    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.delta(
+      '{"title":"康复教学${monthLabel}计划","rows":[{"shortGoal":"能在平衡木上独立行走3米"}]}',
+    );
+    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.done(
+      IepMonthlyPlan(
+        title: '康复教学${monthLabel}计划',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        meta: IepMonthlyPlanMeta(
+          planDate: '2026-05-07',
+          participant: '陈瑞',
+          implementer: '陈瑞',
+          startDate: '2026-$monthValue-01',
+          endDate: '2026-$monthValue-30',
+          monthLabel: monthLabel,
+          sourceTitle: '康复教学季度计划',
+        ),
+        rows: const <IepMonthlyPlanRow>[
+          IepMonthlyPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡与协调能力',
+            shortGoal: '能在平衡木上独立行走3米',
+            trainingItems: <IepMonthlyTrainingItem>[
+              IepMonthlyTrainingItem(
+                content: '平衡木交替步态训练',
+                startEndDate: '2026-05-01 - 2026-05-10',
+              ),
+            ],
+            courseForm: '个训',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required IepPlan sourcePlan,
+    IepMonthlyPlan? monthlyPlan,
+  }) async* {
+    generateWeeklyPlanCalls += 1;
+    final int monthNumber = 4 + targetMonthIndex;
+    final String monthLabel = '${monthNumber}月';
+    yield IepExecutionPlanGenerationEvent<IepWeeklyPlan>.status('正在准备周计划生成上下文');
+    yield IepExecutionPlanGenerationEvent<IepWeeklyPlan>.delta(
+      '{"title":"康复教学周计划日记录卡${monthLabel}第${targetWeekIndex}周","rows":[{"project":"平衡木行走"}]}',
+    );
+    yield IepExecutionPlanGenerationEvent<IepWeeklyPlan>.done(
+      IepWeeklyPlan(
+        title: '康复教学周计划日记录卡${monthLabel}第${targetWeekIndex}周',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        teacherName: '陈瑞',
+        courseName: monthlyPlan?.title ?? '康复教学${monthLabel}计划',
+        trainingDate: '2026-05-01 至 2026-05-02',
+        preparation: '平衡木、记录表',
+        weekDates: const <String>['2026-05-01', '2026-05-02'],
+        rows: const <IepWeeklyPlanRow>[
+          IepWeeklyPlanRow(
+            project: '平衡木行走',
+            content: '在平衡木上独立行走并记录掉落次数',
+            completion: <String>[],
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> saveMonthlyPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required IepMonthlyPlan plan,
+    bool preserveWeeklyPlans = false,
+  }) async {
+    saveMonthlyPlanCalls += 1;
+    lastSavedMonthlyPlan = plan;
+    return IepExecutionPlansSaved(
+      exists: true,
+      durationMonths: durationMonths,
+      monthlyPlans: <IepMonthlyPlanSaved>[
+        IepMonthlyPlanSaved(targetMonthIndex: targetMonthIndex, plan: plan),
+      ],
+      weeklyPlans: preserveWeeklyPlans
+          ? const <IepWeeklyPlanSaved>[
+              IepWeeklyPlanSaved(
+                targetMonthIndex: 1,
+                targetWeekIndex: 1,
+                plan: IepWeeklyPlan(
+                  title: '康复教学周计划日记录卡5月第1周',
+                  student: IepPlanStudent(
+                    name: '陈旭',
+                    gender: '-',
+                    birthDate: '2022-05-11',
+                  ),
+                  teacherName: '陈瑞',
+                  courseName: '康复教学',
+                  trainingDate: '2026-05-01 至 2026-05-02',
+                  preparation: '平衡木、记录表',
+                  weekDates: <String>['2026-05-01', '2026-05-02'],
+                  rows: <IepWeeklyPlanRow>[
+                    IepWeeklyPlanRow(
+                      project: '平衡木行走',
+                      content: '在平衡木上独立行走并记录掉落次数',
+                      completion: <String>[],
+                    ),
+                  ],
+                ),
+              ),
+            ]
+          : const <IepWeeklyPlanSaved>[],
+    );
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> saveWeeklyPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required IepWeeklyPlan plan,
+  }) async {
+    saveWeeklyPlanCalls += 1;
+    lastSavedWeeklyPlan = plan;
+    return IepExecutionPlansSaved(
+      exists: true,
+      durationMonths: durationMonths,
+      monthlyPlans: lastSavedMonthlyPlan == null
+          ? const <IepMonthlyPlanSaved>[]
+          : <IepMonthlyPlanSaved>[
+              IepMonthlyPlanSaved(
+                targetMonthIndex: targetMonthIndex,
+                plan: lastSavedMonthlyPlan!,
+              ),
+            ],
+      weeklyPlans: <IepWeeklyPlanSaved>[
+        IepWeeklyPlanSaved(
+          targetMonthIndex: targetMonthIndex,
+          targetWeekIndex: targetWeekIndex,
+          plan: plan,
+        ),
+      ],
     );
   }
 }
@@ -5479,6 +5835,55 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
       plan: plan,
       updatedTime: '2026-05-10T09:30:00Z',
     );
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<IepMonthlyPlan>>
+      generateMonthlyPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required IepPlan sourcePlan,
+  }) async* {
+    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.error('未实现');
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required IepPlan sourcePlan,
+    IepMonthlyPlan? monthlyPlan,
+  }) async* {
+    yield IepExecutionPlanGenerationEvent<IepWeeklyPlan>.error('未实现');
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> saveMonthlyPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required IepMonthlyPlan plan,
+    bool preserveWeeklyPlans = false,
+  }) async {
+    return IepExecutionPlansSaved.empty(durationMonths);
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> saveWeeklyPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required IepWeeklyPlan plan,
+  }) async {
+    return IepExecutionPlansSaved.empty(durationMonths);
   }
 }
 

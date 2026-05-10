@@ -449,6 +449,7 @@ class _IepRegenerateConfirmDialog extends StatelessWidget {
             ),
             const SizedBox(height: 18),
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFFAF6),
@@ -491,6 +492,118 @@ class _IepRegenerateConfirmDialog extends StatelessWidget {
                   label: '确认重新生成',
                   filled: true,
                   icon: Icons.refresh_rounded,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IepWeeklyPlanMissingMonthConfirmDialog extends StatelessWidget {
+  const _IepWeeklyPlanMissingMonthConfirmDialog({
+    required this.monthLabel,
+    required this.weekNumber,
+    required this.planTitle,
+  });
+
+  final String monthLabel;
+  final int weekNumber;
+  final String planTitle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 468,
+        padding: const EdgeInsets.fromLTRB(22, 22, 22, 20),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: _IepColors.orangeSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.info_outline_rounded,
+                    color: _IepColors.orangeDeep,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    '当前还没有月计划',
+                    style: TextStyle(
+                      color: _IepColors.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Text(
+                '是否直接基于$planTitle生成$monthLabel第$weekNumber周周计划？',
+                style: const TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.45,
+                ),
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '先生成月计划',
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '直接生成周计划',
+                  filled: true,
+                  icon: Icons.auto_awesome_rounded,
                   onTap: () => Navigator.of(context).pop(true),
                 ),
               ],

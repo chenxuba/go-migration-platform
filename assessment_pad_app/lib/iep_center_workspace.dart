@@ -17,6 +17,12 @@ class _IepGenerationResult {
   final IepPlanSaved? savedPlan;
 }
 
+class _ExecutionPlanGenerationResult<T> {
+  const _ExecutionPlanGenerationResult(this.plan);
+
+  final T plan;
+}
+
 class _IepGenerationSessionSnapshot {
   const _IepGenerationSessionSnapshot({
     required this.taskId,
@@ -393,7 +399,19 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_restoreGenerationSessionFor(record)) {
       return;
     }
-    await _generateIepPlan();
+    if (_previewMode == _IepPreviewMode.week &&
+        !_currentWeekCanGenerateDirectly()) {
+      await _showWeeklyPlanMissingMonthConfirmDialog();
+      return;
+    }
+    switch (_previewMode) {
+      case _IepPreviewMode.total:
+        await _generateIepPlan();
+      case _IepPreviewMode.month:
+        await _generateMonthlyPlan();
+      case _IepPreviewMode.week:
+        await _generateWeeklyPlan();
+    }
   }
 
   Future<void> _handleRetryRequest() async {
@@ -440,6 +458,47 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         });
         return _IepGenerationResult(plan: plan, savedPlan: event.savedPlan);
       case IepPlanGenerationEventType.error:
+        throw IepPlanApiException(
+          event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
+        );
+    }
+    return null;
+  }
+
+  Future<_ExecutionPlanGenerationResult<T>?> _handleExecutionGenerationEvent<T>(
+    IepExecutionPlanGenerationEvent<T> event, {
+    required int ticket,
+    required String statusLabel,
+  }) async {
+    switch (event.type) {
+      case IepExecutionPlanGenerationEventType.status:
+        setState(() {
+          _generationStatus =
+              event.message.trim().isEmpty ? statusLabel : event.message.trim();
+        });
+      case IepExecutionPlanGenerationEventType.delta:
+        final String delta = _generationDeltaAfterExistingText(event.text);
+        if (delta.isEmpty) {
+          break;
+        }
+        await _appendDeltaWithTypewriter(delta, ticket: ticket);
+        if (!mounted || ticket != _generationTicket) {
+          return null;
+        }
+        setState(() {
+          _generationStatus = statusLabel;
+        });
+      case IepExecutionPlanGenerationEventType.done:
+        final T? plan = event.data;
+        if (plan == null) {
+          throw const IepPlanApiException('AI生成未返回计划数据');
+        }
+        setState(() {
+          _generationProgress = math.max(_generationProgress, .99);
+          _generationStatus = '生成完成，正在自动保存草稿';
+        });
+        return _ExecutionPlanGenerationResult<T>(plan);
+      case IepExecutionPlanGenerationEventType.error:
         throw IepPlanApiException(
           event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
         );
@@ -568,6 +627,221 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       }
       final String message = 'AI生成失败：$error';
       _storeCurrentGenerationSession(record);
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
+    }
+  }
+
+  Future<void> _generateMonthlyPlan({bool forceRegenerate = false}) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final IepPlan? sourcePlan = _savedPlan?.plan;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (sourcePlan == null || !_savedPlan!.hasContent) {
+      _showMessage('请先生成IEP总计划');
+      return;
+    }
+    if (_generatingPlan) {
+      return;
+    }
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
+    final int monthIndex = _previewMonthIndex();
+    IepMonthlyPlan? finalPlan;
+    setState(() {
+      _loadingPlan = false;
+      _generatingPlan = true;
+      _generationStatus = forceRegenerate ? '正在重新生成月计划' : '正在准备月计划';
+      _aiStreamText = '';
+      _generationProgress = .08;
+      _planError = '';
+    });
+    _notifyRecordStatus(record, 'generating');
+    widget.onConfirmAvailabilityChanged(false);
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      await for (final IepExecutionPlanGenerationEvent<IepMonthlyPlan> event
+          in widget.planClient.generateMonthlyPlanStream(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        sourcePlan: sourcePlan,
+      )) {
+        if (!mounted || ticket != _generationTicket) {
+          return;
+        }
+        final _ExecutionPlanGenerationResult<IepMonthlyPlan>? result =
+            await _handleExecutionGenerationEvent<IepMonthlyPlan>(
+          event,
+          ticket: ticket,
+          statusLabel: 'AI正在生成月计划',
+        );
+        finalPlan = result?.plan ?? finalPlan;
+      }
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      if (finalPlan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      final IepExecutionPlansSaved saved =
+          await widget.planClient.saveMonthlyPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        plan: finalPlan,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '';
+        _aiStreamText = '';
+        _generationProgress = 1;
+        _executionPlans = saved;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage('月计划生成成功，已自动保存', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : error.message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final String message = '月计划生成失败：$error';
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
+    }
+  }
+
+  Future<void> _generateWeeklyPlan({bool forceRegenerate = false}) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final IepPlan? sourcePlan = _savedPlan?.plan;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (sourcePlan == null || !_savedPlan!.hasContent) {
+      _showMessage('请先生成IEP总计划');
+      return;
+    }
+    if (_generatingPlan) {
+      return;
+    }
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
+    final int monthIndex = _previewMonthIndex();
+    final IepMonthlyPlan? monthlyPlan = _executionPlans?.monthPlan(monthIndex);
+    IepWeeklyPlan? finalPlan;
+    setState(() {
+      _loadingPlan = false;
+      _generatingPlan = true;
+      _generationStatus = forceRegenerate ? '正在重新生成周计划' : '正在准备周计划';
+      _aiStreamText = '';
+      _generationProgress = .08;
+      _planError = '';
+    });
+    _notifyRecordStatus(record, 'generating');
+    widget.onConfirmAvailabilityChanged(false);
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      await for (final IepExecutionPlanGenerationEvent<IepWeeklyPlan> event
+          in widget.planClient.generateWeeklyPlanStream(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        targetWeekIndex: _previewWeek,
+        sourcePlan: sourcePlan,
+        monthlyPlan: monthlyPlan,
+      )) {
+        if (!mounted || ticket != _generationTicket) {
+          return;
+        }
+        final _ExecutionPlanGenerationResult<IepWeeklyPlan>? result =
+            await _handleExecutionGenerationEvent<IepWeeklyPlan>(
+          event,
+          ticket: ticket,
+          statusLabel: 'AI正在生成周计划',
+        );
+        finalPlan = result?.plan ?? finalPlan;
+      }
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      if (finalPlan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      final IepExecutionPlansSaved saved = await widget.planClient.saveWeeklyPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        targetWeekIndex: _previewWeek,
+        plan: finalPlan,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '';
+        _aiStreamText = '';
+        _generationProgress = 1;
+        _executionPlans = saved;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage('周计划生成成功，已自动保存', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : error.message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final String message = '周计划生成失败：$error';
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -859,7 +1133,66 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (confirmed != true || !mounted) {
       return;
     }
-    await _generateIepPlan(forceRegenerate: true);
+    switch (_previewMode) {
+      case _IepPreviewMode.total:
+        await _generateIepPlan(forceRegenerate: true);
+      case _IepPreviewMode.month:
+        await _generateMonthlyPlan(forceRegenerate: true);
+      case _IepPreviewMode.week:
+        if (!_currentWeekCanGenerateDirectly()) {
+          await _showWeeklyPlanMissingMonthConfirmDialog(
+            forceRegenerate: true,
+          );
+          return;
+        }
+        await _generateWeeklyPlan(forceRegenerate: true);
+    }
+  }
+
+  bool _currentWeekCanGenerateDirectly() {
+    if (_previewMode != _IepPreviewMode.week) {
+      return true;
+    }
+    final int monthIndex = _previewMonthIndex();
+    final IepMonthlyPlan? monthlyPlan = _executionPlans?.monthPlan(monthIndex);
+    return monthlyPlan != null && monthlyPlan.rows.isNotEmpty;
+  }
+
+  Future<void> _showWeeklyPlanMissingMonthConfirmDialog({
+    bool forceRegenerate = false,
+  }) async {
+    if (_generatingPlan) {
+      return;
+    }
+    final bool? directWeekly = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepWeeklyPlanMissingMonthConfirmDialog(
+            monthLabel: _previewMonth,
+            weekNumber: _previewWeek,
+            planTitle: _savedPlan?.plan?.title.trim().isNotEmpty == true
+                ? _savedPlan!.plan!.title.trim()
+                : '当前IEP总计划',
+          ),
+        );
+      },
+    );
+    if (!mounted) {
+      return;
+    }
+    if (directWeekly == true) {
+      await _generateWeeklyPlan(forceRegenerate: forceRegenerate);
+      return;
+    }
+    if (directWeekly == false) {
+      setState(() {
+        _previewMode = _IepPreviewMode.month;
+        _selectedGoal = null;
+      });
+      await _generateMonthlyPlan(forceRegenerate: forceRegenerate);
+    }
   }
 
   Future<void> _syncPeriodStart(DateTime start) async {
@@ -1086,6 +1419,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _executionPlans?.monthPlan(_previewMonthIndex());
     final IepWeeklyPlan? weekPlan =
         _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final bool showRegenerateAction = switch (_previewMode) {
+      _IepPreviewMode.total => _savedPlan?.hasContent == true,
+      _IepPreviewMode.month => monthPlan != null,
+      _IepPreviewMode.week => weekPlan != null,
+    };
     final String title = _workspaceTitle(record, plan);
     final String statusText = _planStatusText(_savedPlan?.status);
     return Container(
@@ -1101,6 +1439,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             title: title,
             statusText: statusText,
             periodText: _formatDotRange(_periodStart, _periodEnd),
+            previewMode: _previewMode,
+            previewMonthIndex: _previewMonthIndex(),
+            previewWeek: _previewWeek,
           ),
           const SizedBox(height: 10),
           _PlanToolbar(
@@ -1115,6 +1456,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             onPeriodMonthCountChanged: _changePeriodMonthCount,
             syncingPeriod: _syncingPeriod,
             generatingPlan: _generatingPlan,
+            showRegenerateAction: showRegenerateAction,
+            previewMode: _previewMode,
+            previewMonth: _previewMonth,
+            previewWeek: _previewWeek,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -1154,11 +1499,17 @@ class _WorkspaceHeader extends StatelessWidget {
     required this.title,
     required this.statusText,
     required this.periodText,
+    required this.previewMode,
+    required this.previewMonthIndex,
+    required this.previewWeek,
   });
 
   final String title;
   final String statusText;
   final String periodText;
+  final _IepPreviewMode previewMode;
+  final int previewMonthIndex;
+  final int previewWeek;
 
   @override
   Widget build(BuildContext context) {
@@ -1192,7 +1543,11 @@ class _WorkspaceHeader extends StatelessWidget {
             text: periodText,
           ),
           const SizedBox(width: 10),
-          const _ClassContextPill(),
+          _ClassContextPill(
+            previewMode: previewMode,
+            previewMonthIndex: previewMonthIndex,
+            previewWeek: previewWeek,
+          ),
           const SizedBox(width: 10),
           const _StartClassButton(),
         ],
@@ -1202,10 +1557,23 @@ class _WorkspaceHeader extends StatelessWidget {
 }
 
 class _ClassContextPill extends StatelessWidget {
-  const _ClassContextPill();
+  const _ClassContextPill({
+    required this.previewMode,
+    required this.previewMonthIndex,
+    required this.previewWeek,
+  });
+
+  final _IepPreviewMode previewMode;
+  final int previewMonthIndex;
+  final int previewWeek;
 
   @override
   Widget build(BuildContext context) {
+    final String text = switch (previewMode) {
+      _IepPreviewMode.total => 'IEP总计划',
+      _IepPreviewMode.month => '第$previewMonthIndex月',
+      _IepPreviewMode.week => '第$previewMonthIndex月 · 第$previewWeek周',
+    };
     return Container(
       height: 30,
       padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1215,8 +1583,8 @@ class _ClassContextPill extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
         border: Border.all(color: const Color(0xFFFFD3BA)),
       ),
-      child: const Text(
-        '第2月 · 第1周',
+      child: Text(
+        text,
         style: TextStyle(
           color: _IepColors.orangeDeep,
           fontSize: 12,
@@ -1315,6 +1683,10 @@ class _PlanToolbar extends StatelessWidget {
     required this.onPeriodMonthCountChanged,
     required this.syncingPeriod,
     required this.generatingPlan,
+    required this.showRegenerateAction,
+    required this.previewMode,
+    required this.previewMonth,
+    required this.previewWeek,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -1328,6 +1700,10 @@ class _PlanToolbar extends StatelessWidget {
   final ValueChanged<int> onPeriodMonthCountChanged;
   final bool syncingPeriod;
   final bool generatingPlan;
+  final bool showRegenerateAction;
+  final _IepPreviewMode previewMode;
+  final String previewMonth;
+  final int previewWeek;
 
   @override
   Widget build(BuildContext context) {
@@ -1355,6 +1731,9 @@ class _PlanToolbar extends StatelessWidget {
               monthLabels: monthLabels,
               periodStart: periodStart,
               periodMonthCount: periodMonthCount,
+              previewMode: previewMode,
+              previewMonth: previewMonth,
+              previewWeek: previewWeek,
             ),
           ),
           const _ToolbarDivider(),
@@ -1365,14 +1744,16 @@ class _PlanToolbar extends StatelessWidget {
             label: syncingPeriod ? '同步中' : '编辑周期',
             onTap: syncingPeriod || generatingPlan ? null : onEditPeriod,
           ),
-          const SizedBox(width: 8),
-          _TableTinyAction(
-            icon: generatingPlan
-                ? Icons.hourglass_top_rounded
-                : Icons.refresh_rounded,
-            label: generatingPlan ? '生成中' : '重新生成',
-            onTap: generatingPlan ? null : onRegeneratePlan,
-          ),
+          if (showRegenerateAction) ...<Widget>[
+            const SizedBox(width: 8),
+            _TableTinyAction(
+              icon: generatingPlan
+                  ? Icons.hourglass_top_rounded
+                  : Icons.refresh_rounded,
+              label: generatingPlan ? '生成中' : '重新生成',
+              onTap: generatingPlan ? null : onRegeneratePlan,
+            ),
+          ],
         ],
       ),
     );
@@ -1387,6 +1768,9 @@ class _ScrollablePlanNav extends StatefulWidget {
     required this.monthLabels,
     required this.periodStart,
     required this.periodMonthCount,
+    required this.previewMode,
+    required this.previewMonth,
+    required this.previewWeek,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -1395,6 +1779,9 @@ class _ScrollablePlanNav extends StatefulWidget {
   final List<String> monthLabels;
   final DateTime periodStart;
   final int periodMonthCount;
+  final _IepPreviewMode previewMode;
+  final String previewMonth;
+  final int previewWeek;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -1411,9 +1798,26 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   String _selectedMonth = '5月';
   int? _selectedWeek;
 
+  void _syncSelectionFromWidget() {
+    final String nextSection = switch (widget.previewMode) {
+      _IepPreviewMode.total => 'iep',
+      _IepPreviewMode.month => 'month',
+      _IepPreviewMode.week => 'week',
+    };
+    final String nextMonth = widget.monthLabels.contains(widget.previewMonth)
+        ? widget.previewMonth
+        : (widget.monthLabels.isNotEmpty ? widget.monthLabels.first : '5月');
+    final int? nextWeek =
+        widget.previewMode == _IepPreviewMode.week ? widget.previewWeek : null;
+    _selectedSection = nextSection;
+    _selectedMonth = nextMonth;
+    _selectedWeek = nextWeek;
+  }
+
   @override
   void didUpdateWidget(covariant _ScrollablePlanNav oldWidget) {
     super.didUpdateWidget(oldWidget);
+    _syncSelectionFromWidget();
     if (!widget.monthLabels.contains(_selectedMonth) &&
         widget.monthLabels.isNotEmpty) {
       _selectedMonth = widget.monthLabels.first;
@@ -1429,6 +1833,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   @override
   void initState() {
     super.initState();
+    _syncSelectionFromWidget();
     _scrollController = ScrollController();
     _scrollController.addListener(_syncHints);
     _hintController = AnimationController(

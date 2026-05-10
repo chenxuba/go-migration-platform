@@ -154,12 +154,18 @@ class _IepTablePreview extends StatelessWidget {
     );
 
     Widget child;
+    final String generationPlanLabel = switch (previewMode) {
+      _IepPreviewMode.total => 'IEP计划',
+      _IepPreviewMode.month => '$month计划',
+      _IepPreviewMode.week => '$month第$weekNumber周计划',
+    };
     if (generatingPlan) {
       final IepAssessmentRecordSummary currentRecord = record!;
       child = _IepGenerationStreamPanel(
         studentName: currentRecord.studentName.trim().isEmpty
             ? '当前学员'
             : currentRecord.studentName.trim(),
+        planLabel: generationPlanLabel,
         status: generationStatus,
         streamText: generationText,
         progress: generationProgress,
@@ -198,7 +204,9 @@ class _IepTablePreview extends StatelessWidget {
             ? _PlanStateView(
                 icon: Icons.calendar_month_rounded,
                 title: '$month计划未生成',
-                message: plan?.title ?? 'IEP总计划',
+                message: '可基于当前IEP总计划生成$month的月计划模板',
+                actionLabel: 'AI生成',
+                onAction: onGeneratePlan,
               )
             : _WordTableFrame(
                 child: _MonthPlanTable(
@@ -211,7 +219,9 @@ class _IepTablePreview extends StatelessWidget {
             ? _PlanStateView(
                 icon: Icons.view_week_rounded,
                 title: '$month W$weekNumber 周计划未生成',
-                message: plan?.title ?? 'IEP总计划',
+                message: '可基于当前IEP总计划或月计划生成本周周计划模板',
+                actionLabel: 'AI生成',
+                onAction: onGeneratePlan,
               )
             : _WordTableFrame(
                 child: _WeekPlanTable(
@@ -252,12 +262,14 @@ class _IepTablePreview extends StatelessWidget {
 class _IepGenerationStreamPanel extends StatefulWidget {
   const _IepGenerationStreamPanel({
     required this.studentName,
+    required this.planLabel,
     required this.status,
     required this.streamText,
     required this.progress,
   });
 
   final String studentName;
+  final String planLabel;
   final String status;
   final String streamText;
   final double progress;
@@ -365,7 +377,7 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: <Widget>[
                       Text(
-                        '正在生成 ${widget.studentName} 的IEP计划',
+                        '正在生成 ${widget.studentName} 的${widget.planLabel}',
                         style: const TextStyle(
                           color: _IepColors.ink,
                           fontSize: 16,
@@ -383,6 +395,15 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                         ),
                       ),
                     ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  '${(progress * 100).round()}%',
+                  style: const TextStyle(
+                    color: _IepColors.orangeDeep,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],

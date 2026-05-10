@@ -559,7 +559,13 @@ class _PlanStateView extends StatelessWidget {
             ],
             if (actionLabel.trim().isNotEmpty && onAction != null) ...<Widget>[
               const SizedBox(height: 12),
-              _MiniQueueAction(label: actionLabel, onTap: onAction!),
+              if (actionLabel.trim() == 'AI生成')
+                _AiGenerateButton(
+                  generating: false,
+                  onTap: onAction!,
+                )
+              else
+                _MiniQueueAction(label: actionLabel, onTap: onAction!),
             ],
           ],
         ),
