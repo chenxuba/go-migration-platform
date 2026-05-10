@@ -7,6 +7,7 @@ import 'package:assessment_pad_app/assessment_report_list_page.dart';
 import 'package:assessment_pad_app/erxin_assessment_client.dart';
 import 'package:assessment_pad_app/erxin_assessment_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
+import 'package:assessment_pad_app/iep_assessment_record_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_page.dart';
@@ -792,6 +793,7 @@ void main() {
         authClient: _FakeAuthClient(),
         homeClient: _FakeHomeClient(),
         scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -800,8 +802,12 @@ void main() {
     await tester.tap(find.text('IEP中心'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
 
     expect(find.text('学员IEP队列'), findsOneWidget);
+    expect(find.textContaining('陈旭 · 4岁0月'), findsOneWidget);
+    expect(find.text('儿心量表 · 2026-05-07'), findsOneWidget);
+    expect(find.text('已确认'), findsWidgets);
     expect(find.text('康复教学季度计划'), findsOneWidget);
     expect(find.text('开始上课'), findsOneWidget);
     expect(find.text('计划参与者'), findsWidgets);
@@ -3746,6 +3752,61 @@ class _FakeHomeClient implements HomeClient {
         displayName: '晴',
         temperature: 26,
       ),
+    );
+  }
+}
+
+class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
+  int fetchRecordsPageCalls = 0;
+
+  @override
+  Future<IepAssessmentRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 20,
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  }) async {
+    fetchRecordsPageCalls += 1;
+    return const IepAssessmentRecordPage(
+      total: 2,
+      current: 1,
+      size: 2,
+      items: <IepAssessmentRecordSummary>[
+        IepAssessmentRecordSummary(
+          id: 91,
+          source: 'ERXIN',
+          studentId: 18,
+          studentName: '陈旭',
+          assessmentCode: 'ERXIN2',
+          assessmentName: '儿心量表-II',
+          birthDate: '2022-05-11',
+          assessmentDate: '2026-05-07',
+          ageYears: 4,
+          ageMonths: 0,
+          ageDays: 0,
+          examinerName: '陈瑞',
+          iepPlanStatus: 'confirmed',
+          updatedTime: '2026-05-07T10:30:00Z',
+        ),
+        IepAssessmentRecordSummary(
+          id: 88,
+          source: 'PEP3',
+          studentId: 19,
+          studentName: '林一诺',
+          assessmentCode: 'PEP3',
+          assessmentName: 'PEP-3',
+          birthDate: '2021-08-12',
+          assessmentDate: '2026-04-29',
+          ageYears: 4,
+          ageMonths: 8,
+          ageDays: 17,
+          examinerName: '陈瑞',
+          iepPlanStatus: '',
+          updatedTime: '2026-04-29T11:30:00Z',
+        ),
+      ],
     );
   }
 }

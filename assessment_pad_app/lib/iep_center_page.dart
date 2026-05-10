@@ -1,12 +1,19 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
+import 'iep_assessment_record_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
 
 class IepCenterPage extends StatelessWidget {
-  const IepCenterPage({required this.onBack, super.key});
+  const IepCenterPage({
+    required this.onBack,
+    this.recordClient = const ApiIepAssessmentRecordClient(),
+    super.key,
+  });
 
   final VoidCallback onBack;
+  final IepAssessmentRecordClient recordClient;
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +39,7 @@ class IepCenterPage extends StatelessWidget {
                 top: 84,
                 width: metrics.leftWidth,
                 height: 660,
-                child: const _StudentQueuePanel(),
+                child: _StudentQueuePanel(recordClient: recordClient),
               ),
               Positioned(
                 left: metrics.contentLeft,
@@ -503,8 +510,74 @@ class _PrimaryActionButton extends StatelessWidget {
   }
 }
 
-class _StudentQueuePanel extends StatelessWidget {
-  const _StudentQueuePanel();
+class _StudentQueuePanel extends StatefulWidget {
+  const _StudentQueuePanel({required this.recordClient});
+
+  final IepAssessmentRecordClient recordClient;
+
+  @override
+  State<_StudentQueuePanel> createState() => _StudentQueuePanelState();
+}
+
+class _StudentQueuePanelState extends State<_StudentQueuePanel> {
+  static const String _authTokenStorageKey = 'auth_token';
+
+  List<_QueueStudent> _students = <_QueueStudent>[];
+  bool _loading = true;
+  String _error = '';
+  int _totalCount = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadRecords();
+  }
+
+  Future<void> _loadRecords() async {
+    setState(() {
+      _loading = true;
+      _error = '';
+    });
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepAssessmentRecordPage page =
+          await widget.recordClient.fetchRecordsPage(
+        token,
+        pageIndex: 1,
+        pageSize: 30,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _students = page.items.asMap().entries.map((entry) {
+          return _QueueStudent.fromRecord(
+            entry.value,
+            active: entry.key == 0,
+          );
+        }).toList();
+        _totalCount = page.total;
+        _loading = false;
+      });
+    } on IepAssessmentRecordApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = error.message;
+        _loading = false;
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _error = '评估记录加载失败：$error';
+        _loading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -536,9 +609,16 @@ class _StudentQueuePanel extends StatelessWidget {
           const SizedBox(height: 12),
           const _QueueTabs(),
           const SizedBox(height: 12),
-          const _CompactStatsStrip(),
+          _CompactStatsStrip(students: _students, totalCount: _totalCount),
           const SizedBox(height: 12),
-          const Expanded(child: _QueueList()),
+          Expanded(
+            child: _QueueList(
+              students: _students,
+              loading: _loading,
+              error: _error,
+              onRetry: _loadRecords,
+            ),
+          ),
         ],
       ),
     );
@@ -633,10 +713,27 @@ class _QueueTab extends StatelessWidget {
 }
 
 class _CompactStatsStrip extends StatelessWidget {
-  const _CompactStatsStrip();
+  const _CompactStatsStrip({
+    required this.students,
+    required this.totalCount,
+  });
+
+  final List<_QueueStudent> students;
+  final int totalCount;
 
   @override
   Widget build(BuildContext context) {
+    final int pendingCount = students
+        .where((_QueueStudent student) => student.status == '待生成')
+        .length;
+    final int draftCount = students
+        .where((_QueueStudent student) => student.status == '草稿')
+        .length;
+    final int confirmedCount = students
+        .where((_QueueStudent student) => student.status == '已确认')
+        .length;
+    final String totalText =
+        totalCount > 0 ? totalCount.toString() : students.length.toString();
     return Container(
       height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -646,14 +743,14 @@ class _CompactStatsStrip extends StatelessWidget {
         border: Border.all(color: _IepColors.lightLine),
       ),
       child: Row(
-        children: const <Widget>[
-          Expanded(child: _SmallStat(number: '18', label: '待生成')),
-          _StatDivider(),
-          Expanded(child: _SmallStat(number: '7', label: '草稿')),
-          _StatDivider(),
-          Expanded(child: _SmallStat(number: '26', label: '已确认')),
-          _StatDivider(),
-          Expanded(child: _SmallStat(number: '34', label: '本周计划')),
+        children: <Widget>[
+          Expanded(child: _SmallStat(number: totalText, label: '评估记录')),
+          const _StatDivider(),
+          Expanded(child: _SmallStat(number: '$pendingCount', label: '待生成')),
+          const _StatDivider(),
+          Expanded(child: _SmallStat(number: '$draftCount', label: '草稿')),
+          const _StatDivider(),
+          Expanded(child: _SmallStat(number: '$confirmedCount', label: '已确认')),
         ],
       ),
     );
@@ -705,72 +802,147 @@ class _StatDivider extends StatelessWidget {
 }
 
 class _QueueList extends StatelessWidget {
-  const _QueueList();
+  const _QueueList({
+    required this.students,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
+  });
 
-  static const List<_QueueStudent> _students = <_QueueStudent>[
-    _QueueStudent(
-      name: '陈旭',
-      age: '4岁0月',
-      status: '已确认',
-      statusColor: _IepColors.green,
-      statusBg: _IepColors.greenSoft,
-      assessment: '儿心量表 · 2026-05-07',
-      period: '05.01-07.31',
-      avatarAsset: 'assets/avatars/student_chenxu.png',
-      active: true,
-    ),
-    _QueueStudent(
-      name: '陈小宇',
-      age: '6岁1月',
-      status: '草稿',
-      statusColor: _IepColors.yellow,
-      statusBg: _IepColors.yellowSoft,
-      assessment: '儿心量表 · 2026-05-02',
-      period: '05.02-08.01',
-      avatarAsset: 'assets/avatars/student_chenxiaoyu.png',
-    ),
-    _QueueStudent(
-      name: '林一诺',
-      age: '4岁9月',
-      status: '待生成',
-      statusColor: _IepColors.orange,
-      statusBg: _IepColors.orangeSoft,
-      assessment: 'PEP-3 · 2026-04-29',
-      period: '待确认周期',
-      avatarAsset: 'assets/avatars/student_linyinuo.png',
-    ),
-    _QueueStudent(
-      name: '周书言',
-      age: '7岁2月',
-      status: '已确认',
-      statusColor: _IepColors.green,
-      statusBg: _IepColors.greenSoft,
-      assessment: 'PEP-3 · 2026-04-26',
-      period: '04.26-07.25',
-      avatarAsset: 'assets/avatars/student_zhoushuyan.png',
-    ),
-    _QueueStudent(
-      name: '唐沐辰',
-      age: '5岁8月',
-      status: '草稿',
-      statusColor: _IepColors.yellow,
-      statusBg: _IepColors.yellowSoft,
-      assessment: '儿心量表 · 2026-04-21',
-      period: '04.21-07.20',
-      avatarAsset: 'assets/avatars/student_tangmuchen.png',
-    ),
-  ];
+  final List<_QueueStudent> students;
+  final bool loading;
+  final String error;
+  final VoidCallback onRetry;
 
   @override
   Widget build(BuildContext context) {
+    if (loading) {
+      return const _QueueStateView(
+        icon: Icons.hourglass_top_rounded,
+        title: '正在加载评估记录',
+      );
+    }
+    if (error.trim().isNotEmpty) {
+      return _QueueStateView(
+        icon: Icons.wifi_off_rounded,
+        title: '评估记录加载失败',
+        message: error,
+        actionLabel: '重试',
+        onAction: onRetry,
+      );
+    }
+    if (students.isEmpty) {
+      return const _QueueStateView(
+        icon: Icons.assignment_outlined,
+        title: '暂无评估记录',
+        message: '完成评估后会出现在这里',
+      );
+    }
     return ListView.separated(
       physics: const ClampingScrollPhysics(),
       padding: EdgeInsets.zero,
-      itemCount: _students.length,
+      itemCount: students.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int index) {
-        return _QueueStudentCard(student: _students[index]);
+        return _QueueStudentCard(student: students[index]);
       },
+    );
+  }
+}
+
+class _QueueStateView extends StatelessWidget {
+  const _QueueStateView({
+    required this.icon,
+    required this.title,
+    this.message = '',
+    this.actionLabel = '',
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFAF5),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: _IepColors.lightLine),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 28, color: _IepColors.orangeDeep),
+            const SizedBox(height: 8),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _IepColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (message.trim().isNotEmpty) ...<Widget>[
+              const SizedBox(height: 6),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                ),
+              ),
+            ],
+            if (actionLabel.trim().isNotEmpty && onAction != null) ...<Widget>[
+              const SizedBox(height: 10),
+              _MiniQueueAction(label: actionLabel, onTap: onAction!),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _MiniQueueAction extends StatelessWidget {
+  const _MiniQueueAction({required this.label, required this.onTap});
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _IepColors.orangeSoft,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          alignment: Alignment.center,
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: _IepColors.orangeDeep,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -788,6 +960,27 @@ class _QueueStudent {
     this.active = false,
   });
 
+  factory _QueueStudent.fromRecord(
+    IepAssessmentRecordSummary record, {
+    required bool active,
+  }) {
+    final _QueueStatusStyle status = _QueueStatusStyle.fromPlanStatus(
+      record.iepPlanStatus,
+    );
+    return _QueueStudent(
+      name: record.studentName.trim().isEmpty ? '未命名学员' : record.studentName,
+      age: _recordAgeText(record),
+      status: status.label,
+      statusColor: status.color,
+      statusBg: status.background,
+      assessment:
+          '${_recordAssessmentName(record)} · ${_recordDateText(record.assessmentDate)}',
+      period: _recordPeriodText(record),
+      avatarAsset: _avatarAssetForRecord(record),
+      active: active,
+    );
+  }
+
   final String name;
   final String age;
   final String status;
@@ -797,6 +990,103 @@ class _QueueStudent {
   final String period;
   final String avatarAsset;
   final bool active;
+}
+
+class _QueueStatusStyle {
+  const _QueueStatusStyle({
+    required this.label,
+    required this.color,
+    required this.background,
+  });
+
+  factory _QueueStatusStyle.fromPlanStatus(String status) {
+    return switch (status.trim()) {
+      'confirmed' => const _QueueStatusStyle(
+          label: '已确认',
+          color: _IepColors.green,
+          background: _IepColors.greenSoft,
+        ),
+      'draft' => const _QueueStatusStyle(
+          label: '草稿',
+          color: _IepColors.yellow,
+          background: _IepColors.yellowSoft,
+        ),
+      _ => const _QueueStatusStyle(
+          label: '待生成',
+          color: _IepColors.orange,
+          background: _IepColors.orangeSoft,
+        ),
+    };
+  }
+
+  final String label;
+  final Color color;
+  final Color background;
+}
+
+const List<String> _queueAvatarAssets = <String>[
+  'assets/avatars/student_chenxu.png',
+  'assets/avatars/student_chenxiaoyu.png',
+  'assets/avatars/student_linyinuo.png',
+  'assets/avatars/student_zhoushuyan.png',
+  'assets/avatars/student_tangmuchen.png',
+];
+
+String _avatarAssetForRecord(IepAssessmentRecordSummary record) {
+  final String seed = '${record.studentId}:${record.id}:${record.studentName}';
+  int hash = 0;
+  for (int index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.codeUnitAt(index)) & 0x7fffffff;
+  }
+  return _queueAvatarAssets[hash % _queueAvatarAssets.length];
+}
+
+String _recordAgeText(IepAssessmentRecordSummary record) {
+  if (record.ageYears > 0 || record.ageMonths > 0) {
+    return '${record.ageYears}岁${record.ageMonths}月';
+  }
+  final DateTime? birthDate = DateTime.tryParse(record.birthDate);
+  final DateTime? assessmentDate = DateTime.tryParse(record.assessmentDate);
+  if (birthDate == null || assessmentDate == null) {
+    return '年龄未知';
+  }
+  int totalMonths = (assessmentDate.year - birthDate.year) * 12 +
+      assessmentDate.month -
+      birthDate.month;
+  if (assessmentDate.day < birthDate.day) {
+    totalMonths -= 1;
+  }
+  if (totalMonths < 0) {
+    return '年龄未知';
+  }
+  return '${totalMonths ~/ 12}岁${totalMonths % 12}月';
+}
+
+String _recordAssessmentName(IepAssessmentRecordSummary record) {
+  if (record.source == 'ERXIN') {
+    return '儿心量表';
+  }
+  if (record.assessmentName.trim().isNotEmpty) {
+    return record.assessmentName.trim();
+  }
+  return record.assessmentCode == 'PEP3' ? 'PEP-3' : '评估记录';
+}
+
+String _recordDateText(String value) {
+  final DateTime? date = DateTime.tryParse(value.trim());
+  if (date == null) {
+    return value.trim().isEmpty ? '-' : value.trim();
+  }
+  return _formatDateDash(date);
+}
+
+String _recordPeriodText(IepAssessmentRecordSummary record) {
+  final DateTime? start = DateTime.tryParse(record.assessmentDate.trim());
+  if (start == null) {
+    return record.iepPlanStatus.trim().isEmpty ? '待确认周期' : '周期待同步';
+  }
+  final DateTime end = _periodEndFor(start, 3);
+  return _formatDotRange(start, end);
 }
 
 class _QueueStudentCard extends StatelessWidget {
