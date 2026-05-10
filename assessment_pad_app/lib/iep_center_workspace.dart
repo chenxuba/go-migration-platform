@@ -7,6 +7,16 @@ typedef _IepMessageHandler = void Function(
   PadMessageTone tone,
 });
 
+class _IepGenerationResult {
+  const _IepGenerationResult({
+    required this.plan,
+    required this.savedPlan,
+  });
+
+  final IepPlan plan;
+  final IepPlanSaved? savedPlan;
+}
+
 class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace({
     required this.record,
@@ -26,7 +36,8 @@ class _IepWorkspace extends StatefulWidget {
   State<_IepWorkspace> createState() => _IepWorkspaceState();
 }
 
-class _IepWorkspaceState extends State<_IepWorkspace> {
+class _IepWorkspaceState extends State<_IepWorkspace>
+    with WidgetsBindingObserver {
   static const String _authTokenStorageKey = 'auth_token';
 
   _IepPreviewMode _previewMode = _IepPreviewMode.total;
@@ -47,6 +58,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   String _aiStreamText = '';
   double _generationProgress = 0;
   String _planError = '';
+  String _activeGenerationTaskId = '';
+  String _activeGenerationRecordKey = '';
+  int _activeGenerationDurationMonths = 3;
   int _loadTicket = 0;
   int _generationTicket = 0;
 
@@ -59,10 +73,30 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _syncPreviewMonthToPeriod();
     if (widget.record != null) {
       runAfterRouteEntrance(context, _loadPlanBundle);
     }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      return;
+    }
+    Future<void>.delayed(const Duration(milliseconds: 250), () {
+      if (!mounted || _generatingPlan || !_hasResumableGenerationTask) {
+        return;
+      }
+      _resumeIepPlanGenerationTask(showMessage: false);
+    });
   }
 
   @override
@@ -80,6 +114,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _aiStreamText = '';
       _generationProgress = 0;
       _generatingPlan = false;
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = '';
+      ++_generationTicket;
       widget.onConfirmAvailabilityChanged(false);
       _initPeriodFromRecord(widget.record);
       _syncPreviewMonthToPeriod();
@@ -100,6 +137,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _aiStreamText = '';
         _generationProgress = 0;
         _generatingPlan = false;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
         _hasCompletedInitialPlanLoad = false;
       });
       widget.onConfirmAvailabilityChanged(false);
@@ -201,6 +240,76 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     }
   }
 
+  bool get _hasResumableGenerationTask {
+    final IepAssessmentRecordSummary? record = widget.record;
+    return _activeGenerationTaskId.trim().isNotEmpty &&
+        record != null &&
+        _activeGenerationRecordKey == _recordGenerationKey(record) &&
+        _savedPlan?.hasContent != true;
+  }
+
+  Future<_IepGenerationResult?> _handleGenerationEvent(
+    IepPlanGenerationEvent event, {
+    required int ticket,
+  }) async {
+    switch (event.type) {
+      case IepPlanGenerationEventType.status:
+        setState(() {
+          _generationStatus =
+              event.message.trim().isEmpty ? '正在生成IEP计划' : event.message.trim();
+        });
+      case IepPlanGenerationEventType.delta:
+        final String delta = _generationDeltaAfterExistingText(event.text);
+        if (delta.isEmpty) {
+          break;
+        }
+        await _appendDeltaWithTypewriter(
+          delta,
+          ticket: ticket,
+        );
+        if (!mounted || ticket != _generationTicket) {
+          return null;
+        }
+        setState(() {
+          _generationStatus = 'AI正在生成IEP计划';
+        });
+      case IepPlanGenerationEventType.done:
+        final IepPlan? plan = event.plan;
+        if (plan == null) {
+          throw const IepPlanApiException('AI生成未返回计划数据');
+        }
+        setState(() {
+          _generationProgress = .94;
+          _generationStatus = '生成完成，正在自动保存草稿';
+        });
+        return _IepGenerationResult(plan: plan, savedPlan: event.savedPlan);
+      case IepPlanGenerationEventType.error:
+        throw IepPlanApiException(
+          event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
+        );
+    }
+    return null;
+  }
+
+  String _generationDeltaAfterExistingText(String incoming) {
+    if (incoming.isEmpty || _aiStreamText.isEmpty) {
+      return incoming;
+    }
+    if (incoming.startsWith(_aiStreamText)) {
+      return incoming.substring(_aiStreamText.length);
+    }
+    if (_aiStreamText.endsWith(incoming)) {
+      return '';
+    }
+    final int maxOverlap = math.min(_aiStreamText.length, incoming.length);
+    for (int length = maxOverlap; length > 0; length -= 1) {
+      if (_aiStreamText.endsWith(incoming.substring(0, length))) {
+        return incoming.substring(length);
+      }
+    }
+    return incoming;
+  }
+
   Future<void> _generateIepPlan({bool forceRegenerate = false}) async {
     final IepAssessmentRecordSummary? record = widget.record;
     if (record == null) {
@@ -224,6 +333,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _generationProgress = .08;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = _recordGenerationKey(record);
+      _activeGenerationDurationMonths = _periodMonthCount;
       if (forceRegenerate) {
         _savedPlan = null;
         _totalPlanDomains = <_DocDomainData>[];
@@ -234,51 +346,35 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
-      await for (final IepPlanGenerationEvent event
-          in widget.planClient.generateIepPlanStream(
+      final IepPlanGenerationTask task =
+          await widget.planClient.createIepPlanGenerationTask(
         token,
         record: record,
         durationMonths: _periodMonthCount,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _activeGenerationTaskId = task.taskId;
+        _activeGenerationDurationMonths =
+            task.durationMonths == 6 ? 6 : _periodMonthCount;
+        _generationStatus =
+            task.message.trim().isEmpty ? '正在生成IEP计划' : task.message.trim();
+      });
+      await for (final IepPlanGenerationEvent event
+          in widget.planClient.watchIepPlanGenerationTask(
+        token,
+        record: record,
+        taskId: task.taskId,
       )) {
         if (!mounted || ticket != _generationTicket) {
           return;
         }
-        switch (event.type) {
-          case IepPlanGenerationEventType.status:
-            setState(() {
-              _generationStatus = event.message.trim().isEmpty
-                  ? '正在生成IEP计划'
-                  : event.message.trim();
-            });
-          case IepPlanGenerationEventType.delta:
-            if (event.text.isEmpty) {
-              break;
-            }
-            await _appendDeltaWithTypewriter(
-              event.text,
-              ticket: ticket,
-            );
-            setState(() {
-              _generationStatus = 'AI正在生成IEP计划';
-            });
-          case IepPlanGenerationEventType.done:
-            final IepPlan? plan = event.plan;
-            if (plan == null) {
-              throw const IepPlanApiException('AI生成未返回计划数据');
-            }
-            finalPlan = plan;
-            if (event.savedPlan != null) {
-              savedPlanFromTask = event.savedPlan;
-            }
-            setState(() {
-              _generationProgress = .94;
-              _generationStatus = '生成完成，正在自动保存草稿';
-            });
-          case IepPlanGenerationEventType.error:
-            throw IepPlanApiException(
-              event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
-            );
-        }
+        final _IepGenerationResult? result =
+            await _handleGenerationEvent(event, ticket: ticket);
+        finalPlan = result?.plan ?? finalPlan;
+        savedPlanFromTask = result?.savedPlan ?? savedPlanFromTask;
       }
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -286,25 +382,14 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      final IepPlanSaved savedPlan =
-          savedPlanFromTask ?? _draftSavedPlan(finalPlan);
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      setState(() {
-        _generatingPlan = false;
-        _generationStatus = '';
-        _aiStreamText = '';
-        _generationProgress = 1;
-        _savedPlan = savedPlan;
-        _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
-        _applyPeriodFromPlan(savedPlan.plan, record);
-        _totalPlanDomains = savedPlan.plan == null
-            ? <_DocDomainData>[]
-            : _docDomainsFromPlan(savedPlan.plan!);
-        _syncPreviewMonthToPeriod();
-      });
-      _syncConfirmAvailability(savedPlan);
+      _applyGeneratedPlan(
+        record: record,
+        plan: finalPlan,
+        savedPlanFromTask: savedPlanFromTask,
+      );
       _showMessage('AI生成成功，已自动保存草稿', tone: PadMessageTone.success);
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
@@ -330,6 +415,170 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _syncConfirmAvailability(_savedPlan);
       _showMessage(message);
     }
+  }
+
+  Future<void> _resumeIepPlanGenerationTask({bool showMessage = true}) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final String taskId = _activeGenerationTaskId.trim();
+    if (record == null || taskId.isEmpty) {
+      return;
+    }
+    if (_activeGenerationRecordKey != _recordGenerationKey(record)) {
+      return;
+    }
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
+    IepPlan? finalPlan;
+    IepPlanSaved? savedPlanFromTask;
+    setState(() {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+      _loadingPlan = false;
+      _generatingPlan = true;
+      _planError = '';
+      _generationStatus = '正在重新连接AI生成任务';
+      if (_generationProgress < .12) {
+        _generationProgress = .12;
+      }
+    });
+    widget.onConfirmAvailabilityChanged(false);
+    if (showMessage) {
+      _showMessage('正在重新连接AI生成任务');
+    }
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanGenerationTask latest =
+          await widget.planClient.fetchIepPlanGenerationTask(
+        token,
+        record: record,
+        taskId: taskId,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      _activeGenerationDurationMonths =
+          latest.durationMonths == 6 ? 6 : _activeGenerationDurationMonths;
+      final _IepGenerationResult? latestResult =
+          await _applyGenerationTaskSnapshot(latest, ticket: ticket);
+      finalPlan = latestResult?.plan ?? finalPlan;
+      savedPlanFromTask = latestResult?.savedPlan ?? savedPlanFromTask;
+      if (latestResult == null && !latest.isDone) {
+        await for (final IepPlanGenerationEvent event
+            in widget.planClient.watchIepPlanGenerationTask(
+          token,
+          record: record,
+          taskId: taskId,
+        )) {
+          if (!mounted || ticket != _generationTicket) {
+            return;
+          }
+          final _IepGenerationResult? result =
+              await _handleGenerationEvent(event, ticket: ticket);
+          finalPlan = result?.plan ?? finalPlan;
+          savedPlanFromTask = result?.savedPlan ?? savedPlanFromTask;
+        }
+      }
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      if (finalPlan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      _applyGeneratedPlan(
+        record: record,
+        plan: finalPlan,
+        savedPlanFromTask: savedPlanFromTask,
+      );
+      _showMessage('AI生成成功，已自动保存草稿', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成连接已断开';
+        _planError = _savedPlan?.hasContent == true ? '' : error.message;
+      });
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final String message = 'AI生成重连失败：$error';
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成连接已断开';
+        _planError = _savedPlan?.hasContent == true ? '' : message;
+      });
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
+    }
+  }
+
+  Future<_IepGenerationResult?> _applyGenerationTaskSnapshot(
+    IepPlanGenerationTask task, {
+    required int ticket,
+  }) async {
+    if (task.streamText.isNotEmpty && task.streamText != _aiStreamText) {
+      setState(() {
+        _aiStreamText = task.streamText;
+        _generationProgress = math.min(
+          .88,
+          math.max(_generationProgress, _aiStreamText.length / 1800),
+        );
+      });
+    }
+    if (task.isFailed) {
+      throw IepPlanApiException(task.error.isEmpty ? 'AI生成失败' : task.error);
+    }
+    if (task.isDone) {
+      final IepPlan? plan = task.savedPlan?.plan ?? task.plan;
+      if (plan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      setState(() {
+        _generationProgress = .94;
+        _generationStatus =
+            task.message.trim().isEmpty ? '生成完成，正在自动保存草稿' : task.message.trim();
+      });
+      return _IepGenerationResult(plan: plan, savedPlan: task.savedPlan);
+    }
+    setState(() {
+      _generationStatus =
+          task.message.trim().isEmpty ? 'AI正在生成IEP计划' : task.message.trim();
+    });
+    return null;
+  }
+
+  void _applyGeneratedPlan({
+    required IepAssessmentRecordSummary record,
+    required IepPlan plan,
+    required IepPlanSaved? savedPlanFromTask,
+  }) {
+    final IepPlanSaved savedPlan = savedPlanFromTask ?? _draftSavedPlan(plan);
+    setState(() {
+      _generatingPlan = false;
+      _generationStatus = '';
+      _aiStreamText = '';
+      _generationProgress = 1;
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = '';
+      _savedPlan = savedPlan;
+      _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+      _applyPeriodFromPlan(savedPlan.plan, record);
+      _totalPlanDomains = savedPlan.plan == null
+          ? <_DocDomainData>[]
+          : _docDomainsFromPlan(savedPlan.plan!);
+      _syncPreviewMonthToPeriod();
+    });
+    _syncConfirmAvailability(savedPlan);
+  }
+
+  String _recordGenerationKey(IepAssessmentRecordSummary record) {
+    return '${record.source.trim().toUpperCase()}-${record.id}';
   }
 
   void _initPeriodFromRecord(IepAssessmentRecordSummary? record) {
@@ -680,7 +929,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               generationText: _aiStreamText,
               generationProgress: _generationProgress,
               error: _planError,
-              onRetry: _loadPlanBundle,
+              onRetry: _hasResumableGenerationTask
+                  ? _resumeIepPlanGenerationTask
+                  : _loadPlanBundle,
               onGeneratePlan: _generateIepPlan,
               totalPlanDomains: _totalPlanDomains,
               selectedGoal: _selectedGoal,
