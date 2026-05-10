@@ -291,6 +291,132 @@ class _WordSkeletonDivider extends StatelessWidget {
   }
 }
 
+class _IepPlanLoadingState extends StatelessWidget {
+  const _IepPlanLoadingState();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _IepHourglassLoader(),
+          SizedBox(height: 14),
+          Text(
+            '正在读取IEP计划',
+            style: TextStyle(
+              color: _IepColors.text,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IepHourglassLoader extends StatefulWidget {
+  const _IepHourglassLoader();
+
+  @override
+  State<_IepHourglassLoader> createState() => _IepHourglassLoaderState();
+}
+
+class _IepHourglassLoaderState extends State<_IepHourglassLoader>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 980),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (BuildContext context, Widget? child) {
+        return Transform.rotate(
+          angle: _controller.value * 3.1415926,
+          child: child,
+        );
+      },
+      child: const SizedBox(
+        width: 34,
+        height: 34,
+        child: CustomPaint(painter: _IepHourglassPainter()),
+      ),
+    );
+  }
+}
+
+class _IepHourglassPainter extends CustomPainter {
+  const _IepHourglassPainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final double left = size.width * .25;
+    final double right = size.width * .75;
+    final double top = size.height * .16;
+    final double middle = size.height * .5;
+    final double bottom = size.height * .84;
+    final double centerX = size.width * .5;
+
+    final Paint framePaint = Paint()
+      ..color = _IepColors.orangeDeep
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Paint sandPaint = Paint()
+      ..color = _IepColors.orangeDeep.withOpacity(.72)
+      ..style = PaintingStyle.fill;
+
+    final Path frame = Path()
+      ..moveTo(left, top)
+      ..lineTo(right, top)
+      ..moveTo(left, bottom)
+      ..lineTo(right, bottom)
+      ..moveTo(left + 1, top + 1)
+      ..quadraticBezierTo(centerX - 5, middle - 2, centerX, middle)
+      ..quadraticBezierTo(centerX - 5, middle + 2, left + 1, bottom - 1)
+      ..moveTo(right - 1, top + 1)
+      ..quadraticBezierTo(centerX + 5, middle - 2, centerX, middle)
+      ..quadraticBezierTo(centerX + 5, middle + 2, right - 1, bottom - 1);
+
+    final Path bottomSand = Path()
+      ..moveTo(centerX, middle + 1)
+      ..lineTo(right - 3, bottom - 2)
+      ..lineTo(left + 3, bottom - 2)
+      ..close();
+    final Path topSand = Path()
+      ..moveTo(left + 5, top + 3)
+      ..lineTo(right - 5, top + 3)
+      ..lineTo(centerX, middle - 2)
+      ..close();
+
+    canvas.drawPath(
+        topSand, sandPaint..color = sandPaint.color.withOpacity(.2));
+    canvas.drawPath(bottomSand, sandPaint..color = _IepColors.orangeDeep);
+    canvas.drawCircle(Offset(centerX, middle), 1.4, sandPaint);
+    canvas.drawPath(frame, framePaint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _IepHourglassPainter oldDelegate) => false;
+}
+
 class _PlanStateView extends StatelessWidget {
   const _PlanStateView({
     required this.icon,

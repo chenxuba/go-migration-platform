@@ -1,0 +1,1144 @@
+part of 'iep_center_page.dart';
+
+enum _IepPreviewMode { total, month, week }
+
+class _IepWorkspace extends StatefulWidget {
+  const _IepWorkspace({
+    required this.record,
+    required this.planClient,
+    required this.queueBootstrapLoading,
+  });
+
+  final IepAssessmentRecordSummary? record;
+  final IepPlanClient planClient;
+  final bool queueBootstrapLoading;
+
+  @override
+  State<_IepWorkspace> createState() => _IepWorkspaceState();
+}
+
+class _IepWorkspaceState extends State<_IepWorkspace> {
+  static const String _authTokenStorageKey = 'auth_token';
+
+  _IepPreviewMode _previewMode = _IepPreviewMode.total;
+  String _previewMonth = '5月';
+  int _previewWeek = 2;
+  DateTime _periodStart = DateTime(2026, 5);
+  DateTime? _periodEndOverride;
+  int _periodMonthCount = 3;
+  _GoalEditRequest? _selectedGoal;
+  List<_DocDomainData> _totalPlanDomains = <_DocDomainData>[];
+  IepPlanSaved? _savedPlan;
+  IepExecutionPlansSaved? _executionPlans;
+  bool _loadingPlan = false;
+  bool _hasLoadedPlanOnce = false;
+  bool _syncingPeriod = false;
+  String _planError = '';
+  int _loadTicket = 0;
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
+
+  DateTime get _periodEnd =>
+      _periodEndOverride ?? _periodEndFor(_periodStart, _periodMonthCount);
+
+  List<String> get _periodMonths =>
+      _periodMonthLabels(_periodStart, _periodMonthCount);
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPreviewMonthToPeriod();
+    if (widget.record != null) {
+      runAfterRouteEntrance(context, _loadPlanBundle);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _IepWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.record?.id != widget.record?.id ||
+        oldWidget.record?.source != widget.record?.source) {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+      _totalPlanDomains = <_DocDomainData>[];
+      _savedPlan = null;
+      _executionPlans = null;
+      _planError = '';
+      _hasLoadedPlanOnce = false;
+      _initPeriodFromRecord(widget.record);
+      _syncPreviewMonthToPeriod();
+      _loadPlanBundle();
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPlanBundle() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      setState(() {
+        _loadingPlan = false;
+        _planError = '';
+        _savedPlan = null;
+        _executionPlans = null;
+        _totalPlanDomains = <_DocDomainData>[];
+        _hasLoadedPlanOnce = false;
+      });
+      return;
+    }
+    final int ticket = ++_loadTicket;
+    setState(() {
+      _loadingPlan = true;
+      _planError = '';
+    });
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanSaved savedPlan = await widget.planClient.fetchIepPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+      );
+      IepExecutionPlansSaved executionPlans =
+          IepExecutionPlansSaved.empty(_periodMonthCount);
+      if (savedPlan.hasContent) {
+        executionPlans = await widget.planClient.fetchExecutionPlans(
+          token,
+          record: record,
+          durationMonths: savedPlan.durationMonths,
+        );
+      }
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _hasLoadedPlanOnce = true;
+        _savedPlan = savedPlan;
+        _executionPlans = executionPlans;
+        _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+        _applyPeriodFromPlan(savedPlan.plan, record);
+        _totalPlanDomains = savedPlan.plan == null
+            ? <_DocDomainData>[]
+            : _docDomainsFromPlan(savedPlan.plan!);
+        _syncPreviewMonthToPeriod();
+      });
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _hasLoadedPlanOnce = true;
+        _planError = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _hasLoadedPlanOnce = true;
+        _planError = 'IEP计划加载失败：$error';
+      });
+    }
+  }
+
+  void _initPeriodFromRecord(IepAssessmentRecordSummary? record) {
+    final DateTime? assessmentDate =
+        DateTime.tryParse(record?.assessmentDate.trim() ?? '');
+    if (assessmentDate == null) {
+      return;
+    }
+    _periodStart = DateTime(assessmentDate.year, assessmentDate.month);
+    _periodEndOverride = null;
+  }
+
+  void _applyPeriodFromPlan(IepPlan? plan, IepAssessmentRecordSummary record) {
+    final DateTime? planStart = DateTime.tryParse(plan?.meta.startDate ?? '');
+    final DateTime? planEnd = DateTime.tryParse(plan?.meta.endDate ?? '');
+    if (planStart != null) {
+      _periodStart = _dateOnly(planStart);
+    } else {
+      _initPeriodFromRecord(record);
+    }
+    _periodEndOverride = planEnd == null ? null : _dateOnly(planEnd);
+  }
+
+  void _syncPreviewMonthToPeriod() {
+    final List<String> months = _periodMonths;
+    if (months.isEmpty) {
+      return;
+    }
+    if (!months.contains(_previewMonth)) {
+      _previewMonth = months.first;
+      _previewWeek = 1;
+    }
+  }
+
+  int _previewMonthIndex() {
+    final int index = _periodMonths.indexOf(_previewMonth);
+    return index < 0 ? 1 : index + 1;
+  }
+
+  Future<void> _showEditPeriodDialog() async {
+    if (_syncingPeriod) {
+      return;
+    }
+    final _IepPeriodDraft? draft = await showDialog<_IepPeriodDraft>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepPeriodEditDialog(
+            initialStart: _periodStart,
+            monthCount: _periodMonthCount,
+          ),
+        );
+      },
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    await _syncPeriodStart(draft.start);
+  }
+
+  Future<void> _syncPeriodStart(DateTime start) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (_savedPlan?.hasContent != true) {
+      _showMessage('请先生成IEP计划后再调整周期');
+      return;
+    }
+    final DateTime nextStart = _dateOnly(start);
+    if (_dateOnly(_periodStart) == nextStart) {
+      return;
+    }
+    ++_loadTicket;
+    final int sourceDurationMonths = _savedPlan?.durationMonths == 6 ? 6 : 3;
+    setState(() {
+      _syncingPeriod = true;
+      _planError = '';
+    });
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanPeriodSyncResult result =
+          await widget.planClient.syncIepPlanPeriod(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        sourceDurationMonths: sourceDurationMonths,
+        startDate: nextStart,
+      );
+      if (!mounted) {
+        return;
+      }
+      _applySyncedPlanBundle(result.iepPlan, result.executionPlans, record);
+      _showMessage('计划周期和关联月/周计划日期已同步保存', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncingPeriod = false;
+        _planError = error.message;
+      });
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final String message = '同步计划周期失败：$error';
+      setState(() {
+        _syncingPeriod = false;
+        _planError = message;
+      });
+      _showMessage(message);
+    }
+  }
+
+  void _applySyncedPlanBundle(
+    IepPlanSaved savedPlan,
+    IepExecutionPlansSaved executionPlans,
+    IepAssessmentRecordSummary record,
+  ) {
+    setState(() {
+      _syncingPeriod = false;
+      _loadingPlan = false;
+      _hasLoadedPlanOnce = true;
+      _savedPlan = savedPlan;
+      _executionPlans = executionPlans;
+      _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+      _applyPeriodFromPlan(savedPlan.plan, record);
+      _totalPlanDomains = savedPlan.plan == null
+          ? <_DocDomainData>[]
+          : _docDomainsFromPlan(savedPlan.plan!);
+      _syncPreviewMonthToPeriod();
+      _ensurePreviewWeekInRange();
+    });
+  }
+
+  void _ensurePreviewWeekInRange() {
+    if (_previewMode != _IepPreviewMode.week) {
+      return;
+    }
+    final DateTime monthDate = _monthDateFromLabel(
+      _periodStart,
+      _periodMonthCount,
+      _previewMonth,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: monthDate,
+    );
+    if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
+      _previewWeek = 1;
+    }
+  }
+
+  void _showMessage(String message,
+      {PadMessageTone tone = PadMessageTone.info}) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 84,
+      key: 'iep-center-message',
+    );
+  }
+
+  void _showTotalPlan() {
+    setState(() {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+    });
+  }
+
+  void _showMonthPlan(String month) {
+    setState(() {
+      _previewMode = _IepPreviewMode.month;
+      _previewMonth = month;
+      _selectedGoal = null;
+    });
+  }
+
+  void _showWeekPlan(String month, int weekNumber) {
+    final DateTime monthDate = _monthDateFromLabel(
+      _periodStart,
+      _periodMonthCount,
+      month,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: monthDate,
+    );
+    final int week = _weekDatesInMonthRange(monthRange, weekNumber).isEmpty
+        ? _lastAvailableWeekInMonthRange(monthRange)
+        : weekNumber;
+    setState(() {
+      _previewMode = _IepPreviewMode.week;
+      _previewMonth = month;
+      _previewWeek = week;
+      _selectedGoal = null;
+    });
+  }
+
+  void _changePeriodMonthCount(int monthCount) {
+    if (_periodMonthCount == monthCount) {
+      return;
+    }
+    setState(() {
+      _periodMonthCount = monthCount;
+      _periodEndOverride = null;
+      final List<String> months = _periodMonths;
+      if (!months.contains(_previewMonth)) {
+        _previewMonth = months.first;
+        _previewWeek = 1;
+      }
+      _ensurePreviewWeekInRange();
+    });
+    _loadPlanBundle();
+  }
+
+  Future<void> _showGoalEditDialog(_GoalEditRequest request) async {
+    setState(() {
+      _selectedGoal = request;
+    });
+    final _DocDomainData domain = _totalPlanDomains[request.domainIndex];
+    final _GoalEditResult? result = await showDialog<_GoalEditResult>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepGoalEditDialog(
+            domain: domain,
+            request: request,
+          ),
+        );
+      },
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    setState(() {
+      final List<_DocDomainData> nextDomains =
+          List<_DocDomainData>.from(_totalPlanDomains);
+      if (result.longGoals != null) {
+        nextDomains[request.domainIndex] =
+            domain.copyWith(longGoals: result.longGoals);
+      }
+      if (result.shortGoals != null) {
+        nextDomains[request.domainIndex] =
+            domain.copyWith(shortGoals: result.shortGoals);
+      }
+      _totalPlanDomains = nextDomains;
+    });
+  }
+
+  void _clearSelectedGoal() {
+    if (_selectedGoal == null) {
+      return;
+    }
+    setState(() {
+      _selectedGoal = null;
+    });
+  }
+
+  void _handleGoalTap(_GoalEditRequest request) {
+    if (_selectedGoal == request) {
+      _showGoalEditDialog(request);
+      return;
+    }
+    setState(() {
+      _selectedGoal = request;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final IepPlan? plan = _savedPlan?.plan;
+    final IepMonthlyPlan? monthPlan =
+        _executionPlans?.monthPlan(_previewMonthIndex());
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final String title = _workspaceTitle(record, plan);
+    final String statusText = _planStatusText(_savedPlan?.status);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.92),
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _iepShadow(),
+      ),
+      child: Column(
+        children: <Widget>[
+          _WorkspaceHeader(
+            title: title,
+            statusText: statusText,
+            periodText: _formatDotRange(_periodStart, _periodEnd),
+          ),
+          const SizedBox(height: 10),
+          _PlanToolbar(
+            onShowTotalPlan: _showTotalPlan,
+            onShowMonthPlan: _showMonthPlan,
+            onShowWeekPlan: _showWeekPlan,
+            onEditPeriod: _showEditPeriodDialog,
+            monthLabels: _periodMonths,
+            periodMonthCount: _periodMonthCount,
+            periodStart: _periodStart,
+            onPeriodMonthCountChanged: _changePeriodMonthCount,
+            syncingPeriod: _syncingPeriod,
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _IepTablePreview(
+              previewMode: _previewMode,
+              month: _previewMonth,
+              weekNumber: _previewWeek,
+              periodStart: _periodStart,
+              periodMonthCount: _periodMonthCount,
+              record: record,
+              plan: plan,
+              monthPlan: monthPlan,
+              weekPlan: weekPlan,
+              loading: _loadingPlan,
+              bootstrapLoading:
+                  widget.queueBootstrapLoading && !_hasLoadedPlanOnce,
+              error: _planError,
+              onRetry: _loadPlanBundle,
+              totalPlanDomains: _totalPlanDomains,
+              selectedGoal: _selectedGoal,
+              onGoalTap: _handleGoalTap,
+              onClearSelectedGoal: _clearSelectedGoal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WorkspaceHeader extends StatelessWidget {
+  const _WorkspaceHeader({
+    required this.title,
+    required this.statusText,
+    required this.periodText,
+  });
+
+  final String title;
+  final String statusText;
+  final String periodText;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 42,
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _IepColors.ink,
+                fontSize: 19,
+                fontWeight: FontWeight.w900,
+                height: 1,
+              ),
+            ),
+          ),
+          _HeaderMetaPill(
+            icon: statusText == '已确认'
+                ? Icons.verified_rounded
+                : Icons.pending_actions_rounded,
+            text: statusText,
+            iconColor:
+                statusText == '已确认' ? _IepColors.green : _IepColors.yellow,
+          ),
+          const SizedBox(width: 10),
+          _HeaderMetaPill(
+            icon: Icons.date_range_rounded,
+            text: periodText,
+          ),
+          const SizedBox(width: 10),
+          const _ClassContextPill(),
+          const SizedBox(width: 10),
+          const _StartClassButton(),
+        ],
+      ),
+    );
+  }
+}
+
+class _ClassContextPill extends StatelessWidget {
+  const _ClassContextPill();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF6EE),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFFFD3BA)),
+      ),
+      child: const Text(
+        '第2月 · 第1周',
+        style: TextStyle(
+          color: _IepColors.orangeDeep,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderMetaPill extends StatelessWidget {
+  const _HeaderMetaPill({
+    required this.icon,
+    required this.text,
+    this.iconColor = _IepColors.muted,
+  });
+
+  final IconData icon;
+  final String text;
+  final Color iconColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF6),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: _IepColors.lightLine),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, size: 15, color: iconColor),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _IepColors.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StartClassButton extends StatelessWidget {
+  const _StartClassButton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 36,
+      padding: const EdgeInsets.symmetric(horizontal: 15),
+      decoration: BoxDecoration(
+        color: _IepColors.orange,
+        borderRadius: BorderRadius.circular(18),
+        boxShadow: _iepShadow(
+          color: const Color(0x32E96F43),
+          blur: 12,
+          offset: const Offset(0, 5),
+        ),
+      ),
+      child: Row(
+        children: const <Widget>[
+          Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 19),
+          SizedBox(width: 6),
+          Text(
+            '开始上课',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlanToolbar extends StatelessWidget {
+  const _PlanToolbar({
+    required this.onShowTotalPlan,
+    required this.onShowMonthPlan,
+    required this.onShowWeekPlan,
+    required this.onEditPeriod,
+    required this.monthLabels,
+    required this.periodMonthCount,
+    required this.periodStart,
+    required this.onPeriodMonthCountChanged,
+    required this.syncingPeriod,
+  });
+
+  final VoidCallback onShowTotalPlan;
+  final ValueChanged<String> onShowMonthPlan;
+  final void Function(String month, int weekNumber) onShowWeekPlan;
+  final VoidCallback onEditPeriod;
+  final List<String> monthLabels;
+  final int periodMonthCount;
+  final DateTime periodStart;
+  final ValueChanged<int> onPeriodMonthCountChanged;
+  final bool syncingPeriod;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _IepColors.lightLine),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          _PeriodSwitch(
+            selectedMonthCount: periodMonthCount,
+            onChanged: onPeriodMonthCountChanged,
+          ),
+          const _ToolbarDivider(),
+          Expanded(
+            child: _ScrollablePlanNav(
+              onShowTotalPlan: onShowTotalPlan,
+              onShowMonthPlan: onShowMonthPlan,
+              onShowWeekPlan: onShowWeekPlan,
+              monthLabels: monthLabels,
+              periodStart: periodStart,
+              periodMonthCount: periodMonthCount,
+            ),
+          ),
+          const _ToolbarDivider(),
+          _TableTinyAction(
+            icon: syncingPeriod
+                ? Icons.hourglass_top_rounded
+                : Icons.edit_calendar_rounded,
+            label: syncingPeriod ? '同步中' : '编辑周期',
+            onTap: syncingPeriod ? null : onEditPeriod,
+          ),
+          const SizedBox(width: 8),
+          const _TableTinyAction(icon: Icons.refresh_rounded, label: '重新生成'),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScrollablePlanNav extends StatefulWidget {
+  const _ScrollablePlanNav({
+    required this.onShowTotalPlan,
+    required this.onShowMonthPlan,
+    required this.onShowWeekPlan,
+    required this.monthLabels,
+    required this.periodStart,
+    required this.periodMonthCount,
+  });
+
+  final VoidCallback onShowTotalPlan;
+  final ValueChanged<String> onShowMonthPlan;
+  final void Function(String month, int weekNumber) onShowWeekPlan;
+  final List<String> monthLabels;
+  final DateTime periodStart;
+  final int periodMonthCount;
+
+  @override
+  State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
+}
+
+class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
+    with SingleTickerProviderStateMixin {
+  late final ScrollController _scrollController;
+  late final AnimationController _hintController;
+  late final Animation<double> _hintOffset;
+  bool _showLeftHint = false;
+  bool _showRightHint = false;
+  String _selectedSection = 'iep';
+  String _selectedMonth = '5月';
+  int? _selectedWeek;
+
+  @override
+  void didUpdateWidget(covariant _ScrollablePlanNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.monthLabels.contains(_selectedMonth) &&
+        widget.monthLabels.isNotEmpty) {
+      _selectedMonth = widget.monthLabels.first;
+      _selectedWeek = null;
+    }
+    final int maxWeek = _weekCountForSelectedMonth();
+    if (_selectedWeek != null && _selectedWeek! > maxWeek) {
+      _selectedWeek = maxWeek;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_syncHints);
+    _hintController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 760),
+    )..repeat(reverse: true);
+    _hintOffset = CurvedAnimation(
+      parent: _hintController,
+      curve: Curves.easeInOutCubic,
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _syncHints() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    final bool canScroll = position.maxScrollExtent > 1;
+    final bool nextLeft = canScroll && position.pixels > 1;
+    final bool nextRight =
+        canScroll && position.pixels < position.maxScrollExtent - 1;
+    if (_showLeftHint == nextLeft && _showRightHint == nextRight) {
+      return;
+    }
+    setState(() {
+      _showLeftHint = nextLeft;
+      _showRightHint = nextRight;
+    });
+  }
+
+  void _selectPlan(String plan) {
+    setState(() {
+      _selectedSection = plan;
+      _selectedWeek = null;
+    });
+    if (plan == 'iep') {
+      widget.onShowTotalPlan();
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _selectMonth(String month) {
+    setState(() {
+      _selectedSection = 'month';
+      _selectedMonth = month;
+      _selectedWeek = null;
+    });
+    widget.onShowMonthPlan(month);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  void _selectWeek(int weekNumber) {
+    setState(() {
+      _selectedSection = 'week';
+      _selectedWeek = weekNumber;
+    });
+    widget.onShowWeekPlan(_selectedMonth, weekNumber);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_syncHints);
+    _scrollController.dispose();
+    _hintController.dispose();
+    super.dispose();
+  }
+
+  int _weekCountForSelectedMonth() {
+    final DateTime selectedMonthDate = _monthDateFromLabel(
+      widget.periodStart,
+      widget.periodMonthCount,
+      _selectedMonth,
+    );
+    final DateTimeRange selectedMonthRange = _monthRangeInPeriod(
+      periodStart: widget.periodStart,
+      monthCount: widget.periodMonthCount,
+      monthDate: selectedMonthDate,
+    );
+    return _lastAvailableWeekInMonthRange(selectedMonthRange);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int weekCount = _weekCountForSelectedMonth();
+    return Center(
+      child: SizedBox(
+        height: 34,
+        child: Stack(
+          alignment: Alignment.center,
+          children: <Widget>[
+            Center(
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                scrollDirection: Axis.horizontal,
+                physics: const BouncingScrollPhysics(
+                  parent: ClampingScrollPhysics(),
+                ),
+                padding: const EdgeInsets.only(right: 2),
+                child: SizedBox(
+                  height: 34,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
+                    children: <Widget>[
+                      _PlanTab(
+                        text: 'IEP总计划',
+                        active: _selectedSection == 'iep',
+                        width: 92,
+                        onTap: () => _selectPlan('iep'),
+                      ),
+                      const _PlanNavLabel(text: '月计划'),
+                      ...widget.monthLabels.map((String month) {
+                        return _PlanTab(
+                          text: month,
+                          active: _selectedSection == 'month' &&
+                              _selectedMonth == month,
+                          width: 54,
+                          onTap: () => _selectMonth(month),
+                        );
+                      }),
+                      const _PlanNavLabel(text: '周计划'),
+                      ...List<Widget>.generate(weekCount, (int index) {
+                        final int weekNumber = index + 1;
+                        return _PlanTab(
+                          text: '${_selectedMonth} W$weekNumber',
+                          width: 68,
+                          active: _selectedSection == 'week' &&
+                              _selectedWeek == weekNumber,
+                          activeTone: _PlanTabTone.week,
+                          rightGap: weekNumber == weekCount ? 2 : 6,
+                          onTap: () => _selectWeek(weekNumber),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _PlanScrollHint(
+                visible: _showLeftHint,
+                alignment: Alignment.centerLeft,
+                direction: AxisDirection.left,
+                animation: _hintOffset,
+              ),
+            ),
+            Align(
+              alignment: Alignment.centerRight,
+              child: _PlanScrollHint(
+                visible: _showRightHint,
+                alignment: Alignment.centerRight,
+                direction: AxisDirection.right,
+                animation: _hintOffset,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PlanScrollHint extends StatelessWidget {
+  const _PlanScrollHint({
+    required this.visible,
+    required this.alignment,
+    required this.direction,
+    required this.animation,
+  });
+
+  final bool visible;
+  final Alignment alignment;
+  final AxisDirection direction;
+  final Animation<double> animation;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool right = direction == AxisDirection.right;
+    return IgnorePointer(
+      child: AnimatedOpacity(
+        opacity: visible ? 1 : 0,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        child: Container(
+          width: 62,
+          height: 34,
+          alignment: alignment,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: right ? Alignment.centerLeft : Alignment.centerRight,
+              end: right ? Alignment.centerRight : Alignment.centerLeft,
+              colors: const <Color>[
+                Color(0x00FFFAF5),
+                Color(0xEFFFFAF5),
+                Color(0xFFFFFAF5),
+              ],
+            ),
+          ),
+          child: AnimatedBuilder(
+            animation: animation,
+            builder: (BuildContext context, Widget? child) {
+              final double dx = (animation.value * 5 + 1) * (right ? 1 : -1);
+              return Transform.translate(
+                offset: Offset(dx, 0),
+                child: child,
+              );
+            },
+            child: Padding(
+              padding: EdgeInsets.only(
+                left: right ? 0 : 4,
+                right: right ? 4 : 0,
+              ),
+              child: Icon(
+                right
+                    ? Icons.chevron_right_rounded
+                    : Icons.chevron_left_rounded,
+                size: 27,
+                color: _IepColors.orangeDeep.withOpacity(.86),
+                shadows: const <Shadow>[
+                  Shadow(
+                    color: Color(0x22E96F43),
+                    blurRadius: 5,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PeriodSwitch extends StatelessWidget {
+  const _PeriodSwitch({
+    required this.selectedMonthCount,
+    required this.onChanged,
+  });
+
+  final int selectedMonthCount;
+  final ValueChanged<int> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: _IepColors.line),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          _PeriodOption(
+            text: '3个月',
+            active: selectedMonthCount == 3,
+            onTap: () => onChanged(3),
+          ),
+          _PeriodOption(
+            text: '6个月',
+            active: selectedMonthCount == 6,
+            onTap: () => onChanged(6),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PeriodOption extends StatelessWidget {
+  const _PeriodOption({
+    required this.text,
+    required this.onTap,
+    this.active = false,
+  });
+
+  final String text;
+  final VoidCallback onTap;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 26,
+          width: 50,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? _IepColors.orange : Colors.transparent,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: active ? Colors.white : _IepColors.text,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ToolbarDivider extends StatelessWidget {
+  const _ToolbarDivider();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 1,
+      height: 24,
+      margin: const EdgeInsets.symmetric(horizontal: 8),
+      color: _IepColors.lightLine,
+    );
+  }
+}
+
+class _TableTinyAction extends StatelessWidget {
+  const _TableTinyAction({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: onTap == null ? const Color(0xFFF8EEE6) : Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: _IepColors.line),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Icon(
+                icon,
+                color: onTap == null ? _IepColors.muted : _IepColors.text,
+                size: 16,
+              ),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: onTap == null ? _IepColors.muted : _IepColors.text,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
