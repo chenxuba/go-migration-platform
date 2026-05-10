@@ -5,6 +5,18 @@ type PEP3IEPPlanGenerateRequest struct {
 	DurationMonths int   `json:"durationMonths,omitempty"`
 }
 
+type PEP3IEPPlanGenerationTaskVO struct {
+	TaskID         string               `json:"taskId"`
+	Status         string               `json:"status"`
+	Message        string               `json:"message,omitempty"`
+	StreamText     string               `json:"streamText,omitempty"`
+	DurationMonths int                  `json:"durationMonths,omitempty"`
+	Plan           *PEP3IEPPlanAIResult `json:"plan,omitempty"`
+	SavedPlan      *PEP3IEPPlanSavedVO  `json:"savedPlan,omitempty"`
+	Error          string               `json:"error,omitempty"`
+	UpdatedTime    string               `json:"updatedTime,omitempty"`
+}
+
 type PEP3IEPPlanWordExportRequest struct {
 	ID             int64                `json:"id,omitempty"`
 	DurationMonths int                  `json:"durationMonths,omitempty"`

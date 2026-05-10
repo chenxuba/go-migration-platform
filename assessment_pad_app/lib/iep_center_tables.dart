@@ -164,7 +164,7 @@ class _IepTablePreview extends StatelessWidget {
         streamText: generationText,
         progress: generationProgress,
       );
-    } else if (bootstrapLoading && record == null) {
+    } else if (bootstrapLoading) {
       child = const _IepWordTableSkeleton();
     } else if (record == null) {
       child = const _PlanStateView(
@@ -646,11 +646,9 @@ class _WordTable extends StatelessWidget {
 class _WordTableFrame extends StatefulWidget {
   const _WordTableFrame({
     required this.child,
-    this.height,
   });
 
   final Widget child;
-  final double? height;
 
   @override
   State<_WordTableFrame> createState() => _WordTableFrameState();
@@ -696,9 +694,7 @@ class _WordTableFrameState extends State<_WordTableFrame> {
               child: SingleChildScrollView(
                 controller: _scrollController,
                 physics: const ClampingScrollPhysics(),
-                child: widget.height == null
-                    ? widget.child
-                    : SizedBox(height: widget.height, child: widget.child),
+                child: widget.child,
               ),
             );
           },

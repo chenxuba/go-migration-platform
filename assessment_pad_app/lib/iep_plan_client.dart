@@ -46,6 +46,30 @@ const String defaultIepErxinPlanAiStreamPath = String.fromEnvironment(
   'IEP_ERXIN_PLAN_AI_STREAM_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/stream',
 );
+const String defaultIepPep3PlanAiTaskPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_AI_TASK_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/ai/tasks',
+);
+const String defaultIepErxinPlanAiTaskPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_AI_TASK_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/tasks',
+);
+const String defaultIepPep3PlanAiTaskStreamPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_AI_TASK_STREAM_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/ai/tasks/stream',
+);
+const String defaultIepErxinPlanAiTaskStreamPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_AI_TASK_STREAM_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/tasks/stream',
+);
+const String defaultIepPep3PlanAiTaskDetailPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_AI_TASK_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/ai/tasks/detail',
+);
+const String defaultIepErxinPlanAiTaskDetailPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_AI_TASK_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/tasks/detail',
+);
 
 class IepPlanApiException implements Exception {
   const IepPlanApiException(this.message, {this.unauthorized = false});
@@ -84,6 +108,24 @@ abstract interface class IepPlanClient {
     required int durationMonths,
   });
 
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  });
+
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  });
+
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  });
+
   Future<IepPlanSaved> saveIepPlan(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -106,6 +148,12 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinPlanSavePath = defaultIepErxinPlanSavePath,
     this.pep3PlanAiStreamPath = defaultIepPep3PlanAiStreamPath,
     this.erxinPlanAiStreamPath = defaultIepErxinPlanAiStreamPath,
+    this.pep3PlanAiTaskPath = defaultIepPep3PlanAiTaskPath,
+    this.erxinPlanAiTaskPath = defaultIepErxinPlanAiTaskPath,
+    this.pep3PlanAiTaskStreamPath = defaultIepPep3PlanAiTaskStreamPath,
+    this.erxinPlanAiTaskStreamPath = defaultIepErxinPlanAiTaskStreamPath,
+    this.pep3PlanAiTaskDetailPath = defaultIepPep3PlanAiTaskDetailPath,
+    this.erxinPlanAiTaskDetailPath = defaultIepErxinPlanAiTaskDetailPath,
     this.httpClient,
   });
 
@@ -120,6 +168,12 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinPlanSavePath;
   final String pep3PlanAiStreamPath;
   final String erxinPlanAiStreamPath;
+  final String pep3PlanAiTaskPath;
+  final String erxinPlanAiTaskPath;
+  final String pep3PlanAiTaskStreamPath;
+  final String erxinPlanAiTaskStreamPath;
+  final String pep3PlanAiTaskDetailPath;
+  final String erxinPlanAiTaskDetailPath;
   final http.Client? httpClient;
 
   @override
@@ -195,21 +249,80 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
   }) async* {
+    final IepPlanGenerationTask task = await createIepPlanGenerationTask(
+      token,
+      record: record,
+      durationMonths: durationMonths,
+    );
+    yield* watchIepPlanGenerationTask(
+      token,
+      record: record,
+      taskId: task.taskId,
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(_isErxinRecord(record) ? erxinPlanAiTaskPath : pep3PlanAiTaskPath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'durationMonths': _normalizeDuration(durationMonths),
+      },
+    );
+    if (data is! Map) {
+      throw const IepPlanApiException('AI生成任务创建失败：接口返回异常');
+    }
+    return IepPlanGenerationTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    final Object? data = await _getJson(
+      _uri(
+        _isErxinRecord(record)
+            ? erxinPlanAiTaskDetailPath
+            : pep3PlanAiTaskDetailPath,
+        <String, String>{'taskId': taskId},
+      ),
+      token,
+    );
+    if (data is! Map) {
+      throw const IepPlanApiException('AI生成任务查询失败：接口返回异常');
+    }
+    return IepPlanGenerationTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
     final http.Client client = httpClient ?? http.Client();
     final bool shouldCloseClient = httpClient == null;
     bool hasDone = false;
+    String lastStreamText = '';
     try {
       final http.Request request = http.Request(
-        'POST',
-        _uri(_isErxinRecord(record)
-            ? erxinPlanAiStreamPath
-            : pep3PlanAiStreamPath),
-      )
-        ..headers.addAll(_headers(token, accept: 'text/event-stream'))
-        ..body = jsonEncode(<String, dynamic>{
-          'id': record.id,
-          'durationMonths': _normalizeDuration(durationMonths),
-        });
+        'GET',
+        _uri(
+            _isErxinRecord(record)
+                ? erxinPlanAiTaskStreamPath
+                : pep3PlanAiTaskStreamPath,
+            <String, String>{
+              'taskId': taskId,
+            }),
+      )..headers.addAll(_headers(token, accept: 'text/event-stream'));
 
       final http.StreamedResponse response =
           await client.send(request).timeout(const Duration(seconds: 12));
@@ -235,19 +348,31 @@ class ApiIepPlanClient implements IepPlanClient {
         final List<String> frames = buffer.split(RegExp(r'\r?\n\r?\n'));
         buffer = frames.removeLast();
         for (final String frame in frames) {
-          final IepPlanGenerationEvent? event = _parseSseFrame(frame);
-          if (event == null) {
+          final List<IepPlanGenerationEvent> events =
+              _parseTaskSseFrame(frame, lastStreamText);
+          if (events.isEmpty) {
             continue;
           }
-          if (event.type == IepPlanGenerationEventType.done) {
-            hasDone = true;
+          final IepPlanGenerationTask? task = _taskFromSseFrame(frame);
+          if (task != null) {
+            lastStreamText = task.streamText;
           }
-          yield event;
+          for (final IepPlanGenerationEvent event in events) {
+            if (event.type == IepPlanGenerationEventType.done) {
+              hasDone = true;
+            }
+            yield event;
+          }
         }
       }
       if (buffer.trim().isNotEmpty) {
-        final IepPlanGenerationEvent? event = _parseSseFrame(buffer);
-        if (event != null) {
+        final List<IepPlanGenerationEvent> events =
+            _parseTaskSseFrame(buffer, lastStreamText);
+        final IepPlanGenerationTask? task = _taskFromSseFrame(buffer);
+        if (task != null) {
+          lastStreamText = task.streamText;
+        }
+        for (final IepPlanGenerationEvent event in events) {
           if (event.type == IepPlanGenerationEventType.done) {
             hasDone = true;
           }
@@ -255,7 +380,25 @@ class ApiIepPlanClient implements IepPlanClient {
         }
       }
       if (!hasDone) {
-        throw const IepPlanApiException('AI生成未返回计划数据');
+        final IepPlanGenerationTask latest = await fetchIepPlanGenerationTask(
+          token,
+          record: record,
+          taskId: taskId,
+        );
+        final IepPlan? restoredPlan = latest.savedPlan?.plan ?? latest.plan;
+        if (latest.isDone && restoredPlan != null) {
+          yield IepPlanGenerationEvent.done(
+            restoredPlan,
+            savedPlan: latest.savedPlan,
+          );
+          return;
+        }
+        if (latest.isFailed) {
+          throw IepPlanApiException(
+            latest.error.isEmpty ? 'AI生成失败' : latest.error,
+          );
+        }
+        throw const IepPlanApiException('AI生成连接已断开，请稍后返回页面查看生成结果');
       }
     } on TimeoutException {
       throw const IepPlanApiException('AI生成接口响应超时，请检查网络');
@@ -401,6 +544,7 @@ class IepPlanGenerationEvent {
     this.message = '',
     this.text = '',
     this.plan,
+    this.savedPlan,
   });
 
   factory IepPlanGenerationEvent.status(String message) {
@@ -417,10 +561,11 @@ class IepPlanGenerationEvent {
     );
   }
 
-  factory IepPlanGenerationEvent.done(IepPlan plan) {
+  factory IepPlanGenerationEvent.done(IepPlan plan, {IepPlanSaved? savedPlan}) {
     return IepPlanGenerationEvent._(
       type: IepPlanGenerationEventType.done,
       plan: plan,
+      savedPlan: savedPlan,
     );
   }
 
@@ -435,6 +580,51 @@ class IepPlanGenerationEvent {
   final String message;
   final String text;
   final IepPlan? plan;
+  final IepPlanSaved? savedPlan;
+}
+
+class IepPlanGenerationTask {
+  const IepPlanGenerationTask({
+    required this.taskId,
+    required this.status,
+    required this.durationMonths,
+    this.message = '',
+    this.streamText = '',
+    this.plan,
+    this.savedPlan,
+    this.error = '',
+    this.updatedTime = '',
+  });
+
+  factory IepPlanGenerationTask.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> planJson = _mapFrom(json['plan']);
+    final Map<String, dynamic> savedPlanJson = _mapFrom(json['savedPlan']);
+    return IepPlanGenerationTask(
+      taskId: _stringFrom(json['taskId']),
+      status: _stringFrom(json['status']),
+      message: _stringFrom(json['message']),
+      streamText: _stringFrom(json['streamText']),
+      durationMonths: _intFrom(json['durationMonths']),
+      plan: planJson.isEmpty ? null : IepPlan.fromJson(planJson),
+      savedPlan:
+          savedPlanJson.isEmpty ? null : IepPlanSaved.fromJson(savedPlanJson),
+      error: _stringFrom(json['error']),
+      updatedTime: _stringFrom(json['updatedTime']),
+    );
+  }
+
+  final String taskId;
+  final String status;
+  final String message;
+  final String streamText;
+  final int durationMonths;
+  final IepPlan? plan;
+  final IepPlanSaved? savedPlan;
+  final String error;
+  final String updatedTime;
+
+  bool get isDone => status == 'done';
+  bool get isFailed => status == 'failed';
 }
 
 class IepPlanPeriodSyncResult {
@@ -981,6 +1171,23 @@ IepPlanGenerationEvent? _parseSseFrame(String frame) {
   }
   final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
   final String type = _stringFrom(payload['type']);
+  final Map<String, dynamic> taskJson = _mapFrom(payload['data']);
+  if (taskJson.isNotEmpty) {
+    final IepPlanGenerationTask task = IepPlanGenerationTask.fromJson(taskJson);
+    if (task.isDone) {
+      final IepPlan? plan = task.savedPlan?.plan ?? task.plan;
+      if (plan == null) {
+        return IepPlanGenerationEvent.error('AI生成未返回计划数据');
+      }
+      return IepPlanGenerationEvent.done(plan, savedPlan: task.savedPlan);
+    }
+    if (task.isFailed) {
+      return IepPlanGenerationEvent.error(
+        task.error.isEmpty ? 'AI生成失败' : task.error,
+      );
+    }
+    return IepPlanGenerationEvent.status(task.message);
+  }
   return switch (type) {
     'status' => IepPlanGenerationEvent.status(
         _stringFrom(payload['message']),
@@ -998,6 +1205,72 @@ IepPlanGenerationEvent? _parseSseFrame(String frame) {
       ),
     _ => null,
   };
+}
+
+List<IepPlanGenerationEvent> _parseTaskSseFrame(
+  String frame,
+  String lastStreamText,
+) {
+  final IepPlanGenerationTask? task = _taskFromSseFrame(frame);
+  if (task == null) {
+    final IepPlanGenerationEvent? event = _parseSseFrame(frame);
+    return event == null
+        ? const <IepPlanGenerationEvent>[]
+        : <IepPlanGenerationEvent>[event];
+  }
+  if (task.isDone) {
+    final IepPlan? plan = task.savedPlan?.plan ?? task.plan;
+    if (plan == null) {
+      return <IepPlanGenerationEvent>[
+        IepPlanGenerationEvent.error('AI生成未返回计划数据'),
+      ];
+    }
+    return <IepPlanGenerationEvent>[
+      IepPlanGenerationEvent.status(task.message),
+      IepPlanGenerationEvent.done(plan, savedPlan: task.savedPlan),
+    ];
+  }
+  if (task.isFailed) {
+    return <IepPlanGenerationEvent>[
+      IepPlanGenerationEvent.error(
+        task.error.isEmpty ? 'AI生成失败' : task.error,
+      ),
+    ];
+  }
+  final List<IepPlanGenerationEvent> events = <IepPlanGenerationEvent>[];
+  if (task.message.isNotEmpty) {
+    events.add(IepPlanGenerationEvent.status(task.message));
+  }
+  if (task.streamText.length > lastStreamText.length &&
+      task.streamText.startsWith(lastStreamText)) {
+    events.add(IepPlanGenerationEvent.delta(
+      task.streamText.substring(lastStreamText.length),
+    ));
+  } else if (task.streamText.isNotEmpty && task.streamText != lastStreamText) {
+    events.add(IepPlanGenerationEvent.delta(task.streamText));
+  }
+  return events;
+}
+
+IepPlanGenerationTask? _taskFromSseFrame(String frame) {
+  final List<String> dataLines = frame
+      .split(RegExp(r'\r?\n'))
+      .where((String line) => line.startsWith('data:'))
+      .map((String line) => line.substring(5).trim())
+      .toList();
+  if (dataLines.isEmpty) {
+    return null;
+  }
+  final Object? decoded = _tryDecodeJson(dataLines.join('\n'));
+  if (decoded is! Map) {
+    return null;
+  }
+  final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+  final Map<String, dynamic> taskJson = _mapFrom(payload['data']);
+  if (taskJson.isEmpty || !taskJson.containsKey('taskId')) {
+    return null;
+  }
+  return IepPlanGenerationTask.fromJson(taskJson);
 }
 
 Object? _tryDecodeJson(String text) {

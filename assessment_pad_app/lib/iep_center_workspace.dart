@@ -214,6 +214,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     final int ticket = ++_generationTicket;
     ++_loadTicket;
     IepPlan? finalPlan;
+    IepPlanSaved? savedPlanFromTask;
     setState(() {
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
@@ -268,6 +269,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               throw const IepPlanApiException('AI生成未返回计划数据');
             }
             finalPlan = plan;
+            if (event.savedPlan != null) {
+              savedPlanFromTask = event.savedPlan;
+            }
             setState(() {
               _generationProgress = .94;
               _generationStatus = '生成完成，正在自动保存草稿';
@@ -284,52 +288,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      IepPlanSaved savedPlan = _draftSavedPlan(finalPlan);
-      try {
-        savedPlan = await widget.planClient.saveIepPlan(
-          token,
-          record: record,
-          durationMonths: _periodMonthCount,
-          status: 'draft',
-          plan: finalPlan,
-        );
-      } on IepPlanApiException catch (error) {
-        if (!mounted || ticket != _generationTicket) {
-          return;
-        }
-        setState(() {
-          _generatingPlan = false;
-          _generationStatus = '';
-          _generationProgress = 1;
-          _savedPlan = savedPlan;
-          _applyPeriodFromPlan(savedPlan.plan, record);
-          _totalPlanDomains = savedPlan.plan == null
-              ? <_DocDomainData>[]
-              : _docDomainsFromPlan(savedPlan.plan!);
-          _syncPreviewMonthToPeriod();
-        });
-        _syncConfirmAvailability(savedPlan);
-        _showMessage('IEP已生成，但草稿自动保存失败：${error.message}');
-        return;
-      } on Object {
-        if (!mounted || ticket != _generationTicket) {
-          return;
-        }
-        setState(() {
-          _generatingPlan = false;
-          _generationStatus = '';
-          _generationProgress = 1;
-          _savedPlan = savedPlan;
-          _applyPeriodFromPlan(savedPlan.plan, record);
-          _totalPlanDomains = savedPlan.plan == null
-              ? <_DocDomainData>[]
-              : _docDomainsFromPlan(savedPlan.plan!);
-          _syncPreviewMonthToPeriod();
-        });
-        _syncConfirmAvailability(savedPlan);
-        _showMessage('IEP已生成，但草稿自动保存失败，请稍后重试');
-        return;
-      }
+      final IepPlanSaved savedPlan =
+          savedPlanFromTask ?? _draftSavedPlan(finalPlan);
       if (!mounted || ticket != _generationTicket) {
         return;
       }

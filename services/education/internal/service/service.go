@@ -16,25 +16,27 @@ import (
 )
 
 type Service struct {
-	store             *customization.Store
-	repo              *repository.Repository
-	tokenManager      *authx.TokenManager
-	searchClient      *search.Client
-	messageClient     *messaging.Client
-	qiniuClient       *qiniux.Client
-	wechatOfficial    *weChatOfficialClient
-	wechatMiniProgram *weChatMiniProgramClient
+	store              *customization.Store
+	repo               *repository.Repository
+	tokenManager       *authx.TokenManager
+	searchClient       *search.Client
+	messageClient      *messaging.Client
+	qiniuClient        *qiniux.Client
+	wechatOfficial     *weChatOfficialClient
+	wechatMiniProgram  *weChatMiniProgramClient
+	iepGenerationTasks *iepPlanGenerationTaskStore
 }
 
 func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, searchClient *search.Client, messageClient *messaging.Client, qiniuClient *qiniux.Client) *Service {
 	configurePEP3StaticDataRepository(repo)
 	return &Service{
-		store:         store,
-		repo:          repo,
-		tokenManager:  tokenManager,
-		searchClient:  searchClient,
-		messageClient: messageClient,
-		qiniuClient:   qiniuClient,
+		store:              store,
+		repo:               repo,
+		tokenManager:       tokenManager,
+		searchClient:       searchClient,
+		messageClient:      messageClient,
+		qiniuClient:        qiniuClient,
+		iepGenerationTasks: newIEPPlanGenerationTaskStore(),
 	}
 }
 

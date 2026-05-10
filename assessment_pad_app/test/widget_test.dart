@@ -1053,8 +1053,7 @@ void main() {
     await tester.pump();
     expect(find.text('能独立跳跃3次'), findsOneWidget);
 
-    expect(iepPlanClient.savePlanCalls, 1);
-    expect(iepPlanClient.lastSavedPlan?.rows.single.shortGoal, '能独立跳跃3次');
+    expect(iepPlanClient.savePlanCalls, 0);
     expect(find.text('待确认'), findsWidgets);
     expect(find.text('确认IEP'), findsOneWidget);
   });
@@ -1225,9 +1224,9 @@ void main() {
     await tester.tap(find.text('AI生成'));
     await tester.pump(const Duration(milliseconds: 1200));
 
-    expect(iepPlanClient.savePlanCalls, 1);
+    expect(iepPlanClient.savePlanCalls, 0);
     expect(find.text('能独立跳跃3次'), findsOneWidget);
-    expect(find.textContaining('草稿自动保存失败'), findsWidgets);
+    expect(find.textContaining('草稿自动保存失败'), findsNothing);
     expect(find.textContaining('FormatException'), findsNothing);
   });
 
@@ -1264,7 +1263,10 @@ void main() {
     expect(find.text('学员IEP队列'), findsOneWidget);
     expect(find.byKey(const ValueKey<String>('iep-queue-skeleton-0')),
         findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('iep-word-table-skeleton')),
+        findsOneWidget);
     expect(find.text('正在加载评估记录'), findsNothing);
+    expect(find.text('正在读取IEP计划'), findsNothing);
     expect(find.text('请选择左侧评估记录'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 700));
@@ -4388,6 +4390,73 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 
   @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepPlanGenerationTask(
+      taskId: 'fake-task-${record.id}',
+      status: 'running',
+      durationMonths: durationMonths,
+      message: '正在读取评估和训练记录',
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    return IepPlanGenerationTask(
+      taskId: taskId,
+      status: 'done',
+      durationMonths: 3,
+      savedPlan: await saveIepPlan(
+        token,
+        record: record,
+        durationMonths: 3,
+        status: 'draft',
+        plan: lastSavedPlan ??
+            IepPlan(
+              title: '康复教学季度计划',
+              student: IepPlanStudent(
+                name: record.studentName,
+                gender: record.studentGender,
+                birthDate: record.birthDate,
+              ),
+              meta: IepPlanMeta(
+                planDate: record.assessmentDate,
+                participant: record.examinerName,
+                implementer: record.examinerName,
+                startDate: '2026-05-01',
+                endDate: '2026-07-31',
+              ),
+              rows: const <IepPlanRow>[
+                IepPlanRow(
+                  domain: '大肌肉',
+                  longGoal: '提升动态平衡能力',
+                  shortGoal: '能独立跳跃3次',
+                  courseForm: '个训',
+                  startEndDate: '2026-05-01 - 2026-05-31',
+                ),
+              ],
+            ),
+      ),
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) {
+    return generateIepPlanStream(token, record: record, durationMonths: 3);
+  }
+
+  @override
   Future<IepPlanSaved> saveIepPlan(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -4647,32 +4716,76 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
       '立跳跃3次","domain":"大肌肉","longGoal":"提升动态平衡能力","courseForm":"个训","startEndDate":"2026-04-01 - 2026-04-30"}',
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
+    final IepPlan plan = IepPlan(
+      title: '康复教学季度计划',
+      student: IepPlanStudent(
+        name: record.studentName,
+        gender: record.studentGender,
+        birthDate: record.birthDate,
+      ),
+      meta: IepPlanMeta(
+        planDate: record.assessmentDate,
+        participant: record.examinerName,
+        implementer: record.examinerName,
+        startDate: '2026-04-01',
+        endDate: '2026-06-30',
+      ),
+      rows: const <IepPlanRow>[
+        IepPlanRow(
+          domain: '大肌肉',
+          longGoal: '提升动态平衡能力',
+          shortGoal: '能独立跳跃3次',
+          courseForm: '个训',
+          startEndDate: '2026-04-01 - 2026-04-30',
+        ),
+      ],
+    );
     yield IepPlanGenerationEvent.done(
-      IepPlan(
-        title: '康复教学季度计划',
-        student: IepPlanStudent(
-          name: record.studentName,
-          gender: record.studentGender,
-          birthDate: record.birthDate,
-        ),
-        meta: IepPlanMeta(
-          planDate: record.assessmentDate,
-          participant: record.examinerName,
-          implementer: record.examinerName,
-          startDate: '2026-04-01',
-          endDate: '2026-06-30',
-        ),
-        rows: const <IepPlanRow>[
-          IepPlanRow(
-            domain: '大肌肉',
-            longGoal: '提升动态平衡能力',
-            shortGoal: '能独立跳跃3次',
-            courseForm: '个训',
-            startEndDate: '2026-04-01 - 2026-04-30',
-          ),
-        ],
+      plan,
+      savedPlan: IepPlanSaved(
+        exists: true,
+        status: 'draft',
+        durationMonths: durationMonths,
+        plan: plan,
+        updatedTime: '2026-05-10T09:30:00Z',
       ),
     );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepPlanGenerationTask(
+      taskId: 'empty-task-${record.id}',
+      status: 'running',
+      durationMonths: durationMonths,
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    return IepPlanGenerationTask(
+      taskId: taskId,
+      status: 'failed',
+      durationMonths: 3,
+      error: '测试任务已结束',
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) {
+    return generateIepPlanStream(token, record: record, durationMonths: 3);
   }
 
   @override

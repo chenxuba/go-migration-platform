@@ -345,70 +345,74 @@ void main() {
     expect(result.executionPlans.durationMonths, 3);
   });
 
-  test('plan client streams AI generated iep plan and saves draft', () async {
+  test('plan client creates AI generation task and receives saved draft',
+      () async {
     final HttpServer server =
         await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     addTearDown(() async {
       await server.close(force: true);
     });
 
+    const String planJson =
+        '{"title":"康复教学季度计划","student":{"name":"陈旭","gender":"男","birthDate":"2022-05-11"},"meta":{"planDate":"2026-05-07","participant":"陈瑞","implementer":"陈瑞","startDate":"2026-05-01","endDate":"2026-07-31"},"rows":[{"domain":"大肌肉","longGoal":"提升动态平衡","shortGoal":"能连续跳跃3次","courseForm":"个训","startEndDate":"2026-05-01 - 2026-05-31"}]}';
+
     server.listen((HttpRequest request) async {
-      final String body = await utf8.decoder.bind(request).join();
-      final Map<String, dynamic> decoded =
-          jsonDecode(body) as Map<String, dynamic>;
-      expect(request.method, 'POST');
       expect(request.headers.value(HttpHeaders.authorizationHeader),
           'Bearer token-1');
-
-      if (request.uri.path.endsWith('/ai/stream')) {
+      if (request.uri.path.endsWith('/ai/tasks') &&
+          !request.uri.path.endsWith('/stream')) {
+        final String body = await utf8.decoder.bind(request).join();
+        final Map<String, dynamic> decoded =
+            jsonDecode(body) as Map<String, dynamic>;
+        expect(request.method, 'POST');
         expect(request.uri.path,
-            '/api/v1/assessments/pep3/records/iep-plan/ai/stream');
+            '/api/v1/assessments/pep3/records/iep-plan/ai/tasks');
         expect(decoded['id'], 88);
         expect(decoded['durationMonths'], 3);
+        request.response
+          ..statusCode = HttpStatus.ok
+          ..headers.contentType = ContentType.json
+          ..write(
+            jsonEncode(<String, dynamic>{
+              'success': true,
+              'data': <String, dynamic>{
+                'taskId': 'task-1',
+                'status': 'running',
+                'message': '正在读取评估和训练记录',
+                'durationMonths': 3,
+              },
+            }),
+          );
+        await request.response.close();
+        return;
+      }
+
+      if (request.uri.path.endsWith('/ai/tasks/stream')) {
+        expect(request.method, 'GET');
+        expect(request.uri.queryParameters['taskId'], 'task-1');
         request.response
           ..statusCode = HttpStatus.ok
           ..headers.contentType =
               ContentType('text', 'event-stream', charset: 'utf-8')
           ..write(
             'event: status\n'
-            'data: {"type":"status","message":"正在读取评估和训练记录"}\n\n',
+            'data: {"type":"status","data":{"taskId":"task-1","status":"running","message":"正在读取评估和训练记录","durationMonths":3}}\n\n',
           );
         await request.response.flush();
         request.response.write(
-          'event: delta\n'
-          'data: {"type":"delta","text":"{\\"title\\":\\"康复教学季度计划\\",\\"rows\\":[{\\"domain\\":\\"大肌肉\\",\\"longGoal\\":\\"提升动态平衡\\",\\"shortGoal\\":\\"能连续跳跃3次\\",\\"courseForm\\":\\"个训\\",\\"startEndDate\\":\\"2026-05-01 - 2026-05-31\\"}"}\n\n',
+          'event: status\n'
+          'data: {"type":"status","data":{"taskId":"task-1","status":"running","message":"AI正在生成IEP计划","streamText":"{\\"rows\\":[{\\"shortGoal\\":\\"能连续跳跃3次\\"}","durationMonths":3}}\n\n',
         );
         await request.response.flush();
         request.response.write(
           'event: done\n'
-          'data: {"type":"done","data":{"title":"康复教学季度计划","student":{"name":"陈旭","gender":"男","birthDate":"2022-05-11"},"meta":{"planDate":"2026-05-07","participant":"陈瑞","implementer":"陈瑞","startDate":"2026-05-01","endDate":"2026-07-31"},"rows":[{"domain":"大肌肉","longGoal":"提升动态平衡","shortGoal":"能连续跳跃3次","courseForm":"个训","startEndDate":"2026-05-01 - 2026-05-31"}]}}\n\n',
+          'data: {"type":"done","data":{"taskId":"task-1","status":"done","message":"AI生成成功，已自动保存草稿","streamText":"{\\"rows\\":[{\\"shortGoal\\":\\"能连续跳跃3次\\"}]}","durationMonths":3,"savedPlan":{"exists":true,"status":"draft","durationMonths":3,"plan":$planJson,"updatedTime":"2026-05-10T09:30:00Z"}}}\n\n',
         );
         await request.response.close();
         return;
       }
 
-      expect(
-          request.uri.path, '/api/v1/assessments/pep3/records/iep-plan/save');
-      expect(decoded['id'], 88);
-      expect(decoded['durationMonths'], 3);
-      expect(decoded['status'], 'draft');
-      expect(decoded['plan']['rows'][0]['shortGoal'], '能连续跳跃3次');
-      request.response
-        ..statusCode = HttpStatus.ok
-        ..headers.contentType = ContentType.json
-        ..write(
-          jsonEncode(<String, dynamic>{
-            'success': true,
-            'data': <String, dynamic>{
-              'exists': true,
-              'status': 'draft',
-              'durationMonths': 3,
-              'plan': decoded['plan'],
-              'updatedTime': '2026-05-10T09:30:00Z',
-            },
-          }),
-        );
-      await request.response.close();
+      fail('unexpected request: ${request.method} ${request.uri}');
     });
 
     final ApiIepPlanClient client = ApiIepPlanClient(
@@ -434,22 +438,16 @@ void main() {
 
     expect(events.map((IepPlanGenerationEvent event) => event.type), <Object>[
       IepPlanGenerationEventType.status,
+      IepPlanGenerationEventType.status,
       IepPlanGenerationEventType.delta,
+      IepPlanGenerationEventType.status,
       IepPlanGenerationEventType.done,
     ]);
     expect(events[0].message, '正在读取评估和训练记录');
-    expect(events[1].text, contains('能连续跳跃3次'));
-    expect(events[2].plan?.rows.single.shortGoal, '能连续跳跃3次');
-
-    final IepPlanSaved saved = await client.saveIepPlan(
-      'token-1',
-      record: record,
-      durationMonths: 3,
-      status: 'draft',
-      plan: events[2].plan!,
-    );
-    expect(saved.status, 'draft');
-    expect(saved.plan?.rows.single.courseForm, '个训');
+    expect(events[2].text, contains('能连续跳跃3次'));
+    expect(events.last.plan?.rows.single.shortGoal, '能连续跳跃3次');
+    expect(events.last.savedPlan?.status, 'draft');
+    expect(events.last.savedPlan?.plan?.rows.single.courseForm, '个训');
   });
 
   test('plan client rejects malformed save response instead of empty plan',

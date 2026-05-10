@@ -82,24 +82,66 @@ class _IepWordTableSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return _WordTableFrame(
-      height: 820,
       child: Column(
+        key: const ValueKey<String>('iep-word-table-skeleton'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: const <Widget>[
           _WordSkeletonTitle(),
-          _WordSkeletonRow(
-              height: 42, widths: <double>[.12, .2, .1, .16, .12, .24]),
-          _WordSkeletonRow(height: 42, widths: <double>[.12, .22, .12, .28]),
-          _WordSkeletonRow(height: 42, widths: <double>[.12, .18, .14, .3]),
+          _WordSkeletonInfoRow(
+            cells: <_WordSkeletonCellData>[
+              _WordSkeletonCellData(columns: 1, width: 38, bold: true),
+              _WordSkeletonCellData(columns: 1, widthFactor: .48),
+              _WordSkeletonCellData(columns: 1, width: 30, bold: true),
+              _WordSkeletonCellData(columns: 1, widthFactor: .5),
+              _WordSkeletonCellData(columns: 1, width: 54, bold: true),
+              _WordSkeletonCellData(columns: 3, widthFactor: .34, last: true),
+            ],
+          ),
+          _WordSkeletonInfoRow(
+            cells: <_WordSkeletonCellData>[
+              _WordSkeletonCellData(columns: 1, width: 54, bold: true),
+              _WordSkeletonCellData(columns: 3, widthFactor: .42),
+              _WordSkeletonCellData(columns: 1, width: 66, bold: true),
+              _WordSkeletonCellData(columns: 3, widthFactor: .54, last: true),
+            ],
+          ),
+          _WordSkeletonInfoRow(
+            cells: <_WordSkeletonCellData>[
+              _WordSkeletonCellData(columns: 1, width: 42, bold: true),
+              _WordSkeletonCellData(columns: 3, widthFactor: .34),
+              _WordSkeletonCellData(columns: 1, width: 58, bold: true),
+              _WordSkeletonCellData(columns: 3, widthFactor: .62, last: true),
+            ],
+          ),
           _WordSkeletonHeaderRow(),
           _WordSkeletonDomainBlock(active: true),
           _WordSkeletonDomainBlock(),
           _WordSkeletonDomainBlock(),
           _WordSkeletonDomainBlock(shortRows: 2),
+          SizedBox(
+            height: 122.4,
+            child: _WordSkeletonFillerRow(),
+          ),
         ],
       ),
     );
   }
+}
+
+class _WordSkeletonCellData {
+  const _WordSkeletonCellData({
+    required this.columns,
+    this.width,
+    this.widthFactor,
+    this.bold = false,
+    this.last = false,
+  });
+
+  final int columns;
+  final double? width;
+  final double? widthFactor;
+  final bool bold;
+  final bool last;
 }
 
 class _WordSkeletonTitle extends StatelessWidget {
@@ -121,80 +163,63 @@ class _WordSkeletonTitle extends StatelessWidget {
   }
 }
 
-class _WordSkeletonHeaderRow extends StatelessWidget {
-  const _WordSkeletonHeaderRow();
+class _WordSkeletonInfoRow extends StatelessWidget {
+  const _WordSkeletonInfoRow({required this.cells});
+
+  final List<_WordSkeletonCellData> cells;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       height: 42,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFB98A71), width: .8),
-        ),
-      ),
-      child: Row(
-        children: const <Widget>[
-          Expanded(
-              flex: 12,
-              child: Center(child: _IepSkeletonBlock(width: 38, height: 12))),
-          _WordSkeletonDivider(),
-          Expanded(
-              flex: 30,
-              child: Center(child: _IepSkeletonBlock(width: 88, height: 12))),
-          _WordSkeletonDivider(),
-          Expanded(
-              flex: 22,
-              child: Center(child: _IepSkeletonBlock(width: 70, height: 12))),
-          _WordSkeletonDivider(),
-          Expanded(
-              flex: 13,
-              child: Center(child: _IepSkeletonBlock(width: 42, height: 12))),
-          _WordSkeletonDivider(),
-          Expanded(
-              flex: 23,
-              child: Center(child: _IepSkeletonBlock(width: 58, height: 12))),
-        ],
+      child: _FixedGridRow(
+        columns: _WordTable._columns,
+        cells: cells.map((_WordSkeletonCellData cell) {
+          return _FixedGridCell(
+            columns: cell.columns,
+            child: _WordSkeletonCell(
+              width: cell.width,
+              widthFactor: cell.widthFactor,
+              bold: cell.bold,
+              last: cell.last,
+            ),
+          );
+        }).toList(),
       ),
     );
   }
 }
 
-class _WordSkeletonRow extends StatelessWidget {
-  const _WordSkeletonRow({
-    required this.height,
-    required this.widths,
-  });
-
-  final double height;
-  final List<double> widths;
+class _WordSkeletonHeaderRow extends StatelessWidget {
+  const _WordSkeletonHeaderRow();
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: height,
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(
-          bottom: BorderSide(color: Color(0xFFB98A71), width: .8),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          for (int index = 0; index < widths.length; index += 1) ...<Widget>[
-            Expanded(
-              flex: (widths[index] * 100).round(),
-              child: Center(
-                child: _IepSkeletonBlock(
-                  widthFactor: index.isEven ? .46 : .68,
-                  height: 12,
-                  radius: 5,
-                ),
-              ),
-            ),
-            if (index != widths.length - 1) const _WordSkeletonDivider(),
-          ],
+    return SizedBox(
+      height: 42,
+      child: _FixedGridRow(
+        columns: _WordTable._columns,
+        cells: const <_FixedGridCell>[
+          _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 38, bold: true),
+          ),
+          _FixedGridCell(
+            columns: 3,
+            child: _WordSkeletonCell(width: 88, bold: true),
+          ),
+          _FixedGridCell(
+            columns: 2,
+            child: _WordSkeletonCell(width: 70, bold: true),
+          ),
+          _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 42, bold: true),
+          ),
+          _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 58, bold: true, last: true),
+          ),
         ],
       ),
     );
@@ -212,69 +237,48 @@ class _WordSkeletonDomainBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double rowHeight = shortRows == 2 ? 61.2 : 40.8;
     return SizedBox(
       height: shortRows * 39.0 > 122.4 ? shortRows * 39.0 : 122.4,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          const Expanded(
-            flex: 12,
-            child: Center(child: _IepSkeletonBlock(width: 46, height: 14)),
+      child: _FixedGridRow(
+        columns: _WordTable._columns,
+        cells: <_FixedGridCell>[
+          const _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 46, height: 14),
           ),
-          const _WordSkeletonDivider(),
-          Expanded(
-            flex: 30,
-            child: Padding(
-              padding: const EdgeInsets.all(12),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  _IepSkeletonBlock(
-                      widthFactor: active ? .92 : .72, height: 12),
-                  const SizedBox(height: 9),
-                  const _IepSkeletonBlock(widthFactor: .82, height: 12),
-                ],
-              ),
+          _FixedGridCell(
+            columns: 3,
+            child: _WordSkeletonCell(
+              widthFactor: active ? .78 : .64,
+              secondWidthFactor: .7,
+              align: Alignment.centerLeft,
+              padding: const EdgeInsets.symmetric(horizontal: 12),
             ),
           ),
-          const _WordSkeletonDivider(),
-          Expanded(
-            flex: 22,
+          _FixedGridCell(
+            columns: 2,
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: List<Widget>.generate(shortRows, (int index) {
-                return Expanded(
-                  child: Container(
-                    alignment: Alignment.centerLeft,
+                return SizedBox(
+                  height: rowHeight,
+                  child: _WordSkeletonCell(
+                    widthFactor: index == 0 ? .82 : .64,
+                    align: Alignment.centerLeft,
                     padding: const EdgeInsets.symmetric(horizontal: 10),
-                    decoration: BoxDecoration(
-                      border: Border(
-                        bottom: index == shortRows - 1
-                            ? BorderSide.none
-                            : const BorderSide(
-                                color: Color(0xFFB98A71),
-                                width: .8,
-                              ),
-                      ),
-                    ),
-                    child: _IepSkeletonBlock(
-                      widthFactor: index == 0 ? .82 : .64,
-                      height: 11,
-                    ),
                   ),
                 );
               }),
             ),
           ),
-          const _WordSkeletonDivider(),
-          const Expanded(
-            flex: 13,
-            child: Center(child: _IepSkeletonBlock(width: 36, height: 12)),
+          const _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 36),
           ),
-          const _WordSkeletonDivider(),
-          const Expanded(
-            flex: 23,
-            child: Center(child: _IepSkeletonBlock(width: 96, height: 12)),
+          const _FixedGridCell(
+            columns: 1,
+            child: _WordSkeletonCell(width: 82, last: true),
           ),
         ],
       ),
@@ -282,12 +286,99 @@ class _WordSkeletonDomainBlock extends StatelessWidget {
   }
 }
 
-class _WordSkeletonDivider extends StatelessWidget {
-  const _WordSkeletonDivider();
+class _WordSkeletonCell extends StatelessWidget {
+  const _WordSkeletonCell({
+    this.width,
+    this.widthFactor,
+    this.secondWidthFactor,
+    this.height = 12,
+    this.bold = false,
+    this.last = false,
+    this.rowLast = false,
+    this.align = Alignment.center,
+    this.padding = EdgeInsets.zero,
+  });
+
+  final double? width;
+  final double? widthFactor;
+  final double? secondWidthFactor;
+  final double height;
+  final bool bold;
+  final bool last;
+  final bool rowLast;
+  final Alignment align;
+  final EdgeInsetsGeometry padding;
 
   @override
   Widget build(BuildContext context) {
-    return Container(width: .8, color: const Color(0xFFB98A71));
+    final Widget block = _IepSkeletonBlock(
+      width: width,
+      widthFactor: widthFactor,
+      height: height,
+      radius: bold ? 5 : 99,
+    );
+    return Container(
+      alignment: align,
+      padding: padding,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: last
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+          bottom: rowLast
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+        ),
+      ),
+      child: secondWidthFactor == null
+          ? block
+          : Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                block,
+                const SizedBox(height: 9),
+                _IepSkeletonBlock(
+                  widthFactor: secondWidthFactor,
+                  height: height,
+                ),
+              ],
+            ),
+    );
+  }
+}
+
+class _WordSkeletonFillerRow extends StatelessWidget {
+  const _WordSkeletonFillerRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return _FixedGridRow(
+      columns: _WordTable._columns,
+      cells: const <_FixedGridCell>[
+        _FixedGridCell(
+          columns: 1,
+          child: _WordSkeletonCell(rowLast: true),
+        ),
+        _FixedGridCell(
+          columns: 3,
+          child: _WordSkeletonCell(rowLast: true),
+        ),
+        _FixedGridCell(
+          columns: 2,
+          child: _WordSkeletonCell(rowLast: true),
+        ),
+        _FixedGridCell(
+          columns: 1,
+          child: _WordSkeletonCell(rowLast: true),
+        ),
+        _FixedGridCell(
+          columns: 1,
+          child: _WordSkeletonCell(last: true, rowLast: true),
+        ),
+      ],
+    );
   }
 }
 
