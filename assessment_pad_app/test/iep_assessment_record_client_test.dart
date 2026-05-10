@@ -451,4 +451,74 @@ void main() {
     expect(saved.status, 'draft');
     expect(saved.plan?.rows.single.courseForm, '个训');
   });
+
+  test('plan client rejects malformed save response instead of empty plan',
+      () async {
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      await server.close(force: true);
+    });
+
+    server.listen((HttpRequest request) async {
+      await utf8.decoder.bind(request).join();
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.text
+        ..write('ok');
+      await request.response.close();
+    });
+
+    final ApiIepPlanClient client = ApiIepPlanClient(
+      educationBaseUrl: 'http://127.0.0.1:${server.port}',
+    );
+    const IepAssessmentRecordSummary record = IepAssessmentRecordSummary(
+      id: 88,
+      source: 'PEP3',
+      studentId: 19,
+      studentName: '陈旭',
+      assessmentCode: 'PEP3',
+      assessmentName: 'PEP-3',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-07',
+      examinerName: '陈瑞',
+      updatedTime: '',
+    );
+
+    await expectLater(
+      client.saveIepPlan(
+        'token-1',
+        record: record,
+        durationMonths: 3,
+        status: 'draft',
+        plan: const IepPlan(
+          title: '康复教学季度计划',
+          student: IepPlanStudent(name: '陈旭', gender: '男', birthDate: ''),
+          meta: IepPlanMeta(
+            planDate: '',
+            participant: '',
+            implementer: '',
+            startDate: '',
+            endDate: '',
+          ),
+          rows: <IepPlanRow>[
+            IepPlanRow(
+              domain: '大肌肉',
+              longGoal: '提升动态平衡',
+              shortGoal: '能连续跳跃3次',
+              courseForm: '个训',
+              startEndDate: '2026-05-01 - 2026-05-31',
+            ),
+          ],
+        ),
+      ),
+      throwsA(
+        isA<IepPlanApiException>().having(
+          (IepPlanApiException error) => error.message,
+          'message',
+          contains('接口返回异常'),
+        ),
+      ),
+    );
+  });
 }

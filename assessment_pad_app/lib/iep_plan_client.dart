@@ -289,9 +289,15 @@ class ApiIepPlanClient implements IepPlanClient {
       },
     );
     if (data is! Map) {
-      return IepPlanSaved.empty(_normalizeDuration(durationMonths));
+      throw const IepPlanApiException('IEP计划保存失败：接口返回异常');
     }
-    return IepPlanSaved.fromJson(Map<String, dynamic>.from(data));
+    final IepPlanSaved saved = IepPlanSaved.fromJson(
+      Map<String, dynamic>.from(data),
+    );
+    if (!saved.hasContent) {
+      throw const IepPlanApiException('IEP计划保存失败：接口未返回已保存内容');
+    }
+    return saved;
   }
 
   Future<Object?> _getJson(Uri uri, String token) async {
@@ -361,9 +367,8 @@ class ApiIepPlanClient implements IepPlanClient {
   }
 
   Object? _handleResponse(http.Response response) {
-    final Object? decoded = response.body.trim().isEmpty
-        ? null
-        : jsonDecode(utf8.decode(response.bodyBytes));
+    final String body = utf8.decode(response.bodyBytes).trim();
+    final Object? decoded = body.isEmpty ? null : _tryDecodeJson(body);
     if (response.statusCode == 401 || response.statusCode == 403) {
       throw IepPlanApiException(
         _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -970,7 +975,7 @@ IepPlanGenerationEvent? _parseSseFrame(String frame) {
   if (dataLines.isEmpty) {
     return null;
   }
-  final Object? decoded = jsonDecode(dataLines.join('\n'));
+  final Object? decoded = _tryDecodeJson(dataLines.join('\n'));
   if (decoded is! Map) {
     return null;
   }

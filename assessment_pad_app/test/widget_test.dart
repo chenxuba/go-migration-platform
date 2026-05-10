@@ -958,6 +958,49 @@ void main() {
     expect(find.text('集体课'), findsWidgets);
   });
 
+  testWidgets('IEP center expands long and short goal cells without truncating',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: _LongGoalIepPlanClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text(_LongGoalIepPlanClient.longGoal), findsOneWidget);
+    expect(find.text(_LongGoalIepPlanClient.shortGoal), findsOneWidget);
+    expect(find.text(_LongGoalIepPlanClient.shortGoal2), findsOneWidget);
+    expect(find.text(_LongGoalIepPlanClient.shortGoal3), findsOneWidget);
+    expect(
+      tester.getRect(find.text(_LongGoalIepPlanClient.longGoal)).height,
+      greaterThan(90),
+    );
+    expect(
+      tester.getRect(find.text(_LongGoalIepPlanClient.shortGoal)).height,
+      greaterThan(70),
+    );
+  });
+
   testWidgets('IEP center streams AI generation into table and saves draft',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -1012,6 +1055,45 @@ void main() {
     expect(iepPlanClient.lastSavedPlan?.rows.single.shortGoal, '能独立跳跃3次');
     expect(find.text('待确认'), findsWidgets);
     expect(find.text('确认IEP'), findsOneWidget);
+  });
+
+  testWidgets('IEP center keeps generated table when draft save fails',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _EmptyThenGeneratedIepPlanClient iepPlanClient =
+        _EmptyThenGeneratedIepPlanClient(failSave: true);
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakePendingIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.tap(find.text('AI生成'));
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(iepPlanClient.savePlanCalls, 1);
+    expect(find.text('能独立跳跃3次'), findsOneWidget);
+    expect(find.textContaining('草稿自动保存失败'), findsWidgets);
+    expect(find.textContaining('FormatException'), findsNothing);
   });
 
   testWidgets('IEP center shows structured skeleton during route bootstrap',
@@ -4188,7 +4270,73 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 }
 
+class _LongGoalIepPlanClient extends _FakeIepPlanClient {
+  static const String longGoal =
+      '1. 能在移动中稳定控制身体，完成平衡木行走、单脚站立、连续跳跃等动作时保持身体中线稳定，减少明显摇晃和停顿。\n'
+      '2. 能在不同场地和不同材料上迁移动态平衡能力，例如垫上、地面标线、低矮平衡木和户外边缘，完成动作后能主动回到起点等待下一轮。\n'
+      '3. 能根据老师口令调整速度和方向，在安全范围内完成前进、后退、转身和跨越障碍组合动作。';
+  static const String shortGoal =
+      '能连续向前跳跃并保持稳定，双脚同时起跳同时落地，连续完成8次以上，中途不扶墙、不坐下休息；在老师更换地垫颜色、距离和口令节奏后，仍能完成动作并主动等待下一次指令；'
+      '能够在红色、蓝色、黄色三种地垫之间按照口头提示切换路线，落地后保持身体稳定两秒以上，不出现明显跌倒、跪坐或离开训练区域的情况，完成后能主动回到起点。';
+  static const String shortGoal2 = '能双脚交替上下楼梯（一步一阶，扶扶手）';
+  static const String shortGoal3 = '能连续向前翻滚2次（在保护下完成）';
+
+  @override
+  Future<IepPlanSaved> fetchIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepPlanSaved(
+      exists: true,
+      status: 'confirmed',
+      durationMonths: durationMonths,
+      plan: IepPlan(
+        title: durationMonths == 6 ? '康复教学半年计划' : '康复教学季度计划',
+        student: const IepPlanStudent(
+          name: '陈旭',
+          gender: '-',
+          birthDate: '2022-05-11',
+        ),
+        meta: const IepPlanMeta(
+          planDate: '2026-05-07',
+          participant: '陈瑞',
+          implementer: '陈瑞',
+          startDate: '2026-05-01',
+          endDate: '2026-07-31',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: longGoal,
+            shortGoal: shortGoal,
+            courseForm: '个训',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: longGoal,
+            shortGoal: shortGoal2,
+            courseForm: '个训',
+            startEndDate: '2026-06-01 - 2026-06-30',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: longGoal,
+            shortGoal: shortGoal3,
+            courseForm: '个训',
+            startEndDate: '2026-07-01 - 2026-07-31',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
+  _EmptyThenGeneratedIepPlanClient({this.failSave = false});
+
+  final bool failSave;
   int savePlanCalls = 0;
   IepPlan? lastSavedPlan;
 
@@ -4275,6 +4423,9 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
   }) async {
     savePlanCalls += 1;
     lastSavedPlan = plan;
+    if (failSave) {
+      throw const IepPlanApiException('保存接口返回内容异常');
+    }
     return IepPlanSaved(
       exists: true,
       status: status,

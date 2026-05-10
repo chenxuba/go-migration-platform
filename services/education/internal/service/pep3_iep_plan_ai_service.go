@@ -377,8 +377,8 @@ func callDeepSeekIEPPlanWithPrompt(ctx context.Context, payload any, systemPromp
 		return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API returned empty content")
 	}
 
-	var result model.PEP3IEPPlanAIResult
-	if err := json.Unmarshal([]byte(extractJSONContent(content)), &result); err != nil {
+	result, err := parseDeepSeekIEPPlanAIResult(content)
+	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
 	}
 	result.Model = deepSeekIEPPlanModel
@@ -525,15 +525,51 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 		}
 		return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API returned empty content")
 	}
-	var result model.PEP3IEPPlanAIResult
-	if err := json.Unmarshal([]byte(extractJSONContent(text)), &result); err != nil {
+	result, err := parseDeepSeekIEPPlanAIResult(text)
+	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
 	}
 	result.Model = deepSeekIEPPlanModel
 	return result, nil
 }
 
-func extractJSONContent(content string) string {
+func parseDeepSeekIEPPlanAIResult(content string) (model.PEP3IEPPlanAIResult, error) {
+	candidates := extractJSONContentCandidates(content)
+	if len(candidates) == 0 {
+		return model.PEP3IEPPlanAIResult{}, errors.New("no complete JSON object")
+	}
+	var lastErr error
+	for _, candidate := range candidates {
+		result, err := unmarshalDeepSeekIEPPlanCandidate(candidate)
+		if err == nil {
+			return result, nil
+		}
+		lastErr = err
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no complete JSON object")
+	}
+	return model.PEP3IEPPlanAIResult{}, lastErr
+}
+
+func unmarshalDeepSeekIEPPlanCandidate(candidate string) (model.PEP3IEPPlanAIResult, error) {
+	var result model.PEP3IEPPlanAIResult
+	if err := json.Unmarshal([]byte(candidate), &result); err == nil {
+		return result, nil
+	} else {
+		repaired := escapeBareControlCharsInJSONString(candidate)
+		if repaired == candidate {
+			return model.PEP3IEPPlanAIResult{}, err
+		}
+		if repairedErr := json.Unmarshal([]byte(repaired), &result); repairedErr == nil {
+			return result, nil
+		} else {
+			return model.PEP3IEPPlanAIResult{}, err
+		}
+	}
+}
+
+func extractJSONContentCandidates(content string) []string {
 	text := strings.TrimSpace(content)
 	if strings.HasPrefix(text, "```") {
 		text = strings.TrimPrefix(text, "```json")
@@ -541,12 +577,124 @@ func extractJSONContent(content string) string {
 		text = strings.TrimSuffix(text, "```")
 		text = strings.TrimSpace(text)
 	}
-	start := strings.Index(text, "{")
-	end := strings.LastIndex(text, "}")
-	if start >= 0 && end > start {
-		return text[start : end+1]
+	candidates := make([]string, 0, 4)
+	seen := map[string]struct{}{}
+	add := func(value string) {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return
+		}
+		if _, ok := seen[value]; ok {
+			return
+		}
+		seen[value] = struct{}{}
+		candidates = append(candidates, value)
 	}
-	return text
+	if strings.HasPrefix(text, "{") && strings.HasSuffix(text, "}") {
+		add(text)
+	}
+	for _, candidate := range collectBalancedJSONObjectCandidates(text) {
+		add(candidate)
+	}
+	sort.SliceStable(candidates, func(i, j int) bool {
+		leftHasRows := strings.Contains(candidates[i], `"rows"`)
+		rightHasRows := strings.Contains(candidates[j], `"rows"`)
+		if leftHasRows != rightHasRows {
+			return leftHasRows
+		}
+		return len(candidates[i]) > len(candidates[j])
+	})
+	return candidates
+}
+
+func extractJSONContent(content string) string {
+	candidates := extractJSONContentCandidates(content)
+	if len(candidates) > 0 {
+		return candidates[0]
+	}
+	return strings.TrimSpace(content)
+}
+
+func collectBalancedJSONObjectCandidates(text string) []string {
+	result := make([]string, 0, 2)
+	start := -1
+	depth := 0
+	inString := false
+	escaped := false
+	for index := 0; index < len(text); index++ {
+		char := text[index]
+		if inString {
+			if escaped {
+				escaped = false
+			} else if char == '\\' {
+				escaped = true
+			} else if char == '"' {
+				inString = false
+			}
+			continue
+		}
+		if char == '"' {
+			inString = true
+			continue
+		}
+		if char == '{' {
+			if depth == 0 {
+				start = index
+			}
+			depth++
+			continue
+		}
+		if char == '}' && depth > 0 {
+			depth--
+			if depth == 0 && start >= 0 {
+				result = append(result, strings.TrimSpace(text[start:index+1]))
+				start = -1
+			}
+		}
+	}
+	return result
+}
+
+func escapeBareControlCharsInJSONString(text string) string {
+	var builder strings.Builder
+	builder.Grow(len(text))
+	inString := false
+	escaped := false
+	for _, char := range text {
+		if !inString {
+			builder.WriteRune(char)
+			if char == '"' {
+				inString = true
+			}
+			continue
+		}
+		if escaped {
+			builder.WriteRune(char)
+			escaped = false
+			continue
+		}
+		switch char {
+		case '\\':
+			builder.WriteRune(char)
+			escaped = true
+		case '"':
+			builder.WriteRune(char)
+			inString = false
+		case '\n':
+			builder.WriteString(`\n`)
+		case '\r':
+			builder.WriteString(`\r`)
+		case '\t':
+			builder.WriteString(`\t`)
+		default:
+			if char < 0x20 {
+				builder.WriteString(fmt.Sprintf(`\u%04x`, char))
+				continue
+			}
+			builder.WriteRune(char)
+		}
+	}
+	return builder.String()
 }
 
 func normalizePEP3IEPPlanAIResult(result model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, rehabRecords []pep3IEPPlanPromptRehabRecord, currentTeacherName string, durationMonths int) model.PEP3IEPPlanAIResult {

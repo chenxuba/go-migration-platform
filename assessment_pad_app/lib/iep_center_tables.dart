@@ -224,7 +224,6 @@ class _IepTablePreview extends StatelessWidget {
               onClearSelectedGoal: onClearSelectedGoal,
               streamingCursorKey: generatingPlan ? streamingCursorKey : null,
             ),
-            height: _WordTable.heightFor(totalPlanDomains),
             followKey: generatingPlan && previewMode == _IepPreviewMode.total
                 ? streamingCursorKey
                 : null,
@@ -373,9 +372,9 @@ class _WordTable extends StatelessWidget {
   static const double _minHeight = 820;
   static const double _headerHeight = 208;
 
-  static double heightFor(List<_DocDomainData> domains) {
+  static double heightFor(List<_DocDomainData> domains, double width) {
     final double contentHeight =
-        _headerHeight + _DocPlanRows.heightFor(domains);
+        _headerHeight + _DocPlanRows.heightFor(domains, width);
     return contentHeight > _minHeight ? contentHeight : _minHeight;
   }
 
@@ -385,81 +384,95 @@ class _WordTable extends StatelessWidget {
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onClearSelectedGoal,
-      child: Column(
-        children: <Widget>[
-          _WordTableTitle(title: currentPlan?.title ?? '康复教学季度计划'),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '姓名', columns: 1, bold: true),
-              _DocCellData(text: currentPlan?.student.name ?? '-', columns: 1),
-              _DocCellData(text: '性别', columns: 1, bold: true),
-              _DocCellData(
-                  text: currentPlan?.student.gender ?? '-', columns: 1),
-              _DocCellData(text: '出生年月', columns: 1, bold: true),
-              _DocCellData(
-                text: currentPlan?.student.birthDate ?? '-',
-                columns: 3,
-                last: true,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double tableWidth =
+              constraints.maxWidth.isFinite && constraints.maxWidth > 0
+                  ? constraints.maxWidth
+                  : 1008;
+          final double bodyHeight = _bodyHeightFor(domains, tableWidth);
+          return Column(
+            children: <Widget>[
+              _WordTableTitle(title: currentPlan?.title ?? '康复教学季度计划'),
+              _DocTableRow(
+                height: 42,
+                cells: <_DocCellData>[
+                  _DocCellData(text: '姓名', columns: 1, bold: true),
+                  _DocCellData(
+                      text: currentPlan?.student.name ?? '-', columns: 1),
+                  _DocCellData(text: '性别', columns: 1, bold: true),
+                  _DocCellData(
+                      text: currentPlan?.student.gender ?? '-', columns: 1),
+                  _DocCellData(text: '出生年月', columns: 1, bold: true),
+                  _DocCellData(
+                    text: currentPlan?.student.birthDate ?? '-',
+                    columns: 3,
+                    last: true,
+                  ),
+                ],
+              ),
+              _DocTableRow(
+                height: 42,
+                cells: <_DocCellData>[
+                  _DocCellData(text: '制定日期', columns: 1, bold: true),
+                  _DocCellData(
+                      text: currentPlan?.meta.planDate ?? '-', columns: 3),
+                  _DocCellData(text: '计划参与者', columns: 1, bold: true),
+                  _DocCellData(
+                    text: currentPlan?.meta.participant ?? '-',
+                    columns: 3,
+                    last: true,
+                  ),
+                ],
+              ),
+              _DocTableRow(
+                height: 42,
+                cells: <_DocCellData>[
+                  _DocCellData(text: '实施者', columns: 1, bold: true),
+                  _DocCellData(
+                      text: currentPlan?.meta.implementer ?? '-', columns: 3),
+                  _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
+                  _DocCellData(
+                    text:
+                        _metaRangeText(currentPlan?.meta, fallback: periodText),
+                    columns: 3,
+                    noWrap: true,
+                    last: true,
+                  ),
+                ],
+              ),
+              _DocTableRow(
+                height: 42,
+                cells: <_DocCellData>[
+                  _DocCellData(text: '康复\n领域', columns: 1, bold: true),
+                  _DocCellData(text: '长期目标', columns: 3, bold: true),
+                  _DocCellData(text: '短期目标', columns: 2, bold: true),
+                  _DocCellData(text: '课程\n形式', columns: 1, bold: true),
+                  _DocCellData(
+                      text: '起止日期', columns: 1, bold: true, last: true),
+                ],
+              ),
+              SizedBox(
+                height: bodyHeight,
+                child: _DocPlanRows(
+                  domains: domains,
+                  height: bodyHeight,
+                  tableWidth: tableWidth,
+                  selectedGoal: selectedGoal,
+                  onGoalTap: onGoalTap,
+                  streamingCursorKey: streamingCursorKey,
+                ),
               ),
             ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '制定日期', columns: 1, bold: true),
-              _DocCellData(text: currentPlan?.meta.planDate ?? '-', columns: 3),
-              _DocCellData(text: '计划参与者', columns: 1, bold: true),
-              _DocCellData(
-                text: currentPlan?.meta.participant ?? '-',
-                columns: 3,
-                last: true,
-              ),
-            ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '实施者', columns: 1, bold: true),
-              _DocCellData(
-                  text: currentPlan?.meta.implementer ?? '-', columns: 3),
-              _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
-              _DocCellData(
-                text: _metaRangeText(currentPlan?.meta, fallback: periodText),
-                columns: 3,
-                noWrap: true,
-                last: true,
-              ),
-            ],
-          ),
-          _DocTableRow(
-            height: 42,
-            cells: <_DocCellData>[
-              _DocCellData(text: '康复\n领域', columns: 1, bold: true),
-              _DocCellData(text: '长期目标', columns: 3, bold: true),
-              _DocCellData(text: '短期目标', columns: 2, bold: true),
-              _DocCellData(text: '课程\n形式', columns: 1, bold: true),
-              _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
-            ],
-          ),
-          SizedBox(
-            height: _bodyHeightFor(domains),
-            child: _DocPlanRows(
-              domains: domains,
-              height: _bodyHeightFor(domains),
-              selectedGoal: selectedGoal,
-              onGoalTap: onGoalTap,
-              streamingCursorKey: streamingCursorKey,
-            ),
-          ),
-        ],
+          );
+        },
       ),
     );
   }
 
-  static double _bodyHeightFor(List<_DocDomainData> domains) {
+  static double _bodyHeightFor(List<_DocDomainData> domains, double width) {
     final double minBodyHeight = _minHeight - _headerHeight;
-    final double contentHeight = _DocPlanRows.heightFor(domains);
+    final double contentHeight = _DocPlanRows.heightFor(domains, width);
     return contentHeight > minBodyHeight ? contentHeight : minBodyHeight;
   }
 }
@@ -500,17 +513,21 @@ class _WordTableFrameState extends State<_WordTableFrame> {
   }
 
   void _scrollToFollowKey() {
-    final BuildContext? targetContext = widget.followKey?.currentContext;
-    if (!mounted || targetContext == null) {
+    if (!mounted || !_scrollController.hasClients) {
       return;
     }
-    Scrollable.ensureVisible(
-      targetContext,
-      duration: const Duration(milliseconds: 120),
-      curve: Curves.easeOutCubic,
-      alignment: .62,
-      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
-    );
+    final ScrollPosition position = _scrollController.position;
+    final double targetOffset = position.maxScrollExtent;
+    if (targetOffset <= 0 || (targetOffset - position.pixels).abs() < 1) {
+      return;
+    }
+    _scrollController.jumpTo(targetOffset);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_scrollController.hasClients) {
+        return;
+      }
+      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
+    });
   }
 
   @override
@@ -533,12 +550,23 @@ class _WordTableFrameState extends State<_WordTableFrame> {
       ),
       child: Padding(
         padding: const EdgeInsets.all(1.2),
-        child: SingleChildScrollView(
-          controller: _scrollController,
-          physics: const ClampingScrollPhysics(),
-          child: widget.height == null
-              ? widget.child
-              : SizedBox(height: widget.height, child: widget.child),
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final double maxHeight =
+                constraints.maxHeight.isFinite && constraints.maxHeight > 0
+                    ? constraints.maxHeight
+                    : 612;
+            return ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxHeight),
+              child: SingleChildScrollView(
+                controller: _scrollController,
+                physics: const ClampingScrollPhysics(),
+                child: widget.height == null
+                    ? widget.child
+                    : SizedBox(height: widget.height, child: widget.child),
+              ),
+            );
+          },
         ),
       ),
     );
@@ -1564,6 +1592,7 @@ class _DocCellData {
     this.last = false,
     this.noWrap = false,
     this.editable = false,
+    this.maxLines,
   });
 
   final String text;
@@ -1573,6 +1602,7 @@ class _DocCellData {
   final bool last;
   final bool noWrap;
   final bool editable;
+  final int? maxLines;
 }
 
 class _DocTableRow extends StatelessWidget {
@@ -1648,8 +1678,8 @@ class _DocCellBox extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               data.text,
-              maxLines: data.noWrap ? 1 : 4,
-              overflow: TextOverflow.ellipsis,
+              maxLines: data.noWrap ? 1 : data.maxLines,
+              overflow: data.noWrap ? TextOverflow.ellipsis : TextOverflow.clip,
               textAlign: data.align,
               style: TextStyle(
                 color: data.bold ? _IepColors.ink : _IepColors.text,
@@ -1689,6 +1719,7 @@ class _DocPlanRows extends StatelessWidget {
   const _DocPlanRows({
     required this.domains,
     required this.height,
+    required this.tableWidth,
     required this.selectedGoal,
     required this.onGoalTap,
     this.streamingCursorKey,
@@ -1696,30 +1727,119 @@ class _DocPlanRows extends StatelessWidget {
 
   final List<_DocDomainData> domains;
   final double height;
+  final double tableWidth;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
   final GlobalKey? streamingCursorKey;
 
   static const double _minDomainHeight = 122.4;
-  static const double _shortGoalRowHeight = 39;
+  static const double _minShortGoalRowHeight = 32;
+  static const double _textFontSize = 11.4;
+  static const double _textLineHeight = 1.28;
+  static const double _textHorizontalPadding = 16;
+  static const double _textHeightSafety = 5;
 
-  static double blockHeightFor(_DocDomainData domain) {
-    final int shortGoalCount =
-        domain.shortGoals.isEmpty ? 1 : domain.shortGoals.length;
-    final double contentHeight = shortGoalCount * _shortGoalRowHeight;
-    return contentHeight > _minDomainHeight ? contentHeight : _minDomainHeight;
+  static double _scaledColumnWidth(
+    double tableWidth,
+    List<int> columns,
+    int start,
+    int span,
+  ) {
+    final int totalFlex =
+        columns.fold<int>(0, (int sum, int width) => sum + width);
+    final int spanFlex = columns.skip(start).take(span).fold<int>(
+          0,
+          (int sum, int width) => sum + width,
+        );
+    return tableWidth * spanFlex / totalFlex;
   }
 
-  static double heightFor(List<_DocDomainData> domains) {
+  static double _textHeight(
+    String text, {
+    required double width,
+    double verticalPadding = 4,
+  }) {
+    final double maxWidth = math.max(24, width - _textHorizontalPadding);
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: text.trim().isEmpty ? ' ' : text,
+        style: const TextStyle(
+          fontSize: _textFontSize,
+          fontWeight: FontWeight.w700,
+          height: _textLineHeight,
+        ),
+      ),
+      textAlign: TextAlign.left,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return painter.height + verticalPadding * 2 + _textHeightSafety;
+  }
+
+  static double _shortGoalRowHeightFor(
+    _DocShortGoalData goal,
+    double tableWidth,
+  ) {
+    final double shortGoalWidth =
+        _scaledColumnWidth(tableWidth, _WordTable._columns, 4, 2);
+    final double periodWidth =
+        _scaledColumnWidth(tableWidth, _WordTable._columns, 7, 1);
+    return math.max(
+      _minShortGoalRowHeight,
+      math.max(
+        _textHeight(goal.goal, width: shortGoalWidth, verticalPadding: 4),
+        _textHeight(goal.period, width: periodWidth, verticalPadding: 4),
+      ),
+    );
+  }
+
+  static List<double> rowHeightsFor(_DocDomainData domain, double tableWidth) {
+    final List<_DocShortGoalData> shortGoals = domain.shortGoals.isEmpty
+        ? <_DocShortGoalData>[const _DocShortGoalData('', '个训', '')]
+        : domain.shortGoals;
+    final List<double> rowHeights = shortGoals
+        .map(
+          (_DocShortGoalData goal) => _shortGoalRowHeightFor(goal, tableWidth),
+        )
+        .toList();
+    final double rowsHeight = rowHeights.fold<double>(
+      0,
+      (double sum, double rowHeight) => sum + rowHeight,
+    );
+    final double longGoalHeight = _textHeight(
+      domain.longGoals.join('\n'),
+      width: _scaledColumnWidth(tableWidth, _WordTable._columns, 1, 3),
+      verticalPadding: 6,
+    );
+    final double targetHeight =
+        math.max(_minDomainHeight, math.max(rowsHeight, longGoalHeight));
+    if (targetHeight > rowsHeight && rowHeights.isNotEmpty) {
+      final double extraPerRow =
+          (targetHeight - rowsHeight) / rowHeights.length;
+      for (int index = 0; index < rowHeights.length; index += 1) {
+        rowHeights[index] += extraPerRow;
+      }
+    }
+    return rowHeights;
+  }
+
+  static double blockHeightFor(_DocDomainData domain, double tableWidth) {
+    return rowHeightsFor(domain, tableWidth).fold<double>(
+      0,
+      (double height, double rowHeight) => height + rowHeight,
+    );
+  }
+
+  static double heightFor(List<_DocDomainData> domains, double tableWidth) {
     return domains.fold<double>(
       0,
-      (double height, _DocDomainData domain) => height + blockHeightFor(domain),
+      (double height, _DocDomainData domain) =>
+          height + blockHeightFor(domain, tableWidth),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final double contentHeight = heightFor(domains);
+    final double contentHeight = heightFor(domains, tableWidth);
     final double fillerHeight =
         height > contentHeight ? height - contentHeight : 0;
     return Column(
@@ -1727,11 +1847,19 @@ class _DocPlanRows extends StatelessWidget {
       children: <Widget>[
         ...domains.asMap().entries.map((entry) {
           final bool hasFiller = fillerHeight > 0;
+          final List<double> rowHeights = rowHeightsFor(
+            entry.value,
+            tableWidth,
+          );
           return SizedBox(
-            height: blockHeightFor(entry.value),
+            height: rowHeights.fold<double>(
+              0,
+              (double height, double rowHeight) => height + rowHeight,
+            ),
             child: _DocDomainBlock(
               domainIndex: entry.key,
               data: entry.value,
+              rowHeights: rowHeights,
               selected: entry.key == 0,
               last: !hasFiller && entry.key == domains.length - 1,
               selectedGoal: selectedGoal,
@@ -1846,6 +1974,7 @@ class _DocDomainBlock extends StatelessWidget {
   const _DocDomainBlock({
     required this.domainIndex,
     required this.data,
+    required this.rowHeights,
     required this.selected,
     required this.last,
     required this.selectedGoal,
@@ -1855,6 +1984,7 @@ class _DocDomainBlock extends StatelessWidget {
 
   final int domainIndex;
   final _DocDomainData data;
+  final List<double> rowHeights;
   final bool selected;
   final bool last;
   final _GoalEditRequest? selectedGoal;
@@ -1893,7 +2023,8 @@ class _DocDomainBlock extends StatelessWidget {
               );
               final bool markStreamingCursor = streamingCursorKey != null &&
                   entry.key == data.shortGoals.length - 1;
-              return Expanded(
+              return SizedBox(
+                height: rowHeights[entry.key],
                 child: KeyedSubtree(
                   key: markStreamingCursor ? streamingCursorKey : null,
                   child: _DocCellBox(
@@ -1917,7 +2048,8 @@ class _DocDomainBlock extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: data.shortGoals.asMap().entries.map((entry) {
-              return Expanded(
+              return SizedBox(
+                height: rowHeights[entry.key],
                 child: _DocCellBox(
                   data: _DocCellData(
                     text: entry.value.lesson,
@@ -1936,7 +2068,8 @@ class _DocDomainBlock extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: data.shortGoals.asMap().entries.map((entry) {
-              return Expanded(
+              return SizedBox(
+                height: rowHeights[entry.key],
                 child: _DocCellBox(
                   data: _DocCellData(
                     text: entry.value.period,

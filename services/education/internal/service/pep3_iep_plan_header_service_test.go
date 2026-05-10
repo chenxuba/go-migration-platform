@@ -64,6 +64,43 @@ func TestPEP3IEPPlanHeaderValuesForRecordConfigKeepsOriginalExaminerFromInput(t 
 	}
 }
 
+func TestParseDeepSeekIEPPlanAIResultToleratesFencedJSONAndBareNewlines(t *testing.T) {
+	content := "下面是计划：\n```json\n" +
+		`{"title":"康复教学季度计划","student":{"name":"小明"},"meta":{},` +
+		`"rows":[{"domain":"大肌肉","longGoal":"1. 提升平衡能力` + "\n" +
+		`2. 提升跳跃协调能力","shortGoal":"能连续向前跳跃3次","courseForm":"个训","startEndDate":"2026-05-01 - 2026-05-31"}]}` +
+		"\n```\n已完成"
+
+	plan, err := parseDeepSeekIEPPlanAIResult(content)
+	if err != nil {
+		t.Fatalf("parseDeepSeekIEPPlanAIResult returned error: %v", err)
+	}
+	if len(plan.Rows) != 1 {
+		t.Fatalf("expected one row, got %#v", plan.Rows)
+	}
+	if plan.Rows[0].ShortGoal != "能连续向前跳跃3次" {
+		t.Fatalf("unexpected short goal: %q", plan.Rows[0].ShortGoal)
+	}
+	if plan.Rows[0].LongGoal != "1. 提升平衡能力\n2. 提升跳跃协调能力" {
+		t.Fatalf("unexpected long goal: %q", plan.Rows[0].LongGoal)
+	}
+}
+
+func TestParseDeepSeekIEPPlanAIResultChoosesBalancedObject(t *testing.T) {
+	content := `{"note":"不是计划"}` + "\n" +
+		`{"title":"康复教学季度计划","student":{"name":"小明"},"meta":{},` +
+		`"rows":[{"domain":"语言沟通","shortGoal":"能主动说出需求","courseForm":"个训"}]}` +
+		"\n说明文字"
+
+	plan, err := parseDeepSeekIEPPlanAIResult(content)
+	if err != nil {
+		t.Fatalf("parseDeepSeekIEPPlanAIResult returned error: %v", err)
+	}
+	if len(plan.Rows) != 1 || plan.Rows[0].ShortGoal != "能主动说出需求" {
+		t.Fatalf("expected plan object with rows, got %#v", plan)
+	}
+}
+
 func mustParseIEPPlanDateForTest(value string) time.Time {
 	parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
 	if err != nil {

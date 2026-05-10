@@ -327,13 +327,42 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      final IepPlanSaved savedPlan = await widget.planClient.saveIepPlan(
-        token,
-        record: record,
-        durationMonths: _periodMonthCount,
-        status: 'draft',
-        plan: finalPlan,
-      );
+      IepPlanSaved savedPlan = _draftSavedPlan(finalPlan);
+      try {
+        savedPlan = await widget.planClient.saveIepPlan(
+          token,
+          record: record,
+          durationMonths: _periodMonthCount,
+          status: 'draft',
+          plan: finalPlan,
+        );
+      } on IepPlanApiException catch (error) {
+        if (!mounted || ticket != _generationTicket) {
+          return;
+        }
+        setState(() {
+          _generatingPlan = false;
+          _generationStatus = '';
+          _aiStreamText = '';
+          _savedPlan = savedPlan;
+        });
+        _syncConfirmAvailability(savedPlan);
+        _showMessage('IEP已生成，但草稿自动保存失败：${error.message}');
+        return;
+      } on Object {
+        if (!mounted || ticket != _generationTicket) {
+          return;
+        }
+        setState(() {
+          _generatingPlan = false;
+          _generationStatus = '';
+          _aiStreamText = '';
+          _savedPlan = savedPlan;
+        });
+        _syncConfirmAvailability(savedPlan);
+        _showMessage('IEP已生成，但草稿自动保存失败，请稍后重试');
+        return;
+      }
       if (!mounted || ticket != _generationTicket) {
         return;
       }
