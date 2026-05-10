@@ -4121,14 +4121,8 @@ class _PlanStateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Container(
+      child: SizedBox(
         width: 340,
-        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: _IepColors.lightLine),
-        ),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
