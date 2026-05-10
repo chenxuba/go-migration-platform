@@ -978,6 +978,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   int _previewWeek = 2;
   DateTime _periodStart = DateTime(2026, 5);
   int _periodMonthCount = 3;
+  _GoalEditRequest? _selectedGoal;
+  late List<_DocDomainData> _totalPlanDomains =
+      List<_DocDomainData>.from(_DocPlanRows.initialDomains);
 
   DateTime get _periodEnd => _periodEndFor(_periodStart, _periodMonthCount);
 
@@ -1027,6 +1030,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   void _showTotalPlan() {
     setState(() {
       _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
     });
   }
 
@@ -1034,6 +1038,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     setState(() {
       _previewMode = _IepPreviewMode.month;
       _previewMonth = month;
+      _selectedGoal = null;
     });
   }
 
@@ -1042,6 +1047,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _previewMode = _IepPreviewMode.week;
       _previewMonth = month;
       _previewWeek = weekNumber;
+      _selectedGoal = null;
     });
   }
 
@@ -1071,6 +1077,63 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
           _previewWeek = 1;
         }
       }
+    });
+  }
+
+  Future<void> _showGoalEditDialog(_GoalEditRequest request) async {
+    setState(() {
+      _selectedGoal = request;
+    });
+    final _DocDomainData domain = _totalPlanDomains[request.domainIndex];
+    final _GoalEditResult? result = await showDialog<_GoalEditResult>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepGoalEditDialog(
+            domain: domain,
+            request: request,
+          ),
+        );
+      },
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    setState(() {
+      final List<_DocDomainData> nextDomains =
+          List<_DocDomainData>.from(_totalPlanDomains);
+      if (result.longGoals != null) {
+        nextDomains[request.domainIndex] =
+            domain.copyWith(longGoals: result.longGoals);
+      }
+      if (result.shortGoal != null && request.shortGoalIndex != null) {
+        final List<_DocShortGoalData> nextShortGoals =
+            List<_DocShortGoalData>.from(domain.shortGoals);
+        nextShortGoals[request.shortGoalIndex!] = result.shortGoal!;
+        nextDomains[request.domainIndex] =
+            domain.copyWith(shortGoals: nextShortGoals);
+      }
+      _totalPlanDomains = nextDomains;
+    });
+  }
+
+  void _clearSelectedGoal() {
+    if (_selectedGoal == null) {
+      return;
+    }
+    setState(() {
+      _selectedGoal = null;
+    });
+  }
+
+  void _handleGoalTap(_GoalEditRequest request) {
+    if (_selectedGoal == request) {
+      _showGoalEditDialog(request);
+      return;
+    }
+    setState(() {
+      _selectedGoal = request;
     });
   }
 
@@ -1106,6 +1169,10 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               weekNumber: _previewWeek,
               periodStart: _periodStart,
               periodMonthCount: _periodMonthCount,
+              totalPlanDomains: _totalPlanDomains,
+              selectedGoal: _selectedGoal,
+              onGoalTap: _handleGoalTap,
+              onClearSelectedGoal: _clearSelectedGoal,
             ),
           ),
         ],
@@ -1853,7 +1920,7 @@ class _IepPeriodEditDialogState extends State<_IepPeriodEditDialog> {
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
-                    '同步后会按${widget.monthCount}个月周期更新表格中的实施日期，并重算对应月计划、周计划日期。',
+                    '同步后会按${widget.monthCount}个月周期更新表格中的实施日期，并重算对应月计划、周计划起止日期。',
                     style: const TextStyle(
                       color: _IepColors.text,
                       fontSize: 12,
@@ -2053,11 +2120,13 @@ class _IepDialogAction extends StatelessWidget {
     required this.label,
     required this.onTap,
     this.filled = false,
+    this.icon,
   });
 
   final String label;
   final VoidCallback onTap;
   final bool filled;
+  final IconData? icon;
 
   @override
   Widget build(BuildContext context) {
@@ -2079,15 +2148,555 @@ class _IepDialogAction extends StatelessWidget {
               color: filled ? _IepColors.orange : _IepColors.line,
             ),
           ),
-          child: Text(
-            label,
-            style: TextStyle(
-              color: filled ? Colors.white : _IepColors.text,
-              fontSize: 14,
-              fontWeight: FontWeight.w900,
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                Icon(
+                  icon,
+                  size: 16,
+                  color: filled ? Colors.white : _IepColors.text,
+                ),
+                const SizedBox(width: 5),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: filled ? Colors.white : _IepColors.text,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+enum _GoalEditType { longGoal, shortGoal }
+
+class _GoalEditRequest {
+  const _GoalEditRequest._({
+    required this.domainIndex,
+    required this.type,
+    this.shortGoalIndex,
+  });
+
+  factory _GoalEditRequest.longGoal({required int domainIndex}) {
+    return _GoalEditRequest._(
+      domainIndex: domainIndex,
+      type: _GoalEditType.longGoal,
+    );
+  }
+
+  factory _GoalEditRequest.shortGoal({
+    required int domainIndex,
+    required int shortGoalIndex,
+  }) {
+    return _GoalEditRequest._(
+      domainIndex: domainIndex,
+      type: _GoalEditType.shortGoal,
+      shortGoalIndex: shortGoalIndex,
+    );
+  }
+
+  final int domainIndex;
+  final _GoalEditType type;
+  final int? shortGoalIndex;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _GoalEditRequest &&
+            other.domainIndex == domainIndex &&
+            other.type == type &&
+            other.shortGoalIndex == shortGoalIndex;
+  }
+
+  @override
+  int get hashCode => Object.hash(domainIndex, type, shortGoalIndex);
+}
+
+class _GoalEditResult {
+  const _GoalEditResult({
+    this.longGoals,
+    this.shortGoal,
+    this.syncRelatedPlans = false,
+  });
+
+  final List<String>? longGoals;
+  final _DocShortGoalData? shortGoal;
+  final bool syncRelatedPlans;
+}
+
+class _IepGoalEditDialog extends StatefulWidget {
+  const _IepGoalEditDialog({
+    required this.domain,
+    required this.request,
+  });
+
+  final _DocDomainData domain;
+  final _GoalEditRequest request;
+
+  @override
+  State<_IepGoalEditDialog> createState() => _IepGoalEditDialogState();
+}
+
+class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
+  late final List<TextEditingController> _longGoalControllers;
+  late final TextEditingController _shortGoalController;
+  late final TextEditingController _lessonController;
+  late final TextEditingController _periodController;
+
+  bool get _editingLongGoal => widget.request.type == _GoalEditType.longGoal;
+
+  _DocShortGoalData get _shortGoal =>
+      widget.domain.shortGoals[widget.request.shortGoalIndex ?? 0];
+
+  @override
+  void initState() {
+    super.initState();
+    _longGoalControllers = widget.domain.longGoals
+        .map((String goal) => TextEditingController(text: goal))
+        .toList();
+    _shortGoalController = TextEditingController(text: _shortGoal.goal);
+    _lessonController = TextEditingController(text: _shortGoal.lesson);
+    _periodController = TextEditingController(text: _shortGoal.period);
+  }
+
+  @override
+  void dispose() {
+    for (final TextEditingController controller in _longGoalControllers) {
+      controller.dispose();
+    }
+    _shortGoalController.dispose();
+    _lessonController.dispose();
+    _periodController.dispose();
+    super.dispose();
+  }
+
+  void _addLongGoal() {
+    setState(() {
+      _longGoalControllers.add(TextEditingController());
+    });
+  }
+
+  void _removeLongGoal(int index) {
+    if (_longGoalControllers.length <= 1) {
+      return;
+    }
+    setState(() {
+      _longGoalControllers.removeAt(index).dispose();
+    });
+  }
+
+  void _submit({required bool syncRelatedPlans}) {
+    if (_editingLongGoal) {
+      final List<String> goals = _longGoalControllers
+          .map((TextEditingController controller) => controller.text.trim())
+          .where((String value) => value.isNotEmpty)
+          .toList();
+      Navigator.of(context).pop(
+        _GoalEditResult(
+          longGoals: goals.isEmpty ? <String>[''] : goals,
+          syncRelatedPlans: syncRelatedPlans,
+        ),
+      );
+      return;
+    }
+    Navigator.of(context).pop(
+      _GoalEditResult(
+        shortGoal: _shortGoal.copyWith(
+          goal: _shortGoalController.text.trim(),
+          lesson: _lessonController.text.trim(),
+          period: _periodController.text.trim(),
+        ),
+        syncRelatedPlans: syncRelatedPlans,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int? shortGoalIndex = widget.request.shortGoalIndex;
+    final String title = _editingLongGoal ? '编辑长期目标' : '编辑短期目标';
+    final String location = _editingLongGoal
+        ? '${widget.domain.domain} · 长期目标'
+        : '${widget.domain.domain} · 短期目标${(shortGoalIndex ?? 0) + 1}';
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: _editingLongGoal ? 660 : 620,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: _IepColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _IepPeriodTypePill(text: location),
+                const Spacer(),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 20),
+            if (_editingLongGoal)
+              _LongGoalEditor(
+                controllers: _longGoalControllers,
+                onAdd: _addLongGoal,
+                onRemove: _removeLongGoal,
+              )
+            else
+              _ShortGoalEditor(
+                goalController: _shortGoalController,
+                lessonController: _lessonController,
+                periodController: _periodController,
+              ),
+            const SizedBox(height: 12),
+            const _GoalSyncHint(),
+            const SizedBox(height: 20),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '仅保存当前表格',
+                  icon: Icons.save_outlined,
+                  onTap: () => _submit(syncRelatedPlans: false),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '保存并同步',
+                  filled: true,
+                  icon: Icons.sync_rounded,
+                  onTap: () => _submit(syncRelatedPlans: true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _LongGoalEditor extends StatelessWidget {
+  const _LongGoalEditor({
+    required this.controllers,
+    required this.onAdd,
+    required this.onRemove,
+  });
+
+  final List<TextEditingController> controllers;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(maxHeight: 330),
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _IepColors.lightLine),
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          children: <Widget>[
+            for (int index = 0;
+                index < controllers.length;
+                index += 1) ...<Widget>[
+              _GoalTextField(
+                label: '长期目标 ${index + 1}',
+                controller: controllers[index],
+                minLines: 2,
+                maxLines: 3,
+                trailing: _SmallIconAction(
+                  icon: Icons.delete_outline_rounded,
+                  enabled: controllers.length > 1,
+                  onTap: () => onRemove(index),
+                ),
+              ),
+              const SizedBox(height: 10),
+            ],
+            Align(
+              alignment: Alignment.centerLeft,
+              child: _AddGoalButton(onTap: onAdd),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShortGoalEditor extends StatelessWidget {
+  const _ShortGoalEditor({
+    required this.goalController,
+    required this.lessonController,
+    required this.periodController,
+  });
+
+  final TextEditingController goalController;
+  final TextEditingController lessonController;
+  final TextEditingController periodController;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF6),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _IepColors.lightLine),
+      ),
+      child: Column(
+        children: <Widget>[
+          _GoalTextField(
+            label: '短期目标',
+            controller: goalController,
+            minLines: 3,
+            maxLines: 4,
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              Expanded(
+                flex: 8,
+                child: _GoalTextField(
+                  label: '课程形式',
+                  controller: lessonController,
+                  minLines: 1,
+                  maxLines: 1,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                flex: 13,
+                child: _GoalTextField(
+                  label: '起止日期',
+                  controller: periodController,
+                  minLines: 1,
+                  maxLines: 1,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GoalTextField extends StatelessWidget {
+  const _GoalTextField({
+    required this.label,
+    required this.controller,
+    required this.minLines,
+    required this.maxLines,
+    this.trailing,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final int minLines;
+  final int maxLines;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Text(
+              label,
+              style: const TextStyle(
+                color: _IepColors.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const Spacer(),
+            if (trailing != null) trailing!,
+          ],
+        ),
+        const SizedBox(height: 7),
+        TextField(
+          controller: controller,
+          minLines: minLines,
+          maxLines: maxLines,
+          style: const TextStyle(
+            color: _IepColors.ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w700,
+            height: 1.35,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _IepColors.line),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: _IepColors.orange, width: 1.2),
             ),
           ),
         ),
+      ],
+    );
+  }
+}
+
+class _AddGoalButton extends StatelessWidget {
+  const _AddGoalButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 32,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(color: const Color(0xFFFFD8C6)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.add_rounded, size: 17, color: _IepColors.orangeDeep),
+              SizedBox(width: 4),
+              Text(
+                '新增一条',
+                style: TextStyle(
+                  color: _IepColors.orangeDeep,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SmallIconAction extends StatelessWidget {
+  const _SmallIconAction({
+    required this.icon,
+    required this.onTap,
+    this.enabled = true,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+  final bool enabled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 26,
+          height: 26,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: enabled ? Colors.white : const Color(0xFFF8EEE6),
+            shape: BoxShape.circle,
+            border: Border.all(color: _IepColors.lightLine),
+          ),
+          child: Icon(
+            icon,
+            size: 16,
+            color: enabled ? _IepColors.text : _IepColors.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GoalSyncHint extends StatelessWidget {
+  const _GoalSyncHint();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: _IepColors.orangeSoft,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: const Color(0xFFFFD8C6)),
+      ),
+      child: const Row(
+        children: <Widget>[
+          Icon(Icons.info_outline_rounded,
+              size: 16, color: _IepColors.orangeDeep),
+          SizedBox(width: 7),
+          Expanded(
+            child: Text(
+              '修改目标后，可选择仅更新当前IEP总表，也可以同步更新关联月计划、周计划。',
+              style: TextStyle(
+                color: _IepColors.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2187,6 +2796,10 @@ class _IepTablePreview extends StatelessWidget {
     required this.weekNumber,
     required this.periodStart,
     required this.periodMonthCount,
+    required this.totalPlanDomains,
+    required this.selectedGoal,
+    required this.onGoalTap,
+    required this.onClearSelectedGoal,
   });
 
   final _IepPreviewMode previewMode;
@@ -2194,6 +2807,10 @@ class _IepTablePreview extends StatelessWidget {
   final int weekNumber;
   final DateTime periodStart;
   final int periodMonthCount;
+  final List<_DocDomainData> totalPlanDomains;
+  final _GoalEditRequest? selectedGoal;
+  final ValueChanged<_GoalEditRequest> onGoalTap;
+  final VoidCallback onClearSelectedGoal;
 
   @override
   Widget build(BuildContext context) {
@@ -2239,6 +2856,10 @@ class _IepTablePreview extends StatelessWidget {
                 periodStart,
                 _periodEndFor(periodStart, periodMonthCount),
               ),
+              domains: totalPlanDomains,
+              selectedGoal: selectedGoal,
+              onGoalTap: onGoalTap,
+              onClearSelectedGoal: onClearSelectedGoal,
             ),
             height: 820,
           ),
@@ -2248,9 +2869,19 @@ class _IepTablePreview extends StatelessWidget {
 }
 
 class _WordTable extends StatelessWidget {
-  const _WordTable({required this.periodText});
+  const _WordTable({
+    required this.periodText,
+    required this.domains,
+    required this.selectedGoal,
+    required this.onGoalTap,
+    required this.onClearSelectedGoal,
+  });
 
   final String periodText;
+  final List<_DocDomainData> domains;
+  final _GoalEditRequest? selectedGoal;
+  final ValueChanged<_GoalEditRequest> onGoalTap;
+  final VoidCallback onClearSelectedGoal;
 
   static const List<int> _columns = <int>[
     1038,
@@ -2265,53 +2896,61 @@ class _WordTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: <Widget>[
-        const _WordTableTitle(),
-        _DocTableRow(
-          height: 42,
-          cells: <_DocCellData>[
-            _DocCellData(text: '姓名', columns: 1, bold: true),
-            _DocCellData(text: '陈旭', columns: 1),
-            _DocCellData(text: '性别', columns: 1, bold: true),
-            _DocCellData(text: '-', columns: 1),
-            _DocCellData(text: '出生年月', columns: 1, bold: true),
-            _DocCellData(text: '2022-05-11', columns: 3, last: true),
-          ],
-        ),
-        _DocTableRow(
-          height: 42,
-          cells: <_DocCellData>[
-            _DocCellData(text: '制定日期', columns: 1, bold: true),
-            _DocCellData(text: '2026-05-07', columns: 3),
-            _DocCellData(text: '计划参与者', columns: 1, bold: true),
-            _DocCellData(text: '陈瑞', columns: 3, last: true),
-          ],
-        ),
-        _DocTableRow(
-          height: 42,
-          cells: <_DocCellData>[
-            _DocCellData(text: '实施者', columns: 1, bold: true),
-            _DocCellData(text: '陈瑞', columns: 3),
-            _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
-            _DocCellData(
-                text: periodText, columns: 3, noWrap: true, last: true),
-          ],
-        ),
-        _DocTableRow(
-          height: 42,
-          cells: <_DocCellData>[
-            _DocCellData(text: '康复\n领域', columns: 1, bold: true),
-            _DocCellData(text: '长期目标', columns: 3, bold: true),
-            _DocCellData(text: '短期目标', columns: 2, bold: true),
-            _DocCellData(text: '课程\n形式', columns: 1, bold: true),
-            _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
-          ],
-        ),
-        Expanded(
-          child: _DocPlanRows(),
-        ),
-      ],
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: onClearSelectedGoal,
+      child: Column(
+        children: <Widget>[
+          const _WordTableTitle(),
+          _DocTableRow(
+            height: 42,
+            cells: <_DocCellData>[
+              _DocCellData(text: '姓名', columns: 1, bold: true),
+              _DocCellData(text: '陈旭', columns: 1),
+              _DocCellData(text: '性别', columns: 1, bold: true),
+              _DocCellData(text: '-', columns: 1),
+              _DocCellData(text: '出生年月', columns: 1, bold: true),
+              _DocCellData(text: '2022-05-11', columns: 3, last: true),
+            ],
+          ),
+          _DocTableRow(
+            height: 42,
+            cells: <_DocCellData>[
+              _DocCellData(text: '制定日期', columns: 1, bold: true),
+              _DocCellData(text: '2026-05-07', columns: 3),
+              _DocCellData(text: '计划参与者', columns: 1, bold: true),
+              _DocCellData(text: '陈瑞', columns: 3, last: true),
+            ],
+          ),
+          _DocTableRow(
+            height: 42,
+            cells: <_DocCellData>[
+              _DocCellData(text: '实施者', columns: 1, bold: true),
+              _DocCellData(text: '陈瑞', columns: 3),
+              _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
+              _DocCellData(
+                  text: periodText, columns: 3, noWrap: true, last: true),
+            ],
+          ),
+          _DocTableRow(
+            height: 42,
+            cells: <_DocCellData>[
+              _DocCellData(text: '康复\n领域', columns: 1, bold: true),
+              _DocCellData(text: '长期目标', columns: 3, bold: true),
+              _DocCellData(text: '短期目标', columns: 2, bold: true),
+              _DocCellData(text: '课程\n形式', columns: 1, bold: true),
+              _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
+            ],
+          ),
+          Expanded(
+            child: _DocPlanRows(
+              domains: domains,
+              selectedGoal: selectedGoal,
+              onGoalTap: onGoalTap,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -3322,6 +3961,7 @@ class _DocCellData {
     this.align = TextAlign.center,
     this.last = false,
     this.noWrap = false,
+    this.editable = false,
   });
 
   final String text;
@@ -3330,6 +3970,7 @@ class _DocCellData {
   final TextAlign align;
   final bool last;
   final bool noWrap;
+  final bool editable;
 }
 
 class _DocTableRow extends StatelessWidget {
@@ -3371,19 +4012,35 @@ class _DocCellBox extends StatelessWidget {
     required this.data,
     this.rowLast = false,
     this.verticalPadding = 5,
+    this.onTap,
   });
 
   final _DocCellData data;
   final bool rowLast;
   final double verticalPadding;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final Widget content = Container(
       alignment: Alignment.center,
-      padding: EdgeInsets.symmetric(horizontal: 8, vertical: verticalPadding),
+      padding: EdgeInsets.fromLTRB(
+        8,
+        verticalPadding,
+        data.editable ? 14 : 8,
+        verticalPadding,
+      ),
       decoration: BoxDecoration(
         color: Colors.white,
+        boxShadow: data.editable
+            ? const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x22E96F43),
+                  blurRadius: 0,
+                  spreadRadius: 1.4,
+                ),
+              ]
+            : null,
         border: Border(
           right: data.last
               ? BorderSide.none
@@ -3393,26 +4050,62 @@ class _DocCellBox extends StatelessWidget {
               : const BorderSide(color: Color(0xFFB98A71), width: .8),
         ),
       ),
-      child: Text(
-        data.text,
-        maxLines: data.noWrap ? 1 : 4,
-        overflow: TextOverflow.ellipsis,
-        textAlign: data.align,
-        style: TextStyle(
-          color: data.bold ? _IepColors.ink : _IepColors.text,
-          fontSize: 11.4,
-          fontWeight: data.bold ? FontWeight.w900 : FontWeight.w700,
-          height: 1.22,
-        ),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: <Widget>[
+          Align(
+            alignment: Alignment.center,
+            child: Text(
+              data.text,
+              maxLines: data.noWrap ? 1 : 4,
+              overflow: TextOverflow.ellipsis,
+              textAlign: data.align,
+              style: TextStyle(
+                color: data.bold ? _IepColors.ink : _IepColors.text,
+                fontSize: 11.4,
+                fontWeight: data.bold ? FontWeight.w900 : FontWeight.w700,
+                height: 1.22,
+              ),
+            ),
+          ),
+          if (data.editable)
+            const Positioned(
+              right: -6,
+              top: -2,
+              child: Icon(
+                Icons.edit_rounded,
+                size: 10,
+                color: _IepColors.orangeDeep,
+              ),
+            ),
+        ],
+      ),
+    );
+    if (onTap == null) {
+      return content;
+    }
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: content,
       ),
     );
   }
 }
 
 class _DocPlanRows extends StatelessWidget {
-  const _DocPlanRows();
+  const _DocPlanRows({
+    required this.domains,
+    required this.selectedGoal,
+    required this.onGoalTap,
+  });
 
-  static const List<_DocDomainData> _domains = <_DocDomainData>[
+  final List<_DocDomainData> domains;
+  final _GoalEditRequest? selectedGoal;
+  final ValueChanged<_GoalEditRequest> onGoalTap;
+
+  static const List<_DocDomainData> initialDomains = <_DocDomainData>[
     _DocDomainData(
       domain: '大肌肉',
       longGoals: <String>[
@@ -3486,12 +4179,15 @@ class _DocPlanRows extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: _domains.asMap().entries.map((entry) {
+      children: domains.asMap().entries.map((entry) {
         return Expanded(
           child: _DocDomainBlock(
+            domainIndex: entry.key,
             data: entry.value,
             selected: entry.key == 0,
-            last: entry.key == _domains.length - 1,
+            last: entry.key == domains.length - 1,
+            selectedGoal: selectedGoal,
+            onGoalTap: onGoalTap,
           ),
         );
       }).toList(),
@@ -3509,6 +4205,17 @@ class _DocDomainData {
   final String domain;
   final List<String> longGoals;
   final List<_DocShortGoalData> shortGoals;
+
+  _DocDomainData copyWith({
+    List<String>? longGoals,
+    List<_DocShortGoalData>? shortGoals,
+  }) {
+    return _DocDomainData(
+      domain: domain,
+      longGoals: longGoals ?? this.longGoals,
+      shortGoals: shortGoals ?? this.shortGoals,
+    );
+  }
 }
 
 class _DocShortGoalData {
@@ -3517,21 +4224,41 @@ class _DocShortGoalData {
   final String goal;
   final String lesson;
   final String period;
+
+  _DocShortGoalData copyWith({
+    String? goal,
+    String? lesson,
+    String? period,
+  }) {
+    return _DocShortGoalData(
+      goal ?? this.goal,
+      lesson ?? this.lesson,
+      period ?? this.period,
+    );
+  }
 }
 
 class _DocDomainBlock extends StatelessWidget {
   const _DocDomainBlock({
+    required this.domainIndex,
     required this.data,
     required this.selected,
     required this.last,
+    required this.selectedGoal,
+    required this.onGoalTap,
   });
 
+  final int domainIndex;
   final _DocDomainData data;
   final bool selected;
   final bool last;
+  final _GoalEditRequest? selectedGoal;
+  final ValueChanged<_GoalEditRequest> onGoalTap;
 
   @override
   Widget build(BuildContext context) {
+    final _GoalEditRequest longGoalRequest =
+        _GoalEditRequest.longGoal(domainIndex: domainIndex);
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -3547,6 +4274,8 @@ class _DocDomainBlock extends StatelessWidget {
             text: data.longGoals.join('\n'),
             align: TextAlign.left,
             rowLast: last,
+            editable: selectedGoal == longGoalRequest,
+            onTap: () => onGoalTap(longGoalRequest),
           ),
         ),
         Expanded(
@@ -3554,15 +4283,21 @@ class _DocDomainBlock extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: data.shortGoals.asMap().entries.map((entry) {
+              final _GoalEditRequest request = _GoalEditRequest.shortGoal(
+                domainIndex: domainIndex,
+                shortGoalIndex: entry.key,
+              );
               return Expanded(
                 child: _DocCellBox(
                   data: _DocCellData(
                     text: entry.value.goal,
                     columns: 2,
                     align: TextAlign.left,
+                    editable: selectedGoal == request,
                   ),
                   rowLast: last && entry.key == data.shortGoals.length - 1,
                   verticalPadding: 4,
+                  onTap: () => onGoalTap(request),
                 ),
               );
             }).toList(),
@@ -3618,12 +4353,16 @@ class _DocMergedCell extends StatelessWidget {
     this.bold = false,
     this.align = TextAlign.center,
     this.rowLast = false,
+    this.editable = false,
+    this.onTap,
   });
 
   final String text;
   final bool bold;
   final TextAlign align;
   final bool rowLast;
+  final bool editable;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -3633,9 +4372,11 @@ class _DocMergedCell extends StatelessWidget {
         columns: 1,
         bold: bold,
         align: align,
+        editable: editable,
       ),
       rowLast: rowLast,
       verticalPadding: 6,
+      onTap: onTap,
     );
   }
 }

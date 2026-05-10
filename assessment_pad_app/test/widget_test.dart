@@ -862,6 +862,35 @@ void main() {
     expect(find.text('编辑周期'), findsOneWidget);
     expect(find.text('2026.05.05-2026.07.31'), findsOneWidget);
     expect(find.text('2026-05-05 至 2026-07-31'), findsOneWidget);
+
+    await tester.tap(find.textContaining('提升动态平衡与协调能力'));
+    await tester.pump();
+    expect(find.text('编辑长期目标'), findsNothing);
+
+    await tester.tap(find.text('姓名'));
+    await tester.pump();
+    await tester.tap(find.textContaining('提升动态平衡与协调能力'));
+    await tester.pump();
+    expect(find.text('编辑长期目标'), findsNothing);
+
+    await tester.tap(find.textContaining('提升动态平衡与协调能力'));
+    await tester.pump();
+    expect(find.text('编辑长期目标'), findsOneWidget);
+    expect(find.text('大肌肉 · 长期目标'), findsOneWidget);
+    expect(find.text('保存并同步'), findsOneWidget);
+
+    final Finder longGoalField = find.widgetWithText(
+      TextField,
+      '1. 提升动态平衡与协调能力，能在移动中稳定控制身体',
+    );
+    expect(longGoalField, findsOneWidget);
+    await tester.enterText(longGoalField, '1. 能稳定完成平衡木行走与连续跳跃');
+    await tester.pump();
+    await tester.tap(find.text('仅保存当前表格'));
+    await tester.pump();
+
+    expect(find.text('编辑长期目标'), findsNothing);
+    expect(find.textContaining('能稳定完成平衡木行走与连续跳跃'), findsOneWidget);
   });
 
   testWidgets('smart timetable detects availability after target selection',
