@@ -1544,10 +1544,9 @@ class _IepTablePreview extends StatelessWidget {
       ),
       child: switch (previewMode) {
         _IepPreviewMode.month =>
-          _WordTableFrame(child: _MonthPlanTable(month: month), height: 2140),
+          _WordTableFrame(child: _MonthPlanTable(month: month)),
         _IepPreviewMode.week => _WordTableFrame(
             child: _WeekPlanTable(month: month, weekNumber: weekNumber),
-            height: 920,
           ),
         _IepPreviewMode.total =>
           const _WordTableFrame(child: _WordTable(), height: 820),
@@ -1629,11 +1628,11 @@ class _WordTable extends StatelessWidget {
 class _WordTableFrame extends StatelessWidget {
   const _WordTableFrame({
     required this.child,
-    required this.height,
+    this.height,
   });
 
   final Widget child;
-  final double height;
+  final double? height;
 
   @override
   Widget build(BuildContext context) {
@@ -1651,7 +1650,8 @@ class _WordTableFrame extends StatelessWidget {
         padding: const EdgeInsets.all(1.2),
         child: SingleChildScrollView(
           physics: const ClampingScrollPhysics(),
-          child: SizedBox(height: height, child: child),
+          child:
+              height == null ? child : SizedBox(height: height, child: child),
         ),
       ),
     );
