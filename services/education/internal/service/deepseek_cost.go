@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	deepSeekV4ProInputPricePer1MTokensCNY         = 4.0
-	deepSeekV4ProInputCacheHitPricePer1MTokensCNY = 1.0
-	deepSeekV4ProOutputPricePer1MTokensCNY        = 16.0
+	deepSeekV4ProInputPricePer1MTokensCNY         = 3.0
+	deepSeekV4ProInputCacheHitPricePer1MTokensCNY = 0.025
+	deepSeekV4ProOutputPricePer1MTokensCNY        = 6.0
 )
 
 func toDeepSeekUsageVO(usage *deepSeekUsage) *model.DeepSeekUsageVO {
@@ -59,6 +59,14 @@ func estimateDeepSeekOutputCostCNY(text string) float64 {
 	estimatedTokens := math.Ceil(float64(runeCount) * 0.9)
 	total := estimatedTokens * deepSeekV4ProOutputPricePer1MTokensCNY / 1_000_000
 	return roundCurrency(total)
+}
+
+func ComputeDeepSeekUsageCostCNY(usage *model.DeepSeekUsageVO, modelName string) float64 {
+	return computeDeepSeekUsageCostCNY(usage, modelName)
+}
+
+func EstimateDeepSeekOutputCostCNY(text string) float64 {
+	return estimateDeepSeekOutputCostCNY(text)
 }
 
 func roundCurrency(value float64) float64 {

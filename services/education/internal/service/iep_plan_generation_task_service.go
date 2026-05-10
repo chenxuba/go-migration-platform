@@ -281,9 +281,7 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 		latest.Status = iepPlanGenerationTaskRunning
 		latest.Message = "AI正在生成IEP计划"
 		latest.StreamText += text
-		if latest.CostAmountCNY <= 0 {
-			latest.CostAmountCNY = estimateDeepSeekOutputCostCNY(latest.StreamText)
-		}
+		latest.CostAmountCNY = estimateDeepSeekOutputCostCNY(latest.StreamText)
 		return svc.persistAndPublishTask(latest)
 	}
 

@@ -11,16 +11,19 @@ class _IepGenerationResult {
   const _IepGenerationResult({
     required this.plan,
     required this.savedPlan,
+    required this.costAmountCny,
   });
 
   final IepPlan plan;
   final IepPlanSaved? savedPlan;
+  final double costAmountCny;
 }
 
 class _ExecutionPlanGenerationResult<T> {
-  const _ExecutionPlanGenerationResult(this.plan);
+  const _ExecutionPlanGenerationResult(this.plan, this.costAmountCny);
 
   final T plan;
+  final double costAmountCny;
 }
 
 class _IepGenerationSessionSnapshot {
@@ -348,7 +351,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (record == null) {
       return false;
     }
-    final _IepGenerationSessionSnapshot? session = _generationSessionFor(record);
+    final _IepGenerationSessionSnapshot? session =
+        _generationSessionFor(record);
     if (session == null) {
       return false;
     }
@@ -423,7 +427,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   }
 
   Future<void> _handleRetryRequest() async {
-    if (_hasResumableGenerationTask || _generationSessionFor(widget.record) != null) {
+    if (_hasResumableGenerationTask ||
+        _generationSessionFor(widget.record) != null) {
       await _resumeOrRestoreGenerationTask(showMessage: true);
       return;
     }
@@ -476,7 +481,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             event.costAmountCny,
           );
         });
-        return _IepGenerationResult(plan: plan, savedPlan: event.savedPlan);
+        return _IepGenerationResult(
+          plan: plan,
+          savedPlan: event.savedPlan,
+          costAmountCny: event.costAmountCny,
+        );
       case IepPlanGenerationEventType.error:
         throw IepPlanApiException(
           event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
@@ -495,6 +504,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         setState(() {
           _generationStatus =
               event.message.trim().isEmpty ? statusLabel : event.message.trim();
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
       case IepExecutionPlanGenerationEventType.delta:
         final String delta = _generationDeltaAfterExistingText(event.text);
@@ -507,6 +520,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         }
         setState(() {
           _generationStatus = statusLabel;
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
       case IepExecutionPlanGenerationEventType.done:
         final T? plan = event.data;
@@ -516,8 +533,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         setState(() {
           _generationProgress = math.max(_generationProgress, .99);
           _generationStatus = '生成完成，正在自动保存草稿';
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
-        return _ExecutionPlanGenerationResult<T>(plan);
+        return _ExecutionPlanGenerationResult<T>(plan, event.costAmountCny);
       case IepExecutionPlanGenerationEventType.error:
         throw IepPlanApiException(
           event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
@@ -559,6 +580,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     _generationSessionsByRecord.remove(_recordGenerationKey(record));
     IepPlan? finalPlan;
     IepPlanSaved? savedPlanFromTask;
+    double actualCostAmountCny = 0;
     setState(() {
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
@@ -613,6 +635,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             await _handleGenerationEvent(event, ticket: ticket);
         finalPlan = result?.plan ?? finalPlan;
         savedPlanFromTask = result?.savedPlan ?? savedPlanFromTask;
+        if (result != null) {
+          actualCostAmountCny = result.costAmountCny;
+        }
       }
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -628,7 +653,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         plan: finalPlan,
         savedPlanFromTask: savedPlanFromTask,
       );
-      _showMessage('AI生成成功，已自动保存草稿', tone: PadMessageTone.success);
+      await _showGenerationCostDialog(
+        planLabel: 'IEP计划',
+        costAmountCny: actualCostAmountCny,
+      );
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -728,6 +756,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      final double actualCostAmountCny = _generationCostAmountCny;
       setState(() {
         _generatingPlan = false;
         _generationStatus = '';
@@ -737,7 +766,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
-      _showMessage('月计划生成成功，已自动保存', tone: PadMessageTone.success);
+      await _showGenerationCostDialog(
+        planLabel: '月计划',
+        costAmountCny: actualCostAmountCny,
+      );
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -827,7 +859,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      final IepExecutionPlansSaved saved = await widget.planClient.saveWeeklyPlan(
+      final IepExecutionPlansSaved saved =
+          await widget.planClient.saveWeeklyPlan(
         token,
         record: record,
         durationMonths: _periodMonthCount,
@@ -838,6 +871,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      final double actualCostAmountCny = _generationCostAmountCny;
       setState(() {
         _generatingPlan = false;
         _generationStatus = '';
@@ -847,7 +881,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
-      _showMessage('周计划生成成功，已自动保存', tone: PadMessageTone.success);
+      await _showGenerationCostDialog(
+        planLabel: '周计划',
+        costAmountCny: actualCostAmountCny,
+      );
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -889,6 +926,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     ++_loadTicket;
     IepPlan? finalPlan;
     IepPlanSaved? savedPlanFromTask;
+    double actualCostAmountCny = 0;
     setState(() {
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
@@ -938,6 +976,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               await _handleGenerationEvent(event, ticket: ticket);
           finalPlan = result?.plan ?? finalPlan;
           savedPlanFromTask = result?.savedPlan ?? savedPlanFromTask;
+          if (result != null) {
+            actualCostAmountCny = result.costAmountCny;
+          }
         }
       }
       if (!mounted || ticket != _generationTicket) {
@@ -951,7 +992,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         plan: finalPlan,
         savedPlanFromTask: savedPlanFromTask,
       );
-      _showMessage('AI生成成功，已自动保存草稿', tone: PadMessageTone.success);
+      await _showGenerationCostDialog(
+        planLabel: 'IEP计划',
+        costAmountCny: actualCostAmountCny > 0
+            ? actualCostAmountCny
+            : _generationCostAmountCny,
+      );
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -1012,7 +1058,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
           task.costAmountCny,
         );
       });
-      return _IepGenerationResult(plan: plan, savedPlan: task.savedPlan);
+      return _IepGenerationResult(
+        plan: plan,
+        savedPlan: task.savedPlan,
+        costAmountCny: task.costAmountCny,
+      );
     }
     setState(() {
       _generationStatus =
@@ -1332,6 +1382,27 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     widget.onMessage(message, tone: tone);
+  }
+
+  Future<void> _showGenerationCostDialog({
+    required String planLabel,
+    required double costAmountCny,
+  }) async {
+    if (!mounted) {
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepGenerationCostDialog(
+            planLabel: planLabel,
+            costAmountCny: costAmountCny,
+          ),
+        );
+      },
+    );
   }
 
   void _showTotalPlan() {

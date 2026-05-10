@@ -503,6 +503,142 @@ class _IepRegenerateConfirmDialog extends StatelessWidget {
   }
 }
 
+class _IepGenerationCostDialog extends StatelessWidget {
+  const _IepGenerationCostDialog({
+    required this.planLabel,
+    required this.costAmountCny,
+  });
+
+  final String planLabel;
+  final double costAmountCny;
+
+  @override
+  Widget build(BuildContext context) {
+    final String normalizedPlanLabel =
+        planLabel.trim().isEmpty ? '计划' : planLabel.trim();
+    final String costText = costAmountCny > 0
+        ? '¥${costAmountCny >= 1 ? costAmountCny.toStringAsFixed(2) : costAmountCny.toStringAsFixed(4)}'
+        : '暂未拿到真实金额';
+    final String helperText = costAmountCny > 0
+        ? '本次$normalizedPlanLabel已生成完成，并已返回真实消费金额。'
+        : '本次$normalizedPlanLabel已生成完成，但暂未返回真实消费金额。';
+
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 420,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFFF0FAEF),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.check_circle_rounded,
+                    color: Color(0xFF6F9F70),
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    '$normalizedPlanLabel生成完成',
+                    style: const TextStyle(
+                      color: _IepColors.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    '真实消费',
+                    style: TextStyle(
+                      color: _IepColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    costText,
+                    style: const TextStyle(
+                      color: _IepColors.orangeDeep,
+                      fontSize: 30,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Text(
+                    helperText,
+                    style: const TextStyle(
+                      color: _IepColors.text,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      height: 1.45,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '知道了',
+                  filled: true,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _IepWeeklyPlanMissingMonthConfirmDialog extends StatelessWidget {
   const _IepWeeklyPlanMissingMonthConfirmDialog({
     required this.monthLabel,

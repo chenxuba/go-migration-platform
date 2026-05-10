@@ -731,14 +731,25 @@ func (handler *Handler) erxinAssessmentRecordExecutionPlanAIStream(w http.Respon
 	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在准备" + planTypeLabel + "生成上下文"}); err != nil {
 		return
 	}
-	result, _, err := handler.service.GenerateERXinExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
-		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
+	var streamText strings.Builder
+	result, usage, err := handler.service.GenerateERXinExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
+		streamText.WriteString(text)
+		return writeEvent("delta", map[string]any{
+			"type":          "delta",
+			"text":          text,
+			"costAmountCny": service.EstimateDeepSeekOutputCostCNY(streamText.String()),
+		})
 	})
 	if err != nil {
 		_ = writeEvent("error", map[string]any{"type": "error", "message": err.Error()})
 		return
 	}
-	_ = writeEvent("done", map[string]any{"type": "done", "data": result})
+	costAmountCny := service.ComputeDeepSeekUsageCostCNY(usage, "")
+	_ = writeEvent("done", map[string]any{
+		"type":          "done",
+		"data":          result,
+		"costAmountCny": costAmountCny,
+	})
 }
 
 func (handler *Handler) erxinAssessmentRecordExecutionPlanDetail(w http.ResponseWriter, r *http.Request) {

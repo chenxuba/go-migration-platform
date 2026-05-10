@@ -173,7 +173,8 @@ abstract interface class IepPlanClient {
     required IepPlan sourcePlan,
   });
 
-  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>>
+      generateWeeklyPlanStream(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -569,7 +570,8 @@ class ApiIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>>
+      generateWeeklyPlanStream(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -1000,7 +1002,8 @@ class IepExecutionPlanGenerationEvent<T> {
     );
   }
 
-  factory IepExecutionPlanGenerationEvent.done(T data, {double costAmountCny = 0}) {
+  factory IepExecutionPlanGenerationEvent.done(T data,
+      {double costAmountCny = 0}) {
     return IepExecutionPlanGenerationEvent<T>._(
       type: IepExecutionPlanGenerationEventType.done,
       costAmountCny: costAmountCny,
@@ -1780,11 +1783,13 @@ IepExecutionPlanGenerationEvent<T>? _parseExecutionSseFrame<T>(
   final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
   final String type = _stringFrom(payload['type']);
   return switch (type) {
-    'status' => IepExecutionPlanGenerationEvent<T>.status(
+    'status' => IepExecutionPlanGenerationEvent<T>.statusWithCost(
         _stringFrom(payload['message']),
+        _doubleFrom(payload['costAmountCny']),
       ),
-    'delta' => IepExecutionPlanGenerationEvent<T>.delta(
+    'delta' => IepExecutionPlanGenerationEvent<T>.deltaWithCost(
         _stringFrom(payload['text']),
+        _doubleFrom(payload['costAmountCny']),
       ),
     'done' => IepExecutionPlanGenerationEvent<T>.done(
         parser(_mapFrom(payload['data'])),
