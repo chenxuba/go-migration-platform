@@ -5,7 +5,12 @@ type PEP3IEPPlanGenerateRequest struct {
 	DurationMonths int   `json:"durationMonths,omitempty"`
 }
 
+type PEP3IEPPlanActiveTaskRequest struct {
+	ID int64 `json:"id"`
+}
+
 type PEP3IEPPlanGenerationTaskVO struct {
+	Exists         bool                 `json:"exists,omitempty"`
 	TaskID         string               `json:"taskId"`
 	Status         string               `json:"status"`
 	Message        string               `json:"message,omitempty"`

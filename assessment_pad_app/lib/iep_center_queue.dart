@@ -4,12 +4,14 @@ class _StudentQueuePanel extends StatefulWidget {
   const _StudentQueuePanel({
     required this.recordClient,
     required this.selectedRecord,
+    required this.statusOverrides,
     required this.onRecordSelected,
     required this.onInitialLoadSettled,
   });
 
   final IepAssessmentRecordClient recordClient;
   final IepAssessmentRecordSummary? selectedRecord;
+  final Map<String, String> statusOverrides;
   final ValueChanged<IepAssessmentRecordSummary> onRecordSelected;
   final VoidCallback onInitialLoadSettled;
 
@@ -57,7 +59,13 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         _loading = false;
       });
       final IepAssessmentRecordSummary? selectedRecord =
-          _selectedRecordFrom(_visibleRecordsFor(_filter, page.items));
+          _selectedRecordFrom(
+        _visibleRecordsForWithOverrides(
+          _filter,
+          page.items,
+          widget.statusOverrides,
+        ),
+      );
       if (selectedRecord != null) {
         widget.onRecordSelected(selectedRecord);
       }
@@ -108,7 +116,13 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
       _filter = filter;
     });
     final IepAssessmentRecordSummary? selectedRecord =
-        _selectedRecordFrom(_visibleRecordsFor(filter, _records));
+        _selectedRecordFrom(
+      _visibleRecordsForWithOverrides(
+        filter,
+        _records,
+        widget.statusOverrides,
+      ),
+    );
     if (selectedRecord != null) {
       widget.onRecordSelected(selectedRecord);
     }
@@ -144,11 +158,16 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
           const SizedBox(height: 12),
           _QueueTabs(selected: _filter, onChanged: _changeFilter),
           const SizedBox(height: 12),
-          _CompactStatsStrip(records: _records, totalCount: _totalCount),
+          _CompactStatsStrip(
+            records: _records,
+            totalCount: _totalCount,
+            statusOverrides: widget.statusOverrides,
+          ),
           const SizedBox(height: 12),
           Expanded(
             child: _QueueList(
               records: _visibleRecords,
+              statusOverrides: widget.statusOverrides,
               selectedRecord: widget.selectedRecord,
               loading: _loading,
               error: _error,
@@ -162,7 +181,11 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
   }
 
   List<IepAssessmentRecordSummary> get _visibleRecords {
-    return _visibleRecordsFor(_filter, _records);
+    return _visibleRecordsForWithOverrides(
+      _filter,
+      _records,
+      widget.statusOverrides,
+    );
   }
 }
 
@@ -303,26 +326,35 @@ class _CompactStatsStrip extends StatelessWidget {
   const _CompactStatsStrip({
     required this.records,
     required this.totalCount,
+    this.statusOverrides = const <String, String>{},
   });
 
   final List<IepAssessmentRecordSummary> records;
   final int totalCount;
+  final Map<String, String> statusOverrides;
 
   @override
   Widget build(BuildContext context) {
     final int pendingCount = records
-        .where((IepAssessmentRecordSummary record) =>
-            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
-            '待生成')
+        .where((IepAssessmentRecordSummary record) {
+          final String label = _QueueStatusStyle.fromPlanStatus(
+            _effectiveRecordStatus(record, statusOverrides),
+          ).label;
+          return label == '待生成' || label == '生成中';
+        })
         .length;
     final int awaitingConfirmCount = records
         .where((IepAssessmentRecordSummary record) =>
-            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
+            _QueueStatusStyle.fromPlanStatus(
+                  _effectiveRecordStatus(record, statusOverrides),
+                ).label ==
             '待确认')
         .length;
     final int confirmedCount = records
         .where((IepAssessmentRecordSummary record) =>
-            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
+            _QueueStatusStyle.fromPlanStatus(
+                  _effectiveRecordStatus(record, statusOverrides),
+                ).label ==
             '已确认')
         .length;
     final String totalText =
@@ -398,6 +430,7 @@ class _StatDivider extends StatelessWidget {
 class _QueueList extends StatelessWidget {
   const _QueueList({
     required this.records,
+    required this.statusOverrides,
     required this.selectedRecord,
     required this.loading,
     required this.error,
@@ -406,6 +439,7 @@ class _QueueList extends StatelessWidget {
   });
 
   final List<IepAssessmentRecordSummary> records;
+  final Map<String, String> statusOverrides;
   final IepAssessmentRecordSummary? selectedRecord;
   final bool loading;
   final String error;
@@ -443,6 +477,7 @@ class _QueueList extends StatelessWidget {
         return _QueueStudentCard(
           student: _QueueStudent.fromRecord(
             record,
+            statusOverride: _effectiveRecordStatus(record, statusOverrides),
             active: selectedRecord == null
                 ? index == 0
                 : _sameRecord(record, selectedRecord!),
@@ -567,9 +602,10 @@ class _QueueStudent {
   factory _QueueStudent.fromRecord(
     IepAssessmentRecordSummary record, {
     required bool active,
+    String? statusOverride,
   }) {
     final _QueueStatusStyle status = _QueueStatusStyle.fromPlanStatus(
-      record.iepPlanStatus,
+      statusOverride ?? record.iepPlanStatus,
     );
     return _QueueStudent(
       name: record.studentName.trim().isEmpty ? '未命名学员' : record.studentName,
@@ -605,6 +641,11 @@ class _QueueStatusStyle {
 
   factory _QueueStatusStyle.fromPlanStatus(String status) {
     return switch (status.trim()) {
+      'generating' => const _QueueStatusStyle(
+          label: '生成中',
+          color: _IepColors.orangeDeep,
+          background: Color(0xFFFFE7D8),
+        ),
       'confirmed' => const _QueueStatusStyle(
           label: '已确认',
           color: _IepColors.green,
@@ -701,20 +742,30 @@ bool _sameRecord(
       left.source.trim().toUpperCase() == right.source.trim().toUpperCase();
 }
 
-List<IepAssessmentRecordSummary> _visibleRecordsFor(
+List<IepAssessmentRecordSummary> _visibleRecordsForWithOverrides(
   _QueueFilter filter,
   List<IepAssessmentRecordSummary> records,
+  Map<String, String> statusOverrides,
 ) {
   return records.where((IepAssessmentRecordSummary record) {
     final String status =
-        _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label;
+        _QueueStatusStyle.fromPlanStatus(
+          _effectiveRecordStatus(record, statusOverrides),
+        ).label;
     return switch (filter) {
       _QueueFilter.all => true,
-      _QueueFilter.pending => status == '待生成',
+      _QueueFilter.pending => status == '待生成' || status == '生成中',
       _QueueFilter.awaitingConfirm => status == '待确认',
       _QueueFilter.confirmed => status == '已确认',
     };
   }).toList(growable: false);
+}
+
+String _effectiveRecordStatus(
+  IepAssessmentRecordSummary record,
+  Map<String, String> statusOverrides,
+) {
+  return statusOverrides[_recordIdentityKey(record)] ?? record.iepPlanStatus;
 }
 
 class _QueueStudentCard extends StatelessWidget {

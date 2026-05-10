@@ -70,6 +70,14 @@ const String defaultIepErxinPlanAiTaskDetailPath = String.fromEnvironment(
   'IEP_ERXIN_PLAN_AI_TASK_DETAIL_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/tasks/detail',
 );
+const String defaultIepPep3PlanAiTaskActivePath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_AI_TASK_ACTIVE_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/ai/tasks/active',
+);
+const String defaultIepErxinPlanAiTaskActivePath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_AI_TASK_ACTIVE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/tasks/active',
+);
 
 class IepPlanApiException implements Exception {
   const IepPlanApiException(this.message, {this.unauthorized = false});
@@ -120,6 +128,11 @@ abstract interface class IepPlanClient {
     required String taskId,
   });
 
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  });
+
   Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -154,6 +167,8 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinPlanAiTaskStreamPath = defaultIepErxinPlanAiTaskStreamPath,
     this.pep3PlanAiTaskDetailPath = defaultIepPep3PlanAiTaskDetailPath,
     this.erxinPlanAiTaskDetailPath = defaultIepErxinPlanAiTaskDetailPath,
+    this.pep3PlanAiTaskActivePath = defaultIepPep3PlanAiTaskActivePath,
+    this.erxinPlanAiTaskActivePath = defaultIepErxinPlanAiTaskActivePath,
     this.httpClient,
   });
 
@@ -174,6 +189,8 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinPlanAiTaskStreamPath;
   final String pep3PlanAiTaskDetailPath;
   final String erxinPlanAiTaskDetailPath;
+  final String pep3PlanAiTaskActivePath;
+  final String erxinPlanAiTaskActivePath;
   final http.Client? httpClient;
 
   @override
@@ -300,6 +317,29 @@ class ApiIepPlanClient implements IepPlanClient {
       throw const IepPlanApiException('AI生成任务查询失败：接口返回异常');
     }
     return IepPlanGenerationTask.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    final Object? data = await _getJson(
+      _uri(
+        _isErxinRecord(record)
+            ? erxinPlanAiTaskActivePath
+            : pep3PlanAiTaskActivePath,
+        <String, String>{'id': '${record.id}'},
+      ),
+      token,
+    );
+    if (data is! Map) {
+      return null;
+    }
+    final IepPlanGenerationTask task = IepPlanGenerationTask.fromJson(
+      Map<String, dynamic>.from(data),
+    );
+    return task.exists ? task : null;
   }
 
   @override
@@ -585,6 +625,7 @@ class IepPlanGenerationEvent {
 
 class IepPlanGenerationTask {
   const IepPlanGenerationTask({
+    this.exists = true,
     required this.taskId,
     required this.status,
     required this.durationMonths,
@@ -600,6 +641,7 @@ class IepPlanGenerationTask {
     final Map<String, dynamic> planJson = _mapFrom(json['plan']);
     final Map<String, dynamic> savedPlanJson = _mapFrom(json['savedPlan']);
     return IepPlanGenerationTask(
+      exists: json.containsKey('exists') ? _boolFrom(json['exists']) : true,
       taskId: _stringFrom(json['taskId']),
       status: _stringFrom(json['status']),
       message: _stringFrom(json['message']),
@@ -613,6 +655,7 @@ class IepPlanGenerationTask {
     );
   }
 
+  final bool exists;
   final String taskId;
   final String status;
   final String message;

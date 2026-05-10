@@ -37,6 +37,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
   IepAssessmentRecordSummary? _selectedRecord;
   bool _queueBootstrapLoading = true;
   bool _showConfirmIep = false;
+  final Map<String, String> _recordStatusOverrides = <String, String>{};
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
 
@@ -66,6 +67,30 @@ class _IepCenterPageState extends State<IepCenterPage> {
     }
     setState(() {
       _showConfirmIep = visible;
+    });
+  }
+
+  void _handleRecordStatusChanged(
+    IepAssessmentRecordSummary record,
+    String status,
+  ) {
+    final String recordKey = _recordIdentityKey(record);
+    final String normalizedStatus = status.trim();
+    final String? current = _recordStatusOverrides[recordKey];
+    if (normalizedStatus.isEmpty) {
+      if (current == null) {
+        return;
+      }
+      setState(() {
+        _recordStatusOverrides.remove(recordKey);
+      });
+      return;
+    }
+    if (current == normalizedStatus) {
+      return;
+    }
+    setState(() {
+      _recordStatusOverrides[recordKey] = normalizedStatus;
     });
   }
 
@@ -120,6 +145,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                 child: _StudentQueuePanel(
                   recordClient: widget.recordClient,
                   selectedRecord: _selectedRecord,
+                  statusOverrides: _recordStatusOverrides,
                   onRecordSelected: _selectRecord,
                   onInitialLoadSettled: _handleQueueInitialLoadSettled,
                 ),
@@ -135,6 +161,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                   queueBootstrapLoading: _queueBootstrapLoading,
                   onConfirmAvailabilityChanged:
                       _handleConfirmAvailabilityChanged,
+                  onRecordStatusChanged: _handleRecordStatusChanged,
                   onMessage: _showMessage,
                 ),
               ),
@@ -217,6 +244,10 @@ DateTime _periodEndFor(DateTime start, int monthCount) {
 }
 
 DateTime _monthOnly(DateTime value) => DateTime(value.year, value.month);
+
+String _recordIdentityKey(IepAssessmentRecordSummary record) {
+  return '${record.source.trim().toUpperCase()}-${record.id}';
+}
 
 DateTime _monthEnd(DateTime value) => DateTime(value.year, value.month + 1, 0);
 

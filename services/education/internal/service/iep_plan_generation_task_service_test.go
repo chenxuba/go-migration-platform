@@ -1,23 +1,44 @@
 package service
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestIEPPlanGenerationTaskStorePublishesUpdatesAndKeepsSnapshot(t *testing.T) {
 	store := newIEPPlanGenerationTaskStore()
-	task := store.create(iepPlanGenerationTaskKindPEP3, 7, 88, 3)
+	initial := store.upsert(&iepPlanGenerationTask{
+		ID:             "task-1",
+		Kind:           iepPlanGenerationTaskKindPEP3,
+		InstID:         3,
+		UserID:         7,
+		RecordID:       88,
+		DurationMonths: 3,
+		Status:         iepPlanGenerationTaskPending,
+		Message:        "正在准备AI生成任务",
+		UpdatedAt:      time.Now(),
+	})
 
-	ch, unsubscribe, initial, ok := store.subscribe(task.ID)
+	ch, unsubscribe, ok := store.subscribe("task-1", initial)
 	if !ok {
 		t.Fatal("expected subscription to be created")
 	}
-	if initial.Status != iepPlanGenerationTaskPending || initial.TaskID != task.ID {
+	if initial.Status != iepPlanGenerationTaskPending || initial.TaskID != "task-1" {
 		t.Fatalf("unexpected initial snapshot: %+v", initial)
 	}
 
-	store.update(task.ID, func(task *iepPlanGenerationTask) {
-		task.Status = iepPlanGenerationTaskRunning
-		task.Message = "AI正在生成IEP计划"
-		task.StreamText = `{"rows":[{"shortGoal":"能连续跳跃3次"}]}`
+	<-ch
+	store.upsert(&iepPlanGenerationTask{
+		ID:             "task-1",
+		Kind:           iepPlanGenerationTaskKindPEP3,
+		InstID:         3,
+		UserID:         7,
+		RecordID:       88,
+		DurationMonths: 3,
+		Status:         iepPlanGenerationTaskRunning,
+		Message:        "AI正在生成IEP计划",
+		StreamText:     `{"rows":[{"shortGoal":"能连续跳跃3次"}]}`,
+		UpdatedAt:      time.Now(),
 	})
 
 	select {
@@ -33,15 +54,25 @@ func TestIEPPlanGenerationTaskStorePublishesUpdatesAndKeepsSnapshot(t *testing.T
 	}
 
 	unsubscribe()
-	store.update(task.ID, func(task *iepPlanGenerationTask) {
-		task.Status = iepPlanGenerationTaskDone
-		task.Message = "AI生成成功，已自动保存草稿"
+	snapshot := store.upsert(&iepPlanGenerationTask{
+		ID:             "task-1",
+		Kind:           iepPlanGenerationTaskKindPEP3,
+		InstID:         3,
+		UserID:         7,
+		RecordID:       88,
+		DurationMonths: 3,
+		Status:         iepPlanGenerationTaskDone,
+		Message:        "AI生成成功，已自动保存草稿",
+		UpdatedAt:      time.Now(),
 	})
-	snapshot, ok := store.snapshot(task.ID)
+	task, ok := store.get("task-1")
 	if !ok {
 		t.Fatal("expected task snapshot after unsubscribe")
 	}
 	if snapshot.Status != iepPlanGenerationTaskDone {
 		t.Fatalf("unexpected final snapshot: %+v", snapshot)
+	}
+	if task.Status != iepPlanGenerationTaskDone {
+		t.Fatalf("unexpected final task status: %+v", task)
 	}
 }

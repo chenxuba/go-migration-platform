@@ -1347,6 +1347,44 @@ void main() {
     expect(find.text('重新生成后恢复订阅并完成'), findsOneWidget);
   });
 
+  testWidgets('IEP center auto resumes active task after cold start',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _ColdStartResumeIepPlanClient iepPlanClient =
+        _ColdStartResumeIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakePendingIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 1200));
+
+    expect(iepPlanClient.fetchActiveTaskCalls, 1);
+    expect(iepPlanClient.createTaskCalls, 0);
+    expect(iepPlanClient.fetchTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 1);
+    expect(find.text('冷启动恢复成功'), findsOneWidget);
+  });
+
   testWidgets('IEP center suppresses repeated streaming long goal prefixes',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -4464,6 +4502,14 @@ class _FakeIepPlanClient implements IepPlanClient {
   IepPlan? lastSavedPlan;
 
   @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
+  }
+
+  @override
   Future<IepPlanSaved> fetchIepPlan(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -4770,6 +4816,14 @@ class _SlowFirstIepPlanClient extends _FakeIepPlanClient {
   bool _delayedFirstFetch = false;
 
   @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
+  }
+
+  @override
   Future<IepPlanSaved> fetchIepPlan(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -4797,6 +4851,14 @@ class _LongGoalIepPlanClient extends _FakeIepPlanClient {
       '能够在红色、蓝色、黄色三种地垫之间按照口头提示切换路线，落地后保持身体稳定两秒以上，不出现明显跌倒、跪坐或离开训练区域的情况，完成后能主动回到起点。';
   static const String shortGoal2 = '能双脚交替上下楼梯（一步一阶，扶扶手）';
   static const String shortGoal3 = '能连续向前翻滚2次（在保护下完成）';
+
+  @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
+  }
 
   @override
   Future<IepPlanSaved> fetchIepPlan(
@@ -4851,6 +4913,14 @@ class _LongGoalIepPlanClient extends _FakeIepPlanClient {
 }
 
 class _ConfirmRegenerateIepPlanClient extends _FakeIepPlanClient {
+  @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
+  }
+
   @override
   Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
     String token, {
@@ -4960,6 +5030,14 @@ class _DisconnectThenResumeRegenerateIepPlanClient extends _FakeIepPlanClient {
   int watchTaskCalls = 0;
 
   @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
+  }
+
+  @override
   Future<IepPlanGenerationTask> createIepPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -5022,6 +5100,102 @@ class _DisconnectThenResumeRegenerateIepPlanClient extends _FakeIepPlanClient {
           domain: '大肌肉',
           longGoal: '提升动态平衡能力',
           shortGoal: '重新生成后恢复订阅并完成',
+          courseForm: '个训',
+          startEndDate: '2026-05-01 - 2026-05-31',
+        ),
+      ],
+    );
+    yield IepPlanGenerationEvent.done(
+      plan,
+      savedPlan: IepPlanSaved(
+        exists: true,
+        status: 'draft',
+        durationMonths: 3,
+        plan: plan,
+        updatedTime: '2026-05-10T09:30:00Z',
+      ),
+    );
+  }
+}
+
+class _ColdStartResumeIepPlanClient extends _EmptyThenGeneratedIepPlanClient {
+  int createTaskCalls = 0;
+  int fetchTaskCalls = 0;
+  int fetchActiveTaskCalls = 0;
+  int watchTaskCalls = 0;
+
+  @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    fetchActiveTaskCalls += 1;
+    return const IepPlanGenerationTask(
+      taskId: 'cold-start-task',
+      status: 'running',
+      durationMonths: 3,
+      message: 'AI正在生成IEP计划',
+      streamText: '{"rows":[{"shortGoal":"冷启动恢复',
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    createTaskCalls += 1;
+    return await super.createIepPlanGenerationTask(
+      token,
+      record: record,
+      durationMonths: durationMonths,
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    fetchTaskCalls += 1;
+    return IepPlanGenerationTask(
+      taskId: taskId,
+      status: 'running',
+      durationMonths: 3,
+      message: 'AI正在生成IEP计划',
+      streamText: '{"rows":[{"shortGoal":"冷启动恢复',
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
+    watchTaskCalls += 1;
+    yield IepPlanGenerationEvent.delta('成功"}]}');
+    final IepPlan plan = IepPlan(
+      title: '康复教学季度计划',
+      student: IepPlanStudent(
+        name: record.studentName,
+        gender: record.studentGender,
+        birthDate: record.birthDate,
+      ),
+      meta: IepPlanMeta(
+        planDate: record.assessmentDate,
+        participant: record.examinerName,
+        implementer: record.examinerName,
+        startDate: '2026-05-01',
+        endDate: '2026-07-31',
+      ),
+      rows: const <IepPlanRow>[
+        IepPlanRow(
+          domain: '大肌肉',
+          longGoal: '提升动态平衡能力',
+          shortGoal: '冷启动恢复成功',
           courseForm: '个训',
           startEndDate: '2026-05-01 - 2026-05-31',
         ),
@@ -5266,6 +5440,14 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
       durationMonths: 3,
       error: '测试任务已结束',
     );
+  }
+
+  @override
+  Future<IepPlanGenerationTask?> fetchActiveIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+  }) async {
+    return null;
   }
 
   @override
