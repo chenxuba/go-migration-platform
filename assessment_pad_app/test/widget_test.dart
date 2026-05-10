@@ -958,6 +958,46 @@ void main() {
     expect(find.text('集体课'), findsWidgets);
   });
 
+  testWidgets('IEP center shows structured skeleton during route bootstrap',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(
+          delay: const Duration(milliseconds: 300),
+        ),
+        iepPlanClient: _FakeIepPlanClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+
+    expect(find.text('学员IEP队列'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('iep-queue-skeleton-0')),
+        findsOneWidget);
+    expect(find.text('正在加载评估记录'), findsNothing);
+    expect(find.text('请选择左侧评估记录'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.textContaining('陈旭 · 4岁0月'), findsOneWidget);
+  });
+
   testWidgets('smart timetable detects availability after target selection',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
@@ -3760,6 +3800,9 @@ class _FakeHomeClient implements HomeClient {
 }
 
 class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
+  _FakeIepAssessmentRecordClient({this.delay = Duration.zero});
+
+  final Duration delay;
   int fetchRecordsPageCalls = 0;
 
   @override
@@ -3772,6 +3815,9 @@ class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
     String assessmentDateEnd = '',
   }) async {
     fetchRecordsPageCalls += 1;
+    if (delay > Duration.zero) {
+      await Future<void>.delayed(delay);
+    }
     return const IepAssessmentRecordPage(
       total: 2,
       current: 1,

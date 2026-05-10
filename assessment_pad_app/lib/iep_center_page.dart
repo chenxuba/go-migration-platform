@@ -6,6 +6,9 @@ import 'iep_plan_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
+import 'route_bootstrap.dart';
+
+part 'iep_center_loading.dart';
 
 class IepCenterPage extends StatefulWidget {
   const IepCenterPage({
@@ -25,6 +28,7 @@ class IepCenterPage extends StatefulWidget {
 
 class _IepCenterPageState extends State<IepCenterPage> {
   IepAssessmentRecordSummary? _selectedRecord;
+  bool _queueBootstrapLoading = true;
 
   void _selectRecord(IepAssessmentRecordSummary record) {
     final IepAssessmentRecordSummary? current = _selectedRecord;
@@ -33,6 +37,15 @@ class _IepCenterPageState extends State<IepCenterPage> {
     }
     setState(() {
       _selectedRecord = record;
+    });
+  }
+
+  void _handleQueueInitialLoadSettled() {
+    if (!_queueBootstrapLoading) {
+      return;
+    }
+    setState(() {
+      _queueBootstrapLoading = false;
     });
   }
 
@@ -64,6 +77,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                   recordClient: widget.recordClient,
                   selectedRecord: _selectedRecord,
                   onRecordSelected: _selectRecord,
+                  onInitialLoadSettled: _handleQueueInitialLoadSettled,
                 ),
               ),
               Positioned(
@@ -74,6 +88,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                 child: _IepWorkspace(
                   record: _selectedRecord,
                   planClient: widget.planClient,
+                  queueBootstrapLoading: _queueBootstrapLoading,
                 ),
               ),
             ],
@@ -554,11 +569,13 @@ class _StudentQueuePanel extends StatefulWidget {
     required this.recordClient,
     required this.selectedRecord,
     required this.onRecordSelected,
+    required this.onInitialLoadSettled,
   });
 
   final IepAssessmentRecordClient recordClient;
   final IepAssessmentRecordSummary? selectedRecord;
   final ValueChanged<IepAssessmentRecordSummary> onRecordSelected;
+  final VoidCallback onInitialLoadSettled;
 
   @override
   State<_StudentQueuePanel> createState() => _StudentQueuePanelState();
@@ -576,14 +593,16 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
   @override
   void initState() {
     super.initState();
-    _loadRecords();
+    runAfterRouteEntrance(context, _loadRecords);
   }
 
   Future<void> _loadRecords() async {
-    setState(() {
-      _loading = true;
-      _error = '';
-    });
+    if (mounted && !_loading) {
+      setState(() {
+        _loading = true;
+        _error = '';
+      });
+    }
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
@@ -606,6 +625,7 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
       if (selectedRecord != null) {
         widget.onRecordSelected(selectedRecord);
       }
+      widget.onInitialLoadSettled();
     } on IepAssessmentRecordApiException catch (error) {
       if (!mounted) {
         return;
@@ -614,6 +634,7 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         _error = error.message;
         _loading = false;
       });
+      widget.onInitialLoadSettled();
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -622,6 +643,7 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         _error = '评估记录加载失败：$error';
         _loading = false;
       });
+      widget.onInitialLoadSettled();
     }
   }
 
@@ -949,10 +971,7 @@ class _QueueList extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (loading) {
-      return const _QueueStateView(
-        icon: Icons.hourglass_top_rounded,
-        title: '正在加载评估记录',
-      );
+      return const _QueueListSkeleton();
     }
     if (error.trim().isNotEmpty) {
       return _QueueStateView(
@@ -1518,10 +1537,12 @@ class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace({
     required this.record,
     required this.planClient,
+    required this.queueBootstrapLoading,
   });
 
   final IepAssessmentRecordSummary? record;
   final IepPlanClient planClient;
+  final bool queueBootstrapLoading;
 
   @override
   State<_IepWorkspace> createState() => _IepWorkspaceState();
@@ -1557,7 +1578,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   void initState() {
     super.initState();
     _syncPreviewMonthToPeriod();
-    _loadPlanBundle();
+    if (widget.record != null) {
+      runAfterRouteEntrance(context, _loadPlanBundle);
+    }
   }
 
   @override
@@ -1977,6 +2000,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               monthPlan: monthPlan,
               weekPlan: weekPlan,
               loading: _loadingPlan,
+              queueBootstrapLoading: widget.queueBootstrapLoading,
               error: _planError,
               onRetry: _loadPlanBundle,
               totalPlanDomains: _totalPlanDomains,
@@ -3976,6 +4000,7 @@ class _IepTablePreview extends StatelessWidget {
     required this.monthPlan,
     required this.weekPlan,
     required this.loading,
+    required this.queueBootstrapLoading,
     required this.error,
     required this.onRetry,
     required this.totalPlanDomains,
@@ -3994,6 +4019,7 @@ class _IepTablePreview extends StatelessWidget {
   final IepMonthlyPlan? monthPlan;
   final IepWeeklyPlan? weekPlan;
   final bool loading;
+  final bool queueBootstrapLoading;
   final String error;
   final VoidCallback onRetry;
   final List<_DocDomainData> totalPlanDomains;
@@ -4019,17 +4045,16 @@ class _IepTablePreview extends StatelessWidget {
     );
 
     Widget child;
-    if (record == null) {
+    if (queueBootstrapLoading && record == null) {
+      child = const _IepWordTableSkeleton();
+    } else if (record == null) {
       child = const _PlanStateView(
         icon: Icons.touch_app_rounded,
         title: '请选择左侧评估记录',
         message: '选择学员后会读取对应IEP计划',
       );
     } else if (loading) {
-      child = const _PlanStateView(
-        icon: Icons.hourglass_top_rounded,
-        title: '正在加载IEP计划',
-      );
+      child = const _IepWordTableSkeleton();
     } else if (error.trim().isNotEmpty) {
       child = _PlanStateView(
         icon: Icons.wifi_off_rounded,
@@ -4099,254 +4124,6 @@ class _IepTablePreview extends StatelessWidget {
         border: Border.all(color: _IepColors.line),
       ),
       child: child,
-    );
-  }
-}
-
-class _PlanStateView extends StatelessWidget {
-  const _PlanStateView({
-    required this.icon,
-    required this.title,
-    this.message = '',
-    this.actionLabel = '',
-    this.onAction,
-  });
-
-  final IconData icon;
-  final String title;
-  final String message;
-  final String actionLabel;
-  final VoidCallback? onAction;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox(
-        width: 340,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 34, color: _IepColors.orangeDeep),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _IepColors.ink,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (message.trim().isNotEmpty) ...<Widget>[
-              const SizedBox(height: 7),
-              Text(
-                message,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _IepColors.text,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  height: 1.35,
-                ),
-              ),
-            ],
-            if (actionLabel.trim().isNotEmpty && onAction != null) ...<Widget>[
-              const SizedBox(height: 12),
-              _MiniQueueAction(label: actionLabel, onTap: onAction!),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IepEmptyGenerateState extends StatelessWidget {
-  const _IepEmptyGenerateState({required this.studentName});
-
-  final String studentName;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: SizedBox(
-        width: 460,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            const _IepEmptyIllustration(),
-            const SizedBox(height: 18),
-            Text(
-              '$studentName 暂无IEP计划',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _IepColors.ink,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                height: 1.15,
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '可基于当前评估记录生成IEP总计划，生成后会继续展示月计划和周计划入口。',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _IepColors.text,
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 20),
-            const _AiGenerateButton(),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _IepEmptyIllustration extends StatelessWidget {
-  const _IepEmptyIllustration();
-
-  @override
-  Widget build(BuildContext context) {
-    return SizedBox(
-      width: 128,
-      height: 92,
-      child: Stack(
-        alignment: Alignment.center,
-        children: <Widget>[
-          Positioned(
-            bottom: 4,
-            child: Container(
-              width: 106,
-              height: 58,
-              decoration: BoxDecoration(
-                color: const Color(0xFFFFF3EC).withOpacity(.62),
-                borderRadius: BorderRadius.circular(29),
-              ),
-            ),
-          ),
-          Positioned(
-            left: 21,
-            top: 18,
-            child: Transform.rotate(
-              angle: -0.08,
-              child: Container(
-                width: 70,
-                height: 58,
-                padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFFEFCBB7)),
-                  boxShadow: _iepShadow(
-                    color: const Color(0x0FB05F32),
-                    blur: 10,
-                    offset: const Offset(0, 4),
-                  ),
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: const <Widget>[
-                    _EmptyDocLine(width: 42, strong: true),
-                    SizedBox(height: 7),
-                    _EmptyDocLine(width: 50),
-                    SizedBox(height: 6),
-                    _EmptyDocLine(width: 35),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          Positioned(
-            right: 20,
-            top: 10,
-            child: Container(
-              width: 42,
-              height: 42,
-              alignment: Alignment.center,
-              decoration: BoxDecoration(
-                color: _IepColors.orange,
-                shape: BoxShape.circle,
-                boxShadow: _iepShadow(
-                  color: const Color(0x30E96F43),
-                  blur: 14,
-                  offset: const Offset(0, 6),
-                ),
-              ),
-              child: const Icon(
-                Icons.auto_awesome_rounded,
-                size: 23,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _EmptyDocLine extends StatelessWidget {
-  const _EmptyDocLine({required this.width, this.strong = false});
-
-  final double width;
-  final bool strong;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: strong ? 5 : 4,
-      decoration: BoxDecoration(
-        color: strong ? _IepColors.orangeSoft : const Color(0xFFF3DED1),
-        borderRadius: BorderRadius.circular(3),
-      ),
-    );
-  }
-}
-
-class _AiGenerateButton extends StatelessWidget {
-  const _AiGenerateButton();
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: _IepColors.orange,
-      borderRadius: BorderRadius.circular(18),
-      child: InkWell(
-        onTap: () {},
-        borderRadius: BorderRadius.circular(18),
-        child: Container(
-          height: 42,
-          padding: const EdgeInsets.symmetric(horizontal: 26),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(18),
-            boxShadow: _iepShadow(
-              color: const Color(0x2FE96F43),
-              blur: 16,
-              offset: const Offset(0, 7),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: const <Widget>[
-              Icon(Icons.auto_awesome_rounded, size: 18, color: Colors.white),
-              SizedBox(width: 7),
-              Text(
-                'AI生成',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
     );
   }
 }
