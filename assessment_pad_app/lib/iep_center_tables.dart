@@ -499,7 +499,7 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
           ),
           Expanded(
             child: Container(
-              margin: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              margin: const EdgeInsets.fromLTRB(18, 0, 18, 14),
               padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFFCF8),
