@@ -489,6 +489,7 @@ void main() {
         record: record,
         durationMonths: 3,
         status: 'draft',
+        resetExecutionPlans: true,
         plan: const IepPlan(
           title: '康复教学季度计划',
           student: IepPlanStudent(name: '陈旭', gender: '男', birthDate: ''),
@@ -518,5 +519,113 @@ void main() {
         ),
       ),
     );
+  });
+
+  test('plan client sends resetExecutionPlans when regenerating total iep',
+      () async {
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    addTearDown(() async {
+      await server.close(force: true);
+    });
+
+    server.listen((HttpRequest request) async {
+      final String body = await utf8.decoder.bind(request).join();
+      final Map<String, dynamic> decoded =
+          jsonDecode(body) as Map<String, dynamic>;
+
+      expect(request.method, 'POST');
+      expect(
+          request.uri.path, '/api/v1/assessments/pep3/records/iep-plan/save');
+      expect(decoded['id'], 88);
+      expect(decoded['durationMonths'], 3);
+      expect(decoded['status'], 'draft');
+      expect(decoded['resetExecutionPlans'], true);
+
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{
+            'exists': true,
+            'status': 'draft',
+            'durationMonths': 3,
+            'plan': <String, dynamic>{
+              'title': '康复教学季度计划',
+              'student': <String, dynamic>{
+                'name': '陈旭',
+                'gender': '男',
+                'birthDate': '',
+              },
+              'meta': <String, dynamic>{
+                'planDate': '',
+                'participant': '',
+                'implementer': '',
+                'startDate': '',
+                'endDate': '',
+              },
+              'rows': <Map<String, dynamic>>[
+                <String, dynamic>{
+                  'domain': '大肌肉',
+                  'longGoal': '提升动态平衡',
+                  'shortGoal': '能连续跳跃3次',
+                  'courseForm': '个训',
+                  'startEndDate': '2026-05-01 - 2026-05-31',
+                },
+              ],
+            },
+          },
+        }));
+      await request.response.close();
+    });
+
+    final ApiIepPlanClient client = ApiIepPlanClient(
+      educationBaseUrl: 'http://127.0.0.1:${server.port}',
+    );
+    const IepAssessmentRecordSummary record = IepAssessmentRecordSummary(
+      id: 88,
+      source: 'PEP3',
+      studentId: 19,
+      studentName: '陈旭',
+      assessmentCode: 'PEP3',
+      assessmentName: 'PEP-3',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-07',
+      examinerName: '陈瑞',
+      updatedTime: '',
+    );
+
+    final IepPlanSaved saved = await client.saveIepPlan(
+      'token-1',
+      record: record,
+      durationMonths: 3,
+      status: 'draft',
+      resetExecutionPlans: true,
+      plan: const IepPlan(
+        title: '康复教学季度计划',
+        student: IepPlanStudent(name: '陈旭', gender: '男', birthDate: ''),
+        meta: IepPlanMeta(
+          planDate: '',
+          participant: '',
+          implementer: '',
+          startDate: '',
+          endDate: '',
+        ),
+        rows: <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡',
+            shortGoal: '能连续跳跃3次',
+            courseForm: '个训',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+        ],
+      ),
+    );
+
+    expect(saved.exists, isTrue);
+    expect(saved.status, 'draft');
+    expect(saved.hasContent, isTrue);
   });
 }

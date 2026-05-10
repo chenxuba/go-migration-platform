@@ -162,6 +162,7 @@ abstract interface class IepPlanClient {
     required int durationMonths,
     required String status,
     required IepPlan plan,
+    bool resetExecutionPlans = false,
   });
 
   Stream<IepExecutionPlanGenerationEvent<IepMonthlyPlan>>
@@ -523,6 +524,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required int durationMonths,
     required String status,
     required IepPlan plan,
+    bool resetExecutionPlans = false,
   }) async {
     final Object? data = await _postJson(
       _uri(_isErxinRecord(record) ? erxinPlanSavePath : pep3PlanSavePath),
@@ -531,6 +533,7 @@ class ApiIepPlanClient implements IepPlanClient {
         'id': record.id,
         'durationMonths': _normalizeDuration(durationMonths),
         'status': status,
+        'resetExecutionPlans': resetExecutionPlans,
         'plan': plan.toJson(),
       },
     );

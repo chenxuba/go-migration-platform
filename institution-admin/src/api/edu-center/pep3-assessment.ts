@@ -1185,6 +1185,7 @@ export function savePEP3IEPPlanApi(data: {
   id?: number | string
   durationMonths?: number | string
   status?: string
+  resetExecutionPlans?: boolean
   plan: PEP3IEPPlanAIResult
 }) {
   return usePost<PEP3IEPPlanSavedVO>('/api/v1/assessments/pep3/records/iep-plan/save', {

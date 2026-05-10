@@ -478,6 +478,7 @@ export function saveERXinIEPPlanApi(data: {
   id?: number | string
   durationMonths?: number | string
   status?: string
+  resetExecutionPlans?: boolean
   plan: PEP3IEPPlanAIResult
 }) {
   return usePost<PEP3IEPPlanSavedVO>('/api/v1/assessments/erxin/records/iep-plan/save', {

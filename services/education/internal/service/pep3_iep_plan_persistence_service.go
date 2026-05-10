@@ -39,7 +39,7 @@ func (svc *Service) SavePEP3IEPPlan(userID int64, req model.PEP3IEPPlanSaveReque
 	if len(plan.Rows) == 0 {
 		return model.PEP3IEPPlanSavedVO{}, errors.New("请先生成或填写IEP计划")
 	}
-	if err := svc.repo.SavePEP3IEPPlan(context.Background(), repository.PEP3IEPPlanEntity{
+	planEntity := repository.PEP3IEPPlanEntity{
 		InstID:         instID,
 		RecordID:       req.ID,
 		DurationMonths: durationMonths,
@@ -47,8 +47,20 @@ func (svc *Service) SavePEP3IEPPlan(userID int64, req model.PEP3IEPPlanSaveReque
 		Plan:           plan,
 		CreatedBy:      userID,
 		UpdatedBy:      userID,
-	}); err != nil {
-		return model.PEP3IEPPlanSavedVO{}, err
+	}
+	if req.ResetExecutionPlans {
+		if err := svc.repo.SavePEP3IEPPlanWithExecutionPlans(
+			context.Background(),
+			planEntity,
+			nil,
+			0,
+		); err != nil {
+			return model.PEP3IEPPlanSavedVO{}, err
+		}
+	} else {
+		if err := svc.repo.SavePEP3IEPPlan(context.Background(), planEntity); err != nil {
+			return model.PEP3IEPPlanSavedVO{}, err
+		}
 	}
 	return svc.GetPEP3IEPPlan(userID, req.ID, durationMonths)
 }

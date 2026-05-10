@@ -310,10 +310,11 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	_ = svc.persistAndPublishTask(entity)
 
 	saveReq := model.PEP3IEPPlanSaveRequest{
-		ID:             entity.RecordID,
-		DurationMonths: entity.DurationMonths,
-		Status:         pep3IEPPlanStatusDraft,
-		Plan:           plan,
+		ID:                  entity.RecordID,
+		DurationMonths:      entity.DurationMonths,
+		Status:              pep3IEPPlanStatusDraft,
+		ResetExecutionPlans: true,
+		Plan:                plan,
 	}
 	var saved model.PEP3IEPPlanSavedVO
 	if iepPlanGenerationTaskKind(entity.AssessmentType) == iepPlanGenerationTaskKindERXin {

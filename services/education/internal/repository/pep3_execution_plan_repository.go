@@ -181,3 +181,16 @@ func (repo *Repository) DeletePEP3WeeklyExecutionPlansForMonth(ctx context.Conte
 	`, instID, recordID, durationMonths, targetMonthIndex)
 	return err
 }
+
+func (repo *Repository) DeletePEP3ExecutionPlansForDuration(ctx context.Context, instID, recordID int64, durationMonths int) error {
+	if durationMonths <= 0 {
+		durationMonths = 3
+	}
+	_, err := repo.db.ExecContext(ctx, `
+		DELETE FROM assessment_iep_execution_plan
+		WHERE inst_id = ?
+		  AND record_id = ?
+		  AND duration_months = ?
+	`, instID, recordID, durationMonths)
+	return err
+}

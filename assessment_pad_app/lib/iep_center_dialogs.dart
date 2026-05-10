@@ -467,7 +467,7 @@ class _IepRegenerateConfirmDialog extends StatelessWidget {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      '重新生成会用AI生成一份新的IEP计划，并覆盖当前页面已有的IEP内容。已确认后请谨慎操作。',
+                      '重新生成会用AI生成一份新的IEP计划，并覆盖当前页面已有的IEP内容。当前已生成的月计划、周计划会同步重置为空，需在总计划生成完成后重新生成。已导出的Word不受影响。',
                       style: TextStyle(
                         color: _IepColors.text,
                         fontSize: 13,

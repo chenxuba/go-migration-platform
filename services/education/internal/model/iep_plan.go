@@ -25,11 +25,11 @@ type PEP3IEPPlanGenerationTaskVO struct {
 }
 
 type DeepSeekUsageVO struct {
-	PromptTokens         int `json:"promptTokens"`
-	CompletionTokens     int `json:"completionTokens"`
-	PromptCacheHitTokens int `json:"promptCacheHitTokens"`
+	PromptTokens          int `json:"promptTokens"`
+	CompletionTokens      int `json:"completionTokens"`
+	PromptCacheHitTokens  int `json:"promptCacheHitTokens"`
 	PromptCacheMissTokens int `json:"promptCacheMissTokens"`
-	TotalTokens          int `json:"totalTokens"`
+	TotalTokens           int `json:"totalTokens"`
 }
 
 type PEP3IEPPlanWordExportRequest struct {
@@ -87,10 +87,11 @@ type PEP3WeeklyExecutionPlanSaved struct {
 }
 
 type PEP3IEPPlanSaveRequest struct {
-	ID             int64               `json:"id"`
-	DurationMonths int                 `json:"durationMonths,omitempty"`
-	Status         string              `json:"status,omitempty"`
-	Plan           PEP3IEPPlanAIResult `json:"plan"`
+	ID                  int64               `json:"id"`
+	DurationMonths      int                 `json:"durationMonths,omitempty"`
+	Status              string              `json:"status,omitempty"`
+	ResetExecutionPlans bool                `json:"resetExecutionPlans,omitempty"`
+	Plan                PEP3IEPPlanAIResult `json:"plan"`
 }
 
 type PEP3IEPPlanPeriodSyncRequest struct {

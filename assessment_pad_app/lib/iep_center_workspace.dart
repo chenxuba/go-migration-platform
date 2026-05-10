@@ -1090,6 +1090,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
       _savedPlan = savedPlan;
+      _executionPlans = IepExecutionPlansSaved.empty(
+        savedPlan.durationMonths == 6 ? 6 : 3,
+      );
       _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
       _applyPeriodFromPlan(savedPlan.plan, record);
       _totalPlanDomains = savedPlan.plan == null

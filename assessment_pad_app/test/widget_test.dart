@@ -4980,6 +4980,7 @@ class _FakeIepPlanClient implements IepPlanClient {
     required int durationMonths,
     required String status,
     required IepPlan plan,
+    bool resetExecutionPlans = false,
   }) async {
     savePlanCalls += 1;
     lastSavedPlan = plan;
@@ -4993,7 +4994,8 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Stream<IepExecutionPlanGenerationEvent<IepMonthlyPlan>> generateMonthlyPlanStream(
+  Stream<IepExecutionPlanGenerationEvent<IepMonthlyPlan>>
+      generateMonthlyPlanStream(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -5004,7 +5006,8 @@ class _FakeIepPlanClient implements IepPlanClient {
     final int monthNumber = 4 + targetMonthIndex;
     final String monthLabel = '${monthNumber}月';
     final String monthValue = monthNumber.toString().padLeft(2, '0');
-    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.status('正在准备月度计划生成上下文');
+    yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.status(
+        '正在准备月度计划生成上下文');
     yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.delta(
       '{"title":"康复教学${monthLabel}计划","rows":[{"shortGoal":"能在平衡木上独立行走3米"}]}',
     );
@@ -5044,7 +5047,8 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>>
+      generateWeeklyPlanStream(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -5822,6 +5826,7 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required int durationMonths,
     required String status,
     required IepPlan plan,
+    bool resetExecutionPlans = false,
   }) async {
     savePlanCalls += 1;
     lastSavedPlan = plan;
@@ -5850,7 +5855,8 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>> generateWeeklyPlanStream(
+  Stream<IepExecutionPlanGenerationEvent<IepWeeklyPlan>>
+      generateWeeklyPlanStream(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,

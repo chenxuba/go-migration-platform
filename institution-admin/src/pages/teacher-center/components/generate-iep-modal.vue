@@ -1220,7 +1220,7 @@ function confirmRegenerateIepPlan() {
   }
   Modal.confirm({
     title: '重新生成IEP计划',
-    content: '重新生成会覆盖当前IEP计划内容，已导出的Word不受影响。确认要继续吗？',
+    content: '重新生成会覆盖当前IEP计划内容，当前已生成的月计划、周计划会同步重置为空，需在总计划生成完成后重新生成。已导出的Word不受影响。确认要继续吗？',
     okText: '重新生成',
     cancelText: '保留当前计划',
     okButtonProps: { danger: true },
@@ -2769,6 +2769,7 @@ async function persistIepPlan(status, options = {}) {
       id: props.record.id,
       durationMonths: planDuration.value,
       status,
+      resetExecutionPlans: !!options.resetExecutionPlans,
       plan: payloadPlan,
     })
     const data = unwrapResponse(response)
@@ -3003,7 +3004,10 @@ async function generateAIPlan(options = {}) {
     editablePlan.value = createEditablePlanFromPlan(plan, true)
     aiGenerating.value = false
     aiStreamAbortController.value = null
-    await persistIepPlan('draft', { successMessage: 'AI生成成功，已自动保存草稿' })
+    await persistIepPlan('draft', {
+      successMessage: 'AI生成成功，已自动保存草稿',
+      resetExecutionPlans: true,
+    })
   }
   catch (error) {
     if (requestKey !== aiGenerationRequestKey || isAbortError(error))
