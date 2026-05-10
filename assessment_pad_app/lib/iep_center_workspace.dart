@@ -40,7 +40,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   IepPlanSaved? _savedPlan;
   IepExecutionPlansSaved? _executionPlans;
   bool _loadingPlan = false;
-  bool _hasLoadedPlanOnce = false;
+  bool _hasCompletedInitialPlanLoad = false;
   bool _syncingPeriod = false;
   bool _generatingPlan = false;
   String _generationStatus = '';
@@ -80,7 +80,6 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _aiStreamText = '';
       _generationProgress = 0;
       _generatingPlan = false;
-      _hasLoadedPlanOnce = false;
       widget.onConfirmAvailabilityChanged(false);
       _initPeriodFromRecord(widget.record);
       _syncPreviewMonthToPeriod();
@@ -101,7 +100,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _aiStreamText = '';
         _generationProgress = 0;
         _generatingPlan = false;
-        _hasLoadedPlanOnce = false;
+        _hasCompletedInitialPlanLoad = false;
       });
       widget.onConfirmAvailabilityChanged(false);
       return;
@@ -133,7 +132,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       }
       setState(() {
         _loadingPlan = false;
-        _hasLoadedPlanOnce = true;
+        _hasCompletedInitialPlanLoad = true;
         _savedPlan = savedPlan;
         _executionPlans = executionPlans;
         _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
@@ -150,7 +149,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       }
       setState(() {
         _loadingPlan = false;
-        _hasLoadedPlanOnce = true;
+        _hasCompletedInitialPlanLoad = true;
         _planError = error.message;
       });
       widget.onConfirmAvailabilityChanged(false);
@@ -160,7 +159,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       }
       setState(() {
         _loadingPlan = false;
-        _hasLoadedPlanOnce = true;
+        _hasCompletedInitialPlanLoad = true;
         _planError = 'IEP计划加载失败：$error';
       });
       widget.onConfirmAvailabilityChanged(false);
@@ -229,7 +228,6 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _savedPlan = null;
         _totalPlanDomains = <_DocDomainData>[];
       }
-      _hasLoadedPlanOnce = true;
     });
     widget.onConfirmAvailabilityChanged(false);
 
@@ -476,7 +474,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     setState(() {
       _syncingPeriod = false;
       _loadingPlan = false;
-      _hasLoadedPlanOnce = true;
+      _hasCompletedInitialPlanLoad = true;
       _savedPlan = savedPlan;
       _executionPlans = executionPlans;
       _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
@@ -676,8 +674,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               monthPlan: monthPlan,
               weekPlan: weekPlan,
               loading: _loadingPlan,
-              bootstrapLoading:
-                  widget.queueBootstrapLoading && !_hasLoadedPlanOnce,
+              bootstrapLoading: !_hasCompletedInitialPlanLoad,
               generatingPlan: _generatingPlan,
               generationStatus: _generationStatus,
               generationText: _aiStreamText,

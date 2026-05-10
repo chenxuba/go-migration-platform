@@ -1273,6 +1273,53 @@ void main() {
     expect(find.textContaining('陈旭 · 4岁0月'), findsOneWidget);
   });
 
+  testWidgets('IEP center keeps skeleton until initial plan load completes',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: _SlowFirstIepPlanClient(
+          planDelay: const Duration(milliseconds: 600),
+        ),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.textContaining('陈旭 · 4岁0月'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('iep-word-table-skeleton')),
+        findsOneWidget);
+    expect(find.text('正在读取IEP计划'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 700));
+    expect(find.text('能单脚站立保持平衡5秒以上'), findsOneWidget);
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+
+    expect(find.text('正在读取IEP计划'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('iep-word-table-skeleton')),
+        findsNothing);
+  });
+
   testWidgets('smart timetable detects availability after target selection',
       (WidgetTester tester) async {
     final _FakeTimetableClient timetableClient = _FakeTimetableClient();
@@ -4472,6 +4519,30 @@ class _FakeIepPlanClient implements IepPlanClient {
       durationMonths: durationMonths,
       plan: plan,
       updatedTime: '2026-05-10T09:30:00Z',
+    );
+  }
+}
+
+class _SlowFirstIepPlanClient extends _FakeIepPlanClient {
+  _SlowFirstIepPlanClient({required this.planDelay});
+
+  final Duration planDelay;
+  bool _delayedFirstFetch = false;
+
+  @override
+  Future<IepPlanSaved> fetchIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    if (!_delayedFirstFetch) {
+      _delayedFirstFetch = true;
+      await Future<void>.delayed(planDelay);
+    }
+    return super.fetchIepPlan(
+      token,
+      record: record,
+      durationMonths: durationMonths,
     );
   }
 }
