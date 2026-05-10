@@ -813,6 +813,9 @@ void main() {
     expect(find.text('5月 W1'), findsOneWidget);
     expect(find.text('5月 W5'), findsOneWidget);
     expect(find.text('W6'), findsNothing);
+    expect(find.text('康复教学5月计划'), findsOneWidget);
+    expect(find.text('训练内容'), findsOneWidget);
+    expect(find.text('康复教学季度计划'), findsNothing);
     expect(
       tester.widget<Text>(find.text('IEP总计划')).style?.color,
       const Color(0xFF72594D),
@@ -823,6 +826,10 @@ void main() {
 
     expect(tester.widget<Text>(find.text('5月')).style?.color, Colors.white);
     expect(tester.widget<Text>(find.text('5月 W1')).style?.color, Colors.white);
+    expect(find.text('康复教学周计划日记录卡5月第1周'), findsOneWidget);
+    expect(find.text('完成情况'), findsOneWidget);
+    expect(find.text('平衡木行走'), findsOneWidget);
+    expect(find.text('康复教学5月计划'), findsNothing);
   });
 
   testWidgets('smart timetable detects availability after target selection',

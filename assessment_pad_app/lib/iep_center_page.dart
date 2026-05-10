@@ -819,8 +819,40 @@ class _StatusPill extends StatelessWidget {
   }
 }
 
-class _IepWorkspace extends StatelessWidget {
+enum _IepPreviewMode { total, month, week }
+
+class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace();
+
+  @override
+  State<_IepWorkspace> createState() => _IepWorkspaceState();
+}
+
+class _IepWorkspaceState extends State<_IepWorkspace> {
+  _IepPreviewMode _previewMode = _IepPreviewMode.total;
+  String _previewMonth = '5月';
+  int _previewWeek = 2;
+
+  void _showTotalPlan() {
+    setState(() {
+      _previewMode = _IepPreviewMode.total;
+    });
+  }
+
+  void _showMonthPlan(String month) {
+    setState(() {
+      _previewMode = _IepPreviewMode.month;
+      _previewMonth = month;
+    });
+  }
+
+  void _showWeekPlan(String month, int weekNumber) {
+    setState(() {
+      _previewMode = _IepPreviewMode.week;
+      _previewMonth = month;
+      _previewWeek = weekNumber;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -832,12 +864,22 @@ class _IepWorkspace extends StatelessWidget {
         boxShadow: _iepShadow(),
       ),
       child: Column(
-        children: const <Widget>[
-          _WorkspaceHeader(),
-          SizedBox(height: 10),
-          _PlanToolbar(),
-          SizedBox(height: 10),
-          Expanded(child: _IepTablePreview()),
+        children: <Widget>[
+          const _WorkspaceHeader(),
+          const SizedBox(height: 10),
+          _PlanToolbar(
+            onShowTotalPlan: _showTotalPlan,
+            onShowMonthPlan: _showMonthPlan,
+            onShowWeekPlan: _showWeekPlan,
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: _IepTablePreview(
+              previewMode: _previewMode,
+              month: _previewMonth,
+              weekNumber: _previewWeek,
+            ),
+          ),
         ],
       ),
     );
@@ -987,7 +1029,15 @@ class _StartClassButton extends StatelessWidget {
 }
 
 class _PlanToolbar extends StatelessWidget {
-  const _PlanToolbar();
+  const _PlanToolbar({
+    required this.onShowTotalPlan,
+    required this.onShowMonthPlan,
+    required this.onShowWeekPlan,
+  });
+
+  final VoidCallback onShowTotalPlan;
+  final ValueChanged<String> onShowMonthPlan;
+  final void Function(String month, int weekNumber) onShowWeekPlan;
 
   @override
   Widget build(BuildContext context) {
@@ -1004,7 +1054,13 @@ class _PlanToolbar extends StatelessWidget {
         children: <Widget>[
           const _PeriodSwitch(),
           const _ToolbarDivider(),
-          const Expanded(child: _ScrollablePlanNav()),
+          Expanded(
+            child: _ScrollablePlanNav(
+              onShowTotalPlan: onShowTotalPlan,
+              onShowMonthPlan: onShowMonthPlan,
+              onShowWeekPlan: onShowWeekPlan,
+            ),
+          ),
           const _ToolbarDivider(),
           const _TableTinyAction(
               icon: Icons.edit_calendar_rounded, label: '编辑周期'),
@@ -1017,7 +1073,15 @@ class _PlanToolbar extends StatelessWidget {
 }
 
 class _ScrollablePlanNav extends StatefulWidget {
-  const _ScrollablePlanNav();
+  const _ScrollablePlanNav({
+    required this.onShowTotalPlan,
+    required this.onShowMonthPlan,
+    required this.onShowWeekPlan,
+  });
+
+  final VoidCallback onShowTotalPlan;
+  final ValueChanged<String> onShowMonthPlan;
+  final void Function(String month, int weekNumber) onShowWeekPlan;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -1073,6 +1137,9 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
       _selectedSection = plan;
       _selectedWeek = null;
     });
+    if (plan == 'iep') {
+      widget.onShowTotalPlan();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
 
@@ -1082,6 +1149,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
       _selectedMonth = month;
       _selectedWeek = null;
     });
+    widget.onShowMonthPlan(month);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
 
@@ -1090,6 +1158,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
       _selectedSection = 'week';
       _selectedWeek = weekNumber;
     });
+    widget.onShowWeekPlan(_selectedMonth, weekNumber);
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
 
@@ -1454,7 +1523,15 @@ class _PlanNavLabel extends StatelessWidget {
 }
 
 class _IepTablePreview extends StatelessWidget {
-  const _IepTablePreview();
+  const _IepTablePreview({
+    required this.previewMode,
+    required this.month,
+    required this.weekNumber,
+  });
+
+  final _IepPreviewMode previewMode;
+  final String month;
+  final int weekNumber;
 
   @override
   Widget build(BuildContext context) {
@@ -1465,7 +1542,16 @@ class _IepTablePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _IepColors.line),
       ),
-      child: const _WordTableFrame(),
+      child: switch (previewMode) {
+        _IepPreviewMode.month =>
+          _WordTableFrame(child: _MonthPlanTable(month: month), height: 2140),
+        _IepPreviewMode.week => _WordTableFrame(
+            child: _WeekPlanTable(month: month, weekNumber: weekNumber),
+            height: 920,
+          ),
+        _IepPreviewMode.total =>
+          const _WordTableFrame(child: _WordTable(), height: 820),
+      },
     );
   }
 }
@@ -1541,7 +1627,13 @@ class _WordTable extends StatelessWidget {
 }
 
 class _WordTableFrame extends StatelessWidget {
-  const _WordTableFrame();
+  const _WordTableFrame({
+    required this.child,
+    required this.height,
+  });
+
+  final Widget child;
+  final double height;
 
   @override
   Widget build(BuildContext context) {
@@ -1555,19 +1647,957 @@ class _WordTableFrame extends StatelessWidget {
         borderRadius: BorderRadius.circular(8),
         border: Border.all(color: const Color(0xFFB98A71), width: 1.2),
       ),
-      child: const Padding(
-        padding: EdgeInsets.all(1.2),
+      child: Padding(
+        padding: const EdgeInsets.all(1.2),
         child: SingleChildScrollView(
-          physics: ClampingScrollPhysics(),
-          child: SizedBox(height: 820, child: _WordTable()),
+          physics: const ClampingScrollPhysics(),
+          child: SizedBox(height: height, child: child),
         ),
       ),
     );
   }
 }
 
+class _WeekPlanTable extends StatelessWidget {
+  const _WeekPlanTable({
+    required this.month,
+    required this.weekNumber,
+  });
+
+  final String month;
+  final int weekNumber;
+
+  static const List<int> _columns = <int>[
+    1300,
+    1334,
+    1333,
+    1925,
+    698,
+    698,
+    698,
+    698,
+    698,
+    698,
+  ];
+
+  static const List<_WeekTrainingRow> _rows = <_WeekTrainingRow>[
+    _WeekTrainingRow(
+      project: '平衡木行走',
+      content:
+          '在感统室设置宽10cm、高20cm的平衡木，儿童独立行走3米，治疗师在旁保护但不接触，完成后给予口头表扬和代币强化，每日练习2次，记录掉落次数，目标连续3次不掉落。',
+    ),
+    _WeekTrainingRow(
+      project: '直线剪纸',
+      content:
+          '使用彩色纸画有直线（线宽0.5cm），儿童独立剪10cm，治疗师用尺子测量偏差，偏差在0.5cm内给予代币，累计代币兑换偏好活动。',
+    ),
+    _WeekTrainingRow(
+      project: '情绪指认',
+      content:
+          '在绘本阅读中，治疗师指向角色表情，问“他感觉怎么样？”，儿童从4张情绪卡片（高兴、生气、伤心、害怕）中选择对应卡片，正确率100%后，儿童尝试口头命名情绪。',
+    ),
+    _WeekTrainingRow(
+      project: '动作序列模仿',
+      content: '变换动作序列（如“拍肩-转圈-跳”），治疗师示范后儿童模仿，顺序正确率80%以上，逐渐撤除视觉提示，仅靠观察模仿。',
+    ),
+    _WeekTrainingRow(
+      project: '主动邀请同伴',
+      content:
+          '使用社交故事《邀请朋友玩》，课前阅读，课上治疗师提示儿童使用邀请语“我们一起玩吧”，当儿童主动邀请时，同伴积极回应，形成自然强化，记录邀请次数，目标每节至少2次。',
+    ),
+    _WeekTrainingRow(
+      project: '变换问答',
+      content:
+          '使用视觉提示卡“说不同的话”，当儿童在对话中重复同一回答时，治疗师出示卡片并等待3秒，儿童变换回答后立即表扬，逐渐减少提示，记录重复次数。',
+    ),
+    _WeekTrainingRow(
+      project: '减少摇晃行为',
+      content:
+          '使用区别强化，当儿童保持安静坐好2分钟无摇晃，给予代币，累计代币兑换偏好活动；摇晃行为发生时，不给予关注，仅重新引导，目标每节课不超过2次。',
+    ),
+    _WeekTrainingRow(
+      project: '多属性分类',
+      content:
+          '使用属性卡片（红色、圆形、大），儿童根据指令将物品放入对应盒子，如“把红色的放一起”，逐渐增加复杂度，同时按两个属性分类（如红色且圆形），正确后给予代币，正确率90%以上。',
+    ),
+    _WeekTrainingRow(
+      project: '两步指令执行',
+      content:
+          '使用图片提示卡（拍手、摸头），治疗师发两步指令“先拍手再摸头”时同时出示图片，儿童执行，逐渐撤除图片，仅靠听觉理解，正确率90%以上。',
+    ),
+    _WeekTrainingRow(
+      project: '完整句子描述',
+      content:
+          '提供缺少主语的图片，治疗师问“谁在做什么？”，儿童需补充完整句子，如“妈妈在做饭”，逐渐增加句子成分（加入地点“在厨房”），正确结构后给予代币。',
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        _WordTableTitle(title: '康复教学周计划日记录卡$month第$weekNumber周'),
+        const _WeekInfoRows(),
+        const _WeekHeaderRows(),
+        _WeekTrainingRows(rows: _rows),
+      ],
+    );
+  }
+}
+
+class _WeekInfoRows extends StatelessWidget {
+  const _WeekInfoRows();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const <Widget>[
+        _WeekDocTableRow(
+          height: 42,
+          cells: <_WeekDocCellData>[
+            _WeekDocCellData(text: '姓名', columns: 1, bold: true),
+            _WeekDocCellData(text: '陈旭', columns: 1),
+            _WeekDocCellData(text: '性别', columns: 1, bold: true),
+            _WeekDocCellData(text: '-', columns: 1),
+            _WeekDocCellData(text: '出生年月', columns: 2, bold: true),
+            _WeekDocCellData(text: '2022-05-11', columns: 4, last: true),
+          ],
+        ),
+        _WeekDocTableRow(
+          height: 42,
+          cells: <_WeekDocCellData>[
+            _WeekDocCellData(text: '任教\n老师', columns: 1, bold: true),
+            _WeekDocCellData(text: '康复治疗师', columns: 1),
+            _WeekDocCellData(text: '课程\n名称', columns: 1, bold: true),
+            _WeekDocCellData(text: '康复教学', columns: 1),
+            _WeekDocCellData(text: '训练日期', columns: 2, bold: true),
+            _WeekDocCellData(
+                text: '2026-05-04 至 2026-05-09', columns: 4, last: true),
+          ],
+        ),
+        _WeekDocTableRow(
+          height: 54,
+          cells: <_WeekDocCellData>[
+            _WeekDocCellData(text: '训练前\n准备', columns: 1, bold: true),
+            _WeekDocCellData(
+              text:
+                  '平衡木、儿童安全剪刀、直线纸条、情绪卡片、动作序列视觉提示卡、合作性玩具、问答提示卡、挤压球、坐垫、积木、属性卡片、两步指令图片卡、动作图片卡',
+              columns: 9,
+              align: TextAlign.left,
+              last: true,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _WeekHeaderRows extends StatelessWidget {
+  const _WeekHeaderRows();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 70,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Expanded(
+            flex: 1300,
+            child: _WeekDocCellBox(
+              data: _WeekDocCellData(text: '训练项目', columns: 1, bold: true),
+            ),
+          ),
+          const Expanded(
+            flex: 4583,
+            child: _WeekDocCellBox(
+              data: _WeekDocCellData(text: '训练内容', columns: 3, bold: true),
+            ),
+          ),
+          Expanded(
+            flex: 4188,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: const <Widget>[
+                SizedBox(
+                  height: 36,
+                  child: _WeekDocCellBox(
+                    data: _WeekDocCellData(
+                      text: '完成情况',
+                      columns: 6,
+                      bold: true,
+                      last: true,
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 34,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                              text: '05.04', columns: 1, bold: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                              text: '05.05', columns: 1, bold: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                              text: '05.06', columns: 1, bold: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                              text: '05.07', columns: 1, bold: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                              text: '05.08', columns: 1, bold: true),
+                        ),
+                      ),
+                      Expanded(
+                        child: _WeekDocCellBox(
+                          data: _WeekDocCellData(
+                            text: '05.09',
+                            columns: 1,
+                            bold: true,
+                            last: true,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _WeekDocCellData {
+  const _WeekDocCellData({
+    required this.text,
+    required this.columns,
+    this.bold = false,
+    this.align = TextAlign.center,
+    this.last = false,
+  });
+
+  final String text;
+  final int columns;
+  final bool bold;
+  final TextAlign align;
+  final bool last;
+}
+
+class _WeekDocTableRow extends StatelessWidget {
+  const _WeekDocTableRow({required this.height, required this.cells});
+
+  final double height;
+  final List<_WeekDocCellData> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> children = <Widget>[];
+    int columnIndex = 0;
+    for (final _WeekDocCellData cell in cells) {
+      final int flex = _WeekPlanTable._columns
+          .skip(columnIndex)
+          .take(cell.columns)
+          .fold<int>(0, (int sum, int width) => sum + width);
+      columnIndex += cell.columns;
+      children.add(
+        Expanded(
+          flex: flex,
+          child: _WeekDocCellBox(data: cell),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _WeekDocCellBox extends StatelessWidget {
+  const _WeekDocCellBox({
+    required this.data,
+    this.rowLast = false,
+  });
+
+  final _WeekDocCellData data;
+  final bool rowLast;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: data.last
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+          bottom: rowLast
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+        ),
+      ),
+      child: Text(
+        data.text,
+        overflow: TextOverflow.clip,
+        textAlign: data.align,
+        style: TextStyle(
+          color: data.bold ? _IepColors.ink : _IepColors.text,
+          fontSize: 10.8,
+          fontWeight: data.bold ? FontWeight.w900 : FontWeight.w700,
+          height: 1.18,
+        ),
+      ),
+    );
+  }
+}
+
+class _WeekTrainingRows extends StatelessWidget {
+  const _WeekTrainingRows({required this.rows});
+
+  final List<_WeekTrainingRow> rows;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows.asMap().entries.map((entry) {
+        return _WeekTrainingTableRow(
+          row: entry.value,
+          last: entry.key == rows.length - 1,
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _WeekTrainingRow {
+  const _WeekTrainingRow({
+    required this.project,
+    required this.content,
+  });
+
+  final String project;
+  final String content;
+
+  double get rowHeight {
+    if (content.length >= 85) {
+      return 66;
+    }
+    if (content.length >= 70) {
+      return 58;
+    }
+    return 50;
+  }
+}
+
+class _WeekTrainingTableRow extends StatelessWidget {
+  const _WeekTrainingTableRow({
+    required this.row,
+    required this.last,
+  });
+
+  final _WeekTrainingRow row;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: row.rowHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            flex: _WeekPlanTable._columns[0],
+            child: _WeekDocCellBox(
+              data: _WeekDocCellData(text: row.project, columns: 1, bold: true),
+              rowLast: last,
+            ),
+          ),
+          Expanded(
+            flex: _WeekPlanTable._columns[1] +
+                _WeekPlanTable._columns[2] +
+                _WeekPlanTable._columns[3],
+            child: _WeekDocCellBox(
+              data: _WeekDocCellData(
+                text: row.content,
+                columns: 3,
+                align: TextAlign.left,
+              ),
+              rowLast: last,
+            ),
+          ),
+          ...List<Widget>.generate(6, (int index) {
+            return Expanded(
+              flex: _WeekPlanTable._columns[index + 4],
+              child: _WeekDocCellBox(
+                data: _WeekDocCellData(
+                  text: '',
+                  columns: 1,
+                  last: index == 5,
+                ),
+                rowLast: last,
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+}
+
+class _MonthPlanTable extends StatelessWidget {
+  const _MonthPlanTable({required this.month});
+
+  final String month;
+
+  static const List<int> _columns = <int>[
+    806,
+    907,
+    907,
+    958,
+    957,
+    882,
+    882,
+    882,
+    882,
+    826,
+    595,
+    595,
+  ];
+
+  static const List<_MonthDomainData> _domains = <_MonthDomainData>[
+    _MonthDomainData(
+      domain: '大肌肉',
+      longGoal: '1. 提升动态平衡与协调能力，能独立完成单脚站立、走平衡木等动作\n2. 增强下肢力量与跳跃技能，能连续向前跳跃并保持稳定',
+      shortGoal: '能在宽10cm、高20cm的平衡木上独立行走3米，不掉落',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 使用宽10cm、高20cm的平衡木，治疗师先示范双手侧平举保持平衡，儿童在平地上沿直线行走练习，逐步过渡到平衡木上，初始可单手扶墙辅助，逐渐撤除辅助，完成3米行走不掉落。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 在感统室设置平衡木，儿童独立行走3米，治疗师在旁保护但不接触，完成后给予口头表扬和代币强化，每日练习2次，记录掉落次数，目标连续3次不掉落。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至户外低矮花坛边缘（约10cm宽），儿童独立行走3米，治疗师在旁监护，鼓励儿童在不同材质上保持平衡，完成后奖励贴纸。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '小肌肉',
+      longGoal: '1. 提高手眼协调与精细操作能力，能熟练使用剪刀、穿珠子等\n2. 增强手部小肌肉控制，能完成复杂拼图与书写前准备',
+      shortGoal: '能沿直线剪纸，偏差不超过0.5cm，连续剪10cm',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 提供儿童安全剪刀和画有粗直线的纸条（宽2cm），治疗师手把手辅助儿童开合剪刀，沿直线剪，逐步减少辅助，要求偏差不超过0.5cm，剪完10cm。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用彩色纸画有直线（线宽0.5cm），儿童独立剪10cm，治疗师用尺子测量偏差，偏差在0.5cm内给予代币，累计代币兑换偏好活动。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至剪不同材质（如卡纸、杂志页），儿童沿直线剪10cm，偏差不超过0.5cm，完成后将剪下的纸条用于粘贴画，增加趣味性。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '情感表达',
+      longGoal: '1. 能识别并命名基本情绪，理解他人情绪并做出恰当反应\n2. 在情境中表达自己的情绪，并学习简单的情绪调节策略',
+      shortGoal: '能指认高兴、生气、伤心、害怕四种情绪图片，正确率100%',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 使用情绪卡片（高兴、生气、伤心、害怕各2张），治疗师呈现卡片并命名，儿童指认，每次4选1，正确后给予社会性强化，错误时示范正确卡片，连续2次正确率100%进入下一阶段。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 在绘本阅读中，治疗师指向角色表情，问“他感觉怎么样？”，儿童从4张情绪卡片中选择对应卡片，正确率100%后，儿童尝试口头命名情绪。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至真实情境，当同伴或家人表现出情绪时，治疗师提示儿童观察并指认情绪图片，正确后给予自然强化（如“你看到妹妹哭了，知道她伤心，真棒！”）。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '模仿 （视觉/动作）',
+      longGoal: '1. 提升动作模仿的准确性和复杂性，能模仿多步骤动作序列\n2. 增强视觉注意与模仿的泛化能力，能在不同情境下模仿他人',
+      shortGoal: '能模仿3个连续的动作序列（如拍手-摸头-跺脚），顺序正确',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 治疗师示范“拍手-摸头-跺脚”序列，边说边做，儿童模仿，初始可分解教学，先模仿单个动作，再串联，使用视觉提示卡辅助顺序，正确后给予代币。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 变换动作序列（如“拍肩-转圈-跳”），治疗师示范后儿童模仿，顺序正确率80%以上，逐渐撤除视觉提示，仅靠观察模仿。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 在集体课中泛化，治疗师带领小组做动作序列，儿童跟随模仿，顺序正确后担任小老师带领其他儿童，增强动机。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '社交互动',
+      longGoal: '1. 提高与同伴的互动能力，能主动发起并维持简单的社交游戏\n2. 理解并遵守基本社交规则，如轮流、分享、等待',
+      shortGoal: '在小组活动中，能主动邀请同伴一起玩，至少2次/节',
+      lesson: '集体课',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 在集体课自由游戏时间，治疗师设置合作性玩具（如积木、拼图），示范邀请语言“我们一起玩吧”，儿童模仿邀请同伴，每成功邀请1次给予贴纸，目标2次/节。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用社交故事《邀请朋友玩》，课前阅读，课上治疗师提示儿童使用邀请语，当儿童主动邀请时，同伴积极回应，形成自然强化，记录邀请次数。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至户外活动，儿童在滑梯或沙池主动邀请同伴，治疗师在旁观察，必要时给予手势提示，每节至少2次主动邀请，完成后奖励额外自由时间。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '行为特征 -语言',
+      longGoal: '1. 减少刻板语言，增加功能性语言的灵活运用\n2. 提高语言在社交情境中的恰当性，能根据对象调整语言',
+      shortGoal: '在对话中，能根据对方的问题变换回答，减少重复同一句话',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 个训中，治疗师与儿童进行简单问答（如“你喜欢什么颜色？”），若儿童重复同一回答，治疗师示范不同回答并提示“换一种说法”，正确变换后给予强化。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用视觉提示卡“说不同的话”，当儿童重复时，治疗师出示卡片并等待3秒，儿童变换回答后立即表扬，逐渐减少提示，记录重复次数。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至与同伴对话，设置情境（如分享玩具），同伴问“我可以玩吗？”，儿童需根据情境回答（如“可以”或“等一下”），而非固定回答，治疗师在旁辅助。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '行为特征 -非语言',
+      longGoal: '1. 减少自我刺激行为，增加功能性非语言沟通\n2. 提高对环境变化的适应能力，减少刻板行为',
+      shortGoal: '在课堂上，无意义的摇晃身体行为减少至每节课不超过2次',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 个训中，治疗师观察摇晃行为，当行为出现时，立即提供替代感觉输入（如挤压球、坐垫），并口头提醒“坐好”，记录频率，目标每节课不超过2次。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用区别强化，当儿童保持安静坐好2分钟无摇晃，给予代币，累计代币兑换偏好活动；摇晃行为发生时，不给予关注，仅重新引导。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至集体课，治疗师与主教合作，在集体活动中监控摇晃行为，使用视觉提示卡“安静身体”提醒，每节课摇晃不超过2次，达成后给予集体奖励。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '认知 （语言/语前）',
+      longGoal: '1. 提升分类与排序能力，能按多种属性进行归类\n2. 增强问题解决与逻辑思维能力，能完成简单的推理任务',
+      shortGoal: '能按颜色、形状、大小三个属性对物品进行分类，正确率90%',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 提供不同颜色、形状、大小的积木，治疗师先示范按颜色分类，儿童模仿，然后按形状分类，最后按大小分类，每次分类后提问“为什么放在一起？”，正确率90%以上。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用属性卡片（红色、圆形、大），儿童根据指令将物品放入对应盒子，如“把红色的放一起”，逐渐增加复杂度，同时按两个属性分类（如红色且圆形），正确后给予代币。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至生活场景，整理玩具时，儿童按颜色或类型将玩具放回架子，治疗师在旁提示，正确率90%后自然强化（环境整洁）。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '语言理解',
+      longGoal: '1. 提高对复杂指令的理解，能执行两步以上指令\n2. 增强对故事和对话的理解，能回答相关问题',
+      shortGoal: '能执行包含两个步骤的指令（如“先拍手再摸头”），正确率90%',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 个训中，治疗师发出两步指令“先拍手再摸头”，初始可示范，儿童模仿，然后仅用语言指令，儿童执行，正确后给予强化，错误时退回一步分解。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 使用图片提示卡（拍手、摸头），治疗师发指令时同时出示图片，儿童执行，逐渐撤除图片，仅靠听觉理解，正确率90%以上。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至集体课，在音乐活动中，治疗师唱出两步指令“先跺脚再拍手”，儿童跟随，正确后担任小指挥，增加趣味性。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+    _MonthDomainData(
+      domain: '语言表达',
+      longGoal: '1. 扩展句子长度与复杂性，能使用完整句子描述事件\n2. 提高叙事能力，能连贯讲述个人经历或故事',
+      shortGoal: '能使用“主语+谓语+宾语”结构描述图片，如“男孩吃苹果”',
+      lesson: '个训',
+      trainings: <_MonthTrainingData>[
+        _MonthTrainingData(
+            '1. 使用动作图片卡（如男孩吃苹果、女孩拍球），治疗师示范“男孩吃苹果”，儿童模仿，然后出示新图片，儿童独立描述，正确结构后给予代币。',
+            '2026-05-01 - 2026-05-10'),
+        _MonthTrainingData(
+            '2. 提供缺少主语的图片，治疗师问“谁在做什么？”，儿童需补充完整句子，如“妈妈在做饭”，逐渐增加句子成分（加入地点“在厨房”）。',
+            '2026-05-11 - 2026-05-20'),
+        _MonthTrainingData(
+            '3. 泛化至绘本阅读，儿童描述书中画面，治疗师提示使用完整句子，如“小狗在睡觉”，正确后自然强化（继续讲故事）。',
+            '2026-05-21 - 2026-05-31'),
+      ],
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        _WordTableTitle(title: '康复教学$month计划'),
+        const _MonthInfoRows(),
+        _MonthPlanRows(domains: _domains),
+      ],
+    );
+  }
+}
+
+class _MonthInfoRows extends StatelessWidget {
+  const _MonthInfoRows();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: const <Widget>[
+        _MonthDocTableRow(
+          height: 42,
+          cells: <_MonthDocCellData>[
+            _MonthDocCellData(text: '姓名', columns: 1, bold: true),
+            _MonthDocCellData(text: '陈旭', columns: 2),
+            _MonthDocCellData(text: '性别', columns: 1, bold: true),
+            _MonthDocCellData(text: '-', columns: 1),
+            _MonthDocCellData(text: '出生年月', columns: 2, bold: true),
+            _MonthDocCellData(text: '2022-05-11', columns: 5, last: true),
+          ],
+        ),
+        _MonthDocTableRow(
+          height: 42,
+          cells: <_MonthDocCellData>[
+            _MonthDocCellData(text: '制定\n日期', columns: 1, bold: true),
+            _MonthDocCellData(text: '2026-05-07', columns: 2),
+            _MonthDocCellData(text: '计划参与者', columns: 4, bold: true),
+            _MonthDocCellData(text: '陈瑞', columns: 5, last: true),
+          ],
+        ),
+        _MonthDocTableRow(
+          height: 42,
+          cells: <_MonthDocCellData>[
+            _MonthDocCellData(text: '实施者', columns: 1, bold: true),
+            _MonthDocCellData(text: '陈瑞', columns: 2),
+            _MonthDocCellData(text: '实施起止日期', columns: 4, bold: true),
+            _MonthDocCellData(
+              text: '2026-05-01 至 2026-05-31',
+              columns: 5,
+              noWrap: true,
+              last: true,
+            ),
+          ],
+        ),
+        _MonthDocTableRow(
+          height: 42,
+          cells: <_MonthDocCellData>[
+            _MonthDocCellData(text: '康复\n领域', columns: 1, bold: true),
+            _MonthDocCellData(text: '长期目标', columns: 2, bold: true),
+            _MonthDocCellData(text: '短期目标', columns: 2, bold: true),
+            _MonthDocCellData(text: '训练内容', columns: 4, bold: true),
+            _MonthDocCellData(text: '课程\n形式', columns: 1, bold: true),
+            _MonthDocCellData(text: '起止日期', columns: 2, bold: true, last: true),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _MonthDocCellData {
+  const _MonthDocCellData({
+    required this.text,
+    required this.columns,
+    this.bold = false,
+    this.align = TextAlign.center,
+    this.last = false,
+    this.noWrap = false,
+  });
+
+  final String text;
+  final int columns;
+  final bool bold;
+  final TextAlign align;
+  final bool last;
+  final bool noWrap;
+}
+
+class _MonthDocTableRow extends StatelessWidget {
+  const _MonthDocTableRow({required this.height, required this.cells});
+
+  final double height;
+  final List<_MonthDocCellData> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<Widget> children = <Widget>[];
+    int columnIndex = 0;
+    for (final _MonthDocCellData cell in cells) {
+      final int flex = _MonthPlanTable._columns
+          .skip(columnIndex)
+          .take(cell.columns)
+          .fold<int>(0, (int sum, int width) => sum + width);
+      columnIndex += cell.columns;
+      children.add(
+        Expanded(
+          flex: flex,
+          child: _MonthDocCellBox(data: cell),
+        ),
+      );
+    }
+
+    return SizedBox(
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: children,
+      ),
+    );
+  }
+}
+
+class _MonthDocCellBox extends StatelessWidget {
+  const _MonthDocCellBox({
+    required this.data,
+    this.rowLast = false,
+    this.verticalPadding = 5,
+  });
+
+  final _MonthDocCellData data;
+  final bool rowLast;
+  final double verticalPadding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      alignment: Alignment.center,
+      padding: EdgeInsets.symmetric(horizontal: 7, vertical: verticalPadding),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: data.last
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+          bottom: rowLast
+              ? BorderSide.none
+              : const BorderSide(color: Color(0xFFB98A71), width: .8),
+        ),
+      ),
+      child: Text(
+        data.text,
+        maxLines: data.noWrap ? 1 : null,
+        overflow: data.noWrap ? TextOverflow.ellipsis : TextOverflow.clip,
+        textAlign: data.align,
+        style: TextStyle(
+          color: data.bold ? _IepColors.ink : _IepColors.text,
+          fontSize: 10.6,
+          fontWeight: data.bold ? FontWeight.w900 : FontWeight.w700,
+          height: 1.18,
+        ),
+      ),
+    );
+  }
+}
+
+class _MonthPlanRows extends StatelessWidget {
+  const _MonthPlanRows({required this.domains});
+
+  final List<_MonthDomainData> domains;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: domains.asMap().entries.map((entry) {
+        return _MonthDomainBlock(
+          data: entry.value,
+          last: entry.key == domains.length - 1,
+        );
+      }).toList(),
+    );
+  }
+}
+
+class _MonthDomainData {
+  const _MonthDomainData({
+    required this.domain,
+    required this.longGoal,
+    required this.shortGoal,
+    required this.lesson,
+    required this.trainings,
+  });
+
+  final String domain;
+  final String longGoal;
+  final String shortGoal;
+  final String lesson;
+  final List<_MonthTrainingData> trainings;
+}
+
+class _MonthTrainingData {
+  const _MonthTrainingData(this.content, this.period);
+
+  final String content;
+  final String period;
+
+  String get displayPeriod => period.replaceFirst(' - ', '\n至 ');
+
+  double get rowHeight {
+    if (content.length >= 82) {
+      return 74;
+    }
+    if (content.length >= 68) {
+      return 64;
+    }
+    return 54;
+  }
+}
+
+class _MonthDomainBlock extends StatelessWidget {
+  const _MonthDomainBlock({
+    required this.data,
+    required this.last,
+  });
+
+  final _MonthDomainData data;
+  final bool last;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<double> rowHeights =
+        data.trainings.map((training) => training.rowHeight).toList();
+    final double blockHeight =
+        rowHeights.fold<double>(0, (double sum, double height) => sum + height);
+
+    return SizedBox(
+      height: blockHeight,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Expanded(
+            flex: _MonthPlanTable._columns[0],
+            child: _MonthDocCellBox(
+              data:
+                  _MonthDocCellData(text: data.domain, columns: 1, bold: true),
+              rowLast: last,
+            ),
+          ),
+          Expanded(
+            flex: _MonthPlanTable._columns[1] + _MonthPlanTable._columns[2],
+            child: _MonthDocCellBox(
+              data: _MonthDocCellData(
+                text: data.longGoal,
+                columns: 2,
+                align: TextAlign.left,
+              ),
+              rowLast: last,
+            ),
+          ),
+          Expanded(
+            flex: _MonthPlanTable._columns[3] + _MonthPlanTable._columns[4],
+            child: _MonthDocCellBox(
+              data: _MonthDocCellData(
+                text: data.shortGoal,
+                columns: 2,
+                align: TextAlign.left,
+              ),
+              rowLast: last,
+            ),
+          ),
+          Expanded(
+            flex: _MonthPlanTable._columns[5] +
+                _MonthPlanTable._columns[6] +
+                _MonthPlanTable._columns[7] +
+                _MonthPlanTable._columns[8],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: data.trainings.asMap().entries.map((entry) {
+                return SizedBox(
+                  height: rowHeights[entry.key],
+                  child: _MonthDocCellBox(
+                    data: _MonthDocCellData(
+                      text: entry.value.content,
+                      columns: 4,
+                      align: TextAlign.left,
+                    ),
+                    rowLast: last && entry.key == data.trainings.length - 1,
+                    verticalPadding: 4,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          Expanded(
+            flex: _MonthPlanTable._columns[9],
+            child: _MonthDocCellBox(
+              data: _MonthDocCellData(
+                text: data.lesson,
+                columns: 1,
+                noWrap: true,
+              ),
+              rowLast: last,
+            ),
+          ),
+          Expanded(
+            flex: _MonthPlanTable._columns[10] + _MonthPlanTable._columns[11],
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: data.trainings.asMap().entries.map((entry) {
+                return SizedBox(
+                  height: rowHeights[entry.key],
+                  child: _MonthDocCellBox(
+                    data: _MonthDocCellData(
+                      text: entry.value.displayPeriod,
+                      columns: 2,
+                      last: true,
+                    ),
+                    rowLast: last && entry.key == data.trainings.length - 1,
+                    verticalPadding: 4,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _WordTableTitle extends StatelessWidget {
-  const _WordTableTitle();
+  const _WordTableTitle({this.title = '康复教学季度计划'});
+
+  final String title;
 
   @override
   Widget build(BuildContext context) {
@@ -1580,8 +2610,8 @@ class _WordTableTitle extends StatelessWidget {
           bottom: BorderSide(color: Color(0xFFB98A71), width: 1),
         ),
       ),
-      child: const Text(
-        '康复教学季度计划',
+      child: Text(
+        title,
         style: TextStyle(
           color: _IepColors.ink,
           fontSize: 19,
