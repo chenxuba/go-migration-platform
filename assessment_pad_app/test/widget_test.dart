@@ -833,6 +833,35 @@ void main() {
     expect(find.text('完成情况'), findsOneWidget);
     expect(find.text('平衡木行走'), findsOneWidget);
     expect(find.text('康复教学5月计划'), findsNothing);
+
+    await tester.tap(find.text('IEP总计划'));
+    await tester.pump();
+    await tester.tap(find.text('编辑周期'));
+    await tester.pump();
+
+    expect(find.text('编辑周期'), findsWidgets);
+    expect(find.text('3个月周期'), findsOneWidget);
+    expect(find.text('2026-07-31'), findsOneWidget);
+
+    await tester.tap(find.text('周期开始'));
+    await tester.pump();
+    expect(find.text('选择周期开始日期'), findsOneWidget);
+    expect(find.text('请选择周期开始日期，结束日期将按自然月自动计算'), findsOneWidget);
+
+    await tester.tap(find.text('5').first);
+    await tester.pump();
+    await tester.tap(find.text('确定'));
+    await tester.pump();
+
+    expect(find.text('2026-05-05'), findsOneWidget);
+    expect(find.text('2026-07-31'), findsOneWidget);
+
+    await tester.tap(find.text('确认同步'));
+    await tester.pump();
+
+    expect(find.text('编辑周期'), findsOneWidget);
+    expect(find.text('2026.05.05-2026.07.31'), findsOneWidget);
+    expect(find.text('2026-05-05 至 2026-07-31'), findsOneWidget);
   });
 
   testWidgets('smart timetable detects availability after target selection',

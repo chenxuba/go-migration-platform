@@ -44,6 +44,8 @@ Future<DateTimeRange?> showPadDateRangePicker({
 Future<DateTime?> showPadDatePicker({
   required BuildContext context,
   required DateTime initialDate,
+  String title = '选择评估日期',
+  String helperText = '请选择实际评估日期',
   DateTime? today,
   DateTime? minDate,
   DateTime? maxDate,
@@ -77,6 +79,8 @@ Future<DateTime?> showPadDatePicker({
     builder: (BuildContext context) {
       return _PadSingleDateOverlay(
         initialDate: resolvedInitialDate,
+        title: title,
+        helperText: helperText,
         today: currentDay,
         minDate: resolvedMinDate,
         maxDate: resolvedMaxDate,
@@ -103,6 +107,8 @@ class _PickerColors {
 class _PadSingleDateOverlay extends StatelessWidget {
   const _PadSingleDateOverlay({
     required this.initialDate,
+    required this.title,
+    required this.helperText,
     required this.today,
     required this.minDate,
     required this.maxDate,
@@ -111,6 +117,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
   });
 
   final DateTime initialDate;
+  final String title;
+  final String helperText;
   final DateTime today;
   final DateTime minDate;
   final DateTime maxDate;
@@ -130,6 +138,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
             child: PadDialogViewport(
               child: _PadSingleDateDialog(
                 initialDate: initialDate,
+                title: title,
+                helperText: helperText,
                 today: today,
                 minDate: minDate,
                 maxDate: maxDate,
@@ -147,6 +157,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
 class _PadSingleDateDialog extends StatefulWidget {
   const _PadSingleDateDialog({
     required this.initialDate,
+    required this.title,
+    required this.helperText,
     required this.today,
     required this.minDate,
     required this.maxDate,
@@ -155,6 +167,8 @@ class _PadSingleDateDialog extends StatefulWidget {
   });
 
   final DateTime initialDate;
+  final String title;
+  final String helperText;
   final DateTime today;
   final DateTime minDate;
   final DateTime maxDate;
@@ -232,8 +246,8 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
           children: <Widget>[
             Row(
               children: <Widget>[
-                const Text(
-                  '选择评估日期',
+                Text(
+                  widget.title,
                   style: TextStyle(
                     color: _PickerColors.ink,
                     fontSize: 22,
@@ -280,8 +294,8 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
             const SizedBox(height: 18),
             Row(
               children: <Widget>[
-                const Text(
-                  '请选择实际评估日期',
+                Text(
+                  widget.helperText,
                   style: TextStyle(
                     color: _PickerColors.muted,
                     fontSize: 13,

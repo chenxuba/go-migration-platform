@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'pad_date_range_picker.dart';
+import 'pad_responsive.dart';
+
 class IepCenterPage extends StatelessWidget {
   const IepCenterPage({required this.onBack, super.key});
 
@@ -106,6 +109,147 @@ List<BoxShadow> _iepShadow({
   return <BoxShadow>[
     BoxShadow(color: color, blurRadius: blur, offset: offset),
   ];
+}
+
+DateTime _dateOnly(DateTime value) =>
+    DateTime(value.year, value.month, value.day);
+
+DateTime _periodEndFor(DateTime start, int monthCount) {
+  final DateTime periodStart = _dateOnly(start);
+  return DateTime(periodStart.year, periodStart.month + monthCount, 0);
+}
+
+DateTime _monthOnly(DateTime value) => DateTime(value.year, value.month);
+
+DateTime _monthEnd(DateTime value) => DateTime(value.year, value.month + 1, 0);
+
+DateTime _laterDate(DateTime left, DateTime right) =>
+    left.isAfter(right) ? left : right;
+
+DateTime _earlierDate(DateTime left, DateTime right) =>
+    left.isBefore(right) ? left : right;
+
+String _twoDigits(int value) => value.toString().padLeft(2, '0');
+
+String _formatDateDash(DateTime value) {
+  return '${value.year}-${_twoDigits(value.month)}-${_twoDigits(value.day)}';
+}
+
+String _formatDateDot(DateTime value) {
+  return '${value.year}.${_twoDigits(value.month)}.${_twoDigits(value.day)}';
+}
+
+String _formatDotRange(DateTime start, DateTime end) {
+  return '${_formatDateDot(start)}-${_formatDateDot(end)}';
+}
+
+String _formatZhRange(DateTime start, DateTime end) {
+  return '${_formatDateDash(start)} 至 ${_formatDateDash(end)}';
+}
+
+String _monthLabelFromDate(DateTime value) => '${value.month}月';
+
+List<String> _periodMonthLabels(DateTime start, int monthCount) {
+  return List<String>.generate(monthCount, (int index) {
+    return _monthLabelFromDate(DateTime(start.year, start.month + index));
+  });
+}
+
+DateTime _monthDateFromLabel(
+  DateTime periodStart,
+  int monthCount,
+  String label,
+) {
+  for (int index = 0; index < monthCount; index += 1) {
+    final DateTime monthDate =
+        DateTime(periodStart.year, periodStart.month + index);
+    if (_monthLabelFromDate(monthDate) == label) {
+      return monthDate;
+    }
+  }
+  return _monthOnly(periodStart);
+}
+
+DateTimeRange _monthRangeInPeriod({
+  required DateTime periodStart,
+  required int monthCount,
+  required DateTime monthDate,
+}) {
+  final DateTime start =
+      _laterDate(_monthOnly(monthDate), _dateOnly(periodStart));
+  final DateTime end = _earlierDate(
+    _monthEnd(monthDate),
+    _periodEndFor(periodStart, monthCount),
+  );
+  return DateTimeRange(start: start, end: end);
+}
+
+String _monthTrainingPeriodText(DateTimeRange monthRange, int index) {
+  final int endDay = monthRange.end.day;
+  final DateTime segmentStart = switch (index) {
+    0 => DateTime(monthRange.start.year, monthRange.start.month, 1),
+    1 => DateTime(monthRange.start.year, monthRange.start.month, 11),
+    _ => DateTime(monthRange.start.year, monthRange.start.month, 21),
+  };
+  final DateTime segmentEnd = switch (index) {
+    0 => DateTime(monthRange.start.year, monthRange.start.month, 10),
+    1 => DateTime(monthRange.start.year, monthRange.start.month, 20),
+    _ => DateTime(monthRange.start.year, monthRange.start.month, endDay),
+  };
+  final DateTime start = _laterDate(segmentStart, monthRange.start);
+  final DateTime end = _earlierDate(segmentEnd, monthRange.end);
+  if (start.isAfter(end)) {
+    return '';
+  }
+  return '${_formatDateDash(start)}\n至 ${_formatDateDash(end)}';
+}
+
+List<DateTime> _weekDatesInMonthRange(
+    DateTimeRange monthRange, int weekNumber) {
+  DateTime cursor = _dateOnly(monthRange.start);
+  while (cursor.weekday == DateTime.sunday && !cursor.isAfter(monthRange.end)) {
+    cursor = cursor.add(const Duration(days: 1));
+  }
+
+  for (int currentWeek = 1; currentWeek <= 5; currentWeek += 1) {
+    if (cursor.isAfter(monthRange.end)) {
+      return <DateTime>[];
+    }
+    final DateTime end = _earlierDate(_nextSaturday(cursor), monthRange.end);
+    final List<DateTime> dates = <DateTime>[];
+    for (DateTime day = cursor;
+        !day.isAfter(end);
+        day = day.add(const Duration(days: 1))) {
+      if (day.weekday != DateTime.sunday) {
+        dates.add(day);
+      }
+    }
+    if (currentWeek == weekNumber) {
+      return dates;
+    }
+    cursor = end.add(const Duration(days: 1));
+    while (
+        cursor.weekday == DateTime.sunday && !cursor.isAfter(monthRange.end)) {
+      cursor = cursor.add(const Duration(days: 1));
+    }
+  }
+  return <DateTime>[];
+}
+
+DateTime _nextSaturday(DateTime value) {
+  final int offset = (DateTime.saturday - value.weekday) % DateTime.daysPerWeek;
+  return value.add(Duration(days: offset));
+}
+
+String _weekRangeText(List<DateTime> dates) {
+  if (dates.isEmpty) {
+    return '暂无日期';
+  }
+  return _formatZhRange(dates.first, dates.last);
+}
+
+String _weekDateLabel(DateTime value) {
+  return '${_twoDigits(value.month)}.${_twoDigits(value.day)}';
 }
 
 class _IepPagePainter extends CustomPainter {
@@ -832,6 +976,53 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   _IepPreviewMode _previewMode = _IepPreviewMode.total;
   String _previewMonth = '5月';
   int _previewWeek = 2;
+  DateTime _periodStart = DateTime(2026, 5);
+  int _periodMonthCount = 3;
+
+  DateTime get _periodEnd => _periodEndFor(_periodStart, _periodMonthCount);
+
+  List<String> get _periodMonths =>
+      _periodMonthLabels(_periodStart, _periodMonthCount);
+
+  Future<void> _showEditPeriodDialog() async {
+    final _IepPeriodDraft? draft = await showDialog<_IepPeriodDraft>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepPeriodEditDialog(
+            initialStart: _periodStart,
+            monthCount: _periodMonthCount,
+          ),
+        );
+      },
+    );
+    if (draft == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _periodStart = draft.start;
+      final List<String> months = _periodMonths;
+      if (!months.contains(_previewMonth)) {
+        _previewMonth = months.first;
+      }
+      if (_previewMode == _IepPreviewMode.week) {
+        final DateTime monthDate = _monthDateFromLabel(
+          _periodStart,
+          _periodMonthCount,
+          _previewMonth,
+        );
+        final DateTimeRange monthRange = _monthRangeInPeriod(
+          periodStart: _periodStart,
+          monthCount: _periodMonthCount,
+          monthDate: monthDate,
+        );
+        if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
+          _previewWeek = 1;
+        }
+      }
+    });
+  }
 
   void _showTotalPlan() {
     setState(() {
@@ -854,6 +1045,35 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     });
   }
 
+  void _changePeriodMonthCount(int monthCount) {
+    if (_periodMonthCount == monthCount) {
+      return;
+    }
+    setState(() {
+      _periodMonthCount = monthCount;
+      final List<String> months = _periodMonths;
+      if (!months.contains(_previewMonth)) {
+        _previewMonth = months.first;
+        _previewWeek = 1;
+      }
+      if (_previewMode == _IepPreviewMode.week) {
+        final DateTime monthDate = _monthDateFromLabel(
+          _periodStart,
+          _periodMonthCount,
+          _previewMonth,
+        );
+        final DateTimeRange monthRange = _monthRangeInPeriod(
+          periodStart: _periodStart,
+          monthCount: _periodMonthCount,
+          monthDate: monthDate,
+        );
+        if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
+          _previewWeek = 1;
+        }
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -865,12 +1085,18 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       ),
       child: Column(
         children: <Widget>[
-          const _WorkspaceHeader(),
+          _WorkspaceHeader(
+            periodText: _formatDotRange(_periodStart, _periodEnd),
+          ),
           const SizedBox(height: 10),
           _PlanToolbar(
             onShowTotalPlan: _showTotalPlan,
             onShowMonthPlan: _showMonthPlan,
             onShowWeekPlan: _showWeekPlan,
+            onEditPeriod: _showEditPeriodDialog,
+            monthLabels: _periodMonths,
+            periodMonthCount: _periodMonthCount,
+            onPeriodMonthCountChanged: _changePeriodMonthCount,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -878,6 +1104,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               previewMode: _previewMode,
               month: _previewMonth,
               weekNumber: _previewWeek,
+              periodStart: _periodStart,
+              periodMonthCount: _periodMonthCount,
             ),
           ),
         ],
@@ -887,7 +1115,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
 }
 
 class _WorkspaceHeader extends StatelessWidget {
-  const _WorkspaceHeader();
+  const _WorkspaceHeader({required this.periodText});
+
+  final String periodText;
 
   @override
   Widget build(BuildContext context) {
@@ -913,9 +1143,9 @@ class _WorkspaceHeader extends StatelessWidget {
             iconColor: _IepColors.green,
           ),
           const SizedBox(width: 10),
-          const _HeaderMetaPill(
+          _HeaderMetaPill(
             icon: Icons.date_range_rounded,
-            text: '2026.05.01-2026.07.31',
+            text: periodText,
           ),
           const SizedBox(width: 10),
           const _ClassContextPill(),
@@ -1033,11 +1263,19 @@ class _PlanToolbar extends StatelessWidget {
     required this.onShowTotalPlan,
     required this.onShowMonthPlan,
     required this.onShowWeekPlan,
+    required this.onEditPeriod,
+    required this.monthLabels,
+    required this.periodMonthCount,
+    required this.onPeriodMonthCountChanged,
   });
 
   final VoidCallback onShowTotalPlan;
   final ValueChanged<String> onShowMonthPlan;
   final void Function(String month, int weekNumber) onShowWeekPlan;
+  final VoidCallback onEditPeriod;
+  final List<String> monthLabels;
+  final int periodMonthCount;
+  final ValueChanged<int> onPeriodMonthCountChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1052,18 +1290,25 @@ class _PlanToolbar extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: <Widget>[
-          const _PeriodSwitch(),
+          _PeriodSwitch(
+            selectedMonthCount: periodMonthCount,
+            onChanged: onPeriodMonthCountChanged,
+          ),
           const _ToolbarDivider(),
           Expanded(
             child: _ScrollablePlanNav(
               onShowTotalPlan: onShowTotalPlan,
               onShowMonthPlan: onShowMonthPlan,
               onShowWeekPlan: onShowWeekPlan,
+              monthLabels: monthLabels,
             ),
           ),
           const _ToolbarDivider(),
-          const _TableTinyAction(
-              icon: Icons.edit_calendar_rounded, label: '编辑周期'),
+          _TableTinyAction(
+            icon: Icons.edit_calendar_rounded,
+            label: '编辑周期',
+            onTap: onEditPeriod,
+          ),
           const SizedBox(width: 8),
           const _TableTinyAction(icon: Icons.refresh_rounded, label: '重新生成'),
         ],
@@ -1077,11 +1322,13 @@ class _ScrollablePlanNav extends StatefulWidget {
     required this.onShowTotalPlan,
     required this.onShowMonthPlan,
     required this.onShowWeekPlan,
+    required this.monthLabels,
   });
 
   final VoidCallback onShowTotalPlan;
   final ValueChanged<String> onShowMonthPlan;
   final void Function(String month, int weekNumber) onShowWeekPlan;
+  final List<String> monthLabels;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -1097,6 +1344,17 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   String _selectedSection = 'iep';
   String _selectedMonth = '5月';
   int? _selectedWeek;
+
+  @override
+  void didUpdateWidget(covariant _ScrollablePlanNav oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.monthLabels.contains(_selectedMonth) &&
+        widget.monthLabels.isNotEmpty) {
+      _selectedMonth = widget.monthLabels.first;
+      _selectedWeek = null;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
+  }
 
   @override
   void initState() {
@@ -1198,27 +1456,15 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                         onTap: () => _selectPlan('iep'),
                       ),
                       const _PlanNavLabel(text: '月计划'),
-                      _PlanTab(
-                        text: '5月',
-                        active: _selectedSection == 'month' &&
-                            _selectedMonth == '5月',
-                        width: 54,
-                        onTap: () => _selectMonth('5月'),
-                      ),
-                      _PlanTab(
-                        text: '6月',
-                        active: _selectedSection == 'month' &&
-                            _selectedMonth == '6月',
-                        width: 54,
-                        onTap: () => _selectMonth('6月'),
-                      ),
-                      _PlanTab(
-                        text: '7月',
-                        active: _selectedSection == 'month' &&
-                            _selectedMonth == '7月',
-                        width: 54,
-                        onTap: () => _selectMonth('7月'),
-                      ),
+                      ...widget.monthLabels.map((String month) {
+                        return _PlanTab(
+                          text: month,
+                          active: _selectedSection == 'month' &&
+                              _selectedMonth == month,
+                          width: 54,
+                          onTap: () => _selectMonth(month),
+                        );
+                      }),
                       const _PlanNavLabel(text: '周计划'),
                       ...List<Widget>.generate(5, (int index) {
                         final int weekNumber = index + 1;
@@ -1335,7 +1581,13 @@ class _PlanScrollHint extends StatelessWidget {
 }
 
 class _PeriodSwitch extends StatelessWidget {
-  const _PeriodSwitch();
+  const _PeriodSwitch({
+    required this.selectedMonthCount,
+    required this.onChanged,
+  });
+
+  final int selectedMonthCount;
+  final ValueChanged<int> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -1349,9 +1601,17 @@ class _PeriodSwitch extends StatelessWidget {
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
-        children: const <Widget>[
-          _PeriodOption(text: '3个月', active: true),
-          _PeriodOption(text: '6个月'),
+        children: <Widget>[
+          _PeriodOption(
+            text: '3个月',
+            active: selectedMonthCount == 3,
+            onTap: () => onChanged(3),
+          ),
+          _PeriodOption(
+            text: '6个月',
+            active: selectedMonthCount == 6,
+            onTap: () => onChanged(6),
+          ),
         ],
       ),
     );
@@ -1359,27 +1619,40 @@ class _PeriodSwitch extends StatelessWidget {
 }
 
 class _PeriodOption extends StatelessWidget {
-  const _PeriodOption({required this.text, this.active = false});
+  const _PeriodOption({
+    required this.text,
+    required this.onTap,
+    this.active = false,
+  });
 
   final String text;
+  final VoidCallback onTap;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 26,
-      width: 50,
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active ? _IepColors.orange : Colors.transparent,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(13),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: active ? Colors.white : _IepColors.text,
-          fontSize: 11,
-          fontWeight: FontWeight.w900,
+        child: Container(
+          height: 26,
+          width: 50,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? _IepColors.orange : Colors.transparent,
+            borderRadius: BorderRadius.circular(13),
+          ),
+          child: Text(
+            text,
+            style: TextStyle(
+              color: active ? Colors.white : _IepColors.text,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ),
       ),
     );
@@ -1401,35 +1674,420 @@ class _ToolbarDivider extends StatelessWidget {
 }
 
 class _TableTinyAction extends StatelessWidget {
-  const _TableTinyAction({required this.icon, required this.label});
+  const _TableTinyAction({
+    required this.icon,
+    required this.label,
+    this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(15),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(15),
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(15),
+            border: Border.all(color: _IepColors.line),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              Icon(icon, color: _IepColors.text, size: 16),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IepPeriodDraft {
+  const _IepPeriodDraft({required this.start});
+
+  final DateTime start;
+}
+
+class _IepPeriodEditDialog extends StatefulWidget {
+  const _IepPeriodEditDialog({
+    required this.initialStart,
+    required this.monthCount,
+  });
+
+  final DateTime initialStart;
+  final int monthCount;
+
+  @override
+  State<_IepPeriodEditDialog> createState() => _IepPeriodEditDialogState();
+}
+
+class _IepPeriodEditDialogState extends State<_IepPeriodEditDialog> {
+  late DateTime _start;
+
+  DateTime get _end => _periodEndFor(_start, widget.monthCount);
+
+  @override
+  void initState() {
+    super.initState();
+    _start = _dateOnly(widget.initialStart);
+  }
+
+  Future<void> _pickStartDate() async {
+    final DateTime? picked = await showPadDatePicker(
+      context: context,
+      title: '选择周期开始日期',
+      helperText: '请选择周期开始日期，结束日期将按自然月自动计算',
+      initialDate: _start,
+      today: _start,
+      minDate: DateTime(_start.year - 1, 1),
+      maxDate: DateTime(_start.year + 1, 12, 31),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    setState(() {
+      _start = _dateOnly(picked);
+    });
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(_IepPeriodDraft(start: _start));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 540,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '编辑周期',
+                  style: TextStyle(
+                    color: _IepColors.ink,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                _IepPeriodTypePill(text: '${widget.monthCount}个月周期'),
+                const SizedBox(width: 10),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Container(
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Column(
+                children: <Widget>[
+                  _IepPeriodDateTile(
+                    label: '周期开始',
+                    value: _formatDateDash(_start),
+                    icon: Icons.event_available_rounded,
+                    onTap: _pickStartDate,
+                  ),
+                  const SizedBox(height: 10),
+                  _IepPeriodDateTile(
+                    label: '周期结束',
+                    value: _formatDateDash(_end),
+                    icon: Icons.event_repeat_rounded,
+                    trailingText: '自动计算',
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
+            Row(
+              children: <Widget>[
+                const Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: _IepColors.muted,
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '同步后会按${widget.monthCount}个月周期更新表格中的实施日期，并重算对应月计划、周计划日期。',
+                    style: const TextStyle(
+                      color: _IepColors.text,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      height: 1.35,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '确认同步',
+                  filled: true,
+                  onTap: _submit,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IepPeriodTypePill extends StatelessWidget {
+  const _IepPeriodTypePill({required this.text});
+
+  final String text;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 9),
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: _IepColors.orangeSoft,
         borderRadius: BorderRadius.circular(15),
-        border: Border.all(color: _IepColors.line),
+        border: Border.all(color: const Color(0xFFFFD8C6)),
       ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: <Widget>[
-          Icon(icon, color: _IepColors.text, size: 16),
-          const SizedBox(width: 5),
-          Text(
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: _IepColors.orangeDeep,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _IepPeriodDateTile extends StatelessWidget {
+  const _IepPeriodDateTile({
+    required this.label,
+    required this.value,
+    required this.icon,
+    this.trailingText,
+    this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final IconData icon;
+  final String? trailingText;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool clickable = onTap != null;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 58,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: clickable ? const Color(0xFFFFCDB4) : _IepColors.line,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 34,
+                height: 34,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: clickable
+                      ? _IepColors.orangeSoft
+                      : const Color(0xFFF8EEE6),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  size: 19,
+                  color: clickable ? _IepColors.orangeDeep : _IepColors.muted,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      label,
+                      style: const TextStyle(
+                        color: _IepColors.muted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Text(
+                      value,
+                      style: const TextStyle(
+                        color: _IepColors.ink,
+                        fontSize: 17,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (trailingText != null)
+                Text(
+                  trailingText!,
+                  style: const TextStyle(
+                    color: _IepColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                )
+              else
+                const Icon(
+                  Icons.chevron_right_rounded,
+                  color: _IepColors.orangeDeep,
+                  size: 24,
+                ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IepDialogIconButton extends StatelessWidget {
+  const _IepDialogIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 36,
+          height: 36,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFAF6),
+            shape: BoxShape.circle,
+            border: Border.all(color: _IepColors.lightLine),
+          ),
+          child: Icon(icon, size: 21, color: _IepColors.text),
+        ),
+      ),
+    );
+  }
+}
+
+class _IepDialogAction extends StatelessWidget {
+  const _IepDialogAction({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 42,
+          constraints: const BoxConstraints(minWidth: 92),
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 20),
+          decoration: BoxDecoration(
+            color: filled ? _IepColors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: filled ? _IepColors.orange : _IepColors.line,
+            ),
+          ),
+          child: Text(
             label,
-            style: const TextStyle(
-              color: _IepColors.text,
-              fontSize: 11,
+            style: TextStyle(
+              color: filled ? Colors.white : _IepColors.text,
+              fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1527,14 +2185,33 @@ class _IepTablePreview extends StatelessWidget {
     required this.previewMode,
     required this.month,
     required this.weekNumber,
+    required this.periodStart,
+    required this.periodMonthCount,
   });
 
   final _IepPreviewMode previewMode;
   final String month;
   final int weekNumber;
+  final DateTime periodStart;
+  final int periodMonthCount;
 
   @override
   Widget build(BuildContext context) {
+    final DateTime monthDate = _monthDateFromLabel(
+      periodStart,
+      periodMonthCount,
+      month,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: periodStart,
+      monthCount: periodMonthCount,
+      monthDate: monthDate,
+    );
+    final List<DateTime> weekDates = _weekDatesInMonthRange(
+      monthRange,
+      weekNumber,
+    );
+
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
       decoration: BoxDecoration(
@@ -1543,20 +2220,37 @@ class _IepTablePreview extends StatelessWidget {
         border: Border.all(color: _IepColors.line),
       ),
       child: switch (previewMode) {
-        _IepPreviewMode.month =>
-          _WordTableFrame(child: _MonthPlanTable(month: month)),
-        _IepPreviewMode.week => _WordTableFrame(
-            child: _WeekPlanTable(month: month, weekNumber: weekNumber),
+        _IepPreviewMode.month => _WordTableFrame(
+            child: _MonthPlanTable(
+              month: month,
+              monthRange: monthRange,
+            ),
           ),
-        _IepPreviewMode.total =>
-          const _WordTableFrame(child: _WordTable(), height: 820),
+        _IepPreviewMode.week => _WordTableFrame(
+            child: _WeekPlanTable(
+              month: month,
+              weekNumber: weekNumber,
+              weekDates: weekDates,
+            ),
+          ),
+        _IepPreviewMode.total => _WordTableFrame(
+            child: _WordTable(
+              periodText: _formatZhRange(
+                periodStart,
+                _periodEndFor(periodStart, periodMonthCount),
+              ),
+            ),
+            height: 820,
+          ),
       },
     );
   }
 }
 
 class _WordTable extends StatelessWidget {
-  const _WordTable();
+  const _WordTable({required this.periodText});
+
+  final String periodText;
 
   static const List<int> _columns = <int>[
     1038,
@@ -1572,8 +2266,8 @@ class _WordTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: const <Widget>[
-        _WordTableTitle(),
+      children: <Widget>[
+        const _WordTableTitle(),
         _DocTableRow(
           height: 42,
           cells: <_DocCellData>[
@@ -1601,10 +2295,7 @@ class _WordTable extends StatelessWidget {
             _DocCellData(text: '陈瑞', columns: 3),
             _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
             _DocCellData(
-                text: '2026-05-01 至 2026-07-31',
-                columns: 3,
-                noWrap: true,
-                last: true),
+                text: periodText, columns: 3, noWrap: true, last: true),
           ],
         ),
         _DocTableRow(
@@ -1662,10 +2353,12 @@ class _WeekPlanTable extends StatelessWidget {
   const _WeekPlanTable({
     required this.month,
     required this.weekNumber,
+    required this.weekDates,
   });
 
   final String month;
   final int weekNumber;
+  final List<DateTime> weekDates;
 
   static const List<int> _columns = <int>[
     1300,
@@ -1737,8 +2430,8 @@ class _WeekPlanTable extends StatelessWidget {
     return Column(
       children: <Widget>[
         _WordTableTitle(title: '康复教学周计划日记录卡$month第$weekNumber周'),
-        const _WeekInfoRows(),
-        const _WeekHeaderRows(),
+        _WeekInfoRows(periodText: _weekRangeText(weekDates)),
+        _WeekHeaderRows(dates: weekDates),
         _WeekTrainingRows(rows: _rows),
       ],
     );
@@ -1746,12 +2439,14 @@ class _WeekPlanTable extends StatelessWidget {
 }
 
 class _WeekInfoRows extends StatelessWidget {
-  const _WeekInfoRows();
+  const _WeekInfoRows({required this.periodText});
+
+  final String periodText;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: const <Widget>[
+      children: <Widget>[
         _WeekDocTableRow(
           height: 42,
           cells: <_WeekDocCellData>[
@@ -1766,13 +2461,16 @@ class _WeekInfoRows extends StatelessWidget {
         _WeekDocTableRow(
           height: 42,
           cells: <_WeekDocCellData>[
-            _WeekDocCellData(text: '任教\n老师', columns: 1, bold: true),
-            _WeekDocCellData(text: '康复治疗师', columns: 1),
-            _WeekDocCellData(text: '课程\n名称', columns: 1, bold: true),
-            _WeekDocCellData(text: '康复教学', columns: 1),
-            _WeekDocCellData(text: '训练日期', columns: 2, bold: true),
+            const _WeekDocCellData(text: '任教\n老师', columns: 1, bold: true),
+            const _WeekDocCellData(text: '康复治疗师', columns: 1),
+            const _WeekDocCellData(text: '课程\n名称', columns: 1, bold: true),
+            const _WeekDocCellData(text: '康复教学', columns: 1),
+            const _WeekDocCellData(text: '训练日期', columns: 2, bold: true),
             _WeekDocCellData(
-                text: '2026-05-04 至 2026-05-09', columns: 4, last: true),
+              text: periodText,
+              columns: 4,
+              last: true,
+            ),
           ],
         ),
         _WeekDocTableRow(
@@ -1794,7 +2492,9 @@ class _WeekInfoRows extends StatelessWidget {
 }
 
 class _WeekHeaderRows extends StatelessWidget {
-  const _WeekHeaderRows();
+  const _WeekHeaderRows({required this.dates});
+
+  final List<DateTime> dates;
 
   @override
   Widget build(BuildContext context) {
@@ -1819,10 +2519,10 @@ class _WeekHeaderRows extends StatelessWidget {
             flex: 4188,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: const <Widget>[
+              children: <Widget>[
                 SizedBox(
                   height: 36,
-                  child: _WeekDocCellBox(
+                  child: const _WeekDocCellBox(
                     data: _WeekDocCellData(
                       text: '完成情况',
                       columns: 6,
@@ -1835,48 +2535,21 @@ class _WeekHeaderRows extends StatelessWidget {
                   height: 34,
                   child: Row(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      Expanded(
+                    children: List<Widget>.generate(6, (int index) {
+                      final String label = index < dates.length
+                          ? _weekDateLabel(dates[index])
+                          : '';
+                      return Expanded(
                         child: _WeekDocCellBox(
                           data: _WeekDocCellData(
-                              text: '05.04', columns: 1, bold: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _WeekDocCellBox(
-                          data: _WeekDocCellData(
-                              text: '05.05', columns: 1, bold: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _WeekDocCellBox(
-                          data: _WeekDocCellData(
-                              text: '05.06', columns: 1, bold: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _WeekDocCellBox(
-                          data: _WeekDocCellData(
-                              text: '05.07', columns: 1, bold: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _WeekDocCellBox(
-                          data: _WeekDocCellData(
-                              text: '05.08', columns: 1, bold: true),
-                        ),
-                      ),
-                      Expanded(
-                        child: _WeekDocCellBox(
-                          data: _WeekDocCellData(
-                            text: '05.09',
+                            text: label,
                             columns: 1,
                             bold: true,
-                            last: true,
+                            last: index == 5,
                           ),
                         ),
-                      ),
-                    ],
+                      );
+                    }),
                   ),
                 ),
               ],
@@ -2073,9 +2746,13 @@ class _WeekTrainingTableRow extends StatelessWidget {
 }
 
 class _MonthPlanTable extends StatelessWidget {
-  const _MonthPlanTable({required this.month});
+  const _MonthPlanTable({
+    required this.month,
+    required this.monthRange,
+  });
 
   final String month;
+  final DateTimeRange monthRange;
 
   static const List<int> _columns = <int>[
     806,
@@ -2270,20 +2947,23 @@ class _MonthPlanTable extends StatelessWidget {
     return Column(
       children: <Widget>[
         _WordTableTitle(title: '康复教学$month计划'),
-        const _MonthInfoRows(),
-        _MonthPlanRows(domains: _domains),
+        _MonthInfoRows(
+            periodText: _formatZhRange(monthRange.start, monthRange.end)),
+        _MonthPlanRows(domains: _domains, monthRange: monthRange),
       ],
     );
   }
 }
 
 class _MonthInfoRows extends StatelessWidget {
-  const _MonthInfoRows();
+  const _MonthInfoRows({required this.periodText});
+
+  final String periodText;
 
   @override
   Widget build(BuildContext context) {
     return Column(
-      children: const <Widget>[
+      children: <Widget>[
         _MonthDocTableRow(
           height: 42,
           cells: <_MonthDocCellData>[
@@ -2298,20 +2978,20 @@ class _MonthInfoRows extends StatelessWidget {
         _MonthDocTableRow(
           height: 42,
           cells: <_MonthDocCellData>[
-            _MonthDocCellData(text: '制定\n日期', columns: 1, bold: true),
-            _MonthDocCellData(text: '2026-05-07', columns: 2),
-            _MonthDocCellData(text: '计划参与者', columns: 4, bold: true),
-            _MonthDocCellData(text: '陈瑞', columns: 5, last: true),
+            const _MonthDocCellData(text: '制定\n日期', columns: 1, bold: true),
+            const _MonthDocCellData(text: '2026-05-07', columns: 2),
+            const _MonthDocCellData(text: '计划参与者', columns: 4, bold: true),
+            const _MonthDocCellData(text: '陈瑞', columns: 5, last: true),
           ],
         ),
         _MonthDocTableRow(
           height: 42,
           cells: <_MonthDocCellData>[
-            _MonthDocCellData(text: '实施者', columns: 1, bold: true),
-            _MonthDocCellData(text: '陈瑞', columns: 2),
-            _MonthDocCellData(text: '实施起止日期', columns: 4, bold: true),
+            const _MonthDocCellData(text: '实施者', columns: 1, bold: true),
+            const _MonthDocCellData(text: '陈瑞', columns: 2),
+            const _MonthDocCellData(text: '实施起止日期', columns: 4, bold: true),
             _MonthDocCellData(
-              text: '2026-05-01 至 2026-05-31',
+              text: periodText,
               columns: 5,
               noWrap: true,
               last: true,
@@ -2320,7 +3000,7 @@ class _MonthInfoRows extends StatelessWidget {
         ),
         _MonthDocTableRow(
           height: 42,
-          cells: <_MonthDocCellData>[
+          cells: const <_MonthDocCellData>[
             _MonthDocCellData(text: '康复\n领域', columns: 1, bold: true),
             _MonthDocCellData(text: '长期目标', columns: 2, bold: true),
             _MonthDocCellData(text: '短期目标', columns: 2, bold: true),
@@ -2430,9 +3110,13 @@ class _MonthDocCellBox extends StatelessWidget {
 }
 
 class _MonthPlanRows extends StatelessWidget {
-  const _MonthPlanRows({required this.domains});
+  const _MonthPlanRows({
+    required this.domains,
+    required this.monthRange,
+  });
 
   final List<_MonthDomainData> domains;
+  final DateTimeRange monthRange;
 
   @override
   Widget build(BuildContext context) {
@@ -2442,6 +3126,7 @@ class _MonthPlanRows extends StatelessWidget {
         return _MonthDomainBlock(
           data: entry.value,
           last: entry.key == domains.length - 1,
+          monthRange: monthRange,
         );
       }).toList(),
     );
@@ -2487,10 +3172,12 @@ class _MonthDomainBlock extends StatelessWidget {
   const _MonthDomainBlock({
     required this.data,
     required this.last,
+    required this.monthRange,
   });
 
   final _MonthDomainData data;
   final bool last;
+  final DateTimeRange monthRange;
 
   @override
   Widget build(BuildContext context) {
@@ -2573,11 +3260,15 @@ class _MonthDomainBlock extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: data.trainings.asMap().entries.map((entry) {
+                final String periodText = _monthTrainingPeriodText(
+                  monthRange,
+                  entry.key,
+                );
                 return SizedBox(
                   height: rowHeights[entry.key],
                   child: _MonthDocCellBox(
                     data: _MonthDocCellData(
-                      text: entry.value.displayPeriod,
+                      text: periodText,
                       columns: 2,
                       last: true,
                     ),
