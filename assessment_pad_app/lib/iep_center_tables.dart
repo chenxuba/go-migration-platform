@@ -385,14 +385,6 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                     ],
                   ),
                 ),
-                Text(
-                  '${(progress * 100).round()}%',
-                  style: const TextStyle(
-                    color: _IepColors.orangeDeep,
-                    fontSize: 16,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
               ],
             ),
           ),

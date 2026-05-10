@@ -198,7 +198,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               ? 'AI正在生成IEP计划'
               : activeTask.message.trim(),
           streamText: activeTask.streamText,
-          progress: activeTask.streamText.trim().isEmpty ? .12 : .4,
+          progress: _streamGenerationProgress(activeTask.streamText),
         );
         _generationSessionsByRecord[_recordGenerationKey(record)] = session;
         if (_restoreGenerationSessionFor(record)) {
@@ -285,9 +285,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       }
       setState(() {
         _aiStreamText += String.fromCharCode(codePoint);
-        _generationProgress = math.min(
-          .88,
-          math.max(_generationProgress, _aiStreamText.length / 1800),
+        _generationProgress = math.max(
+          _generationProgress,
+          _streamGenerationProgress(_aiStreamText),
         );
       });
       await Future<void>.delayed(const Duration(milliseconds: 4));
@@ -435,7 +435,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
           throw const IepPlanApiException('AI生成未返回计划数据');
         }
         setState(() {
-          _generationProgress = .94;
+          _generationProgress = math.max(_generationProgress, .99);
           _generationStatus = '生成完成，正在自动保存草稿';
         });
         return _IepGenerationResult(plan: plan, savedPlan: event.savedPlan);
@@ -692,9 +692,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (task.streamText.isNotEmpty && task.streamText != _aiStreamText) {
       setState(() {
         _aiStreamText = task.streamText;
-        _generationProgress = math.min(
-          .88,
-          math.max(_generationProgress, _aiStreamText.length / 1800),
+        _generationProgress = math.max(
+          _generationProgress,
+          _streamGenerationProgress(_aiStreamText),
         );
       });
     }
@@ -707,7 +707,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
       setState(() {
-        _generationProgress = .94;
+        _generationProgress = math.max(_generationProgress, .99);
         _generationStatus =
             task.message.trim().isEmpty ? '生成完成，正在自动保存草稿' : task.message.trim();
       });
@@ -756,6 +756,30 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     widget.onRecordStatusChanged(record, normalized);
+  }
+
+  double _streamGenerationProgress(String text) {
+    final String trimmed = text.trim();
+    if (trimmed.isEmpty) {
+      return .12;
+    }
+    final double length = trimmed.runes.length.toDouble();
+    const double floor = .12;
+    const double ceiling = .975;
+
+    if (length <= 520) {
+      return _lerpProgress(floor, .26, length / 520);
+    }
+    if (length <= 2000) {
+      return _lerpProgress(.26, .88, (length - 520) / 1480);
+    }
+    final double tail = 1 - math.exp(-(length - 2000) / 900);
+    return _lerpProgress(.88, ceiling, tail.clamp(0, 1));
+  }
+
+  double _lerpProgress(double start, double end, double t) {
+    final double normalized = t.clamp(0, 1).toDouble();
+    return start + (end - start) * normalized;
   }
 
   String _recordGenerationKey(IepAssessmentRecordSummary record) {
