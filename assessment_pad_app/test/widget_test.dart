@@ -1043,10 +1043,7 @@ void main() {
     expect(find.text('正在读取评估和训练记录'), findsWidgets);
     expect(find.text('生成中'), findsWidgets);
 
-    await tester.pump(const Duration(milliseconds: 260));
-    expect(find.text('能独'), findsOneWidget);
-
-    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pump(const Duration(milliseconds: 960));
     expect(find.text('能独立跳跃3次'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 200));
@@ -1055,6 +1052,87 @@ void main() {
     expect(iepPlanClient.lastSavedPlan?.rows.single.shortGoal, '能独立跳跃3次');
     expect(find.text('待确认'), findsWidgets);
     expect(find.text('确认IEP'), findsOneWidget);
+  });
+
+  testWidgets('IEP center suppresses repeated streaming long goal prefixes',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakePendingIepAssessmentRecordClient(),
+        iepPlanClient: _RepeatedLongGoalStreamIepPlanClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.tap(find.text('AI生成'));
+    await tester.pump(const Duration(milliseconds: 620));
+
+    expect(find.text('提升动态平衡能力'), findsOneWidget);
+    expect(find.text('提升动态'), findsNothing);
+    expect(find.text('个训'), findsNothing);
+    expect(find.text('集体课'), findsWidgets);
+
+    await tester.pump(const Duration(milliseconds: 1400));
+    expect(find.text('能双脚连续跳跃5次'), findsOneWidget);
+    expect(find.text('个训'), findsNothing);
+    expect(find.text('集体课'), findsWidgets);
+  });
+
+  testWidgets('IEP center suppresses repeated streaming domain prefixes',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakePendingIepAssessmentRecordClient(),
+        iepPlanClient: _RepeatedDomainStreamIepPlanClient(),
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    await tester.tap(find.text('AI生成'));
+    await tester.pump(const Duration(milliseconds: 700));
+
+    expect(find.text('大肌'), findsNothing);
+    expect(find.text('大肌肉'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 1200));
+    expect(find.text('大肌肉'), findsOneWidget);
+    expect(find.text('能双脚连续跳跃5次'), findsOneWidget);
   });
 
   testWidgets('IEP center keeps generated table when draft save fails',
@@ -4326,6 +4404,119 @@ class _LongGoalIepPlanClient extends _FakeIepPlanClient {
             shortGoal: shortGoal3,
             courseForm: '个训',
             startEndDate: '2026-07-01 - 2026-07-31',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepeatedLongGoalStreamIepPlanClient
+    extends _EmptyThenGeneratedIepPlanClient {
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
+    await Future<void>.delayed(const Duration(milliseconds: 60));
+    yield IepPlanGenerationEvent.delta(
+      '{"rows":[{"domain":"大肌肉","longGoal":"提升动态平衡能力","shortGoal":"能单脚站立保持平衡5秒以上","courseForm":"集体课","startEndDate":"2026-05-01 - 2026-05-31"},',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 260));
+    yield IepPlanGenerationEvent.delta(
+      '{"domain":"大肌肉","longGoal":"提升动态',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    yield IepPlanGenerationEvent.delta(
+      '平衡能力","shortGoal":"能双脚连续跳跃5次","courseForm":"集体课","startEndDate":"2026-06-01 - 2026-06-30"}]}',
+    );
+    yield IepPlanGenerationEvent.done(
+      IepPlan(
+        title: '康复教学季度计划',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        meta: IepPlanMeta(
+          planDate: record.assessmentDate,
+          participant: record.examinerName,
+          implementer: record.examinerName,
+          startDate: '2026-05-01',
+          endDate: '2026-07-31',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能单脚站立保持平衡5秒以上',
+            courseForm: '集体课',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能双脚连续跳跃5次',
+            courseForm: '集体课',
+            startEndDate: '2026-06-01 - 2026-06-30',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RepeatedDomainStreamIepPlanClient
+    extends _EmptyThenGeneratedIepPlanClient {
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
+    yield IepPlanGenerationEvent.delta(
+      '{"rows":[{"domain":"大肌肉","longGoal":"提升动态平衡能力","shortGoal":"能单脚站立保持平衡5秒以上","courseForm":"集体课","startEndDate":"2026-05-01 - 2026-05-31"},',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    yield IepPlanGenerationEvent.delta(
+      '{"domain":"大肌',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 120));
+    yield IepPlanGenerationEvent.delta(
+      '肉","longGoal":"提升动态平衡能力","shortGoal":"能双脚连续跳跃5次","courseForm":"集体课","startEndDate":"2026-06-01 - 2026-06-30"}]}',
+    );
+    yield IepPlanGenerationEvent.done(
+      IepPlan(
+        title: '康复教学季度计划',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        meta: IepPlanMeta(
+          planDate: record.assessmentDate,
+          participant: record.examinerName,
+          implementer: record.examinerName,
+          startDate: '2026-05-01',
+          endDate: '2026-07-31',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能单脚站立保持平衡5秒以上',
+            courseForm: '集体课',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能双脚连续跳跃5次',
+            courseForm: '集体课',
+            startEndDate: '2026-06-01 - 2026-06-30',
           ),
         ],
       ),

@@ -22,7 +22,10 @@ String _planStatusText(String? status) {
   return '待生成';
 }
 
-List<_DocDomainData> _docDomainsFromPlan(IepPlan plan) {
+List<_DocDomainData> _docDomainsFromPlan(
+  IepPlan plan, {
+  bool defaultMissingCourseForm = true,
+}) {
   final Map<String, List<IepPlanRow>> grouped = <String, List<IepPlanRow>>{};
   for (final IepPlanRow row in plan.rows) {
     final String domain = row.domain.trim().isEmpty ? '未分领域' : row.domain;
@@ -36,9 +39,10 @@ List<_DocDomainData> _docDomainsFromPlan(IepPlan plan) {
         .toList();
     final List<_DocShortGoalData> shortGoals =
         entry.value.map((IepPlanRow row) {
+      final String courseForm = row.courseForm.trim();
       return _DocShortGoalData(
         row.shortGoal,
-        row.courseForm.trim().isEmpty ? '个训' : row.courseForm,
+        courseForm.isEmpty && defaultMissingCourseForm ? '个训' : courseForm,
         row.startEndDate,
       );
     }).toList();
@@ -46,7 +50,13 @@ List<_DocDomainData> _docDomainsFromPlan(IepPlan plan) {
       domain: entry.key,
       longGoals: longGoals.isEmpty ? <String>[''] : longGoals,
       shortGoals: shortGoals.isEmpty
-          ? <_DocShortGoalData>[const _DocShortGoalData('', '个训', '')]
+          ? <_DocShortGoalData>[
+              _DocShortGoalData(
+                '',
+                defaultMissingCourseForm ? '个训' : '',
+                '',
+              ),
+            ]
           : shortGoals,
     );
   }).toList();
@@ -76,21 +86,32 @@ IepPlan? _streamingIepPlanFromText({
     // parsed as soon as each object is complete.
   }
 
-  final List<IepPlanRow> rows = _collectStreamingJsonObjects(
-    _extractRowsArrayText(content),
-  )
-      .map((_StreamingJsonObject object) {
-        return _streamingIepPlanRowFromObject(object);
-      })
-      .whereType<IepPlanRow>()
-      .where((IepPlanRow row) {
-        return row.domain.trim().isNotEmpty ||
-            row.longGoal.trim().isNotEmpty ||
-            row.shortGoal.trim().isNotEmpty;
-      })
-      .toList(growable: false);
+  final List<_StreamingPlanRow> rows = _stableStreamingPlanRows(
+    _collectStreamingJsonObjects(_extractRowsArrayText(content))
+        .map((_StreamingJsonObject object) {
+          final IepPlanRow? row = _streamingIepPlanRowFromObject(object);
+          return row == null
+              ? null
+              : _StreamingPlanRow(row: row, complete: object.complete);
+        })
+        .whereType<_StreamingPlanRow>()
+        .where((_StreamingPlanRow item) {
+          final IepPlanRow row = item.row;
+          return row.domain.trim().isNotEmpty ||
+              row.longGoal.trim().isNotEmpty ||
+              row.shortGoal.trim().isNotEmpty;
+        })
+        .toList(growable: false),
+  );
 
-  if (rows.isEmpty) {
+  final List<IepPlanRow> planRows =
+      rows.map((_StreamingPlanRow item) => item.row).where((IepPlanRow row) {
+    return row.domain.trim().isNotEmpty ||
+        row.longGoal.trim().isNotEmpty ||
+        row.shortGoal.trim().isNotEmpty;
+  }).toList(growable: false);
+
+  if (planRows.isEmpty) {
     return null;
   }
   return IepPlan(
@@ -113,7 +134,7 @@ IepPlan? _streamingIepPlanFromText({
       startDate: _formatDateDash(_dateOnly(periodStart)),
       endDate: _formatDateDash(_periodEndFor(periodStart, durationMonths)),
     ),
-    rows: rows,
+    rows: planRows,
   );
 }
 
@@ -143,6 +164,110 @@ class _StreamingJsonObject {
 
   final String raw;
   final bool complete;
+}
+
+class _StreamingPlanRow {
+  const _StreamingPlanRow({required this.row, required this.complete});
+
+  final IepPlanRow row;
+  final bool complete;
+}
+
+List<_StreamingPlanRow> _stableStreamingPlanRows(
+  List<_StreamingPlanRow> rows,
+) {
+  final Map<String, List<String>> seenLongGoalsByDomain =
+      <String, List<String>>{};
+  final Set<String> seenDomains = <String>{};
+  final List<_StreamingPlanRow> result = <_StreamingPlanRow>[];
+
+  for (final _StreamingPlanRow item in rows) {
+    IepPlanRow row = item.row;
+    final String rawDomain = row.domain.trim();
+    final String? repeatedDomain = !item.complete && rawDomain.isNotEmpty
+        ? _matchingStreamingDomain(seenDomains, rawDomain)
+        : null;
+    if (repeatedDomain != null &&
+        row.longGoal.trim().isEmpty &&
+        row.shortGoal.trim().isEmpty &&
+        row.courseForm.trim().isEmpty &&
+        row.startEndDate.trim().isEmpty) {
+      continue;
+    }
+    if (repeatedDomain != null && rawDomain != repeatedDomain) {
+      row = IepPlanRow(
+        domain: repeatedDomain,
+        longGoal: row.longGoal,
+        shortGoal: row.shortGoal,
+        courseForm: row.courseForm,
+        startEndDate: row.startEndDate,
+      );
+    }
+    final String domainKey =
+        row.domain.trim().isEmpty ? '未分领域' : row.domain.trim();
+    final String longGoal = row.longGoal.trim();
+    final List<String> seenLongGoals =
+        seenLongGoalsByDomain.putIfAbsent(domainKey, () => <String>[]);
+
+    if (!item.complete &&
+        longGoal.isNotEmpty &&
+        seenLongGoals
+            .any((String seen) => _sameStreamingLongGoal(seen, longGoal))) {
+      row = IepPlanRow(
+        domain: row.domain,
+        longGoal: '',
+        shortGoal: row.shortGoal,
+        courseForm: row.courseForm,
+        startEndDate: row.startEndDate,
+      );
+    }
+
+    if (seenDomains.contains(domainKey) &&
+        row.longGoal.trim().isEmpty &&
+        row.shortGoal.trim().isEmpty &&
+        row.courseForm.trim().isEmpty &&
+        row.startEndDate.trim().isEmpty) {
+      continue;
+    }
+
+    final String stableLongGoal = row.longGoal.trim();
+    if (stableLongGoal.isNotEmpty &&
+        !seenLongGoals.any(
+          (String seen) => _sameStreamingLongGoal(seen, stableLongGoal),
+        )) {
+      seenLongGoals.add(stableLongGoal);
+    }
+    seenDomains.add(domainKey);
+    result.add(_StreamingPlanRow(row: row, complete: item.complete));
+  }
+
+  return result;
+}
+
+String? _matchingStreamingDomain(Set<String> seenDomains, String incoming) {
+  for (final String seen in seenDomains) {
+    if (_sameStreamingTextPrefix(seen, incoming)) {
+      return seen;
+    }
+  }
+  return null;
+}
+
+bool _sameStreamingLongGoal(String existing, String incoming) {
+  return _sameStreamingTextPrefix(existing, incoming);
+}
+
+bool _sameStreamingTextPrefix(String existing, String incoming) {
+  final String left = _compactGoalText(existing);
+  final String right = _compactGoalText(incoming);
+  if (left.isEmpty || right.isEmpty) {
+    return false;
+  }
+  return left == right || left.startsWith(right) || right.startsWith(left);
+}
+
+String _compactGoalText(String text) {
+  return text.replaceAll(RegExp(r'\s+'), '');
 }
 
 List<_StreamingJsonObject> _collectStreamingJsonObjects(String text) {

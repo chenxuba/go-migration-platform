@@ -43,6 +43,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   int _generationTicket = 0;
   int _lastTypewriterPaintAt = 0;
   int _streamPaintRevision = 0;
+  String _lastStreamingPlanSignature = '';
   final GlobalKey _streamingCursorKey = GlobalKey(
     debugLabel: 'iep-streaming-cursor',
   );
@@ -186,7 +187,10 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     );
   }
 
-  void _applyStreamingPlan(IepPlan plan) {
+  void _applyStreamingPlan(
+    IepPlan plan, {
+    bool defaultMissingCourseForm = false,
+  }) {
     setState(() {
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
@@ -195,21 +199,21 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _savedPlan = _draftSavedPlan(plan);
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       _applyPeriodFromPlan(plan, widget.record!);
-      _totalPlanDomains = _docDomainsFromPlan(plan);
+      _totalPlanDomains = _docDomainsFromPlan(
+        plan,
+        defaultMissingCourseForm: defaultMissingCourseForm,
+      );
       _streamPaintRevision += 1;
       _syncPreviewMonthToPeriod();
     });
     _syncConfirmAvailability(_savedPlan);
   }
 
-  void _paintStreamingText(
+  bool _paintStreamingText(
     IepAssessmentRecordSummary record, {
     required bool force,
   }) {
     final int now = DateTime.now().millisecondsSinceEpoch;
-    if (!force && now - _lastTypewriterPaintAt < 18) {
-      return;
-    }
     final IepPlan? partialPlan = _streamingIepPlanFromText(
       text: _aiStreamText,
       record: record,
@@ -218,10 +222,19 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       fallbackPlan: _savedPlan?.plan,
     );
     if (partialPlan == null) {
-      return;
+      return false;
     }
+    final String signature = _streamingPlanSignature(partialPlan);
+    if (!force && signature == _lastStreamingPlanSignature) {
+      return false;
+    }
+    if (!force && now - _lastTypewriterPaintAt < 18) {
+      return true;
+    }
+    _lastStreamingPlanSignature = signature;
     _lastTypewriterPaintAt = now;
     _applyStreamingPlan(partialPlan);
+    return true;
   }
 
   Future<void> _appendDeltaWithTypewriter(
@@ -234,13 +247,49 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         return;
       }
       _aiStreamText += String.fromCharCode(codePoint);
-      _paintStreamingText(record, force: false);
-      await Future<void>.delayed(const Duration(milliseconds: 4));
+      final bool hasVisibleProgress = _paintStreamingText(
+        record,
+        force: false,
+      );
+      if (hasVisibleProgress) {
+        await Future<void>.delayed(const Duration(milliseconds: 4));
+      } else {
+        await Future<void>.delayed(Duration.zero);
+      }
     }
     if (!mounted || ticket != _generationTicket) {
       return;
     }
     _paintStreamingText(record, force: true);
+  }
+
+  String _streamingPlanSignature(IepPlan plan) {
+    final StringBuffer buffer = StringBuffer()
+      ..write(plan.title)
+      ..write('|');
+    for (final _DocDomainData domain
+        in _docDomainsFromPlan(plan, defaultMissingCourseForm: false)) {
+      buffer
+        ..write(domain.domain)
+        ..write('>');
+      for (final String longGoal in domain.longGoals) {
+        buffer
+          ..write(longGoal)
+          ..write(';');
+      }
+      buffer.write('>');
+      for (final _DocShortGoalData shortGoal in domain.shortGoals) {
+        buffer
+          ..write(shortGoal.goal)
+          ..write(',')
+          ..write(shortGoal.lesson)
+          ..write(',')
+          ..write(shortGoal.period)
+          ..write(';');
+      }
+      buffer.write('|');
+    }
+    return buffer.toString();
   }
 
   Future<void> _generateIepPlan({bool forceRegenerate = false}) async {
@@ -263,6 +312,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _generationStatus = forceRegenerate ? '正在重新生成IEP计划' : '正在准备AI生成';
       _aiStreamText = '';
       _lastTypewriterPaintAt = 0;
+      _lastStreamingPlanSignature = '';
       _streamPaintRevision = 0;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
@@ -311,7 +361,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               throw const IepPlanApiException('AI生成未返回计划数据');
             }
             finalPlan = plan;
-            _applyStreamingPlan(plan);
+            _applyStreamingPlan(plan, defaultMissingCourseForm: true);
             setState(() {
               _generationStatus = '生成完成，正在自动保存草稿';
             });

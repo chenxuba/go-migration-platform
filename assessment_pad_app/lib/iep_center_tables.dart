@@ -372,12 +372,6 @@ class _WordTable extends StatelessWidget {
   static const double _minHeight = 820;
   static const double _headerHeight = 208;
 
-  static double heightFor(List<_DocDomainData> domains, double width) {
-    final double contentHeight =
-        _headerHeight + _DocPlanRows.heightFor(domains, width);
-    return contentHeight > _minHeight ? contentHeight : _minHeight;
-  }
-
   @override
   Widget build(BuildContext context) {
     final IepPlan? currentPlan = plan;
@@ -508,26 +502,27 @@ class _WordTableFrameState extends State<_WordTableFrame> {
     super.didUpdateWidget(oldWidget);
     if (widget.followKey != null &&
         widget.followRevision != oldWidget.followRevision) {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFollowKey());
+      WidgetsBinding.instance
+          .addPostFrameCallback((_) => _scrollToFollowKey(retry: true));
     }
   }
 
-  void _scrollToFollowKey() {
-    if (!mounted || !_scrollController.hasClients) {
-      return;
-    }
-    final ScrollPosition position = _scrollController.position;
-    final double targetOffset = position.maxScrollExtent;
-    if (targetOffset <= 0 || (targetOffset - position.pixels).abs() < 1) {
-      return;
-    }
-    _scrollController.jumpTo(targetOffset);
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted || !_scrollController.hasClients) {
-        return;
+  void _scrollToFollowKey({bool retry = false}) {
+    final BuildContext? targetContext = widget.followKey?.currentContext;
+    if (!mounted || targetContext == null) {
+      if (retry) {
+        WidgetsBinding.instance
+            .addPostFrameCallback((_) => _scrollToFollowKey());
       }
-      _scrollController.jumpTo(_scrollController.position.maxScrollExtent);
-    });
+      return;
+    }
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 80),
+      curve: Curves.easeOutCubic,
+      alignment: .82,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+    );
   }
 
   @override
@@ -1592,7 +1587,6 @@ class _DocCellData {
     this.last = false,
     this.noWrap = false,
     this.editable = false,
-    this.maxLines,
   });
 
   final String text;
@@ -1602,7 +1596,6 @@ class _DocCellData {
   final bool last;
   final bool noWrap;
   final bool editable;
-  final int? maxLines;
 }
 
 class _DocTableRow extends StatelessWidget {
@@ -1678,7 +1671,7 @@ class _DocCellBox extends StatelessWidget {
             alignment: Alignment.center,
             child: Text(
               data.text,
-              maxLines: data.noWrap ? 1 : data.maxLines,
+              maxLines: data.noWrap ? 1 : null,
               overflow: data.noWrap ? TextOverflow.ellipsis : TextOverflow.clip,
               textAlign: data.align,
               style: TextStyle(
@@ -2025,19 +2018,33 @@ class _DocDomainBlock extends StatelessWidget {
                   entry.key == data.shortGoals.length - 1;
               return SizedBox(
                 height: rowHeights[entry.key],
-                child: KeyedSubtree(
-                  key: markStreamingCursor ? streamingCursorKey : null,
-                  child: _DocCellBox(
-                    data: _DocCellData(
-                      text: entry.value.goal,
-                      columns: 2,
-                      align: TextAlign.left,
-                      editable: selectedGoal == request,
+                child: Stack(
+                  children: <Widget>[
+                    Positioned.fill(
+                      child: _DocCellBox(
+                        data: _DocCellData(
+                          text: entry.value.goal,
+                          columns: 2,
+                          align: TextAlign.left,
+                          editable: selectedGoal == request,
+                        ),
+                        rowLast:
+                            last && entry.key == data.shortGoals.length - 1,
+                        verticalPadding: 4,
+                        onTap: () => onGoalTap(request),
+                      ),
                     ),
-                    rowLast: last && entry.key == data.shortGoals.length - 1,
-                    verticalPadding: 4,
-                    onTap: () => onGoalTap(request),
-                  ),
+                    if (markStreamingCursor)
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: SizedBox(
+                          key: streamingCursorKey,
+                          height: 1,
+                        ),
+                      ),
+                  ],
                 ),
               );
             }).toList(),
