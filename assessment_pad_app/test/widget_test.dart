@@ -1161,6 +1161,192 @@ void main() {
     expect(iepPlanClient.watchTaskCalls, 2);
   });
 
+  testWidgets(
+      'IEP center restores existing AI task when switching away and back',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _DisconnectThenResumeIepPlanClient iepPlanClient =
+        _DisconnectThenResumeIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    expect(find.text('林一诺 暂无IEP计划'), findsOneWidget);
+    await tester.tap(find.text('AI生成'));
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.textContaining('接口连接失败'), findsWidgets);
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 1);
+
+    await tester.tap(find.textContaining('陈旭 · 4岁0月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 450));
+
+    await tester.pump(const Duration(milliseconds: 900));
+
+    expect(find.text('AI生成'), findsNothing);
+    expect(find.text('能恢复订阅并完成'), findsOneWidget);
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.fetchTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 2);
+  });
+
+  testWidgets(
+      'IEP center generate action resumes existing task instead of creating another one',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _DisconnectThenResumeIepPlanClient iepPlanClient =
+        _DisconnectThenResumeIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 200));
+
+    await tester.tap(find.text('AI生成'));
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.textContaining('接口连接失败'), findsWidgets);
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 1);
+
+    await tester.tap(find.textContaining('陈旭 · 4岁0月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    final Finder generateButton = find.text('AI生成');
+    if (generateButton.evaluate().isNotEmpty) {
+      await tester.tap(generateButton);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 900));
+    } else {
+      await tester.pump(const Duration(milliseconds: 900));
+    }
+
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.fetchTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 2);
+    expect(find.text('能恢复订阅并完成'), findsOneWidget);
+  });
+
+  testWidgets(
+      'IEP center resumes regenerate task after switching away and back',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _DisconnectThenResumeRegenerateIepPlanClient iepPlanClient =
+        _DisconnectThenResumeRegenerateIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.text('重新生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.tap(find.text('确认重新生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 180));
+
+    expect(find.textContaining('接口连接失败'), findsWidgets);
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 1);
+
+    await tester.tap(find.textContaining('林一诺 · 4岁8月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 320));
+
+    await tester.tap(find.textContaining('陈旭 · 4岁0月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 900));
+
+    expect(iepPlanClient.createTaskCalls, 1);
+    expect(iepPlanClient.fetchTaskCalls, 1);
+    expect(iepPlanClient.watchTaskCalls, 2);
+    expect(find.text('重新生成后恢复订阅并完成'), findsOneWidget);
+  });
+
   testWidgets('IEP center suppresses repeated streaming long goal prefixes',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -4745,6 +4931,97 @@ class _DisconnectThenResumeIepPlanClient
           domain: '大肌肉',
           longGoal: '提升动态平衡能力',
           shortGoal: '能恢复订阅并完成',
+          courseForm: '个训',
+          startEndDate: '2026-05-01 - 2026-05-31',
+        ),
+      ],
+    );
+    yield IepPlanGenerationEvent.done(
+      plan,
+      savedPlan: IepPlanSaved(
+        exists: true,
+        status: 'draft',
+        durationMonths: 3,
+        plan: plan,
+        updatedTime: '2026-05-10T09:30:00Z',
+      ),
+    );
+  }
+}
+
+class _DisconnectThenResumeRegenerateIepPlanClient extends _FakeIepPlanClient {
+  @override
+  int createTaskCalls = 0;
+
+  @override
+  int fetchTaskCalls = 0;
+
+  @override
+  int watchTaskCalls = 0;
+
+  @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    createTaskCalls += 1;
+    return IepPlanGenerationTask(
+      taskId: 'resume-regenerate-task-${record.id}',
+      status: 'running',
+      durationMonths: durationMonths,
+      message: '正在读取评估和训练记录',
+    );
+  }
+
+  @override
+  Future<IepPlanGenerationTask> fetchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    fetchTaskCalls += 1;
+    return IepPlanGenerationTask(
+      taskId: taskId,
+      status: 'running',
+      durationMonths: 3,
+      message: 'AI正在重新生成IEP计划',
+      streamText: '{"rows":[{"shortGoal":"重新生成后恢复',
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
+    watchTaskCalls += 1;
+    if (watchTaskCalls == 1) {
+      yield IepPlanGenerationEvent.status('AI正在重新生成IEP计划');
+      yield IepPlanGenerationEvent.delta('{"rows":[{"shortGoal":"重新生成后恢复');
+      throw const IepPlanApiException('接口连接失败，请稍后重试');
+    }
+    yield IepPlanGenerationEvent.delta('订阅并完成"}]}');
+    final IepPlan plan = IepPlan(
+      title: '康复教学季度计划',
+      student: IepPlanStudent(
+        name: record.studentName,
+        gender: record.studentGender,
+        birthDate: record.birthDate,
+      ),
+      meta: IepPlanMeta(
+        planDate: record.assessmentDate,
+        participant: record.examinerName,
+        implementer: record.examinerName,
+        startDate: '2026-05-01',
+        endDate: '2026-07-31',
+      ),
+      rows: const <IepPlanRow>[
+        IepPlanRow(
+          domain: '大肌肉',
+          longGoal: '提升动态平衡能力',
+          shortGoal: '重新生成后恢复订阅并完成',
           courseForm: '个训',
           startEndDate: '2026-05-01 - 2026-05-31',
         ),

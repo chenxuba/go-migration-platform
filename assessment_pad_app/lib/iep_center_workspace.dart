@@ -17,6 +17,22 @@ class _IepGenerationResult {
   final IepPlanSaved? savedPlan;
 }
 
+class _IepGenerationSessionSnapshot {
+  const _IepGenerationSessionSnapshot({
+    required this.taskId,
+    required this.durationMonths,
+    required this.status,
+    required this.streamText,
+    required this.progress,
+  });
+
+  final String taskId;
+  final int durationMonths;
+  final String status;
+  final String streamText;
+  final double progress;
+}
+
 class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace({
     required this.record,
@@ -61,6 +77,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
   int _activeGenerationDurationMonths = 3;
+  final Map<String, _IepGenerationSessionSnapshot> _generationSessionsByRecord =
+      <String, _IepGenerationSessionSnapshot>{};
   int _loadTicket = 0;
   int _generationTicket = 0;
 
@@ -92,10 +110,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     Future<void>.delayed(const Duration(milliseconds: 250), () {
-      if (!mounted || _generatingPlan || !_hasResumableGenerationTask) {
+      if (!mounted) {
         return;
       }
-      _resumeIepPlanGenerationTask(showMessage: false);
+      _resumeOrRestoreGenerationTask(showMessage: false);
     });
   }
 
@@ -104,6 +122,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.record?.id != widget.record?.id ||
         oldWidget.record?.source != widget.record?.source) {
+      _storeCurrentGenerationSession(oldWidget.record);
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
       _totalPlanDomains = <_DocDomainData>[];
@@ -116,10 +135,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generatingPlan = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
+      ++_loadTicket;
       ++_generationTicket;
       widget.onConfirmAvailabilityChanged(false);
       _initPeriodFromRecord(widget.record);
       _syncPreviewMonthToPeriod();
+      if (_restoreGenerationSessionFor(widget.record)) {
+        return;
+      }
       _loadPlanBundle();
     }
   }
@@ -240,12 +263,113 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     }
   }
 
+  bool _hasGenerationTaskFor(IepAssessmentRecordSummary? record) {
+    return record != null &&
+        _activeGenerationTaskId.trim().isNotEmpty &&
+        _activeGenerationRecordKey == _recordGenerationKey(record);
+  }
+
   bool get _hasResumableGenerationTask {
+    return _hasGenerationTaskFor(widget.record);
+  }
+
+  void _storeCurrentGenerationSession(IepAssessmentRecordSummary? record) {
+    if (record == null) {
+      return;
+    }
+    final String recordKey = _recordGenerationKey(record);
+    if (!_hasGenerationTaskFor(record)) {
+      _generationSessionsByRecord.remove(recordKey);
+      return;
+    }
+    _generationSessionsByRecord[recordKey] = _IepGenerationSessionSnapshot(
+      taskId: _activeGenerationTaskId,
+      durationMonths: _activeGenerationDurationMonths,
+      status: _generationStatus,
+      streamText: _aiStreamText,
+      progress: _generationProgress,
+    );
+  }
+
+  _IepGenerationSessionSnapshot? _generationSessionFor(
+    IepAssessmentRecordSummary? record,
+  ) {
+    if (record == null) {
+      return null;
+    }
+    return _generationSessionsByRecord[_recordGenerationKey(record)];
+  }
+
+  bool _restoreGenerationSessionFor(IepAssessmentRecordSummary? record) {
+    if (record == null) {
+      return false;
+    }
+    final _IepGenerationSessionSnapshot? session = _generationSessionFor(record);
+    if (session == null) {
+      return false;
+    }
+    setState(() {
+      _periodMonthCount = session.durationMonths == 6 ? 6 : 3;
+      _periodEndOverride = null;
+      _activeGenerationTaskId = session.taskId;
+      _activeGenerationRecordKey = _recordGenerationKey(record);
+      _activeGenerationDurationMonths = session.durationMonths;
+      _generationStatus = session.status;
+      _aiStreamText = session.streamText;
+      _generationProgress = session.progress;
+      _generatingPlan = true;
+      _planError = '';
+      _hasCompletedInitialPlanLoad = true;
+      _loadingPlan = false;
+    });
+    Future<void>.microtask(() {
+      if (!mounted) {
+        return;
+      }
+      _resumeIepPlanGenerationTask(showMessage: false);
+    });
+    return true;
+  }
+
+  Future<void> _resumeOrRestoreGenerationTask({
+    bool showMessage = false,
+  }) async {
     final IepAssessmentRecordSummary? record = widget.record;
-    return _activeGenerationTaskId.trim().isNotEmpty &&
-        record != null &&
-        _activeGenerationRecordKey == _recordGenerationKey(record) &&
-        _savedPlan?.hasContent != true;
+    if (record == null) {
+      return;
+    }
+    if (_hasResumableGenerationTask) {
+      await _resumeIepPlanGenerationTask(showMessage: showMessage);
+      return;
+    }
+    _restoreGenerationSessionFor(record);
+  }
+
+  Future<void> _handleGeneratePlanRequest() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (_generatingPlan) {
+      return;
+    }
+    if (_hasResumableGenerationTask) {
+      await _resumeIepPlanGenerationTask(showMessage: false);
+      return;
+    }
+    if (_restoreGenerationSessionFor(record)) {
+      return;
+    }
+    await _generateIepPlan();
+  }
+
+  Future<void> _handleRetryRequest() async {
+    if (_hasResumableGenerationTask || _generationSessionFor(widget.record) != null) {
+      await _resumeOrRestoreGenerationTask(showMessage: true);
+      return;
+    }
+    await _loadPlanBundle();
   }
 
   Future<_IepGenerationResult?> _handleGenerationEvent(
@@ -321,6 +445,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     }
     final int ticket = ++_generationTicket;
     ++_loadTicket;
+    _generationSessionsByRecord.remove(_recordGenerationKey(record));
     IepPlan? finalPlan;
     IepPlanSaved? savedPlanFromTask;
     setState(() {
@@ -395,6 +520,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -407,6 +533,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = 'AI生成失败：$error';
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -496,6 +623,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
@@ -508,6 +636,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = 'AI生成重连失败：$error';
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
@@ -558,6 +687,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     required IepPlan plan,
     required IepPlanSaved? savedPlanFromTask,
   }) {
+    _generationSessionsByRecord.remove(_recordGenerationKey(record));
     final IepPlanSaved savedPlan = savedPlanFromTask ?? _draftSavedPlan(plan);
     setState(() {
       _generatingPlan = false;
@@ -929,10 +1059,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               generationText: _aiStreamText,
               generationProgress: _generationProgress,
               error: _planError,
-              onRetry: _hasResumableGenerationTask
-                  ? _resumeIepPlanGenerationTask
-                  : _loadPlanBundle,
-              onGeneratePlan: _generateIepPlan,
+              onRetry: _handleRetryRequest,
+              onGeneratePlan: _handleGeneratePlanRequest,
               totalPlanDomains: _totalPlanDomains,
               selectedGoal: _selectedGoal,
               onGoalTap: _handleGoalTap,
