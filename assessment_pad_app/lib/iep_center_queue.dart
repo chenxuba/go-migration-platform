@@ -196,7 +196,7 @@ class _QueueFilterButton extends StatelessWidget {
   }
 }
 
-enum _QueueFilter { all, pending, draft }
+enum _QueueFilter { all, pending, awaitingConfirm, confirmed }
 
 class _QueueTabs extends StatelessWidget {
   const _QueueTabs({
@@ -234,9 +234,16 @@ class _QueueTabs extends StatelessWidget {
           ),
           Expanded(
             child: _QueueTab(
-              label: '草稿',
-              active: selected == _QueueFilter.draft,
-              onTap: () => onChanged(_QueueFilter.draft),
+              label: '待确认',
+              active: selected == _QueueFilter.awaitingConfirm,
+              onTap: () => onChanged(_QueueFilter.awaitingConfirm),
+            ),
+          ),
+          Expanded(
+            child: _QueueTab(
+              label: '已确认',
+              active: selected == _QueueFilter.confirmed,
+              onTap: () => onChanged(_QueueFilter.confirmed),
             ),
           ),
         ],
@@ -308,10 +315,10 @@ class _CompactStatsStrip extends StatelessWidget {
             _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
             '待生成')
         .length;
-    final int draftCount = records
+    final int awaitingConfirmCount = records
         .where((IepAssessmentRecordSummary record) =>
             _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
-            '草稿')
+            '待确认')
         .length;
     final int confirmedCount = records
         .where((IepAssessmentRecordSummary record) =>
@@ -334,7 +341,8 @@ class _CompactStatsStrip extends StatelessWidget {
           const _StatDivider(),
           Expanded(child: _SmallStat(number: '$pendingCount', label: '待生成')),
           const _StatDivider(),
-          Expanded(child: _SmallStat(number: '$draftCount', label: '草稿')),
+          Expanded(
+              child: _SmallStat(number: '$awaitingConfirmCount', label: '待确认')),
           const _StatDivider(),
           Expanded(child: _SmallStat(number: '$confirmedCount', label: '已确认')),
         ],
@@ -603,7 +611,7 @@ class _QueueStatusStyle {
           background: _IepColors.greenSoft,
         ),
       'draft' => const _QueueStatusStyle(
-          label: '草稿',
+          label: '待确认',
           color: _IepColors.yellow,
           background: _IepColors.yellowSoft,
         ),
@@ -703,7 +711,8 @@ List<IepAssessmentRecordSummary> _visibleRecordsFor(
     return switch (filter) {
       _QueueFilter.all => true,
       _QueueFilter.pending => status == '待生成',
-      _QueueFilter.draft => status == '草稿',
+      _QueueFilter.awaitingConfirm => status == '待确认',
+      _QueueFilter.confirmed => status == '已确认',
     };
   }).toList(growable: false);
 }

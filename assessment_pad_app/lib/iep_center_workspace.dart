@@ -7,11 +7,13 @@ class _IepWorkspace extends StatefulWidget {
     required this.record,
     required this.planClient,
     required this.queueBootstrapLoading,
+    required this.onConfirmAvailabilityChanged,
   });
 
   final IepAssessmentRecordSummary? record;
   final IepPlanClient planClient;
   final bool queueBootstrapLoading;
+  final ValueChanged<bool> onConfirmAvailabilityChanged;
 
   @override
   State<_IepWorkspace> createState() => _IepWorkspaceState();
@@ -33,8 +35,12 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   bool _loadingPlan = false;
   bool _hasLoadedPlanOnce = false;
   bool _syncingPeriod = false;
+  bool _generatingPlan = false;
+  String _generationStatus = '';
+  String _aiStreamText = '';
   String _planError = '';
   int _loadTicket = 0;
+  int _generationTicket = 0;
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
 
@@ -64,7 +70,11 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _savedPlan = null;
       _executionPlans = null;
       _planError = '';
+      _generationStatus = '';
+      _aiStreamText = '';
+      _generatingPlan = false;
       _hasLoadedPlanOnce = false;
+      widget.onConfirmAvailabilityChanged(false);
       _initPeriodFromRecord(widget.record);
       _syncPreviewMonthToPeriod();
       _loadPlanBundle();
@@ -86,8 +96,12 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _savedPlan = null;
         _executionPlans = null;
         _totalPlanDomains = <_DocDomainData>[];
+        _generationStatus = '';
+        _aiStreamText = '';
+        _generatingPlan = false;
         _hasLoadedPlanOnce = false;
       });
+      widget.onConfirmAvailabilityChanged(false);
       return;
     }
     final int ticket = ++_loadTicket;
@@ -127,6 +141,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             : _docDomainsFromPlan(savedPlan.plan!);
         _syncPreviewMonthToPeriod();
       });
+      _syncConfirmAvailability(savedPlan);
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _loadTicket) {
         return;
@@ -136,6 +151,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _hasLoadedPlanOnce = true;
         _planError = error.message;
       });
+      widget.onConfirmAvailabilityChanged(false);
     } on Object catch (error) {
       if (!mounted || ticket != _loadTicket) {
         return;
@@ -145,6 +161,176 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _hasLoadedPlanOnce = true;
         _planError = 'IEP计划加载失败：$error';
       });
+      widget.onConfirmAvailabilityChanged(false);
+    }
+  }
+
+  void _syncConfirmAvailability(IepPlanSaved? savedPlan) {
+    final bool canConfirm = savedPlan?.hasContent == true &&
+        savedPlan?.status.trim() != 'confirmed';
+    widget.onConfirmAvailabilityChanged(canConfirm);
+  }
+
+  IepPlanSaved _draftSavedPlan(IepPlan plan) {
+    return IepPlanSaved(
+      exists: true,
+      status: 'draft',
+      durationMonths: _periodMonthCount,
+      plan: plan,
+      updatedTime: _formatDateDash(DateTime.now()),
+    );
+  }
+
+  void _applyStreamingPlan(IepPlan plan) {
+    setState(() {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+      _loadingPlan = false;
+      _hasLoadedPlanOnce = true;
+      _savedPlan = _draftSavedPlan(plan);
+      _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
+      _applyPeriodFromPlan(plan, widget.record!);
+      _totalPlanDomains = _docDomainsFromPlan(plan);
+      _syncPreviewMonthToPeriod();
+    });
+    _syncConfirmAvailability(_savedPlan);
+  }
+
+  Future<void> _generateIepPlan({bool forceRegenerate = false}) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (_generatingPlan) {
+      return;
+    }
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
+    IepPlan? finalPlan;
+    setState(() {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+      _loadingPlan = false;
+      _generatingPlan = true;
+      _generationStatus = forceRegenerate ? '正在重新生成IEP计划' : '正在准备AI生成';
+      _aiStreamText = '';
+      _planError = '';
+      _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
+      if (forceRegenerate) {
+        _savedPlan = null;
+        _totalPlanDomains = <_DocDomainData>[];
+      }
+      _hasLoadedPlanOnce = true;
+    });
+    widget.onConfirmAvailabilityChanged(false);
+
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      await for (final IepPlanGenerationEvent event
+          in widget.planClient.generateIepPlanStream(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+      )) {
+        if (!mounted || ticket != _generationTicket) {
+          return;
+        }
+        switch (event.type) {
+          case IepPlanGenerationEventType.status:
+            setState(() {
+              _generationStatus = event.message.trim().isEmpty
+                  ? '正在生成IEP计划'
+                  : event.message.trim();
+            });
+          case IepPlanGenerationEventType.delta:
+            if (event.text.isEmpty) {
+              break;
+            }
+            _aiStreamText += event.text;
+            final IepPlan? partialPlan = _streamingIepPlanFromText(
+              text: _aiStreamText,
+              record: record,
+              periodStart: _periodStart,
+              durationMonths: _periodMonthCount,
+              fallbackPlan: _savedPlan?.plan,
+            );
+            if (partialPlan != null) {
+              _applyStreamingPlan(partialPlan);
+            }
+            setState(() {
+              _generationStatus = 'AI正在绘制IEP表格';
+            });
+          case IepPlanGenerationEventType.done:
+            final IepPlan? plan = event.plan;
+            if (plan == null) {
+              throw const IepPlanApiException('AI生成未返回计划数据');
+            }
+            finalPlan = plan;
+            _applyStreamingPlan(plan);
+            setState(() {
+              _generationStatus = '生成完成，正在自动保存草稿';
+            });
+          case IepPlanGenerationEventType.error:
+            throw IepPlanApiException(
+              event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
+            );
+        }
+      }
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      if (finalPlan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      final IepPlanSaved savedPlan = await widget.planClient.saveIepPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        status: 'draft',
+        plan: finalPlan,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '';
+        _aiStreamText = '';
+        _savedPlan = savedPlan;
+        _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+        _applyPeriodFromPlan(savedPlan.plan, record);
+        _totalPlanDomains = savedPlan.plan == null
+            ? <_DocDomainData>[]
+            : _docDomainsFromPlan(savedPlan.plan!);
+        _syncPreviewMonthToPeriod();
+      });
+      _syncConfirmAvailability(savedPlan);
+      _showMessage('AI生成成功，已自动保存草稿', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : error.message;
+      });
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final String message = 'AI生成失败：$error';
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成失败';
+        _planError = _savedPlan?.hasContent == true ? '' : message;
+      });
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
     }
   }
 
@@ -186,7 +372,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   }
 
   Future<void> _showEditPeriodDialog() async {
-    if (_syncingPeriod) {
+    if (_syncingPeriod || _generatingPlan) {
       return;
     }
     final _IepPeriodDraft? draft = await showDialog<_IepPeriodDraft>(
@@ -284,6 +470,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _syncPreviewMonthToPeriod();
       _ensurePreviewWeekInRange();
     });
+    _syncConfirmAvailability(savedPlan);
   }
 
   void _ensurePreviewWeekInRange() {
@@ -357,7 +544,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   }
 
   void _changePeriodMonthCount(int monthCount) {
-    if (_periodMonthCount == monthCount) {
+    if (_periodMonthCount == monthCount || _generatingPlan) {
       return;
     }
     setState(() {
@@ -457,11 +644,13 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             onShowMonthPlan: _showMonthPlan,
             onShowWeekPlan: _showWeekPlan,
             onEditPeriod: _showEditPeriodDialog,
+            onRegeneratePlan: () => _generateIepPlan(forceRegenerate: true),
             monthLabels: _periodMonths,
             periodMonthCount: _periodMonthCount,
             periodStart: _periodStart,
             onPeriodMonthCountChanged: _changePeriodMonthCount,
             syncingPeriod: _syncingPeriod,
+            generatingPlan: _generatingPlan,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -478,8 +667,11 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               loading: _loadingPlan,
               bootstrapLoading:
                   widget.queueBootstrapLoading && !_hasLoadedPlanOnce,
+              generatingPlan: _generatingPlan,
+              generationStatus: _generationStatus,
               error: _planError,
               onRetry: _loadPlanBundle,
+              onGeneratePlan: _generateIepPlan,
               totalPlanDomains: _totalPlanDomains,
               selectedGoal: _selectedGoal,
               onGoalTap: _handleGoalTap,
@@ -651,22 +843,26 @@ class _PlanToolbar extends StatelessWidget {
     required this.onShowMonthPlan,
     required this.onShowWeekPlan,
     required this.onEditPeriod,
+    required this.onRegeneratePlan,
     required this.monthLabels,
     required this.periodMonthCount,
     required this.periodStart,
     required this.onPeriodMonthCountChanged,
     required this.syncingPeriod,
+    required this.generatingPlan,
   });
 
   final VoidCallback onShowTotalPlan;
   final ValueChanged<String> onShowMonthPlan;
   final void Function(String month, int weekNumber) onShowWeekPlan;
   final VoidCallback onEditPeriod;
+  final VoidCallback onRegeneratePlan;
   final List<String> monthLabels;
   final int periodMonthCount;
   final DateTime periodStart;
   final ValueChanged<int> onPeriodMonthCountChanged;
   final bool syncingPeriod;
+  final bool generatingPlan;
 
   @override
   Widget build(BuildContext context) {
@@ -698,14 +894,20 @@ class _PlanToolbar extends StatelessWidget {
           ),
           const _ToolbarDivider(),
           _TableTinyAction(
-            icon: syncingPeriod
+            icon: syncingPeriod || generatingPlan
                 ? Icons.hourglass_top_rounded
                 : Icons.edit_calendar_rounded,
             label: syncingPeriod ? '同步中' : '编辑周期',
-            onTap: syncingPeriod ? null : onEditPeriod,
+            onTap: syncingPeriod || generatingPlan ? null : onEditPeriod,
           ),
           const SizedBox(width: 8),
-          const _TableTinyAction(icon: Icons.refresh_rounded, label: '重新生成'),
+          _TableTinyAction(
+            icon: generatingPlan
+                ? Icons.hourglass_top_rounded
+                : Icons.refresh_rounded,
+            label: generatingPlan ? '生成中' : '重新生成',
+            onTap: generatingPlan ? null : onRegeneratePlan,
+          ),
         ],
       ),
     );

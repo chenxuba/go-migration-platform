@@ -3862,6 +3862,8 @@ class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
 
 class _FakeIepPlanClient implements IepPlanClient {
   DateTime _startDate = DateTime(2026, 5);
+  int savePlanCalls = 0;
+  IepPlan? lastSavedPlan;
 
   @override
   Future<IepPlanSaved> fetchIepPlan(
@@ -4028,6 +4030,66 @@ class _FakeIepPlanClient implements IepPlanClient {
         record: record,
         durationMonths: durationMonths,
       ),
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
+    yield IepPlanGenerationEvent.delta(
+      '{"title":"康复教学季度计划","rows":[',
+    );
+    yield IepPlanGenerationEvent.delta(
+      '{"domain":"大肌肉","longGoal":"提升动态平衡能力","shortGoal":"能独立跳跃3次","courseForm":"个训","startEndDate":"2026-05-01 - 2026-05-31"}',
+    );
+    yield IepPlanGenerationEvent.done(
+      IepPlan(
+        title: durationMonths == 6 ? '康复教学半年计划' : '康复教学季度计划',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        meta: IepPlanMeta(
+          planDate: record.assessmentDate,
+          participant: record.examinerName,
+          implementer: record.examinerName,
+          startDate: '2026-05-01',
+          endDate: durationMonths == 6 ? '2026-10-31' : '2026-07-31',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能独立跳跃3次',
+            courseForm: '个训',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<IepPlanSaved> saveIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String status,
+    required IepPlan plan,
+  }) async {
+    savePlanCalls += 1;
+    lastSavedPlan = plan;
+    return IepPlanSaved(
+      exists: true,
+      status: status,
+      durationMonths: durationMonths,
+      plan: plan,
+      updatedTime: '2026-05-10T09:30:00Z',
     );
   }
 }

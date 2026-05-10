@@ -100,8 +100,11 @@ class _IepTablePreview extends StatelessWidget {
     required this.weekPlan,
     required this.loading,
     required this.bootstrapLoading,
+    required this.generatingPlan,
+    required this.generationStatus,
     required this.error,
     required this.onRetry,
+    required this.onGeneratePlan,
     required this.totalPlanDomains,
     required this.selectedGoal,
     required this.onGoalTap,
@@ -119,8 +122,11 @@ class _IepTablePreview extends StatelessWidget {
   final IepWeeklyPlan? weekPlan;
   final bool loading;
   final bool bootstrapLoading;
+  final bool generatingPlan;
+  final String generationStatus;
   final String error;
   final VoidCallback onRetry;
+  final VoidCallback onGeneratePlan;
   final List<_DocDomainData> totalPlanDomains;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
@@ -152,7 +158,7 @@ class _IepTablePreview extends StatelessWidget {
         title: '请选择左侧评估记录',
         message: '选择学员后会读取对应IEP计划',
       );
-    } else if (loading) {
+    } else if (loading && !generatingPlan) {
       child = const _IepPlanLoadingState();
     } else if (error.trim().isNotEmpty) {
       child = _PlanStateView(
@@ -168,6 +174,9 @@ class _IepTablePreview extends StatelessWidget {
         studentName: currentRecord.studentName.trim().isEmpty
             ? '当前学员'
             : currentRecord.studentName.trim(),
+        generating: generatingPlan,
+        statusText: generationStatus,
+        onGenerate: onGeneratePlan,
       );
     } else {
       child = switch (previewMode) {
@@ -222,7 +231,22 @@ class _IepTablePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _IepColors.line),
       ),
-      child: child,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(child: child),
+          if (generatingPlan && (plan != null && totalPlanDomains.isNotEmpty))
+            Positioned(
+              left: 12,
+              right: 12,
+              top: 10,
+              child: _IepGenerationStatusStrip(
+                text: generationStatus.trim().isEmpty
+                    ? 'AI正在绘制IEP表格'
+                    : generationStatus,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

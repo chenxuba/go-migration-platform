@@ -317,7 +317,9 @@ class _IepPlanLoadingState extends StatelessWidget {
 }
 
 class _IepHourglassLoader extends StatefulWidget {
-  const _IepHourglassLoader();
+  const _IepHourglassLoader({this.size = 34});
+
+  final double size;
 
   @override
   State<_IepHourglassLoader> createState() => _IepHourglassLoaderState();
@@ -352,10 +354,10 @@ class _IepHourglassLoaderState extends State<_IepHourglassLoader>
           child: child,
         );
       },
-      child: const SizedBox(
-        width: 34,
-        height: 34,
-        child: CustomPaint(painter: _IepHourglassPainter()),
+      child: SizedBox(
+        width: widget.size,
+        height: widget.size,
+        child: const CustomPaint(painter: _IepHourglassPainter()),
       ),
     );
   }
@@ -476,9 +478,17 @@ class _PlanStateView extends StatelessWidget {
 }
 
 class _IepEmptyGenerateState extends StatelessWidget {
-  const _IepEmptyGenerateState({required this.studentName});
+  const _IepEmptyGenerateState({
+    required this.studentName,
+    required this.generating,
+    required this.statusText,
+    required this.onGenerate,
+  });
 
   final String studentName;
+  final bool generating;
+  final String statusText;
+  final VoidCallback onGenerate;
 
   @override
   Widget build(BuildContext context) {
@@ -488,10 +498,12 @@ class _IepEmptyGenerateState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
-            const _IepEmptyIllustration(),
+            generating
+                ? const _IepHourglassLoader()
+                : const _IepEmptyIllustration(),
             const SizedBox(height: 18),
             Text(
-              '$studentName 暂无IEP计划',
+              generating ? '正在生成 $studentName 的IEP计划' : '$studentName 暂无IEP计划',
               textAlign: TextAlign.center,
               style: const TextStyle(
                 color: _IepColors.ink,
@@ -501,10 +513,12 @@ class _IepEmptyGenerateState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 8),
-            const Text(
-              '可基于当前评估记录生成IEP总计划，生成后会继续展示月计划和周计划入口。',
+            Text(
+              generating
+                  ? (statusText.trim().isEmpty ? 'AI正在准备表格内容' : statusText)
+                  : '可基于当前评估记录生成IEP总计划，生成后会继续展示月计划和周计划入口。',
               textAlign: TextAlign.center,
-              style: TextStyle(
+              style: const TextStyle(
                 color: _IepColors.text,
                 fontSize: 13,
                 fontWeight: FontWeight.w700,
@@ -512,7 +526,10 @@ class _IepEmptyGenerateState extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 20),
-            const _AiGenerateButton(),
+            _AiGenerateButton(
+              generating: generating,
+              onTap: generating ? null : onGenerate,
+            ),
           ],
         ),
       ),
@@ -623,15 +640,21 @@ class _EmptyDocLine extends StatelessWidget {
 }
 
 class _AiGenerateButton extends StatelessWidget {
-  const _AiGenerateButton();
+  const _AiGenerateButton({
+    required this.generating,
+    required this.onTap,
+  });
+
+  final bool generating;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: _IepColors.orange,
+      color: generating ? const Color(0xFFEFC1A8) : _IepColors.orange,
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
-        onTap: () {},
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Container(
           height: 42,
@@ -646,14 +669,63 @@ class _AiGenerateButton extends StatelessWidget {
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
-            children: const <Widget>[
-              Icon(Icons.auto_awesome_rounded, size: 18, color: Colors.white),
-              SizedBox(width: 7),
+            children: <Widget>[
+              Icon(
+                generating
+                    ? Icons.hourglass_top_rounded
+                    : Icons.auto_awesome_rounded,
+                size: 18,
+                color: Colors.white,
+              ),
+              const SizedBox(width: 7),
               Text(
-                'AI生成',
-                style: TextStyle(
+                generating ? '生成中' : 'AI生成',
+                style: const TextStyle(
                   color: Colors.white,
                   fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IepGenerationStatusStrip extends StatelessWidget {
+  const _IepGenerationStatusStrip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return IgnorePointer(
+      child: Center(
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.92),
+            borderRadius: BorderRadius.circular(17),
+            border: Border.all(color: const Color(0xFFFFD8C3)),
+            boxShadow: _iepShadow(
+              color: const Color(0x18B05F32),
+              blur: 12,
+              offset: const Offset(0, 5),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              const _IepHourglassLoader(size: 18),
+              const SizedBox(width: 8),
+              Text(
+                text,
+                style: const TextStyle(
+                  color: _IepColors.orangeDeep,
+                  fontSize: 12,
                   fontWeight: FontWeight.w900,
                 ),
               ),

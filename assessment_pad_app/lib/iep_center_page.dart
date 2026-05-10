@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -34,6 +36,7 @@ class IepCenterPage extends StatefulWidget {
 class _IepCenterPageState extends State<IepCenterPage> {
   IepAssessmentRecordSummary? _selectedRecord;
   bool _queueBootstrapLoading = true;
+  bool _showConfirmIep = false;
 
   void _selectRecord(IepAssessmentRecordSummary record) {
     final IepAssessmentRecordSummary? current = _selectedRecord;
@@ -42,6 +45,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
     }
     setState(() {
       _selectedRecord = record;
+      _showConfirmIep = false;
     });
   }
 
@@ -51,6 +55,15 @@ class _IepCenterPageState extends State<IepCenterPage> {
     }
     setState(() {
       _queueBootstrapLoading = false;
+    });
+  }
+
+  void _handleConfirmAvailabilityChanged(bool visible) {
+    if (_showConfirmIep == visible) {
+      return;
+    }
+    setState(() {
+      _showConfirmIep = visible;
     });
   }
 
@@ -71,7 +84,11 @@ class _IepCenterPageState extends State<IepCenterPage> {
                 left: 0,
                 top: 0,
                 right: 0,
-                child: _IepTopBar(onBack: widget.onBack, metrics: metrics),
+                child: _IepTopBar(
+                  onBack: widget.onBack,
+                  metrics: metrics,
+                  showConfirmIep: _showConfirmIep,
+                ),
               ),
               Positioned(
                 left: metrics.outer,
@@ -94,6 +111,8 @@ class _IepCenterPageState extends State<IepCenterPage> {
                   record: _selectedRecord,
                   planClient: widget.planClient,
                   queueBootstrapLoading: _queueBootstrapLoading,
+                  onConfirmAvailabilityChanged:
+                      _handleConfirmAvailabilityChanged,
                 ),
               ),
             ],
@@ -339,10 +358,15 @@ class _IepPagePainter extends CustomPainter {
 }
 
 class _IepTopBar extends StatelessWidget {
-  const _IepTopBar({required this.onBack, required this.metrics});
+  const _IepTopBar({
+    required this.onBack,
+    required this.metrics,
+    required this.showConfirmIep,
+  });
 
   final VoidCallback onBack;
   final _IepMetrics metrics;
+  final bool showConfirmIep;
 
   @override
   Widget build(BuildContext context) {
@@ -379,9 +403,11 @@ class _IepTopBar extends StatelessWidget {
               icon: Icons.file_download_outlined, label: '导出Word'),
           const SizedBox(width: 10),
           const _SoftActionButton(icon: Icons.print_rounded, label: '打印'),
-          const SizedBox(width: 10),
-          const _PrimaryActionButton(
-              icon: Icons.check_circle_rounded, label: '确认IEP'),
+          if (showConfirmIep) ...<Widget>[
+            const SizedBox(width: 10),
+            const _PrimaryActionButton(
+                icon: Icons.check_circle_rounded, label: '确认IEP'),
+          ],
         ],
       ),
     );

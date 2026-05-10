@@ -30,6 +30,22 @@ const String defaultIepErxinPeriodSyncPath = String.fromEnvironment(
   'IEP_ERXIN_PERIOD_SYNC_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/period/sync',
 );
+const String defaultIepPep3PlanSavePath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_SAVE_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/save',
+);
+const String defaultIepErxinPlanSavePath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_SAVE_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/save',
+);
+const String defaultIepPep3PlanAiStreamPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_AI_STREAM_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/ai/stream',
+);
+const String defaultIepErxinPlanAiStreamPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_AI_STREAM_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/ai/stream',
+);
 
 class IepPlanApiException implements Exception {
   const IepPlanApiException(this.message, {this.unauthorized = false});
@@ -61,6 +77,20 @@ abstract interface class IepPlanClient {
     required int sourceDurationMonths,
     required DateTime startDate,
   });
+
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  });
+
+  Future<IepPlanSaved> saveIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String status,
+    required IepPlan plan,
+  });
 }
 
 class ApiIepPlanClient implements IepPlanClient {
@@ -72,6 +102,10 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinExecutionDetailPath = defaultIepErxinExecutionDetailPath,
     this.pep3PeriodSyncPath = defaultIepPep3PeriodSyncPath,
     this.erxinPeriodSyncPath = defaultIepErxinPeriodSyncPath,
+    this.pep3PlanSavePath = defaultIepPep3PlanSavePath,
+    this.erxinPlanSavePath = defaultIepErxinPlanSavePath,
+    this.pep3PlanAiStreamPath = defaultIepPep3PlanAiStreamPath,
+    this.erxinPlanAiStreamPath = defaultIepErxinPlanAiStreamPath,
     this.httpClient,
   });
 
@@ -82,6 +116,10 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinExecutionDetailPath;
   final String pep3PeriodSyncPath;
   final String erxinPeriodSyncPath;
+  final String pep3PlanSavePath;
+  final String erxinPlanSavePath;
+  final String pep3PlanAiStreamPath;
+  final String erxinPlanAiStreamPath;
   final http.Client? httpClient;
 
   @override
@@ -151,6 +189,111 @@ class ApiIepPlanClient implements IepPlanClient {
     return IepPlanPeriodSyncResult.fromJson(Map<String, dynamic>.from(data));
   }
 
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    final http.Client client = httpClient ?? http.Client();
+    final bool shouldCloseClient = httpClient == null;
+    bool hasDone = false;
+    try {
+      final http.Request request = http.Request(
+        'POST',
+        _uri(_isErxinRecord(record)
+            ? erxinPlanAiStreamPath
+            : pep3PlanAiStreamPath),
+      )
+        ..headers.addAll(_headers(token, accept: 'text/event-stream'))
+        ..body = jsonEncode(<String, dynamic>{
+          'id': record.id,
+          'durationMonths': _normalizeDuration(durationMonths),
+        });
+
+      final http.StreamedResponse response =
+          await client.send(request).timeout(const Duration(seconds: 12));
+      if (response.statusCode == 401 || response.statusCode == 403) {
+        final String body = await response.stream.bytesToString();
+        throw IepPlanApiException(
+          _messageFromPayload(_tryDecodeJson(body)) ?? '登录已失效，请重新登录',
+          unauthorized: true,
+        );
+      }
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        final String body = await response.stream.bytesToString();
+        throw IepPlanApiException(
+          _messageFromPayload(_tryDecodeJson(body)) ??
+              (body.trim().isEmpty ? 'AI生成失败' : body.trim()),
+        );
+      }
+
+      String buffer = '';
+      await for (final String chunk
+          in response.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        final List<String> frames = buffer.split(RegExp(r'\r?\n\r?\n'));
+        buffer = frames.removeLast();
+        for (final String frame in frames) {
+          final IepPlanGenerationEvent? event = _parseSseFrame(frame);
+          if (event == null) {
+            continue;
+          }
+          if (event.type == IepPlanGenerationEventType.done) {
+            hasDone = true;
+          }
+          yield event;
+        }
+      }
+      if (buffer.trim().isNotEmpty) {
+        final IepPlanGenerationEvent? event = _parseSseFrame(buffer);
+        if (event != null) {
+          if (event.type == IepPlanGenerationEventType.done) {
+            hasDone = true;
+          }
+          yield event;
+        }
+      }
+      if (!hasDone) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+    } on TimeoutException {
+      throw const IepPlanApiException('AI生成接口响应超时，请检查网络');
+    } on IepPlanApiException {
+      rethrow;
+    } on Object catch (error) {
+      throw IepPlanApiException('无法连接AI生成接口：$error');
+    } finally {
+      if (shouldCloseClient) {
+        client.close();
+      }
+    }
+  }
+
+  @override
+  Future<IepPlanSaved> saveIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String status,
+    required IepPlan plan,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(_isErxinRecord(record) ? erxinPlanSavePath : pep3PlanSavePath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'durationMonths': _normalizeDuration(durationMonths),
+        'status': status,
+        'plan': plan.toJson(),
+      },
+    );
+    if (data is! Map) {
+      return IepPlanSaved.empty(_normalizeDuration(durationMonths));
+    }
+    return IepPlanSaved.fromJson(Map<String, dynamic>.from(data));
+  }
+
   Future<Object?> _getJson(Uri uri, String token) async {
     final http.Client client = httpClient ?? http.Client();
     final bool shouldCloseClient = httpClient == null;
@@ -204,10 +347,14 @@ class ApiIepPlanClient implements IepPlanClient {
     );
   }
 
-  Map<String, String> _headers(String token) {
+  Map<String, String> _headers(
+    String token, {
+    String accept = 'application/json',
+  }) {
     return <String, String>{
-      'Accept': 'application/json',
+      'Accept': accept,
       'Content-Type': 'application/json; charset=utf-8',
+      'Accept-Language': 'zh-CN',
       if (token.trim().isNotEmpty) 'Authorization': 'Bearer ${token.trim()}',
       if (token.trim().isNotEmpty) 'X-Access-Token': token.trim(),
     };
@@ -239,6 +386,50 @@ class ApiIepPlanClient implements IepPlanClient {
     }
     return decoded;
   }
+}
+
+enum IepPlanGenerationEventType { status, delta, done, error }
+
+class IepPlanGenerationEvent {
+  const IepPlanGenerationEvent._({
+    required this.type,
+    this.message = '',
+    this.text = '',
+    this.plan,
+  });
+
+  factory IepPlanGenerationEvent.status(String message) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.status,
+      message: message,
+    );
+  }
+
+  factory IepPlanGenerationEvent.delta(String text) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.delta,
+      text: text,
+    );
+  }
+
+  factory IepPlanGenerationEvent.done(IepPlan plan) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.done,
+      plan: plan,
+    );
+  }
+
+  factory IepPlanGenerationEvent.error(String message) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.error,
+      message: message,
+    );
+  }
+
+  final IepPlanGenerationEventType type;
+  final String message;
+  final String text;
+  final IepPlan? plan;
 }
 
 class IepPlanPeriodSyncResult {
@@ -426,6 +617,15 @@ class IepPlan {
   final IepPlanStudent student;
   final IepPlanMeta meta;
   final List<IepPlanRow> rows;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'title': title,
+      'student': student.toJson(),
+      'meta': meta.toJson(),
+      'rows': rows.map((IepPlanRow row) => row.toJson()).toList(),
+    };
+  }
 }
 
 class IepPlanStudent {
@@ -446,6 +646,14 @@ class IepPlanStudent {
   final String name;
   final String gender;
   final String birthDate;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'name': name,
+      'gender': gender,
+      'birthDate': birthDate,
+    };
+  }
 }
 
 class IepPlanMeta {
@@ -472,6 +680,16 @@ class IepPlanMeta {
   final String implementer;
   final String startDate;
   final String endDate;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'planDate': planDate,
+      'participant': participant,
+      'implementer': implementer,
+      'startDate': startDate,
+      'endDate': endDate,
+    };
+  }
 }
 
 class IepPlanRow {
@@ -498,6 +716,16 @@ class IepPlanRow {
   final String shortGoal;
   final String courseForm;
   final String startEndDate;
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'domain': domain,
+      'longGoal': longGoal,
+      'shortGoal': shortGoal,
+      'courseForm': courseForm,
+      'startEndDate': startEndDate,
+    };
+  }
 }
 
 class IepMonthlyPlan {
@@ -731,4 +959,50 @@ String? _messageFromPayload(Object? payload) {
     }
   }
   return null;
+}
+
+IepPlanGenerationEvent? _parseSseFrame(String frame) {
+  final List<String> dataLines = frame
+      .split(RegExp(r'\r?\n'))
+      .where((String line) => line.startsWith('data:'))
+      .map((String line) => line.substring(5).trim())
+      .toList();
+  if (dataLines.isEmpty) {
+    return null;
+  }
+  final Object? decoded = jsonDecode(dataLines.join('\n'));
+  if (decoded is! Map) {
+    return null;
+  }
+  final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+  final String type = _stringFrom(payload['type']);
+  return switch (type) {
+    'status' => IepPlanGenerationEvent.status(
+        _stringFrom(payload['message']),
+      ),
+    'delta' => IepPlanGenerationEvent.delta(
+        _stringFrom(payload['text']),
+      ),
+    'done' => IepPlanGenerationEvent.done(
+        IepPlan.fromJson(_mapFrom(payload['data'])),
+      ),
+    'error' => IepPlanGenerationEvent.error(
+        _stringFrom(payload['message']).isEmpty
+            ? 'AI生成失败'
+            : _stringFrom(payload['message']),
+      ),
+    _ => null,
+  };
+}
+
+Object? _tryDecodeJson(String text) {
+  final String content = text.trim();
+  if (content.isEmpty) {
+    return null;
+  }
+  try {
+    return jsonDecode(content);
+  } on Object {
+    return content;
+  }
 }
