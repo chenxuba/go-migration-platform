@@ -7,6 +7,7 @@ class _PlanTab extends StatelessWidget {
     required this.text,
     required this.width,
     this.active = false,
+    this.generated = false,
     this.activeTone = _PlanTabTone.primary,
     this.rightGap = 6,
     this.onTap,
@@ -15,6 +16,7 @@ class _PlanTab extends StatelessWidget {
   final String text;
   final double width;
   final bool active;
+  final bool generated;
   final _PlanTabTone activeTone;
   final double rightGap;
   final VoidCallback? onTap;
@@ -32,6 +34,8 @@ class _PlanTab extends StatelessWidget {
     final Color borderColor = activeTone == _PlanTabTone.week
         ? const Color(0xFFFFD8C3)
         : _IepColors.lightLine;
+    final Color dotColor =
+        generated ? const Color(0xFF6F9F70) : const Color(0xFFD0D6DE);
 
     return Padding(
       padding: EdgeInsets.only(right: rightGap),
@@ -50,14 +54,31 @@ class _PlanTab extends StatelessWidget {
               borderRadius: BorderRadius.circular(15),
               border: active ? null : Border.all(color: borderColor),
             ),
-            child: Text(
-              text,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: active ? Colors.white : inactiveText,
-                fontSize: 11,
-                fontWeight: FontWeight.w900,
-              ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Container(
+                  width: 7,
+                  height: 7,
+                  decoration: BoxDecoration(
+                    color: dotColor,
+                    shape: BoxShape.circle,
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Flexible(
+                  child: Text(
+                    text,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: active ? Colors.white : inactiveText,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),
@@ -221,8 +242,8 @@ class _IepTablePreview extends StatelessWidget {
         _IepPreviewMode.week => weekPlan == null
             ? _PlanStateView(
                 icon: Icons.view_week_rounded,
-                title: '$month W$weekNumber 周计划未生成',
-                message: '可基于当前IEP总计划或月计划生成本周周计划模板',
+                title: '$month第$weekNumber周计划未生成',
+                message: '可基于当前IEP总计划或月计划生成本周计划模板',
                 actionLabel: 'AI生成',
                 onAction: onGeneratePlan,
               )
@@ -250,14 +271,16 @@ class _IepTablePreview extends StatelessWidget {
       };
     }
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _IepColors.line),
+    return AnimatedSwitcher(
+      duration: const Duration(milliseconds: 220),
+      switchInCurve: Curves.easeOutCubic,
+      switchOutCurve: Curves.easeInCubic,
+      child: KeyedSubtree(
+        key: ValueKey<String>(
+          '${previewMode.name}|$month|$weekNumber|${generatingPlan ? 'generating' : 'stable'}|${loading ? 'loading' : 'ready'}|${error.trim()}',
+        ),
+        child: child,
       ),
-      child: child,
     );
   }
 }
@@ -341,8 +364,8 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
 
   void _jumpToBottom() {
     final ScrollPosition position = _scrollController.position;
-    final double target =
-        position.maxScrollExtent.clamp(position.minScrollExtent, double.infinity);
+    final double target = position.maxScrollExtent
+        .clamp(position.minScrollExtent, double.infinity);
     if ((position.pixels - target).abs() <= .5) {
       return;
     }
@@ -535,9 +558,7 @@ class _IepReadableStream {
 
   factory _IepReadableStream.fromRaw(String raw) {
     final String content = _formatIepStreamTextIncrementally(raw).trimRight();
-    final String visible = content.isEmpty
-        ? '正在连接AI生成服务，准备读取评估记录...'
-        : content;
+    final String visible = content.isEmpty ? '正在连接AI生成服务，准备读取评估记录...' : content;
     return _IepReadableStream(
       content: visible,
     );

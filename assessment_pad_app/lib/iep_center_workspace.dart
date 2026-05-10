@@ -1565,6 +1565,18 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             previewMode: _previewMode,
             previewMonth: _previewMonth,
             previewWeek: _previewWeek,
+            totalPlanGenerated: _savedPlan?.hasContent == true,
+            generatedMonthIndexes: _executionPlans?.monthlyPlans
+                    .map((IepMonthlyPlanSaved item) => item.targetMonthIndex)
+                    .toSet() ??
+                <int>{},
+            generatedWeekKeys: _executionPlans?.weeklyPlans
+                    .map(
+                      (IepWeeklyPlanSaved item) =>
+                          '${item.targetMonthIndex}-${item.targetWeekIndex}',
+                    )
+                    .toSet() ??
+                <String>{},
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -1793,6 +1805,9 @@ class _PlanToolbar extends StatelessWidget {
     required this.previewMode,
     required this.previewMonth,
     required this.previewWeek,
+    required this.totalPlanGenerated,
+    required this.generatedMonthIndexes,
+    required this.generatedWeekKeys,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -1810,6 +1825,9 @@ class _PlanToolbar extends StatelessWidget {
   final _IepPreviewMode previewMode;
   final String previewMonth;
   final int previewWeek;
+  final bool totalPlanGenerated;
+  final Set<int> generatedMonthIndexes;
+  final Set<String> generatedWeekKeys;
 
   @override
   Widget build(BuildContext context) {
@@ -1840,6 +1858,9 @@ class _PlanToolbar extends StatelessWidget {
               previewMode: previewMode,
               previewMonth: previewMonth,
               previewWeek: previewWeek,
+              totalPlanGenerated: totalPlanGenerated,
+              generatedMonthIndexes: generatedMonthIndexes,
+              generatedWeekKeys: generatedWeekKeys,
             ),
           ),
           const _ToolbarDivider(),
@@ -1877,6 +1898,9 @@ class _ScrollablePlanNav extends StatefulWidget {
     required this.previewMode,
     required this.previewMonth,
     required this.previewWeek,
+    required this.totalPlanGenerated,
+    required this.generatedMonthIndexes,
+    required this.generatedWeekKeys,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -1888,6 +1912,9 @@ class _ScrollablePlanNav extends StatefulWidget {
   final _IepPreviewMode previewMode;
   final String previewMonth;
   final int previewWeek;
+  final bool totalPlanGenerated;
+  final Set<int> generatedMonthIndexes;
+  final Set<String> generatedWeekKeys;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -2048,15 +2075,20 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                       _PlanTab(
                         text: 'IEP总计划',
                         active: _selectedSection == 'iep',
+                        generated: widget.totalPlanGenerated,
                         width: 92,
                         onTap: () => _selectPlan('iep'),
                       ),
                       const _PlanNavLabel(text: '月计划'),
                       ...widget.monthLabels.map((String month) {
+                        final int monthIndex =
+                            widget.monthLabels.indexOf(month) + 1;
                         return _PlanTab(
                           text: month,
                           active: _selectedSection == 'month' &&
                               _selectedMonth == month,
+                          generated:
+                              widget.generatedMonthIndexes.contains(monthIndex),
                           width: 54,
                           onTap: () => _selectMonth(month),
                         );
@@ -2064,11 +2096,15 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                       const _PlanNavLabel(text: '周计划'),
                       ...List<Widget>.generate(weekCount, (int index) {
                         final int weekNumber = index + 1;
+                        final int monthIndex =
+                            widget.monthLabels.indexOf(_selectedMonth) + 1;
                         return _PlanTab(
                           text: '${_selectedMonth} W$weekNumber',
                           width: 68,
                           active: _selectedSection == 'week' &&
                               _selectedWeek == weekNumber,
+                          generated: widget.generatedWeekKeys
+                              .contains('$monthIndex-$weekNumber'),
                           activeTone: _PlanTabTone.week,
                           rightGap: weekNumber == weekCount ? 2 : 6,
                           onTap: () => _selectWeek(weekNumber),
