@@ -102,8 +102,8 @@ class _IepTablePreview extends StatelessWidget {
     required this.bootstrapLoading,
     required this.generatingPlan,
     required this.generationStatus,
-    required this.streamingRevision,
-    required this.streamingCursorKey,
+    required this.generationText,
+    required this.generationProgress,
     required this.error,
     required this.onRetry,
     required this.onGeneratePlan,
@@ -126,8 +126,8 @@ class _IepTablePreview extends StatelessWidget {
   final bool bootstrapLoading;
   final bool generatingPlan;
   final String generationStatus;
-  final int streamingRevision;
-  final GlobalKey streamingCursorKey;
+  final String generationText;
+  final double generationProgress;
   final String error;
   final VoidCallback onRetry;
   final VoidCallback onGeneratePlan;
@@ -154,7 +154,17 @@ class _IepTablePreview extends StatelessWidget {
     );
 
     Widget child;
-    if (bootstrapLoading && record == null) {
+    if (generatingPlan) {
+      final IepAssessmentRecordSummary currentRecord = record!;
+      child = _IepGenerationStreamPanel(
+        studentName: currentRecord.studentName.trim().isEmpty
+            ? '当前学员'
+            : currentRecord.studentName.trim(),
+        status: generationStatus,
+        streamText: generationText,
+        progress: generationProgress,
+      );
+    } else if (bootstrapLoading && record == null) {
       child = const _IepWordTableSkeleton();
     } else if (record == null) {
       child = const _PlanStateView(
@@ -222,12 +232,7 @@ class _IepTablePreview extends StatelessWidget {
               selectedGoal: selectedGoal,
               onGoalTap: onGoalTap,
               onClearSelectedGoal: onClearSelectedGoal,
-              streamingCursorKey: generatingPlan ? streamingCursorKey : null,
             ),
-            followKey: generatingPlan && previewMode == _IepPreviewMode.total
-                ? streamingCursorKey
-                : null,
-            followRevision: streamingRevision,
           ),
       };
     }
@@ -239,20 +244,190 @@ class _IepTablePreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _IepColors.line),
       ),
-      child: Stack(
+      child: child,
+    );
+  }
+}
+
+class _IepGenerationStreamPanel extends StatefulWidget {
+  const _IepGenerationStreamPanel({
+    required this.studentName,
+    required this.status,
+    required this.streamText,
+    required this.progress,
+  });
+
+  final String studentName;
+  final String status;
+  final String streamText;
+  final double progress;
+
+  @override
+  State<_IepGenerationStreamPanel> createState() =>
+      _IepGenerationStreamPanelState();
+}
+
+class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _IepGenerationStreamPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.streamText != oldWidget.streamText) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) {
+          return;
+        }
+        _scrollController.animateTo(
+          _scrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 90),
+          curve: Curves.easeOutCubic,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final double progress = widget.progress.clamp(0, 1).toDouble();
+    final String status =
+        widget.status.trim().isEmpty ? 'AI正在生成IEP计划' : widget.status.trim();
+    final String visibleText = widget.streamText.trim().isEmpty
+        ? '正在连接AI生成服务，准备读取评估记录...'
+        : widget.streamText;
+
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: const Color(0xFFFFD8C3)),
+        boxShadow: _iepShadow(
+          color: const Color(0x12B05F32),
+          blur: 14,
+          offset: const Offset(0, 6),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Positioned.fill(child: child),
-          if (generatingPlan && (plan != null && totalPlanDomains.isNotEmpty))
-            Positioned(
-              left: 12,
-              right: 12,
-              top: 10,
-              child: _IepGenerationStatusStrip(
-                text: generationStatus.trim().isEmpty
-                    ? 'AI正在绘制IEP表格'
-                    : generationStatus,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+            child: Row(
+              children: <Widget>[
+                const _IepHourglassLoader(size: 24),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '正在生成 ${widget.studentName} 的IEP计划',
+                        style: const TextStyle(
+                          color: _IepColors.ink,
+                          fontSize: 16,
+                          fontWeight: FontWeight.w900,
+                          height: 1.15,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        status,
+                        style: const TextStyle(
+                          color: _IepColors.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Text(
+                  '${(progress * 100).round()}%',
+                  style: const TextStyle(
+                    color: _IepColors.orangeDeep,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 18),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(99),
+              child: LinearProgressIndicator(
+                minHeight: 8,
+                value: progress <= 0 ? null : progress,
+                backgroundColor: const Color(0xFFFFEEE4),
+                color: _IepColors.orange,
               ),
             ),
+          ),
+          const SizedBox(height: 14),
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+              padding: const EdgeInsets.all(14),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFCF8),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Scrollbar(
+                controller: _scrollController,
+                thumbVisibility: true,
+                child: SingleChildScrollView(
+                  controller: _scrollController,
+                  physics: const ClampingScrollPhysics(),
+                  child: Text(
+                    visibleText,
+                    style: const TextStyle(
+                      color: _IepColors.text,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.55,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+            child: Row(
+              children: const <Widget>[
+                Icon(
+                  Icons.auto_awesome_rounded,
+                  color: _IepColors.orangeDeep,
+                  size: 16,
+                ),
+                SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    '生成完成后将自动保存草稿，并切换为正式IEP表格预览',
+                    style: TextStyle(
+                      color: _IepColors.muted,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
@@ -348,7 +523,6 @@ class _WordTable extends StatelessWidget {
     required this.selectedGoal,
     required this.onGoalTap,
     required this.onClearSelectedGoal,
-    this.streamingCursorKey,
   });
 
   final String periodText;
@@ -357,7 +531,6 @@ class _WordTable extends StatelessWidget {
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
   final VoidCallback onClearSelectedGoal;
-  final GlobalKey? streamingCursorKey;
 
   static const List<int> _columns = <int>[
     1038,
@@ -454,7 +627,6 @@ class _WordTable extends StatelessWidget {
                   tableWidth: tableWidth,
                   selectedGoal: selectedGoal,
                   onGoalTap: onGoalTap,
-                  streamingCursorKey: streamingCursorKey,
                 ),
               ),
             ],
@@ -475,14 +647,10 @@ class _WordTableFrame extends StatefulWidget {
   const _WordTableFrame({
     required this.child,
     this.height,
-    this.followKey,
-    this.followRevision = 0,
   });
 
   final Widget child;
   final double? height;
-  final GlobalKey? followKey;
-  final int followRevision;
 
   @override
   State<_WordTableFrame> createState() => _WordTableFrameState();
@@ -495,34 +663,6 @@ class _WordTableFrameState extends State<_WordTableFrame> {
   void initState() {
     super.initState();
     _scrollController = ScrollController();
-  }
-
-  @override
-  void didUpdateWidget(covariant _WordTableFrame oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.followKey != null &&
-        widget.followRevision != oldWidget.followRevision) {
-      WidgetsBinding.instance
-          .addPostFrameCallback((_) => _scrollToFollowKey(retry: true));
-    }
-  }
-
-  void _scrollToFollowKey({bool retry = false}) {
-    final BuildContext? targetContext = widget.followKey?.currentContext;
-    if (!mounted || targetContext == null) {
-      if (retry) {
-        WidgetsBinding.instance
-            .addPostFrameCallback((_) => _scrollToFollowKey());
-      }
-      return;
-    }
-    Scrollable.ensureVisible(
-      targetContext,
-      duration: const Duration(milliseconds: 80),
-      curve: Curves.easeOutCubic,
-      alignment: .82,
-      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
-    );
   }
 
   @override
@@ -1715,7 +1855,6 @@ class _DocPlanRows extends StatelessWidget {
     required this.tableWidth,
     required this.selectedGoal,
     required this.onGoalTap,
-    this.streamingCursorKey,
   });
 
   final List<_DocDomainData> domains;
@@ -1723,7 +1862,6 @@ class _DocPlanRows extends StatelessWidget {
   final double tableWidth;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
-  final GlobalKey? streamingCursorKey;
 
   static const double _minDomainHeight = 122.4;
   static const double _minShortGoalRowHeight = 32;
@@ -1857,8 +1995,6 @@ class _DocPlanRows extends StatelessWidget {
               last: !hasFiller && entry.key == domains.length - 1,
               selectedGoal: selectedGoal,
               onGoalTap: onGoalTap,
-              streamingCursorKey:
-                  entry.key == domains.length - 1 ? streamingCursorKey : null,
             ),
           );
         }),
@@ -1972,7 +2108,6 @@ class _DocDomainBlock extends StatelessWidget {
     required this.last,
     required this.selectedGoal,
     required this.onGoalTap,
-    this.streamingCursorKey,
   });
 
   final int domainIndex;
@@ -1982,7 +2117,6 @@ class _DocDomainBlock extends StatelessWidget {
   final bool last;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
-  final GlobalKey? streamingCursorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -2014,8 +2148,6 @@ class _DocDomainBlock extends StatelessWidget {
                 domainIndex: domainIndex,
                 shortGoalIndex: entry.key,
               );
-              final bool markStreamingCursor = streamingCursorKey != null &&
-                  entry.key == data.shortGoals.length - 1;
               return SizedBox(
                 height: rowHeights[entry.key],
                 child: Stack(
@@ -2034,16 +2166,6 @@ class _DocDomainBlock extends StatelessWidget {
                         onTap: () => onGoalTap(request),
                       ),
                     ),
-                    if (markStreamingCursor)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
-                        child: SizedBox(
-                          key: streamingCursorKey,
-                          height: 1,
-                        ),
-                      ),
                   ],
                 ),
               );

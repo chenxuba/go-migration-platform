@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -38,6 +37,8 @@ class _IepCenterPageState extends State<IepCenterPage> {
   IepAssessmentRecordSummary? _selectedRecord;
   bool _queueBootstrapLoading = true;
   bool _showConfirmIep = false;
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
 
   void _selectRecord(IepAssessmentRecordSummary record) {
     final IepAssessmentRecordSummary? current = _selectedRecord;
@@ -66,6 +67,26 @@ class _IepCenterPageState extends State<IepCenterPage> {
     setState(() {
       _showConfirmIep = visible;
     });
+  }
+
+  void _showMessage(String message,
+      {PadMessageTone tone = PadMessageTone.info}) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 12,
+      key: 'iep-center-message',
+    );
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
   }
 
   @override
@@ -114,6 +135,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                   queueBootstrapLoading: _queueBootstrapLoading,
                   onConfirmAvailabilityChanged:
                       _handleConfirmAvailabilityChanged,
+                  onMessage: _showMessage,
                 ),
               ),
             ],

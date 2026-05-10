@@ -1001,7 +1001,7 @@ void main() {
     );
   });
 
-  testWidgets('IEP center streams AI generation into table and saves draft',
+  testWidgets('IEP center streams AI output then renders table and saves draft',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
     tester.view.devicePixelRatio = 1;
@@ -1043,15 +1043,75 @@ void main() {
     expect(find.text('正在读取评估和训练记录'), findsWidgets);
     expect(find.text('生成中'), findsWidgets);
 
-    await tester.pump(const Duration(milliseconds: 960));
-    expect(find.text('能独立跳跃3次'), findsOneWidget);
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.text('生成完成后将自动保存草稿，并切换为正式IEP表格预览'), findsOneWidget);
+    expect(find.textContaining('"rows"'), findsOneWidget);
+    expect(find.text('能独立跳跃3次'), findsNothing);
 
+    await tester.pump(const Duration(milliseconds: 900));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
+    expect(find.text('能独立跳跃3次'), findsOneWidget);
+
     expect(iepPlanClient.savePlanCalls, 1);
     expect(iepPlanClient.lastSavedPlan?.rows.single.shortGoal, '能独立跳跃3次');
     expect(find.text('待确认'), findsWidgets);
     expect(find.text('确认IEP'), findsOneWidget);
+  });
+
+  testWidgets('IEP center confirms before regenerating plan',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _ConfirmRegenerateIepPlanClient iepPlanClient =
+        _ConfirmRegenerateIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    await tester.tap(find.text('重新生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(find.text('确认重新生成IEP？'), findsOneWidget);
+    expect(iepPlanClient.generatePlanCalls, 0);
+
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+
+    expect(find.text('确认重新生成IEP？'), findsNothing);
+    expect(iepPlanClient.generatePlanCalls, 0);
+
+    await tester.tap(find.text('重新生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    await tester.tap(find.text('确认重新生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(iepPlanClient.generatePlanCalls, 1);
   });
 
   testWidgets('IEP center suppresses repeated streaming long goal prefixes',
@@ -1085,14 +1145,11 @@ void main() {
     await tester.tap(find.text('AI生成'));
     await tester.pump(const Duration(milliseconds: 620));
 
-    expect(find.text('提升动态平衡能力'), findsOneWidget);
-    expect(find.text('提升动态'), findsNothing);
-    expect(find.text('个训'), findsNothing);
-    expect(find.text('集体课'), findsWidgets);
+    expect(find.textContaining('"longGoal":"提升动态'), findsOneWidget);
+    expect(find.text('提升动态平衡能力'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 1400));
     expect(find.text('能双脚连续跳跃5次'), findsOneWidget);
-    expect(find.text('个训'), findsNothing);
     expect(find.text('集体课'), findsWidgets);
   });
 
@@ -1127,8 +1184,8 @@ void main() {
     await tester.tap(find.text('AI生成'));
     await tester.pump(const Duration(milliseconds: 700));
 
-    expect(find.text('大肌'), findsNothing);
-    expect(find.text('大肌肉'), findsOneWidget);
+    expect(find.textContaining('"domain":"大肌'), findsOneWidget);
+    expect(find.text('大肌肉'), findsNothing);
 
     await tester.pump(const Duration(milliseconds: 1200));
     expect(find.text('大肌肉'), findsOneWidget);
@@ -4117,6 +4174,7 @@ class _FakePendingIepAssessmentRecordClient
 class _FakeIepPlanClient implements IepPlanClient {
   DateTime _startDate = DateTime(2026, 5);
   int savePlanCalls = 0;
+  int generatePlanCalls = 0;
   IepPlan? lastSavedPlan;
 
   @override
@@ -4293,6 +4351,7 @@ class _FakeIepPlanClient implements IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
   }) async* {
+    generatePlanCalls += 1;
     yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
     yield IepPlanGenerationEvent.delta(
       '{"title":"康复教学季度计划","rows":[',
@@ -4408,6 +4467,18 @@ class _LongGoalIepPlanClient extends _FakeIepPlanClient {
         ],
       ),
     );
+  }
+}
+
+class _ConfirmRegenerateIepPlanClient extends _FakeIepPlanClient {
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    generatePlanCalls += 1;
+    yield IepPlanGenerationEvent.error('测试中断生成');
   }
 }
 

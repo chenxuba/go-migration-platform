@@ -694,49 +694,6 @@ class _AiGenerateButton extends StatelessWidget {
   }
 }
 
-class _IepGenerationStatusStrip extends StatelessWidget {
-  const _IepGenerationStatusStrip({required this.text});
-
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return IgnorePointer(
-      child: Center(
-        child: Container(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.92),
-            borderRadius: BorderRadius.circular(17),
-            border: Border.all(color: const Color(0xFFFFD8C3)),
-            boxShadow: _iepShadow(
-              color: const Color(0x18B05F32),
-              blur: 12,
-              offset: const Offset(0, 5),
-            ),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              const _IepHourglassLoader(size: 18),
-              const SizedBox(width: 8),
-              Text(
-                text,
-                style: const TextStyle(
-                  color: _IepColors.orangeDeep,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _IepSkeletonBlock extends StatelessWidget {
   const _IepSkeletonBlock({
     this.width,

@@ -2,18 +2,25 @@ part of 'iep_center_page.dart';
 
 enum _IepPreviewMode { total, month, week }
 
+typedef _IepMessageHandler = void Function(
+  String message, {
+  PadMessageTone tone,
+});
+
 class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace({
     required this.record,
     required this.planClient,
     required this.queueBootstrapLoading,
     required this.onConfirmAvailabilityChanged,
+    required this.onMessage,
   });
 
   final IepAssessmentRecordSummary? record;
   final IepPlanClient planClient;
   final bool queueBootstrapLoading;
   final ValueChanged<bool> onConfirmAvailabilityChanged;
+  final _IepMessageHandler onMessage;
 
   @override
   State<_IepWorkspace> createState() => _IepWorkspaceState();
@@ -38,17 +45,10 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   bool _generatingPlan = false;
   String _generationStatus = '';
   String _aiStreamText = '';
+  double _generationProgress = 0;
   String _planError = '';
   int _loadTicket = 0;
   int _generationTicket = 0;
-  int _lastTypewriterPaintAt = 0;
-  int _streamPaintRevision = 0;
-  String _lastStreamingPlanSignature = '';
-  final GlobalKey _streamingCursorKey = GlobalKey(
-    debugLabel: 'iep-streaming-cursor',
-  );
-  final PadMessageOverlayController _messageController =
-      PadMessageOverlayController();
 
   DateTime get _periodEnd =>
       _periodEndOverride ?? _periodEndFor(_periodStart, _periodMonthCount);
@@ -78,6 +78,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _planError = '';
       _generationStatus = '';
       _aiStreamText = '';
+      _generationProgress = 0;
       _generatingPlan = false;
       _hasLoadedPlanOnce = false;
       widget.onConfirmAvailabilityChanged(false);
@@ -85,12 +86,6 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _syncPreviewMonthToPeriod();
       _loadPlanBundle();
     }
-  }
-
-  @override
-  void dispose() {
-    _messageController.dispose();
-    super.dispose();
   }
 
   Future<void> _loadPlanBundle() async {
@@ -104,6 +99,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _totalPlanDomains = <_DocDomainData>[];
         _generationStatus = '';
         _aiStreamText = '';
+        _generationProgress = 0;
         _generatingPlan = false;
         _hasLoadedPlanOnce = false;
       });
@@ -187,109 +183,23 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     );
   }
 
-  void _applyStreamingPlan(
-    IepPlan plan, {
-    bool defaultMissingCourseForm = false,
-  }) {
-    setState(() {
-      _previewMode = _IepPreviewMode.total;
-      _selectedGoal = null;
-      _loadingPlan = false;
-      _hasLoadedPlanOnce = true;
-      _savedPlan = _draftSavedPlan(plan);
-      _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
-      _applyPeriodFromPlan(plan, widget.record!);
-      _totalPlanDomains = _docDomainsFromPlan(
-        plan,
-        defaultMissingCourseForm: defaultMissingCourseForm,
-      );
-      _streamPaintRevision += 1;
-      _syncPreviewMonthToPeriod();
-    });
-    _syncConfirmAvailability(_savedPlan);
-  }
-
-  bool _paintStreamingText(
-    IepAssessmentRecordSummary record, {
-    required bool force,
-  }) {
-    final int now = DateTime.now().millisecondsSinceEpoch;
-    final IepPlan? partialPlan = _streamingIepPlanFromText(
-      text: _aiStreamText,
-      record: record,
-      periodStart: _periodStart,
-      durationMonths: _periodMonthCount,
-      fallbackPlan: _savedPlan?.plan,
-    );
-    if (partialPlan == null) {
-      return false;
-    }
-    final String signature = _streamingPlanSignature(partialPlan);
-    if (!force && signature == _lastStreamingPlanSignature) {
-      return false;
-    }
-    if (!force && now - _lastTypewriterPaintAt < 18) {
-      return true;
-    }
-    _lastStreamingPlanSignature = signature;
-    _lastTypewriterPaintAt = now;
-    _applyStreamingPlan(partialPlan);
-    return true;
-  }
-
   Future<void> _appendDeltaWithTypewriter(
-    String delta,
-    IepAssessmentRecordSummary record, {
+    String delta, {
     required int ticket,
   }) async {
     for (final int codePoint in delta.runes) {
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _aiStreamText += String.fromCharCode(codePoint);
-      final bool hasVisibleProgress = _paintStreamingText(
-        record,
-        force: false,
-      );
-      if (hasVisibleProgress) {
-        await Future<void>.delayed(const Duration(milliseconds: 4));
-      } else {
-        await Future<void>.delayed(Duration.zero);
-      }
+      setState(() {
+        _aiStreamText += String.fromCharCode(codePoint);
+        _generationProgress = math.min(
+          .88,
+          math.max(_generationProgress, _aiStreamText.length / 1800),
+        );
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 4));
     }
-    if (!mounted || ticket != _generationTicket) {
-      return;
-    }
-    _paintStreamingText(record, force: true);
-  }
-
-  String _streamingPlanSignature(IepPlan plan) {
-    final StringBuffer buffer = StringBuffer()
-      ..write(plan.title)
-      ..write('|');
-    for (final _DocDomainData domain
-        in _docDomainsFromPlan(plan, defaultMissingCourseForm: false)) {
-      buffer
-        ..write(domain.domain)
-        ..write('>');
-      for (final String longGoal in domain.longGoals) {
-        buffer
-          ..write(longGoal)
-          ..write(';');
-      }
-      buffer.write('>');
-      for (final _DocShortGoalData shortGoal in domain.shortGoals) {
-        buffer
-          ..write(shortGoal.goal)
-          ..write(',')
-          ..write(shortGoal.lesson)
-          ..write(',')
-          ..write(shortGoal.period)
-          ..write(';');
-      }
-      buffer.write('|');
-    }
-    return buffer.toString();
   }
 
   Future<void> _generateIepPlan({bool forceRegenerate = false}) async {
@@ -311,9 +221,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _generatingPlan = true;
       _generationStatus = forceRegenerate ? '正在重新生成IEP计划' : '正在准备AI生成';
       _aiStreamText = '';
-      _lastTypewriterPaintAt = 0;
-      _lastStreamingPlanSignature = '';
-      _streamPaintRevision = 0;
+      _generationProgress = .08;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       if (forceRegenerate) {
@@ -349,11 +257,10 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             }
             await _appendDeltaWithTypewriter(
               event.text,
-              record,
               ticket: ticket,
             );
             setState(() {
-              _generationStatus = 'AI正在绘制IEP表格';
+              _generationStatus = 'AI正在生成IEP计划';
             });
           case IepPlanGenerationEventType.done:
             final IepPlan? plan = event.plan;
@@ -361,8 +268,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               throw const IepPlanApiException('AI生成未返回计划数据');
             }
             finalPlan = plan;
-            _applyStreamingPlan(plan, defaultMissingCourseForm: true);
             setState(() {
+              _generationProgress = .94;
               _generationStatus = '生成完成，正在自动保存草稿';
             });
           case IepPlanGenerationEventType.error:
@@ -393,8 +300,13 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         setState(() {
           _generatingPlan = false;
           _generationStatus = '';
-          _aiStreamText = '';
+          _generationProgress = 1;
           _savedPlan = savedPlan;
+          _applyPeriodFromPlan(savedPlan.plan, record);
+          _totalPlanDomains = savedPlan.plan == null
+              ? <_DocDomainData>[]
+              : _docDomainsFromPlan(savedPlan.plan!);
+          _syncPreviewMonthToPeriod();
         });
         _syncConfirmAvailability(savedPlan);
         _showMessage('IEP已生成，但草稿自动保存失败：${error.message}');
@@ -406,8 +318,13 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         setState(() {
           _generatingPlan = false;
           _generationStatus = '';
-          _aiStreamText = '';
+          _generationProgress = 1;
           _savedPlan = savedPlan;
+          _applyPeriodFromPlan(savedPlan.plan, record);
+          _totalPlanDomains = savedPlan.plan == null
+              ? <_DocDomainData>[]
+              : _docDomainsFromPlan(savedPlan.plan!);
+          _syncPreviewMonthToPeriod();
         });
         _syncConfirmAvailability(savedPlan);
         _showMessage('IEP已生成，但草稿自动保存失败，请稍后重试');
@@ -420,6 +337,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         _generatingPlan = false;
         _generationStatus = '';
         _aiStreamText = '';
+        _generationProgress = 1;
         _savedPlan = savedPlan;
         _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
         _applyPeriodFromPlan(savedPlan.plan, record);
@@ -513,6 +431,23 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       return;
     }
     await _syncPeriodStart(draft.start);
+  }
+
+  Future<void> _showRegeneratePlanConfirmDialog() async {
+    if (_generatingPlan) {
+      return;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return const PadDialogViewport(child: _IepRegenerateConfirmDialog());
+      },
+    );
+    if (confirmed != true || !mounted) {
+      return;
+    }
+    await _generateIepPlan(forceRegenerate: true);
   }
 
   Future<void> _syncPeriodStart(DateTime start) async {
@@ -619,13 +554,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     if (!mounted || message.trim().isEmpty) {
       return;
     }
-    _messageController.show(
-      context,
-      message,
-      tone: tone,
-      topMargin: 84,
-      key: 'iep-center-message',
-    );
+    widget.onMessage(message, tone: tone);
   }
 
   void _showTotalPlan() {
@@ -766,7 +695,7 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             onShowMonthPlan: _showMonthPlan,
             onShowWeekPlan: _showWeekPlan,
             onEditPeriod: _showEditPeriodDialog,
-            onRegeneratePlan: () => _generateIepPlan(forceRegenerate: true),
+            onRegeneratePlan: _showRegeneratePlanConfirmDialog,
             monthLabels: _periodMonths,
             periodMonthCount: _periodMonthCount,
             periodStart: _periodStart,
@@ -791,8 +720,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
                   widget.queueBootstrapLoading && !_hasLoadedPlanOnce,
               generatingPlan: _generatingPlan,
               generationStatus: _generationStatus,
-              streamingRevision: _streamPaintRevision,
-              streamingCursorKey: _streamingCursorKey,
+              generationText: _aiStreamText,
+              generationProgress: _generationProgress,
               error: _planError,
               onRetry: _loadPlanBundle,
               onGeneratePlan: _generateIepPlan,

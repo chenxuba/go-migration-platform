@@ -387,6 +387,121 @@ class _IepDialogAction extends StatelessWidget {
   }
 }
 
+class _IepRegenerateConfirmDialog extends StatelessWidget {
+  const _IepRegenerateConfirmDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: _IepColors.orangeSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.refresh_rounded,
+                    color: _IepColors.orangeDeep,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                const Expanded(
+                  child: Text(
+                    '确认重新生成IEP？',
+                    style: TextStyle(
+                      color: _IepColors.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: const <Widget>[
+                  Icon(
+                    Icons.info_outline_rounded,
+                    size: 18,
+                    color: _IepColors.orangeDeep,
+                  ),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      '重新生成会用AI生成一份新的IEP计划，并覆盖当前页面已有的IEP内容。已确认后请谨慎操作。',
+                      style: TextStyle(
+                        color: _IepColors.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '确认重新生成',
+                  filled: true,
+                  icon: Icons.refresh_rounded,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 enum _GoalEditType { longGoal, shortGoal }
 
 class _GoalEditRequest {
