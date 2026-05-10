@@ -891,6 +891,62 @@ void main() {
 
     expect(find.text('编辑长期目标'), findsNothing);
     expect(find.textContaining('能稳定完成平衡木行走与连续跳跃'), findsOneWidget);
+
+    await tester.tap(find.text('能单脚站立保持平衡5秒以上'));
+    await tester.pump();
+    await tester.tap(find.text('能单脚站立保持平衡5秒以上'));
+    await tester.pump();
+
+    expect(find.text('编辑短期目标'), findsOneWidget);
+    expect(find.text('大肌肉 · 短期目标1'), findsOneWidget);
+    expect(find.text('新增一条短期目标'), findsOneWidget);
+    expect(find.text('当前短期目标'), findsOneWidget);
+    expect(find.text('短期目标 1'), findsOneWidget);
+    expect(find.text('短期目标 2'), findsNothing);
+    expect(find.widgetWithText(TextField, '个训'), findsNothing);
+    expect(find.text('个训'), findsWidgets);
+    expect(find.text('集体课'), findsWidgets);
+
+    await tester.tap(find.byIcon(Icons.delete_outline_rounded));
+    await tester.pump();
+    expect(find.text('短期目标 1'), findsNothing);
+    await tester.tap(find.text('仅保存当前表格'));
+    await tester.pump();
+
+    expect(find.text('编辑短期目标'), findsNothing);
+    expect(find.text('能单脚站立保持平衡5秒以上'), findsNothing);
+    expect(find.text('能双脚连续向前跳5步以上'), findsOneWidget);
+
+    await tester.tap(find.text('姓名'));
+    await tester.pump();
+    await tester.tap(find.text('能双脚连续向前跳5步以上'));
+    await tester.pump();
+    await tester.tap(find.text('能双脚连续向前跳5步以上'));
+    await tester.pump();
+
+    expect(find.text('编辑短期目标'), findsOneWidget);
+    expect(find.text('大肌肉 · 短期目标1'), findsOneWidget);
+
+    await tester.tap(find.text('新增一条短期目标'));
+    await tester.pump();
+    expect(find.text('短期目标 2'), findsOneWidget);
+
+    final Finder newShortGoalField =
+        find.byKey(const ValueKey<String>('short-goal-1-goal'));
+    await tester.enterText(newShortGoalField, '能完成新增短期目标');
+    await tester.pump();
+    final Finder newLessonOption =
+        find.byKey(const ValueKey<String>('short-goal-1-lesson-集体课'));
+    await tester.ensureVisible(newLessonOption);
+    await tester.tap(newLessonOption);
+    await tester.pump();
+    await tester.ensureVisible(find.text('仅保存当前表格'));
+    await tester.tap(find.text('仅保存当前表格'));
+    await tester.pump();
+
+    expect(find.text('编辑短期目标'), findsNothing);
+    expect(find.text('能完成新增短期目标'), findsOneWidget);
+    expect(find.text('集体课'), findsWidgets);
   });
 
   testWidgets('smart timetable detects availability after target selection',

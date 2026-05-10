@@ -1107,12 +1107,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
         nextDomains[request.domainIndex] =
             domain.copyWith(longGoals: result.longGoals);
       }
-      if (result.shortGoal != null && request.shortGoalIndex != null) {
-        final List<_DocShortGoalData> nextShortGoals =
-            List<_DocShortGoalData>.from(domain.shortGoals);
-        nextShortGoals[request.shortGoalIndex!] = result.shortGoal!;
+      if (result.shortGoals != null) {
         nextDomains[request.domainIndex] =
-            domain.copyWith(shortGoals: nextShortGoals);
+            domain.copyWith(shortGoals: result.shortGoals);
       }
       _totalPlanDomains = nextDomains;
     });
@@ -2222,12 +2219,12 @@ class _GoalEditRequest {
 class _GoalEditResult {
   const _GoalEditResult({
     this.longGoals,
-    this.shortGoal,
+    this.shortGoals,
     this.syncRelatedPlans = false,
   });
 
   final List<String>? longGoals;
-  final _DocShortGoalData? shortGoal;
+  final List<_DocShortGoalData>? shortGoals;
   final bool syncRelatedPlans;
 }
 
@@ -2245,25 +2242,49 @@ class _IepGoalEditDialog extends StatefulWidget {
 }
 
 class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
-  late final List<TextEditingController> _longGoalControllers;
-  late final TextEditingController _shortGoalController;
-  late final TextEditingController _lessonController;
-  late final TextEditingController _periodController;
+  final List<TextEditingController> _longGoalControllers =
+      <TextEditingController>[];
+  final List<_ShortGoalDraft> _shortGoalDrafts = <_ShortGoalDraft>[];
 
   bool get _editingLongGoal => widget.request.type == _GoalEditType.longGoal;
 
-  _DocShortGoalData get _shortGoal =>
-      widget.domain.shortGoals[widget.request.shortGoalIndex ?? 0];
+  bool get _canRemoveCurrentShortGoal {
+    return !_editingLongGoal &&
+        (widget.domain.shortGoals.length > 1 || _shortGoalDrafts.length > 1);
+  }
+
+  int get _shortGoalIndex {
+    final int index = widget.request.shortGoalIndex ?? 0;
+    if (widget.domain.shortGoals.isEmpty || index <= 0) {
+      return 0;
+    }
+    final int lastIndex = widget.domain.shortGoals.length - 1;
+    return index > lastIndex ? lastIndex : index;
+  }
+
+  _DocShortGoalData get _shortGoal {
+    if (widget.domain.shortGoals.isEmpty) {
+      return const _DocShortGoalData('', '个训', '');
+    }
+    return widget.domain.shortGoals[_shortGoalIndex];
+  }
 
   @override
   void initState() {
     super.initState();
-    _longGoalControllers = widget.domain.longGoals
-        .map((String goal) => TextEditingController(text: goal))
-        .toList();
-    _shortGoalController = TextEditingController(text: _shortGoal.goal);
-    _lessonController = TextEditingController(text: _shortGoal.lesson);
-    _periodController = TextEditingController(text: _shortGoal.period);
+    _longGoalControllers.addAll(
+      widget.domain.longGoals
+          .map((String goal) => TextEditingController(text: goal)),
+    );
+    if (!_editingLongGoal) {
+      _shortGoalDrafts.add(
+        _ShortGoalDraft(
+          goal: _shortGoal.goal,
+          lesson: _normalizeLesson(_shortGoal.lesson),
+          period: _shortGoal.period,
+        ),
+      );
+    }
   }
 
   @override
@@ -2271,10 +2292,14 @@ class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
     for (final TextEditingController controller in _longGoalControllers) {
       controller.dispose();
     }
-    _shortGoalController.dispose();
-    _lessonController.dispose();
-    _periodController.dispose();
+    for (final _ShortGoalDraft draft in _shortGoalDrafts) {
+      draft.dispose();
+    }
     super.dispose();
+  }
+
+  String _normalizeLesson(String lesson) {
+    return lesson == '集体课' ? '集体课' : '个训';
   }
 
   void _addLongGoal() {
@@ -2292,6 +2317,36 @@ class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
     });
   }
 
+  void _addShortGoal() {
+    setState(() {
+      _shortGoalDrafts.add(
+        _ShortGoalDraft(
+          goal: '',
+          lesson: '个训',
+          period: _shortGoal.period,
+        ),
+      );
+    });
+  }
+
+  void _removeShortGoal(int index) {
+    if (index < 0 || index >= _shortGoalDrafts.length) {
+      return;
+    }
+    if (index == 0 && !_canRemoveCurrentShortGoal) {
+      return;
+    }
+    setState(() {
+      _shortGoalDrafts.removeAt(index).dispose();
+    });
+  }
+
+  void _changeShortGoalLesson(int index, String lesson) {
+    setState(() {
+      _shortGoalDrafts[index].lesson = lesson;
+    });
+  }
+
   void _submit({required bool syncRelatedPlans}) {
     if (_editingLongGoal) {
       final List<String> goals = _longGoalControllers
@@ -2306,13 +2361,32 @@ class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
       );
       return;
     }
+    final List<_DocShortGoalData> editedShortGoals = _shortGoalDrafts
+        .map((_ShortGoalDraft draft) => draft.toData())
+        .where((_DocShortGoalData data) => data.goal.trim().isNotEmpty)
+        .toList();
+    final List<_DocShortGoalData> nextShortGoals =
+        List<_DocShortGoalData>.from(widget.domain.shortGoals);
+    if (nextShortGoals.isEmpty) {
+      nextShortGoals.addAll(
+        editedShortGoals.isEmpty
+            ? <_DocShortGoalData>[_shortGoal.copyWith(goal: '')]
+            : editedShortGoals,
+      );
+    } else if (editedShortGoals.isEmpty) {
+      if (nextShortGoals.length > 1) {
+        nextShortGoals.removeAt(_shortGoalIndex);
+      } else {
+        nextShortGoals[_shortGoalIndex] = _shortGoal.copyWith(goal: '');
+      }
+    } else {
+      nextShortGoals
+        ..removeAt(_shortGoalIndex)
+        ..insertAll(_shortGoalIndex, editedShortGoals);
+    }
     Navigator.of(context).pop(
       _GoalEditResult(
-        shortGoal: _shortGoal.copyWith(
-          goal: _shortGoalController.text.trim(),
-          lesson: _lessonController.text.trim(),
-          period: _periodController.text.trim(),
-        ),
+        shortGoals: nextShortGoals,
         syncRelatedPlans: syncRelatedPlans,
       ),
     );
@@ -2375,9 +2449,12 @@ class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
               )
             else
               _ShortGoalEditor(
-                goalController: _shortGoalController,
-                lessonController: _lessonController,
-                periodController: _periodController,
+                drafts: _shortGoalDrafts,
+                firstShortGoalNumber: _shortGoalIndex + 1,
+                canRemoveCurrent: _canRemoveCurrentShortGoal,
+                onLessonChanged: _changeShortGoalLesson,
+                onAdd: _addShortGoal,
+                onRemove: _removeShortGoal,
               ),
             const SizedBox(height: 12),
             const _GoalSyncHint(),
@@ -2408,6 +2485,32 @@ class _IepGoalEditDialogState extends State<_IepGoalEditDialog> {
         ),
       ),
     );
+  }
+}
+
+class _ShortGoalDraft {
+  _ShortGoalDraft({
+    required String goal,
+    required this.lesson,
+    required String period,
+  })  : goalController = TextEditingController(text: goal),
+        periodController = TextEditingController(text: period);
+
+  final TextEditingController goalController;
+  final TextEditingController periodController;
+  String lesson;
+
+  _DocShortGoalData toData() {
+    return _DocShortGoalData(
+      goalController.text.trim(),
+      lesson,
+      periodController.text.trim(),
+    );
+  }
+
+  void dispose() {
+    goalController.dispose();
+    periodController.dispose();
   }
 }
 
@@ -2464,18 +2567,25 @@ class _LongGoalEditor extends StatelessWidget {
 
 class _ShortGoalEditor extends StatelessWidget {
   const _ShortGoalEditor({
-    required this.goalController,
-    required this.lessonController,
-    required this.periodController,
+    required this.drafts,
+    required this.firstShortGoalNumber,
+    required this.canRemoveCurrent,
+    required this.onLessonChanged,
+    required this.onAdd,
+    required this.onRemove,
   });
 
-  final TextEditingController goalController;
-  final TextEditingController lessonController;
-  final TextEditingController periodController;
+  final List<_ShortGoalDraft> drafts;
+  final int firstShortGoalNumber;
+  final bool canRemoveCurrent;
+  final void Function(int index, String lesson) onLessonChanged;
+  final VoidCallback onAdd;
+  final ValueChanged<int> onRemove;
 
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(maxHeight: 372),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFAF6),
@@ -2484,10 +2594,105 @@ class _ShortGoalEditor extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
+          Row(
+            children: <Widget>[
+              const Text(
+                '当前短期目标',
+                style: TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              _AddGoalButton(
+                label: '新增一条短期目标',
+                onTap: onAdd,
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Expanded(
+            child: SingleChildScrollView(
+              child: Column(
+                children: <Widget>[
+                  for (int index = 0; index < drafts.length; index += 1)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        bottom: index == drafts.length - 1 ? 0 : 12,
+                      ),
+                      child: _ShortGoalDraftCard(
+                        index: index,
+                        number: firstShortGoalNumber + index,
+                        draft: drafts[index],
+                        canRemove: index > 0 || canRemoveCurrent,
+                        onLessonChanged: (String value) =>
+                            onLessonChanged(index, value),
+                        onRemove: () => onRemove(index),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShortGoalDraftCard extends StatelessWidget {
+  const _ShortGoalDraftCard({
+    required this.index,
+    required this.number,
+    required this.draft,
+    required this.canRemove,
+    required this.onLessonChanged,
+    required this.onRemove,
+  });
+
+  final int index;
+  final int number;
+  final _ShortGoalDraft draft;
+  final bool canRemove;
+  final ValueChanged<String> onLessonChanged;
+  final VoidCallback onRemove;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _IepColors.line),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Text(
+                '短期目标 $number',
+                style: const TextStyle(
+                  color: _IepColors.ink,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              _SmallIconAction(
+                icon: Icons.delete_outline_rounded,
+                enabled: canRemove,
+                onTap: onRemove,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
           _GoalTextField(
-            label: '短期目标',
-            controller: goalController,
-            minLines: 3,
+            fieldKey: ValueKey<String>('short-goal-$index-goal'),
+            label: '目标内容',
+            controller: draft.goalController,
+            minLines: 2,
             maxLines: 4,
           ),
           const SizedBox(height: 12),
@@ -2495,11 +2700,11 @@ class _ShortGoalEditor extends StatelessWidget {
             children: <Widget>[
               Expanded(
                 flex: 8,
-                child: _GoalTextField(
+                child: _LessonSegmentedPicker(
                   label: '课程形式',
-                  controller: lessonController,
-                  minLines: 1,
-                  maxLines: 1,
+                  value: draft.lesson,
+                  optionKeyPrefix: 'short-goal-$index-lesson',
+                  onChanged: onLessonChanged,
                 ),
               ),
               const SizedBox(width: 12),
@@ -2507,7 +2712,7 @@ class _ShortGoalEditor extends StatelessWidget {
                 flex: 13,
                 child: _GoalTextField(
                   label: '起止日期',
-                  controller: periodController,
+                  controller: draft.periodController,
                   minLines: 1,
                   maxLines: 1,
                 ),
@@ -2520,12 +2725,118 @@ class _ShortGoalEditor extends StatelessWidget {
   }
 }
 
+class _LessonSegmentedPicker extends StatelessWidget {
+  const _LessonSegmentedPicker({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+    this.optionKeyPrefix,
+  });
+
+  final String label;
+  final String value;
+  final ValueChanged<String> onChanged;
+  final String? optionKeyPrefix;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: _IepColors.text,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        Container(
+          height: 42,
+          padding: const EdgeInsets.all(3),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _IepColors.line),
+          ),
+          child: Row(
+            children: <Widget>[
+              _LessonOption(
+                label: '个训',
+                active: value == '个训',
+                optionKey: optionKeyPrefix == null
+                    ? null
+                    : ValueKey<String>('$optionKeyPrefix-个训'),
+                onTap: () => onChanged('个训'),
+              ),
+              _LessonOption(
+                label: '集体课',
+                active: value == '集体课',
+                optionKey: optionKeyPrefix == null
+                    ? null
+                    : ValueKey<String>('$optionKeyPrefix-集体课'),
+                onTap: () => onChanged('集体课'),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _LessonOption extends StatelessWidget {
+  const _LessonOption({
+    required this.label,
+    required this.active,
+    required this.onTap,
+    this.optionKey,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+  final Key? optionKey;
+
+  @override
+  Widget build(BuildContext context) {
+    return Expanded(
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(9),
+        child: InkWell(
+          key: optionKey,
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(9),
+          child: Container(
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: active ? _IepColors.orange : Colors.transparent,
+              borderRadius: BorderRadius.circular(9),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                color: active ? Colors.white : _IepColors.text,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _GoalTextField extends StatelessWidget {
   const _GoalTextField({
     required this.label,
     required this.controller,
     required this.minLines,
     required this.maxLines,
+    this.fieldKey,
     this.trailing,
   });
 
@@ -2533,6 +2844,7 @@ class _GoalTextField extends StatelessWidget {
   final TextEditingController controller;
   final int minLines;
   final int maxLines;
+  final Key? fieldKey;
   final Widget? trailing;
 
   @override
@@ -2556,6 +2868,7 @@ class _GoalTextField extends StatelessWidget {
         ),
         const SizedBox(height: 7),
         TextField(
+          key: fieldKey,
           controller: controller,
           minLines: minLines,
           maxLines: maxLines,
@@ -2588,9 +2901,13 @@ class _GoalTextField extends StatelessWidget {
 }
 
 class _AddGoalButton extends StatelessWidget {
-  const _AddGoalButton({required this.onTap});
+  const _AddGoalButton({
+    required this.onTap,
+    this.label = '新增一条',
+  });
 
   final VoidCallback onTap;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -2608,14 +2925,15 @@ class _AddGoalButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(13),
             border: Border.all(color: const Color(0xFFFFD8C6)),
           ),
-          child: const Row(
+          child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(Icons.add_rounded, size: 17, color: _IepColors.orangeDeep),
-              SizedBox(width: 4),
+              const Icon(Icons.add_rounded,
+                  size: 17, color: _IepColors.orangeDeep),
+              const SizedBox(width: 4),
               Text(
-                '新增一条',
-                style: TextStyle(
+                label,
+                style: const TextStyle(
                   color: _IepColors.orangeDeep,
                   fontSize: 12,
                   fontWeight: FontWeight.w900,
@@ -2861,7 +3179,7 @@ class _IepTablePreview extends StatelessWidget {
               onGoalTap: onGoalTap,
               onClearSelectedGoal: onClearSelectedGoal,
             ),
-            height: 820,
+            height: _WordTable.heightFor(totalPlanDomains),
           ),
       },
     );
@@ -2893,6 +3211,14 @@ class _WordTable extends StatelessWidget {
     927,
     2319,
   ];
+  static const double _minHeight = 820;
+  static const double _headerHeight = 208;
+
+  static double heightFor(List<_DocDomainData> domains) {
+    final double contentHeight =
+        _headerHeight + _DocPlanRows.heightFor(domains);
+    return contentHeight > _minHeight ? contentHeight : _minHeight;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2942,7 +3268,8 @@ class _WordTable extends StatelessWidget {
               _DocCellData(text: '起止日期', columns: 1, bold: true, last: true),
             ],
           ),
-          Expanded(
+          SizedBox(
+            height: _DocPlanRows.heightFor(domains),
             child: _DocPlanRows(
               domains: domains,
               selectedGoal: selectedGoal,
@@ -3254,16 +3581,18 @@ class _WeekDocCellBox extends StatelessWidget {
   const _WeekDocCellBox({
     required this.data,
     this.rowLast = false,
+    this.verticalPadding = 5,
   });
 
   final _WeekDocCellData data;
   final bool rowLast;
+  final double verticalPadding;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       alignment: Alignment.center,
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+      padding: EdgeInsets.symmetric(horizontal: 7, vertical: verticalPadding),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(
@@ -3320,12 +3649,12 @@ class _WeekTrainingRow {
 
   double get rowHeight {
     if (content.length >= 85) {
-      return 66;
+      return 62;
     }
     if (content.length >= 70) {
-      return 58;
+      return 54;
     }
-    return 50;
+    return 46;
   }
 }
 
@@ -3350,6 +3679,7 @@ class _WeekTrainingTableRow extends StatelessWidget {
             child: _WeekDocCellBox(
               data: _WeekDocCellData(text: row.project, columns: 1, bold: true),
               rowLast: last,
+              verticalPadding: 3,
             ),
           ),
           Expanded(
@@ -3363,6 +3693,7 @@ class _WeekTrainingTableRow extends StatelessWidget {
                 align: TextAlign.left,
               ),
               rowLast: last,
+              verticalPadding: 3,
             ),
           ),
           ...List<Widget>.generate(6, (int index) {
@@ -3375,6 +3706,7 @@ class _WeekTrainingTableRow extends StatelessWidget {
                   last: index == 5,
                 ),
                 rowLast: last,
+                verticalPadding: 3,
               ),
             );
           }),
@@ -3798,12 +4130,12 @@ class _MonthTrainingData {
 
   double get rowHeight {
     if (content.length >= 82) {
-      return 74;
+      return 70;
     }
     if (content.length >= 68) {
-      return 64;
+      return 60;
     }
-    return 54;
+    return 50;
   }
 }
 
@@ -3877,7 +4209,7 @@ class _MonthDomainBlock extends StatelessWidget {
                       align: TextAlign.left,
                     ),
                     rowLast: last && entry.key == data.trainings.length - 1,
-                    verticalPadding: 4,
+                    verticalPadding: 3,
                   ),
                 );
               }).toList(),
@@ -3912,7 +4244,7 @@ class _MonthDomainBlock extends StatelessWidget {
                       last: true,
                     ),
                     rowLast: last && entry.key == data.trainings.length - 1,
-                    verticalPadding: 4,
+                    verticalPadding: 3,
                   ),
                 );
               }).toList(),
@@ -4105,6 +4437,23 @@ class _DocPlanRows extends StatelessWidget {
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
 
+  static const double _minDomainHeight = 122.4;
+  static const double _shortGoalRowHeight = 39;
+
+  static double blockHeightFor(_DocDomainData domain) {
+    final int shortGoalCount =
+        domain.shortGoals.isEmpty ? 1 : domain.shortGoals.length;
+    final double contentHeight = shortGoalCount * _shortGoalRowHeight;
+    return contentHeight > _minDomainHeight ? contentHeight : _minDomainHeight;
+  }
+
+  static double heightFor(List<_DocDomainData> domains) {
+    return domains.fold<double>(
+      0,
+      (double height, _DocDomainData domain) => height + blockHeightFor(domain),
+    );
+  }
+
   static const List<_DocDomainData> initialDomains = <_DocDomainData>[
     _DocDomainData(
       domain: '大肌肉',
@@ -4180,7 +4529,8 @@ class _DocPlanRows extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: domains.asMap().entries.map((entry) {
-        return Expanded(
+        return SizedBox(
+          height: blockHeightFor(entry.value),
           child: _DocDomainBlock(
             domainIndex: entry.key,
             data: entry.value,
