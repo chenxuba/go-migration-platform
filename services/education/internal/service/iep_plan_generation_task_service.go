@@ -37,6 +37,8 @@ type iepPlanGenerationTask struct {
 	Status         string
 	Message        string
 	StreamText     string
+	Usage          *model.DeepSeekUsageVO
+	CostAmountCNY  float64
 	Plan           *model.PEP3IEPPlanAIResult
 	SavedPlan      *model.PEP3IEPPlanSavedVO
 	Error          string
@@ -81,6 +83,8 @@ func (store *iepPlanGenerationTaskStore) upsert(task *iepPlanGenerationTask) mod
 	current.Status = task.Status
 	current.Message = task.Message
 	current.StreamText = task.StreamText
+	current.Usage = task.Usage
+	current.CostAmountCNY = task.CostAmountCNY
 	current.Plan = task.Plan
 	current.SavedPlan = task.SavedPlan
 	current.Error = task.Error
@@ -130,6 +134,8 @@ func (task *iepPlanGenerationTask) snapshot() model.PEP3IEPPlanGenerationTaskVO 
 		Status:         task.Status,
 		Message:        task.Message,
 		StreamText:     task.StreamText,
+		Usage:          task.Usage,
+		CostAmountCNY:  task.CostAmountCNY,
 		DurationMonths: task.DurationMonths,
 		Plan:           task.Plan,
 		SavedPlan:      task.SavedPlan,
@@ -275,15 +281,19 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 		latest.Status = iepPlanGenerationTaskRunning
 		latest.Message = "AI正在生成IEP计划"
 		latest.StreamText += text
+		if latest.CostAmountCNY <= 0 {
+			latest.CostAmountCNY = estimateDeepSeekOutputCostCNY(latest.StreamText)
+		}
 		return svc.persistAndPublishTask(latest)
 	}
 
 	var plan model.PEP3IEPPlanAIResult
+	var usage *model.DeepSeekUsageVO
 	switch iepPlanGenerationTaskKind(entity.AssessmentType) {
 	case iepPlanGenerationTaskKindERXin:
-		plan, err = svc.GenerateERXinIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
+		plan, usage, err = svc.GenerateERXinIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	default:
-		plan, err = svc.GeneratePEP3IEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
+		plan, usage, err = svc.GeneratePEP3IEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	}
 	if err != nil {
 		entity.Status = iepPlanGenerationTaskFailed
@@ -296,6 +306,8 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	entity.Status = iepPlanGenerationTaskRunning
 	entity.Message = "生成完成，正在自动保存草稿"
 	entity.Plan = &plan
+	entity.Usage = usage
+	entity.CostAmountCNY = computeDeepSeekUsageCostCNY(usage, plan.Model)
 	entity.Error = ""
 	_ = svc.persistAndPublishTask(entity)
 
@@ -323,6 +335,8 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	entity.Status = iepPlanGenerationTaskDone
 	entity.Message = "AI生成成功，已自动保存草稿"
 	entity.Plan = &plan
+	entity.Usage = usage
+	entity.CostAmountCNY = computeDeepSeekUsageCostCNY(usage, plan.Model)
 	entity.SavedPlan = &saved
 	entity.Error = ""
 	_ = svc.persistAndPublishTask(entity)
@@ -362,6 +376,8 @@ func (svc *Service) publishTaskSnapshot(entity repository.IEPPlanGenerationTaskE
 		Status:         entity.Status,
 		Message:        entity.Message,
 		StreamText:     entity.StreamText,
+		Usage:          entity.Usage,
+		CostAmountCNY:  entity.CostAmountCNY,
 		Plan:           entity.Plan,
 		SavedPlan:      entity.SavedPlan,
 		Error:          entity.Error,
@@ -376,6 +392,8 @@ func (svc *Service) taskSnapshotFromEntity(entity repository.IEPPlanGenerationTa
 		Status:         entity.Status,
 		Message:        entity.Message,
 		StreamText:     entity.StreamText,
+		Usage:          entity.Usage,
+		CostAmountCNY:  entity.CostAmountCNY,
 		DurationMonths: entity.DurationMonths,
 		Plan:           entity.Plan,
 		SavedPlan:      entity.SavedPlan,

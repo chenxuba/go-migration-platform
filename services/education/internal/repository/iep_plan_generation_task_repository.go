@@ -28,6 +28,8 @@ type IEPPlanGenerationTaskEntity struct {
 	Status         string
 	Message        string
 	StreamText     string
+	Usage          *model.DeepSeekUsageVO
+	CostAmountCNY  float64
 	Plan           *model.PEP3IEPPlanAIResult
 	SavedPlan      *model.PEP3IEPPlanSavedVO
 	Error          string
@@ -50,6 +52,8 @@ func ensureIEPPlanGenerationTaskTables(ctx context.Context, db *sql.DB) error {
 			status VARCHAR(16) NOT NULL DEFAULT 'pending',
 			message VARCHAR(255) NOT NULL DEFAULT '',
 			stream_text LONGTEXT NULL,
+			usage_json LONGTEXT NULL,
+			cost_amount_cny DECIMAL(12,6) NOT NULL DEFAULT 0,
 			plan_json LONGTEXT NULL,
 			saved_plan_json LONGTEXT NULL,
 			error_message VARCHAR(500) NOT NULL DEFAULT '',
@@ -70,8 +74,14 @@ func ensureIEPPlanGenerationTaskTables(ctx context.Context, db *sql.DB) error {
 		`ALTER TABLE assessment_iep_generation_task ADD UNIQUE KEY uk_assessment_iep_generation_task_task (task_id, del_flag)`); err != nil {
 		return err
 	}
-	return ensureTableIndexExists(ctx, db, "assessment_iep_generation_task", "idx_assessment_iep_generation_task_active",
-		`ALTER TABLE assessment_iep_generation_task ADD KEY idx_assessment_iep_generation_task_active (inst_id, user_id, record_id, assessment_type, status, update_time)`)
+	if err := ensureTableIndexExists(ctx, db, "assessment_iep_generation_task", "idx_assessment_iep_generation_task_active",
+		`ALTER TABLE assessment_iep_generation_task ADD KEY idx_assessment_iep_generation_task_active (inst_id, user_id, record_id, assessment_type, status, update_time)`); err != nil {
+		return err
+	}
+	return ensureColumnsOnTable(ctx, db, "assessment_iep_generation_task", map[string]string{
+		"usage_json":       "usage_json LONGTEXT NULL AFTER stream_text",
+		"cost_amount_cny":  "cost_amount_cny DECIMAL(12,6) NOT NULL DEFAULT 0 AFTER usage_json",
+	})
 }
 
 func (repo *Repository) CreateIEPPlanGenerationTask(ctx context.Context, entity IEPPlanGenerationTaskEntity) error {
@@ -90,9 +100,9 @@ func (repo *Repository) CreateIEPPlanGenerationTask(ctx context.Context, entity 
 	_, err := repo.db.ExecContext(ctx, `
 		INSERT INTO assessment_iep_generation_task (
 			task_id, inst_id, user_id, record_id, assessment_type, duration_months,
-			status, message, stream_text, plan_json, saved_plan_json, error_message,
+			status, message, stream_text, usage_json, cost_amount_cny, plan_json, saved_plan_json, error_message,
 			create_id, update_id, create_time, update_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, NULL, '', ?, ?, NOW(), NOW(), 0)
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, '', NULL, 0, NULL, NULL, '', ?, ?, NOW(), NOW(), 0)
 	`,
 		taskID,
 		entity.InstID,
@@ -114,9 +124,17 @@ func (repo *Repository) UpdateIEPPlanGenerationTask(ctx context.Context, entity 
 		return fmt.Errorf("task id is required")
 	}
 	var (
+		usageJSON     any
 		planJSON      any
 		savedPlanJSON any
 	)
+	if entity.Usage != nil {
+		raw, err := json.Marshal(entity.Usage)
+		if err != nil {
+			return fmt.Errorf("marshal iep generation usage: %w", err)
+		}
+		usageJSON = string(raw)
+	}
 	if entity.Plan != nil {
 		raw, err := json.Marshal(entity.Plan)
 		if err != nil {
@@ -137,6 +155,8 @@ func (repo *Repository) UpdateIEPPlanGenerationTask(ctx context.Context, entity 
 		    status = ?,
 		    message = ?,
 		    stream_text = ?,
+		    usage_json = ?,
+		    cost_amount_cny = ?,
 		    plan_json = ?,
 		    saved_plan_json = ?,
 		    error_message = ?,
@@ -149,6 +169,8 @@ func (repo *Repository) UpdateIEPPlanGenerationTask(ctx context.Context, entity 
 		strings.TrimSpace(entity.Status),
 		strings.TrimSpace(entity.Message),
 		entity.StreamText,
+		usageJSON,
+		entity.CostAmountCNY,
 		planJSON,
 		savedPlanJSON,
 		strings.TrimSpace(entity.Error),
@@ -161,7 +183,7 @@ func (repo *Repository) UpdateIEPPlanGenerationTask(ctx context.Context, entity 
 func (repo *Repository) GetIEPPlanGenerationTaskByTaskID(ctx context.Context, taskID string) (IEPPlanGenerationTaskEntity, bool, error) {
 	return repo.getIEPPlanGenerationTask(ctx, `
 		SELECT task_id, inst_id, user_id, record_id, assessment_type, duration_months,
-		       status, message, stream_text, plan_json, saved_plan_json, error_message,
+		       status, message, stream_text, usage_json, cost_amount_cny, plan_json, saved_plan_json, error_message,
 		       create_time, update_time
 		FROM assessment_iep_generation_task
 		WHERE task_id = ? AND del_flag = 0
@@ -176,7 +198,7 @@ func (repo *Repository) FindActiveIEPPlanGenerationTask(
 ) (IEPPlanGenerationTaskEntity, bool, error) {
 	return repo.getIEPPlanGenerationTask(ctx, `
 		SELECT task_id, inst_id, user_id, record_id, assessment_type, duration_months,
-		       status, message, stream_text, plan_json, saved_plan_json, error_message,
+		       status, message, stream_text, usage_json, cost_amount_cny, plan_json, saved_plan_json, error_message,
 		       create_time, update_time
 		FROM assessment_iep_generation_task
 		WHERE inst_id = ?
@@ -194,6 +216,8 @@ func (repo *Repository) getIEPPlanGenerationTask(ctx context.Context, query stri
 	var (
 		entity           IEPPlanGenerationTaskEntity
 		streamText       sql.NullString
+		usageJSON        sql.NullString
+		costAmountCNY    sql.NullFloat64
 		planJSON         sql.NullString
 		savedPlanJSON    sql.NullString
 		errorMessage     sql.NullString
@@ -212,6 +236,8 @@ func (repo *Repository) getIEPPlanGenerationTask(ctx context.Context, query stri
 		&entity.Status,
 		&message,
 		&streamText,
+		&usageJSON,
+		&costAmountCNY,
 		&planJSON,
 		&savedPlanJSON,
 		&errorMessage,
@@ -227,7 +253,15 @@ func (repo *Repository) getIEPPlanGenerationTask(ctx context.Context, query stri
 	entity.AssessmentType = strings.TrimSpace(assessmentType.String)
 	entity.Message = strings.TrimSpace(message.String)
 	entity.StreamText = streamText.String
+	entity.CostAmountCNY = costAmountCNY.Float64
 	entity.Error = strings.TrimSpace(errorMessage.String)
+	if usageJSON.Valid && strings.TrimSpace(usageJSON.String) != "" {
+		var usage model.DeepSeekUsageVO
+		if err := json.Unmarshal([]byte(usageJSON.String), &usage); err != nil {
+			return IEPPlanGenerationTaskEntity{}, false, fmt.Errorf("parse iep generation usage: %w", err)
+		}
+		entity.Usage = &usage
+	}
 	if planJSON.Valid && strings.TrimSpace(planJSON.String) != "" {
 		var plan model.PEP3IEPPlanAIResult
 		if err := json.Unmarshal([]byte(planJSON.String), &plan); err != nil {

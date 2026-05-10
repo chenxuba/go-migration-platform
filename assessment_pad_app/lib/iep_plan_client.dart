@@ -834,6 +834,7 @@ class IepPlanGenerationEvent {
     required this.type,
     this.message = '',
     this.text = '',
+    this.costAmountCny = 0,
     this.plan,
     this.savedPlan,
   });
@@ -845,6 +846,17 @@ class IepPlanGenerationEvent {
     );
   }
 
+  factory IepPlanGenerationEvent.statusWithCost(
+    String message,
+    double costAmountCny,
+  ) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.status,
+      message: message,
+      costAmountCny: costAmountCny,
+    );
+  }
+
   factory IepPlanGenerationEvent.delta(String text) {
     return IepPlanGenerationEvent._(
       type: IepPlanGenerationEventType.delta,
@@ -852,9 +864,25 @@ class IepPlanGenerationEvent {
     );
   }
 
-  factory IepPlanGenerationEvent.done(IepPlan plan, {IepPlanSaved? savedPlan}) {
+  factory IepPlanGenerationEvent.deltaWithCost(
+    String text,
+    double costAmountCny,
+  ) {
+    return IepPlanGenerationEvent._(
+      type: IepPlanGenerationEventType.delta,
+      text: text,
+      costAmountCny: costAmountCny,
+    );
+  }
+
+  factory IepPlanGenerationEvent.done(
+    IepPlan plan, {
+    IepPlanSaved? savedPlan,
+    double costAmountCny = 0,
+  }) {
     return IepPlanGenerationEvent._(
       type: IepPlanGenerationEventType.done,
+      costAmountCny: costAmountCny,
       plan: plan,
       savedPlan: savedPlan,
     );
@@ -870,6 +898,7 @@ class IepPlanGenerationEvent {
   final IepPlanGenerationEventType type;
   final String message;
   final String text;
+  final double costAmountCny;
   final IepPlan? plan;
   final IepPlanSaved? savedPlan;
 }
@@ -882,6 +911,7 @@ class IepPlanGenerationTask {
     required this.durationMonths,
     this.message = '',
     this.streamText = '',
+    this.costAmountCny = 0,
     this.plan,
     this.savedPlan,
     this.error = '',
@@ -897,6 +927,7 @@ class IepPlanGenerationTask {
       status: _stringFrom(json['status']),
       message: _stringFrom(json['message']),
       streamText: _stringFrom(json['streamText']),
+      costAmountCny: _doubleFrom(json['costAmountCny']),
       durationMonths: _intFrom(json['durationMonths']),
       plan: planJson.isEmpty ? null : IepPlan.fromJson(planJson),
       savedPlan:
@@ -911,6 +942,7 @@ class IepPlanGenerationTask {
   final String status;
   final String message;
   final String streamText;
+  final double costAmountCny;
   final int durationMonths;
   final IepPlan? plan;
   final IepPlanSaved? savedPlan;
@@ -928,6 +960,7 @@ class IepExecutionPlanGenerationEvent<T> {
     required this.type,
     this.message = '',
     this.text = '',
+    this.costAmountCny = 0,
     this.data,
   });
 
@@ -938,6 +971,17 @@ class IepExecutionPlanGenerationEvent<T> {
     );
   }
 
+  factory IepExecutionPlanGenerationEvent.statusWithCost(
+    String message,
+    double costAmountCny,
+  ) {
+    return IepExecutionPlanGenerationEvent<T>._(
+      type: IepExecutionPlanGenerationEventType.status,
+      message: message,
+      costAmountCny: costAmountCny,
+    );
+  }
+
   factory IepExecutionPlanGenerationEvent.delta(String text) {
     return IepExecutionPlanGenerationEvent<T>._(
       type: IepExecutionPlanGenerationEventType.delta,
@@ -945,9 +989,21 @@ class IepExecutionPlanGenerationEvent<T> {
     );
   }
 
-  factory IepExecutionPlanGenerationEvent.done(T data) {
+  factory IepExecutionPlanGenerationEvent.deltaWithCost(
+    String text,
+    double costAmountCny,
+  ) {
+    return IepExecutionPlanGenerationEvent<T>._(
+      type: IepExecutionPlanGenerationEventType.delta,
+      text: text,
+      costAmountCny: costAmountCny,
+    );
+  }
+
+  factory IepExecutionPlanGenerationEvent.done(T data, {double costAmountCny = 0}) {
     return IepExecutionPlanGenerationEvent<T>._(
       type: IepExecutionPlanGenerationEventType.done,
+      costAmountCny: costAmountCny,
       data: data,
     );
   }
@@ -962,6 +1018,7 @@ class IepExecutionPlanGenerationEvent<T> {
   final IepExecutionPlanGenerationEventType type;
   final String message;
   final String text;
+  final double costAmountCny;
   final T? data;
 }
 
@@ -1524,6 +1581,19 @@ int _intFrom(Object? value) {
   return int.tryParse('${value ?? ''}') ?? 0;
 }
 
+double _doubleFrom(Object? value) {
+  if (value is double) {
+    return value;
+  }
+  if (value is int) {
+    return value.toDouble();
+  }
+  if (value is num) {
+    return value.toDouble();
+  }
+  return double.tryParse('${value ?? ''}') ?? 0;
+}
+
 String _stringFrom(Object? value) => '${value ?? ''}'.trim();
 
 String _dateStringFrom(Object? value) {
@@ -1575,14 +1645,21 @@ IepPlanGenerationEvent? _parseSseFrame(String frame) {
       if (plan == null) {
         return IepPlanGenerationEvent.error('AI生成未返回计划数据');
       }
-      return IepPlanGenerationEvent.done(plan, savedPlan: task.savedPlan);
+      return IepPlanGenerationEvent.done(
+        plan,
+        savedPlan: task.savedPlan,
+        costAmountCny: task.costAmountCny,
+      );
     }
     if (task.isFailed) {
       return IepPlanGenerationEvent.error(
         task.error.isEmpty ? 'AI生成失败' : task.error,
       );
     }
-    return IepPlanGenerationEvent.status(task.message);
+    return IepPlanGenerationEvent.statusWithCost(
+      task.message,
+      task.costAmountCny,
+    );
   }
   return switch (type) {
     'status' => IepPlanGenerationEvent.status(
@@ -1593,6 +1670,7 @@ IepPlanGenerationEvent? _parseSseFrame(String frame) {
       ),
     'done' => IepPlanGenerationEvent.done(
         IepPlan.fromJson(_mapFrom(payload['data'])),
+        costAmountCny: _doubleFrom(payload['costAmountCny']),
       ),
     'error' => IepPlanGenerationEvent.error(
         _stringFrom(payload['message']).isEmpty
@@ -1623,7 +1701,11 @@ List<IepPlanGenerationEvent> _parseTaskSseFrame(
     }
     return <IepPlanGenerationEvent>[
       IepPlanGenerationEvent.status(task.message),
-      IepPlanGenerationEvent.done(plan, savedPlan: task.savedPlan),
+      IepPlanGenerationEvent.done(
+        plan,
+        savedPlan: task.savedPlan,
+        costAmountCny: task.costAmountCny,
+      ),
     ];
   }
   if (task.isFailed) {
@@ -1635,15 +1717,25 @@ List<IepPlanGenerationEvent> _parseTaskSseFrame(
   }
   final List<IepPlanGenerationEvent> events = <IepPlanGenerationEvent>[];
   if (task.message.isNotEmpty) {
-    events.add(IepPlanGenerationEvent.status(task.message));
+    events.add(
+      IepPlanGenerationEvent.statusWithCost(task.message, task.costAmountCny),
+    );
   }
   if (task.streamText.length > lastStreamText.length &&
       task.streamText.startsWith(lastStreamText)) {
-    events.add(IepPlanGenerationEvent.delta(
-      task.streamText.substring(lastStreamText.length),
-    ));
+    events.add(
+      IepPlanGenerationEvent.deltaWithCost(
+        task.streamText.substring(lastStreamText.length),
+        task.costAmountCny,
+      ),
+    );
   } else if (task.streamText.isNotEmpty && task.streamText != lastStreamText) {
-    events.add(IepPlanGenerationEvent.delta(task.streamText));
+    events.add(
+      IepPlanGenerationEvent.deltaWithCost(
+        task.streamText,
+        task.costAmountCny,
+      ),
+    );
   }
   return events;
 }
@@ -1696,6 +1788,7 @@ IepExecutionPlanGenerationEvent<T>? _parseExecutionSseFrame<T>(
       ),
     'done' => IepExecutionPlanGenerationEvent<T>.done(
         parser(_mapFrom(payload['data'])),
+        costAmountCny: _doubleFrom(payload['costAmountCny']),
       ),
     'error' => IepExecutionPlanGenerationEvent<T>.error(
         _stringFrom(payload['message']).isEmpty

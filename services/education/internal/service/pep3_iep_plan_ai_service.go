@@ -41,6 +41,7 @@ type deepSeekChatRequest struct {
 	MaxTokens      int                   `json:"max_tokens,omitempty"`
 	ResponseFormat map[string]string     `json:"response_format,omitempty"`
 	Thinking       *deepSeekThinking     `json:"thinking,omitempty"`
+	StreamOptions  *deepSeekStreamOptions `json:"stream_options,omitempty"`
 	Stream         bool                  `json:"stream,omitempty"`
 }
 
@@ -54,11 +55,24 @@ type deepSeekThinking struct {
 	Type string `json:"type"`
 }
 
+type deepSeekStreamOptions struct {
+	IncludeUsage bool `json:"include_usage,omitempty"`
+}
+
+type deepSeekUsage struct {
+	PromptTokens          int `json:"prompt_tokens"`
+	CompletionTokens      int `json:"completion_tokens"`
+	PromptCacheHitTokens  int `json:"prompt_cache_hit_tokens"`
+	PromptCacheMissTokens int `json:"prompt_cache_miss_tokens"`
+	TotalTokens           int `json:"total_tokens"`
+}
+
 type deepSeekChatResponse struct {
 	Choices []struct {
 		Message      deepSeekChatMessage `json:"message"`
 		FinishReason string              `json:"finish_reason,omitempty"`
 	} `json:"choices"`
+	Usage *deepSeekUsage `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
@@ -70,6 +84,7 @@ type deepSeekChatStreamChunk struct {
 		Delta        deepSeekChatMessage `json:"delta"`
 		FinishReason string              `json:"finish_reason,omitempty"`
 	} `json:"choices"`
+	Usage *deepSeekUsage `json:"usage,omitempty"`
 	Error *struct {
 		Message string `json:"message"`
 		Type    string `json:"type"`
@@ -164,12 +179,12 @@ func (svc *Service) GeneratePEP3IEPPlanWithAI(userID int64, recordID int64, dura
 	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), nil
 }
 
-func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID int64, recordID int64, durationMonths int, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
+func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID int64, recordID int64, durationMonths int, onDelta func(string) error) (model.PEP3IEPPlanAIResult, *model.DeepSeekUsageVO, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if recordID <= 0 {
-		return model.PEP3IEPPlanAIResult{}, errors.New("invalid assessment record id")
+		return model.PEP3IEPPlanAIResult{}, nil, errors.New("invalid assessment record id")
 	}
 	if durationMonths <= 0 {
 		durationMonths = 6
@@ -177,33 +192,33 @@ func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID 
 
 	instID, err := svc.pep3AssessmentInstID(userID)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
 	record, err := svc.repo.GetAssessmentRecord(ctx, instID, recordID)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 
 	var rehabRows []pep3IEPPlanPromptRehabRecord
 	if record.StudentID > 0 {
 		rows, err := svc.repo.ListRecentPublishedRehabRecordRows(ctx, instID, record.StudentID, 12)
 		if err != nil {
-			return model.PEP3IEPPlanAIResult{}, err
+			return model.PEP3IEPPlanAIResult{}, nil, err
 		}
 		rehabRows = buildPEP3IEPPlanPromptRehabRecords(rows)
 	}
 
 	interpretation, err := svc.GetPEP3ReportInterpretation(userID, recordID)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	payload := buildPEP3IEPPlanPromptPayload(record, interpretation, rehabRows, durationMonths)
-	result, err := callDeepSeekIEPPlanStream(ctx, payload, onDelta)
+	result, usage, err := callDeepSeekIEPPlanStream(ctx, payload, onDelta)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, usage, err
 	}
-	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), nil
+	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), usage, nil
 }
 
 func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, interpretation model.ERXinReportInterpretationVO, rehabRecords []pep3IEPPlanPromptRehabRecord, durationMonths int) pep3IEPPlanPromptPayload {
@@ -415,8 +430,9 @@ func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
-		Thinking: &deepSeekThinking{Type: "disabled"},
-		Stream:   stream,
+		Thinking:      &deepSeekThinking{Type: "disabled"},
+		StreamOptions: &deepSeekStreamOptions{IncludeUsage: stream},
+		Stream:        stream,
 	})
 }
 
@@ -434,17 +450,17 @@ func pep3IEPPlanSystemPrompt() string {
 	}, "\n")
 }
 
-func callDeepSeekIEPPlanStream(ctx context.Context, payload pep3IEPPlanPromptPayload, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
+func callDeepSeekIEPPlanStream(ctx context.Context, payload pep3IEPPlanPromptPayload, onDelta func(string) error) (model.PEP3IEPPlanAIResult, *model.DeepSeekUsageVO, error) {
 	return callDeepSeekIEPPlanStreamWithPrompt(ctx, payload, pep3IEPPlanSystemPrompt(), onDelta)
 }
 
-func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, systemPrompt string, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
+func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, systemPrompt string, onDelta func(string) error) (model.PEP3IEPPlanAIResult, *model.DeepSeekUsageVO, error) {
 	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 	if apiKey == "" {
 		apiKey = deepSeekIEPPlanFallbackAPIKey
 	}
 	if apiKey == "" {
-		return model.PEP3IEPPlanAIResult{}, errors.New("DEEPSEEK_API_KEY is not configured")
+		return model.PEP3IEPPlanAIResult{}, nil, errors.New("DEEPSEEK_API_KEY is not configured")
 	}
 	endpoint := strings.TrimSpace(os.Getenv("DEEPSEEK_API_BASE_URL"))
 	if endpoint == "" {
@@ -453,13 +469,13 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 
 	requestBody, err := buildDeepSeekIEPPlanRequestBodyWithPrompt(payload, systemPrompt, true)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, deepSeekIEPPlanTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
@@ -467,18 +483,19 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 	resp, err := (&http.Client{Timeout: deepSeekIEPPlanTimeout + 5*time.Second}).Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-			return model.PEP3IEPPlanAIResult{}, fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
+			return model.PEP3IEPPlanAIResult{}, nil, fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
 		}
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return model.PEP3IEPPlanAIResult{}, fmt.Errorf("DeepSeek API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return model.PEP3IEPPlanAIResult{}, nil, fmt.Errorf("DeepSeek API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var content strings.Builder
 	var reasoning strings.Builder
+	var usage *model.DeepSeekUsageVO
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -495,17 +512,20 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 		}
 		var chunk deepSeekChatStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return model.PEP3IEPPlanAIResult{}, fmt.Errorf("parse DeepSeek stream chunk: %w", err)
+			return model.PEP3IEPPlanAIResult{}, nil, fmt.Errorf("parse DeepSeek stream chunk: %w", err)
 		}
 		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
-			return model.PEP3IEPPlanAIResult{}, errors.New(chunk.Error.Message)
+			return model.PEP3IEPPlanAIResult{}, nil, errors.New(chunk.Error.Message)
+		}
+		if chunk.Usage != nil {
+			usage = toDeepSeekUsageVO(chunk.Usage)
 		}
 		for _, choice := range chunk.Choices {
 			if text := choice.Delta.Content; text != "" {
 				content.WriteString(text)
 				if onDelta != nil {
 					if err := onDelta(text); err != nil {
-						return model.PEP3IEPPlanAIResult{}, err
+						return model.PEP3IEPPlanAIResult{}, usage, err
 					}
 				}
 			}
@@ -515,22 +535,22 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, usage, err
 	}
 
 	text := strings.TrimSpace(content.String())
 	if text == "" {
 		if strings.TrimSpace(reasoning.String()) != "" {
-			return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API 只返回了 reasoning_content，没有返回最终JSON内容，请重试")
+			return model.PEP3IEPPlanAIResult{}, usage, errors.New("DeepSeek API 只返回了 reasoning_content，没有返回最终JSON内容，请重试")
 		}
-		return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API returned empty content")
+		return model.PEP3IEPPlanAIResult{}, usage, errors.New("DeepSeek API returned empty content")
 	}
 	result, err := parseDeepSeekIEPPlanAIResult(text)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
+		return model.PEP3IEPPlanAIResult{}, usage, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
 	}
 	result.Model = deepSeekIEPPlanModel
-	return result, nil
+	return result, usage, nil
 }
 
 func parseDeepSeekIEPPlanAIResult(content string) (model.PEP3IEPPlanAIResult, error) {

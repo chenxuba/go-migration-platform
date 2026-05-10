@@ -30,6 +30,7 @@ class _IepGenerationSessionSnapshot {
     required this.status,
     required this.streamText,
     required this.progress,
+    required this.costAmountCny,
   });
 
   final String taskId;
@@ -37,6 +38,7 @@ class _IepGenerationSessionSnapshot {
   final String status;
   final String streamText;
   final double progress;
+  final double costAmountCny;
 }
 
 class _IepWorkspace extends StatefulWidget {
@@ -82,6 +84,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _generationStatus = '';
   String _aiStreamText = '';
   double _generationProgress = 0;
+  double _generationCostAmountCny = 0;
   String _planError = '';
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
@@ -141,6 +144,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationStatus = '';
       _aiStreamText = '';
       _generationProgress = 0;
+      _generationCostAmountCny = 0;
       _generatingPlan = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
@@ -168,6 +172,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _generationStatus = '';
         _aiStreamText = '';
         _generationProgress = 0;
+        _generationCostAmountCny = 0;
         _generatingPlan = false;
         _activeGenerationTaskId = '';
         _activeGenerationRecordKey = '';
@@ -205,6 +210,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               : activeTask.message.trim(),
           streamText: activeTask.streamText,
           progress: _streamGenerationProgress(activeTask.streamText),
+          costAmountCny: activeTask.costAmountCny,
         );
         _generationSessionsByRecord[_recordGenerationKey(record)] = session;
         if (_restoreGenerationSessionFor(record)) {
@@ -325,6 +331,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       status: _generationStatus,
       streamText: _aiStreamText,
       progress: _generationProgress,
+      costAmountCny: _generationCostAmountCny,
     );
   }
 
@@ -354,6 +361,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationStatus = session.status;
       _aiStreamText = session.streamText;
       _generationProgress = session.progress;
+      _generationCostAmountCny = session.costAmountCny;
       _generatingPlan = true;
       _planError = '';
       _hasCompletedInitialPlanLoad = true;
@@ -431,6 +439,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         setState(() {
           _generationStatus =
               event.message.trim().isEmpty ? '正在生成IEP计划' : event.message.trim();
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
       case IepPlanGenerationEventType.delta:
         final String delta = _generationDeltaAfterExistingText(event.text);
@@ -446,6 +458,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         }
         setState(() {
           _generationStatus = 'AI正在生成IEP计划';
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
       case IepPlanGenerationEventType.done:
         final IepPlan? plan = event.plan;
@@ -455,6 +471,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         setState(() {
           _generationProgress = math.max(_generationProgress, .99);
           _generationStatus = '生成完成，正在自动保存草稿';
+          _generationCostAmountCny = math.max(
+            _generationCostAmountCny,
+            event.costAmountCny,
+          );
         });
         return _IepGenerationResult(plan: plan, savedPlan: event.savedPlan);
       case IepPlanGenerationEventType.error:
@@ -547,6 +567,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationStatus = forceRegenerate ? '正在重新生成IEP计划' : '正在准备AI生成';
       _aiStreamText = '';
       _generationProgress = .08;
+      _generationCostAmountCny = 0;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       _activeGenerationTaskId = '';
@@ -662,6 +683,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationStatus = forceRegenerate ? '正在重新生成月计划' : '正在准备月计划';
       _aiStreamText = '';
       _generationProgress = .08;
+      _generationCostAmountCny = 0;
       _planError = '';
     });
     _notifyRecordStatus(record, 'generating');
@@ -769,6 +791,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationStatus = forceRegenerate ? '正在重新生成周计划' : '正在准备周计划';
       _aiStreamText = '';
       _generationProgress = .08;
+      _generationCostAmountCny = 0;
       _planError = '';
     });
     _notifyRecordStatus(record, 'generating');
@@ -984,12 +1007,20 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _generationProgress = math.max(_generationProgress, .99);
         _generationStatus =
             task.message.trim().isEmpty ? '生成完成，正在自动保存草稿' : task.message.trim();
+        _generationCostAmountCny = math.max(
+          _generationCostAmountCny,
+          task.costAmountCny,
+        );
       });
       return _IepGenerationResult(plan: plan, savedPlan: task.savedPlan);
     }
     setState(() {
       _generationStatus =
           task.message.trim().isEmpty ? 'AI正在生成IEP计划' : task.message.trim();
+      _generationCostAmountCny = math.max(
+        _generationCostAmountCny,
+        task.costAmountCny,
+      );
     });
     return null;
   }
@@ -1479,6 +1510,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               generationStatus: _generationStatus,
               generationText: _aiStreamText,
               generationProgress: _generationProgress,
+              generationCostAmountCny: _generationCostAmountCny,
               error: _planError,
               onRetry: _handleRetryRequest,
               onGeneratePlan: _handleGeneratePlanRequest,

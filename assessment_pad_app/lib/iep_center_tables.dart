@@ -104,6 +104,7 @@ class _IepTablePreview extends StatelessWidget {
     required this.generationStatus,
     required this.generationText,
     required this.generationProgress,
+    required this.generationCostAmountCny,
     required this.error,
     required this.onRetry,
     required this.onGeneratePlan,
@@ -128,6 +129,7 @@ class _IepTablePreview extends StatelessWidget {
   final String generationStatus;
   final String generationText;
   final double generationProgress;
+  final double generationCostAmountCny;
   final String error;
   final VoidCallback onRetry;
   final VoidCallback onGeneratePlan;
@@ -169,6 +171,7 @@ class _IepTablePreview extends StatelessWidget {
         status: generationStatus,
         streamText: generationText,
         progress: generationProgress,
+        costAmountCny: generationCostAmountCny,
       );
     } else if (bootstrapLoading) {
       child = const _IepWordTableSkeleton();
@@ -266,6 +269,7 @@ class _IepGenerationStreamPanel extends StatefulWidget {
     required this.status,
     required this.streamText,
     required this.progress,
+    required this.costAmountCny,
   });
 
   final String studentName;
@@ -273,6 +277,7 @@ class _IepGenerationStreamPanel extends StatefulWidget {
   final String status;
   final String streamText;
   final double progress;
+  final double costAmountCny;
 
   @override
   State<_IepGenerationStreamPanel> createState() =>
@@ -349,6 +354,9 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
     final double progress = widget.progress.clamp(0, 1).toDouble();
     final String status =
         widget.status.trim().isEmpty ? 'AI正在生成IEP计划' : widget.status.trim();
+    final String? costText = widget.costAmountCny > 0
+        ? '¥${widget.costAmountCny.toStringAsFixed(widget.costAmountCny >= 1 ? 2 : 4)}'
+        : null;
     final _IepReadableStream readable =
         _IepReadableStream.fromRaw(widget.streamText);
 
@@ -398,13 +406,30 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                   ),
                 ),
                 const SizedBox(width: 12),
-                Text(
-                  '${(progress * 100).round()}%',
-                  style: const TextStyle(
-                    color: _IepColors.orangeDeep,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: <Widget>[
+                    if (costText != null)
+                      Text(
+                        costText,
+                        style: const TextStyle(
+                          color: _IepColors.text,
+                          fontSize: 11.5,
+                          fontWeight: FontWeight.w800,
+                          height: 1,
+                        ),
+                      ),
+                    if (costText != null) const SizedBox(height: 4),
+                    Text(
+                      '${(progress * 100).round()}%',
+                      style: const TextStyle(
+                        color: _IepColors.orangeDeep,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        height: 1,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

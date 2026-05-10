@@ -908,7 +908,7 @@ func (handler *Handler) pep3AssessmentRecordExecutionPlanAIStream(w http.Respons
 	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在准备" + planTypeLabel + "生成上下文"}); err != nil {
 		return
 	}
-	result, err := handler.service.GeneratePEP3ExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
+	result, _, err := handler.service.GeneratePEP3ExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
 		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
 	})
 	if err != nil {
@@ -1225,7 +1225,7 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanAIStream(w http.ResponseWrite
 	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在读取评估和训练记录"}); err != nil {
 		return
 	}
-	result, err := handler.service.GeneratePEP3IEPPlanWithAIStream(r.Context(), claims.UserID, req.ID, req.DurationMonths, func(text string) error {
+	result, _, err := handler.service.GeneratePEP3IEPPlanWithAIStream(r.Context(), claims.UserID, req.ID, req.DurationMonths, func(text string) error {
 		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
 	})
 	if err != nil {

@@ -121,28 +121,30 @@ func (svc *Service) GeneratePEP3ExecutionPlanWithAI(ctx context.Context, userID 
 	}
 }
 
-func (svc *Service) GeneratePEP3ExecutionPlanWithAIStream(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest, onDelta func(string) error) (any, error) {
+func (svc *Service) GeneratePEP3ExecutionPlanWithAIStream(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest, onDelta func(string) error) (any, *model.DeepSeekUsageVO, error) {
 	prepared, err := svc.preparePEP3ExecutionPlanGeneration(ctx, userID, req)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	switch prepared.PlanType {
 	case "monthly":
 		var result model.PEP3MonthlyPlanAIResult
-		if err := callDeepSeekExecutionPlanStream(ctx, prepared.SystemPrompt, prepared.Payload, &result, onDelta); err != nil {
-			return nil, err
+		usage, err := callDeepSeekExecutionPlanStream(ctx, prepared.SystemPrompt, prepared.Payload, &result, onDelta)
+		if err != nil {
+			return nil, usage, err
 		}
 		normalized := normalizePEP3MonthlyExecutionPlan(result, prepared.SourcePlan, prepared.Target, prepared.CurrentTeacherName)
-		return normalized, nil
+		return normalized, usage, nil
 	case "weekly":
 		var result model.PEP3WeeklyPlanAIResult
-		if err := callDeepSeekExecutionPlanStream(ctx, prepared.SystemPrompt, prepared.Payload, &result, onDelta); err != nil {
-			return nil, err
+		usage, err := callDeepSeekExecutionPlanStream(ctx, prepared.SystemPrompt, prepared.Payload, &result, onDelta)
+		if err != nil {
+			return nil, usage, err
 		}
 		normalized := normalizePEP3WeeklyExecutionPlan(result, prepared.SourcePlan, req.MonthlyPlan, prepared.Target, prepared.CurrentTeacherName)
-		return normalized, nil
+		return normalized, usage, nil
 	default:
-		return nil, errors.New("invalid execution plan type")
+		return nil, nil, errors.New("invalid execution plan type")
 	}
 }
 
@@ -229,18 +231,19 @@ func buildDeepSeekExecutionPlanRequestBody(systemPrompt string, payload pep3Exec
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
-		Thinking: &deepSeekThinking{Type: "disabled"},
-		Stream:   stream,
+		Thinking:      &deepSeekThinking{Type: "disabled"},
+		StreamOptions: &deepSeekStreamOptions{IncludeUsage: stream},
+		Stream:        stream,
 	})
 }
 
-func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, payload pep3ExecutionPlanPromptPayload, result any, onDelta func(string) error) error {
+func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, payload pep3ExecutionPlanPromptPayload, result any, onDelta func(string) error) (*model.DeepSeekUsageVO, error) {
 	apiKey := strings.TrimSpace(os.Getenv("DEEPSEEK_API_KEY"))
 	if apiKey == "" {
 		apiKey = deepSeekIEPPlanFallbackAPIKey
 	}
 	if apiKey == "" {
-		return errors.New("DEEPSEEK_API_KEY is not configured")
+		return nil, errors.New("DEEPSEEK_API_KEY is not configured")
 	}
 	endpoint := strings.TrimSpace(os.Getenv("DEEPSEEK_API_BASE_URL"))
 	if endpoint == "" {
@@ -248,31 +251,32 @@ func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, p
 	}
 	requestBody, err := buildDeepSeekExecutionPlanRequestBody(systemPrompt, payload, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	requestCtx, cancel := context.WithTimeout(ctx, deepSeekIEPPlanTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 	resp, err := (&http.Client{Timeout: deepSeekIEPPlanTimeout + 5*time.Second}).Do(req)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
+			return nil, fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
 		}
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("DeepSeek API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, fmt.Errorf("DeepSeek API returned %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var content strings.Builder
 	var reasoning strings.Builder
+	var usage *model.DeepSeekUsageVO
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 	for scanner.Scan() {
@@ -289,17 +293,20 @@ func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, p
 		}
 		var chunk deepSeekChatStreamChunk
 		if err := json.Unmarshal([]byte(data), &chunk); err != nil {
-			return fmt.Errorf("parse DeepSeek execution plan stream chunk: %w", err)
+			return usage, fmt.Errorf("parse DeepSeek execution plan stream chunk: %w", err)
 		}
 		if chunk.Error != nil && strings.TrimSpace(chunk.Error.Message) != "" {
-			return errors.New(chunk.Error.Message)
+			return usage, errors.New(chunk.Error.Message)
+		}
+		if chunk.Usage != nil {
+			usage = toDeepSeekUsageVO(chunk.Usage)
 		}
 		for _, choice := range chunk.Choices {
 			if text := choice.Delta.Content; text != "" {
 				content.WriteString(text)
 				if onDelta != nil {
 					if err := onDelta(text); err != nil {
-						return err
+						return usage, err
 					}
 				}
 			}
@@ -309,19 +316,19 @@ func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, p
 		}
 	}
 	if err := scanner.Err(); err != nil {
-		return err
+		return usage, err
 	}
 	text := strings.TrimSpace(content.String())
 	if text == "" {
 		if strings.TrimSpace(reasoning.String()) != "" {
-			return errors.New("DeepSeek API 只返回了 reasoning_content，没有返回最终JSON内容，请重试")
+			return usage, errors.New("DeepSeek API 只返回了 reasoning_content，没有返回最终JSON内容，请重试")
 		}
-		return errors.New("DeepSeek API returned empty content")
+		return usage, errors.New("DeepSeek API returned empty content")
 	}
 	if err := json.Unmarshal([]byte(extractJSONContent(text)), result); err != nil {
-		return fmt.Errorf("parse DeepSeek execution plan JSON: %w", err)
+		return usage, fmt.Errorf("parse DeepSeek execution plan JSON: %w", err)
 	}
-	return nil
+	return usage, nil
 }
 
 func normalizeExecutionSourceIEPPlan(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, currentTeacherName string, durationMonths int) model.PEP3IEPPlanAIResult {

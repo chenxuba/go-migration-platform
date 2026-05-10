@@ -15,11 +15,21 @@ type PEP3IEPPlanGenerationTaskVO struct {
 	Status         string               `json:"status"`
 	Message        string               `json:"message,omitempty"`
 	StreamText     string               `json:"streamText,omitempty"`
+	Usage          *DeepSeekUsageVO     `json:"usage,omitempty"`
+	CostAmountCNY  float64              `json:"costAmountCny,omitempty"`
 	DurationMonths int                  `json:"durationMonths,omitempty"`
 	Plan           *PEP3IEPPlanAIResult `json:"plan,omitempty"`
 	SavedPlan      *PEP3IEPPlanSavedVO  `json:"savedPlan,omitempty"`
 	Error          string               `json:"error,omitempty"`
 	UpdatedTime    string               `json:"updatedTime,omitempty"`
+}
+
+type DeepSeekUsageVO struct {
+	PromptTokens         int `json:"promptTokens"`
+	CompletionTokens     int `json:"completionTokens"`
+	PromptCacheHitTokens int `json:"promptCacheHitTokens"`
+	PromptCacheMissTokens int `json:"promptCacheMissTokens"`
+	TotalTokens          int `json:"totalTokens"`
 }
 
 type PEP3IEPPlanWordExportRequest struct {

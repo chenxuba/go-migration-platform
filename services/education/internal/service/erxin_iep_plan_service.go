@@ -52,31 +52,31 @@ func (svc *Service) GenerateERXinIEPPlanWithAI(userID int64, recordID int64, dur
 	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), nil
 }
 
-func (svc *Service) GenerateERXinIEPPlanWithAIStream(ctx context.Context, userID int64, recordID int64, durationMonths int, onDelta func(string) error) (model.PEP3IEPPlanAIResult, error) {
+func (svc *Service) GenerateERXinIEPPlanWithAIStream(ctx context.Context, userID int64, recordID int64, durationMonths int, onDelta func(string) error) (model.PEP3IEPPlanAIResult, *model.DeepSeekUsageVO, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	if recordID <= 0 {
-		return model.PEP3IEPPlanAIResult{}, errors.New("invalid assessment record id")
+		return model.PEP3IEPPlanAIResult{}, nil, errors.New("invalid assessment record id")
 	}
 	if durationMonths <= 0 {
 		durationMonths = 6
 	}
 	record, report, interpretation, err := svc.prepareERXinIEPPlanSource(ctx, userID, recordID)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
 	rehabRows, err := svc.erxinIEPPlanPromptRehabRecords(ctx, userID, record)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	payload := buildERXinIEPPlanPromptPayload(record, report, interpretation, rehabRows, durationMonths)
-	result, err := callDeepSeekIEPPlanStreamWithPrompt(ctx, payload, erxinIEPPlanSystemPrompt(), onDelta)
+	result, usage, err := callDeepSeekIEPPlanStreamWithPrompt(ctx, payload, erxinIEPPlanSystemPrompt(), onDelta)
 	if err != nil {
-		return model.PEP3IEPPlanAIResult{}, err
+		return model.PEP3IEPPlanAIResult{}, usage, err
 	}
-	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), nil
+	return normalizePEP3IEPPlanAIResult(result, record, rehabRows, currentTeacherName, durationMonths), usage, nil
 }
 
 func (svc *Service) SaveERXinIEPPlan(userID int64, req model.PEP3IEPPlanSaveRequest) (model.PEP3IEPPlanSavedVO, error) {
@@ -121,9 +121,9 @@ func (svc *Service) GenerateERXinExecutionPlanWithAI(ctx context.Context, userID
 	return svc.GeneratePEP3ExecutionPlanWithAI(ctx, userID, req)
 }
 
-func (svc *Service) GenerateERXinExecutionPlanWithAIStream(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest, onDelta func(string) error) (any, error) {
+func (svc *Service) GenerateERXinExecutionPlanWithAIStream(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest, onDelta func(string) error) (any, *model.DeepSeekUsageVO, error) {
 	if _, err := svc.validateERXinIEPPlanRecord(userID, req.ID); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return svc.GeneratePEP3ExecutionPlanWithAIStream(ctx, userID, req, onDelta)
 }

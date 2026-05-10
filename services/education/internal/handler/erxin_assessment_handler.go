@@ -731,7 +731,7 @@ func (handler *Handler) erxinAssessmentRecordExecutionPlanAIStream(w http.Respon
 	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在准备" + planTypeLabel + "生成上下文"}); err != nil {
 		return
 	}
-	result, err := handler.service.GenerateERXinExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
+	result, _, err := handler.service.GenerateERXinExecutionPlanWithAIStream(r.Context(), claims.UserID, req, func(text string) error {
 		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
 	})
 	if err != nil {
@@ -983,7 +983,7 @@ func (handler *Handler) erxinAssessmentRecordIEPPlanAIStream(w http.ResponseWrit
 	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在读取儿心评估结果和报告解读"}); err != nil {
 		return
 	}
-	result, err := handler.service.GenerateERXinIEPPlanWithAIStream(r.Context(), claims.UserID, req.ID, req.DurationMonths, func(text string) error {
+	result, _, err := handler.service.GenerateERXinIEPPlanWithAIStream(r.Context(), claims.UserID, req.ID, req.DurationMonths, func(text string) error {
 		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
 	})
 	if err != nil {
