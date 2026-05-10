@@ -76,18 +76,11 @@ IepPlan? _streamingIepPlanFromText({
     // parsed as soon as each object is complete.
   }
 
-  final List<IepPlanRow> rows = _collectCompleteJsonObjects(
+  final List<IepPlanRow> rows = _collectStreamingJsonObjects(
     _extractRowsArrayText(content),
   )
-      .map((String raw) {
-        try {
-          final Object? decoded = jsonDecode(raw);
-          return decoded is Map
-              ? IepPlanRow.fromJson(Map<String, dynamic>.from(decoded))
-              : null;
-        } on Object {
-          return null;
-        }
+      .map((_StreamingJsonObject object) {
+        return _streamingIepPlanRowFromObject(object);
       })
       .whereType<IepPlanRow>()
       .where((IepPlanRow row) {
@@ -145,8 +138,15 @@ String _extractRowsArrayText(String text) {
   return text.substring(arrayStart + 1);
 }
 
-List<String> _collectCompleteJsonObjects(String text) {
-  final List<String> objects = <String>[];
+class _StreamingJsonObject {
+  const _StreamingJsonObject({required this.raw, required this.complete});
+
+  final String raw;
+  final bool complete;
+}
+
+List<_StreamingJsonObject> _collectStreamingJsonObjects(String text) {
+  final List<_StreamingJsonObject> objects = <_StreamingJsonObject>[];
   int start = -1;
   int depth = 0;
   bool inString = false;
@@ -177,23 +177,118 @@ List<String> _collectCompleteJsonObjects(String text) {
     if (char == '}' && depth > 0) {
       depth -= 1;
       if (depth == 0 && start >= 0) {
-        objects.add(text.substring(start, index + 1));
+        objects.add(
+          _StreamingJsonObject(
+            raw: text.substring(start, index + 1),
+            complete: true,
+          ),
+        );
         start = -1;
       }
     }
   }
+  if (start >= 0 && depth > 0) {
+    objects.add(
+      _StreamingJsonObject(raw: text.substring(start), complete: false),
+    );
+  }
   return objects;
 }
 
-String _extractJsonStringField(String text, String key) {
+IepPlanRow? _streamingIepPlanRowFromObject(_StreamingJsonObject object) {
+  if (object.complete) {
+    try {
+      final Object? decoded = jsonDecode(object.raw);
+      if (decoded is Map) {
+        return IepPlanRow.fromJson(Map<String, dynamic>.from(decoded));
+      }
+    } on Object {
+      // Fall through to tolerant parsing below.
+    }
+  }
+  final String domain = _extractJsonStringField(
+    object.raw,
+    'domain',
+    allowPartial: !object.complete,
+  );
+  final String longGoal = _extractJsonStringField(
+    object.raw,
+    'longGoal',
+    allowPartial: !object.complete,
+  );
+  final String shortGoal = _extractJsonStringField(
+    object.raw,
+    'shortGoal',
+    allowPartial: !object.complete,
+  );
+  final String courseForm = _extractJsonStringField(
+    object.raw,
+    'courseForm',
+    allowPartial: !object.complete,
+  );
+  final String startEndDate = _extractJsonStringField(
+    object.raw,
+    'startEndDate',
+    allowPartial: !object.complete,
+  );
+  if (domain.isEmpty &&
+      longGoal.isEmpty &&
+      shortGoal.isEmpty &&
+      courseForm.isEmpty &&
+      startEndDate.isEmpty) {
+    return null;
+  }
+  return IepPlanRow(
+    domain: domain,
+    longGoal: longGoal,
+    shortGoal: shortGoal,
+    courseForm: courseForm,
+    startEndDate: startEndDate,
+  );
+}
+
+String _extractJsonStringField(
+  String text,
+  String key, {
+  bool allowPartial = false,
+}) {
   final RegExp pattern = RegExp(
-    '"${RegExp.escape(key)}"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"',
+    '"${RegExp.escape(key)}"\\s*:\\s*"',
   );
   final RegExpMatch? match = pattern.firstMatch(text);
   if (match == null) {
     return '';
   }
-  final String raw = match.group(1) ?? '';
+  final StringBuffer raw = StringBuffer();
+  bool escaped = false;
+  for (int index = match.end; index < text.length; index += 1) {
+    final String char = text[index];
+    if (escaped) {
+      raw
+        ..write('\\')
+        ..write(char);
+      escaped = false;
+      continue;
+    }
+    if (char == '\\') {
+      escaped = true;
+      continue;
+    }
+    if (char == '"') {
+      return _decodeJsonString(raw.toString());
+    }
+    raw.write(char);
+  }
+  if (!allowPartial) {
+    return '';
+  }
+  if (escaped) {
+    raw.write('\\');
+  }
+  return _decodeJsonString(raw.toString());
+}
+
+String _decodeJsonString(String raw) {
   try {
     return jsonDecode('"$raw"') as String;
   } on Object {

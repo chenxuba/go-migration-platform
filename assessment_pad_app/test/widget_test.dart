@@ -1000,7 +1000,10 @@ void main() {
     expect(find.text('正在读取评估和训练记录'), findsWidgets);
     expect(find.text('生成中'), findsWidgets);
 
-    await tester.pump(const Duration(milliseconds: 80));
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(find.text('能独'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 700));
     expect(find.text('能独立跳跃3次'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 200));
@@ -4227,8 +4230,11 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
     await Future<void>.delayed(const Duration(milliseconds: 100));
     yield IepPlanGenerationEvent.delta(
-      '{"title":"康复教学季度计划","rows":['
-      '{"domain":"大肌肉","longGoal":"提升动态平衡能力","shortGoal":"能独立跳跃3次","courseForm":"个训","startEndDate":"2026-04-01 - 2026-04-30"}',
+      '{"rows":[{"shortGoal":"能独',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 40));
+    yield IepPlanGenerationEvent.delta(
+      '立跳跃3次","domain":"大肌肉","longGoal":"提升动态平衡能力","courseForm":"个训","startEndDate":"2026-04-01 - 2026-04-30"}',
     );
     await Future<void>.delayed(const Duration(milliseconds: 20));
     yield IepPlanGenerationEvent.done(

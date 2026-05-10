@@ -102,6 +102,8 @@ class _IepTablePreview extends StatelessWidget {
     required this.bootstrapLoading,
     required this.generatingPlan,
     required this.generationStatus,
+    required this.streamingRevision,
+    required this.streamingCursorKey,
     required this.error,
     required this.onRetry,
     required this.onGeneratePlan,
@@ -124,6 +126,8 @@ class _IepTablePreview extends StatelessWidget {
   final bool bootstrapLoading;
   final bool generatingPlan;
   final String generationStatus;
+  final int streamingRevision;
+  final GlobalKey streamingCursorKey;
   final String error;
   final VoidCallback onRetry;
   final VoidCallback onGeneratePlan;
@@ -218,8 +222,13 @@ class _IepTablePreview extends StatelessWidget {
               selectedGoal: selectedGoal,
               onGoalTap: onGoalTap,
               onClearSelectedGoal: onClearSelectedGoal,
+              streamingCursorKey: generatingPlan ? streamingCursorKey : null,
             ),
             height: _WordTable.heightFor(totalPlanDomains),
+            followKey: generatingPlan && previewMode == _IepPreviewMode.total
+                ? streamingCursorKey
+                : null,
+            followRevision: streamingRevision,
           ),
       };
     }
@@ -340,6 +349,7 @@ class _WordTable extends StatelessWidget {
     required this.selectedGoal,
     required this.onGoalTap,
     required this.onClearSelectedGoal,
+    this.streamingCursorKey,
   });
 
   final String periodText;
@@ -348,6 +358,7 @@ class _WordTable extends StatelessWidget {
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
   final VoidCallback onClearSelectedGoal;
+  final GlobalKey? streamingCursorKey;
 
   static const List<int> _columns = <int>[
     1038,
@@ -432,27 +443,81 @@ class _WordTable extends StatelessWidget {
             ],
           ),
           SizedBox(
-            height: _DocPlanRows.heightFor(domains),
+            height: _bodyHeightFor(domains),
             child: _DocPlanRows(
               domains: domains,
+              height: _bodyHeightFor(domains),
               selectedGoal: selectedGoal,
               onGoalTap: onGoalTap,
+              streamingCursorKey: streamingCursorKey,
             ),
           ),
         ],
       ),
     );
   }
+
+  static double _bodyHeightFor(List<_DocDomainData> domains) {
+    final double minBodyHeight = _minHeight - _headerHeight;
+    final double contentHeight = _DocPlanRows.heightFor(domains);
+    return contentHeight > minBodyHeight ? contentHeight : minBodyHeight;
+  }
 }
 
-class _WordTableFrame extends StatelessWidget {
+class _WordTableFrame extends StatefulWidget {
   const _WordTableFrame({
     required this.child,
     this.height,
+    this.followKey,
+    this.followRevision = 0,
   });
 
   final Widget child;
   final double? height;
+  final GlobalKey? followKey;
+  final int followRevision;
+
+  @override
+  State<_WordTableFrame> createState() => _WordTableFrameState();
+}
+
+class _WordTableFrameState extends State<_WordTableFrame> {
+  late final ScrollController _scrollController;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _WordTableFrame oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.followKey != null &&
+        widget.followRevision != oldWidget.followRevision) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToFollowKey());
+    }
+  }
+
+  void _scrollToFollowKey() {
+    final BuildContext? targetContext = widget.followKey?.currentContext;
+    if (!mounted || targetContext == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      targetContext,
+      duration: const Duration(milliseconds: 120),
+      curve: Curves.easeOutCubic,
+      alignment: .62,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.keepVisibleAtEnd,
+    );
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -469,9 +534,11 @@ class _WordTableFrame extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.all(1.2),
         child: SingleChildScrollView(
+          controller: _scrollController,
           physics: const ClampingScrollPhysics(),
-          child:
-              height == null ? child : SizedBox(height: height, child: child),
+          child: widget.height == null
+              ? widget.child
+              : SizedBox(height: widget.height, child: widget.child),
         ),
       ),
     );
@@ -1621,13 +1688,17 @@ class _DocCellBox extends StatelessWidget {
 class _DocPlanRows extends StatelessWidget {
   const _DocPlanRows({
     required this.domains,
+    required this.height,
     required this.selectedGoal,
     required this.onGoalTap,
+    this.streamingCursorKey,
   });
 
   final List<_DocDomainData> domains;
+  final double height;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
+  final GlobalKey? streamingCursorKey;
 
   static const double _minDomainHeight = 122.4;
   static const double _shortGoalRowHeight = 39;
@@ -1648,21 +1719,82 @@ class _DocPlanRows extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final double contentHeight = heightFor(domains);
+    final double fillerHeight =
+        height > contentHeight ? height - contentHeight : 0;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: domains.asMap().entries.map((entry) {
-        return SizedBox(
-          height: blockHeightFor(entry.value),
-          child: _DocDomainBlock(
-            domainIndex: entry.key,
-            data: entry.value,
-            selected: entry.key == 0,
-            last: entry.key == domains.length - 1,
-            selectedGoal: selectedGoal,
-            onGoalTap: onGoalTap,
+      children: <Widget>[
+        ...domains.asMap().entries.map((entry) {
+          final bool hasFiller = fillerHeight > 0;
+          return SizedBox(
+            height: blockHeightFor(entry.value),
+            child: _DocDomainBlock(
+              domainIndex: entry.key,
+              data: entry.value,
+              selected: entry.key == 0,
+              last: !hasFiller && entry.key == domains.length - 1,
+              selectedGoal: selectedGoal,
+              onGoalTap: onGoalTap,
+              streamingCursorKey:
+                  entry.key == domains.length - 1 ? streamingCursorKey : null,
+            ),
+          );
+        }),
+        if (fillerHeight > 0)
+          SizedBox(
+            height: fillerHeight,
+            child: const _DocPlanFillerRow(),
           ),
-        );
-      }).toList(),
+      ],
+    );
+  }
+}
+
+class _DocPlanFillerRow extends StatelessWidget {
+  const _DocPlanFillerRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return _FixedGridRow(
+      columns: _WordTable._columns,
+      cells: const <_FixedGridCell>[
+        _FixedGridCell(
+          columns: 1,
+          child: _DocCellBox(
+            data: _DocCellData(text: '', columns: 1),
+            rowLast: true,
+          ),
+        ),
+        _FixedGridCell(
+          columns: 3,
+          child: _DocCellBox(
+            data: _DocCellData(text: '', columns: 3),
+            rowLast: true,
+          ),
+        ),
+        _FixedGridCell(
+          columns: 2,
+          child: _DocCellBox(
+            data: _DocCellData(text: '', columns: 2),
+            rowLast: true,
+          ),
+        ),
+        _FixedGridCell(
+          columns: 1,
+          child: _DocCellBox(
+            data: _DocCellData(text: '', columns: 1),
+            rowLast: true,
+          ),
+        ),
+        _FixedGridCell(
+          columns: 1,
+          child: _DocCellBox(
+            data: _DocCellData(text: '', columns: 1, last: true),
+            rowLast: true,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1718,6 +1850,7 @@ class _DocDomainBlock extends StatelessWidget {
     required this.last,
     required this.selectedGoal,
     required this.onGoalTap,
+    this.streamingCursorKey,
   });
 
   final int domainIndex;
@@ -1726,6 +1859,7 @@ class _DocDomainBlock extends StatelessWidget {
   final bool last;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
+  final GlobalKey? streamingCursorKey;
 
   @override
   Widget build(BuildContext context) {
@@ -1757,17 +1891,22 @@ class _DocDomainBlock extends StatelessWidget {
                 domainIndex: domainIndex,
                 shortGoalIndex: entry.key,
               );
+              final bool markStreamingCursor = streamingCursorKey != null &&
+                  entry.key == data.shortGoals.length - 1;
               return Expanded(
-                child: _DocCellBox(
-                  data: _DocCellData(
-                    text: entry.value.goal,
-                    columns: 2,
-                    align: TextAlign.left,
-                    editable: selectedGoal == request,
+                child: KeyedSubtree(
+                  key: markStreamingCursor ? streamingCursorKey : null,
+                  child: _DocCellBox(
+                    data: _DocCellData(
+                      text: entry.value.goal,
+                      columns: 2,
+                      align: TextAlign.left,
+                      editable: selectedGoal == request,
+                    ),
+                    rowLast: last && entry.key == data.shortGoals.length - 1,
+                    verticalPadding: 4,
+                    onTap: () => onGoalTap(request),
                   ),
-                  rowLast: last && entry.key == data.shortGoals.length - 1,
-                  verticalPadding: 4,
-                  onTap: () => onGoalTap(request),
                 ),
               );
             }).toList(),

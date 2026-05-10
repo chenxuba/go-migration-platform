@@ -41,6 +41,11 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   String _planError = '';
   int _loadTicket = 0;
   int _generationTicket = 0;
+  int _lastTypewriterPaintAt = 0;
+  int _streamPaintRevision = 0;
+  final GlobalKey _streamingCursorKey = GlobalKey(
+    debugLabel: 'iep-streaming-cursor',
+  );
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
 
@@ -191,9 +196,51 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       _applyPeriodFromPlan(plan, widget.record!);
       _totalPlanDomains = _docDomainsFromPlan(plan);
+      _streamPaintRevision += 1;
       _syncPreviewMonthToPeriod();
     });
     _syncConfirmAvailability(_savedPlan);
+  }
+
+  void _paintStreamingText(
+    IepAssessmentRecordSummary record, {
+    required bool force,
+  }) {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    if (!force && now - _lastTypewriterPaintAt < 18) {
+      return;
+    }
+    final IepPlan? partialPlan = _streamingIepPlanFromText(
+      text: _aiStreamText,
+      record: record,
+      periodStart: _periodStart,
+      durationMonths: _periodMonthCount,
+      fallbackPlan: _savedPlan?.plan,
+    );
+    if (partialPlan == null) {
+      return;
+    }
+    _lastTypewriterPaintAt = now;
+    _applyStreamingPlan(partialPlan);
+  }
+
+  Future<void> _appendDeltaWithTypewriter(
+    String delta,
+    IepAssessmentRecordSummary record, {
+    required int ticket,
+  }) async {
+    for (final int codePoint in delta.runes) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      _aiStreamText += String.fromCharCode(codePoint);
+      _paintStreamingText(record, force: false);
+      await Future<void>.delayed(const Duration(milliseconds: 4));
+    }
+    if (!mounted || ticket != _generationTicket) {
+      return;
+    }
+    _paintStreamingText(record, force: true);
   }
 
   Future<void> _generateIepPlan({bool forceRegenerate = false}) async {
@@ -215,6 +262,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       _generatingPlan = true;
       _generationStatus = forceRegenerate ? '正在重新生成IEP计划' : '正在准备AI生成';
       _aiStreamText = '';
+      _lastTypewriterPaintAt = 0;
+      _streamPaintRevision = 0;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       if (forceRegenerate) {
@@ -248,17 +297,11 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             if (event.text.isEmpty) {
               break;
             }
-            _aiStreamText += event.text;
-            final IepPlan? partialPlan = _streamingIepPlanFromText(
-              text: _aiStreamText,
-              record: record,
-              periodStart: _periodStart,
-              durationMonths: _periodMonthCount,
-              fallbackPlan: _savedPlan?.plan,
+            await _appendDeltaWithTypewriter(
+              event.text,
+              record,
+              ticket: ticket,
             );
-            if (partialPlan != null) {
-              _applyStreamingPlan(partialPlan);
-            }
             setState(() {
               _generationStatus = 'AI正在绘制IEP表格';
             });
@@ -669,6 +712,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
                   widget.queueBootstrapLoading && !_hasLoadedPlanOnce,
               generatingPlan: _generatingPlan,
               generationStatus: _generationStatus,
+              streamingRevision: _streamPaintRevision,
+              streamingCursorKey: _streamingCursorKey,
               error: _planError,
               onRetry: _loadPlanBundle,
               onGeneratePlan: _generateIepPlan,
