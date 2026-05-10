@@ -304,9 +304,8 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
     final double progress = widget.progress.clamp(0, 1).toDouble();
     final String status =
         widget.status.trim().isEmpty ? 'AI正在生成IEP计划' : widget.status.trim();
-    final String visibleText = widget.streamText.trim().isEmpty
-        ? '正在连接AI生成服务，准备读取评估记录...'
-        : widget.streamText;
+    final _IepReadableStream readable =
+        _IepReadableStream.fromRaw(widget.streamText);
 
     return Container(
       decoration: BoxDecoration(
@@ -376,32 +375,53 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
               ),
             ),
           ),
-          const SizedBox(height: 14),
           Expanded(
             child: Container(
-              margin: const EdgeInsets.fromLTRB(18, 0, 18, 14),
-              padding: const EdgeInsets.all(14),
+              margin: const EdgeInsets.fromLTRB(18, 14, 18, 14),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
               decoration: BoxDecoration(
                 color: const Color(0xFFFFFCF8),
-                borderRadius: BorderRadius.circular(8),
+                borderRadius: BorderRadius.circular(9),
                 border: Border.all(color: _IepColors.lightLine),
               ),
-              child: Scrollbar(
-                controller: _scrollController,
-                thumbVisibility: true,
-                child: SingleChildScrollView(
-                  controller: _scrollController,
-                  physics: const ClampingScrollPhysics(),
-                  child: Text(
-                    visibleText,
-                    style: const TextStyle(
-                      color: _IepColors.text,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w700,
-                      height: 1.55,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Row(
+                    children: const <Widget>[
+                      Icon(
+                        Icons.auto_awesome_rounded,
+                        size: 16,
+                        color: _IepColors.orangeDeep,
+                      ),
+                      SizedBox(width: 6),
+                      Text(
+                        'AI正在整理可预览内容',
+                        style: TextStyle(
+                          color: _IepColors.ink,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      controller: _scrollController,
+                      physics: const ClampingScrollPhysics(),
+                      child: Text(
+                        readable.content,
+                        style: const TextStyle(
+                          color: _IepColors.text,
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          height: 1.42,
+                        ),
+                      ),
                     ),
                   ),
-                ),
+                ],
               ),
             ),
           ),
@@ -432,6 +452,215 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
       ),
     );
   }
+}
+
+class _IepReadableStream {
+  const _IepReadableStream({
+    required this.content,
+  });
+
+  factory _IepReadableStream.fromRaw(String raw) {
+    final String content = _formatIepStreamTextIncrementally(raw).trimRight();
+    final String visible = content.isEmpty
+        ? '正在连接AI生成服务，准备读取评估记录...'
+        : content;
+    return _IepReadableStream(
+      content: visible,
+    );
+  }
+
+  final String content;
+}
+
+String _formatIepStreamTextIncrementally(String raw) {
+  final String text = raw.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  final StringBuffer output = StringBuffer();
+  final StringBuffer token = StringBuffer();
+  _IepReadableJsonMode mode = _IepReadableJsonMode.outside;
+  String currentKey = '';
+  bool expectingValue = false;
+  bool escaping = false;
+  bool lastWasNewline = true;
+
+  void writeText(String value) {
+    if (value.isEmpty) {
+      return;
+    }
+    output.write(value);
+    lastWasNewline = value.endsWith('\n');
+  }
+
+  void writeFieldPrefix(String key) {
+    if (output.isNotEmpty && !lastWasNewline) {
+      writeText('\n');
+    }
+    writeText('${_iepReadableLabel(key)}：');
+  }
+
+  void writeEscaped(String char) {
+    switch (char) {
+      case 'n':
+      case 'r':
+      case 't':
+        writeText(' ');
+      case '"':
+        writeText('"');
+      case '/':
+        writeText('/');
+      case '\\':
+        writeText('\\');
+      default:
+        writeText(char);
+    }
+  }
+
+  for (final int rune in text.runes) {
+    final String char = String.fromCharCode(rune);
+    if (escaping) {
+      if (mode == _IepReadableJsonMode.visibleValue) {
+        writeEscaped(char);
+      } else if (mode == _IepReadableJsonMode.key) {
+        token.write(char);
+      }
+      escaping = false;
+      continue;
+    }
+    if (char == r'\') {
+      escaping = true;
+      continue;
+    }
+    switch (mode) {
+      case _IepReadableJsonMode.outside:
+        if (char == '"') {
+          token.clear();
+          if (expectingValue) {
+            if (_isIepReadableField(currentKey)) {
+              writeFieldPrefix(currentKey);
+              mode = _IepReadableJsonMode.visibleValue;
+            } else {
+              mode = _IepReadableJsonMode.hiddenValue;
+            }
+          } else {
+            mode = _IepReadableJsonMode.key;
+          }
+        } else if (char == ':') {
+          expectingValue = currentKey.isNotEmpty;
+        } else if (char == ',' || char == '}' || char == ']') {
+          if (expectingValue) {
+            expectingValue = false;
+            currentKey = '';
+          }
+        }
+      case _IepReadableJsonMode.key:
+        if (char == '"') {
+          currentKey = token.toString();
+          token.clear();
+          mode = _IepReadableJsonMode.outside;
+        } else {
+          token.write(char);
+        }
+      case _IepReadableJsonMode.visibleValue:
+        if (char == '"') {
+          mode = _IepReadableJsonMode.outside;
+          expectingValue = false;
+          currentKey = '';
+          if (output.isNotEmpty && !lastWasNewline) {
+            writeText('\n');
+          }
+        } else {
+          writeText(char);
+        }
+      case _IepReadableJsonMode.hiddenValue:
+        if (char == '"') {
+          mode = _IepReadableJsonMode.outside;
+          expectingValue = false;
+          currentKey = '';
+        }
+    }
+  }
+
+  final String normalized = output.toString().trimRight();
+  if (normalized.isNotEmpty) {
+    return normalized;
+  }
+  return text
+      .replaceAll('{', '')
+      .replaceAll('}', '')
+      .replaceAll('[', '')
+      .replaceAll(']', '')
+      .replaceAll('"', '')
+      .replaceAll(',', '')
+      .trim();
+}
+
+enum _IepReadableJsonMode { outside, key, visibleValue, hiddenValue }
+
+bool _isIepReadableField(String key) {
+  return const <String>{
+    'title',
+    'domain',
+    'longGoal',
+    'shortGoal',
+    'courseForm',
+    'startEndDate',
+    'participant',
+    'implementer',
+    'planDate',
+    'startDate',
+    'endDate',
+    'project',
+    'content',
+    'teacherName',
+    'courseName',
+    'trainingDate',
+    'preparation',
+    'monthLabel',
+  }.contains(key);
+}
+
+String _iepReadableLabel(String key) {
+  switch (key) {
+    case 'title':
+      return '计划';
+    case 'domain':
+      return '领域';
+    case 'longGoal':
+      return '长期目标';
+    case 'shortGoal':
+      return '短期目标';
+    case 'courseForm':
+      return '课程形式';
+    case 'startEndDate':
+      return '起止日期';
+    case 'participant':
+      return '计划参与者';
+    case 'implementer':
+      return '实施者';
+    case 'planDate':
+      return '制定日期';
+    case 'startDate':
+      return '开始日期';
+    case 'endDate':
+      return '结束日期';
+    case 'project':
+      return '训练项目';
+    case 'content':
+      return '训练内容';
+    case 'teacherName':
+      return '老师';
+    case 'courseName':
+      return '课程';
+    case 'trainingDate':
+      return '训练日期';
+    case 'preparation':
+      return '课前准备';
+    case 'monthLabel':
+      return '月份';
+  }
+  return key;
 }
 
 int _gridFlex(List<int> columns, int start, int span) {

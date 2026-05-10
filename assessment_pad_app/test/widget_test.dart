@@ -1045,12 +1045,12 @@ void main() {
 
     await tester.pump(const Duration(milliseconds: 260));
     expect(find.text('生成完成后将自动保存草稿，并切换为正式IEP表格预览'), findsOneWidget);
-    expect(find.textContaining('"rows"'), findsOneWidget);
-    expect(find.text('能独立跳跃3次'), findsNothing);
+    expect(find.text('AI正在整理可预览内容'), findsOneWidget);
 
     await tester.pump(const Duration(milliseconds: 900));
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump();
+    expect(find.text('大肌肉'), findsWidgets);
     expect(find.text('能独立跳跃3次'), findsOneWidget);
 
     expect(iepPlanClient.savePlanCalls, 0);
