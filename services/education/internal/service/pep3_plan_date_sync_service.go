@@ -165,7 +165,7 @@ func iepPlanWholeMonthDateRangeFromStart(start time.Time, durationMonths int) (s
 		durationMonths = 6
 	}
 	normalizedStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
-	end := normalizedStart.AddDate(0, durationMonths, 0).AddDate(0, 0, -1)
+	end := time.Date(normalizedStart.Year(), normalizedStart.Month()+time.Month(durationMonths), 0, 0, 0, 0, 0, time.Local)
 	return normalizedStart.Format("2006-01-02"), end.Format("2006-01-02")
 }
 
@@ -178,6 +178,8 @@ func iepPlanStageDateRangesFromStart(start time.Time, durationMonths int) []stri
 	monthRemainder := durationMonths % stageCount
 	ranges := make([]string, 0, stageCount)
 	current := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	_, periodEndText := iepPlanWholeMonthDateRangeFromStart(start, durationMonths)
+	periodEnd, _ := time.ParseInLocation("2006-01-02", periodEndText, time.Local)
 	for index := 0; index < stageCount; index++ {
 		months := monthBase
 		if index < monthRemainder {
@@ -186,7 +188,10 @@ func iepPlanStageDateRangesFromStart(start time.Time, durationMonths int) []stri
 		if months <= 0 {
 			months = 1
 		}
-		end := current.AddDate(0, months, 0).AddDate(0, 0, -1)
+		end := time.Date(current.Year(), current.Month()+time.Month(months), 0, 0, 0, 0, 0, time.Local)
+		if !periodEnd.IsZero() && end.After(periodEnd) {
+			end = periodEnd
+		}
 		ranges = append(ranges, current.Format("2006-01-02")+" - "+end.Format("2006-01-02"))
 		current = end.AddDate(0, 0, 1)
 	}

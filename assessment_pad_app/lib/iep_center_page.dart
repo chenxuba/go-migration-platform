@@ -2,18 +2,39 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'iep_assessment_record_client.dart';
+import 'iep_plan_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
+import 'pad_top_message.dart';
 
-class IepCenterPage extends StatelessWidget {
+class IepCenterPage extends StatefulWidget {
   const IepCenterPage({
     required this.onBack,
     this.recordClient = const ApiIepAssessmentRecordClient(),
+    this.planClient = const ApiIepPlanClient(),
     super.key,
   });
 
   final VoidCallback onBack;
   final IepAssessmentRecordClient recordClient;
+  final IepPlanClient planClient;
+
+  @override
+  State<IepCenterPage> createState() => _IepCenterPageState();
+}
+
+class _IepCenterPageState extends State<IepCenterPage> {
+  IepAssessmentRecordSummary? _selectedRecord;
+
+  void _selectRecord(IepAssessmentRecordSummary record) {
+    final IepAssessmentRecordSummary? current = _selectedRecord;
+    if (current != null && _sameRecord(current, record)) {
+      return;
+    }
+    setState(() {
+      _selectedRecord = record;
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -32,21 +53,28 @@ class IepCenterPage extends StatelessWidget {
                 left: 0,
                 top: 0,
                 right: 0,
-                child: _IepTopBar(onBack: onBack, metrics: metrics),
+                child: _IepTopBar(onBack: widget.onBack, metrics: metrics),
               ),
               Positioned(
                 left: metrics.outer,
                 top: 84,
                 width: metrics.leftWidth,
                 height: 660,
-                child: _StudentQueuePanel(recordClient: recordClient),
+                child: _StudentQueuePanel(
+                  recordClient: widget.recordClient,
+                  selectedRecord: _selectedRecord,
+                  onRecordSelected: _selectRecord,
+                ),
               ),
               Positioned(
                 left: metrics.contentLeft,
                 top: 84,
                 width: metrics.contentWidth,
                 height: 660,
-                child: const _IepWorkspace(),
+                child: _IepWorkspace(
+                  record: _selectedRecord,
+                  planClient: widget.planClient,
+                ),
               ),
             ],
           ),
@@ -222,7 +250,7 @@ List<DateTime> _weekDatesInMonthRange(
     if (cursor.isAfter(monthRange.end)) {
       return <DateTime>[];
     }
-    final DateTime end = _earlierDate(_nextSaturday(cursor), monthRange.end);
+    final DateTime end = _earlierDate(_weekEndForStart(cursor), monthRange.end);
     final List<DateTime> dates = <DateTime>[];
     for (DateTime day = cursor;
         !day.isAfter(end);
@@ -243,9 +271,20 @@ List<DateTime> _weekDatesInMonthRange(
   return <DateTime>[];
 }
 
-DateTime _nextSaturday(DateTime value) {
-  final int offset = (DateTime.saturday - value.weekday) % DateTime.daysPerWeek;
-  return value.add(Duration(days: offset));
+int _lastAvailableWeekInMonthRange(DateTimeRange monthRange) {
+  int lastWeek = 1;
+  for (int weekNumber = 1; weekNumber <= 5; weekNumber += 1) {
+    if (_weekDatesInMonthRange(monthRange, weekNumber).isNotEmpty) {
+      lastWeek = weekNumber;
+    }
+  }
+  return lastWeek;
+}
+
+DateTime _weekEndForStart(DateTime value) {
+  final int daysUntilSunday =
+      (DateTime.sunday - value.weekday) % DateTime.daysPerWeek;
+  return value.add(Duration(days: daysUntilSunday));
 }
 
 String _weekRangeText(List<DateTime> dates) {
@@ -511,9 +550,15 @@ class _PrimaryActionButton extends StatelessWidget {
 }
 
 class _StudentQueuePanel extends StatefulWidget {
-  const _StudentQueuePanel({required this.recordClient});
+  const _StudentQueuePanel({
+    required this.recordClient,
+    required this.selectedRecord,
+    required this.onRecordSelected,
+  });
 
   final IepAssessmentRecordClient recordClient;
+  final IepAssessmentRecordSummary? selectedRecord;
+  final ValueChanged<IepAssessmentRecordSummary> onRecordSelected;
 
   @override
   State<_StudentQueuePanel> createState() => _StudentQueuePanelState();
@@ -522,10 +567,11 @@ class _StudentQueuePanel extends StatefulWidget {
 class _StudentQueuePanelState extends State<_StudentQueuePanel> {
   static const String _authTokenStorageKey = 'auth_token';
 
-  List<_QueueStudent> _students = <_QueueStudent>[];
+  List<IepAssessmentRecordSummary> _records = <IepAssessmentRecordSummary>[];
   bool _loading = true;
   String _error = '';
   int _totalCount = 0;
+  _QueueFilter _filter = _QueueFilter.all;
 
   @override
   void initState() {
@@ -551,15 +597,15 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         return;
       }
       setState(() {
-        _students = page.items.asMap().entries.map((entry) {
-          return _QueueStudent.fromRecord(
-            entry.value,
-            active: entry.key == 0,
-          );
-        }).toList();
+        _records = page.items;
         _totalCount = page.total;
         _loading = false;
       });
+      final IepAssessmentRecordSummary? selectedRecord =
+          _selectedRecordFrom(_visibleRecordsFor(_filter, page.items));
+      if (selectedRecord != null) {
+        widget.onRecordSelected(selectedRecord);
+      }
     } on IepAssessmentRecordApiException catch (error) {
       if (!mounted) {
         return;
@@ -576,6 +622,37 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         _error = '评估记录加载失败：$error';
         _loading = false;
       });
+    }
+  }
+
+  IepAssessmentRecordSummary? _selectedRecordFrom(
+    List<IepAssessmentRecordSummary> records,
+  ) {
+    if (records.isEmpty) {
+      return null;
+    }
+    final IepAssessmentRecordSummary? selectedRecord = widget.selectedRecord;
+    if (selectedRecord != null) {
+      for (final IepAssessmentRecordSummary record in records) {
+        if (_sameRecord(record, selectedRecord)) {
+          return null;
+        }
+      }
+    }
+    return records.first;
+  }
+
+  void _changeFilter(_QueueFilter filter) {
+    if (_filter == filter) {
+      return;
+    }
+    setState(() {
+      _filter = filter;
+    });
+    final IepAssessmentRecordSummary? selectedRecord =
+        _selectedRecordFrom(_visibleRecordsFor(filter, _records));
+    if (selectedRecord != null) {
+      widget.onRecordSelected(selectedRecord);
     }
   }
 
@@ -607,21 +684,27 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
             ],
           ),
           const SizedBox(height: 12),
-          const _QueueTabs(),
+          _QueueTabs(selected: _filter, onChanged: _changeFilter),
           const SizedBox(height: 12),
-          _CompactStatsStrip(students: _students, totalCount: _totalCount),
+          _CompactStatsStrip(records: _records, totalCount: _totalCount),
           const SizedBox(height: 12),
           Expanded(
             child: _QueueList(
-              students: _students,
+              records: _visibleRecords,
+              selectedRecord: widget.selectedRecord,
               loading: _loading,
               error: _error,
               onRetry: _loadRecords,
+              onRecordSelected: widget.onRecordSelected,
             ),
           ),
         ],
       ),
     );
+  }
+
+  List<IepAssessmentRecordSummary> get _visibleRecords {
+    return _visibleRecordsFor(_filter, _records);
   }
 }
 
@@ -655,8 +738,16 @@ class _QueueFilterButton extends StatelessWidget {
   }
 }
 
+enum _QueueFilter { all, pending, draft }
+
 class _QueueTabs extends StatelessWidget {
-  const _QueueTabs();
+  const _QueueTabs({
+    required this.selected,
+    required this.onChanged,
+  });
+
+  final _QueueFilter selected;
+  final ValueChanged<_QueueFilter> onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -668,10 +759,28 @@ class _QueueTabs extends StatelessWidget {
         borderRadius: BorderRadius.circular(17),
       ),
       child: Row(
-        children: const <Widget>[
-          Expanded(child: _QueueTab(label: '全部', active: true)),
-          Expanded(child: _QueueTab(label: '待生成')),
-          Expanded(child: _QueueTab(label: '草稿')),
+        children: <Widget>[
+          Expanded(
+            child: _QueueTab(
+              label: '全部',
+              active: selected == _QueueFilter.all,
+              onTap: () => onChanged(_QueueFilter.all),
+            ),
+          ),
+          Expanded(
+            child: _QueueTab(
+              label: '待生成',
+              active: selected == _QueueFilter.pending,
+              onTap: () => onChanged(_QueueFilter.pending),
+            ),
+          ),
+          Expanded(
+            child: _QueueTab(
+              label: '草稿',
+              active: selected == _QueueFilter.draft,
+              onTap: () => onChanged(_QueueFilter.draft),
+            ),
+          ),
         ],
       ),
     );
@@ -679,33 +788,46 @@ class _QueueTabs extends StatelessWidget {
 }
 
 class _QueueTab extends StatelessWidget {
-  const _QueueTab({required this.label, this.active = false});
+  const _QueueTab({
+    required this.label,
+    required this.onTap,
+    this.active = false,
+  });
 
   final String label;
+  final VoidCallback onTap;
   final bool active;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: active ? Colors.white : Colors.transparent,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        boxShadow: active
-            ? _iepShadow(
-                color: const Color(0x0FB05F32),
-                blur: 8,
-                offset: const Offset(0, 3),
-              )
-            : const <BoxShadow>[],
-      ),
-      child: Text(
-        label,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(
-          color: active ? _IepColors.orangeDeep : _IepColors.text,
-          fontSize: 12,
-          fontWeight: FontWeight.w900,
+        child: Container(
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: active ? Colors.white : Colors.transparent,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: active
+                ? _iepShadow(
+                    color: const Color(0x0FB05F32),
+                    blur: 8,
+                    offset: const Offset(0, 3),
+                  )
+                : const <BoxShadow>[],
+          ),
+          child: Text(
+            label,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: active ? _IepColors.orangeDeep : _IepColors.text,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
         ),
       ),
     );
@@ -714,26 +836,32 @@ class _QueueTab extends StatelessWidget {
 
 class _CompactStatsStrip extends StatelessWidget {
   const _CompactStatsStrip({
-    required this.students,
+    required this.records,
     required this.totalCount,
   });
 
-  final List<_QueueStudent> students;
+  final List<IepAssessmentRecordSummary> records;
   final int totalCount;
 
   @override
   Widget build(BuildContext context) {
-    final int pendingCount = students
-        .where((_QueueStudent student) => student.status == '待生成')
+    final int pendingCount = records
+        .where((IepAssessmentRecordSummary record) =>
+            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
+            '待生成')
         .length;
-    final int draftCount = students
-        .where((_QueueStudent student) => student.status == '草稿')
+    final int draftCount = records
+        .where((IepAssessmentRecordSummary record) =>
+            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
+            '草稿')
         .length;
-    final int confirmedCount = students
-        .where((_QueueStudent student) => student.status == '已确认')
+    final int confirmedCount = records
+        .where((IepAssessmentRecordSummary record) =>
+            _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label ==
+            '已确认')
         .length;
     final String totalText =
-        totalCount > 0 ? totalCount.toString() : students.length.toString();
+        totalCount > 0 ? totalCount.toString() : records.length.toString();
     return Container(
       height: 58,
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -803,16 +931,20 @@ class _StatDivider extends StatelessWidget {
 
 class _QueueList extends StatelessWidget {
   const _QueueList({
-    required this.students,
+    required this.records,
+    required this.selectedRecord,
     required this.loading,
     required this.error,
     required this.onRetry,
+    required this.onRecordSelected,
   });
 
-  final List<_QueueStudent> students;
+  final List<IepAssessmentRecordSummary> records;
+  final IepAssessmentRecordSummary? selectedRecord;
   final bool loading;
   final String error;
   final VoidCallback onRetry;
+  final ValueChanged<IepAssessmentRecordSummary> onRecordSelected;
 
   @override
   Widget build(BuildContext context) {
@@ -831,7 +963,7 @@ class _QueueList extends StatelessWidget {
         onAction: onRetry,
       );
     }
-    if (students.isEmpty) {
+    if (records.isEmpty) {
       return const _QueueStateView(
         icon: Icons.assignment_outlined,
         title: '暂无评估记录',
@@ -841,10 +973,19 @@ class _QueueList extends StatelessWidget {
     return ListView.separated(
       physics: const ClampingScrollPhysics(),
       padding: EdgeInsets.zero,
-      itemCount: students.length,
+      itemCount: records.length,
       separatorBuilder: (_, __) => const SizedBox(height: 10),
       itemBuilder: (BuildContext context, int index) {
-        return _QueueStudentCard(student: students[index]);
+        final IepAssessmentRecordSummary record = records[index];
+        return _QueueStudentCard(
+          student: _QueueStudent.fromRecord(
+            record,
+            active: selectedRecord == null
+                ? index == 0
+                : _sameRecord(record, selectedRecord!),
+          ),
+          onTap: () => onRecordSelected(record),
+        );
       },
     );
   }
@@ -1089,91 +1230,209 @@ String _recordPeriodText(IepAssessmentRecordSummary record) {
   return _formatDotRange(start, end);
 }
 
+bool _sameRecord(
+  IepAssessmentRecordSummary left,
+  IepAssessmentRecordSummary right,
+) {
+  return left.id == right.id &&
+      left.source.trim().toUpperCase() == right.source.trim().toUpperCase();
+}
+
+List<IepAssessmentRecordSummary> _visibleRecordsFor(
+  _QueueFilter filter,
+  List<IepAssessmentRecordSummary> records,
+) {
+  return records.where((IepAssessmentRecordSummary record) {
+    final String status =
+        _QueueStatusStyle.fromPlanStatus(record.iepPlanStatus).label;
+    return switch (filter) {
+      _QueueFilter.all => true,
+      _QueueFilter.pending => status == '待生成',
+      _QueueFilter.draft => status == '草稿',
+    };
+  }).toList(growable: false);
+}
+
+String _workspaceTitle(IepAssessmentRecordSummary? record, IepPlan? plan) {
+  final String studentName = plan?.student.name.trim().isNotEmpty == true
+      ? plan!.student.name.trim()
+      : (record?.studentName.trim().isNotEmpty == true
+          ? record!.studentName.trim()
+          : '未选择学员');
+  final String planTitle =
+      plan?.title.trim().isNotEmpty == true ? plan!.title.trim() : '康复教学计划';
+  return '$studentName · $planTitle';
+}
+
+String _planStatusText(String? status) {
+  return status?.trim() == 'confirmed' ? '已确认' : '草稿';
+}
+
+List<_DocDomainData> _docDomainsFromPlan(IepPlan plan) {
+  final Map<String, List<IepPlanRow>> grouped = <String, List<IepPlanRow>>{};
+  for (final IepPlanRow row in plan.rows) {
+    final String domain = row.domain.trim().isEmpty ? '未分领域' : row.domain;
+    grouped.putIfAbsent(domain, () => <IepPlanRow>[]).add(row);
+  }
+  return grouped.entries.map((MapEntry<String, List<IepPlanRow>> entry) {
+    final List<String> longGoals = entry.value
+        .map((IepPlanRow row) => row.longGoal.trim())
+        .where((String value) => value.isNotEmpty)
+        .toSet()
+        .toList();
+    final List<_DocShortGoalData> shortGoals =
+        entry.value.map((IepPlanRow row) {
+      return _DocShortGoalData(
+        row.shortGoal,
+        row.courseForm.trim().isEmpty ? '个训' : row.courseForm,
+        row.startEndDate,
+      );
+    }).toList();
+    return _DocDomainData(
+      domain: entry.key,
+      longGoals: longGoals.isEmpty ? <String>[''] : longGoals,
+      shortGoals: shortGoals.isEmpty
+          ? <_DocShortGoalData>[const _DocShortGoalData('', '个训', '')]
+          : shortGoals,
+    );
+  }).toList();
+}
+
+_MonthDomainData _monthDomainFromPlanRow(IepMonthlyPlanRow row) {
+  return _MonthDomainData(
+    domain: row.domain,
+    longGoal: row.longGoal,
+    shortGoal: row.shortGoal,
+    lesson: row.courseForm.trim().isEmpty ? '个训' : row.courseForm,
+    trainings: row.trainingItems.isEmpty
+        ? <_MonthTrainingData>[const _MonthTrainingData('', '')]
+        : row.trainingItems.map((IepMonthlyTrainingItem item) {
+            return _MonthTrainingData(item.content, item.startEndDate);
+          }).toList(),
+  );
+}
+
+_WeekTrainingRow _weekTrainingRowFromPlanRow(IepWeeklyPlanRow row) {
+  return _WeekTrainingRow(project: row.project, content: row.content);
+}
+
+String _metaRangeText(IepPlanMeta? meta, {required String fallback}) {
+  if (meta == null) {
+    return fallback;
+  }
+  if (meta.startDate.isEmpty || meta.endDate.isEmpty) {
+    return fallback;
+  }
+  return '${meta.startDate} 至 ${meta.endDate}';
+}
+
+List<DateTime>? _dateListFromStrings(List<String>? values) {
+  if (values == null || values.isEmpty) {
+    return null;
+  }
+  final List<DateTime> dates = values
+      .map((String value) => DateTime.tryParse(value.trim()))
+      .whereType<DateTime>()
+      .map(_dateOnly)
+      .toList();
+  return dates.isEmpty ? null : dates;
+}
+
 class _QueueStudentCard extends StatelessWidget {
-  const _QueueStudentCard({required this.student});
+  const _QueueStudentCard({required this.student, required this.onTap});
 
   final _QueueStudent student;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 80,
-      padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
-      decoration: BoxDecoration(
-        color: student.active ? const Color(0xFFFFF3EB) : Colors.white,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(14),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color:
-              student.active ? const Color(0xFFFFB792) : _IepColors.lightLine,
-          width: student.active ? 1.4 : 1,
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          _QueueAvatar(asset: student.avatarAsset, active: student.active),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '${student.name} · ${student.age}',
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _IepColors.ink,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    _StatusPill(
-                      text: student.status,
-                      color: student.statusColor,
-                      bg: student.statusBg,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  student.assessment,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _IepColors.text,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    height: 1,
-                  ),
-                ),
-                const SizedBox(height: 6),
-                Row(
-                  children: <Widget>[
-                    const Icon(
-                      Icons.date_range_rounded,
-                      size: 13,
-                      color: _IepColors.muted,
-                    ),
-                    const SizedBox(width: 4),
-                    Expanded(
-                      child: Text(
-                        student.period,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _IepColors.muted,
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          height: 1,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+        child: Container(
+          height: 80,
+          padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 8),
+          decoration: BoxDecoration(
+            color: student.active ? const Color(0xFFFFF3EB) : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: student.active
+                  ? const Color(0xFFFFB792)
+                  : _IepColors.lightLine,
+              width: student.active ? 1.4 : 1,
             ),
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              _QueueAvatar(asset: student.avatarAsset, active: student.active),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Row(
+                      children: <Widget>[
+                        Expanded(
+                          child: Text(
+                            '${student.name} · ${student.age}',
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _IepColors.ink,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        _StatusPill(
+                          text: student.status,
+                          color: student.statusColor,
+                          bg: student.statusBg,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Text(
+                      student.assessment,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _IepColors.text,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                        height: 1,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      children: <Widget>[
+                        const Icon(
+                          Icons.date_range_rounded,
+                          size: 13,
+                          color: _IepColors.muted,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            student.period,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _IepColors.muted,
+                              fontSize: 11,
+                              fontWeight: FontWeight.w700,
+                              height: 1,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -1256,28 +1515,182 @@ class _StatusPill extends StatelessWidget {
 enum _IepPreviewMode { total, month, week }
 
 class _IepWorkspace extends StatefulWidget {
-  const _IepWorkspace();
+  const _IepWorkspace({
+    required this.record,
+    required this.planClient,
+  });
+
+  final IepAssessmentRecordSummary? record;
+  final IepPlanClient planClient;
 
   @override
   State<_IepWorkspace> createState() => _IepWorkspaceState();
 }
 
 class _IepWorkspaceState extends State<_IepWorkspace> {
+  static const String _authTokenStorageKey = 'auth_token';
+
   _IepPreviewMode _previewMode = _IepPreviewMode.total;
   String _previewMonth = '5月';
   int _previewWeek = 2;
   DateTime _periodStart = DateTime(2026, 5);
+  DateTime? _periodEndOverride;
   int _periodMonthCount = 3;
   _GoalEditRequest? _selectedGoal;
-  late List<_DocDomainData> _totalPlanDomains =
-      List<_DocDomainData>.from(_DocPlanRows.initialDomains);
+  List<_DocDomainData> _totalPlanDomains = <_DocDomainData>[];
+  IepPlanSaved? _savedPlan;
+  IepExecutionPlansSaved? _executionPlans;
+  bool _loadingPlan = false;
+  bool _syncingPeriod = false;
+  String _planError = '';
+  int _loadTicket = 0;
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
 
-  DateTime get _periodEnd => _periodEndFor(_periodStart, _periodMonthCount);
+  DateTime get _periodEnd =>
+      _periodEndOverride ?? _periodEndFor(_periodStart, _periodMonthCount);
 
   List<String> get _periodMonths =>
       _periodMonthLabels(_periodStart, _periodMonthCount);
 
+  @override
+  void initState() {
+    super.initState();
+    _syncPreviewMonthToPeriod();
+    _loadPlanBundle();
+  }
+
+  @override
+  void didUpdateWidget(covariant _IepWorkspace oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.record?.id != widget.record?.id ||
+        oldWidget.record?.source != widget.record?.source) {
+      _previewMode = _IepPreviewMode.total;
+      _selectedGoal = null;
+      _totalPlanDomains = <_DocDomainData>[];
+      _savedPlan = null;
+      _executionPlans = null;
+      _planError = '';
+      _initPeriodFromRecord(widget.record);
+      _syncPreviewMonthToPeriod();
+      _loadPlanBundle();
+    }
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadPlanBundle() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      setState(() {
+        _loadingPlan = false;
+        _planError = '';
+        _savedPlan = null;
+        _executionPlans = null;
+        _totalPlanDomains = <_DocDomainData>[];
+      });
+      return;
+    }
+    final int ticket = ++_loadTicket;
+    setState(() {
+      _loadingPlan = true;
+      _planError = '';
+    });
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanSaved savedPlan = await widget.planClient.fetchIepPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+      );
+      IepExecutionPlansSaved executionPlans =
+          IepExecutionPlansSaved.empty(_periodMonthCount);
+      if (savedPlan.hasContent) {
+        executionPlans = await widget.planClient.fetchExecutionPlans(
+          token,
+          record: record,
+          durationMonths: savedPlan.durationMonths,
+        );
+      }
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _savedPlan = savedPlan;
+        _executionPlans = executionPlans;
+        _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+        _applyPeriodFromPlan(savedPlan.plan, record);
+        _totalPlanDomains = savedPlan.plan == null
+            ? <_DocDomainData>[]
+            : _docDomainsFromPlan(savedPlan.plan!);
+        _syncPreviewMonthToPeriod();
+      });
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _planError = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      setState(() {
+        _loadingPlan = false;
+        _planError = 'IEP计划加载失败：$error';
+      });
+    }
+  }
+
+  void _initPeriodFromRecord(IepAssessmentRecordSummary? record) {
+    final DateTime? assessmentDate =
+        DateTime.tryParse(record?.assessmentDate.trim() ?? '');
+    if (assessmentDate == null) {
+      return;
+    }
+    _periodStart = DateTime(assessmentDate.year, assessmentDate.month);
+    _periodEndOverride = null;
+  }
+
+  void _applyPeriodFromPlan(IepPlan? plan, IepAssessmentRecordSummary record) {
+    final DateTime? planStart = DateTime.tryParse(plan?.meta.startDate ?? '');
+    final DateTime? planEnd = DateTime.tryParse(plan?.meta.endDate ?? '');
+    if (planStart != null) {
+      _periodStart = _dateOnly(planStart);
+    } else {
+      _initPeriodFromRecord(record);
+    }
+    _periodEndOverride = planEnd == null ? null : _dateOnly(planEnd);
+  }
+
+  void _syncPreviewMonthToPeriod() {
+    final List<String> months = _periodMonths;
+    if (months.isEmpty) {
+      return;
+    }
+    if (!months.contains(_previewMonth)) {
+      _previewMonth = months.first;
+      _previewWeek = 1;
+    }
+  }
+
+  int _previewMonthIndex() {
+    final int index = _periodMonths.indexOf(_previewMonth);
+    return index < 0 ? 1 : index + 1;
+  }
+
   Future<void> _showEditPeriodDialog() async {
+    if (_syncingPeriod) {
+      return;
+    }
     final _IepPeriodDraft? draft = await showDialog<_IepPeriodDraft>(
       context: context,
       barrierColor: const Color(0x33000000),
@@ -1293,28 +1706,118 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     if (draft == null || !mounted) {
       return;
     }
+    await _syncPeriodStart(draft.start);
+  }
+
+  Future<void> _syncPeriodStart(DateTime start) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (_savedPlan?.hasContent != true) {
+      _showMessage('请先生成IEP计划后再调整周期');
+      return;
+    }
+    final DateTime nextStart = _dateOnly(start);
+    if (_dateOnly(_periodStart) == nextStart) {
+      return;
+    }
+    ++_loadTicket;
+    final int sourceDurationMonths = _savedPlan?.durationMonths == 6 ? 6 : 3;
     setState(() {
-      _periodStart = draft.start;
-      final List<String> months = _periodMonths;
-      if (!months.contains(_previewMonth)) {
-        _previewMonth = months.first;
-      }
-      if (_previewMode == _IepPreviewMode.week) {
-        final DateTime monthDate = _monthDateFromLabel(
-          _periodStart,
-          _periodMonthCount,
-          _previewMonth,
-        );
-        final DateTimeRange monthRange = _monthRangeInPeriod(
-          periodStart: _periodStart,
-          monthCount: _periodMonthCount,
-          monthDate: monthDate,
-        );
-        if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
-          _previewWeek = 1;
-        }
-      }
+      _syncingPeriod = true;
+      _planError = '';
     });
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanPeriodSyncResult result =
+          await widget.planClient.syncIepPlanPeriod(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        sourceDurationMonths: sourceDurationMonths,
+        startDate: nextStart,
+      );
+      if (!mounted) {
+        return;
+      }
+      _applySyncedPlanBundle(result.iepPlan, result.executionPlans, record);
+      _showMessage('计划周期和关联月/周计划日期已同步保存', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _syncingPeriod = false;
+        _planError = error.message;
+      });
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final String message = '同步计划周期失败：$error';
+      setState(() {
+        _syncingPeriod = false;
+        _planError = message;
+      });
+      _showMessage(message);
+    }
+  }
+
+  void _applySyncedPlanBundle(
+    IepPlanSaved savedPlan,
+    IepExecutionPlansSaved executionPlans,
+    IepAssessmentRecordSummary record,
+  ) {
+    setState(() {
+      _syncingPeriod = false;
+      _loadingPlan = false;
+      _savedPlan = savedPlan;
+      _executionPlans = executionPlans;
+      _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+      _applyPeriodFromPlan(savedPlan.plan, record);
+      _totalPlanDomains = savedPlan.plan == null
+          ? <_DocDomainData>[]
+          : _docDomainsFromPlan(savedPlan.plan!);
+      _syncPreviewMonthToPeriod();
+      _ensurePreviewWeekInRange();
+    });
+  }
+
+  void _ensurePreviewWeekInRange() {
+    if (_previewMode != _IepPreviewMode.week) {
+      return;
+    }
+    final DateTime monthDate = _monthDateFromLabel(
+      _periodStart,
+      _periodMonthCount,
+      _previewMonth,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: monthDate,
+    );
+    if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
+      _previewWeek = 1;
+    }
+  }
+
+  void _showMessage(String message,
+      {PadMessageTone tone = PadMessageTone.info}) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 84,
+      key: 'iep-center-message',
+    );
   }
 
   void _showTotalPlan() {
@@ -1333,10 +1836,23 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
   }
 
   void _showWeekPlan(String month, int weekNumber) {
+    final DateTime monthDate = _monthDateFromLabel(
+      _periodStart,
+      _periodMonthCount,
+      month,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: monthDate,
+    );
+    final int week = _weekDatesInMonthRange(monthRange, weekNumber).isEmpty
+        ? _lastAvailableWeekInMonthRange(monthRange)
+        : weekNumber;
     setState(() {
       _previewMode = _IepPreviewMode.week;
       _previewMonth = month;
-      _previewWeek = weekNumber;
+      _previewWeek = week;
       _selectedGoal = null;
     });
   }
@@ -1347,27 +1863,15 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
     }
     setState(() {
       _periodMonthCount = monthCount;
+      _periodEndOverride = null;
       final List<String> months = _periodMonths;
       if (!months.contains(_previewMonth)) {
         _previewMonth = months.first;
         _previewWeek = 1;
       }
-      if (_previewMode == _IepPreviewMode.week) {
-        final DateTime monthDate = _monthDateFromLabel(
-          _periodStart,
-          _periodMonthCount,
-          _previewMonth,
-        );
-        final DateTimeRange monthRange = _monthRangeInPeriod(
-          periodStart: _periodStart,
-          monthCount: _periodMonthCount,
-          monthDate: monthDate,
-        );
-        if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
-          _previewWeek = 1;
-        }
-      }
+      _ensurePreviewWeekInRange();
     });
+    _loadPlanBundle();
   }
 
   Future<void> _showGoalEditDialog(_GoalEditRequest request) async {
@@ -1426,6 +1930,14 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
 
   @override
   Widget build(BuildContext context) {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final IepPlan? plan = _savedPlan?.plan;
+    final IepMonthlyPlan? monthPlan =
+        _executionPlans?.monthPlan(_previewMonthIndex());
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final String title = _workspaceTitle(record, plan);
+    final String statusText = _planStatusText(_savedPlan?.status);
     return Container(
       padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
       decoration: BoxDecoration(
@@ -1436,6 +1948,8 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
       child: Column(
         children: <Widget>[
           _WorkspaceHeader(
+            title: title,
+            statusText: statusText,
             periodText: _formatDotRange(_periodStart, _periodEnd),
           ),
           const SizedBox(height: 10),
@@ -1446,7 +1960,9 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
             onEditPeriod: _showEditPeriodDialog,
             monthLabels: _periodMonths,
             periodMonthCount: _periodMonthCount,
+            periodStart: _periodStart,
             onPeriodMonthCountChanged: _changePeriodMonthCount,
+            syncingPeriod: _syncingPeriod,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -1456,6 +1972,13 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
               weekNumber: _previewWeek,
               periodStart: _periodStart,
               periodMonthCount: _periodMonthCount,
+              record: record,
+              plan: plan,
+              monthPlan: monthPlan,
+              weekPlan: weekPlan,
+              loading: _loadingPlan,
+              error: _planError,
+              onRetry: _loadPlanBundle,
               totalPlanDomains: _totalPlanDomains,
               selectedGoal: _selectedGoal,
               onGoalTap: _handleGoalTap,
@@ -1469,8 +1992,14 @@ class _IepWorkspaceState extends State<_IepWorkspace> {
 }
 
 class _WorkspaceHeader extends StatelessWidget {
-  const _WorkspaceHeader({required this.periodText});
+  const _WorkspaceHeader({
+    required this.title,
+    required this.statusText,
+    required this.periodText,
+  });
 
+  final String title;
+  final String statusText;
   final String periodText;
 
   @override
@@ -1479,11 +2008,11 @@ class _WorkspaceHeader extends StatelessWidget {
       height: 42,
       child: Row(
         children: <Widget>[
-          const Expanded(
+          Expanded(
             child: Text(
-              '陈旭 · 康复教学季度计划',
+              title,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(
+              style: const TextStyle(
                 color: _IepColors.ink,
                 fontSize: 19,
                 fontWeight: FontWeight.w900,
@@ -1491,10 +2020,13 @@ class _WorkspaceHeader extends StatelessWidget {
               ),
             ),
           ),
-          const _HeaderMetaPill(
-            icon: Icons.verified_rounded,
-            text: '已确认',
-            iconColor: _IepColors.green,
+          _HeaderMetaPill(
+            icon: statusText == '已确认'
+                ? Icons.verified_rounded
+                : Icons.pending_actions_rounded,
+            text: statusText,
+            iconColor:
+                statusText == '已确认' ? _IepColors.green : _IepColors.yellow,
           ),
           const SizedBox(width: 10),
           _HeaderMetaPill(
@@ -1620,7 +2152,9 @@ class _PlanToolbar extends StatelessWidget {
     required this.onEditPeriod,
     required this.monthLabels,
     required this.periodMonthCount,
+    required this.periodStart,
     required this.onPeriodMonthCountChanged,
+    required this.syncingPeriod,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -1629,7 +2163,9 @@ class _PlanToolbar extends StatelessWidget {
   final VoidCallback onEditPeriod;
   final List<String> monthLabels;
   final int periodMonthCount;
+  final DateTime periodStart;
   final ValueChanged<int> onPeriodMonthCountChanged;
+  final bool syncingPeriod;
 
   @override
   Widget build(BuildContext context) {
@@ -1655,13 +2191,17 @@ class _PlanToolbar extends StatelessWidget {
               onShowMonthPlan: onShowMonthPlan,
               onShowWeekPlan: onShowWeekPlan,
               monthLabels: monthLabels,
+              periodStart: periodStart,
+              periodMonthCount: periodMonthCount,
             ),
           ),
           const _ToolbarDivider(),
           _TableTinyAction(
-            icon: Icons.edit_calendar_rounded,
-            label: '编辑周期',
-            onTap: onEditPeriod,
+            icon: syncingPeriod
+                ? Icons.hourglass_top_rounded
+                : Icons.edit_calendar_rounded,
+            label: syncingPeriod ? '同步中' : '编辑周期',
+            onTap: syncingPeriod ? null : onEditPeriod,
           ),
           const SizedBox(width: 8),
           const _TableTinyAction(icon: Icons.refresh_rounded, label: '重新生成'),
@@ -1677,12 +2217,16 @@ class _ScrollablePlanNav extends StatefulWidget {
     required this.onShowMonthPlan,
     required this.onShowWeekPlan,
     required this.monthLabels,
+    required this.periodStart,
+    required this.periodMonthCount,
   });
 
   final VoidCallback onShowTotalPlan;
   final ValueChanged<String> onShowMonthPlan;
   final void Function(String month, int weekNumber) onShowWeekPlan;
   final List<String> monthLabels;
+  final DateTime periodStart;
+  final int periodMonthCount;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -1706,6 +2250,10 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
         widget.monthLabels.isNotEmpty) {
       _selectedMonth = widget.monthLabels.first;
       _selectedWeek = null;
+    }
+    final int maxWeek = _weekCountForSelectedMonth();
+    if (_selectedWeek != null && _selectedWeek! > maxWeek) {
+      _selectedWeek = maxWeek;
     }
     WidgetsBinding.instance.addPostFrameCallback((_) => _syncHints());
   }
@@ -1782,8 +2330,23 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
     super.dispose();
   }
 
+  int _weekCountForSelectedMonth() {
+    final DateTime selectedMonthDate = _monthDateFromLabel(
+      widget.periodStart,
+      widget.periodMonthCount,
+      _selectedMonth,
+    );
+    final DateTimeRange selectedMonthRange = _monthRangeInPeriod(
+      periodStart: widget.periodStart,
+      monthCount: widget.periodMonthCount,
+      monthDate: selectedMonthDate,
+    );
+    return _lastAvailableWeekInMonthRange(selectedMonthRange);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final int weekCount = _weekCountForSelectedMonth();
     return Center(
       child: SizedBox(
         height: 34,
@@ -1820,7 +2383,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                         );
                       }),
                       const _PlanNavLabel(text: '周计划'),
-                      ...List<Widget>.generate(5, (int index) {
+                      ...List<Widget>.generate(weekCount, (int index) {
                         final int weekNumber = index + 1;
                         return _PlanTab(
                           text: '${_selectedMonth} W$weekNumber',
@@ -1828,7 +2391,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                           active: _selectedSection == 'week' &&
                               _selectedWeek == weekNumber,
                           activeTone: _PlanTabTone.week,
-                          rightGap: weekNumber == 5 ? 2 : 6,
+                          rightGap: weekNumber == weekCount ? 2 : 6,
                           onTap: () => _selectWeek(weekNumber),
                         );
                       }),
@@ -2050,19 +2613,23 @@ class _TableTinyAction extends StatelessWidget {
           height: 30,
           padding: const EdgeInsets.symmetric(horizontal: 9),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: onTap == null ? const Color(0xFFF8EEE6) : Colors.white,
             borderRadius: BorderRadius.circular(15),
             border: Border.all(color: _IepColors.line),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
-              Icon(icon, color: _IepColors.text, size: 16),
+              Icon(
+                icon,
+                color: onTap == null ? _IepColors.muted : _IepColors.text,
+                size: 16,
+              ),
               const SizedBox(width: 5),
               Text(
                 label,
-                style: const TextStyle(
-                  color: _IepColors.text,
+                style: TextStyle(
+                  color: onTap == null ? _IepColors.muted : _IepColors.text,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
@@ -3404,6 +3971,13 @@ class _IepTablePreview extends StatelessWidget {
     required this.weekNumber,
     required this.periodStart,
     required this.periodMonthCount,
+    required this.record,
+    required this.plan,
+    required this.monthPlan,
+    required this.weekPlan,
+    required this.loading,
+    required this.error,
+    required this.onRetry,
     required this.totalPlanDomains,
     required this.selectedGoal,
     required this.onGoalTap,
@@ -3415,6 +3989,13 @@ class _IepTablePreview extends StatelessWidget {
   final int weekNumber;
   final DateTime periodStart;
   final int periodMonthCount;
+  final IepAssessmentRecordSummary? record;
+  final IepPlan? plan;
+  final IepMonthlyPlan? monthPlan;
+  final IepWeeklyPlan? weekPlan;
+  final bool loading;
+  final String error;
+  final VoidCallback onRetry;
   final List<_DocDomainData> totalPlanDomains;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
@@ -3437,33 +4018,68 @@ class _IepTablePreview extends StatelessWidget {
       weekNumber,
     );
 
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _IepColors.line),
-      ),
-      child: switch (previewMode) {
-        _IepPreviewMode.month => _WordTableFrame(
-            child: _MonthPlanTable(
-              month: month,
-              monthRange: monthRange,
-            ),
-          ),
-        _IepPreviewMode.week => _WordTableFrame(
-            child: _WeekPlanTable(
-              month: month,
-              weekNumber: weekNumber,
-              weekDates: weekDates,
-            ),
-          ),
+    Widget child;
+    if (record == null) {
+      child = const _PlanStateView(
+        icon: Icons.touch_app_rounded,
+        title: '请选择左侧评估记录',
+        message: '选择学员后会读取对应IEP计划',
+      );
+    } else if (loading) {
+      child = const _PlanStateView(
+        icon: Icons.hourglass_top_rounded,
+        title: '正在加载IEP计划',
+      );
+    } else if (error.trim().isNotEmpty) {
+      child = _PlanStateView(
+        icon: Icons.wifi_off_rounded,
+        title: 'IEP计划加载失败',
+        message: error,
+        actionLabel: '重试',
+        onAction: onRetry,
+      );
+    } else if (plan == null || totalPlanDomains.isEmpty) {
+      child = const _PlanStateView(
+        icon: Icons.assignment_outlined,
+        title: '暂无已生成IEP',
+        message: '确认IEP后会在这里展示总计划、月计划和周计划',
+      );
+    } else {
+      child = switch (previewMode) {
+        _IepPreviewMode.month => monthPlan == null
+            ? _PlanStateView(
+                icon: Icons.calendar_month_rounded,
+                title: '$month计划未生成',
+                message: plan?.title ?? 'IEP总计划',
+              )
+            : _WordTableFrame(
+                child: _MonthPlanTable(
+                  month: month,
+                  monthRange: monthRange,
+                  plan: monthPlan,
+                ),
+              ),
+        _IepPreviewMode.week => weekPlan == null
+            ? _PlanStateView(
+                icon: Icons.view_week_rounded,
+                title: '$month W$weekNumber 周计划未生成',
+                message: plan?.title ?? 'IEP总计划',
+              )
+            : _WordTableFrame(
+                child: _WeekPlanTable(
+                  month: month,
+                  weekNumber: weekNumber,
+                  weekDates: weekDates,
+                  plan: weekPlan,
+                ),
+              ),
         _IepPreviewMode.total => _WordTableFrame(
             child: _WordTable(
               periodText: _formatZhRange(
                 periodStart,
                 _periodEndFor(periodStart, periodMonthCount),
               ),
+              plan: plan,
               domains: totalPlanDomains,
               selectedGoal: selectedGoal,
               onGoalTap: onGoalTap,
@@ -3471,7 +4087,81 @@ class _IepTablePreview extends StatelessWidget {
             ),
             height: _WordTable.heightFor(totalPlanDomains),
           ),
-      },
+      };
+    }
+
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 14, 14, 12),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _IepColors.line),
+      ),
+      child: child,
+    );
+  }
+}
+
+class _PlanStateView extends StatelessWidget {
+  const _PlanStateView({
+    required this.icon,
+    required this.title,
+    this.message = '',
+    this.actionLabel = '',
+    this.onAction,
+  });
+
+  final IconData icon;
+  final String title;
+  final String message;
+  final String actionLabel;
+  final VoidCallback? onAction;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        width: 340,
+        padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 22),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: _IepColors.lightLine),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Icon(icon, size: 34, color: _IepColors.orangeDeep),
+            const SizedBox(height: 10),
+            Text(
+              title,
+              textAlign: TextAlign.center,
+              style: const TextStyle(
+                color: _IepColors.ink,
+                fontSize: 15,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            if (message.trim().isNotEmpty) ...<Widget>[
+              const SizedBox(height: 7),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  height: 1.35,
+                ),
+              ),
+            ],
+            if (actionLabel.trim().isNotEmpty && onAction != null) ...<Widget>[
+              const SizedBox(height: 12),
+              _MiniQueueAction(label: actionLabel, onTap: onAction!),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
@@ -3479,6 +4169,7 @@ class _IepTablePreview extends StatelessWidget {
 class _WordTable extends StatelessWidget {
   const _WordTable({
     required this.periodText,
+    required this.plan,
     required this.domains,
     required this.selectedGoal,
     required this.onGoalTap,
@@ -3486,6 +4177,7 @@ class _WordTable extends StatelessWidget {
   });
 
   final String periodText;
+  final IepPlan? plan;
   final List<_DocDomainData> domains;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
@@ -3512,40 +4204,55 @@ class _WordTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final IepPlan? currentPlan = plan;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: onClearSelectedGoal,
       child: Column(
         children: <Widget>[
-          const _WordTableTitle(),
+          _WordTableTitle(title: currentPlan?.title ?? '康复教学季度计划'),
           _DocTableRow(
             height: 42,
             cells: <_DocCellData>[
               _DocCellData(text: '姓名', columns: 1, bold: true),
-              _DocCellData(text: '陈旭', columns: 1),
+              _DocCellData(text: currentPlan?.student.name ?? '-', columns: 1),
               _DocCellData(text: '性别', columns: 1, bold: true),
-              _DocCellData(text: '-', columns: 1),
+              _DocCellData(
+                  text: currentPlan?.student.gender ?? '-', columns: 1),
               _DocCellData(text: '出生年月', columns: 1, bold: true),
-              _DocCellData(text: '2022-05-11', columns: 3, last: true),
+              _DocCellData(
+                text: currentPlan?.student.birthDate ?? '-',
+                columns: 3,
+                last: true,
+              ),
             ],
           ),
           _DocTableRow(
             height: 42,
             cells: <_DocCellData>[
               _DocCellData(text: '制定日期', columns: 1, bold: true),
-              _DocCellData(text: '2026-05-07', columns: 3),
+              _DocCellData(text: currentPlan?.meta.planDate ?? '-', columns: 3),
               _DocCellData(text: '计划参与者', columns: 1, bold: true),
-              _DocCellData(text: '陈瑞', columns: 3, last: true),
+              _DocCellData(
+                text: currentPlan?.meta.participant ?? '-',
+                columns: 3,
+                last: true,
+              ),
             ],
           ),
           _DocTableRow(
             height: 42,
             cells: <_DocCellData>[
               _DocCellData(text: '实施者', columns: 1, bold: true),
-              _DocCellData(text: '陈瑞', columns: 3),
+              _DocCellData(
+                  text: currentPlan?.meta.implementer ?? '-', columns: 3),
               _DocCellData(text: '实施\n起止日期', columns: 1, bold: true),
               _DocCellData(
-                  text: periodText, columns: 3, noWrap: true, last: true),
+                text: _metaRangeText(currentPlan?.meta, fallback: periodText),
+                columns: 3,
+                noWrap: true,
+                last: true,
+              ),
             ],
           ),
           _DocTableRow(
@@ -3610,11 +4317,13 @@ class _WeekPlanTable extends StatelessWidget {
     required this.month,
     required this.weekNumber,
     required this.weekDates,
+    required this.plan,
   });
 
   final String month;
   final int weekNumber;
   final List<DateTime> weekDates;
+  final IepWeeklyPlan? plan;
 
   static const List<int> _columns = <int>[
     1300,
@@ -3629,7 +4338,7 @@ class _WeekPlanTable extends StatelessWidget {
     698,
   ];
 
-  static const List<_WeekTrainingRow> _rows = <_WeekTrainingRow>[
+  static const List<_WeekTrainingRow> _fallbackRows = <_WeekTrainingRow>[
     _WeekTrainingRow(
       project: '平衡木行走',
       content:
@@ -3683,21 +4392,40 @@ class _WeekPlanTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final IepWeeklyPlan? currentPlan = plan;
+    final List<_WeekTrainingRow> rows = currentPlan?.rows
+            .map(_weekTrainingRowFromPlanRow)
+            .where((_WeekTrainingRow row) =>
+                row.project.trim().isNotEmpty || row.content.trim().isNotEmpty)
+            .toList() ??
+        _fallbackRows;
+    final List<DateTime> displayWeekDates =
+        _dateListFromStrings(currentPlan?.weekDates) ?? weekDates;
     return Column(
       children: <Widget>[
-        _WordTableTitle(title: '康复教学周计划日记录卡$month第$weekNumber周'),
-        _WeekInfoRows(periodText: _weekRangeText(weekDates)),
-        _WeekHeaderRows(dates: weekDates),
-        _WeekTrainingRows(rows: _rows),
+        _WordTableTitle(
+          title: currentPlan?.title.trim().isNotEmpty == true
+              ? currentPlan!.title
+              : '康复教学周计划日记录卡$month第$weekNumber周',
+        ),
+        _WeekInfoRows(
+          plan: currentPlan,
+          periodText: currentPlan?.trainingDate.trim().isNotEmpty == true
+              ? currentPlan!.trainingDate
+              : _weekRangeText(displayWeekDates),
+        ),
+        _WeekHeaderRows(dates: displayWeekDates),
+        _WeekTrainingRows(rows: rows),
       ],
     );
   }
 }
 
 class _WeekInfoRows extends StatelessWidget {
-  const _WeekInfoRows({required this.periodText});
+  const _WeekInfoRows({required this.periodText, required this.plan});
 
   final String periodText;
+  final IepWeeklyPlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -3707,20 +4435,34 @@ class _WeekInfoRows extends StatelessWidget {
           height: 42,
           cells: <_WeekDocCellData>[
             _WeekDocCellData(text: '姓名', columns: 1, bold: true),
-            _WeekDocCellData(text: '陈旭', columns: 1),
+            _WeekDocCellData(text: plan?.student.name ?? '-', columns: 1),
             _WeekDocCellData(text: '性别', columns: 1, bold: true),
-            _WeekDocCellData(text: '-', columns: 1),
+            _WeekDocCellData(text: plan?.student.gender ?? '-', columns: 1),
             _WeekDocCellData(text: '出生年月', columns: 2, bold: true),
-            _WeekDocCellData(text: '2022-05-11', columns: 4, last: true),
+            _WeekDocCellData(
+              text: plan?.student.birthDate ?? '-',
+              columns: 4,
+              last: true,
+            ),
           ],
         ),
         _WeekDocTableRow(
           height: 42,
           cells: <_WeekDocCellData>[
             const _WeekDocCellData(text: '任教\n老师', columns: 1, bold: true),
-            const _WeekDocCellData(text: '康复治疗师', columns: 1),
+            _WeekDocCellData(
+              text: plan?.teacherName.trim().isNotEmpty == true
+                  ? plan!.teacherName
+                  : '-',
+              columns: 1,
+            ),
             const _WeekDocCellData(text: '课程\n名称', columns: 1, bold: true),
-            const _WeekDocCellData(text: '康复教学', columns: 1),
+            _WeekDocCellData(
+              text: plan?.courseName.trim().isNotEmpty == true
+                  ? plan!.courseName
+                  : '康复教学',
+              columns: 1,
+            ),
             const _WeekDocCellData(text: '训练日期', columns: 2, bold: true),
             _WeekDocCellData(
               text: periodText,
@@ -3734,8 +4476,9 @@ class _WeekInfoRows extends StatelessWidget {
           cells: <_WeekDocCellData>[
             _WeekDocCellData(text: '训练前\n准备', columns: 1, bold: true),
             _WeekDocCellData(
-              text:
-                  '平衡木、儿童安全剪刀、直线纸条、情绪卡片、动作序列视觉提示卡、合作性玩具、问答提示卡、挤压球、坐垫、积木、属性卡片、两步指令图片卡、动作图片卡',
+              text: plan?.preparation.trim().isNotEmpty == true
+                  ? plan!.preparation
+                  : '训练材料、视觉提示卡、强化物、记录表',
               columns: 9,
               align: TextAlign.left,
               last: true,
@@ -4010,10 +4753,12 @@ class _MonthPlanTable extends StatelessWidget {
   const _MonthPlanTable({
     required this.month,
     required this.monthRange,
+    required this.plan,
   });
 
   final String month;
   final DateTimeRange monthRange;
+  final IepMonthlyPlan? plan;
 
   static const List<int> _columns = <int>[
     806,
@@ -4030,7 +4775,7 @@ class _MonthPlanTable extends StatelessWidget {
     595,
   ];
 
-  static const List<_MonthDomainData> _domains = <_MonthDomainData>[
+  static const List<_MonthDomainData> _fallbackDomains = <_MonthDomainData>[
     _MonthDomainData(
       domain: '大肌肉',
       longGoal: '1. 提升动态平衡与协调能力，能独立完成单脚站立、走平衡木等动作\n2. 增强下肢力量与跳跃技能，能连续向前跳跃并保持稳定',
@@ -4205,21 +4950,41 @@ class _MonthPlanTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final IepMonthlyPlan? currentPlan = plan;
+    final List<_MonthDomainData> domains = currentPlan?.rows
+            .map(_monthDomainFromPlanRow)
+            .where((_MonthDomainData item) =>
+                item.domain.trim().isNotEmpty ||
+                item.shortGoal.trim().isNotEmpty ||
+                item.trainings.any((_MonthTrainingData training) =>
+                    training.content.trim().isNotEmpty))
+            .toList() ??
+        _fallbackDomains;
     return Column(
       children: <Widget>[
-        _WordTableTitle(title: '康复教学$month计划'),
+        _WordTableTitle(
+          title: currentPlan?.title.trim().isNotEmpty == true
+              ? currentPlan!.title
+              : '康复教学$month计划',
+        ),
         _MonthInfoRows(
-            periodText: _formatZhRange(monthRange.start, monthRange.end)),
-        _MonthPlanRows(domains: _domains, monthRange: monthRange),
+          plan: currentPlan,
+          periodText: _metaRangeText(
+            currentPlan?.meta,
+            fallback: _formatZhRange(monthRange.start, monthRange.end),
+          ),
+        ),
+        _MonthPlanRows(domains: domains, monthRange: monthRange),
       ],
     );
   }
 }
 
 class _MonthInfoRows extends StatelessWidget {
-  const _MonthInfoRows({required this.periodText});
+  const _MonthInfoRows({required this.periodText, required this.plan});
 
   final String periodText;
+  final IepMonthlyPlan? plan;
 
   @override
   Widget build(BuildContext context) {
@@ -4229,27 +4994,35 @@ class _MonthInfoRows extends StatelessWidget {
           height: 42,
           cells: <_MonthDocCellData>[
             _MonthDocCellData(text: '姓名', columns: 1, bold: true),
-            _MonthDocCellData(text: '陈旭', columns: 2),
+            _MonthDocCellData(text: plan?.student.name ?? '-', columns: 2),
             _MonthDocCellData(text: '性别', columns: 1, bold: true),
-            _MonthDocCellData(text: '-', columns: 1),
+            _MonthDocCellData(text: plan?.student.gender ?? '-', columns: 1),
             _MonthDocCellData(text: '出生年月', columns: 2, bold: true),
-            _MonthDocCellData(text: '2022-05-11', columns: 5, last: true),
+            _MonthDocCellData(
+              text: plan?.student.birthDate ?? '-',
+              columns: 5,
+              last: true,
+            ),
           ],
         ),
         _MonthDocTableRow(
           height: 42,
           cells: <_MonthDocCellData>[
             const _MonthDocCellData(text: '制定\n日期', columns: 1, bold: true),
-            const _MonthDocCellData(text: '2026-05-07', columns: 2),
+            _MonthDocCellData(text: plan?.meta.planDate ?? '-', columns: 2),
             const _MonthDocCellData(text: '计划参与者', columns: 4, bold: true),
-            const _MonthDocCellData(text: '陈瑞', columns: 5, last: true),
+            _MonthDocCellData(
+              text: plan?.meta.participant ?? '-',
+              columns: 5,
+              last: true,
+            ),
           ],
         ),
         _MonthDocTableRow(
           height: 42,
           cells: <_MonthDocCellData>[
             const _MonthDocCellData(text: '实施者', columns: 1, bold: true),
-            const _MonthDocCellData(text: '陈瑞', columns: 2),
+            _MonthDocCellData(text: plan?.meta.implementer ?? '-', columns: 2),
             const _MonthDocCellData(text: '实施起止日期', columns: 4, bold: true),
             _MonthDocCellData(
               text: periodText,
@@ -4743,76 +5516,6 @@ class _DocPlanRows extends StatelessWidget {
       (double height, _DocDomainData domain) => height + blockHeightFor(domain),
     );
   }
-
-  static const List<_DocDomainData> initialDomains = <_DocDomainData>[
-    _DocDomainData(
-      domain: '大肌肉',
-      longGoals: <String>[
-        '1. 提升动态平衡与协调能力，能在移动中稳定控制身体',
-        '2. 增强下肢力量与跳跃技能，完成连续跳跃动作',
-      ],
-      shortGoals: <_DocShortGoalData>[
-        _DocShortGoalData('能单脚站立保持平衡5秒以上', '个训', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData('能双脚连续向前跳5步以上', '集体课', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData('能在平衡木上独立行走2米', '个训', '2026-05-01 - 2026-05-31'),
-      ],
-    ),
-    _DocDomainData(
-      domain: '小肌肉',
-      longGoals: <String>[
-        '1. 提高手眼协调与精细操作能力，完成复杂拼插任务',
-        '2. 增强手部力量与控制，熟练使用剪刀沿直线裁剪',
-      ],
-      shortGoals: <_DocShortGoalData>[
-        _DocShortGoalData('能独立完成12块以上的拼图', '个训', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData(
-            '能用剪刀沿直线剪开10厘米长的纸条', '集体课', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData('能串起直径1厘米的珠子10颗', '个训', '2026-05-01 - 2026-05-31'),
-      ],
-    ),
-    _DocDomainData(
-      domain: '情感表达',
-      longGoals: <String>[
-        '1. 能识别并命名基本情绪，理解情绪产生的原因',
-        '2. 在情境中恰当地表达自己的情绪，并用语言描述感受',
-      ],
-      shortGoals: <_DocShortGoalData>[
-        _DocShortGoalData(
-            '能指认高兴、生气、伤心、害怕四种基本情绪图片', '集体课', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData(
-            '在角色扮演游戏中，能说出角色可能的情绪', '集体课', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData(
-            '当自己情绪波动时，能用简单语言表达感受', '个训', '2026-05-01 - 2026-05-31'),
-      ],
-    ),
-    _DocDomainData(
-      domain: '模仿（视觉/动作）',
-      longGoals: <String>[
-        '1. 提高动作模仿的准确性和复杂性，能模仿多步骤动作序列',
-        '2. 增强视觉记忆与动作再现能力，完成延迟模仿任务',
-      ],
-      shortGoals: <_DocShortGoalData>[
-        _DocShortGoalData('能模仿3个步骤的粗大动作序列', '个训', '2026-05-01 - 2026-05-31'),
-        _DocShortGoalData('能模仿搭建6块积木的造型', '个训', '2026-06-01 - 2026-06-30'),
-        _DocShortGoalData(
-            '观察教师动作10秒后，能延迟模仿该动作', '集体课', '2026-06-01 - 2026-06-30'),
-      ],
-    ),
-    _DocDomainData(
-      domain: '社交互动',
-      longGoals: <String>[
-        '1. 提升与同伴的合作与轮流意识，能在游戏中遵守规则',
-        '2. 增强社交发起与回应能力，主动参与小组活动',
-      ],
-      shortGoals: <_DocShortGoalData>[
-        _DocShortGoalData(
-            '在集体游戏中，能等待轮流并遵守简单规则', '集体课', '2026-06-01 - 2026-06-30'),
-        _DocShortGoalData('能主动邀请同伴一起玩', '集体课', '2026-06-01 - 2026-06-30'),
-        _DocShortGoalData(
-            '在角色扮演中，能与同伴合作完成一个场景', '集体课', '2026-06-01 - 2026-06-30'),
-      ],
-    ),
-  ];
 
   @override
   Widget build(BuildContext context) {

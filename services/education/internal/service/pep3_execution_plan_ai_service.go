@@ -379,7 +379,7 @@ func buildExecutionPlanTarget(sourcePlan model.PEP3IEPPlanAIResult, durationMont
 	if targetMonthIndex > 1 {
 		monthStart = time.Date(planStart.Year(), planStart.Month()+time.Month(targetMonthIndex-1), 1, 0, 0, 0, 0, time.Local)
 	}
-	planEnd := planStart.AddDate(0, durationMonths, 0).AddDate(0, 0, -1)
+	planEnd := time.Date(planStart.Year(), planStart.Month()+time.Month(durationMonths), 0, 0, 0, 0, 0, time.Local)
 	monthEnd := time.Date(monthStart.Year(), monthStart.Month()+1, 0, 0, 0, 0, 0, time.Local)
 	if monthEnd.After(planEnd) {
 		monthEnd = planEnd

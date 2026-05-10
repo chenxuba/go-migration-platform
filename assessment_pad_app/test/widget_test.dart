@@ -8,6 +8,7 @@ import 'package:assessment_pad_app/erxin_assessment_client.dart';
 import 'package:assessment_pad_app/erxin_assessment_page.dart';
 import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/iep_assessment_record_client.dart';
+import 'package:assessment_pad_app/iep_plan_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_page.dart';
@@ -794,6 +795,7 @@ void main() {
         homeClient: _FakeHomeClient(),
         scaleClient: _FakeAssessmentScaleClient(),
         iepRecordClient: _FakeIepAssessmentRecordClient(),
+        iepPlanClient: _FakeIepPlanClient(),
         timetableClient: _FakeTimetableClient(),
       ),
     );
@@ -809,6 +811,7 @@ void main() {
     expect(find.text('儿心量表 · 2026-05-07'), findsOneWidget);
     expect(find.text('已确认'), findsWidgets);
     expect(find.text('康复教学季度计划'), findsOneWidget);
+    expect(find.text('能单脚站立保持平衡5秒以上'), findsOneWidget);
     expect(find.text('开始上课'), findsOneWidget);
     expect(find.text('计划参与者'), findsWidgets);
     expect(find.text('实施者'), findsWidgets);
@@ -3809,6 +3812,184 @@ class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
       ],
     );
   }
+}
+
+class _FakeIepPlanClient implements IepPlanClient {
+  DateTime _startDate = DateTime(2026, 5);
+
+  @override
+  Future<IepPlanSaved> fetchIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepPlanSaved(
+      exists: true,
+      status: 'confirmed',
+      durationMonths: durationMonths,
+      plan: IepPlan(
+        title: durationMonths == 6 ? '康复教学半年计划' : '康复教学季度计划',
+        student: const IepPlanStudent(
+          name: '陈旭',
+          gender: '-',
+          birthDate: '2022-05-11',
+        ),
+        meta: const IepPlanMeta(
+          planDate: '2026-05-07',
+          participant: '陈瑞',
+          implementer: '陈瑞',
+          startDate: '',
+          endDate: '',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '1. 提升动态平衡与协调能力，能在移动中稳定控制身体',
+            shortGoal: '能单脚站立保持平衡5秒以上',
+            courseForm: '个训',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '1. 提升动态平衡与协调能力，能在移动中稳定控制身体',
+            shortGoal: '能双脚连续向前跳5步以上',
+            courseForm: '集体课',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '1. 提升动态平衡与协调能力，能在移动中稳定控制身体',
+            shortGoal: '能在平衡木上独立行走2米',
+            courseForm: '个训',
+            startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> fetchExecutionPlans(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return const IepExecutionPlansSaved(
+      exists: true,
+      durationMonths: 3,
+      monthlyPlans: <IepMonthlyPlanSaved>[
+        IepMonthlyPlanSaved(
+          targetMonthIndex: 1,
+          plan: IepMonthlyPlan(
+            title: '康复教学5月计划',
+            student: IepPlanStudent(
+              name: '陈旭',
+              gender: '-',
+              birthDate: '2022-05-11',
+            ),
+            meta: IepMonthlyPlanMeta(
+              planDate: '2026-05-07',
+              participant: '陈瑞',
+              implementer: '陈瑞',
+              startDate: '2026-05-01',
+              endDate: '2026-05-31',
+              monthLabel: '5月',
+              sourceTitle: '康复教学季度计划',
+            ),
+            rows: <IepMonthlyPlanRow>[
+              IepMonthlyPlanRow(
+                domain: '大肌肉',
+                longGoal: '提升动态平衡与协调能力',
+                shortGoal: '能在平衡木上独立行走3米',
+                trainingItems: <IepMonthlyTrainingItem>[
+                  IepMonthlyTrainingItem(
+                    content: '平衡木行走训练',
+                    startEndDate: '2026-05-01 - 2026-05-10',
+                  ),
+                ],
+                courseForm: '个训',
+              ),
+            ],
+          ),
+        ),
+      ],
+      weeklyPlans: <IepWeeklyPlanSaved>[
+        IepWeeklyPlanSaved(
+          targetMonthIndex: 1,
+          targetWeekIndex: 1,
+          plan: IepWeeklyPlan(
+            title: '康复教学周计划日记录卡5月第1周',
+            student: IepPlanStudent(
+              name: '陈旭',
+              gender: '-',
+              birthDate: '2022-05-11',
+            ),
+            teacherName: '陈瑞',
+            courseName: '康复教学',
+            trainingDate: '2026-05-01 至 2026-05-02',
+            preparation: '平衡木、记录表',
+            weekDates: <String>['2026-05-01', '2026-05-02'],
+            rows: <IepWeeklyPlanRow>[
+              IepWeeklyPlanRow(
+                project: '平衡木行走',
+                content: '在平衡木上独立行走并记录掉落次数',
+                completion: <String>[],
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepPlanPeriodSyncResult> syncIepPlanPeriod(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int sourceDurationMonths,
+    required DateTime startDate,
+  }) async {
+    _startDate = DateTime(startDate.year, startDate.month, startDate.day);
+    final DateTime endDate =
+        DateTime(_startDate.year, _startDate.month + durationMonths, 0);
+    final IepPlanSaved plan = await fetchIepPlan(
+      token,
+      record: record,
+      durationMonths: durationMonths,
+    );
+    return IepPlanPeriodSyncResult(
+      iepPlan: IepPlanSaved(
+        exists: plan.exists,
+        status: plan.status,
+        durationMonths: plan.durationMonths,
+        updatedTime: plan.updatedTime,
+        plan: IepPlan(
+          title: plan.plan!.title,
+          student: plan.plan!.student,
+          meta: IepPlanMeta(
+            planDate: plan.plan!.meta.planDate,
+            participant: plan.plan!.meta.participant,
+            implementer: plan.plan!.meta.implementer,
+            startDate: _formatDateDashForTest(_startDate),
+            endDate: _formatDateDashForTest(endDate),
+          ),
+          rows: plan.plan!.rows,
+        ),
+      ),
+      executionPlans: await fetchExecutionPlans(
+        token,
+        record: record,
+        durationMonths: durationMonths,
+      ),
+    );
+  }
+}
+
+String _formatDateDashForTest(DateTime value) {
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
 }
 
 class _FakeAssessmentScaleClient implements AssessmentScaleClient {

@@ -15,6 +15,7 @@ import 'erxin_assessment_page.dart';
 import 'home_client.dart';
 import 'iep_assessment_record_client.dart';
 import 'iep_center_page.dart';
+import 'iep_plan_client.dart';
 import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
 import 'pad_responsive.dart';
@@ -59,6 +60,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.pep3Client = const ApiPep3AssessmentClient(),
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.iepRecordClient = const ApiIepAssessmentRecordClient(),
+    this.iepPlanClient = const ApiIepPlanClient(),
     this.timetableClient = const ApiTimetableClient(),
     super.key,
   });
@@ -69,6 +71,7 @@ class AssessmentPadApp extends StatelessWidget {
   final Pep3AssessmentClient pep3Client;
   final ErxinAssessmentClient erxinClient;
   final IepAssessmentRecordClient iepRecordClient;
+  final IepPlanClient iepPlanClient;
   final TimetableClient timetableClient;
 
   @override
@@ -126,6 +129,7 @@ class AssessmentPadApp extends StatelessWidget {
             body: PadViewport(
               child: IepCenterPage(
                 recordClient: iepRecordClient,
+                planClient: iepPlanClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
