@@ -269,34 +269,67 @@ class _IepGenerationStreamPanel extends StatefulWidget {
 
 class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
   late final ScrollController _scrollController;
+  bool _stickToBottom = true;
+  bool _scrollSyncScheduled = false;
 
   @override
   void initState() {
     super.initState();
     _scrollController = ScrollController();
+    _scrollController.addListener(_handleScroll);
   }
 
   @override
   void didUpdateWidget(covariant _IepGenerationStreamPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (widget.streamText != oldWidget.streamText) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted || !_scrollController.hasClients) {
-          return;
-        }
-        _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
-          duration: const Duration(milliseconds: 90),
-          curve: Curves.easeOutCubic,
-        );
-      });
+      _scheduleStickToBottom();
     }
   }
 
   @override
   void dispose() {
+    _scrollController.removeListener(_handleScroll);
     _scrollController.dispose();
     super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    _stickToBottom = position.maxScrollExtent - position.pixels <= 48;
+  }
+
+  void _scheduleStickToBottom() {
+    if (_scrollSyncScheduled) {
+      return;
+    }
+    _scrollSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollSyncScheduled = false;
+      if (!mounted || !_scrollController.hasClients || !_stickToBottom) {
+        return;
+      }
+      _jumpToBottom();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients || !_stickToBottom) {
+          return;
+        }
+        _jumpToBottom();
+      });
+    });
+  }
+
+  void _jumpToBottom() {
+    final ScrollPosition position = _scrollController.position;
+    final double target =
+        position.maxScrollExtent.clamp(position.minScrollExtent, double.infinity);
+    if ((position.pixels - target).abs() <= .5) {
+      return;
+    }
+    _scrollController.jumpTo(target);
   }
 
   @override
@@ -410,13 +443,16 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                     child: SingleChildScrollView(
                       controller: _scrollController,
                       physics: const ClampingScrollPhysics(),
-                      child: Text(
-                        readable.content,
-                        style: const TextStyle(
-                          color: _IepColors.text,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w700,
-                          height: 1.42,
+                      child: Padding(
+                        padding: const EdgeInsets.only(bottom: 26),
+                        child: Text(
+                          readable.content,
+                          style: const TextStyle(
+                            color: _IepColors.text,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w700,
+                            height: 1.42,
+                          ),
                         ),
                       ),
                     ),
