@@ -382,6 +382,7 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
         : null;
     final _IepReadableStream readable =
         _IepReadableStream.fromRaw(widget.streamText);
+    final String progressText = '${(progress * 100).round()}%';
 
     return Container(
       decoration: BoxDecoration(
@@ -416,57 +417,84 @@ class _IepGenerationStreamPanelState extends State<_IepGenerationStreamPanel> {
                           height: 1.15,
                         ),
                       ),
-                      const SizedBox(height: 5),
-                      Text(
-                        status,
-                        style: const TextStyle(
-                          color: _IepColors.text,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                        ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            status,
+                            style: const TextStyle(
+                              color: _IepColors.text,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(99),
+                              child: LinearProgressIndicator(
+                                minHeight: 8,
+                                value: progress <= 0 ? null : progress,
+                                backgroundColor: const Color(0xFFFFEEE4),
+                                color: _IepColors.orange,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFFFF3EA),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              progressText,
+                              style: const TextStyle(
+                                color: _IepColors.orangeDeep,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w900,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                          if (costText != null) ...<Widget>[
+                            const SizedBox(width: 8),
+                            Text(
+                              costText,
+                              style: const TextStyle(
+                                color: _IepColors.orangeDeep,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                                height: 1,
+                              ),
+                            ),
+                          ],
+                          const SizedBox(width: 8),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 118),
+                            child: Text(
+                              costText == null ? '正在估算金额' : '完成后切换真实消费',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              textAlign: TextAlign.right,
+                              style: const TextStyle(
+                                color: _IepColors.muted,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                                height: 1.1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: <Widget>[
-                    if (costText != null)
-                      Text(
-                        costText,
-                        style: const TextStyle(
-                          color: _IepColors.text,
-                          fontSize: 11.5,
-                          fontWeight: FontWeight.w800,
-                          height: 1,
-                        ),
-                      ),
-                    if (costText != null) const SizedBox(height: 4),
-                    Text(
-                      '${(progress * 100).round()}%',
-                      style: const TextStyle(
-                        color: _IepColors.orangeDeep,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        height: 1,
-                      ),
-                    ),
-                  ],
-                ),
               ],
-            ),
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 18),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(99),
-              child: LinearProgressIndicator(
-                minHeight: 8,
-                value: progress <= 0 ? null : progress,
-                backgroundColor: const Color(0xFFFFEEE4),
-                color: _IepColors.orange,
-              ),
             ),
           ),
           Expanded(
