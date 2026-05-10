@@ -958,6 +958,59 @@ void main() {
     expect(find.text('集体课'), findsWidgets);
   });
 
+  testWidgets('IEP center streams AI generation into table and saves draft',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _EmptyThenGeneratedIepPlanClient iepPlanClient =
+        _EmptyThenGeneratedIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakePendingIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('林一诺 暂无IEP计划'), findsOneWidget);
+    expect(find.text('确认IEP'), findsNothing);
+
+    await tester.tap(find.text('AI生成'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+
+    expect(find.text('正在生成 林一诺 的IEP计划'), findsOneWidget);
+    expect(find.text('正在读取评估和训练记录'), findsWidgets);
+    expect(find.text('生成中'), findsWidgets);
+
+    await tester.pump(const Duration(milliseconds: 80));
+    expect(find.text('能独立跳跃3次'), findsOneWidget);
+
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
+    expect(iepPlanClient.savePlanCalls, 1);
+    expect(iepPlanClient.lastSavedPlan?.rows.single.shortGoal, '能独立跳跃3次');
+    expect(find.text('待确认'), findsWidgets);
+    expect(find.text('确认IEP'), findsOneWidget);
+  });
+
   testWidgets('IEP center shows structured skeleton during route bootstrap',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -3860,6 +3913,44 @@ class _FakeIepAssessmentRecordClient implements IepAssessmentRecordClient {
   }
 }
 
+class _FakePendingIepAssessmentRecordClient
+    implements IepAssessmentRecordClient {
+  @override
+  Future<IepAssessmentRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 20,
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  }) async {
+    return const IepAssessmentRecordPage(
+      total: 1,
+      current: 1,
+      size: 1,
+      items: <IepAssessmentRecordSummary>[
+        IepAssessmentRecordSummary(
+          id: 88,
+          source: 'PEP3',
+          studentId: 19,
+          studentName: '林一诺',
+          studentGender: '女',
+          assessmentCode: 'PEP3',
+          assessmentName: 'PEP-3',
+          birthDate: '2021-08-12',
+          assessmentDate: '2026-04-29',
+          ageYears: 4,
+          ageMonths: 8,
+          ageDays: 17,
+          examinerName: '陈瑞',
+          iepPlanStatus: '',
+          updatedTime: '2026-04-29T11:30:00Z',
+        ),
+      ],
+    );
+  }
+}
+
 class _FakeIepPlanClient implements IepPlanClient {
   DateTime _startDate = DateTime(2026, 5);
   int savePlanCalls = 0;
@@ -4068,6 +4159,100 @@ class _FakeIepPlanClient implements IepPlanClient {
             shortGoal: '能独立跳跃3次',
             courseForm: '个训',
             startEndDate: '2026-05-01 - 2026-05-31',
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Future<IepPlanSaved> saveIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String status,
+    required IepPlan plan,
+  }) async {
+    savePlanCalls += 1;
+    lastSavedPlan = plan;
+    return IepPlanSaved(
+      exists: true,
+      status: status,
+      durationMonths: durationMonths,
+      plan: plan,
+      updatedTime: '2026-05-10T09:30:00Z',
+    );
+  }
+}
+
+class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
+  int savePlanCalls = 0;
+  IepPlan? lastSavedPlan;
+
+  @override
+  Future<IepPlanSaved> fetchIepPlan(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepPlanSaved.empty(durationMonths);
+  }
+
+  @override
+  Future<IepExecutionPlansSaved> fetchExecutionPlans(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async {
+    return IepExecutionPlansSaved.empty(durationMonths);
+  }
+
+  @override
+  Future<IepPlanPeriodSyncResult> syncIepPlanPeriod(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int sourceDurationMonths,
+    required DateTime startDate,
+  }) async {
+    return IepPlanPeriodSyncResult.empty(durationMonths);
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> generateIepPlanStream(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) async* {
+    yield IepPlanGenerationEvent.status('正在读取评估和训练记录');
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    yield IepPlanGenerationEvent.delta(
+      '{"title":"康复教学季度计划","rows":['
+      '{"domain":"大肌肉","longGoal":"提升动态平衡能力","shortGoal":"能独立跳跃3次","courseForm":"个训","startEndDate":"2026-04-01 - 2026-04-30"}',
+    );
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    yield IepPlanGenerationEvent.done(
+      IepPlan(
+        title: '康复教学季度计划',
+        student: IepPlanStudent(
+          name: record.studentName,
+          gender: record.studentGender,
+          birthDate: record.birthDate,
+        ),
+        meta: IepPlanMeta(
+          planDate: record.assessmentDate,
+          participant: record.examinerName,
+          implementer: record.examinerName,
+          startDate: '2026-04-01',
+          endDate: '2026-06-30',
+        ),
+        rows: const <IepPlanRow>[
+          IepPlanRow(
+            domain: '大肌肉',
+            longGoal: '提升动态平衡能力',
+            shortGoal: '能独立跳跃3次',
+            courseForm: '个训',
+            startEndDate: '2026-04-01 - 2026-04-30',
           ),
         ],
       ),
