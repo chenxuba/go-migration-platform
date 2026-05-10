@@ -1200,22 +1200,22 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
                       const _PlanNavLabel(text: '月计划'),
                       _PlanTab(
                         text: '5月',
-                        active:
-                            _selectedSection != 'iep' && _selectedMonth == '5月',
+                        active: _selectedSection == 'month' &&
+                            _selectedMonth == '5月',
                         width: 54,
                         onTap: () => _selectMonth('5月'),
                       ),
                       _PlanTab(
                         text: '6月',
-                        active:
-                            _selectedSection != 'iep' && _selectedMonth == '6月',
+                        active: _selectedSection == 'month' &&
+                            _selectedMonth == '6月',
                         width: 54,
                         onTap: () => _selectMonth('6月'),
                       ),
                       _PlanTab(
                         text: '7月',
-                        active:
-                            _selectedSection != 'iep' && _selectedMonth == '7月',
+                        active: _selectedSection == 'month' &&
+                            _selectedMonth == '7月',
                         width: 54,
                         onTap: () => _selectMonth('7月'),
                       ),

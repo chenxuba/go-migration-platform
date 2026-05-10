@@ -824,7 +824,10 @@ void main() {
     await tester.tap(find.text('5月 W1'));
     await tester.pump();
 
-    expect(tester.widget<Text>(find.text('5月')).style?.color, Colors.white);
+    expect(
+      tester.widget<Text>(find.text('5月')).style?.color,
+      const Color(0xFF72594D),
+    );
     expect(tester.widget<Text>(find.text('5月 W1')).style?.color, Colors.white);
     expect(find.text('康复教学周计划日记录卡5月第1周'), findsOneWidget);
     expect(find.text('完成情况'), findsOneWidget);
