@@ -2228,6 +2228,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _IepPreviewMode.month => monthPlanRegenerateDisabled,
       _IepPreviewMode.week => weekHasAnyRecord,
     };
+    final bool generatePlanEnabled = switch (_previewMode) {
+      _IepPreviewMode.total => true,
+      _IepPreviewMode.month => _savedPlan?.hasContent == true,
+      _IepPreviewMode.week => _savedPlan?.hasContent == true,
+    };
     final bool currentPlanGenerated = switch (_previewMode) {
       _IepPreviewMode.total => _savedPlan?.hasContent == true,
       _IepPreviewMode.month => monthPlan != null,
@@ -2288,6 +2293,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               };
               _showMessage(message);
             },
+            generateEnabled: generatePlanEnabled,
+            onDisabledGenerateTap: () {
+              _showMessage('请先生成IEP总计划，再生成月计划或周计划');
+            },
             previewMode: _previewMode,
             previewMonth: _previewMonth,
             previewWeek: _previewWeek,
@@ -2326,6 +2335,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               error: _planError,
               onRetry: _handleRetryRequest,
               onGeneratePlan: _handleGeneratePlanRequest,
+              generatePlanEnabled: generatePlanEnabled,
+              onDisabledGeneratePlanTap: () {
+                _showMessage('请先生成IEP总计划，再生成月计划或周计划');
+              },
               totalPlanDomains: _totalPlanDomains,
               selectedGoal: _selectedGoal,
               onGoalTap: _handleGoalTap,
@@ -2562,6 +2575,8 @@ class _PlanToolbar extends StatelessWidget {
     required this.currentPlanGenerated,
     required this.editPeriodDisabledWithHint,
     required this.onDisabledEditPeriodTap,
+    required this.generateEnabled,
+    required this.onDisabledGenerateTap,
     required this.regenerateDisabledWithHint,
     required this.onDisabledRegenerateTap,
     required this.previewMode,
@@ -2587,6 +2602,8 @@ class _PlanToolbar extends StatelessWidget {
   final bool currentPlanGenerated;
   final bool editPeriodDisabledWithHint;
   final VoidCallback onDisabledEditPeriodTap;
+  final bool generateEnabled;
+  final VoidCallback onDisabledGenerateTap;
   final bool regenerateDisabledWithHint;
   final VoidCallback onDisabledRegenerateTap;
   final _IepPreviewMode previewMode;
@@ -2657,11 +2674,18 @@ class _PlanToolbar extends StatelessWidget {
                 : (currentPlanGenerated ? '重新生成' : 'AI生成'),
             primary: true,
             width: 96,
-            enabled: !generatingPlan && !regenerateDisabledWithHint,
+            enabled: !generatingPlan &&
+                (currentPlanGenerated
+                    ? !regenerateDisabledWithHint
+                    : generateEnabled),
             onTap: generatingPlan
                 ? null
-                : (regenerateDisabledWithHint
-                    ? onDisabledRegenerateTap
+                : ((currentPlanGenerated
+                        ? regenerateDisabledWithHint
+                        : !generateEnabled)
+                    ? (currentPlanGenerated
+                        ? onDisabledRegenerateTap
+                        : onDisabledGenerateTap)
                     : (currentPlanGenerated
                         ? onRegeneratePlan
                         : onGeneratePlan)),

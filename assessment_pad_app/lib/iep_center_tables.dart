@@ -129,6 +129,8 @@ class _IepTablePreview extends StatelessWidget {
     required this.error,
     required this.onRetry,
     required this.onGeneratePlan,
+    required this.generatePlanEnabled,
+    required this.onDisabledGeneratePlanTap,
     required this.totalPlanDomains,
     required this.selectedGoal,
     required this.onGoalTap,
@@ -154,6 +156,8 @@ class _IepTablePreview extends StatelessWidget {
   final String error;
   final VoidCallback onRetry;
   final VoidCallback onGeneratePlan;
+  final bool generatePlanEnabled;
+  final VoidCallback onDisabledGeneratePlanTap;
   final List<_DocDomainData> totalPlanDomains;
   final _GoalEditRequest? selectedGoal;
   final ValueChanged<_GoalEditRequest> onGoalTap;
@@ -232,6 +236,8 @@ class _IepTablePreview extends StatelessWidget {
         generating: generatingPlan,
         statusText: generationStatus,
         onGenerate: onGeneratePlan,
+        generateEnabled: generatePlanEnabled,
+        onDisabledGenerateTap: onDisabledGeneratePlanTap,
       );
     } else {
       child = switch (previewMode) {
@@ -241,7 +247,10 @@ class _IepTablePreview extends StatelessWidget {
                 title: '$month计划未生成',
                 message: '可基于当前IEP总计划生成$month的月计划模板',
                 actionLabel: 'AI生成',
-                onAction: onGeneratePlan,
+                onAction: generatePlanEnabled
+                    ? onGeneratePlan
+                    : onDisabledGeneratePlanTap,
+                actionEnabled: generatePlanEnabled,
               )
             : _WordTableFrame(
                 child: _MonthPlanTable(
@@ -256,7 +265,10 @@ class _IepTablePreview extends StatelessWidget {
                 title: '$month第$weekNumber周计划未生成',
                 message: '可基于当前IEP总计划或月计划生成本周计划模板',
                 actionLabel: 'AI生成',
-                onAction: onGeneratePlan,
+                onAction: generatePlanEnabled
+                    ? onGeneratePlan
+                    : onDisabledGeneratePlanTap,
+                actionEnabled: generatePlanEnabled,
               )
             : _WordTableFrame(
                 child: _WeekPlanTable(

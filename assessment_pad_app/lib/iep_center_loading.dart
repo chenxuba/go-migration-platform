@@ -516,6 +516,7 @@ class _PlanStateView extends StatelessWidget {
     required this.title,
     this.message = '',
     this.actionLabel = '',
+    this.actionEnabled = true,
     this.onAction,
   });
 
@@ -523,6 +524,7 @@ class _PlanStateView extends StatelessWidget {
   final String title;
   final String message;
   final String actionLabel;
+  final bool actionEnabled;
   final VoidCallback? onAction;
 
   @override
@@ -562,6 +564,7 @@ class _PlanStateView extends StatelessWidget {
               if (actionLabel.trim() == 'AI生成')
                 _AiGenerateButton(
                   generating: false,
+                  enabled: actionEnabled,
                   onTap: onAction!,
                 )
               else
@@ -580,12 +583,16 @@ class _IepEmptyGenerateState extends StatelessWidget {
     required this.generating,
     required this.statusText,
     required this.onGenerate,
+    this.generateEnabled = true,
+    this.onDisabledGenerateTap,
   });
 
   final String studentName;
   final bool generating;
   final String statusText;
   final VoidCallback onGenerate;
+  final bool generateEnabled;
+  final VoidCallback? onDisabledGenerateTap;
 
   @override
   Widget build(BuildContext context) {
@@ -625,7 +632,12 @@ class _IepEmptyGenerateState extends StatelessWidget {
             const SizedBox(height: 20),
             _AiGenerateButton(
               generating: generating,
-              onTap: generating ? null : onGenerate,
+              enabled: generateEnabled,
+              onTap: generating
+                  ? null
+                  : (generateEnabled
+                      ? onGenerate
+                      : (onDisabledGenerateTap ?? onGenerate)),
             ),
           ],
         ),
@@ -739,16 +751,21 @@ class _EmptyDocLine extends StatelessWidget {
 class _AiGenerateButton extends StatelessWidget {
   const _AiGenerateButton({
     required this.generating,
+    this.enabled = true,
     required this.onTap,
   });
 
   final bool generating;
+  final bool enabled;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final bool clickable = generating ? false : enabled;
     return Material(
-      color: generating ? const Color(0xFFEFC1A8) : _IepColors.orange,
+      color: generating
+          ? const Color(0xFFEFC1A8)
+          : (enabled ? _IepColors.orange : const Color(0xFFF0DDD1)),
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         onTap: onTap,
@@ -759,7 +776,8 @@ class _AiGenerateButton extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             boxShadow: _iepShadow(
-              color: const Color(0x2FE96F43),
+              color:
+                  clickable ? const Color(0x2FE96F43) : const Color(0x00E96F43),
               blur: 16,
               offset: const Offset(0, 7),
             ),
@@ -772,13 +790,15 @@ class _AiGenerateButton extends StatelessWidget {
                     ? Icons.hourglass_top_rounded
                     : Icons.auto_awesome_rounded,
                 size: 18,
-                color: Colors.white,
+                color:
+                    clickable || generating ? Colors.white : _IepColors.muted,
               ),
               const SizedBox(width: 7),
               Text(
                 generating ? '生成中' : 'AI生成',
-                style: const TextStyle(
-                  color: Colors.white,
+                style: TextStyle(
+                  color:
+                      clickable || generating ? Colors.white : _IepColors.muted,
                   fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
