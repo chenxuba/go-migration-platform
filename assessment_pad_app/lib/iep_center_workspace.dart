@@ -2497,7 +2497,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return '继续上课';
     }
     if (_selectedWeekIsCurrent(weekPlan)) {
-      return '修改记录';
+      return _selectedWeekHasRecordedEntry(weekPlan) ? '修改记录' : '开始上课';
     }
     if (_selectedWeekIsPast(weekPlan)) {
       return _selectedWeekHasRecordedEntry(weekPlan) ? '修改记录' : '修/补记录';

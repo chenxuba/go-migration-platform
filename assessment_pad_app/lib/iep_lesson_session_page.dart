@@ -181,6 +181,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   Timer? _lessonHeartbeatTimer;
   Timer? _autoAdvanceTaskTimer;
   bool _sessionPausedByLifecycle = false;
+  bool _allowRoutePop = false;
   bool _closingPage = false;
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
@@ -220,6 +221,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       _activeSaveFuture = null;
       _cancelAutoAdvanceTask();
       _sessionPausedByLifecycle = false;
+      _allowRoutePop = false;
       _closingPage = false;
       _syncLessonRuntime();
     }
@@ -624,6 +626,28 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
+  Future<void> _popLessonPage(_IepLessonSessionExitResult result) async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _allowRoutePop = true;
+    });
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted) {
+      return;
+    }
+    final bool popped = await Navigator.of(context).maybePop(result);
+    if (!mounted || popped) {
+      return;
+    }
+    setState(() {
+      _allowRoutePop = false;
+      _closingPage = false;
+    });
+    _showMessage('页面返回失败，请重试');
+  }
+
   void _showMessage(
     String message, {
     PadMessageTone tone = PadMessageTone.info,
@@ -919,10 +943,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
           return;
         }
       }
-      Navigator.of(context).pop(
-        const _IepLessonSessionExitResult(
-            _IepLessonSessionExitAction.completed),
-      );
+      await _popLessonPage(const _IepLessonSessionExitResult(
+        _IepLessonSessionExitAction.completed,
+      ));
       return;
     }
     final String? code = await showDialog<String>(
@@ -965,8 +988,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
         return;
       }
     }
-    Navigator.of(context).pop(const _IepLessonSessionExitResult(
-        _IepLessonSessionExitAction.completed));
+    await _popLessonPage(const _IepLessonSessionExitResult(
+      _IepLessonSessionExitAction.completed,
+    ));
   }
 
   Future<void> _handleBackPressed() async {
@@ -986,7 +1010,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
         return;
       }
     }
-    Navigator.of(context).pop(
+    await _popLessonPage(
       _IepLessonSessionExitResult(
         widget.draft.managesSession
             ? _IepLessonSessionExitAction.paused
@@ -1043,7 +1067,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
     }).length;
 
     return PopScope(
-      canPop: false,
+      canPop: _allowRoutePop,
       onPopInvoked: (bool didPop) async {
         if (didPop) {
           return;
