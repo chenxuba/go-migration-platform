@@ -2390,7 +2390,15 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             previewMode: _previewMode,
             previewMonthIndex: _previewMonthIndex(),
             previewWeek: _previewWeek,
-            onStartClass: _openLessonSession,
+            onStartClass: startClassEnabled
+                ? _openLessonSession
+                : () {
+                    if (_previewMode != _IepPreviewMode.week) {
+                      _showMessage('请选中周计划');
+                      return;
+                    }
+                    _openLessonSession();
+                  },
             startClassEnabled: startClassEnabled,
             startClassLabel: _lessonEntryButtonLabel(weekPlan),
           ),
@@ -2647,7 +2655,7 @@ class _StartClassButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: enabled ? onTap : null,
+        onTap: onTap,
         borderRadius: BorderRadius.circular(18),
         child: Container(
           height: 36,
