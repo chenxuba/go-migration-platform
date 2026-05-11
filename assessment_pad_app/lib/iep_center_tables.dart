@@ -1477,10 +1477,12 @@ class _WeekTrainingRow {
   const _WeekTrainingRow({
     required this.project,
     required this.content,
+    this.completion = const <String>[],
   });
 
   final String project;
   final String content;
+  final List<String> completion;
 
   double get rowHeight {
     if (content.length >= 85) {
@@ -1530,12 +1532,16 @@ class _WeekTrainingTableRow extends StatelessWidget {
             ),
           ),
           ...List<_FixedGridCell>.generate(6, (int index) {
+            final String completionText = index < row.completion.length
+                ? row.completion[index].trim()
+                : '';
             return _FixedGridCell(
               columns: 1,
               child: _WeekDocCellBox(
                 data: _WeekDocCellData(
-                  text: '',
+                  text: completionText,
                   columns: 1,
+                  bold: completionText.isNotEmpty,
                   last: index == 5,
                 ),
                 rowLast: last,

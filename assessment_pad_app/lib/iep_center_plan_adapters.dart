@@ -75,7 +75,11 @@ _MonthDomainData _monthDomainFromPlanRow(IepMonthlyPlanRow row) {
 }
 
 _WeekTrainingRow _weekTrainingRowFromPlanRow(IepWeeklyPlanRow row) {
-  return _WeekTrainingRow(project: row.project, content: row.content);
+  return _WeekTrainingRow(
+    project: row.project,
+    content: row.content,
+    completion: row.completion,
+  );
 }
 
 List<String> _normalizedNumberedTextLines(Iterable<String> values) {

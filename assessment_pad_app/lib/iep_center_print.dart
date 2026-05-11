@@ -464,7 +464,15 @@ List<pw.Widget> _iepWeekPrintWidgets({
       final List<_IepPrintCell> rowCells = <_IepPrintCell>[
         _IepPrintCell(row.project, 1, bold: true),
         _IepPrintCell(row.content, 3, align: pw.TextAlign.left),
-        ...List<_IepPrintCell>.generate(6, (_) => _IepPrintCell('', 1)),
+        ...List<_IepPrintCell>.generate(6, (int index) {
+          final String completionText =
+              index < row.completion.length ? row.completion[index].trim() : '';
+          return _IepPrintCell(
+            completionText,
+            1,
+            bold: completionText.isNotEmpty,
+          );
+        }),
       ];
       return _iepPrintRow(
         columns,
@@ -761,7 +769,7 @@ class _IepSpanningPrintTable extends pw.Widget with pw.SpanningWidget {
           : pw.Alignment.center,
       padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
       child: pw.Text(
-        text.trim().isEmpty ? ' ' : text,
+        text.trim().isEmpty ? ' ' : _normalizeIepPrintText(text),
         textAlign: align,
         style: pw.TextStyle(
           color: bold ? _iepPrintInk : _iepPrintText,
@@ -923,7 +931,7 @@ pw.Widget _iepPrintCell(_IepPrintCell cell) {
       border: pw.Border.all(color: _iepPrintBorder, width: .55),
     ),
     child: pw.Text(
-      cell.text.trim().isEmpty ? ' ' : cell.text,
+      cell.text.trim().isEmpty ? ' ' : _normalizeIepPrintText(cell.text),
       textAlign: cell.align,
       style: pw.TextStyle(
         color: cell.bold ? _iepPrintInk : _iepPrintText,
@@ -934,6 +942,14 @@ pw.Widget _iepPrintCell(_IepPrintCell cell) {
       ),
     ),
   );
+}
+
+String _normalizeIepPrintText(String text) {
+  if (text.isEmpty) {
+    return text;
+  }
+  // `✗` 在当前嵌入的 PDF 字体里会退化成缺字方框，打印时改成稳定可显示的乘号。
+  return text.replaceAll('✗', '×');
 }
 
 bool _isCompactPrintHeader(_IepPrintCell cell) {

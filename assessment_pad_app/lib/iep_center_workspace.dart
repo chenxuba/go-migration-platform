@@ -1318,6 +1318,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_syncingPeriod || _generatingPlan) {
       return;
     }
+    if (_hasAnyExecutionRecord()) {
+      _showMessage('该记录卡已记录，不支持编辑周期');
+      return;
+    }
     final _IepPeriodDraft? draft = await showDialog<_IepPeriodDraft>(
       context: context,
       barrierColor: const Color(0x33000000),
@@ -1338,6 +1342,24 @@ class _IepWorkspaceState extends State<_IepWorkspace>
 
   Future<void> _showRegeneratePlanConfirmDialog() async {
     if (_generatingPlan) {
+      return;
+    }
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final bool blocked = switch (_previewMode) {
+      _IepPreviewMode.total => _totalPlanHasAnyWeeklyExecutionRecord(),
+      _IepPreviewMode.month => _monthHasAnyWeeklyExecutionRecord(
+          _previewMonthIndex(),
+        ),
+      _IepPreviewMode.week => _selectedWeekHasRecordedEntry(weekPlan),
+    };
+    if (blocked) {
+      final String message = switch (_previewMode) {
+        _IepPreviewMode.total => '已有月计划下的周计划被记录，不支持重新生成总计划',
+        _IepPreviewMode.month => '当前月份下已有周计划被记录，不支持重新生成月计划',
+        _IepPreviewMode.week => '该记录卡已记录，不支持重新生成',
+      };
+      _showMessage(message);
       return;
     }
     final bool? confirmed = await showDialog<bool>(
@@ -2118,6 +2140,73 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return weekDates.any((DateTime item) => _dateOnly(item) == today);
   }
 
+  bool _selectedWeekHasRecordedEntry(IepWeeklyPlan? weekPlan) {
+    if (weekPlan == null) {
+      return false;
+    }
+    return weekPlan.rows.any(
+      (IepWeeklyPlanRow row) => row.completion.any(
+        (String code) => code.trim().isNotEmpty,
+      ),
+    );
+  }
+
+  bool _selectedWeekHasTodayRecord(IepWeeklyPlan? weekPlan) {
+    if (weekPlan == null || _previewMode != _IepPreviewMode.week) {
+      return false;
+    }
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: _monthDateFromLabel(
+        _periodStart,
+        _periodMonthCount,
+        _previewMonth,
+      ),
+    );
+    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
+        _weekDatesInMonthRange(monthRange, _previewWeek);
+    final DateTime today = _dateOnly(DateTime.now());
+    final int todayIndex = weekDates.indexWhere(
+      (DateTime item) => _dateOnly(item) == today,
+    );
+    if (todayIndex < 0) {
+      return false;
+    }
+    return weekPlan.rows.any((IepWeeklyPlanRow row) {
+      if (todayIndex >= row.completion.length) {
+        return false;
+      }
+      return row.completion[todayIndex].trim().isNotEmpty;
+    });
+  }
+
+  bool _hasAnyExecutionRecord() {
+    final IepExecutionPlansSaved? plans = _executionPlans;
+    if (plans == null) {
+      return false;
+    }
+    return plans.weeklyPlans.any(
+      (IepWeeklyPlanSaved item) => _selectedWeekHasRecordedEntry(item.plan),
+    );
+  }
+
+  bool _monthHasAnyWeeklyExecutionRecord(int monthIndex) {
+    final IepExecutionPlansSaved? plans = _executionPlans;
+    if (plans == null) {
+      return false;
+    }
+    return plans.weeklyPlans.any(
+      (IepWeeklyPlanSaved item) =>
+          item.targetMonthIndex == monthIndex &&
+          _selectedWeekHasRecordedEntry(item.plan),
+    );
+  }
+
+  bool _totalPlanHasAnyWeeklyExecutionRecord() {
+    return _hasAnyExecutionRecord();
+  }
+
   @override
   Widget build(BuildContext context) {
     final IepAssessmentRecordSummary? record = widget.record;
@@ -2127,16 +2216,28 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     final IepWeeklyPlan? weekPlan =
         _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
     final bool canStartClassToday = _canStartClassForSelectedWeek(weekPlan);
+    final bool weekHasAnyRecord = _selectedWeekHasRecordedEntry(weekPlan);
+    final bool weekHasTodayRecord = _selectedWeekHasTodayRecord(weekPlan);
+    final bool hasAnyExecutionRecord = _hasAnyExecutionRecord();
+    final bool totalPlanRegenerateDisabled =
+        _totalPlanHasAnyWeeklyExecutionRecord();
+    final bool monthPlanRegenerateDisabled =
+        _monthHasAnyWeeklyExecutionRecord(_previewMonthIndex());
+    final bool regenerateDisabledWithHint = switch (_previewMode) {
+      _IepPreviewMode.total => totalPlanRegenerateDisabled,
+      _IepPreviewMode.month => monthPlanRegenerateDisabled,
+      _IepPreviewMode.week => weekHasAnyRecord,
+    };
+    final bool currentPlanGenerated = switch (_previewMode) {
+      _IepPreviewMode.total => _savedPlan?.hasContent == true,
+      _IepPreviewMode.month => monthPlan != null,
+      _IepPreviewMode.week => weekPlan != null,
+    };
     final bool startClassEnabled = record != null &&
         _previewMode == _IepPreviewMode.week &&
         canStartClassToday &&
         !_loadingPlan &&
         !_generatingPlan;
-    final bool showRegenerateAction = switch (_previewMode) {
-      _IepPreviewMode.total => _savedPlan?.hasContent == true,
-      _IepPreviewMode.month => monthPlan != null,
-      _IepPreviewMode.week => weekPlan != null,
-    };
     final String title = _workspaceTitle(record, plan);
     final String statusText = _planStatusText(_savedPlan?.status);
     return Container(
@@ -2157,6 +2258,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             previewWeek: _previewWeek,
             onStartClass: _openLessonSession,
             startClassEnabled: startClassEnabled,
+            startClassLabel: weekHasTodayRecord ? '修改记录' : '开始上课',
           ),
           const SizedBox(height: 10),
           _PlanToolbar(
@@ -2171,7 +2273,21 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             onPeriodMonthCountChanged: _changePeriodMonthCount,
             syncingPeriod: _syncingPeriod,
             generatingPlan: _generatingPlan,
-            showRegenerateAction: showRegenerateAction,
+            currentPlanGenerated: currentPlanGenerated,
+            onGeneratePlan: _handleGeneratePlanRequest,
+            editPeriodDisabledWithHint: hasAnyExecutionRecord,
+            onDisabledEditPeriodTap: () {
+              _showMessage('该记录卡已记录，不支持编辑周期');
+            },
+            regenerateDisabledWithHint: regenerateDisabledWithHint,
+            onDisabledRegenerateTap: () {
+              final String message = switch (_previewMode) {
+                _IepPreviewMode.total => '已有月计划下的周计划被记录，不支持重新生成总计划',
+                _IepPreviewMode.month => '当前月份下已有周计划被记录，不支持重新生成月计划',
+                _IepPreviewMode.week => '该记录卡已记录，不支持重新生成',
+              };
+              _showMessage(message);
+            },
             previewMode: _previewMode,
             previewMonth: _previewMonth,
             previewWeek: _previewWeek,
@@ -2232,6 +2348,7 @@ class _WorkspaceHeader extends StatelessWidget {
     required this.previewWeek,
     required this.onStartClass,
     required this.startClassEnabled,
+    required this.startClassLabel,
   });
 
   final String title;
@@ -2242,6 +2359,7 @@ class _WorkspaceHeader extends StatelessWidget {
   final int previewWeek;
   final VoidCallback onStartClass;
   final bool startClassEnabled;
+  final String startClassLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -2284,6 +2402,7 @@ class _WorkspaceHeader extends StatelessWidget {
           _StartClassButton(
             onTap: onStartClass,
             enabled: startClassEnabled,
+            label: startClassLabel,
           ),
         ],
       ),
@@ -2374,10 +2493,12 @@ class _StartClassButton extends StatelessWidget {
   const _StartClassButton({
     required this.onTap,
     required this.enabled,
+    required this.label,
   });
 
   final VoidCallback onTap;
   final bool enabled;
+  final String label;
 
   @override
   Widget build(BuildContext context) {
@@ -2409,7 +2530,7 @@ class _StartClassButton extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                '开始上课',
+                label,
                 style: TextStyle(
                   color: enabled ? Colors.white : _IepColors.muted,
                   fontSize: 13,
@@ -2430,6 +2551,7 @@ class _PlanToolbar extends StatelessWidget {
     required this.onShowMonthPlan,
     required this.onShowWeekPlan,
     required this.onEditPeriod,
+    required this.onGeneratePlan,
     required this.onRegeneratePlan,
     required this.monthLabels,
     required this.periodMonthCount,
@@ -2437,7 +2559,11 @@ class _PlanToolbar extends StatelessWidget {
     required this.onPeriodMonthCountChanged,
     required this.syncingPeriod,
     required this.generatingPlan,
-    required this.showRegenerateAction,
+    required this.currentPlanGenerated,
+    required this.editPeriodDisabledWithHint,
+    required this.onDisabledEditPeriodTap,
+    required this.regenerateDisabledWithHint,
+    required this.onDisabledRegenerateTap,
     required this.previewMode,
     required this.previewMonth,
     required this.previewWeek,
@@ -2450,6 +2576,7 @@ class _PlanToolbar extends StatelessWidget {
   final ValueChanged<String> onShowMonthPlan;
   final void Function(String month, int weekNumber) onShowWeekPlan;
   final VoidCallback onEditPeriod;
+  final VoidCallback onGeneratePlan;
   final VoidCallback onRegeneratePlan;
   final List<String> monthLabels;
   final int periodMonthCount;
@@ -2457,7 +2584,11 @@ class _PlanToolbar extends StatelessWidget {
   final ValueChanged<int> onPeriodMonthCountChanged;
   final bool syncingPeriod;
   final bool generatingPlan;
-  final bool showRegenerateAction;
+  final bool currentPlanGenerated;
+  final bool editPeriodDisabledWithHint;
+  final VoidCallback onDisabledEditPeriodTap;
+  final bool regenerateDisabledWithHint;
+  final VoidCallback onDisabledRegenerateTap;
   final _IepPreviewMode previewMode;
   final String previewMonth;
   final int previewWeek;
@@ -2505,18 +2636,36 @@ class _PlanToolbar extends StatelessWidget {
                 ? Icons.hourglass_top_rounded
                 : Icons.edit_calendar_rounded,
             label: syncingPeriod ? '同步中' : '编辑周期',
-            onTap: syncingPeriod || generatingPlan ? null : onEditPeriod,
+            enabled: !syncingPeriod &&
+                !generatingPlan &&
+                !editPeriodDisabledWithHint,
+            onTap: syncingPeriod || generatingPlan
+                ? null
+                : (editPeriodDisabledWithHint
+                    ? onDisabledEditPeriodTap
+                    : onEditPeriod),
           ),
-          if (showRegenerateAction) ...<Widget>[
-            const SizedBox(width: 8),
-            _TableTinyAction(
-              icon: generatingPlan
-                  ? Icons.hourglass_top_rounded
-                  : Icons.refresh_rounded,
-              label: generatingPlan ? '生成中' : '重新生成',
-              onTap: generatingPlan ? null : onRegeneratePlan,
-            ),
-          ],
+          const SizedBox(width: 8),
+          _TableTinyAction(
+            icon: generatingPlan
+                ? Icons.hourglass_top_rounded
+                : (currentPlanGenerated
+                    ? Icons.refresh_rounded
+                    : Icons.auto_awesome_rounded),
+            label: generatingPlan
+                ? '生成中'
+                : (currentPlanGenerated ? '重新生成' : 'AI生成'),
+            primary: true,
+            width: 96,
+            enabled: !generatingPlan && !regenerateDisabledWithHint,
+            onTap: generatingPlan
+                ? null
+                : (regenerateDisabledWithHint
+                    ? onDisabledRegenerateTap
+                    : (currentPlanGenerated
+                        ? onRegeneratePlan
+                        : onGeneratePlan)),
+          ),
         ],
       ),
     );
@@ -2956,15 +3105,30 @@ class _TableTinyAction extends StatelessWidget {
   const _TableTinyAction({
     required this.icon,
     required this.label,
+    this.enabled = true,
+    this.primary = false,
+    this.width,
     this.onTap,
   });
 
   final IconData icon;
   final String label;
+  final bool enabled;
+  final bool primary;
+  final double? width;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final bool filled = primary;
+    final Color backgroundColor = !enabled
+        ? (filled ? const Color(0xFFF3E1D6) : const Color(0xFFF8EEE6))
+        : (filled ? _IepColors.orange : Colors.white);
+    final Color borderColor = filled
+        ? (enabled ? _IepColors.orange : const Color(0xFFF3E1D6))
+        : _IepColors.line;
+    final Color foregroundColor =
+        enabled ? (filled ? Colors.white : _IepColors.text) : _IepColors.muted;
     return Material(
       color: Colors.transparent,
       borderRadius: BorderRadius.circular(15),
@@ -2973,25 +3137,33 @@ class _TableTinyAction extends StatelessWidget {
         borderRadius: BorderRadius.circular(15),
         child: Container(
           height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 9),
+          width: width,
+          padding: EdgeInsets.symmetric(horizontal: filled ? 11 : 9),
           decoration: BoxDecoration(
-            color: onTap == null ? const Color(0xFFF8EEE6) : Colors.white,
+            color: backgroundColor,
             borderRadius: BorderRadius.circular(15),
-            border: Border.all(color: _IepColors.line),
+            border: Border.all(color: borderColor),
+            boxShadow: filled && enabled
+                ? _iepShadow(
+                    color: const Color(0x2EE96F43),
+                    blur: 10,
+                    offset: const Offset(0, 4),
+                  )
+                : const <BoxShadow>[],
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.center,
             children: <Widget>[
               Icon(
                 icon,
-                color: onTap == null ? _IepColors.muted : _IepColors.text,
+                color: foregroundColor,
                 size: 16,
               ),
               const SizedBox(width: 5),
               Text(
                 label,
                 style: TextStyle(
-                  color: onTap == null ? _IepColors.muted : _IepColors.text,
+                  color: foregroundColor,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
