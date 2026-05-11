@@ -5169,6 +5169,117 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 
   @override
+  Future<IepLessonSessionWeekState> fetchLessonSessionWeekState(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+  }) async {
+    return const IepLessonSessionWeekState();
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> startLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      currentSession: IepLessonSession(
+        lessonDate: lessonDate,
+        weekDateIndex: 1,
+        status: 'in_progress',
+        elapsedSeconds: 0,
+      ),
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'in_progress',
+          elapsedSeconds: 0,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> pauseLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'paused',
+          elapsedSeconds: 60,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> completeLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'completed',
+          elapsedSeconds: 120,
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> heartbeatLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      currentSession: IepLessonSession(
+        lessonDate: lessonDate,
+        weekDateIndex: 1,
+        status: 'in_progress',
+        elapsedSeconds: 30,
+      ),
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'in_progress',
+          elapsedSeconds: 30,
+        ),
+      ],
+    );
+  }
+
+  @override
   Future<IepWordFile> downloadIepPlanWord(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -5918,6 +6029,113 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required IepWeeklyPlan plan,
   }) async {
     return IepExecutionPlansSaved.empty(durationMonths);
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> fetchLessonSessionWeekState(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+  }) async {
+    return const IepLessonSessionWeekState();
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> startLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      currentSession: IepLessonSession(
+        lessonDate: lessonDate,
+        weekDateIndex: 1,
+        status: 'in_progress',
+      ),
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'in_progress',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> pauseLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'paused',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> completeLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'completed',
+        ),
+      ],
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> heartbeatLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    return IepLessonSessionWeekState(
+      exists: true,
+      currentSession: IepLessonSession(
+        lessonDate: lessonDate,
+        weekDateIndex: 1,
+        status: 'in_progress',
+        elapsedSeconds: 10,
+      ),
+      sessions: <IepLessonSession>[
+        IepLessonSession(
+          lessonDate: lessonDate,
+          weekDateIndex: 1,
+          status: 'in_progress',
+          elapsedSeconds: 10,
+        ),
+      ],
+    );
   }
 
   @override

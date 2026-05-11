@@ -976,6 +976,95 @@ func (handler *Handler) pep3AssessmentRecordExecutionPlanSave(w http.ResponseWri
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) pep3AssessmentRecordLessonSessionWeekState(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	recordID, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || recordID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	targetMonthIndex, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("targetMonthIndex")))
+	if err != nil || targetMonthIndex <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid targetMonthIndex", ctx.RequestID)
+		return
+	}
+	targetWeekIndex, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("targetWeekIndex")))
+	if err != nil || targetWeekIndex <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid targetWeekIndex", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetPEP3LessonSessionWeekState(claims.UserID, model.PEP3LessonSessionWeekQueryRequest{
+		ID:               recordID,
+		DurationMonths:   parsePEP3IEPPlanDurationQuery(r),
+		TargetMonthIndex: targetMonthIndex,
+		TargetWeekIndex:  targetWeekIndex,
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordLessonSessionStart(w http.ResponseWriter, r *http.Request) {
+	handler.handlePEP3LessonSessionOperate(w, r, func(userID int64, req model.PEP3LessonSessionOperateRequest) (model.PEP3LessonSessionWeekStateVO, error) {
+		return handler.service.StartPEP3LessonSession(userID, req)
+	})
+}
+
+func (handler *Handler) pep3AssessmentRecordLessonSessionPause(w http.ResponseWriter, r *http.Request) {
+	handler.handlePEP3LessonSessionOperate(w, r, func(userID int64, req model.PEP3LessonSessionOperateRequest) (model.PEP3LessonSessionWeekStateVO, error) {
+		return handler.service.PausePEP3LessonSession(userID, req)
+	})
+}
+
+func (handler *Handler) pep3AssessmentRecordLessonSessionComplete(w http.ResponseWriter, r *http.Request) {
+	handler.handlePEP3LessonSessionOperate(w, r, func(userID int64, req model.PEP3LessonSessionOperateRequest) (model.PEP3LessonSessionWeekStateVO, error) {
+		return handler.service.CompletePEP3LessonSession(userID, req)
+	})
+}
+
+func (handler *Handler) pep3AssessmentRecordLessonSessionHeartbeat(w http.ResponseWriter, r *http.Request) {
+	handler.handlePEP3LessonSessionOperate(w, r, func(userID int64, req model.PEP3LessonSessionOperateRequest) (model.PEP3LessonSessionWeekStateVO, error) {
+		return handler.service.HeartbeatPEP3LessonSession(userID, req)
+	})
+}
+
+func (handler *Handler) handlePEP3LessonSessionOperate(
+	w http.ResponseWriter,
+	r *http.Request,
+	operate func(int64, model.PEP3LessonSessionOperateRequest) (model.PEP3LessonSessionWeekStateVO, error),
+) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3LessonSessionOperateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := operate(claims.UserID, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) pep3AssessmentRecordIEPPlanAI(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

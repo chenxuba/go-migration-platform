@@ -96,6 +96,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   int _activeGenerationDurationMonths = 3;
   final Map<String, _IepGenerationSessionSnapshot> _generationSessionsByRecord =
       <String, _IepGenerationSessionSnapshot>{};
+  IepLessonSessionWeekState? _lessonSessionState;
   int _loadTicket = 0;
   int _generationTicket = 0;
 
@@ -131,6 +132,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       _resumeOrRestoreGenerationTask(showMessage: false);
+      if (_previewMode == _IepPreviewMode.week) {
+        unawaited(_refreshLessonSessionState());
+      }
     });
   }
 
@@ -145,6 +149,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _totalPlanDomains = <_DocDomainData>[];
       _savedPlan = null;
       _executionPlans = null;
+      _lessonSessionState = null;
       _planError = '';
       _generationStatus = '';
       _aiStreamText = '';
@@ -173,6 +178,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _planError = '';
         _savedPlan = null;
         _executionPlans = null;
+        _lessonSessionState = null;
         _totalPlanDomains = <_DocDomainData>[];
         _generationStatus = '';
         _aiStreamText = '';
@@ -251,6 +257,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             : _docDomainsFromPlan(savedPlan.plan!);
         _syncPreviewMonthToPeriod();
       });
+      if (_previewMode == _IepPreviewMode.week) {
+        unawaited(_refreshLessonSessionState());
+      }
       _notifyRecordStatus(record, savedPlan.status);
       _syncConfirmAvailability(savedPlan);
     } on IepPlanApiException catch (error) {
@@ -1699,6 +1708,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     setState(() {
       _previewMode = _IepPreviewMode.total;
       _selectedGoal = null;
+      _lessonSessionState = null;
     });
   }
 
@@ -1707,6 +1717,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _previewMode = _IepPreviewMode.month;
       _previewMonth = month;
       _selectedGoal = null;
+      _lessonSessionState = null;
     });
   }
 
@@ -1730,6 +1741,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _previewWeek = week;
       _selectedGoal = null;
     });
+    unawaited(_refreshLessonSessionState());
   }
 
   void _changePeriodMonthCount(int monthCount) {
@@ -1832,38 +1844,87 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _showMessage('当前周计划尚未到开始记录时间，当前选中：$weekRangeText');
       return;
     }
-    final int? selectedDateIndex =
-        await _resolveLessonEntryDateIndex(weekPlan, weekDates);
+    final IepLessonSession? resumeSession = _currentLessonSession();
+    final int? selectedDateIndex = resumeSession != null
+        ? _selectedDateIndexForLessonSession(resumeSession, weekDates)
+        : await _resolveLessonEntryDateIndex(weekPlan, weekDates);
     if (!mounted || selectedDateIndex == null) {
       return;
     }
-    final _IepLessonSessionDraft draft = _buildLessonSessionDraft(
-      record: record,
-      totalPlan: totalPlan,
-      monthPlan: monthPlan,
-      weekPlan: weekPlan,
-      initialSelectedDateIndex: selectedDateIndex,
-    );
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (BuildContext routeContext) => Scaffold(
-          body: _IepLessonFullscreenViewport(
-            child: _IepLessonSessionPage(
-              draft: draft,
-              planClient: widget.planClient,
-              onPlansSaved: (IepExecutionPlansSaved saved) {
-                if (!mounted) {
-                  return;
-                }
-                setState(() {
-                  _executionPlans = saved;
-                });
-              },
+    final String lessonDate = _formatDateDash(weekDates[selectedDateIndex]);
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      if (token.trim().isEmpty) {
+        throw const IepPlanApiException('请先登录后再开始上课');
+      }
+      final IepLessonSessionWeekState lessonSessionState =
+          await widget.planClient.startLessonSession(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        targetWeekIndex: _previewWeek,
+        lessonDate: lessonDate,
+      );
+      if (!mounted) {
+        return;
+      }
+      final IepLessonSession lessonSession =
+          lessonSessionState.sessionForDate(lessonDate) ??
+              lessonSessionState.currentSession ??
+              IepLessonSession(
+                lessonDate: lessonDate,
+                weekDateIndex: selectedDateIndex + 1,
+                status: 'in_progress',
+              );
+      setState(() {
+        _lessonSessionState = lessonSessionState;
+      });
+      final _IepLessonSessionDraft draft = _buildLessonSessionDraft(
+        record: record,
+        totalPlan: totalPlan,
+        monthPlan: monthPlan,
+        weekPlan: weekPlan,
+        initialSelectedDateIndex: selectedDateIndex,
+        lessonDate: lessonDate,
+        lessonSession: lessonSession,
+      );
+      await Navigator.of(context).push<_IepLessonSessionExitResult>(
+        MaterialPageRoute<_IepLessonSessionExitResult>(
+          builder: (BuildContext routeContext) => Scaffold(
+            body: _IepLessonFullscreenViewport(
+              child: _IepLessonSessionPage(
+                draft: draft,
+                planClient: widget.planClient,
+                onPlansSaved: (IepExecutionPlansSaved saved) {
+                  if (!mounted) {
+                    return;
+                  }
+                  setState(() {
+                    _executionPlans = saved;
+                  });
+                },
+              ),
             ),
           ),
         ),
-      ),
-    );
+      );
+      if (!mounted) {
+        return;
+      }
+      await _refreshLessonSessionState();
+    } on IepPlanApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      _showMessage('开始上课失败：$error');
+    }
   }
 
   Future<int?> _resolveLessonEntryDateIndex(
@@ -1959,6 +2020,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     required IepMonthlyPlan? monthPlan,
     required IepWeeklyPlan? weekPlan,
     int initialSelectedDateIndex = 0,
+    required String lessonDate,
+    required IepLessonSession lessonSession,
   }) {
     final String studentName = totalPlan?.student.name.trim().isNotEmpty == true
         ? totalPlan!.student.name.trim()
@@ -2098,6 +2161,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       periodLabel: periodLabel,
       weekLabel: weekLabel,
       initialSelectedDateIndex: initialSelectedDateIndex,
+      lessonDate: lessonDate,
+      lessonSession: lessonSession,
       trainingDateLabel: trainingDateLabel,
       weekDateOptions: weekDateOptions,
       completionColumnLabels: weekDateOptions,
@@ -2250,6 +2315,127 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return _dateOnly(weekDates.first).isAfter(today);
   }
 
+  Future<void> _refreshLessonSessionState() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final int monthIndex = _previewMonthIndex();
+    final int weekIndex = _previewWeek;
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(monthIndex, weekIndex);
+    if (record == null ||
+        _previewMode != _IepPreviewMode.week ||
+        weekPlan == null) {
+      if (_lessonSessionState != null && mounted) {
+        setState(() {
+          _lessonSessionState = null;
+        });
+      }
+      return;
+    }
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      if (token.trim().isEmpty) {
+        return;
+      }
+      final IepLessonSessionWeekState state =
+          await widget.planClient.fetchLessonSessionWeekState(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        targetMonthIndex: monthIndex,
+        targetWeekIndex: weekIndex,
+      );
+      if (!mounted) {
+        return;
+      }
+      final IepAssessmentRecordSummary? currentRecord = widget.record;
+      if (currentRecord == null ||
+          !_sameRecord(currentRecord, record) ||
+          _previewMode != _IepPreviewMode.week ||
+          _previewMonthIndex() != monthIndex ||
+          _previewWeek != weekIndex) {
+        return;
+      }
+      setState(() {
+        _lessonSessionState = state;
+      });
+    } on Object {
+      if (!mounted) {
+        return;
+      }
+      final IepAssessmentRecordSummary? currentRecord = widget.record;
+      if (currentRecord == null ||
+          !_sameRecord(currentRecord, record) ||
+          _previewMode != _IepPreviewMode.week ||
+          _previewMonthIndex() != monthIndex ||
+          _previewWeek != weekIndex) {
+        return;
+      }
+      setState(() {
+        _lessonSessionState = null;
+      });
+    }
+  }
+
+  IepLessonSession? _currentLessonSession() {
+    final IepLessonSessionWeekState? state = _lessonSessionState;
+    if (state == null) {
+      return null;
+    }
+    final IepLessonSession? current = state.currentSession;
+    if (current != null && current.isInProgress) {
+      return current;
+    }
+    IepLessonSession? paused;
+    for (final IepLessonSession item in state.sessions) {
+      if (item.isInProgress) {
+        return item;
+      }
+      if (!item.isPaused) {
+        continue;
+      }
+      if (paused == null ||
+          _lessonSessionSortKey(item).compareTo(_lessonSessionSortKey(paused)) >
+              0) {
+        paused = item;
+      }
+    }
+    return paused;
+  }
+
+  String _lessonSessionSortKey(IepLessonSession session) {
+    final List<String> candidates = <String>[
+      session.updatedTime,
+      session.lastHeartbeatAt,
+      session.lastResumedAt,
+      session.pausedAt,
+      session.endedAt,
+      session.startedAt,
+      session.lessonDate,
+    ];
+    for (final String item in candidates) {
+      final String normalized = item.trim();
+      if (normalized.isNotEmpty) {
+        return normalized;
+      }
+    }
+    return '';
+  }
+
+  int _selectedDateIndexForLessonSession(
+    IepLessonSession session,
+    List<DateTime> weekDates,
+  ) {
+    if (session.weekDateIndex > 0 &&
+        session.weekDateIndex <= weekDates.length) {
+      return session.weekDateIndex - 1;
+    }
+    final int matchedIndex = weekDates.indexWhere(
+      (DateTime item) => _formatDateDash(item) == session.lessonDate,
+    );
+    return matchedIndex < 0 ? 0 : matchedIndex;
+  }
+
   bool _canOpenLessonForSelectedWeek(IepWeeklyPlan? weekPlan) {
     return weekPlan != null &&
         _previewMode == _IepPreviewMode.week &&
@@ -2290,6 +2476,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _lessonEntryButtonLabel(IepWeeklyPlan? weekPlan) {
     if (_previewMode != _IepPreviewMode.week || weekPlan == null) {
       return '开始上课';
+    }
+    final IepLessonSession? session = _currentLessonSession();
+    if (session != null && (session.isInProgress || session.isPaused)) {
+      return '继续上课';
     }
     if (_selectedWeekIsCurrent(weekPlan)) {
       return '修改记录';

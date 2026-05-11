@@ -111,6 +111,56 @@ const String defaultIepErxinExecutionWordPath = String.fromEnvironment(
   'IEP_ERXIN_EXECUTION_WORD_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/word',
 );
+const String defaultIepPep3LessonSessionWeekStatePath = String.fromEnvironment(
+  'IEP_PEP3_LESSON_SESSION_WEEK_STATE_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/iep-plan/lesson-session/week-state',
+);
+const String defaultIepErxinLessonSessionWeekStatePath = String.fromEnvironment(
+  'IEP_ERXIN_LESSON_SESSION_WEEK_STATE_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/iep-plan/lesson-session/week-state',
+);
+const String defaultIepPep3LessonSessionStartPath = String.fromEnvironment(
+  'IEP_PEP3_LESSON_SESSION_START_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/iep-plan/lesson-session/start',
+);
+const String defaultIepErxinLessonSessionStartPath = String.fromEnvironment(
+  'IEP_ERXIN_LESSON_SESSION_START_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/iep-plan/lesson-session/start',
+);
+const String defaultIepPep3LessonSessionPausePath = String.fromEnvironment(
+  'IEP_PEP3_LESSON_SESSION_PAUSE_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/iep-plan/lesson-session/pause',
+);
+const String defaultIepErxinLessonSessionPausePath = String.fromEnvironment(
+  'IEP_ERXIN_LESSON_SESSION_PAUSE_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/iep-plan/lesson-session/pause',
+);
+const String defaultIepPep3LessonSessionCompletePath = String.fromEnvironment(
+  'IEP_PEP3_LESSON_SESSION_COMPLETE_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/iep-plan/lesson-session/complete',
+);
+const String defaultIepErxinLessonSessionCompletePath = String.fromEnvironment(
+  'IEP_ERXIN_LESSON_SESSION_COMPLETE_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/iep-plan/lesson-session/complete',
+);
+const String defaultIepPep3LessonSessionHeartbeatPath = String.fromEnvironment(
+  'IEP_PEP3_LESSON_SESSION_HEARTBEAT_PATH',
+  defaultValue:
+      '/api/v1/assessments/pep3/records/iep-plan/lesson-session/heartbeat',
+);
+const String defaultIepErxinLessonSessionHeartbeatPath = String.fromEnvironment(
+  'IEP_ERXIN_LESSON_SESSION_HEARTBEAT_PATH',
+  defaultValue:
+      '/api/v1/assessments/erxin/records/iep-plan/lesson-session/heartbeat',
+);
 
 class IepPlanApiException implements Exception {
   const IepPlanApiException(this.message, {this.unauthorized = false});
@@ -219,6 +269,50 @@ abstract interface class IepPlanClient {
     required IepWeeklyPlan plan,
   });
 
+  Future<IepLessonSessionWeekState> fetchLessonSessionWeekState(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+  });
+
+  Future<IepLessonSessionWeekState> startLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  });
+
+  Future<IepLessonSessionWeekState> pauseLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  });
+
+  Future<IepLessonSessionWeekState> completeLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  });
+
+  Future<IepLessonSessionWeekState> heartbeatLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  });
+
   Future<IepWordFile> downloadIepPlanWord(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -268,6 +362,22 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinPlanWordPath = defaultIepErxinPlanWordPath,
     this.pep3ExecutionWordPath = defaultIepPep3ExecutionWordPath,
     this.erxinExecutionWordPath = defaultIepErxinExecutionWordPath,
+    this.pep3LessonSessionWeekStatePath =
+        defaultIepPep3LessonSessionWeekStatePath,
+    this.erxinLessonSessionWeekStatePath =
+        defaultIepErxinLessonSessionWeekStatePath,
+    this.pep3LessonSessionStartPath = defaultIepPep3LessonSessionStartPath,
+    this.erxinLessonSessionStartPath = defaultIepErxinLessonSessionStartPath,
+    this.pep3LessonSessionPausePath = defaultIepPep3LessonSessionPausePath,
+    this.erxinLessonSessionPausePath = defaultIepErxinLessonSessionPausePath,
+    this.pep3LessonSessionCompletePath =
+        defaultIepPep3LessonSessionCompletePath,
+    this.erxinLessonSessionCompletePath =
+        defaultIepErxinLessonSessionCompletePath,
+    this.pep3LessonSessionHeartbeatPath =
+        defaultIepPep3LessonSessionHeartbeatPath,
+    this.erxinLessonSessionHeartbeatPath =
+        defaultIepErxinLessonSessionHeartbeatPath,
     this.httpClient,
   });
 
@@ -298,6 +408,16 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinPlanWordPath;
   final String pep3ExecutionWordPath;
   final String erxinExecutionWordPath;
+  final String pep3LessonSessionWeekStatePath;
+  final String erxinLessonSessionWeekStatePath;
+  final String pep3LessonSessionStartPath;
+  final String erxinLessonSessionStartPath;
+  final String pep3LessonSessionPausePath;
+  final String erxinLessonSessionPausePath;
+  final String pep3LessonSessionCompletePath;
+  final String erxinLessonSessionCompletePath;
+  final String pep3LessonSessionHeartbeatPath;
+  final String erxinLessonSessionHeartbeatPath;
   final http.Client? httpClient;
 
   @override
@@ -701,6 +821,122 @@ class ApiIepPlanClient implements IepPlanClient {
   }
 
   @override
+  Future<IepLessonSessionWeekState> fetchLessonSessionWeekState(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+  }) async {
+    final Object? data = await _getJson(
+      _uri(
+        _isErxinRecord(record)
+            ? erxinLessonSessionWeekStatePath
+            : pep3LessonSessionWeekStatePath,
+        <String, String>{
+          'id': '${record.id}',
+          'durationMonths': '${_normalizeDuration(durationMonths)}',
+          'targetMonthIndex': '$targetMonthIndex',
+          'targetWeekIndex': '$targetWeekIndex',
+        },
+      ),
+      token,
+    );
+    if (data is! Map) {
+      return const IepLessonSessionWeekState();
+    }
+    return IepLessonSessionWeekState.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> startLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) {
+    return _operateLessonSession(
+      token,
+      record: record,
+      path: _isErxinRecord(record)
+          ? erxinLessonSessionStartPath
+          : pep3LessonSessionStartPath,
+      durationMonths: durationMonths,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      lessonDate: lessonDate,
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> pauseLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) {
+    return _operateLessonSession(
+      token,
+      record: record,
+      path: _isErxinRecord(record)
+          ? erxinLessonSessionPausePath
+          : pep3LessonSessionPausePath,
+      durationMonths: durationMonths,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      lessonDate: lessonDate,
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> completeLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) {
+    return _operateLessonSession(
+      token,
+      record: record,
+      path: _isErxinRecord(record)
+          ? erxinLessonSessionCompletePath
+          : pep3LessonSessionCompletePath,
+      durationMonths: durationMonths,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      lessonDate: lessonDate,
+    );
+  }
+
+  @override
+  Future<IepLessonSessionWeekState> heartbeatLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) {
+    return _operateLessonSession(
+      token,
+      record: record,
+      path: _isErxinRecord(record)
+          ? erxinLessonSessionHeartbeatPath
+          : pep3LessonSessionHeartbeatPath,
+      durationMonths: durationMonths,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      lessonDate: lessonDate,
+    );
+  }
+
+  @override
   Future<IepWordFile> downloadIepPlanWord(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -943,6 +1179,32 @@ class ApiIepPlanClient implements IepPlanClient {
       bytes: response.bodyBytes,
       fallbackName: fallbackName,
     );
+  }
+
+  Future<IepLessonSessionWeekState> _operateLessonSession(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String path,
+    required int durationMonths,
+    required int targetMonthIndex,
+    required int targetWeekIndex,
+    required String lessonDate,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(path),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'durationMonths': _normalizeDuration(durationMonths),
+        'targetMonthIndex': targetMonthIndex,
+        'targetWeekIndex': targetWeekIndex,
+        'lessonDate': lessonDate,
+      },
+    );
+    if (data is! Map) {
+      return const IepLessonSessionWeekState();
+    }
+    return IepLessonSessionWeekState.fromJson(Map<String, dynamic>.from(data));
   }
 
   Uri _uri(String path, [Map<String, String>? query]) {
@@ -1326,6 +1588,93 @@ class IepExecutionPlansSaved {
     }
     return null;
   }
+}
+
+class IepLessonSessionWeekState {
+  const IepLessonSessionWeekState({
+    this.exists = false,
+    this.currentSession,
+    this.sessions = const <IepLessonSession>[],
+  });
+
+  factory IepLessonSessionWeekState.fromJson(Map<String, dynamic> json) {
+    return IepLessonSessionWeekState(
+      exists: _boolFrom(json['exists']),
+      currentSession: _mapFrom(json['currentSession']).isEmpty
+          ? null
+          : IepLessonSession.fromJson(_mapFrom(json['currentSession'])),
+      sessions: _listFrom(json['sessions'])
+          .map(IepLessonSession.fromJson)
+          .toList(growable: false),
+    );
+  }
+
+  final bool exists;
+  final IepLessonSession? currentSession;
+  final List<IepLessonSession> sessions;
+
+  IepLessonSession? sessionForDate(String lessonDate) {
+    final String normalized = lessonDate.trim();
+    if (normalized.isEmpty) {
+      return null;
+    }
+    for (final IepLessonSession item in sessions) {
+      if (item.lessonDate == normalized) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  bool hasActiveSessionForDate(String lessonDate) {
+    final IepLessonSession? session = sessionForDate(lessonDate);
+    return session?.isInProgress == true;
+  }
+}
+
+class IepLessonSession {
+  const IepLessonSession({
+    this.lessonDate = '',
+    this.weekDateIndex = 0,
+    this.status = '',
+    this.elapsedSeconds = 0,
+    this.startedAt = '',
+    this.lastResumedAt = '',
+    this.lastHeartbeatAt = '',
+    this.pausedAt = '',
+    this.endedAt = '',
+    this.updatedTime = '',
+  });
+
+  factory IepLessonSession.fromJson(Map<String, dynamic> json) {
+    return IepLessonSession(
+      lessonDate: _dateStringFrom(json['lessonDate']),
+      weekDateIndex: _intFrom(json['weekDateIndex']),
+      status: _stringFrom(json['status']),
+      elapsedSeconds: _intFrom(json['elapsedSeconds']),
+      startedAt: _stringFrom(json['startedAt']),
+      lastResumedAt: _stringFrom(json['lastResumedAt']),
+      lastHeartbeatAt: _stringFrom(json['lastHeartbeatAt']),
+      pausedAt: _stringFrom(json['pausedAt']),
+      endedAt: _stringFrom(json['endedAt']),
+      updatedTime: _stringFrom(json['updatedTime']),
+    );
+  }
+
+  final String lessonDate;
+  final int weekDateIndex;
+  final String status;
+  final int elapsedSeconds;
+  final String startedAt;
+  final String lastResumedAt;
+  final String lastHeartbeatAt;
+  final String pausedAt;
+  final String endedAt;
+  final String updatedTime;
+
+  bool get isInProgress => status == 'in_progress';
+  bool get isPaused => status == 'paused';
+  bool get isCompleted => status == 'completed';
 }
 
 class IepMonthlyPlanSaved {

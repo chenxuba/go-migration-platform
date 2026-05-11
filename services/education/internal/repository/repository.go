@@ -246,6 +246,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensurePEP3LessonRecordTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensurePEP3LessonSessionTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensureAssessmentScaleTables(ctx, repo.db); err != nil {
 		return err
 	}

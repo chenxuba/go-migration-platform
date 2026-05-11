@@ -66,6 +66,41 @@ type PEP3ExecutionPlanSaveRequest struct {
 	PreserveWeeklyPlans bool                     `json:"preserveWeeklyPlans,omitempty"`
 }
 
+type PEP3LessonSessionWeekQueryRequest struct {
+	ID               int64 `json:"id"`
+	DurationMonths   int   `json:"durationMonths,omitempty"`
+	TargetMonthIndex int   `json:"targetMonthIndex,omitempty"`
+	TargetWeekIndex  int   `json:"targetWeekIndex,omitempty"`
+}
+
+type PEP3LessonSessionOperateRequest struct {
+	ID               int64  `json:"id"`
+	DurationMonths   int    `json:"durationMonths,omitempty"`
+	TargetMonthIndex int    `json:"targetMonthIndex,omitempty"`
+	TargetWeekIndex  int    `json:"targetWeekIndex,omitempty"`
+	LessonDate       string `json:"lessonDate,omitempty"`
+	WeekDateIndex    int    `json:"weekDateIndex,omitempty"`
+}
+
+type PEP3LessonSessionVO struct {
+	LessonDate      string `json:"lessonDate,omitempty"`
+	WeekDateIndex   int    `json:"weekDateIndex,omitempty"`
+	Status          string `json:"status,omitempty"`
+	ElapsedSeconds  int    `json:"elapsedSeconds,omitempty"`
+	StartedAt       string `json:"startedAt,omitempty"`
+	LastResumedAt   string `json:"lastResumedAt,omitempty"`
+	LastHeartbeatAt string `json:"lastHeartbeatAt,omitempty"`
+	PausedAt        string `json:"pausedAt,omitempty"`
+	EndedAt         string `json:"endedAt,omitempty"`
+	UpdatedTime     string `json:"updatedTime,omitempty"`
+}
+
+type PEP3LessonSessionWeekStateVO struct {
+	Exists         bool                  `json:"exists"`
+	CurrentSession *PEP3LessonSessionVO  `json:"currentSession,omitempty"`
+	Sessions       []PEP3LessonSessionVO `json:"sessions,omitempty"`
+}
+
 type PEP3ExecutionPlanSavedVO struct {
 	Exists         bool                            `json:"exists"`
 	DurationMonths int                             `json:"durationMonths,omitempty"`

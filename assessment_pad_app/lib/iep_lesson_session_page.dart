@@ -17,6 +17,8 @@ class _IepLessonSessionDraft {
     required this.periodLabel,
     required this.weekLabel,
     required this.initialSelectedDateIndex,
+    required this.lessonDate,
+    required this.lessonSession,
     String? trainingDateLabel,
     List<String>? weekDateOptions,
     List<String>? completionColumnLabels,
@@ -42,6 +44,8 @@ class _IepLessonSessionDraft {
   final String periodLabel;
   final String weekLabel;
   final int initialSelectedDateIndex;
+  final String lessonDate;
+  final IepLessonSession lessonSession;
   final String? _trainingDateLabel;
   final List<String>? _weekDateOptions;
   final List<String>? _completionColumnLabels;
@@ -55,6 +59,14 @@ class _IepLessonSessionDraft {
 
   List<String> get completionColumnLabels =>
       _completionColumnLabels ?? const <String>[];
+}
+
+enum _IepLessonSessionExitAction { paused, completed, back }
+
+class _IepLessonSessionExitResult {
+  const _IepLessonSessionExitResult(this.action);
+
+  final _IepLessonSessionExitAction action;
 }
 
 class _IepLessonFullscreenViewport extends StatelessWidget {
@@ -136,7 +148,8 @@ class _IepLessonSessionPage extends StatefulWidget {
   State<_IepLessonSessionPage> createState() => _IepLessonSessionPageState();
 }
 
-class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
+class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
+    with WidgetsBindingObserver {
   static const String _authTokenStorageKey = 'auth_token';
 
   int _selectedTaskIndex = 0;
@@ -144,22 +157,32 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
   List<List<String>> _taskCompletionCodes = <List<String>>[];
   String _courseName = '康复教学';
   late IepWeeklyPlan _weeklyPlan;
+  late IepLessonSession _lessonSession;
+  int _displayElapsedSeconds = 0;
   bool _weeklyPlanDirty = false;
   bool _needsResave = false;
   int _weeklyPlanRevision = 0;
   Future<bool>? _activeSaveFuture;
+  Timer? _lessonClockTimer;
+  Timer? _lessonHeartbeatTimer;
+  bool _sessionPausedByLifecycle = false;
+  bool _closingPage = false;
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _weeklyPlan = widget.draft.weeklyPlan;
     _taskCompletionCodes = _normalizedCompletionCodes(widget.draft);
     _selectedDateIndex = _initialSelectedDateIndexFor(widget.draft);
     _courseName = widget.draft.courseName.trim().isEmpty
         ? '康复教学'
         : widget.draft.courseName.trim();
+    _lessonSession = widget.draft.lessonSession;
+    _displayElapsedSeconds = _lessonSession.elapsedSeconds;
+    _syncLessonRuntime();
   }
 
   @override
@@ -173,11 +196,43 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       _courseName = widget.draft.courseName.trim().isEmpty
           ? '康复教学'
           : widget.draft.courseName.trim();
+      _lessonSession = widget.draft.lessonSession;
+      _displayElapsedSeconds = _lessonSession.elapsedSeconds;
       _weeklyPlanDirty = false;
       _needsResave = false;
       _weeklyPlanRevision = 0;
       _activeSaveFuture = null;
+      _sessionPausedByLifecycle = false;
+      _closingPage = false;
+      _syncLessonRuntime();
     }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (_closingPage) {
+      return;
+    }
+    switch (state) {
+      case AppLifecycleState.resumed:
+        if (_sessionPausedByLifecycle) {
+          unawaited(_resumeLessonSessionAfterLifecycle());
+        }
+        break;
+      case AppLifecycleState.inactive:
+        break;
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.paused:
+      case AppLifecycleState.detached:
+        unawaited(_pauseLessonSessionForLifecycle());
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _stopLessonRuntime();
+    super.dispose();
   }
 
   int _initialSelectedDateIndexFor(_IepLessonSessionDraft draft) {
@@ -205,6 +260,289 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
         return '';
       });
     }).toList(growable: false);
+  }
+
+  void _syncLessonRuntime() {
+    _stopLessonRuntime();
+    if (!_lessonSession.isInProgress) {
+      return;
+    }
+    _lessonClockTimer = Timer.periodic(const Duration(seconds: 1), (
+      Timer timer,
+    ) {
+      if (!mounted || !_lessonSession.isInProgress) {
+        return;
+      }
+      setState(() {
+        _displayElapsedSeconds += 1;
+      });
+    });
+    _lessonHeartbeatTimer = Timer.periodic(const Duration(seconds: 20), (
+      Timer timer,
+    ) {
+      if (!mounted || !_lessonSession.isInProgress || _closingPage) {
+        return;
+      }
+      unawaited(_sendLessonHeartbeat());
+    });
+  }
+
+  void _stopLessonRuntime() {
+    _lessonClockTimer?.cancel();
+    _lessonClockTimer = null;
+    _lessonHeartbeatTimer?.cancel();
+    _lessonHeartbeatTimer = null;
+  }
+
+  void _applyLessonSession(IepLessonSession session) {
+    _lessonSession = session;
+    _displayElapsedSeconds = session.elapsedSeconds;
+    _syncLessonRuntime();
+    if (!mounted) {
+      return;
+    }
+    setState(() {});
+  }
+
+  String _lessonDateValue() {
+    final String lessonDate = widget.draft.lessonDate.trim();
+    if (lessonDate.isNotEmpty) {
+      return lessonDate;
+    }
+    if (_lessonSession.lessonDate.trim().isNotEmpty) {
+      return _lessonSession.lessonDate.trim();
+    }
+    final List<String> weekDates = _weeklyPlan.weekDates;
+    if (_selectedDateIndex >= 0 && _selectedDateIndex < weekDates.length) {
+      return weekDates[_selectedDateIndex].trim();
+    }
+    return '';
+  }
+
+  IepLessonSession _fallbackLessonSession(String status) {
+    return IepLessonSession(
+      lessonDate: _lessonDateValue(),
+      weekDateIndex: _lessonSession.weekDateIndex > 0
+          ? _lessonSession.weekDateIndex
+          : _selectedDateIndex + 1,
+      status: status,
+      elapsedSeconds: _displayElapsedSeconds,
+      startedAt: _lessonSession.startedAt,
+      lastResumedAt: _lessonSession.lastResumedAt,
+      lastHeartbeatAt: _lessonSession.lastHeartbeatAt,
+      pausedAt: _lessonSession.pausedAt,
+      endedAt: _lessonSession.endedAt,
+      updatedTime: _lessonSession.updatedTime,
+    );
+  }
+
+  IepLessonSession _resolveLessonSessionFromState(
+    IepLessonSessionWeekState state,
+    String lessonDate,
+  ) {
+    return state.sessionForDate(lessonDate) ??
+        state.currentSession ??
+        _fallbackLessonSession(_lessonSession.status);
+  }
+
+  Future<String> _readAuthToken() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    return prefs.getString(_authTokenStorageKey) ?? '';
+  }
+
+  Future<bool> _startLessonSessionRemote({bool silent = false}) async {
+    final String lessonDate = _lessonDateValue();
+    if (lessonDate.isEmpty) {
+      return false;
+    }
+    try {
+      final String token = await _readAuthToken();
+      if (token.trim().isEmpty) {
+        throw const IepPlanApiException('请先登录后再开始上课');
+      }
+      final IepLessonSessionWeekState state =
+          await widget.planClient.startLessonSession(
+        token,
+        record: widget.draft.record,
+        durationMonths: widget.draft.durationMonths,
+        targetMonthIndex: widget.draft.targetMonthIndex,
+        targetWeekIndex: widget.draft.targetWeekIndex,
+        lessonDate: lessonDate,
+      );
+      final IepLessonSession session = state.sessionForDate(lessonDate) ??
+          state.currentSession ??
+          _fallbackLessonSession('in_progress');
+      _applyLessonSession(session);
+      return true;
+    } on IepPlanApiException catch (error) {
+      if (!silent) {
+        _showMessage(error.message);
+      }
+      return false;
+    } on Object catch (error) {
+      if (!silent) {
+        _showMessage('恢复上课状态失败：$error');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _pauseLessonSessionRemote({bool silent = false}) async {
+    final String lessonDate = _lessonDateValue();
+    if (lessonDate.isEmpty) {
+      return false;
+    }
+    try {
+      final String token = await _readAuthToken();
+      if (token.trim().isEmpty) {
+        throw const IepPlanApiException('请先登录后再暂停上课');
+      }
+      final IepLessonSessionWeekState state =
+          await widget.planClient.pauseLessonSession(
+        token,
+        record: widget.draft.record,
+        durationMonths: widget.draft.durationMonths,
+        targetMonthIndex: widget.draft.targetMonthIndex,
+        targetWeekIndex: widget.draft.targetWeekIndex,
+        lessonDate: lessonDate,
+      );
+      final IepLessonSession session = state.sessionForDate(lessonDate) ??
+          state.currentSession ??
+          _fallbackLessonSession('paused');
+      _applyLessonSession(
+        session.status.trim().isEmpty
+            ? _fallbackLessonSession('paused')
+            : session,
+      );
+      return true;
+    } on IepPlanApiException catch (error) {
+      if (!silent) {
+        _showMessage(error.message);
+      }
+      return false;
+    } on Object catch (error) {
+      if (!silent) {
+        _showMessage('暂停上课失败：$error');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _completeLessonSessionRemote({bool silent = false}) async {
+    final String lessonDate = _lessonDateValue();
+    if (lessonDate.isEmpty) {
+      return false;
+    }
+    try {
+      final String token = await _readAuthToken();
+      if (token.trim().isEmpty) {
+        throw const IepPlanApiException('请先登录后再结束上课');
+      }
+      final IepLessonSessionWeekState state =
+          await widget.planClient.completeLessonSession(
+        token,
+        record: widget.draft.record,
+        durationMonths: widget.draft.durationMonths,
+        targetMonthIndex: widget.draft.targetMonthIndex,
+        targetWeekIndex: widget.draft.targetWeekIndex,
+        lessonDate: lessonDate,
+      );
+      final IepLessonSession session = state.sessionForDate(lessonDate) ??
+          state.currentSession ??
+          _fallbackLessonSession('completed');
+      _applyLessonSession(
+        session.status.trim().isEmpty
+            ? _fallbackLessonSession('completed')
+            : session,
+      );
+      return true;
+    } on IepPlanApiException catch (error) {
+      if (!silent) {
+        _showMessage(error.message);
+      }
+      return false;
+    } on Object catch (error) {
+      if (!silent) {
+        _showMessage('结束上课失败：$error');
+      }
+      return false;
+    }
+  }
+
+  Future<void> _sendLessonHeartbeat() async {
+    final String lessonDate = _lessonDateValue();
+    if (lessonDate.isEmpty || !_lessonSession.isInProgress) {
+      return;
+    }
+    try {
+      final String token = await _readAuthToken();
+      if (token.trim().isEmpty) {
+        return;
+      }
+      final IepLessonSessionWeekState state =
+          await widget.planClient.heartbeatLessonSession(
+        token,
+        record: widget.draft.record,
+        durationMonths: widget.draft.durationMonths,
+        targetMonthIndex: widget.draft.targetMonthIndex,
+        targetWeekIndex: widget.draft.targetWeekIndex,
+        lessonDate: lessonDate,
+      );
+      final IepLessonSession session =
+          _resolveLessonSessionFromState(state, lessonDate);
+      if (!_lessonSession.isInProgress && !session.isInProgress) {
+        return;
+      }
+      _applyLessonSession(session);
+    } on Object {
+      // 心跳失败先静默，后端会在超时后自动转为暂停。
+    }
+  }
+
+  Future<void> _pauseLessonSessionForLifecycle() async {
+    if (_closingPage || !_lessonSession.isInProgress) {
+      return;
+    }
+    final bool saved = await _flushWeeklyPlanSave(silent: true);
+    if (!saved) {
+      return;
+    }
+    final bool paused = await _pauseLessonSessionRemote(silent: true);
+    if (paused) {
+      _sessionPausedByLifecycle = true;
+    }
+  }
+
+  Future<void> _resumeLessonSessionAfterLifecycle() async {
+    if (_closingPage) {
+      return;
+    }
+    final bool resumed = await _startLessonSessionRemote(silent: true);
+    if (resumed) {
+      _sessionPausedByLifecycle = false;
+    }
+  }
+
+  String _lessonStatusText() {
+    final String duration = _formatLessonElapsed(_displayElapsedSeconds);
+    if (_lessonSession.isCompleted) {
+      return '已结束 $duration';
+    }
+    if (_lessonSession.isPaused) {
+      return '已暂停 $duration';
+    }
+    return '进行中 $duration';
+  }
+
+  String _formatLessonElapsed(int totalSeconds) {
+    final int safeSeconds = math.max(0, totalSeconds);
+    final int hours = safeSeconds ~/ 3600;
+    final int minutes = (safeSeconds % 3600) ~/ 60;
+    final int seconds = safeSeconds % 60;
+    if (hours > 0) {
+      return '$hours:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    }
+    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
 
   void _showMessage(
@@ -472,11 +810,24 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       selectedDateIndex: selectedDateIndex,
     );
     if (missingTaskIndexes.isEmpty) {
-      final bool saved = await _flushWeeklyPlanSave();
-      if (!mounted || !saved) {
+      if (_closingPage) {
         return;
       }
-      Navigator.of(context).maybePop();
+      _closingPage = true;
+      final bool saved = await _flushWeeklyPlanSave();
+      if (!mounted || !saved) {
+        _closingPage = false;
+        return;
+      }
+      final bool completed = await _completeLessonSessionRemote();
+      if (!mounted || !completed) {
+        _closingPage = false;
+        return;
+      }
+      Navigator.of(context).pop(
+        const _IepLessonSessionExitResult(
+            _IepLessonSessionExitAction.completed),
+      );
       return;
     }
     final String? code = await showDialog<String>(
@@ -502,19 +853,45 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       taskIndexes: missingTaskIndexes,
       code: code,
     );
-    final bool saved = await _flushWeeklyPlanSave();
-    if (!mounted || !saved) {
+    if (_closingPage) {
       return;
     }
-    Navigator.of(context).maybePop();
+    _closingPage = true;
+    final bool saved = await _flushWeeklyPlanSave();
+    if (!mounted || !saved) {
+      _closingPage = false;
+      return;
+    }
+    final bool completed = await _completeLessonSessionRemote();
+    if (!mounted || !completed) {
+      _closingPage = false;
+      return;
+    }
+    Navigator.of(context).pop(const _IepLessonSessionExitResult(
+        _IepLessonSessionExitAction.completed));
   }
 
   Future<void> _handleBackPressed() async {
-    final bool saved = await _flushWeeklyPlanSave();
-    if (!mounted || !saved) {
+    if (_closingPage) {
       return;
     }
-    Navigator.of(context).maybePop();
+    _closingPage = true;
+    final bool saved = await _flushWeeklyPlanSave();
+    if (!mounted || !saved) {
+      _closingPage = false;
+      return;
+    }
+    final bool paused = await _pauseLessonSessionRemote();
+    if (!mounted || !paused) {
+      _closingPage = false;
+      return;
+    }
+    Navigator.of(context).pop(
+        const _IepLessonSessionExitResult(_IepLessonSessionExitAction.paused));
+  }
+
+  Future<void> _handlePauseLesson() async {
+    await _handleBackPressed();
   }
 
   @override
@@ -541,107 +918,118 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
           item[selectedDateIndex].isNotEmpty;
     }).length;
 
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final double width =
-            constraints.maxWidth.isFinite ? constraints.maxWidth : 1366;
-        final bool compact = width < 1180;
-        final double outer = compact ? 14 : 20;
-        final double gap = compact ? 10 : 14;
-        final double leftWidth = compact ? 248 : 272;
-        final double rightWidth = compact ? 278 : 320;
-        final double centerWidth =
-            width - outer * 2 - leftWidth - rightWidth - gap * 2;
-
-        return ColoredBox(
-          color: const Color(0xFFFFF7EE),
-          child: Stack(
-            children: <Widget>[
-              Positioned.fill(
-                child: CustomPaint(painter: _IepLessonBackgroundPainter()),
-              ),
-              Positioned(
-                left: 0,
-                right: 0,
-                top: 0,
-                child: _IepLessonTopBar(
-                  onBack: _handleBackPressed,
-                  draft: draft,
-                  selectedDateLabel: selectedDateLabel,
-                  onEndLesson: _handleEndLesson,
-                ),
-              ),
-              Positioned(
-                left: outer,
-                top: 84,
-                width: leftWidth,
-                height: 660,
-                child: _IepLessonTaskRail(
-                  draft: draft,
-                  selectedIndex: selectedIndex,
-                  selectedDateIndex: selectedDateIndex,
-                  recordedCount: recordedCount,
-                  completionCodes: _taskCompletionCodes,
-                  onTaskSelected: (int index) {
-                    setState(() {
-                      _selectedTaskIndex = index;
-                    });
-                  },
-                ),
-              ),
-              Positioned(
-                left: outer + leftWidth + gap,
-                top: 84,
-                width: centerWidth,
-                height: 660,
-                child: _IepLessonMainPanel(
-                  draft: draft,
-                  task: selectedTask,
-                  taskIndex: selectedIndex,
-                  selectedDateLabel: selectedDateLabel,
-                  courseName: _courseName,
-                  onEditCourseName: _editCourseName,
-                  hasPreviousTask: tasks.isNotEmpty && selectedIndex > 0,
-                  hasNextTask:
-                      tasks.isNotEmpty && selectedIndex < tasks.length - 1,
-                  onPreviousTask: tasks.isNotEmpty && selectedIndex > 0
-                      ? () {
-                          setState(() {
-                            _selectedTaskIndex = selectedIndex - 1;
-                          });
-                        }
-                      : null,
-                  onNextTask:
-                      tasks.isNotEmpty && selectedIndex < tasks.length - 1
-                          ? () {
-                              setState(() {
-                                _selectedTaskIndex = selectedIndex + 1;
-                              });
-                            }
-                          : null,
-                ),
-              ),
-              Positioned(
-                right: outer,
-                top: 84,
-                width: rightWidth,
-                height: 660,
-                child: _IepLessonRecordPanel(
-                  draft: draft,
-                  task: selectedTask,
-                  currentCodes: selectedIndex < _taskCompletionCodes.length
-                      ? _taskCompletionCodes[selectedIndex]
-                      : const <String>[],
-                  weekDateOptions: weekDateOptions,
-                  selectedDateIndex: selectedDateIndex,
-                  onCodeSelected: _updateCompletionCode,
-                  selectedDateLabel: selectedDateLabel,
-                ),
-              ),
-            ],
-          ),
-        );
+    return PopScope(
+      canPop: false,
+      onPopInvoked: (bool didPop) async {
+        if (didPop) {
+          return;
+        }
+        await _handleBackPressed();
       },
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width =
+              constraints.maxWidth.isFinite ? constraints.maxWidth : 1366;
+          final bool compact = width < 1180;
+          final double outer = compact ? 14 : 20;
+          final double gap = compact ? 10 : 14;
+          final double leftWidth = compact ? 248 : 272;
+          final double rightWidth = compact ? 278 : 320;
+          final double centerWidth =
+              width - outer * 2 - leftWidth - rightWidth - gap * 2;
+
+          return ColoredBox(
+            color: const Color(0xFFFFF7EE),
+            child: Stack(
+              children: <Widget>[
+                Positioned.fill(
+                  child: CustomPaint(painter: _IepLessonBackgroundPainter()),
+                ),
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  child: _IepLessonTopBar(
+                    onBack: _handleBackPressed,
+                    onPause: _handlePauseLesson,
+                    draft: draft,
+                    selectedDateLabel: selectedDateLabel,
+                    statusText: _lessonStatusText(),
+                    onEndLesson: _handleEndLesson,
+                  ),
+                ),
+                Positioned(
+                  left: outer,
+                  top: 84,
+                  width: leftWidth,
+                  height: 660,
+                  child: _IepLessonTaskRail(
+                    draft: draft,
+                    selectedIndex: selectedIndex,
+                    selectedDateIndex: selectedDateIndex,
+                    recordedCount: recordedCount,
+                    completionCodes: _taskCompletionCodes,
+                    onTaskSelected: (int index) {
+                      setState(() {
+                        _selectedTaskIndex = index;
+                      });
+                    },
+                  ),
+                ),
+                Positioned(
+                  left: outer + leftWidth + gap,
+                  top: 84,
+                  width: centerWidth,
+                  height: 660,
+                  child: _IepLessonMainPanel(
+                    draft: draft,
+                    task: selectedTask,
+                    taskIndex: selectedIndex,
+                    selectedDateLabel: selectedDateLabel,
+                    courseName: _courseName,
+                    onEditCourseName: _editCourseName,
+                    hasPreviousTask: tasks.isNotEmpty && selectedIndex > 0,
+                    hasNextTask:
+                        tasks.isNotEmpty && selectedIndex < tasks.length - 1,
+                    onPreviousTask: tasks.isNotEmpty && selectedIndex > 0
+                        ? () {
+                            setState(() {
+                              _selectedTaskIndex = selectedIndex - 1;
+                            });
+                          }
+                        : null,
+                    onNextTask:
+                        tasks.isNotEmpty && selectedIndex < tasks.length - 1
+                            ? () {
+                                setState(() {
+                                  _selectedTaskIndex = selectedIndex + 1;
+                                });
+                              }
+                            : null,
+                  ),
+                ),
+                Positioned(
+                  right: outer,
+                  top: 84,
+                  width: rightWidth,
+                  height: 660,
+                  child: _IepLessonRecordPanel(
+                    draft: draft,
+                    task: selectedTask,
+                    currentCodes: selectedIndex < _taskCompletionCodes.length
+                        ? _taskCompletionCodes[selectedIndex]
+                        : const <String>[],
+                    weekDateOptions: weekDateOptions,
+                    selectedDateIndex: selectedDateIndex,
+                    onCodeSelected: _updateCompletionCode,
+                    selectedDateLabel: selectedDateLabel,
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
     );
   }
 }
@@ -674,14 +1062,18 @@ class _IepLessonBackgroundPainter extends CustomPainter {
 class _IepLessonTopBar extends StatelessWidget {
   const _IepLessonTopBar({
     required this.onBack,
+    required this.onPause,
     required this.draft,
     required this.selectedDateLabel,
+    required this.statusText,
     required this.onEndLesson,
   });
 
   final VoidCallback onBack;
+  final VoidCallback onPause;
   final _IepLessonSessionDraft draft;
   final String selectedDateLabel;
+  final String statusText;
   final VoidCallback onEndLesson;
 
   @override
@@ -713,7 +1105,7 @@ class _IepLessonTopBar extends StatelessWidget {
           const SizedBox(width: 8),
           _IepLessonMetaBadge(
             icon: Icons.schedule_rounded,
-            text: '进行中 32:18',
+            text: statusText,
             tone: _IepLessonBadgeTone.orange,
           ),
           const Spacer(),
@@ -721,6 +1113,7 @@ class _IepLessonTopBar extends StatelessWidget {
             label: '暂停',
             icon: Icons.pause_circle_outline_rounded,
             filled: false,
+            onTap: onPause,
           ),
           const SizedBox(width: 10),
           _IepLessonActionButton(
