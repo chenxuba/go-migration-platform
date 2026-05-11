@@ -221,6 +221,105 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     });
   }
 
+  String _selectedDateLabelFor(_IepLessonSessionDraft draft) {
+    final List<String> weekDateOptions = draft.weekDateOptions;
+    if (weekDateOptions.isEmpty) {
+      return draft.trainingDateLabel;
+    }
+    final int selectedDateIndex = _selectedDateIndex.clamp(
+      0,
+      math.max(0, weekDateOptions.length - 1),
+    );
+    return weekDateOptions[selectedDateIndex];
+  }
+
+  List<int> _missingTaskIndexesForDate({
+    required _IepLessonSessionDraft draft,
+    required int selectedDateIndex,
+  }) {
+    final List<_IepLessonTaskDraft> tasks = draft.tasks;
+    if (_taskCompletionCodes.length != tasks.length) {
+      _taskCompletionCodes = _normalizedCompletionCodes(draft);
+    }
+    final List<int> indexes = <int>[];
+    for (int index = 0; index < _taskCompletionCodes.length; index++) {
+      final List<String> taskCodes = _taskCompletionCodes[index];
+      if (selectedDateIndex >= taskCodes.length) {
+        indexes.add(index);
+        continue;
+      }
+      if (taskCodes[selectedDateIndex].trim().isEmpty) {
+        indexes.add(index);
+      }
+    }
+    return indexes;
+  }
+
+  void _fillMissingTaskCodes({
+    required int selectedDateIndex,
+    required List<int> taskIndexes,
+    required String code,
+  }) {
+    final List<List<String>> next = _taskCompletionCodes
+        .map((List<String> item) => List<String>.from(item))
+        .toList(growable: false);
+    for (final int taskIndex in taskIndexes) {
+      if (taskIndex < 0 || taskIndex >= next.length) {
+        continue;
+      }
+      final List<String> taskCodes = next[taskIndex];
+      if (selectedDateIndex < 0 || selectedDateIndex >= taskCodes.length) {
+        continue;
+      }
+      if (taskCodes[selectedDateIndex].trim().isEmpty) {
+        taskCodes[selectedDateIndex] = code;
+      }
+    }
+    setState(() {
+      _taskCompletionCodes = next;
+    });
+  }
+
+  Future<void> _handleEndLesson() async {
+    final _IepLessonSessionDraft draft = widget.draft;
+    final List<String> weekDateOptions = draft.weekDateOptions;
+    final int selectedDateIndex = weekDateOptions.isEmpty
+        ? 0
+        : _selectedDateIndex.clamp(0, math.max(0, weekDateOptions.length - 1));
+    final List<int> missingTaskIndexes = _missingTaskIndexesForDate(
+      draft: draft,
+      selectedDateIndex: selectedDateIndex,
+    );
+    if (missingTaskIndexes.isEmpty) {
+      widget.onBack();
+      return;
+    }
+    final String? code = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepLessonMissingRecordDialog(
+            selectedDateLabel: _selectedDateLabelFor(draft),
+            missingTasks: missingTaskIndexes
+                .where((int index) => index >= 0 && index < draft.tasks.length)
+                .map((int index) => draft.tasks[index])
+                .toList(growable: false),
+          ),
+        );
+      },
+    );
+    if (!mounted || code == null || code.trim().isEmpty) {
+      return;
+    }
+    _fillMissingTaskCodes(
+      selectedDateIndex: selectedDateIndex,
+      taskIndexes: missingTaskIndexes,
+      code: code,
+    );
+    widget.onBack();
+  }
+
   @override
   Widget build(BuildContext context) {
     final _IepLessonSessionDraft draft = widget.draft;
@@ -272,6 +371,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
                   onBack: widget.onBack,
                   draft: draft,
                   selectedDateLabel: selectedDateLabel,
+                  onEndLesson: _handleEndLesson,
                 ),
               ),
               Positioned(
@@ -379,11 +479,13 @@ class _IepLessonTopBar extends StatelessWidget {
     required this.onBack,
     required this.draft,
     required this.selectedDateLabel,
+    required this.onEndLesson,
   });
 
   final VoidCallback onBack;
   final _IepLessonSessionDraft draft;
   final String selectedDateLabel;
+  final VoidCallback onEndLesson;
 
   @override
   Widget build(BuildContext context) {
@@ -428,6 +530,7 @@ class _IepLessonTopBar extends StatelessWidget {
             label: '结束上课',
             icon: Icons.stop_circle_rounded,
             filled: true,
+            onTap: onEndLesson,
           ),
         ],
       ),
@@ -552,48 +655,61 @@ class _IepLessonActionButton extends StatelessWidget {
     required this.label,
     required this.icon,
     required this.filled,
+    this.onTap,
   });
 
   final String label;
   final IconData icon;
   final bool filled;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
-      decoration: BoxDecoration(
-        color: filled ? _IepColors.orange : Colors.white,
+    return Opacity(
+      opacity: onTap == null ? .58 : 1,
+      child: Material(
+        color: Colors.transparent,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(
-          color: filled ? _IepColors.orange : _IepColors.line,
-        ),
-        boxShadow: filled
-            ? _iepShadow(
-                color: const Color(0x26E96F43),
-                blur: 14,
-                offset: const Offset(0, 5),
-              )
-            : const <BoxShadow>[],
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(
-            icon,
-            size: 18,
-            color: filled ? Colors.white : _IepColors.text,
-          ),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: TextStyle(
-              color: filled ? Colors.white : _IepColors.text,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(19),
+          child: Container(
+            height: 38,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: BoxDecoration(
+              color: filled ? _IepColors.orange : Colors.white,
+              borderRadius: BorderRadius.circular(19),
+              border: Border.all(
+                color: filled ? _IepColors.orange : _IepColors.line,
+              ),
+              boxShadow: filled
+                  ? _iepShadow(
+                      color: const Color(0x26E96F43),
+                      blur: 14,
+                      offset: const Offset(0, 5),
+                    )
+                  : const <BoxShadow>[],
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  icon,
+                  size: 18,
+                  color: filled ? Colors.white : _IepColors.text,
+                ),
+                const SizedBox(width: 6),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: filled ? Colors.white : _IepColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
+        ),
       ),
     );
   }
@@ -1292,6 +1408,168 @@ class _IepLessonCourseNameDialogState
   }
 }
 
+class _IepLessonMissingRecordDialog extends StatefulWidget {
+  const _IepLessonMissingRecordDialog({
+    required this.selectedDateLabel,
+    required this.missingTasks,
+  });
+
+  final String selectedDateLabel;
+  final List<_IepLessonTaskDraft> missingTasks;
+
+  @override
+  State<_IepLessonMissingRecordDialog> createState() =>
+      _IepLessonMissingRecordDialogState();
+}
+
+class _IepLessonMissingRecordDialogState
+    extends State<_IepLessonMissingRecordDialog> {
+  String _selectedCode = '';
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      alignment: const Alignment(0, -0.08),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 560,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        '还有 ${widget.missingTasks.length} 项未记录',
+                        style: const TextStyle(
+                          color: _IepColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${widget.selectedDateLabel} 仍有训练项目未填写完成情况，选择一个结果后可一键补记并结束上课。',
+                        style: const TextStyle(
+                          color: _IepColors.text,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                          height: 1.45,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFBF7),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E6),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(
+                      Icons.info_outline_rounded,
+                      size: 16,
+                      color: _IepColors.orangeDeep,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '当前还有 ${widget.missingTasks.length} 项未填写完成情况。如果本次训练结果一致，可直接选择一个记录结果，一键补记后结束上课。',
+                      style: const TextStyle(
+                        color: _IepColors.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              '一键补记为',
+              style: TextStyle(
+                color: _IepColors.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            _IepLessonCodeGrid(
+              codes: _lessonRecordCodeOptions,
+              currentCode: _selectedCode,
+              enabled: true,
+              onCodeSelected: (String code) {
+                setState(() {
+                  _selectedCode = code;
+                });
+              },
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _IepLessonDialogButton(
+                    label: '继续记录',
+                    primary: false,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _IepLessonDialogButton(
+                    label: '补记并结束',
+                    primary: true,
+                    onTap: _selectedCode.isEmpty
+                        ? null
+                        : () => Navigator.of(context).pop(_selectedCode),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _IepLessonDialogButton extends StatelessWidget {
   const _IepLessonDialogButton({
     required this.label,
@@ -1301,10 +1579,11 @@ class _IepLessonDialogButton extends StatelessWidget {
 
   final String label;
   final bool primary;
-  final VoidCallback onTap;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
+    final bool enabled = onTap != null;
     return Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1314,16 +1593,22 @@ class _IepLessonDialogButton extends StatelessWidget {
           height: 44,
           alignment: Alignment.center,
           decoration: BoxDecoration(
-            color: primary ? _IepColors.orange : Colors.white,
+            color: !enabled
+                ? const Color(0xFFF3F4F6)
+                : (primary ? _IepColors.orange : Colors.white),
             borderRadius: BorderRadius.circular(14),
             border: Border.all(
-              color: primary ? _IepColors.orange : _IepColors.line,
+              color: !enabled
+                  ? const Color(0xFFE0E3E8)
+                  : (primary ? _IepColors.orange : _IepColors.line),
             ),
           ),
           child: Text(
             label,
             style: TextStyle(
-              color: primary ? Colors.white : _IepColors.text,
+              color: !enabled
+                  ? const Color(0xFFB4BAC4)
+                  : (primary ? Colors.white : _IepColors.text),
               fontSize: 14,
               fontWeight: FontWeight.w900,
             ),
@@ -1580,15 +1865,6 @@ class _IepLessonRecordPanel extends StatelessWidget {
     final String currentCode = safeDateIndex < currentCodes.length
         ? currentCodes[safeDateIndex].trim()
         : '';
-    const List<String> codeOptions = <String>[
-      '√',
-      '✗',
-      'S',
-      'G',
-      'M',
-      'V',
-      'P'
-    ];
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.95),
@@ -1690,7 +1966,7 @@ class _IepLessonRecordPanel extends StatelessWidget {
                   _IepLessonRecordSection(
                     title: '数据记录',
                     child: _IepLessonCodeGrid(
-                      codes: codeOptions,
+                      codes: _lessonRecordCodeOptions,
                       currentCode: currentCode,
                       enabled: task != null,
                       onCodeSelected: onCodeSelected,
@@ -1921,6 +2197,16 @@ class _IepLessonCodeCard extends StatelessWidget {
     );
   }
 }
+
+const List<String> _lessonRecordCodeOptions = <String>[
+  '√',
+  '✗',
+  'S',
+  'G',
+  'M',
+  'V',
+  'P',
+];
 
 String _lessonCodeLabel(String code) {
   switch (code) {
