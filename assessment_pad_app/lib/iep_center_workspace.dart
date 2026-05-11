@@ -293,22 +293,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   }
 
   List<String> _normalizedGoalLines(List<String> values) {
-    final List<String> lines = <String>[];
-    for (final String value in values) {
-      final List<String> segments = value
-          .replaceAll('\r\n', '\n')
-          .replaceAll('\r', '\n')
-          .split('\n')
-          .map((String item) => item.trim())
-          .where((String item) => item.isNotEmpty)
-          .toList();
-      for (final String segment in segments) {
-        if (!lines.contains(segment)) {
-          lines.add(segment);
-        }
-      }
-    }
-    return lines;
+    return _normalizedNumberedTextLines(values);
   }
 
   IepPlan _planPayloadForSave() {
@@ -1561,9 +1546,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     try {
-      final IepWordFile file = await _exportWordFileForCurrentPreview(record);
-      await _openWordFile(file);
-      _showMessage('已打开打印文件，请使用系统打印', tone: PadMessageTone.success);
+      await Printing.layoutPdf(
+        name: _currentPrintFileName(record),
+        onLayout: _buildCurrentPlanPrintPdf,
+      );
     } on IepPlanApiException catch (error) {
       _showMessage(error.message);
     } on Object catch (error) {
@@ -1607,33 +1593,63 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     };
   }
 
-  Future<File> _persistWordFile(IepWordFile file) async {
-    final Directory tempDir = await getTemporaryDirectory();
-    final String safeName = file.resolvedFileName.trim().isEmpty
-        ? 'iep-plan.docx'
-        : file.resolvedFileName.trim();
-    final File tempFile = File('${tempDir.path}/$safeName');
-    await tempFile.writeAsBytes(file.bytes, flush: true);
-    return tempFile;
-  }
-
   Future<bool> _saveWordFile(IepWordFile file) async {
     return DownloadedFileSaver.save(file);
   }
 
-  Future<void> _openWordFile(IepWordFile file) async {
-    final File tempFile = await _persistWordFile(file);
-    final OpenResult result = await OpenFilex.open(
-      tempFile.path,
-      type: file.contentType.trim().isEmpty
-          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-          : file.contentType,
-    );
-    if (result.type != ResultType.done) {
-      throw IepPlanApiException(
-        result.message.trim().isEmpty ? '无法打开导出文件' : result.message.trim(),
-      );
+  String _currentPrintFileName(IepAssessmentRecordSummary record) {
+    final String studentName =
+        record.studentName.trim().isEmpty ? '学员' : record.studentName.trim();
+    final String suffix = switch (_previewMode) {
+      _IepPreviewMode.total => 'IEP总计划',
+      _IepPreviewMode.month => '${_previewMonth}月计划',
+      _IepPreviewMode.week => '${_previewMonth}第$_previewWeek周计划',
+    };
+    return '$studentName-$suffix.pdf';
+  }
+
+  Future<Uint8List> _buildCurrentPlanPrintPdf(PdfPageFormat format) async {
+    final IepPlan? totalPlan = _savedPlan?.plan;
+    final int monthIndex = _previewMonthIndex();
+    final IepMonthlyPlan? monthPlan = _executionPlans?.monthPlan(monthIndex);
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(monthIndex, _previewWeek);
+    if (_previewMode == _IepPreviewMode.total && totalPlan == null) {
+      throw const IepPlanApiException('请先生成IEP总计划');
     }
+    if (_previewMode == _IepPreviewMode.month && monthPlan == null) {
+      throw const IepPlanApiException('请先生成月计划');
+    }
+    if (_previewMode == _IepPreviewMode.week && weekPlan == null) {
+      throw const IepPlanApiException('请先生成周计划');
+    }
+
+    final DateTime monthDate = _monthDateFromLabel(
+      _periodStart,
+      _periodMonthCount,
+      _previewMonth,
+    );
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: monthDate,
+    );
+    final List<DateTime> weekDates =
+        _dateListFromStrings(weekPlan?.weekDates) ??
+            _weekDatesInMonthRange(monthRange, _previewWeek);
+    return _buildIepPlanPrintPdf(
+      format: format,
+      mode: _previewMode,
+      totalPlan: totalPlan,
+      totalDomains: _totalPlanDomains,
+      monthPlan: monthPlan,
+      weekPlan: weekPlan,
+      periodText: _formatDotRange(_periodStart, _periodEnd),
+      monthLabel: _previewMonth,
+      weekNumber: _previewWeek,
+      monthRange: monthRange,
+      weekDates: weekDates,
+    );
   }
 
   Future<void> _showGenerationCostDialog({

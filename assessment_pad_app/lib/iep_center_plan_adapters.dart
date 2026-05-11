@@ -32,16 +32,14 @@ List<_DocDomainData> _docDomainsFromPlan(
     grouped.putIfAbsent(domain, () => <IepPlanRow>[]).add(row);
   }
   return grouped.entries.map((MapEntry<String, List<IepPlanRow>> entry) {
-    final List<String> longGoals = entry.value
-        .map((IepPlanRow row) => row.longGoal.trim())
-        .where((String value) => value.isNotEmpty)
-        .toSet()
-        .toList();
+    final List<String> longGoals = _normalizedNumberedTextLines(
+      entry.value.map((IepPlanRow row) => row.longGoal),
+    );
     final List<_DocShortGoalData> shortGoals =
         entry.value.map((IepPlanRow row) {
       final String courseForm = row.courseForm.trim();
       return _DocShortGoalData(
-        row.shortGoal,
+        _normalizeNumberedText(row.shortGoal),
         courseForm.isEmpty && defaultMissingCourseForm ? '个训' : courseForm,
         row.startEndDate,
       );
@@ -65,8 +63,8 @@ List<_DocDomainData> _docDomainsFromPlan(
 _MonthDomainData _monthDomainFromPlanRow(IepMonthlyPlanRow row) {
   return _MonthDomainData(
     domain: row.domain,
-    longGoal: row.longGoal,
-    shortGoal: row.shortGoal,
+    longGoal: _normalizeNumberedText(row.longGoal),
+    shortGoal: _normalizeNumberedText(row.shortGoal),
     lesson: row.courseForm.trim().isEmpty ? '个训' : row.courseForm,
     trainings: row.trainingItems.isEmpty
         ? <_MonthTrainingData>[const _MonthTrainingData('', '')]
@@ -78,6 +76,62 @@ _MonthDomainData _monthDomainFromPlanRow(IepMonthlyPlanRow row) {
 
 _WeekTrainingRow _weekTrainingRowFromPlanRow(IepWeeklyPlanRow row) {
   return _WeekTrainingRow(project: row.project, content: row.content);
+}
+
+List<String> _normalizedNumberedTextLines(Iterable<String> values) {
+  final List<String> lines = <String>[];
+  final String normalized = _normalizeNumberedText(values.join('\n'));
+  final List<String> segments = normalized
+      .split('\n')
+      .map((String item) => item.trim())
+      .where((String item) => item.isNotEmpty)
+      .toList();
+  for (final String segment in segments) {
+    if (!lines.contains(segment)) {
+      lines.add(segment);
+    }
+  }
+  return lines;
+}
+
+String _normalizeNumberedText(String value) {
+  final List<String> segments = value
+      .replaceAll('\r\n', '\n')
+      .replaceAll('\r', '\n')
+      .split('\n')
+      .map((String item) => item.trim())
+      .where((String item) => item.isNotEmpty)
+      .toList();
+  final List<String> lines = <String>[];
+  String? pendingMarker;
+  for (final String segment in segments) {
+    if (_isStandaloneNumberMarker(segment)) {
+      if (pendingMarker != null) {
+        lines.add(pendingMarker);
+      }
+      pendingMarker = segment;
+      continue;
+    }
+    if (pendingMarker != null) {
+      lines.add('$pendingMarker $segment');
+      pendingMarker = null;
+    } else {
+      lines.add(segment);
+    }
+  }
+  if (pendingMarker != null) {
+    lines.add(pendingMarker);
+  }
+  return lines.join('\n');
+}
+
+bool _isStandaloneNumberMarker(String value) {
+  final String text = value.trim();
+  return RegExp(r'^(?:\d{1,2}|[（(]?\d{1,2}[）)]|\d{1,2}[\.．、])$')
+          .hasMatch(text) ||
+      RegExp(
+        r'^(?:[一二三四五六七八九十]{1,3}|[（(]?[一二三四五六七八九十]{1,3}[）)]|[一二三四五六七八九十]{1,3}[\.．、])$',
+      ).hasMatch(text);
 }
 
 String _metaRangeText(IepPlanMeta? meta, {required String fallback}) {

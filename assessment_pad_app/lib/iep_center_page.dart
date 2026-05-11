@@ -1,9 +1,10 @@
-import 'dart:io';
 import 'dart:math' as math;
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
-import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'iep_assessment_record_client.dart';
@@ -20,6 +21,7 @@ part 'iep_center_queue.dart';
 part 'iep_center_workspace.dart';
 part 'iep_center_dialogs.dart';
 part 'iep_center_tables.dart';
+part 'iep_center_print.dart';
 
 class IepCenterPage extends StatefulWidget {
   const IepCenterPage({
