@@ -81,16 +81,22 @@ Future<Uint8List> _buildIepPlanPrintPdf({
       build: (pw.Context context) {
         return switch (mode) {
           _IepPreviewMode.total => _iepTotalPrintWidgets(
+              context: context,
+              tableWidth: pageFormat.availableWidth,
               plan: totalPlan!,
               domains: totalDomains,
               periodText: periodText,
             ),
           _IepPreviewMode.month => _iepMonthPrintWidgets(
+              context: context,
+              tableWidth: pageFormat.availableWidth,
               plan: monthPlan!,
               monthLabel: monthLabel,
               monthRange: monthRange,
             ),
           _IepPreviewMode.week => _iepWeekPrintWidgets(
+              context: context,
+              tableWidth: pageFormat.availableWidth,
               plan: weekPlan!,
               monthLabel: monthLabel,
               weekNumber: weekNumber,
@@ -104,6 +110,8 @@ Future<Uint8List> _buildIepPlanPrintPdf({
 }
 
 List<pw.Widget> _iepTotalPrintWidgets({
+  required pw.Context context,
+  required double tableWidth,
   required IepPlan plan,
   required List<_DocDomainData> domains,
   required String periodText,
@@ -140,11 +148,14 @@ List<pw.Widget> _iepTotalPrintWidgets({
       _IepPrintCell('课程\n形式', 1, bold: true),
       _IepPrintCell('起止日期', 1, bold: true),
     ]),
-    ...domains.expand((domain) => _iepTotalDomainWidgets(columns, domain)),
+    ...domains.expand((domain) =>
+        _iepTotalDomainWidgets(context, tableWidth, columns, domain)),
   ];
 }
 
 List<pw.Widget> _iepTotalDomainWidgets(
+  pw.Context context,
+  double tableWidth,
   List<int> columns,
   _DocDomainData domain,
 ) {
@@ -152,14 +163,31 @@ List<pw.Widget> _iepTotalDomainWidgets(
       ? <_DocShortGoalData>[const _DocShortGoalData('', '', '')]
       : domain.shortGoals;
   final List<double> rowHeights = shortGoals.map((goal) {
-    return math.max(
-      _iepTextHeightEstimate(goal.goal, charsPerLine: 22, minHeight: 32),
-      _iepTextHeightEstimate(goal.period, charsPerLine: 12, minHeight: 32),
+    return _iepMeasuredSpanningRowHeight(
+      context,
+      tableWidth,
+      columns,
+      <_IepSpanningCell>[
+        _IepSpanningCell(
+          startColumn: 4,
+          columnSpan: 2,
+          text: goal.goal,
+          align: pw.TextAlign.left,
+        ),
+        _IepSpanningCell(startColumn: 6, columnSpan: 1, text: goal.lesson),
+        _IepSpanningCell(startColumn: 7, columnSpan: 1, text: goal.period),
+      ],
+      minHeight: 32,
     );
   }).toList();
-  final double longGoalHeight = _iepTextHeightEstimate(
-    domain.longGoals.join('\n'),
-    charsPerLine: 35,
+  final double longGoalHeight = _iepMeasuredPrintCellHeight(
+    context,
+    _IepPrintCell(
+      domain.longGoals.join('\n'),
+      3,
+      align: pw.TextAlign.left,
+    ),
+    _iepColumnWidth(columns, 1, 3, tableWidth),
     minHeight: 72,
   );
   final double rowsHeight =
@@ -205,6 +233,8 @@ List<pw.Widget> _iepTotalDomainWidgets(
 }
 
 List<pw.Widget> _iepMonthPrintWidgets({
+  required pw.Context context,
+  required double tableWidth,
   required IepMonthlyPlan plan,
   required String monthLabel,
   required DateTimeRange monthRange,
@@ -257,12 +287,14 @@ List<pw.Widget> _iepMonthPrintWidgets({
       _IepPrintCell('课程\n形式', 1, bold: true),
       _IepPrintCell('起止日期', 2, bold: true),
     ]),
-    ...domains.expand(
-        (domain) => _iepMonthDomainWidgets(columns, domain, monthRange)),
+    ...domains.expand((domain) => _iepMonthDomainWidgets(
+        context, tableWidth, columns, domain, monthRange)),
   ];
 }
 
 List<pw.Widget> _iepMonthDomainWidgets(
+  pw.Context context,
+  double tableWidth,
   List<int> columns,
   _MonthDomainData domain,
   DateTimeRange monthRange,
@@ -271,15 +303,39 @@ List<pw.Widget> _iepMonthDomainWidgets(
       ? <_MonthTrainingData>[const _MonthTrainingData('', '')]
       : domain.trainings;
   final List<double> rowHeights = trainings.map((training) {
-    return _iepTextHeightEstimate(
-      training.content,
-      charsPerLine: 42,
+    return _iepMeasuredSpanningRowHeight(
+      context,
+      tableWidth,
+      columns,
+      <_IepSpanningCell>[
+        _IepSpanningCell(
+          startColumn: 5,
+          columnSpan: 4,
+          text: training.content,
+          align: pw.TextAlign.left,
+        ),
+        _IepSpanningCell(
+          startColumn: 10,
+          columnSpan: 2,
+          text: training.period,
+        ),
+      ],
       minHeight: 42,
     );
   }).toList();
   final double mergedHeight = math.max(
-    _iepTextHeightEstimate(domain.longGoal, charsPerLine: 20, minHeight: 80),
-    _iepTextHeightEstimate(domain.shortGoal, charsPerLine: 16, minHeight: 80),
+    _iepMeasuredPrintCellHeight(
+      context,
+      _IepPrintCell(domain.longGoal, 2, align: pw.TextAlign.left),
+      _iepColumnWidth(columns, 1, 2, tableWidth),
+      minHeight: 80,
+    ),
+    _iepMeasuredPrintCellHeight(
+      context,
+      _IepPrintCell(domain.shortGoal, 2, align: pw.TextAlign.left),
+      _iepColumnWidth(columns, 3, 2, tableWidth),
+      minHeight: 80,
+    ),
   );
   final double rowsHeight =
       rowHeights.fold<double>(0, (double sum, double item) => sum + item);
@@ -338,6 +394,8 @@ List<pw.Widget> _iepMonthDomainWidgets(
 }
 
 List<pw.Widget> _iepWeekPrintWidgets({
+  required pw.Context context,
+  required double tableWidth,
   required IepWeeklyPlan plan,
   required String monthLabel,
   required int weekNumber,
@@ -351,6 +409,16 @@ List<pw.Widget> _iepWeekPrintWidgets({
       .where((_WeekTrainingRow row) =>
           row.project.trim().isNotEmpty || row.content.trim().isNotEmpty)
       .toList();
+  final String preparationText =
+      plan.preparation.trim().isEmpty ? '训练材料、视觉提示卡、强化物、记录表' : plan.preparation;
+  final List<_IepPrintCell> preparationCells = <_IepPrintCell>[
+    _IepPrintCell('训练前\n准备', 1, bold: true),
+    _IepPrintCell(
+      preparationText,
+      9,
+      align: pw.TextAlign.left,
+    ),
+  ];
   return <pw.Widget>[
     _iepPrintTitle(
       plan.title.trim().isEmpty
@@ -381,39 +449,34 @@ List<pw.Widget> _iepWeekPrintWidgets({
       ),
     ]),
     _iepPrintRow(
+      columns,
+      preparationCells,
+      minHeight: _iepMeasuredPrintRowHeight(
+        context,
+        tableWidth,
         columns,
-        <_IepPrintCell>[
-          _IepPrintCell('训练前\n准备', 1, bold: true),
-          _IepPrintCell(
-            plan.preparation.trim().isEmpty
-                ? '训练材料、视觉提示卡、强化物、记录表'
-                : plan.preparation,
-            9,
-            align: pw.TextAlign.left,
-          ),
-        ],
-        minHeight: _iepTextHeightEstimate(
-          plan.preparation.trim().isEmpty
-              ? '训练材料、视觉提示卡、强化物、记录表'
-              : plan.preparation,
-          charsPerLine: 84,
-          minHeight: 38,
-        )),
+        preparationCells,
+        minHeight: 32,
+      ),
+    ),
     _iepWeekHeader(columns, displayWeekDates),
     ...trainingRows.map((row) {
+      final List<_IepPrintCell> rowCells = <_IepPrintCell>[
+        _IepPrintCell(row.project, 1, bold: true),
+        _IepPrintCell(row.content, 3, align: pw.TextAlign.left),
+        ...List<_IepPrintCell>.generate(6, (_) => _IepPrintCell('', 1)),
+      ];
       return _iepPrintRow(
+        columns,
+        rowCells,
+        minHeight: _iepMeasuredPrintRowHeight(
+          context,
+          tableWidth,
           columns,
-          <_IepPrintCell>[
-            _IepPrintCell(row.project, 1, bold: true),
-            _IepPrintCell(row.content, 3, align: pw.TextAlign.left),
-            ...List<_IepPrintCell>.generate(6, (_) => _IepPrintCell('', 1)),
-          ],
-          minHeight: math.max(
-            _iepTextHeightEstimate(row.project,
-                charsPerLine: 10, minHeight: 38),
-            _iepTextHeightEstimate(row.content,
-                charsPerLine: 36, minHeight: 38),
-          ));
+          rowCells,
+          minHeight: 32,
+        ),
+      );
     }),
   ];
 }
@@ -772,19 +835,80 @@ int _iepColumnFlex(List<int> columns, int start, int span) {
   });
 }
 
-double _iepTextHeightEstimate(
-  String text, {
-  required double charsPerLine,
+double _iepColumnWidth(
+  List<int> columns,
+  int start,
+  int span,
+  double tableWidth,
+) {
+  final int total = columns.fold<int>(0, (int sum, int item) => sum + item);
+  final int flex = _iepColumnFlex(columns, start, span);
+  return tableWidth * flex / total;
+}
+
+double _iepMeasuredPrintCellHeight(
+  pw.Context context,
+  _IepPrintCell cell,
+  double width, {
   double minHeight = 28,
 }) {
-  final List<String> lines =
-      text.replaceAll('\r\n', '\n').replaceAll('\r', '\n').split('\n');
-  int visualLines = 0;
-  for (final String line in lines) {
-    final int length = line.trim().isEmpty ? 1 : line.trim().length;
-    visualLines += math.max(1, (length / charsPerLine).ceil());
+  final pw.Widget widget = _iepPrintCell(cell);
+  widget.layout(
+    context,
+    pw.BoxConstraints.tightFor(width: width),
+  );
+  return math.max(minHeight, widget.box?.height ?? minHeight);
+}
+
+double _iepMeasuredPrintRowHeight(
+  pw.Context context,
+  double tableWidth,
+  List<int> columns,
+  List<_IepPrintCell> cells, {
+  double minHeight = 28,
+}) {
+  double height = minHeight;
+  int columnOffset = 0;
+  for (final _IepPrintCell cell in cells) {
+    height = math.max(
+      height,
+      _iepMeasuredPrintCellHeight(
+        context,
+        cell,
+        _iepColumnWidth(columns, columnOffset, cell.columns, tableWidth),
+        minHeight: minHeight,
+      ),
+    );
+    columnOffset += cell.columns;
   }
-  return math.max(minHeight, visualLines * 10.2 + 10);
+  return height;
+}
+
+double _iepMeasuredSpanningRowHeight(
+  pw.Context context,
+  double tableWidth,
+  List<int> columns,
+  List<_IepSpanningCell> cells, {
+  double minHeight = 28,
+}) {
+  double height = minHeight;
+  for (final _IepSpanningCell cell in cells) {
+    height = math.max(
+      height,
+      _iepMeasuredPrintCellHeight(
+        context,
+        _IepPrintCell(
+          cell.text,
+          cell.columnSpan,
+          bold: cell.bold,
+          align: cell.align,
+        ),
+        _iepColumnWidth(columns, cell.startColumn, cell.columnSpan, tableWidth),
+        minHeight: minHeight,
+      ),
+    );
+  }
+  return height;
 }
 
 pw.Widget _iepPrintCell(_IepPrintCell cell) {
@@ -817,5 +941,10 @@ bool _isCompactPrintHeader(_IepPrintCell cell) {
     return false;
   }
   final String text = cell.text.replaceAll(RegExp(r'\s+'), '');
-  return text == '实施起止日期' || text == '课程形式' || text == '康复领域';
+  return text == '实施起止日期' ||
+      text == '课程形式' ||
+      text == '康复领域' ||
+      text == '任教老师' ||
+      text == '课程名称' ||
+      text == '训练前准备';
 }
