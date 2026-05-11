@@ -113,16 +113,23 @@ String _normalizeNumberedText(String value) {
       continue;
     }
     if (pendingMarker != null) {
-      lines.add('$pendingMarker $segment');
+      lines.add('$pendingMarker$segment');
       pendingMarker = null;
     } else {
-      lines.add(segment);
+      lines.add(_removeNumberMarkerBreakSpace(segment));
     }
   }
   if (pendingMarker != null) {
     lines.add(pendingMarker);
   }
   return lines.join('\n');
+}
+
+String _removeNumberMarkerBreakSpace(String value) {
+  return value.replaceFirstMapped(
+    RegExp(r'^(\d{1,2}[\.．、]|[（(]?\d{1,2}[）)]|[一二三四五六七八九十]{1,3}[\.．、])\s+'),
+    (Match match) => match.group(1) ?? '',
+  );
 }
 
 bool _isStandaloneNumberMarker(String value) {
