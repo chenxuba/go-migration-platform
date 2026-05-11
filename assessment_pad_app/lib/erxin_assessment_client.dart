@@ -58,6 +58,11 @@ const String defaultErxinRecordReportPdfPath = String.fromEnvironment(
   'ERXIN_RECORD_REPORT_PDF_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/report/pdf',
 );
+const String defaultErxinRecordReportInterpretationPdfPath =
+    String.fromEnvironment(
+  'ERXIN_RECORD_REPORT_INTERPRETATION_PDF_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/report/interpretation/pdf',
+);
 const String defaultErxinRecordReportInterpretationAiPath =
     String.fromEnvironment(
   'ERXIN_RECORD_REPORT_INTERPRETATION_AI_PATH',
@@ -140,6 +145,8 @@ abstract class ErxinAssessmentClient {
 
   Future<Uint8List> downloadRecordReportPdf(String token, int id);
 
+  Future<Uint8List> downloadRecordReportInterpretationPdf(String token, int id);
+
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -171,6 +178,8 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
     this.recordUpdatePath = defaultErxinRecordUpdatePath,
     this.recordConfigUpdatePath = defaultErxinRecordConfigUpdatePath,
     this.recordReportPdfPath = defaultErxinRecordReportPdfPath,
+    this.recordReportInterpretationPdfPath =
+        defaultErxinRecordReportInterpretationPdfPath,
     this.recordReportInterpretationPath =
         defaultErxinRecordReportInterpretationPath,
     this.recordReportInterpretationAiPath =
@@ -192,6 +201,7 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
   final String recordUpdatePath;
   final String recordConfigUpdatePath;
   final String recordReportPdfPath;
+  final String recordReportInterpretationPdfPath;
   final String recordReportInterpretationPath;
   final String recordReportInterpretationAiPath;
   final String recordReportInterpretationAiStreamPath;
@@ -439,6 +449,51 @@ class ApiErxinAssessmentClient extends ErxinAssessmentClient {
           : jsonDecode(utf8.decode(response.bodyBytes));
       throw AssessmentScaleApiException(
         _messageFromPayload(decoded) ?? '评估报告PDF加载失败',
+      );
+    }
+    return response.bodyBytes;
+  }
+
+  @override
+  Future<Uint8List> downloadRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final Uri uri = _uri(
+      educationBaseUrl,
+      recordReportInterpretationPdfPath,
+      <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await client
+          .get(
+            uri,
+            headers: _authHeaders(token),
+          )
+          .timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const AssessmentScaleApiException('报告解读PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw AssessmentScaleApiException('无法连接报告解读PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final Object? decoded = response.body.trim().isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final Object? decoded = response.body.trim().isEmpty
+          ? null
+          : jsonDecode(utf8.decode(response.bodyBytes));
+      throw AssessmentScaleApiException(
+        _messageFromPayload(decoded) ?? '报告解读PDF加载失败',
       );
     }
     return response.bodyBytes;

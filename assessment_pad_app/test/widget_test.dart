@@ -5306,6 +5306,34 @@ class _FakeIepPlanClient implements IepPlanClient {
   }) async {
     return _fakeIepWordFile('${record.studentName}-周计划.docx');
   }
+
+  @override
+  Future<Uint8List> downloadIepPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<Uint8List> downloadMonthlyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<Uint8List> downloadWeeklyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
 }
 
 class _SlowFirstIepPlanClient extends _FakeIepPlanClient {
@@ -6165,6 +6193,34 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
   }) async {
     return _fakeIepWordFile('${record.studentName}-周计划.docx');
   }
+
+  @override
+  Future<Uint8List> downloadIepPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<Uint8List> downloadMonthlyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<Uint8List> downloadWeeklyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
 }
 
 IepWordFile _fakeIepWordFile(String fileName) {
@@ -6819,6 +6875,14 @@ class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   }
 
   @override
+  Future<Uint8List> downloadRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    return reportPdfBytes;
+  }
+
+  @override
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -7418,6 +7482,14 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     String dimension = 'score_and_profile',
   }) async {
     return Uint8List(0);
+  }
+
+  @override
+  Future<Uint8List> downloadRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
   }
 
   @override

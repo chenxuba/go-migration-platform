@@ -402,7 +402,7 @@ func buildIEPTableStart(widths []int) string {
 	var builder strings.Builder
 	builder.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="`)
 	builder.WriteString(strconv.Itoa(sumInts(widths...)))
-	builder.WriteString(`" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid>`)
+	builder.WriteString(`" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="24" w:type="dxa"/><w:right w:w="24" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid>`)
 	for _, width := range widths {
 		builder.WriteString(`<w:gridCol w:w="`)
 		builder.WriteString(strconv.Itoa(width))
@@ -474,9 +474,9 @@ func buildIEPParagraph(text, align string, bold bool, size int, options iepPlanW
 	if align == "" {
 		align = "left"
 	}
-	before := 40
-	after := 40
-	lineSpacing := 300
+	before := 20
+	after := 20
+	lineSpacing := 260
 	if options.CompactParagraph {
 		before = 0
 		after = 0

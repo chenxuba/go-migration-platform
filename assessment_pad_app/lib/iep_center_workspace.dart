@@ -1577,9 +1577,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     try {
+      final Uint8List bytes = await _downloadCurrentPlanPrintPdf(record);
       await Printing.layoutPdf(
         name: _currentPrintFileName(record),
-        onLayout: _buildCurrentPlanPrintPdf,
+        onLayout: (_) async => bytes,
       );
     } on IepPlanApiException catch (error) {
       _showMessage(error.message);
@@ -1639,6 +1640,43 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return '$studentName-$suffix.pdf';
   }
 
+  Future<Uint8List> _downloadCurrentPlanPrintPdf(
+    IepAssessmentRecordSummary record,
+  ) async {
+    final IepPlan? totalPlan = _savedPlan?.plan;
+    final IepMonthlyPlan? monthPlan =
+        _executionPlans?.monthPlan(_previewMonthIndex());
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    return switch (_previewMode) {
+      _IepPreviewMode.total => totalPlan == null
+          ? throw const IepPlanApiException('请先生成IEP总计划')
+          : widget.planClient.downloadIepPlanPdf(
+              token,
+              record: record,
+              durationMonths: _periodMonthCount,
+              plan: _planPayloadForSave(),
+            ),
+      _IepPreviewMode.month => monthPlan == null
+          ? throw const IepPlanApiException('请先生成月计划')
+          : widget.planClient.downloadMonthlyPlanPdf(
+              token,
+              record: record,
+              plan: monthPlan,
+            ),
+      _IepPreviewMode.week => weekPlan == null
+          ? throw const IepPlanApiException('请先生成周计划')
+          : widget.planClient.downloadWeeklyPlanPdf(
+              token,
+              record: record,
+              plan: weekPlan,
+            ),
+    };
+  }
+
+  // ignore: unused_element
   Future<Uint8List> _buildCurrentPlanPrintPdf(PdfPageFormat format) async {
     final IepPlan? totalPlan = _savedPlan?.plan;
     final int monthIndex = _previewMonthIndex();

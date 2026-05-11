@@ -59,6 +59,11 @@ const String defaultPep3RecordBookletPdfPath = String.fromEnvironment(
   'PEP3_RECORD_BOOKLET_PDF_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/booklet/pdf',
 );
+const String defaultPep3RecordReportInterpretationPdfPath =
+    String.fromEnvironment(
+  'PEP3_RECORD_REPORT_INTERPRETATION_PDF_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/report/interpretation/pdf',
+);
 const String defaultPep3RecordReportInterpretationPath = String.fromEnvironment(
   'PEP3_RECORD_REPORT_INTERPRETATION_PATH',
   defaultValue: '/api/v1/assessments/pep3/records/report/interpretation',
@@ -860,6 +865,11 @@ abstract interface class Pep3AssessmentClient {
     String dimension = 'score_and_profile',
   });
 
+  Future<Uint8List> downloadRecordReportInterpretationPdf(
+    String token,
+    int id,
+  );
+
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -893,6 +903,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.recordDetailPath = defaultPep3RecordDetailPath,
     this.recordConfigUpdatePath = defaultPep3RecordConfigUpdatePath,
     this.recordBookletPdfPath = defaultPep3RecordBookletPdfPath,
+    this.recordReportInterpretationPdfPath =
+        defaultPep3RecordReportInterpretationPdfPath,
     this.recordReportInterpretationPath =
         defaultPep3RecordReportInterpretationPath,
     this.recordReportInterpretationAiPath =
@@ -915,6 +927,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String recordDetailPath;
   final String recordConfigUpdatePath;
   final String recordBookletPdfPath;
+  final String recordReportInterpretationPdfPath;
   final String recordReportInterpretationPath;
   final String recordReportInterpretationAiPath;
   final String recordReportInterpretationAiStreamPath;
@@ -1188,6 +1201,41 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
       throw Pep3ApiException(
         _messageFromPayload(await _decodeResponse(response.body)) ??
             '评估报告PDF加载失败',
+      );
+    }
+    return _normalizeReportPdfBytes(response.bodyBytes);
+  }
+
+  @override
+  Future<Uint8List> downloadRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(recordReportInterpretationPdfPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: _headers(token)).timeout(
+            const Duration(seconds: 20),
+          );
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '报告解读PDF加载失败',
       );
     }
     return _normalizeReportPdfBytes(response.bodyBytes);

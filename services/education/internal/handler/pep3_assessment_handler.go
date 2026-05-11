@@ -816,6 +816,61 @@ func (handler *Handler) pep3AssessmentRecordIEPPlanWord(w http.ResponseWriter, r
 	_, _ = w.Write(content)
 }
 
+func (handler *Handler) pep3AssessmentRecordIEPPlanPDF(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var recordID int64
+	var durationMonths int
+	var plan *model.PEP3IEPPlanAIResult
+	if r.Method == http.MethodPost {
+		var req model.PEP3IEPPlanWordExportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		recordID = req.ID
+		durationMonths = req.DurationMonths
+		plan = req.Plan
+	} else if rawID := strings.TrimSpace(r.URL.Query().Get("id")); rawID != "" {
+		parsedID, err := strconv.ParseInt(rawID, 10, 64)
+		if err != nil || parsedID < 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+			return
+		}
+		recordID = parsedID
+	}
+	if r.Method == http.MethodGet {
+		durationMonths, _ = strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("duration")))
+	}
+	var fileName string
+	var contentType string
+	var content []byte
+	var err error
+	if plan != nil {
+		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanPDFFromAIResult(claims.UserID, recordID, *plan, durationMonths)
+	} else {
+		fileName, contentType, content, err = handler.service.ExportPEP3IEPPlanPDF(claims.UserID, recordID, durationMonths)
+	}
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
 func (handler *Handler) pep3AssessmentRecordExecutionPlanWord(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -841,6 +896,35 @@ func (handler *Handler) pep3AssessmentRecordExecutionPlanWord(w http.ResponseWri
 	}
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func (handler *Handler) pep3AssessmentRecordExecutionPlanPDF(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3ExecutionPlanWordExportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	fileName, contentType, content, err := handler.service.ExportPEP3ExecutionPlanPDF(claims.UserID, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(fileName))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
@@ -110,6 +111,22 @@ const String defaultIepPep3ExecutionWordPath = String.fromEnvironment(
 const String defaultIepErxinExecutionWordPath = String.fromEnvironment(
   'IEP_ERXIN_EXECUTION_WORD_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/word',
+);
+const String defaultIepPep3PlanPdfPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_PDF_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/pdf',
+);
+const String defaultIepErxinPlanPdfPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_PDF_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/pdf',
+);
+const String defaultIepPep3ExecutionPdfPath = String.fromEnvironment(
+  'IEP_PEP3_EXECUTION_PDF_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/execution/pdf',
+);
+const String defaultIepErxinExecutionPdfPath = String.fromEnvironment(
+  'IEP_ERXIN_EXECUTION_PDF_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/pdf',
 );
 const String defaultIepPep3LessonSessionWeekStatePath = String.fromEnvironment(
   'IEP_PEP3_LESSON_SESSION_WEEK_STATE_PATH',
@@ -331,6 +348,25 @@ abstract interface class IepPlanClient {
     required IepAssessmentRecordSummary record,
     required IepWeeklyPlan plan,
   });
+
+  Future<Uint8List> downloadIepPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  });
+
+  Future<Uint8List> downloadMonthlyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  });
+
+  Future<Uint8List> downloadWeeklyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  });
 }
 
 class ApiIepPlanClient implements IepPlanClient {
@@ -362,6 +398,10 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinPlanWordPath = defaultIepErxinPlanWordPath,
     this.pep3ExecutionWordPath = defaultIepPep3ExecutionWordPath,
     this.erxinExecutionWordPath = defaultIepErxinExecutionWordPath,
+    this.pep3PlanPdfPath = defaultIepPep3PlanPdfPath,
+    this.erxinPlanPdfPath = defaultIepErxinPlanPdfPath,
+    this.pep3ExecutionPdfPath = defaultIepPep3ExecutionPdfPath,
+    this.erxinExecutionPdfPath = defaultIepErxinExecutionPdfPath,
     this.pep3LessonSessionWeekStatePath =
         defaultIepPep3LessonSessionWeekStatePath,
     this.erxinLessonSessionWeekStatePath =
@@ -408,6 +448,10 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinPlanWordPath;
   final String pep3ExecutionWordPath;
   final String erxinExecutionWordPath;
+  final String pep3PlanPdfPath;
+  final String erxinPlanPdfPath;
+  final String pep3ExecutionPdfPath;
+  final String erxinExecutionPdfPath;
   final String pep3LessonSessionWeekStatePath;
   final String erxinLessonSessionWeekStatePath;
   final String pep3LessonSessionStartPath;
@@ -1000,6 +1044,64 @@ class ApiIepPlanClient implements IepPlanClient {
     );
   }
 
+  @override
+  Future<Uint8List> downloadIepPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return _downloadPdfByPost(
+      _uri(_isErxinRecord(record) ? erxinPlanPdfPath : pep3PlanPdfPath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'durationMonths': _normalizeDuration(durationMonths),
+        'plan': plan.toJson(),
+      },
+    );
+  }
+
+  @override
+  Future<Uint8List> downloadMonthlyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return _downloadPdfByPost(
+      _uri(_isErxinRecord(record)
+          ? erxinExecutionPdfPath
+          : pep3ExecutionPdfPath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'planType': 'monthly',
+        'monthlyPlan': plan.toJson(),
+        'weeklyPlan': null,
+      },
+    );
+  }
+
+  @override
+  Future<Uint8List> downloadWeeklyPlanPdf(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return _downloadPdfByPost(
+      _uri(_isErxinRecord(record)
+          ? erxinExecutionPdfPath
+          : pep3ExecutionPdfPath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'planType': 'weekly',
+        'monthlyPlan': null,
+        'weeklyPlan': plan.toJson(),
+      },
+    );
+  }
+
   Stream<IepExecutionPlanGenerationEvent<T>> _generateExecutionPlanStream<T>(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -1179,6 +1281,52 @@ class ApiIepPlanClient implements IepPlanClient {
       bytes: response.bodyBytes,
       fallbackName: fallbackName,
     );
+  }
+
+  Future<Uint8List> _downloadPdfByPost(
+    Uri uri,
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final http.Client client = httpClient ?? http.Client();
+    final bool shouldCloseClient = httpClient == null;
+    final http.Response response;
+    try {
+      response = await client
+          .post(
+            uri,
+            headers: _headers(
+              token,
+              accept: 'application/pdf, application/octet-stream, */*',
+            ),
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 60));
+    } on TimeoutException {
+      throw const IepPlanApiException('IEP计划接口响应超时，请检查网络');
+    } on Object catch (error) {
+      throw IepPlanApiException('无法连接IEP计划接口：$error');
+    } finally {
+      if (shouldCloseClient) {
+        client.close();
+      }
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = utf8.decode(response.bodyBytes).trim();
+      throw IepPlanApiException(
+        _messageFromPayload(body.isEmpty ? null : _tryDecodeJson(body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = utf8.decode(response.bodyBytes).trim();
+      throw IepPlanApiException(
+        _messageFromPayload(body.isEmpty ? null : _tryDecodeJson(body)) ??
+            '打印失败',
+      );
+    }
+    return response.bodyBytes;
   }
 
   Future<IepLessonSessionWeekState> _operateLessonSession(

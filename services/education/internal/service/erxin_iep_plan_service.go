@@ -114,6 +114,27 @@ func (svc *Service) ExportERXinIEPPlanWordFromAIResult(userID int64, recordID in
 	return svc.ExportPEP3IEPPlanWordFromAIResult(userID, recordID, planResult, durationMonths)
 }
 
+func (svc *Service) ExportERXinIEPPlanPDF(userID int64, recordID int64, durationMonths int) (string, string, []byte, error) {
+	if _, err := svc.validateERXinIEPPlanRecord(userID, recordID); err != nil {
+		return "", "", nil, err
+	}
+	saved, err := svc.GetPEP3IEPPlan(userID, recordID, durationMonths)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if !saved.Exists || saved.Plan == nil || len(saved.Plan.Rows) == 0 {
+		return "", "", nil, errors.New("暂无可打印的IEP计划")
+	}
+	return svc.ExportPEP3IEPPlanPDFFromAIResult(userID, recordID, *saved.Plan, durationMonths)
+}
+
+func (svc *Service) ExportERXinIEPPlanPDFFromAIResult(userID int64, recordID int64, planResult model.PEP3IEPPlanAIResult, durationMonths int) (string, string, []byte, error) {
+	if _, err := svc.validateERXinIEPPlanRecord(userID, recordID); err != nil {
+		return "", "", nil, err
+	}
+	return svc.ExportPEP3IEPPlanPDFFromAIResult(userID, recordID, planResult, durationMonths)
+}
+
 func (svc *Service) GenerateERXinExecutionPlanWithAI(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest) (any, error) {
 	if _, err := svc.validateERXinIEPPlanRecord(userID, req.ID); err != nil {
 		return nil, err
@@ -147,6 +168,13 @@ func (svc *Service) ExportERXinExecutionPlanWord(userID int64, req model.PEP3Exe
 		return "", "", nil, err
 	}
 	return svc.ExportPEP3ExecutionPlanWord(userID, req)
+}
+
+func (svc *Service) ExportERXinExecutionPlanPDF(userID int64, req model.PEP3ExecutionPlanWordExportRequest) (string, string, []byte, error) {
+	if _, err := svc.validateERXinIEPPlanRecord(userID, req.ID); err != nil {
+		return "", "", nil, err
+	}
+	return svc.ExportPEP3ExecutionPlanPDF(userID, req)
 }
 
 func (svc *Service) prepareERXinIEPPlanSource(ctx context.Context, userID, recordID int64) (model.AssessmentRecordDetailVO, model.ERXinReportVO, model.ERXinReportInterpretationVO, error) {

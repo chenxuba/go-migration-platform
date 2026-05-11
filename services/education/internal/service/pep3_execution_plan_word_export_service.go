@@ -165,7 +165,7 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 					} else {
 						builder.WriteString(buildIEPCell(nil, widths[9], iepPlanWordCellOptions{VMerge: "continue"}))
 					}
-					builder.WriteString(buildIEPCell([]string{item.StartEndDate}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", CompactParagraph: true}))
+					builder.WriteString(buildIEPCell(splitWordDateRangeLines(item.StartEndDate), sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", CompactParagraph: true}))
 					builder.WriteString(`</w:tr>`)
 				}
 				firstDomainRow = false
@@ -351,4 +351,32 @@ func formatPEP3WeeklyDateLabel(value string) string {
 		return text[5:7] + "." + text[8:10]
 	}
 	return strings.ReplaceAll(text, "-", ".")
+}
+
+func splitWordDateRangeLines(text string) []string {
+	value := strings.TrimSpace(text)
+	if value == "" {
+		return nil
+	}
+	for _, separator := range []string{" - ", " 至 ", "—", "–"} {
+		if strings.Contains(value, separator) {
+			parts := strings.SplitN(value, separator, 2)
+			left := strings.TrimSpace(parts[0])
+			right := strings.TrimSpace(parts[1])
+			if left != "" && right != "" {
+				if separator == " - " {
+					return []string{left + " -", right}
+				}
+				if separator == " 至 " {
+					return []string{left + " 至", right}
+				}
+				return []string{left, right}
+			}
+		}
+	}
+	if len(value) >= 22 {
+		mid := len(value) / 2
+		return []string{strings.TrimSpace(value[:mid]), strings.TrimSpace(value[mid:])}
+	}
+	return []string{value}
 }

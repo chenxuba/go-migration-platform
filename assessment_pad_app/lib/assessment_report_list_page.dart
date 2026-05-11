@@ -3887,16 +3887,22 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       _interpretationErrorMessage = '';
     });
     try {
+      final Uint8List bytes =
+          await widget.client.downloadRecordReportInterpretationPdf(
+        widget.token.trim(),
+        widget.record.id,
+      );
       await Printing.layoutPdf(
         name: _pep3PrintFileName(_displayRecord, '报告解读'),
-        onLayout: (PdfPageFormat format) => _buildErxinInterpretationPrintPdf(
-          _displayRecord,
-          interpretation!,
-          format,
-          title: 'PEP-3测试员记录册报告解读',
-          domainSectionTitle: '领域表现',
-        ),
+        onLayout: (_) async => bytes,
       );
+    } on Pep3ApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _interpretationErrorMessage = error.message;
+      });
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -4648,12 +4654,23 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       _interpretationErrorMessage = '';
     });
     try {
+      final Uint8List bytes =
+          await widget.client.downloadRecordReportInterpretationPdf(
+        widget.token.trim(),
+        widget.record.id,
+      );
       final Pep3RecordSummary record = _displayRecord ?? widget.record;
       await Printing.layoutPdf(
         name: _erxinPrintFileName(record, '报告解读'),
-        onLayout: (PdfPageFormat format) =>
-            _buildErxinInterpretationPrintPdf(record, interpretation!, format),
+        onLayout: (_) async => bytes,
       );
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _interpretationErrorMessage = error.message;
+      });
     } on Object catch (error) {
       if (!mounted) {
         return;
@@ -5721,6 +5738,7 @@ class _ErxinInterpretationSection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 Future<Uint8List> _buildErxinInterpretationPrintPdf(
   Pep3RecordSummary record,
   ErxinReportInterpretation interpretation,
