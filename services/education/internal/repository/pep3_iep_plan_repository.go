@@ -105,11 +105,17 @@ func (repo *Repository) SavePEP3IEPPlanWithExecutionPlans(ctx context.Context, p
 		if err := deletePEP3ExecutionPlansForDurationTx(ctx, tx, plan.InstID, plan.RecordID, replacedDurationMonths); err != nil {
 			return err
 		}
+		if err := deletePEP3LessonRecordsForDurationTx(ctx, tx, plan.InstID, plan.RecordID, replacedDurationMonths); err != nil {
+			return err
+		}
 	}
 	if err := savePEP3IEPPlanTx(ctx, tx, plan); err != nil {
 		return err
 	}
 	if err := deletePEP3ExecutionPlansForDurationTx(ctx, tx, plan.InstID, plan.RecordID, plan.DurationMonths); err != nil {
+		return err
+	}
+	if err := deletePEP3LessonRecordsForDurationTx(ctx, tx, plan.InstID, plan.RecordID, plan.DurationMonths); err != nil {
 		return err
 	}
 	for _, executionPlan := range executionPlans {

@@ -50,7 +50,35 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 		if req.WeeklyPlan == nil || len(req.WeeklyPlan.Rows) == 0 {
 			return model.PEP3ExecutionPlanSavedVO{}, errors.New("暂无可保存的周计划")
 		}
-		plan = *req.WeeklyPlan
+		weeklyPlan := *req.WeeklyPlan
+		plan = weeklyPlan
+		lessonRecords := buildPEP3LessonRecordEntities(
+			record,
+			weeklyPlan,
+			durationMonths,
+			targetMonthIndex,
+			targetWeekIndex,
+			userID,
+			instID,
+		)
+		if err := svc.repo.SavePEP3WeeklyExecutionPlanWithLessonRecords(
+			context.Background(),
+			repository.PEP3ExecutionPlanEntity{
+				InstID:           instID,
+				RecordID:         req.ID,
+				DurationMonths:   durationMonths,
+				PlanType:         planType,
+				TargetMonthIndex: targetMonthIndex,
+				TargetWeekIndex:  targetWeekIndex,
+				CreatedBy:        userID,
+				UpdatedBy:        userID,
+			},
+			weeklyPlan,
+			lessonRecords,
+		); err != nil {
+			return model.PEP3ExecutionPlanSavedVO{}, err
+		}
+		return svc.GetPEP3ExecutionPlans(userID, req.ID, durationMonths)
 	}
 	if err := svc.repo.SavePEP3ExecutionPlan(context.Background(), repository.PEP3ExecutionPlanEntity{
 		InstID:           instID,
@@ -66,6 +94,9 @@ func (svc *Service) SavePEP3ExecutionPlan(userID int64, req model.PEP3ExecutionP
 	}
 	if planType == pep3ExecutionPlanTypeMonthly && !req.PreserveWeeklyPlans {
 		if err := svc.repo.DeletePEP3WeeklyExecutionPlansForMonth(context.Background(), instID, req.ID, durationMonths, targetMonthIndex); err != nil {
+			return model.PEP3ExecutionPlanSavedVO{}, err
+		}
+		if err := svc.repo.DeletePEP3LessonRecordsForMonth(context.Background(), instID, req.ID, durationMonths, targetMonthIndex); err != nil {
 			return model.PEP3ExecutionPlanSavedVO{}, err
 		}
 	}
