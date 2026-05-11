@@ -228,7 +228,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
         final double outer = compact ? 14 : 20;
         final double gap = compact ? 10 : 14;
         final double leftWidth = compact ? 248 : 272;
-        final double rightWidth = compact ? 256 : 292;
+        final double rightWidth = compact ? 278 : 320;
         final double centerWidth =
             width - outer * 2 - leftWidth - rightWidth - gap * 2;
 
@@ -277,6 +277,24 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
                   task: selectedTask,
                   taskIndex: selectedIndex,
                   selectedDateLabel: selectedDateLabel,
+                  hasPreviousTask: tasks.isNotEmpty && selectedIndex > 0,
+                  hasNextTask:
+                      tasks.isNotEmpty && selectedIndex < tasks.length - 1,
+                  onPreviousTask: tasks.isNotEmpty && selectedIndex > 0
+                      ? () {
+                          setState(() {
+                            _selectedTaskIndex = selectedIndex - 1;
+                          });
+                        }
+                      : null,
+                  onNextTask:
+                      tasks.isNotEmpty && selectedIndex < tasks.length - 1
+                          ? () {
+                              setState(() {
+                                _selectedTaskIndex = selectedIndex + 1;
+                              });
+                            }
+                          : null,
                 ),
               ),
               Positioned(
@@ -574,6 +592,9 @@ class _IepLessonTaskRail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final List<_IepLessonTaskDraft> tasks = draft.tasks;
+    final String dayLabel = draft.weekDateOptions.isEmpty
+        ? draft.trainingDateLabel
+        : draft.weekDateOptions[selectedDateIndex];
     return Container(
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.95),
@@ -581,53 +602,16 @@ class _IepLessonTaskRail extends StatelessWidget {
         border: Border.all(color: _IepColors.line),
         boxShadow: _iepShadow(),
       ),
-      padding: const EdgeInsets.fromLTRB(14, 14, 14, 14),
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            '训练项目',
-            style: TextStyle(
-              color: _IepColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
+          _IepLessonTaskRailHeader(
+            dayLabel: dayLabel,
+            recordedCount: recordedCount,
+            totalCount: tasks.length,
           ),
-          const SizedBox(height: 6),
-          Text(
-            '${recordedCount.clamp(0, tasks.length)}/${tasks.length} 已记录',
-            style: const TextStyle(
-              color: _IepColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            draft.weekDateOptions.isEmpty
-                ? draft.trainingDateLabel
-                : draft.weekDateOptions[selectedDateIndex],
-            style: const TextStyle(
-              color: _IepColors.orangeDeep,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 14),
-          Container(
-            height: 8,
-            clipBehavior: Clip.antiAlias,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF0E5),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: FractionallySizedBox(
-              widthFactor: tasks.isEmpty ? 0 : recordedCount / tasks.length,
-              alignment: Alignment.centerLeft,
-              child: Container(color: _IepColors.orange),
-            ),
-          ),
-          const SizedBox(height: 14),
+          const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
               physics: const BouncingScrollPhysics(),
@@ -644,7 +628,7 @@ class _IepLessonTaskRail extends StatelessWidget {
                           : '';
                   return Padding(
                     padding: EdgeInsets.only(
-                      bottom: index == tasks.length - 1 ? 0 : 10,
+                      bottom: index == tasks.length - 1 ? 0 : 6,
                     ),
                     child: _IepLessonTaskCard(
                       index: index,
@@ -682,115 +666,189 @@ class _IepLessonTaskCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color borderColor =
-        selected ? _IepColors.orange.withOpacity(.55) : _IepColors.lightLine;
-    final Color fillColor = selected ? const Color(0xFFFFF6EE) : Colors.white;
+        selected ? _IepColors.orange.withOpacity(.55) : const Color(0xFFF1E6DC);
+    final Color fillColor =
+        selected ? const Color(0xFFFFF7F0) : const Color(0xFFFFFDFC);
     final bool recorded = currentCode.isNotEmpty;
     final String stateLabel = recorded ? _lessonCodeLabel(currentCode) : '待记录';
     final Color stateColor =
         recorded ? _lessonCodeColor(currentCode) : _IepColors.muted;
+    final Color leadingColor =
+        recorded ? _lessonCodeColor(currentCode) : _IepColors.orangeDeep;
+    final double inactiveOpacity = selected ? 1 : .74;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(16),
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-          decoration: BoxDecoration(
-            color: fillColor,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: borderColor),
-          ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Container(
-                width: 26,
-                height: 26,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: recorded
-                      ? _lessonCodeColor(currentCode).withOpacity(.12)
-                      : selected
-                          ? _IepColors.orangeSoft
-                          : const Color(0xFFFFFAF6),
-                  shape: BoxShape.circle,
-                ),
-                child: recorded
-                    ? Text(
-                        currentCode,
-                        style: TextStyle(
-                          color: _lessonCodeColor(currentCode),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      )
-                    : Text(
-                        '${index + 1}',
-                        style: const TextStyle(
-                          color: _IepColors.orangeDeep,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: <Widget>[
-                    Text(
-                      task.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _IepColors.ink,
-                        fontSize: 14,
-                        fontWeight: FontWeight.w900,
-                        height: 1.35,
-                      ),
-                    ),
-                    const SizedBox(height: 10),
-                    Row(
-                      children: <Widget>[
-                        Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 8,
-                            vertical: 4,
-                          ),
-                          decoration: BoxDecoration(
-                            color: selected
-                                ? const Color(0xFFFFEEDF)
-                                : const Color(0xFFFFFBF7),
-                            borderRadius: BorderRadius.circular(999),
-                          ),
-                          child: Text(
-                            '第${index + 1}项',
-                            style: const TextStyle(
-                              color: _IepColors.muted,
-                              fontSize: 11,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                        ),
-                        const Spacer(),
-                        Text(
-                          stateLabel,
+    return Opacity(
+      opacity: inactiveOpacity,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(12),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            decoration: BoxDecoration(
+              color: fillColor,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Container(
+                  width: 28,
+                  height: 28,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: leadingColor.withOpacity(selected ? .12 : .08),
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                  child: recorded
+                      ? Text(
+                          currentCode,
                           style: TextStyle(
-                            color: stateColor,
-                            fontSize: 11,
+                            color: leadingColor,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        )
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            color: leadingColor,
+                            fontSize: 12,
                             fontWeight: FontWeight.w900,
                           ),
                         ),
-                      ],
-                    ),
-                  ],
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        task.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _IepColors.ink,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          height: 1.28,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Row(
+                        children: <Widget>[
+                          Text(
+                            '第${index + 1}项',
+                            style: const TextStyle(
+                              color: _IepColors.muted,
+                              fontSize: 10,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const Spacer(),
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: stateColor.withOpacity(.10),
+                              borderRadius: BorderRadius.circular(999),
+                            ),
+                            child: Text(
+                              stateLabel,
+                              style: TextStyle(
+                                color: stateColor,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _IepLessonTaskRailHeader extends StatelessWidget {
+  const _IepLessonTaskRailHeader({
+    required this.dayLabel,
+    required this.recordedCount,
+    required this.totalCount,
+  });
+
+  final String dayLabel;
+  final int recordedCount;
+  final int totalCount;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            const Text(
+              '训练项目',
+              style: TextStyle(
+                color: _IepColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const Spacer(),
+            Text(
+              '$recordedCount/$totalCount',
+              style: const TextStyle(
+                color: _IepColors.orangeDeep,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFFBF7),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _IepColors.lightLine),
+          ),
+          child: Row(
+            children: <Widget>[
+              Text(
+                dayLabel,
+                style: const TextStyle(
+                  color: _IepColors.orangeDeep,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '已记录 $recordedCount 项',
+                style: const TextStyle(
+                  color: _IepColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ],
           ),
         ),
-      ),
+      ],
     );
   }
 }
@@ -801,12 +859,20 @@ class _IepLessonMainPanel extends StatelessWidget {
     required this.task,
     required this.taskIndex,
     required this.selectedDateLabel,
+    required this.hasPreviousTask,
+    required this.hasNextTask,
+    required this.onPreviousTask,
+    required this.onNextTask,
   });
 
   final _IepLessonSessionDraft draft;
   final _IepLessonTaskDraft? task;
   final int taskIndex;
   final String selectedDateLabel;
+  final bool hasPreviousTask;
+  final bool hasNextTask;
+  final VoidCallback? onPreviousTask;
+  final VoidCallback? onNextTask;
 
   @override
   Widget build(BuildContext context) {
@@ -852,6 +918,30 @@ class _IepLessonMainPanel extends StatelessWidget {
                       preparation: draft.preparation,
                     ),
                   ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _IepLessonNavButton(
+                        label: '上一项',
+                        icon: Icons.west_rounded,
+                        enabled: hasPreviousTask,
+                        primary: false,
+                        onTap: onPreviousTask,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _IepLessonNavButton(
+                        label: '下一项',
+                        icon: Icons.east_rounded,
+                        enabled: hasNextTask,
+                        primary: true,
+                        onTap: onNextTask,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -1109,6 +1199,74 @@ class _IepLessonPreparationCard extends StatelessWidget {
   }
 }
 
+class _IepLessonNavButton extends StatelessWidget {
+  const _IepLessonNavButton({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.primary,
+    this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final bool primary;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background = !enabled
+        ? const Color(0xFFF6EEE7)
+        : primary
+            ? _IepColors.orange
+            : Colors.white;
+    final Color borderColor = !enabled
+        ? const Color(0xFFEADCCF)
+        : primary
+            ? _IepColors.orange
+            : _IepColors.line;
+    final Color textColor = !enabled
+        ? _IepColors.muted
+        : primary
+            ? Colors.white
+            : _IepColors.text;
+    return Opacity(
+      opacity: enabled ? 1 : .72,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(16),
+          child: Container(
+            height: 48,
+            decoration: BoxDecoration(
+              color: background,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: borderColor),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, size: 18, color: textColor),
+                const SizedBox(width: 8),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _IepLessonRecordPanel extends StatelessWidget {
   const _IepLessonRecordPanel({
     required this.draft,
@@ -1165,18 +1323,6 @@ class _IepLessonRecordPanel extends StatelessWidget {
               color: _IepColors.ink,
               fontSize: 16,
               fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            task?.title ?? '请选择训练项目',
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _IepColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              height: 1.35,
             ),
           ),
           const SizedBox(height: 14),
@@ -1389,10 +1535,10 @@ class _IepLessonCodeGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final double itemWidth = (constraints.maxWidth - 10) / 2;
+        final double itemWidth = (constraints.maxWidth - 12) / 2;
         return Wrap(
-          spacing: 10,
-          runSpacing: 10,
+          spacing: 12,
+          runSpacing: 12,
           children: codes.map((String code) {
             return _IepLessonCodeCard(
               code: code,
@@ -1471,12 +1617,14 @@ class _IepLessonCodeCard extends StatelessWidget {
                 Expanded(
                   child: Text(
                     label,
+                    maxLines: 2,
+                    overflow: TextOverflow.visible,
                     style: TextStyle(
                       color:
                           selected ? _lessonCodeColor(code) : _IepColors.text,
-                      fontSize: 13,
+                      fontSize: 14,
                       fontWeight: FontWeight.w800,
-                      height: 1.25,
+                      height: 1.2,
                     ),
                   ),
                 ),
