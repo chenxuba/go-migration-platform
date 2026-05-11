@@ -1781,6 +1781,311 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     });
   }
 
+  Future<void> _openLessonSession() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    if (_previewMode != _IepPreviewMode.week) {
+      _showMessage('请先切换到周计划后再开始上课');
+      return;
+    }
+    final IepPlan? totalPlan = _savedPlan?.plan;
+    final int monthIndex = _previewMonthIndex();
+    final IepMonthlyPlan? monthPlan = _executionPlans?.monthPlan(monthIndex);
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(monthIndex, _previewWeek);
+    if (weekPlan == null) {
+      _showMessage('请先生成当前周计划后再开始上课');
+      return;
+    }
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: _monthDateFromLabel(
+        _periodStart,
+        _periodMonthCount,
+        _previewMonth,
+      ),
+    );
+    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
+        _weekDatesInMonthRange(monthRange, _previewWeek);
+    final DateTime today = _dateOnly(DateTime.now());
+    final int todayIndex = weekDates.indexWhere(
+      (DateTime day) => _dateOnly(day) == today,
+    );
+    if (todayIndex < 0) {
+      final String weekRangeText =
+          weekDates.isEmpty ? '当前周计划' : _weekRangeText(weekDates);
+      _showMessage('当前只支持从包含今天的周计划开始上课，当前选中：$weekRangeText');
+      return;
+    }
+    final _IepLessonSessionDraft draft = _buildLessonSessionDraft(
+      record: record,
+      totalPlan: totalPlan,
+      monthPlan: monthPlan,
+      weekPlan: weekPlan,
+      initialSelectedDateIndex: todayIndex,
+    );
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (BuildContext routeContext) => Scaffold(
+          body: _IepLessonFullscreenViewport(
+            child: _IepLessonSessionPage(
+              onBack: () => Navigator.of(routeContext).maybePop(),
+              draft: draft,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  _IepLessonSessionDraft _buildLessonSessionDraft({
+    required IepAssessmentRecordSummary record,
+    required IepPlan? totalPlan,
+    required IepMonthlyPlan? monthPlan,
+    required IepWeeklyPlan? weekPlan,
+    int initialSelectedDateIndex = 0,
+  }) {
+    final String studentName = totalPlan?.student.name.trim().isNotEmpty == true
+        ? totalPlan!.student.name.trim()
+        : record.studentName.trim();
+    final String gender = totalPlan?.student.gender.trim().isNotEmpty == true
+        ? totalPlan!.student.gender.trim()
+        : record.studentGender.trim();
+    final String teacherName = weekPlan?.teacherName.trim().isNotEmpty == true
+        ? weekPlan!.teacherName.trim()
+        : record.examinerName.trim();
+    final String courseName = weekPlan?.courseName.trim().isNotEmpty == true
+        ? weekPlan!.courseName.trim()
+        : '康复教学';
+    final String planTitle = switch (_previewMode) {
+      _IepPreviewMode.total => totalPlan?.title.trim().isNotEmpty == true
+          ? totalPlan!.title.trim()
+          : '康复教学计划',
+      _IepPreviewMode.month => monthPlan?.title.trim().isNotEmpty == true
+          ? monthPlan!.title.trim()
+          : '康复教学$_previewMonth计划',
+      _IepPreviewMode.week => weekPlan?.title.trim().isNotEmpty == true
+          ? weekPlan!.title.trim()
+          : '康复教学周计划日记录卡$_previewMonth第$_previewWeek周',
+    };
+    final String periodLabel = _formatDotRange(_periodStart, _periodEnd);
+    final String weekLabel = switch (_previewMode) {
+      _IepPreviewMode.total => 'IEP总计划',
+      _IepPreviewMode.month => '$_previewMonth 月计划',
+      _IepPreviewMode.week => '$_previewMonth 第$_previewWeek周',
+    };
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: _monthDateFromLabel(
+        _periodStart,
+        _periodMonthCount,
+        _previewMonth,
+      ),
+    );
+    final List<DateTime> weekDates =
+        _dateListFromStrings(weekPlan?.weekDates) ??
+            _weekDatesInMonthRange(monthRange, _previewWeek);
+    final List<String> weekDateOptions = weekDates
+        .map((DateTime item) => _weekDateOptionLabel(item))
+        .toList(growable: false);
+    final String trainingDateLabel = weekDates.isEmpty
+        ? (weekPlan?.trainingDate.trim().isNotEmpty == true
+            ? weekPlan!.trainingDate.trim()
+            : _weekRangeText(weekDates))
+        : weekDateOptions.first;
+    final String ageLabel = _ageSummaryText(record);
+    final String preparation = weekPlan?.preparation.trim().isNotEmpty == true
+        ? weekPlan!.preparation.trim()
+        : '训练材料、视觉提示卡、强化物、记录表';
+
+    final List<String> goals = <String>{}
+        .followedBy(_goalLinesFromWeekPlan(weekPlan))
+        .followedBy(_goalLinesFromMonthPlan(monthPlan))
+        .followedBy(_goalLinesFromTotalPlan(totalPlan))
+        .where((String item) => item.trim().isNotEmpty)
+        .toList();
+
+    final List<_IepLessonTaskDraft> tasks = <_IepLessonTaskDraft>[];
+    if (weekPlan != null) {
+      for (final IepWeeklyPlanRow row in weekPlan.rows) {
+        final String project = row.project.trim();
+        final String content = row.content.trim();
+        if (project.isEmpty && content.isEmpty) {
+          continue;
+        }
+        tasks.add(
+          _IepLessonTaskDraft(
+            title: project.isEmpty ? '训练项目' : project,
+            subtitle: content.isEmpty ? '待补充训练内容' : content,
+            domain: _domainFromWeeklyProject(project),
+            goal: goals.isEmpty ? '' : goals.first,
+            materials: preparation,
+            steps: _defaultLessonSteps(content.isEmpty ? project : content),
+            tips: _defaultLessonTips(project, content),
+            completionCodes: row.completion,
+          ),
+        );
+      }
+    }
+    final List<_IepLessonTaskDraft> effectiveTasks = tasks.isEmpty
+        ? <_IepLessonTaskDraft>[
+            _IepLessonTaskDraft(
+              title: '待执行训练任务',
+              subtitle: '当前周计划暂无可执行训练项，请先补充本周训练内容。',
+              domain: '周计划',
+              goal: goals.isEmpty ? '完成本周课堂训练记录' : goals.first,
+              materials: preparation,
+              steps: _defaultLessonSteps(
+                '根据本周计划补充具体训练项目后再进入正式上课。',
+              ),
+              tips: _defaultLessonTips(
+                '周计划任务待补充',
+                '根据本周计划补充具体训练项目后再进入正式上课。',
+              ),
+              completionCodes: List<String>.filled(weekDateOptions.length, ''),
+            ),
+          ]
+        : tasks;
+
+    return _IepLessonSessionDraft(
+      studentName: studentName.isEmpty ? '未选择学员' : studentName,
+      gender: gender,
+      ageLabel: ageLabel,
+      teacherName: teacherName.isEmpty ? '未设置老师' : teacherName,
+      courseName: courseName,
+      planTitle: planTitle,
+      stageLabel: '课堂执行中',
+      periodLabel: periodLabel,
+      weekLabel: weekLabel,
+      initialSelectedDateIndex: initialSelectedDateIndex,
+      trainingDateLabel: trainingDateLabel,
+      weekDateOptions: weekDateOptions,
+      completionColumnLabels: weekDateOptions,
+      preparation: preparation,
+      goals: goals.isEmpty ? <String>['提升课堂参与度与任务完成度'] : goals,
+      tasks: effectiveTasks,
+    );
+  }
+
+  List<String> _goalLinesFromWeekPlan(IepWeeklyPlan? plan) {
+    if (plan == null) {
+      return const <String>[];
+    }
+    return plan.rows
+        .map((IepWeeklyPlanRow row) => row.content.trim())
+        .where((String item) => item.isNotEmpty)
+        .take(3)
+        .toList();
+  }
+
+  List<String> _goalLinesFromMonthPlan(IepMonthlyPlan? plan) {
+    if (plan == null) {
+      return const <String>[];
+    }
+    return plan.rows
+        .map((IepMonthlyPlanRow row) => row.shortGoal.trim())
+        .where((String item) => item.isNotEmpty)
+        .take(3)
+        .toList();
+  }
+
+  List<String> _goalLinesFromTotalPlan(IepPlan? plan) {
+    if (plan == null) {
+      return const <String>[];
+    }
+    return plan.rows
+        .map((IepPlanRow row) => row.shortGoal.trim())
+        .where((String item) => item.isNotEmpty)
+        .take(3)
+        .toList();
+  }
+
+  String _ageSummaryText(IepAssessmentRecordSummary record) {
+    final List<String> parts = <String>[];
+    if (record.ageYears > 0) {
+      parts.add('${record.ageYears}岁');
+    }
+    if (record.ageMonths > 0 && parts.length < 2) {
+      parts.add('${record.ageMonths}个月');
+    }
+    if (parts.isEmpty && record.birthDate.trim().isNotEmpty) {
+      return record.birthDate.trim();
+    }
+    return parts.isEmpty ? '年龄待补充' : parts.join();
+  }
+
+  String _domainFromWeeklyProject(String project) {
+    if (project.contains('情绪') || project.contains('表达')) {
+      return '情绪表达';
+    }
+    if (project.contains('社交')) {
+      return '社交互动';
+    }
+    if (project.contains('动作') || project.contains('协调')) {
+      return '动作协调';
+    }
+    if (project.contains('语言')) {
+      return '语言表达';
+    }
+    return '认知理解';
+  }
+
+  List<String> _defaultLessonSteps(String content) {
+    final String core = content.trim().isEmpty ? '完成当前训练任务' : content.trim();
+    return <String>[
+      '先用口头提示和示范建立本轮任务规则，确认学员理解 $core。',
+      '进入正式训练，记录独立完成、辅助完成和错误反应的次数。',
+      '完成后立即给予反馈和强化，并根据表现决定是否进入下一轮。',
+    ];
+  }
+
+  List<String> _defaultLessonTips(String project, String content) {
+    final String anchor =
+        project.trim().isNotEmpty ? project.trim() : content.trim();
+    return <String>[
+      '先说短句指令，再给视觉提示，避免一次性输入过多信息。',
+      '当学员完成 $anchor 时，立即给予明确强化和表扬。',
+      '如果出现分心或抗拒，先降低难度，再逐步回到原任务。',
+    ];
+  }
+
+  String _weekDateOptionLabel(DateTime value) {
+    final List<String> weekdays = <String>[
+      '周一',
+      '周二',
+      '周三',
+      '周四',
+      '周五',
+      '周六',
+    ];
+    final int weekdayIndex = value.weekday.clamp(1, 6) - 1;
+    return '${_weekDateLabel(value)} ${weekdays[weekdayIndex]}';
+  }
+
+  bool _canStartClassForSelectedWeek(IepWeeklyPlan? weekPlan) {
+    if (weekPlan == null || _previewMode != _IepPreviewMode.week) {
+      return false;
+    }
+    final DateTimeRange monthRange = _monthRangeInPeriod(
+      periodStart: _periodStart,
+      monthCount: _periodMonthCount,
+      monthDate: _monthDateFromLabel(
+        _periodStart,
+        _periodMonthCount,
+        _previewMonth,
+      ),
+    );
+    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
+        _weekDatesInMonthRange(monthRange, _previewWeek);
+    final DateTime today = _dateOnly(DateTime.now());
+    return weekDates.any((DateTime item) => _dateOnly(item) == today);
+  }
+
   @override
   Widget build(BuildContext context) {
     final IepAssessmentRecordSummary? record = widget.record;
@@ -1789,6 +2094,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _executionPlans?.monthPlan(_previewMonthIndex());
     final IepWeeklyPlan? weekPlan =
         _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final bool canStartClassToday = _canStartClassForSelectedWeek(weekPlan);
+    final bool startClassEnabled = record != null &&
+        _previewMode == _IepPreviewMode.week &&
+        canStartClassToday &&
+        !_loadingPlan &&
+        !_generatingPlan;
     final bool showRegenerateAction = switch (_previewMode) {
       _IepPreviewMode.total => _savedPlan?.hasContent == true,
       _IepPreviewMode.month => monthPlan != null,
@@ -1812,6 +2123,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             previewMode: _previewMode,
             previewMonthIndex: _previewMonthIndex(),
             previewWeek: _previewWeek,
+            onStartClass: _openLessonSession,
+            startClassEnabled: startClassEnabled,
           ),
           const SizedBox(height: 10),
           _PlanToolbar(
@@ -1885,6 +2198,8 @@ class _WorkspaceHeader extends StatelessWidget {
     required this.previewMode,
     required this.previewMonthIndex,
     required this.previewWeek,
+    required this.onStartClass,
+    required this.startClassEnabled,
   });
 
   final String title;
@@ -1893,6 +2208,8 @@ class _WorkspaceHeader extends StatelessWidget {
   final _IepPreviewMode previewMode;
   final int previewMonthIndex;
   final int previewWeek;
+  final VoidCallback onStartClass;
+  final bool startClassEnabled;
 
   @override
   Widget build(BuildContext context) {
@@ -1932,7 +2249,10 @@ class _WorkspaceHeader extends StatelessWidget {
             previewWeek: previewWeek,
           ),
           const SizedBox(width: 10),
-          const _StartClassButton(),
+          _StartClassButton(
+            onTap: onStartClass,
+            enabled: startClassEnabled,
+          ),
         ],
       ),
     );
@@ -2019,35 +2339,54 @@ class _HeaderMetaPill extends StatelessWidget {
 }
 
 class _StartClassButton extends StatelessWidget {
-  const _StartClassButton();
+  const _StartClassButton({
+    required this.onTap,
+    required this.enabled,
+  });
+
+  final VoidCallback onTap;
+  final bool enabled;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 36,
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      decoration: BoxDecoration(
-        color: _IepColors.orange,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(18),
-        boxShadow: _iepShadow(
-          color: const Color(0x32E96F43),
-          blur: 12,
-          offset: const Offset(0, 5),
-        ),
-      ),
-      child: Row(
-        children: const <Widget>[
-          Icon(Icons.play_circle_fill_rounded, color: Colors.white, size: 19),
-          SizedBox(width: 6),
-          Text(
-            '开始上课',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
+        child: Container(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: enabled ? _IepColors.orange : const Color(0xFFF3E5DA),
+            borderRadius: BorderRadius.circular(18),
+            boxShadow: enabled
+                ? _iepShadow(
+                    color: const Color(0x32E96F43),
+                    blur: 12,
+                    offset: const Offset(0, 5),
+                  )
+                : const <BoxShadow>[],
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              Icon(
+                Icons.play_circle_fill_rounded,
+                color: enabled ? Colors.white : _IepColors.muted,
+                size: 19,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '开始上课',
+                style: TextStyle(
+                  color: enabled ? Colors.white : _IepColors.muted,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

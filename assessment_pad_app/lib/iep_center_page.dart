@@ -22,6 +22,7 @@ part 'iep_center_workspace.dart';
 part 'iep_center_dialogs.dart';
 part 'iep_center_tables.dart';
 part 'iep_center_print.dart';
+part 'iep_lesson_session_page.dart';
 
 class IepCenterPage extends StatefulWidget {
   const IepCenterPage({
