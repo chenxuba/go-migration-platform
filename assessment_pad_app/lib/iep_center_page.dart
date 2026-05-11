@@ -386,9 +386,16 @@ List<BoxShadow> _iepShadow({
 DateTime _dateOnly(DateTime value) =>
     DateTime(value.year, value.month, value.day);
 
+DateTime _addMonthsClamped(DateTime start, int months) {
+  final DateTime targetMonth = DateTime(start.year, start.month + months, 1);
+  final int lastDay = DateTime(targetMonth.year, targetMonth.month + 1, 0).day;
+  final int targetDay = math.min(start.day, lastDay);
+  return DateTime(targetMonth.year, targetMonth.month, targetDay);
+}
+
 DateTime _periodEndFor(DateTime start, int monthCount) {
   final DateTime periodStart = _dateOnly(start);
-  return DateTime(periodStart.year, periodStart.month + monthCount, 0);
+  return _addMonthsClamped(periodStart, monthCount);
 }
 
 DateTime _monthOnly(DateTime value) => DateTime(value.year, value.month);
@@ -426,9 +433,20 @@ String _formatZhRange(DateTime start, DateTime end) {
 String _monthLabelFromDate(DateTime value) => '${value.month}月';
 
 List<String> _periodMonthLabels(DateTime start, int monthCount) {
-  return List<String>.generate(monthCount, (int index) {
-    return _monthLabelFromDate(DateTime(start.year, start.month + index));
-  });
+  return _periodMonthDates(start, _periodEndFor(start, monthCount))
+      .map(_monthLabelFromDate)
+      .toList(growable: false);
+}
+
+List<DateTime> _periodMonthDates(DateTime periodStart, DateTime periodEnd) {
+  final List<DateTime> months = <DateTime>[];
+  DateTime cursor = DateTime(periodStart.year, periodStart.month, 1);
+  final DateTime normalizedEnd = DateTime(periodEnd.year, periodEnd.month, 1);
+  while (!cursor.isAfter(normalizedEnd)) {
+    months.add(cursor);
+    cursor = DateTime(cursor.year, cursor.month + 1, 1);
+  }
+  return months;
 }
 
 DateTime _monthDateFromLabel(
@@ -436,9 +454,8 @@ DateTime _monthDateFromLabel(
   int monthCount,
   String label,
 ) {
-  for (int index = 0; index < monthCount; index += 1) {
-    final DateTime monthDate =
-        DateTime(periodStart.year, periodStart.month + index);
+  for (final DateTime monthDate in _periodMonthDates(
+      periodStart, _periodEndFor(periodStart, monthCount))) {
     if (_monthLabelFromDate(monthDate) == label) {
       return monthDate;
     }
@@ -480,46 +497,62 @@ String _monthTrainingPeriodText(DateTimeRange monthRange, int index) {
   return '${_formatDateDash(start)}\n至 ${_formatDateDash(end)}';
 }
 
-List<DateTime> _weekDatesInMonthRange(
-    DateTimeRange monthRange, int weekNumber) {
+List<List<DateTime>> _workingWeekBucketsInMonthRange(
+  DateTimeRange monthRange, {
+  List<int> restWeekdays = const <int>[DateTime.sunday],
+}) {
   DateTime cursor = _dateOnly(monthRange.start);
-  while (cursor.weekday == DateTime.sunday && !cursor.isAfter(monthRange.end)) {
-    cursor = cursor.add(const Duration(days: 1));
-  }
+  final Set<int> blockedWeekdays = restWeekdays
+      .where(
+          (int value) => value >= DateTime.monday && value <= DateTime.sunday)
+      .toSet();
+  final List<List<DateTime>> buckets = <List<DateTime>>[];
 
   for (int currentWeek = 1; currentWeek <= 5; currentWeek += 1) {
     if (cursor.isAfter(monthRange.end)) {
-      return <DateTime>[];
+      break;
     }
     final DateTime end = _earlierDate(_weekEndForStart(cursor), monthRange.end);
     final List<DateTime> dates = <DateTime>[];
     for (DateTime day = cursor;
         !day.isAfter(end);
         day = day.add(const Duration(days: 1))) {
-      if (day.weekday != DateTime.sunday) {
+      if (!blockedWeekdays.contains(day.weekday)) {
         dates.add(day);
       }
     }
-    if (currentWeek == weekNumber) {
-      return dates;
+    if (dates.isNotEmpty) {
+      buckets.add(dates);
     }
     cursor = end.add(const Duration(days: 1));
-    while (
-        cursor.weekday == DateTime.sunday && !cursor.isAfter(monthRange.end)) {
-      cursor = cursor.add(const Duration(days: 1));
-    }
   }
-  return <DateTime>[];
+  return buckets;
 }
 
-int _lastAvailableWeekInMonthRange(DateTimeRange monthRange) {
-  int lastWeek = 1;
-  for (int weekNumber = 1; weekNumber <= 5; weekNumber += 1) {
-    if (_weekDatesInMonthRange(monthRange, weekNumber).isNotEmpty) {
-      lastWeek = weekNumber;
-    }
+List<DateTime> _weekDatesInMonthRange(
+  DateTimeRange monthRange,
+  int weekNumber, {
+  List<int> restWeekdays = const <int>[DateTime.sunday],
+}) {
+  final List<List<DateTime>> buckets = _workingWeekBucketsInMonthRange(
+    monthRange,
+    restWeekdays: restWeekdays,
+  );
+  if (weekNumber < 1 || weekNumber > buckets.length) {
+    return <DateTime>[];
   }
-  return lastWeek;
+  return buckets[weekNumber - 1];
+}
+
+int _lastAvailableWeekInMonthRange(
+  DateTimeRange monthRange, {
+  List<int> restWeekdays = const <int>[DateTime.sunday],
+}) {
+  final int count = _workingWeekBucketsInMonthRange(
+    monthRange,
+    restWeekdays: restWeekdays,
+  ).length;
+  return count <= 0 ? 1 : count;
 }
 
 DateTime _weekEndForStart(DateTime value) {

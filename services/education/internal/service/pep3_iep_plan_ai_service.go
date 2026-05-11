@@ -760,26 +760,33 @@ func iepPlanBaseDate(record model.AssessmentRecordDetailVO) time.Time {
 }
 
 func iepPlanWholeMonthDateRange(record model.AssessmentRecordDetailVO, durationMonths int) (string, string) {
-	if durationMonths <= 0 {
-		durationMonths = 6
-	}
-	base := iepPlanBaseDate(record)
-	start := time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, time.Local)
-	end := start.AddDate(0, durationMonths, 0).AddDate(0, 0, -1)
+	start, end := iepPlanDateRangeFromStart(iepPlanBaseDate(record), durationMonths)
 	return start.Format("2006-01-02"), end.Format("2006-01-02")
 }
 
 func iepPlanStageDateRanges(record model.AssessmentRecordDetailVO, durationMonths int) []string {
+	return iepPlanStageDateRangesFromStart(iepPlanBaseDate(record), durationMonths)
+}
+
+func iepPlanDateRangeFromStart(start time.Time, durationMonths int) (time.Time, time.Time) {
 	if durationMonths <= 0 {
 		durationMonths = 6
 	}
-	base := iepPlanBaseDate(record)
-	start := time.Date(base.Year(), base.Month(), 1, 0, 0, 0, 0, time.Local)
+	normalizedStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	end := addMonthsClamped(normalizedStart, durationMonths)
+	return normalizedStart, end
+}
+
+func iepPlanStageDateRangesFromStart(start time.Time, durationMonths int) []string {
+	if durationMonths <= 0 {
+		durationMonths = 6
+	}
+	periodStart, periodEnd := iepPlanDateRangeFromStart(start, durationMonths)
 	stageCount := 3
 	monthBase := durationMonths / stageCount
 	monthRemainder := durationMonths % stageCount
 	ranges := make([]string, 0, stageCount)
-	current := start
+	current := periodStart
 	for i := 0; i < stageCount; i++ {
 		months := monthBase
 		if i < monthRemainder {
@@ -788,11 +795,30 @@ func iepPlanStageDateRanges(record model.AssessmentRecordDetailVO, durationMonth
 		if months <= 0 {
 			months = 1
 		}
-		end := current.AddDate(0, months, 0).AddDate(0, 0, -1)
+		end := periodEnd
+		if i < stageCount-1 {
+			end = addMonthsClamped(current, months).AddDate(0, 0, -1)
+			if end.After(periodEnd) {
+				end = periodEnd
+			}
+			if end.Before(current) {
+				end = current
+			}
+		}
 		ranges = append(ranges, current.Format("2006-01-02")+" - "+end.Format("2006-01-02"))
 		current = end.AddDate(0, 0, 1)
 	}
 	return ranges
+}
+
+func addMonthsClamped(start time.Time, months int) time.Time {
+	firstOfTargetMonth := time.Date(start.Year(), start.Month()+time.Month(months), 1, 0, 0, 0, 0, time.Local)
+	lastDayOfTargetMonth := time.Date(firstOfTargetMonth.Year(), firstOfTargetMonth.Month()+1, 0, 0, 0, 0, 0, time.Local).Day()
+	targetDay := start.Day()
+	if targetDay > lastDayOfTargetMonth {
+		targetDay = lastDayOfTargetMonth
+	}
+	return time.Date(firstOfTargetMonth.Year(), firstOfTargetMonth.Month(), targetDay, 0, 0, 0, 0, time.Local)
 }
 
 func normalizeIEPPlanAIRows(rows []model.PEP3IEPPlanRow, stageRanges []string, defaultCourseForm string) []model.PEP3IEPPlanRow {

@@ -161,41 +161,8 @@ func syncPEP3IEPPlanPeriodDates(plan model.PEP3IEPPlanAIResult, record model.Ass
 }
 
 func iepPlanWholeMonthDateRangeFromStart(start time.Time, durationMonths int) (string, string) {
-	if durationMonths <= 0 {
-		durationMonths = 6
-	}
-	normalizedStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
-	end := time.Date(normalizedStart.Year(), normalizedStart.Month()+time.Month(durationMonths), 0, 0, 0, 0, 0, time.Local)
+	normalizedStart, end := iepPlanDateRangeFromStart(start, durationMonths)
 	return normalizedStart.Format("2006-01-02"), end.Format("2006-01-02")
-}
-
-func iepPlanStageDateRangesFromStart(start time.Time, durationMonths int) []string {
-	if durationMonths <= 0 {
-		durationMonths = 6
-	}
-	stageCount := 3
-	monthBase := durationMonths / stageCount
-	monthRemainder := durationMonths % stageCount
-	ranges := make([]string, 0, stageCount)
-	current := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
-	_, periodEndText := iepPlanWholeMonthDateRangeFromStart(start, durationMonths)
-	periodEnd, _ := time.ParseInLocation("2006-01-02", periodEndText, time.Local)
-	for index := 0; index < stageCount; index++ {
-		months := monthBase
-		if index < monthRemainder {
-			months++
-		}
-		if months <= 0 {
-			months = 1
-		}
-		end := time.Date(current.Year(), current.Month()+time.Month(months), 0, 0, 0, 0, 0, time.Local)
-		if !periodEnd.IsZero() && end.After(periodEnd) {
-			end = periodEnd
-		}
-		ranges = append(ranges, current.Format("2006-01-02")+" - "+end.Format("2006-01-02"))
-		current = end.AddDate(0, 0, 1)
-	}
-	return ranges
 }
 
 func (svc *Service) buildPEP3PeriodExecutionPlanEntities(ctx context.Context, instID, recordID int64, durationMonths, sourceDurationMonths int, sourcePlan model.PEP3IEPPlanAIResult, currentTeacherName string, userID int64) ([]repository.PEP3ExecutionPlanEntity, error) {
@@ -223,19 +190,23 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(ctx context.Context, in
 
 	result := make([]repository.PEP3ExecutionPlanEntity, 0, len(sourceEntities))
 	monthlyPlans := make(map[int]model.PEP3MonthlyPlanAIResult)
+	monthCount := executionPlanMonthCount(sourcePlan, durationMonths)
+	if monthCount <= 0 {
+		monthCount = 1
+	}
 	for _, entity := range sourceEntities {
 		if strings.ToLower(strings.TrimSpace(entity.PlanType)) != pep3ExecutionPlanTypeMonthly {
 			continue
 		}
 		monthIndex := entity.TargetMonthIndex
-		if monthIndex < 1 || monthIndex > durationMonths {
+		if monthIndex < 1 || monthIndex > monthCount {
 			continue
 		}
 		var plan model.PEP3MonthlyPlanAIResult
 		if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
 			return nil, fmt.Errorf("parse monthly execution plan: %w", err)
 		}
-		target := buildExecutionPlanTarget(sourcePlan, durationMonths, monthIndex, 0)
+		target := buildExecutionPlanTarget(sourcePlan, durationMonths, monthIndex, 0, plan.RestWeekdays)
 		plan = syncPEP3MonthlyPlanPeriodDates(plan, sourcePlan, target, currentTeacherName)
 		monthlyPlans[target.MonthIndex] = plan
 		raw, err := json.Marshal(plan)
@@ -260,15 +231,22 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(ctx context.Context, in
 			continue
 		}
 		monthIndex := entity.TargetMonthIndex
-		if monthIndex < 1 || monthIndex > durationMonths {
+		if monthIndex < 1 || monthIndex > monthCount {
 			continue
 		}
 		var plan model.PEP3WeeklyPlanAIResult
 		if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
 			return nil, fmt.Errorf("parse weekly execution plan: %w", err)
 		}
-		target := buildExecutionPlanTarget(sourcePlan, durationMonths, monthIndex, entity.TargetWeekIndex)
 		var monthlyPlan *model.PEP3MonthlyPlanAIResult
+		if currentMonthlyPlan, ok := monthlyPlans[monthIndex]; ok {
+			monthlyPlan = &currentMonthlyPlan
+		}
+		restWeekdays := inferWeeklyPlanRestWeekdays(plan)
+		if len(plan.RestWeekdays) == 0 && monthlyPlan != nil && len(monthlyPlan.RestWeekdays) > 0 {
+			restWeekdays = normalizeExecutionPlanRestWeekdays(monthlyPlan.RestWeekdays)
+		}
+		target := buildExecutionPlanTarget(sourcePlan, durationMonths, monthIndex, entity.TargetWeekIndex, restWeekdays)
 		if currentMonthlyPlan, ok := monthlyPlans[target.MonthIndex]; ok {
 			monthlyPlan = &currentMonthlyPlan
 		}
@@ -307,7 +285,7 @@ func syncPEP3MonthlyPlanPeriodDates(plan model.PEP3MonthlyPlanAIResult, sourcePl
 	for rowIndex := range plan.Rows {
 		items := plan.Rows[rowIndex].TrainingItems
 		for itemIndex := range items {
-			items[itemIndex].StartEndDate = firstNonEmptyExportValue(monthlyItemDateRange(target.StartDate, target.EndDate, itemIndex, len(items)), target.StartDate+" - "+target.EndDate)
+			items[itemIndex].StartEndDate = firstNonEmptyExportValue(monthlyItemDateRangeForTarget(target, itemIndex, len(items)), target.StartDate+" - "+target.EndDate)
 		}
 		plan.Rows[rowIndex].TrainingItems = items
 	}

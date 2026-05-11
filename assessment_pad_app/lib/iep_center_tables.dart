@@ -119,6 +119,7 @@ class _IepTablePreview extends StatelessWidget {
     required this.plan,
     required this.monthPlan,
     required this.weekPlan,
+    required this.weekFallbackRestWeekdays,
     required this.loading,
     required this.bootstrapLoading,
     required this.generatingPlan,
@@ -146,6 +147,7 @@ class _IepTablePreview extends StatelessWidget {
   final IepPlan? plan;
   final IepMonthlyPlan? monthPlan;
   final IepWeeklyPlan? weekPlan;
+  final List<int> weekFallbackRestWeekdays;
   final bool loading;
   final bool bootstrapLoading;
   final bool generatingPlan;
@@ -178,6 +180,7 @@ class _IepTablePreview extends StatelessWidget {
     final List<DateTime> weekDates = _weekDatesInMonthRange(
       monthRange,
       weekNumber,
+      restWeekdays: weekFallbackRestWeekdays,
     );
     final String contentSignature = Object.hashAll(<Object?>[
       record?.id,
@@ -2207,10 +2210,8 @@ class _MonthDomainGroupBlock extends StatelessWidget {
               children: allRows.asMap().entries.expand((rowEntry) {
                 return rowEntry.value.trainingRowHeights.asMap().entries.map(
                   (trainingEntry) {
-                    final String periodText = _monthTrainingPeriodText(
-                      monthRange,
-                      trainingEntry.key,
-                    );
+                    final String periodText = rowEntry.value
+                        .data.trainings[trainingEntry.key].displayPeriod;
                     return SizedBox(
                       height: trainingEntry.value,
                       child: _MonthDocCellBox(

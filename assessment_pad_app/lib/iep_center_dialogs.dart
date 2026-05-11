@@ -34,7 +34,7 @@ class _IepPeriodEditDialogState extends State<_IepPeriodEditDialog> {
     final DateTime? picked = await showPadDatePicker(
       context: context,
       title: '选择周期开始日期',
-      helperText: '请选择周期开始日期，结束日期将按自然月自动计算',
+      helperText: '请选择周期开始日期，结束日期将按3个月或6个月周期自动计算',
       initialDate: _start,
       today: _start,
       minDate: DateTime(_start.year - 1, 1),
@@ -1014,6 +1014,233 @@ class _IepWeeklyPlanMissingMonthConfirmDialog extends StatelessWidget {
                   filled: true,
                   icon: Icons.auto_awesome_rounded,
                   onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IepWeeklyRestWeekdayDialog extends StatefulWidget {
+  const _IepWeeklyRestWeekdayDialog({
+    required this.initialSelectedWeekdays,
+    required this.title,
+    required this.helperText,
+    required this.confirmLabel,
+  });
+
+  final List<int> initialSelectedWeekdays;
+  final String title;
+  final String helperText;
+  final String confirmLabel;
+
+  @override
+  State<_IepWeeklyRestWeekdayDialog> createState() =>
+      _IepWeeklyRestWeekdayDialogState();
+}
+
+class _IepWeeklyRestWeekdayDialogState
+    extends State<_IepWeeklyRestWeekdayDialog> {
+  static const List<int> _weekdayOrder = <int>[
+    DateTime.monday,
+    DateTime.tuesday,
+    DateTime.wednesday,
+    DateTime.thursday,
+    DateTime.friday,
+    DateTime.saturday,
+    DateTime.sunday,
+  ];
+
+  late List<int> _selectedWeekdays;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedWeekdays = widget.initialSelectedWeekdays
+        .where(
+          (int item) => item >= DateTime.monday && item <= DateTime.sunday,
+        )
+        .take(2)
+        .toList(growable: true);
+    if (_selectedWeekdays.isEmpty) {
+      _selectedWeekdays = <int>[DateTime.sunday];
+    }
+  }
+
+  String _weekdayLabel(int weekday) {
+    return switch (weekday) {
+      DateTime.monday => '周一',
+      DateTime.tuesday => '周二',
+      DateTime.wednesday => '周三',
+      DateTime.thursday => '周四',
+      DateTime.friday => '周五',
+      DateTime.saturday => '周六',
+      _ => '周日',
+    };
+  }
+
+  void _toggleWeekday(int weekday) {
+    setState(() {
+      if (_selectedWeekdays.contains(weekday)) {
+        if (_selectedWeekdays.length == 1) {
+          return;
+        }
+        _selectedWeekdays.remove(weekday);
+        return;
+      }
+      if (_selectedWeekdays.length >= 2) {
+        return;
+      }
+      _selectedWeekdays.add(weekday);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool canSubmit = _selectedWeekdays.isNotEmpty;
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      alignment: const Alignment(0, -0.08),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 620,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    widget.title,
+                    style: const TextStyle(
+                      color: _IepColors.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1,
+                    ),
+                  ),
+                ),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Text(
+                widget.helperText,
+                style: TextStyle(
+                  color: _IepColors.text,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  height: 1.45,
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: _weekdayOrder.map((int weekday) {
+                final bool selected = _selectedWeekdays.contains(weekday);
+                return Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: () => _toggleWeekday(weekday),
+                    borderRadius: BorderRadius.circular(14),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 12,
+                      ),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFFFFF1E6)
+                            : const Color(0xFFFFFBF7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? _IepColors.orange
+                              : _IepColors.lightLine,
+                          width: selected ? 1.6 : 1,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          Icon(
+                            selected
+                                ? Icons.check_circle_rounded
+                                : Icons.radio_button_unchecked_rounded,
+                            size: 16,
+                            color: selected
+                                ? _IepColors.orangeDeep
+                                : _IepColors.muted,
+                          ),
+                          const SizedBox(width: 8),
+                          Text(
+                            _weekdayLabel(weekday),
+                            style: TextStyle(
+                              color: selected
+                                  ? _IepColors.orangeDeep
+                                  : _IepColors.ink,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              }).toList(growable: false),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _IepDialogAction(
+                    label: '取消',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _IepDialogAction(
+                    label: widget.confirmLabel,
+                    filled: true,
+                    onTap: canSubmit
+                        ? () => Navigator.of(context).pop(
+                              _selectedWeekdays.toList(growable: false),
+                            )
+                        : () {},
+                  ),
                 ),
               ],
             ),

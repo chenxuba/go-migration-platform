@@ -44,6 +44,7 @@ type PEP3ExecutionPlanGenerateRequest struct {
 	PlanType         string                   `json:"planType"`
 	TargetMonthIndex int                      `json:"targetMonthIndex,omitempty"`
 	TargetWeekIndex  int                      `json:"targetWeekIndex,omitempty"`
+	RestWeekdays     []int                    `json:"restWeekdays,omitempty"`
 	SourcePlan       PEP3IEPPlanAIResult      `json:"sourcePlan"`
 	MonthlyPlan      *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
 }
@@ -181,11 +182,12 @@ type PEP3IEPPlanRow struct {
 }
 
 type PEP3MonthlyPlanAIResult struct {
-	Title   string               `json:"title"`
-	Model   string               `json:"model,omitempty"`
-	Student PEP3IEPPlanStudent   `json:"student"`
-	Meta    PEP3MonthlyPlanMeta  `json:"meta"`
-	Rows    []PEP3MonthlyPlanRow `json:"rows"`
+	Title        string               `json:"title"`
+	Model        string               `json:"model,omitempty"`
+	Student      PEP3IEPPlanStudent   `json:"student"`
+	RestWeekdays []int                `json:"restWeekdays,omitempty"`
+	Meta         PEP3MonthlyPlanMeta  `json:"meta"`
+	Rows         []PEP3MonthlyPlanRow `json:"rows"`
 }
 
 type PEP3MonthlyPlanMeta struct {
@@ -220,6 +222,7 @@ type PEP3WeeklyPlanAIResult struct {
 	TrainingDate string              `json:"trainingDate"`
 	Preparation  string              `json:"preparation"`
 	WeekDates    []string            `json:"weekDates"`
+	RestWeekdays []int               `json:"restWeekdays,omitempty"`
 	Rows         []PEP3WeeklyPlanRow `json:"rows"`
 	SourceTitle  string              `json:"sourceTitle,omitempty"`
 }

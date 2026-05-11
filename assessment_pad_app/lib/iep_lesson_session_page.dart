@@ -697,6 +697,11 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       trainingDate: _weeklyPlan.trainingDate,
       preparation: _weeklyPlan.preparation,
       weekDates: List<String>.from(_weeklyPlan.weekDates),
+      restWeekdays: List<int>.from(
+        _weeklyPlan.restWeekdays.isNotEmpty
+            ? _weeklyPlan.restWeekdays
+            : const <int>[DateTime.sunday],
+      ),
       rows: rows,
     );
   }

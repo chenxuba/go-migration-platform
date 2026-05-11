@@ -254,6 +254,7 @@ abstract interface class IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
     required int targetMonthIndex,
+    List<int> restWeekdays = const <int>[],
     required IepPlan sourcePlan,
   });
 
@@ -266,6 +267,7 @@ abstract interface class IepPlanClient {
     required int targetWeekIndex,
     required IepPlan sourcePlan,
     IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
   });
 
   Future<IepExecutionPlansSaved> saveMonthlyPlan(
@@ -763,6 +765,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
     required int targetMonthIndex,
+    List<int> restWeekdays = const <int>[],
     required IepPlan sourcePlan,
   }) {
     return _generateExecutionPlanStream<IepMonthlyPlan>(
@@ -773,6 +776,7 @@ class ApiIepPlanClient implements IepPlanClient {
         'durationMonths': _normalizeDuration(durationMonths),
         'planType': 'monthly',
         'targetMonthIndex': targetMonthIndex,
+        if (restWeekdays.isNotEmpty) 'restWeekdays': restWeekdays,
         'sourcePlan': sourcePlan.toJson(),
       },
       parser: (Map<String, dynamic> json) => IepMonthlyPlan.fromJson(json),
@@ -789,6 +793,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required int targetWeekIndex,
     required IepPlan sourcePlan,
     IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
   }) {
     return _generateExecutionPlanStream<IepWeeklyPlan>(
       token,
@@ -800,6 +805,7 @@ class ApiIepPlanClient implements IepPlanClient {
         'targetMonthIndex': targetMonthIndex,
         'targetWeekIndex': targetWeekIndex,
         'sourcePlan': sourcePlan.toJson(),
+        if (restWeekdays.isNotEmpty) 'restWeekdays': restWeekdays,
         if (monthlyPlan != null) 'monthlyPlan': monthlyPlan.toJson(),
       },
       parser: (Map<String, dynamic> json) => IepWeeklyPlan.fromJson(json),
@@ -2004,6 +2010,7 @@ class IepMonthlyPlan {
   const IepMonthlyPlan({
     required this.title,
     required this.student,
+    required this.restWeekdays,
     required this.meta,
     required this.rows,
   });
@@ -2012,6 +2019,7 @@ class IepMonthlyPlan {
     return IepMonthlyPlan(
       title: _stringFrom(json['title']),
       student: IepPlanStudent.fromJson(_mapFrom(json['student'])),
+      restWeekdays: _intListFrom(json['restWeekdays']),
       meta: IepMonthlyPlanMeta.fromJson(_mapFrom(json['meta'])),
       rows: _listFrom(json['rows']).map(IepMonthlyPlanRow.fromJson).toList(),
     );
@@ -2019,6 +2027,7 @@ class IepMonthlyPlan {
 
   final String title;
   final IepPlanStudent student;
+  final List<int> restWeekdays;
   final IepMonthlyPlanMeta meta;
   final List<IepMonthlyPlanRow> rows;
 
@@ -2026,6 +2035,7 @@ class IepMonthlyPlan {
     return <String, dynamic>{
       'title': title,
       'student': student.toJson(),
+      'restWeekdays': restWeekdays,
       'meta': meta.toJson(),
       'rows': rows.map((IepMonthlyPlanRow row) => row.toJson()).toList(),
     };
@@ -2141,6 +2151,7 @@ class IepWeeklyPlan {
     required this.trainingDate,
     required this.preparation,
     required this.weekDates,
+    required this.restWeekdays,
     required this.rows,
   });
 
@@ -2153,6 +2164,7 @@ class IepWeeklyPlan {
       trainingDate: _stringFrom(json['trainingDate']),
       preparation: _stringFrom(json['preparation']),
       weekDates: _stringListFrom(json['weekDates']),
+      restWeekdays: _intListFrom(json['restWeekdays']),
       rows: _listFrom(json['rows']).map(IepWeeklyPlanRow.fromJson).toList(),
     );
   }
@@ -2164,6 +2176,7 @@ class IepWeeklyPlan {
   final String trainingDate;
   final String preparation;
   final List<String> weekDates;
+  final List<int> restWeekdays;
   final List<IepWeeklyPlanRow> rows;
 
   Map<String, dynamic> toJson() {
@@ -2175,6 +2188,7 @@ class IepWeeklyPlan {
       'trainingDate': trainingDate,
       'preparation': preparation,
       'weekDates': weekDates,
+      'restWeekdays': restWeekdays,
       'rows': rows.map((IepWeeklyPlanRow row) => row.toJson()).toList(),
     };
   }
@@ -2244,6 +2258,16 @@ List<String> _stringListFrom(Object? value) {
     return <String>[];
   }
   return value.map((Object? item) => _stringFrom(item)).toList();
+}
+
+List<int> _intListFrom(Object? value) {
+  if (value is! List) {
+    return <int>[];
+  }
+  return value
+      .map((Object? item) => _intFrom(item))
+      .where((int item) => item > 0)
+      .toList(growable: false);
 }
 
 bool _boolFrom(Object? value) {

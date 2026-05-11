@@ -141,7 +141,7 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 		for _, longGoalGroup := range domainGroup.LongGoalGroups {
 			firstLongGoalRow := true
 			for _, row := range longGoalGroup.Rows {
-				items := monthlyTrainingItemsForWord(row, plan.Meta.StartDate, plan.Meta.EndDate)
+				items := monthlyTrainingItemsForWord(row, plan.Meta.StartDate, plan.Meta.EndDate, plan.RestWeekdays)
 				for index, item := range items {
 					builder.WriteString(buildIEPTableRowStart(620))
 					if firstDomainRow && index == 0 {
@@ -249,7 +249,7 @@ func groupPEP3MonthlyPlanRows(rows []model.PEP3MonthlyPlanRow) []pep3MonthlyPlan
 	return result
 }
 
-func monthlyTrainingItemsForWord(row model.PEP3MonthlyPlanRow, startDate, endDate string) []model.PEP3MonthlyTrainingItem {
+func monthlyTrainingItemsForWord(row model.PEP3MonthlyPlanRow, startDate, endDate string, restWeekdays []int) []model.PEP3MonthlyTrainingItem {
 	items := make([]model.PEP3MonthlyTrainingItem, 0, len(row.TrainingItems))
 	for _, item := range row.TrainingItems {
 		content := strings.TrimSpace(item.Content)
@@ -266,7 +266,20 @@ func monthlyTrainingItemsForWord(row model.PEP3MonthlyPlanRow, startDate, endDat
 	}
 	for index := range items {
 		if strings.TrimSpace(items[index].StartEndDate) == "" {
-			items[index].StartEndDate = firstNonEmptyExportValue(monthlyItemDateRange(startDate, endDate, index, len(items)), startDate+" - "+endDate)
+			items[index].StartEndDate = firstNonEmptyExportValue(
+				monthlyItemDateRangeForWeekRanges(
+					calendarWeekRangesForDateRange(
+						parseIEPPlanDateValue(startDate),
+						parseIEPPlanDateValue(endDate),
+						normalizeExecutionPlanRestWeekdays(restWeekdays),
+					),
+					startDate,
+					endDate,
+					index,
+					len(items),
+				),
+				startDate+" - "+endDate,
+			)
 		}
 	}
 	return items

@@ -591,6 +591,7 @@ export async function generateERXinExecutionPlanAIStreamApi(
     planType: 'monthly' | 'weekly'
     targetMonthIndex?: number | string
     targetWeekIndex?: number | string
+    restWeekdays?: number[]
     sourcePlan: PEP3IEPPlanAIResult
     monthlyPlan?: PEP3MonthlyPlanAIResult | null
   },

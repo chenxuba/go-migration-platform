@@ -94,6 +94,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
   int _activeGenerationDurationMonths = 6;
+  List<int> _activeWeeklyRestWeekdays = <int>[DateTime.sunday];
+  final Map<int, List<int>> _monthlyRestWeekdayOverrides = <int, List<int>>{};
   final Map<String, _IepGenerationSessionSnapshot> _generationSessionsByRecord =
       <String, _IepGenerationSessionSnapshot>{};
   IepLessonSessionWeekState? _lessonSessionState;
@@ -158,6 +160,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generatingPlan = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
+      _activeWeeklyRestWeekdays = <int>[DateTime.sunday];
+      _monthlyRestWeekdayOverrides.clear();
       ++_loadTicket;
       ++_generationTicket;
       widget.onConfirmAvailabilityChanged(false);
@@ -245,6 +249,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _loadTicket) {
         return;
       }
+      _syncMonthlyRestWeekdayOverridesFromExecutionPlans(executionPlans);
       setState(() {
         _loadingPlan = false;
         _hasCompletedInitialPlanLoad = true;
@@ -734,6 +739,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationCostAmountCny = 0;
       _planError = '';
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
+      _monthlyRestWeekdayOverrides.clear();
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = _recordGenerationKey(record);
       _activeGenerationDurationMonths = _periodMonthCount;
@@ -843,11 +849,39 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_generatingPlan) {
       return;
     }
+    final List<int>? restWeekdays = await _showWeeklyRestWeekdaysDialog(
+      initialSelectedWeekdays: _currentMonthlyRestWeekdays(),
+      title: '选择$_previewMonth休息日',
+      helperText: '请先选择机构休息日。系统会先据此计算当前月份周数，再让月计划每一条训练内容的日期区间与后续周计划一一对应。',
+      confirmLabel: '确认并生成',
+    );
+    if (restWeekdays == null || !mounted) {
+      return;
+    }
     final int ticket = ++_generationTicket;
     ++_loadTicket;
     final int monthIndex = _previewMonthIndex();
     IepMonthlyPlan? finalPlan;
     setState(() {
+      _activeWeeklyRestWeekdays = List<int>.from(restWeekdays);
+      _monthlyRestWeekdayOverrides[monthIndex] = List<int>.from(restWeekdays);
+      final DateTime monthDate = _monthDateFromLabel(
+        _periodStart,
+        _periodMonthCount,
+        _previewMonth,
+      );
+      final DateTimeRange monthRange = _monthRangeInPeriod(
+        periodStart: _periodStart,
+        monthCount: _periodMonthCount,
+        monthDate: monthDate,
+      );
+      final int maxWeek = _lastAvailableWeekInMonthRange(
+        monthRange,
+        restWeekdays: restWeekdays,
+      );
+      if (_previewWeek > maxWeek) {
+        _previewWeek = 1;
+      }
       _loadingPlan = false;
       _generatingPlan = true;
       _generationStatus = forceRegenerate ? '正在重新生成月计划' : '正在准备月计划';
@@ -868,6 +902,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         record: record,
         durationMonths: _periodMonthCount,
         targetMonthIndex: monthIndex,
+        restWeekdays: restWeekdays,
         sourcePlan: sourcePlan,
       )) {
         if (!mounted || ticket != _generationTicket) {
@@ -899,6 +934,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final double actualCostAmountCny = _generationCostAmountCny;
+      _syncMonthlyRestWeekdayOverridesFromExecutionPlans(saved);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '';
@@ -954,12 +990,30 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_generatingPlan) {
       return;
     }
-    final int ticket = ++_generationTicket;
-    ++_loadTicket;
+    List<int>? restWeekdays;
     final int monthIndex = _previewMonthIndex();
     final IepMonthlyPlan? monthlyPlan = _executionPlans?.monthPlan(monthIndex);
+    if (monthlyPlan != null && monthlyPlan.restWeekdays.isNotEmpty) {
+      restWeekdays = _normalizeWeeklyRestWeekdays(monthlyPlan.restWeekdays);
+    } else {
+      restWeekdays = await _showWeeklyRestWeekdaysDialog(
+        initialSelectedWeekdays: _currentWeeklyRestWeekdays(),
+        title: '选择$_previewMonth第$_previewWeek周休息日',
+        helperText: '当前没有可复用的月计划休息日，请先选择机构休息日。系统会自动从周计划完成情况日期里过滤这些星期。',
+        confirmLabel: '确认并生成',
+      );
+      if (restWeekdays == null || !mounted) {
+        return;
+      }
+    }
+    final List<int> effectiveRestWeekdays = List<int>.from(restWeekdays);
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
     IepWeeklyPlan? finalPlan;
     setState(() {
+      _activeWeeklyRestWeekdays = List<int>.from(effectiveRestWeekdays);
+      _monthlyRestWeekdayOverrides[monthIndex] =
+          List<int>.from(effectiveRestWeekdays);
       _loadingPlan = false;
       _generatingPlan = true;
       _generationStatus = forceRegenerate ? '正在重新生成周计划' : '正在准备周计划';
@@ -983,6 +1037,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         targetWeekIndex: _previewWeek,
         sourcePlan: sourcePlan,
         monthlyPlan: monthlyPlan,
+        restWeekdays: effectiveRestWeekdays,
       )) {
         if (!mounted || ticket != _generationTicket) {
           return;
@@ -1014,6 +1069,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final double actualCostAmountCny = _generationCostAmountCny;
+      _syncMonthlyRestWeekdayOverridesFromExecutionPlans(saved);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '';
@@ -1235,6 +1291,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _executionPlans = IepExecutionPlansSaved.empty(
         savedPlan.durationMonths == 6 ? 6 : 3,
       );
+      _monthlyRestWeekdayOverrides.clear();
       _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
       _applyPeriodFromPlan(savedPlan.plan, record);
       _totalPlanDomains = savedPlan.plan == null
@@ -1286,13 +1343,99 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return '${record.source.trim().toUpperCase()}-${record.id}';
   }
 
+  List<int> _normalizeWeeklyRestWeekdays(List<int> value) {
+    final List<int> normalized = <int>[];
+    for (final int weekday in value) {
+      if (weekday < DateTime.monday || weekday > DateTime.sunday) {
+        continue;
+      }
+      if (normalized.contains(weekday)) {
+        continue;
+      }
+      normalized.add(weekday);
+      if (normalized.length >= 2) {
+        break;
+      }
+    }
+    return normalized.isEmpty ? <int>[DateTime.sunday] : normalized;
+  }
+
+  List<int>? _weeklyPlanRestWeekdaysForMonth(int monthIndex) {
+    final IepExecutionPlansSaved? executionPlans = _executionPlans;
+    if (executionPlans == null) {
+      return null;
+    }
+    for (final IepWeeklyPlanSaved item in executionPlans.weeklyPlans) {
+      if (item.targetMonthIndex != monthIndex ||
+          item.plan.restWeekdays.isEmpty) {
+        continue;
+      }
+      return _normalizeWeeklyRestWeekdays(item.plan.restWeekdays);
+    }
+    return null;
+  }
+
+  List<int> _restWeekdaysForMonth(int monthIndex) {
+    final List<int>? override = _monthlyRestWeekdayOverrides[monthIndex];
+    if (override != null && override.isNotEmpty) {
+      return _normalizeWeeklyRestWeekdays(override);
+    }
+    final List<int>? weeklyRestWeekdays =
+        _weeklyPlanRestWeekdaysForMonth(monthIndex);
+    if (weeklyRestWeekdays != null && weeklyRestWeekdays.isNotEmpty) {
+      return weeklyRestWeekdays;
+    }
+    final IepMonthlyPlan? monthPlan = _executionPlans?.monthPlan(monthIndex);
+    if (monthPlan != null && monthPlan.restWeekdays.isNotEmpty) {
+      return _normalizeWeeklyRestWeekdays(monthPlan.restWeekdays);
+    }
+    return _normalizeWeeklyRestWeekdays(_activeWeeklyRestWeekdays);
+  }
+
+  List<int> _currentMonthlyRestWeekdays() {
+    return _restWeekdaysForMonth(_previewMonthIndex());
+  }
+
+  List<int> _currentWeeklyRestWeekdays() {
+    final IepWeeklyPlan? plan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    if (plan != null && plan.restWeekdays.isNotEmpty) {
+      return _normalizeWeeklyRestWeekdays(plan.restWeekdays);
+    }
+    return _currentMonthlyRestWeekdays();
+  }
+
+  void _syncMonthlyRestWeekdayOverridesFromExecutionPlans(
+    IepExecutionPlansSaved? executionPlans,
+  ) {
+    _monthlyRestWeekdayOverrides.clear();
+    if (executionPlans == null) {
+      return;
+    }
+    for (final IepMonthlyPlanSaved item in executionPlans.monthlyPlans) {
+      if (item.plan.restWeekdays.isEmpty) {
+        continue;
+      }
+      _monthlyRestWeekdayOverrides[item.targetMonthIndex] =
+          _normalizeWeeklyRestWeekdays(item.plan.restWeekdays);
+    }
+    for (final IepWeeklyPlanSaved item in executionPlans.weeklyPlans) {
+      if (_monthlyRestWeekdayOverrides.containsKey(item.targetMonthIndex) ||
+          item.plan.restWeekdays.isEmpty) {
+        continue;
+      }
+      _monthlyRestWeekdayOverrides[item.targetMonthIndex] =
+          _normalizeWeeklyRestWeekdays(item.plan.restWeekdays);
+    }
+  }
+
   void _initPeriodFromRecord(IepAssessmentRecordSummary? record) {
     final DateTime? assessmentDate =
         DateTime.tryParse(record?.assessmentDate.trim() ?? '');
     if (assessmentDate == null) {
       return;
     }
-    _periodStart = DateTime(assessmentDate.year, assessmentDate.month);
+    _periodStart = _dateOnly(assessmentDate);
     _periodEndOverride = null;
   }
 
@@ -1443,6 +1586,33 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     }
   }
 
+  Future<List<int>?> _showWeeklyRestWeekdaysDialog({
+    List<int>? initialSelectedWeekdays,
+    String title = '选择机构休息日',
+    String helperText = '系统会自动从周计划完成情况日期里过滤这些星期，保留当前 6 列布局。',
+    String confirmLabel = '开始生成',
+  }) async {
+    final List<int>? result = await showDialog<List<int>>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepWeeklyRestWeekdayDialog(
+            initialSelectedWeekdays:
+                initialSelectedWeekdays ?? _currentWeeklyRestWeekdays(),
+            title: title,
+            helperText: helperText,
+            confirmLabel: confirmLabel,
+          ),
+        );
+      },
+    );
+    if (result == null) {
+      return null;
+    }
+    return _normalizeWeeklyRestWeekdays(result);
+  }
+
   Future<void> _syncPeriodStart(DateTime start) async {
     final IepAssessmentRecordSummary? record = widget.record;
     if (record == null) {
@@ -1512,6 +1682,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _hasCompletedInitialPlanLoad = true;
       _savedPlan = savedPlan;
       _executionPlans = executionPlans;
+      _syncMonthlyRestWeekdayOverridesFromExecutionPlans(executionPlans);
       _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
       _applyPeriodFromPlan(savedPlan.plan, record);
       _totalPlanDomains = savedPlan.plan == null
@@ -1528,6 +1699,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_previewMode != _IepPreviewMode.week) {
       return;
     }
+    final int monthIndex = _previewMonthIndex();
     final DateTime monthDate = _monthDateFromLabel(
       _periodStart,
       _periodMonthCount,
@@ -1538,7 +1710,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       monthCount: _periodMonthCount,
       monthDate: monthDate,
     );
-    if (_weekDatesInMonthRange(monthRange, _previewWeek).isEmpty) {
+    if (_weekDatesInMonthRange(
+      monthRange,
+      _previewWeek,
+      restWeekdays: _restWeekdaysForMonth(monthIndex),
+    ).isEmpty) {
       _previewWeek = 1;
     }
   }
@@ -1703,9 +1879,16 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       monthCount: _periodMonthCount,
       monthDate: monthDate,
     );
+    final List<int> restWeekdays = weekPlan?.restWeekdays.isNotEmpty == true
+        ? _normalizeWeeklyRestWeekdays(weekPlan!.restWeekdays)
+        : _restWeekdaysForMonth(monthIndex);
     final List<DateTime> weekDates =
         _dateListFromStrings(weekPlan?.weekDates) ??
-            _weekDatesInMonthRange(monthRange, _previewWeek);
+            _weekDatesInMonthRange(
+              monthRange,
+              _previewWeek,
+              restWeekdays: restWeekdays,
+            );
     return _buildIepPlanPrintPdf(
       format: format,
       mode: _previewMode,
@@ -1760,6 +1943,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   }
 
   void _showWeekPlan(String month, int weekNumber) {
+    final int monthIndex =
+        _periodMonths.indexOf(month) < 0 ? 1 : _periodMonths.indexOf(month) + 1;
+    final List<int> restWeekdays = _restWeekdaysForMonth(monthIndex);
     final DateTime monthDate = _monthDateFromLabel(
       _periodStart,
       _periodMonthCount,
@@ -1770,8 +1956,15 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       monthCount: _periodMonthCount,
       monthDate: monthDate,
     );
-    final int week = _weekDatesInMonthRange(monthRange, weekNumber).isEmpty
-        ? _lastAvailableWeekInMonthRange(monthRange)
+    final int week = _weekDatesInMonthRange(
+      monthRange,
+      weekNumber,
+      restWeekdays: restWeekdays,
+    ).isEmpty
+        ? _lastAvailableWeekInMonthRange(
+            monthRange,
+            restWeekdays: restWeekdays,
+          )
         : weekNumber;
     setState(() {
       _previewMode = _IepPreviewMode.week;
@@ -1947,6 +2140,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
                   if (!mounted) {
                     return;
                   }
+                  _syncMonthlyRestWeekdayOverridesFromExecutionPlans(saved);
                   setState(() {
                     _executionPlans = saved;
                   });
@@ -2109,9 +2303,16 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _previewMonth,
       ),
     );
+    final List<int> restWeekdays = weekPlan?.restWeekdays.isNotEmpty == true
+        ? _normalizeWeeklyRestWeekdays(weekPlan!.restWeekdays)
+        : _restWeekdaysForMonth(monthIndex);
     final List<DateTime> weekDates =
         _dateListFromStrings(weekPlan?.weekDates) ??
-            _weekDatesInMonthRange(monthRange, _previewWeek);
+            _weekDatesInMonthRange(
+              monthRange,
+              _previewWeek,
+              restWeekdays: restWeekdays,
+            );
     final List<String> weekDateOptions = weekDates
         .map((DateTime item) => _weekDateOptionLabel(item))
         .toList(growable: false);
@@ -2196,6 +2397,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             trainingDate: trainingDateLabel,
             preparation: preparation,
             weekDates: weekDates.map(_formatDateDash).toList(growable: false),
+            restWeekdays: const <int>[DateTime.sunday],
             rows: const <IepWeeklyPlanRow>[],
           ),
       studentName: studentName.isEmpty ? '未选择学员' : studentName,
@@ -2310,8 +2512,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       '周四',
       '周五',
       '周六',
+      '周日',
     ];
-    final int weekdayIndex = value.weekday.clamp(1, 6) - 1;
+    final int weekdayIndex = value.weekday.clamp(1, 7) - 1;
     return '${_weekDateLabel(value)} ${weekdays[weekdayIndex]}';
   }
 
@@ -2319,6 +2522,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (weekPlan == null || _previewMode != _IepPreviewMode.week) {
       return const <DateTime>[];
     }
+    final int monthIndex = _previewMonthIndex();
     final DateTimeRange monthRange = _monthRangeInPeriod(
       periodStart: _periodStart,
       monthCount: _periodMonthCount,
@@ -2329,7 +2533,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       ),
     );
     return _dateListFromStrings(weekPlan.weekDates) ??
-        _weekDatesInMonthRange(monthRange, _previewWeek);
+        _weekDatesInMonthRange(
+          monthRange,
+          _previewWeek,
+          restWeekdays: _restWeekdaysForMonth(monthIndex),
+        );
   }
 
   int _selectedWeekTodayIndex(IepWeeklyPlan? weekPlan) {
@@ -2692,6 +2900,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
                     )
                     .toSet() ??
                 <String>{},
+            resolveMonthRestWeekdays: _restWeekdaysForMonth,
           ),
           const SizedBox(height: 10),
           Expanded(
@@ -2705,6 +2914,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
               plan: plan,
               monthPlan: monthPlan,
               weekPlan: weekPlan,
+              weekFallbackRestWeekdays: _previewMode == _IepPreviewMode.week
+                  ? (weekPlan?.restWeekdays.isNotEmpty == true
+                      ? _normalizeWeeklyRestWeekdays(weekPlan!.restWeekdays)
+                      : _restWeekdaysForMonth(_previewMonthIndex()))
+                  : _restWeekdaysForMonth(_previewMonthIndex()),
               loading: _loadingPlan,
               bootstrapLoading: !_hasCompletedInitialPlanLoad,
               generatingPlan: _generatingPlan,
@@ -2965,6 +3179,7 @@ class _PlanToolbar extends StatelessWidget {
     required this.totalPlanGenerated,
     required this.generatedMonthIndexes,
     required this.generatedWeekKeys,
+    required this.resolveMonthRestWeekdays,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -2992,6 +3207,7 @@ class _PlanToolbar extends StatelessWidget {
   final bool totalPlanGenerated;
   final Set<int> generatedMonthIndexes;
   final Set<String> generatedWeekKeys;
+  final List<int> Function(int monthIndex) resolveMonthRestWeekdays;
 
   @override
   Widget build(BuildContext context) {
@@ -3025,6 +3241,7 @@ class _PlanToolbar extends StatelessWidget {
               totalPlanGenerated: totalPlanGenerated,
               generatedMonthIndexes: generatedMonthIndexes,
               generatedWeekKeys: generatedWeekKeys,
+              resolveMonthRestWeekdays: resolveMonthRestWeekdays,
             ),
           ),
           const _ToolbarDivider(),
@@ -3090,6 +3307,7 @@ class _ScrollablePlanNav extends StatefulWidget {
     required this.totalPlanGenerated,
     required this.generatedMonthIndexes,
     required this.generatedWeekKeys,
+    required this.resolveMonthRestWeekdays,
   });
 
   final VoidCallback onShowTotalPlan;
@@ -3104,6 +3322,7 @@ class _ScrollablePlanNav extends StatefulWidget {
   final bool totalPlanGenerated;
   final Set<int> generatedMonthIndexes;
   final Set<String> generatedWeekKeys;
+  final List<int> Function(int monthIndex) resolveMonthRestWeekdays;
 
   @override
   State<_ScrollablePlanNav> createState() => _ScrollablePlanNavState();
@@ -3237,6 +3456,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
   }
 
   int _weekCountForSelectedMonth() {
+    final int monthIndex = widget.monthLabels.indexOf(_selectedMonth) + 1;
     final DateTime selectedMonthDate = _monthDateFromLabel(
       widget.periodStart,
       widget.periodMonthCount,
@@ -3247,7 +3467,12 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
       monthCount: widget.periodMonthCount,
       monthDate: selectedMonthDate,
     );
-    return _lastAvailableWeekInMonthRange(selectedMonthRange);
+    return _lastAvailableWeekInMonthRange(
+      selectedMonthRange,
+      restWeekdays: widget.resolveMonthRestWeekdays(
+        monthIndex < 1 ? 1 : monthIndex,
+      ),
+    );
   }
 
   @override

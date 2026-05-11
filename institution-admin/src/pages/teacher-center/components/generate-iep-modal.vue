@@ -44,7 +44,14 @@ const confirmingPlan = ref(false)
 const savingExecutionPlan = ref(false)
 const syncingPlanPeriod = ref(false)
 const periodEditorOpen = ref(false)
+const weeklyRestDayEditorOpen = ref(false)
+const weeklyRestWeekdayDraft = ref([7])
 const periodDraftStartDate = ref('')
+const selectedWeeklyRestWeekdays = ref([7])
+const monthlyRestWeekdayOverrides = ref({})
+const weeklyRestDialogTitle = ref('选择机构休息日')
+const weeklyRestDialogHelperText = ref('系统会自动从周计划完成情况日期里过滤这些星期，保留当前 6 列布局。')
+const weeklyRestDialogConfirmText = ref('开始生成')
 const showPlanLoadingOverlay = ref(false)
 const aiStreamStatus = ref('')
 const aiStreamText = ref('')
@@ -94,6 +101,7 @@ let executionPlanRequestKey = 0
 let loadPlanRequestKey = 0
 let ignoreNextPlanDurationWatch = false
 let planLoadingOverlayTimer = 0
+let weeklyRestWeekdayResolver = null
 const planDateSyncDirty = ref(false)
 const planDateSyncSourceDuration = ref('6')
 
@@ -646,7 +654,7 @@ const planDisplayRows = computed(() => {
 const selectedExecutionMonthLabel = computed(() => executionMonthLabelForIndex(selectedExecutionMonth.value))
 const selectedExecutionMonthRange = computed(() => executionMonthRangeForIndex(selectedExecutionMonth.value))
 const selectedExecutionMonthGenerated = computed(() => !!monthlyPlans.value[String(clampExecutionMonth(selectedExecutionMonth.value))])
-const executionWeekCount = computed(() => weekCountForRange(selectedExecutionMonthRange.value))
+const executionWeekCount = computed(() => weekCountForRange(selectedExecutionMonthRange.value, executionRestWeekdaysForMonth(selectedExecutionMonth.value)))
 const selectedExecutionWeekValue = computed(() => clampExecutionWeek(selectedExecutionWeek.value))
 const selectedExecutionWeekLabel = computed(() => `第${selectedExecutionWeekValue.value}周`)
 const selectedExecutionWeekRange = computed(() => executionWeekRangeForIndex(selectedExecutionWeekValue.value))
@@ -654,15 +662,16 @@ const executionWeekStorageKey = computed(() => `${clampExecutionMonth(selectedEx
 const selectedExecutionWeekGenerated = computed(() => !!weeklyPlans.value[executionWeekStorageKey.value])
 
 const executionNavigatorMonths = computed(() => {
-  const count = Number(planDuration.value) === 6 ? 6 : 3
+  const count = executionMonthCount()
   return Array.from({ length: count }, (_, index) => {
     const monthIndex = index + 1
     const monthRange = executionMonthRangeForIndex(monthIndex)
     const monthGenerated = !!monthlyPlans.value[String(monthIndex)]
-    const monthWeekCount = weekCountForRange(monthRange)
+    const restWeekdays = executionRestWeekdaysForMonth(monthIndex)
+    const monthWeekCount = weekCountForRange(monthRange, restWeekdays)
     const weeks = Array.from({ length: monthWeekCount }, (_, weekOffset) => {
       const weekIndex = weekOffset + 1
-      const weekRange = executionWeekRangeForMonth(monthIndex, weekIndex)
+      const weekRange = executionWeekRangeForMonth(monthIndex, weekIndex, restWeekdays)
       const key = `${monthIndex}-${weekIndex}`
       return {
         index: weekIndex,
@@ -845,7 +854,13 @@ function normalizeMonthlyTrainingItems(row = {}) {
 
   const startDate = monthlyPlan.value?.meta?.startDate || defaultPlanDateRange.value.start
   const endDate = monthlyPlan.value?.meta?.endDate || lastDayAfterMonths(startDate, 1)
-  return normalizeMonthlyTrainingItemsForRange(items, startDate, endDate)
+  return normalizeMonthlyTrainingItemsForRange(
+    items,
+    startDate,
+    endDate,
+    monthlyPlan.value?.restWeekdays || currentMonthlyRestWeekdays(),
+    row?.shortGoal,
+  )
 }
 
 const executionPlanSourceText = computed(() => {
@@ -987,11 +1002,21 @@ function formatLocalDate(date) {
 }
 
 function clampExecutionMonth(value) {
-  const count = Number(planDuration.value) === 6 ? 6 : 3
+  const count = executionMonthCount()
   const month = Number(value || 1)
   if (Number.isNaN(month))
     return 1
   return Math.max(1, Math.min(count, Math.floor(month)))
+}
+
+function executionMonthCount() {
+  const start = new Date(`${defaultPlanDateRange.value.start}T00:00:00`)
+  const end = new Date(`${defaultPlanDateRange.value.end}T00:00:00`)
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
+    return Number(planDuration.value) === 6 ? 6 : 3
+  return ((end.getFullYear() - start.getFullYear()) * 12)
+    + (end.getMonth() - start.getMonth())
+    + 1
 }
 
 function executionMonthDateForIndex(monthIndex) {
@@ -1020,8 +1045,8 @@ function executionMonthRangeForIndex(monthIndex) {
   }
 }
 
-function weekCountForRange(range = {}) {
-  return Math.max(1, calendarWeekRangesForRange(range).length)
+function weekCountForRange(range = {}, restWeekdays = [7]) {
+  return Math.max(1, calendarWeekRangesForRange(range, restWeekdays).length)
 }
 
 function clampExecutionWeek(value) {
@@ -1035,27 +1060,28 @@ function executionWeekRangeForIndex(weekIndex) {
   return executionWeekRangeForMonth(selectedExecutionMonth.value, weekIndex)
 }
 
-function executionWeekRangeForMonth(monthIndex, weekIndex) {
+function executionWeekRangeForMonth(monthIndex, weekIndex, restWeekdays = executionRestWeekdaysForMonth(monthIndex)) {
   const monthRange = executionMonthRangeForIndex(monthIndex)
-  const weekRanges = calendarWeekRangesForRange(monthRange)
+  const weekRanges = calendarWeekRangesForRange(monthRange, restWeekdays)
   if (!weekRanges.length)
     return { start: monthRange.start, end: monthRange.end }
   const index = Math.max(1, Math.min(weekRanges.length, Number(weekIndex || 1)))
   return weekRanges[index - 1]
 }
 
-function calendarWeekRangesForRange(range = {}) {
+function calendarWeekRangesForRange(range = {}, restWeekdays = [7]) {
   const start = new Date(`${range.start}T00:00:00`)
   const end = new Date(`${range.end}T00:00:00`)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
     return []
+  const blockedWeekdays = new Set(normalizeRestWeekdays(restWeekdays).map(item => item === 7 ? 0 : item))
   const ranges = []
   let cursor = new Date(start.getFullYear(), start.getMonth(), start.getDate())
   while (cursor <= end) {
     const rawWeekEnd = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate() + (6 - cursor.getDay()))
     const weekEnd = rawWeekEnd > end ? end : rawWeekEnd
-    const visibleStart = firstNonSundayBetween(cursor, weekEnd)
-    const visibleEnd = lastNonSundayBetween(weekEnd, cursor)
+    const visibleStart = firstWorkingDayBetween(cursor, weekEnd, blockedWeekdays)
+    const visibleEnd = lastWorkingDayBetween(weekEnd, cursor, blockedWeekdays)
     if (visibleStart && visibleEnd && visibleEnd >= visibleStart) {
       ranges.push({
         start: formatLocalDate(visibleStart),
@@ -1067,17 +1093,17 @@ function calendarWeekRangesForRange(range = {}) {
   return ranges
 }
 
-function firstNonSundayBetween(start, end) {
+function firstWorkingDayBetween(start, end, blockedWeekdays) {
   for (let current = new Date(start.getFullYear(), start.getMonth(), start.getDate()); current <= end; current = new Date(current.getFullYear(), current.getMonth(), current.getDate() + 1)) {
-    if (current.getDay() !== 0)
+    if (!blockedWeekdays.has(current.getDay()))
       return current
   }
   return null
 }
 
-function lastNonSundayBetween(start, end) {
+function lastWorkingDayBetween(start, end, blockedWeekdays) {
   for (let current = new Date(start.getFullYear(), start.getMonth(), start.getDate()); current >= end; current = new Date(current.getFullYear(), current.getMonth(), current.getDate() - 1)) {
-    if (current.getDay() !== 0)
+    if (!blockedWeekdays.has(current.getDay()))
       return current
   }
   return null
@@ -1102,25 +1128,39 @@ function executionMonthLabelForIndex(monthIndex) {
   return `${date.getMonth() + 1}月`
 }
 
-function lastDayAfterMonths(dateText, months) {
+function addMonthsClamped(dateText, months) {
   const date = new Date(`${dateText}T00:00:00`)
   if (Number.isNaN(date.getTime()))
-    return addDays(addMonths(dateText, months), -1)
-  return formatLocalDate(new Date(date.getFullYear(), date.getMonth() + months, date.getDate() - 1))
+    return dateText
+  const targetMonth = new Date(date.getFullYear(), date.getMonth() + Number(months || 0), 1)
+  const lastDay = new Date(targetMonth.getFullYear(), targetMonth.getMonth() + 1, 0).getDate()
+  const targetDay = Math.min(date.getDate(), lastDay)
+  return formatLocalDate(new Date(targetMonth.getFullYear(), targetMonth.getMonth(), targetDay))
+}
+
+function lastDayAfterMonths(dateText, months) {
+  return addMonthsClamped(dateText, months)
 }
 
 function dateRangeForMonthlyItem(startText, endText, itemIndex, itemCount) {
+  const weekRanges = calendarWeekRangesForRange({ start: startText, end: endText })
+  return dateRangeForMonthlyItemByWeekRanges(weekRanges, startText, endText, itemIndex, itemCount)
+}
+
+function dateRangeForMonthlyItemByWeekRanges(weekRanges = [], startText, endText, itemIndex, itemCount) {
   const start = new Date(`${startText}T00:00:00`)
   const end = new Date(`${endText}T00:00:00`)
   if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || end < start)
     return [startText, endText].filter(Boolean).join(' - ')
   const count = Math.max(1, Number(itemCount || 1))
   const index = Math.max(0, Math.min(count - 1, Number(itemIndex || 0)))
-  const totalDays = Math.floor((end.getTime() - start.getTime()) / 86400000) + 1
-  const offsetStart = Math.floor(index * totalDays / count)
-  const offsetEnd = Math.max(offsetStart, Math.floor((index + 1) * totalDays / count) - 1)
-  const itemStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() + offsetStart)
-  const itemEnd = new Date(start.getFullYear(), start.getMonth(), start.getDate() + offsetEnd)
+  if (!weekRanges.length)
+    return `${formatLocalDate(start)} - ${formatLocalDate(end)}`
+  const weekCount = weekRanges.length
+  const startIndex = Math.min(weekCount - 1, Math.floor(index * weekCount / count))
+  const endIndex = Math.min(weekCount - 1, Math.max(startIndex, Math.floor((index + 1) * weekCount / count) - 1))
+  const itemStart = new Date(`${weekRanges[startIndex].start}T00:00:00`)
+  const itemEnd = new Date(`${weekRanges[endIndex].end}T00:00:00`)
   return `${formatLocalDate(itemStart)} - ${formatLocalDate(itemEnd)}`
 }
 
@@ -1133,19 +1173,123 @@ function buildStageDateRanges(startDate, durationMonths) {
   const remainder = durationMonths % stageCount
   const ranges = []
   let current = new Date(date.getFullYear(), date.getMonth(), date.getDate())
+  const periodEnd = new Date(`${lastDayAfterMonths(startDate, durationMonths)}T00:00:00`)
   for (let index = 0; index < stageCount; index++) {
     const months = Math.max(1, baseMonths + (index < remainder ? 1 : 0))
-    const end = new Date(current.getFullYear(), current.getMonth() + months, current.getDate() - 1)
+    let end = periodEnd
+    if (index < stageCount - 1) {
+      end = new Date(current.getFullYear(), current.getMonth() + months, current.getDate() - 1)
+      if (end > periodEnd)
+        end = periodEnd
+      if (end < current)
+        end = current
+    }
     ranges.push(`${formatLocalDate(current)} - ${formatLocalDate(end)}`)
     current = new Date(end.getFullYear(), end.getMonth(), end.getDate() + 1)
   }
   return ranges
 }
 
+function normalizeRestWeekdays(restWeekdays = []) {
+  const source = Array.isArray(restWeekdays) && restWeekdays.length ? restWeekdays : [7]
+  const normalized = []
+  for (const rawValue of source) {
+    const value = Number(rawValue || 0)
+    if (!Number.isInteger(value) || value < 1 || value > 7 || normalized.includes(value))
+      continue
+    normalized.push(value)
+    if (normalized.length >= 2)
+      break
+  }
+  return normalized.length ? normalized : [7]
+}
+
+function weeklyPlanRestWeekdaysForMonth(monthIndex) {
+  const normalizedMonthIndex = clampExecutionMonth(monthIndex)
+  const items = Object.entries(weeklyPlans.value || {})
+  for (const [key, plan] of items) {
+    if (!key.startsWith(`${normalizedMonthIndex}-`))
+      continue
+    if (Array.isArray(plan?.restWeekdays) && plan.restWeekdays.length)
+      return normalizeRestWeekdays(plan.restWeekdays)
+  }
+  return null
+}
+
+function executionRestWeekdaysForMonth(monthIndex) {
+  const normalizedMonthIndex = clampExecutionMonth(monthIndex)
+  if (monthlyRestWeekdayOverrides.value[String(normalizedMonthIndex)]?.length)
+    return normalizeRestWeekdays(monthlyRestWeekdayOverrides.value[String(normalizedMonthIndex)])
+  const weeklyRestWeekdays = weeklyPlanRestWeekdaysForMonth(normalizedMonthIndex)
+  if (weeklyRestWeekdays?.length)
+    return weeklyRestWeekdays
+  const monthlyPlanForMonth = monthlyPlans.value[String(normalizedMonthIndex)]
+  const monthlyRestWeekdays = normalizeRestWeekdays(monthlyPlanForMonth?.restWeekdays || [])
+  if (monthlyPlanForMonth?.restWeekdays?.length)
+    return monthlyRestWeekdays
+  return normalizeRestWeekdays(selectedWeeklyRestWeekdays.value)
+}
+
+function currentMonthlyRestWeekdays() {
+  return executionRestWeekdaysForMonth(selectedExecutionMonth.value)
+}
+
+function currentWeeklyRestWeekdays() {
+  if (Array.isArray(weeklyPlan.value?.restWeekdays) && weeklyPlan.value.restWeekdays.length)
+    return normalizeRestWeekdays(weeklyPlan.value.restWeekdays)
+  return currentMonthlyRestWeekdays()
+}
+
+function setMonthRestWeekdays(monthIndex, restWeekdays = []) {
+  monthlyRestWeekdayOverrides.value = {
+    ...monthlyRestWeekdayOverrides.value,
+    [String(clampExecutionMonth(monthIndex))]: normalizeRestWeekdays(restWeekdays),
+  }
+}
+
+function toggleWeeklyRestWeekday(weekday) {
+  const value = Number(weekday || 0)
+  if (!Number.isInteger(value) || value < 1 || value > 7)
+    return
+  if (weeklyRestWeekdayDraft.value.includes(value)) {
+    if (weeklyRestWeekdayDraft.value.length === 1)
+      return
+    weeklyRestWeekdayDraft.value = weeklyRestWeekdayDraft.value.filter(item => item !== value)
+    return
+  }
+  if (weeklyRestWeekdayDraft.value.length >= 2)
+    return
+  weeklyRestWeekdayDraft.value = [...weeklyRestWeekdayDraft.value, value]
+}
+
+function closeWeeklyRestWeekdayDialog(result = null) {
+  weeklyRestDayEditorOpen.value = false
+  const resolve = weeklyRestWeekdayResolver
+  weeklyRestWeekdayResolver = null
+  resolve?.(result)
+}
+
+function confirmWeeklyRestWeekdayDialog() {
+  const selected = normalizeRestWeekdays(weeklyRestWeekdayDraft.value)
+  closeWeeklyRestWeekdayDialog(selected)
+}
+
+function pickWeeklyRestWeekdays(initialSelected = [], options = {}) {
+  weeklyRestWeekdayDraft.value = normalizeRestWeekdays(initialSelected)
+  weeklyRestDialogTitle.value = String(options.title || '选择机构休息日').trim() || '选择机构休息日'
+  weeklyRestDialogHelperText.value = String(options.helperText || '系统会自动从周计划完成情况日期里过滤这些星期，保留当前 6 列布局。').trim() || '系统会自动从周计划完成情况日期里过滤这些星期，保留当前 6 列布局。'
+  weeklyRestDialogConfirmText.value = String(options.confirmText || '开始生成').trim() || '开始生成'
+  weeklyRestDayEditorOpen.value = true
+  return new Promise((resolve) => {
+    weeklyRestWeekdayResolver = resolve
+  })
+}
+
 async function generateMonthlyPlan(options = {}) {
   if (generatingExecutionPlan.value)
     return
   const forceRegenerate = !!options.forceRegenerate
+  let restWeekdays = Array.isArray(options.restWeekdays) ? normalizeRestWeekdays(options.restWeekdays) : null
   if (selectedExecutionMonthGenerated.value && !forceRegenerate) {
     messageService.warning(`${selectedExecutionMonthLabel.value}计划已生成，如需覆盖请进入该月份后点击“重新生成”`)
     return
@@ -1155,6 +1299,19 @@ async function generateMonthlyPlan(options = {}) {
     messageService.warning('请先生成或填写IEP计划')
     return
   }
+  if (!restWeekdays) {
+    const selected = await pickWeeklyRestWeekdays(currentMonthlyRestWeekdays(), {
+      title: `选择${selectedExecutionMonthLabel.value}休息日`,
+      helperText: '请先选择机构休息日。系统会先据此计算当前月份的周数，再让月计划每一条训练内容的日期区间与后续周计划一一对应。',
+      confirmText: '确认并生成',
+    })
+    if (!selected?.length)
+      return
+    restWeekdays = normalizeRestWeekdays(selected)
+  }
+  selectedWeeklyRestWeekdays.value = restWeekdays
+  setMonthRestWeekdays(selectedExecutionMonth.value, restWeekdays)
+  selectedExecutionWeek.value = Math.max(1, Math.min(weekCountForRange(selectedExecutionMonthRange.value, restWeekdays), selectedExecutionWeek.value))
   executionPlanGeneratingType.value = 'monthly'
   executionPlanRequestKey += 1
   const requestKey = executionPlanRequestKey
@@ -1173,6 +1330,7 @@ async function generateMonthlyPlan(options = {}) {
         durationMonths: planDuration.value,
         planType: 'monthly',
         targetMonthIndex: selectedExecutionMonth.value,
+        restWeekdays,
         sourcePlan,
       },
       {
@@ -1339,6 +1497,7 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
   if (generatingExecutionPlan.value)
     return
   const forceRegenerate = !!options.forceRegenerate
+  let restWeekdays = Array.isArray(options.restWeekdays) ? normalizeRestWeekdays(options.restWeekdays) : null
   if (selectedExecutionWeekGenerated.value && !forceRegenerate) {
     messageService.warning(`${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划已生成，如需覆盖请进入该周后点击“重新生成”`)
     return
@@ -1367,6 +1526,23 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
     })
     return
   }
+  if (!restWeekdays && monthlyPlan.value?.restWeekdays?.length)
+    restWeekdays = normalizeRestWeekdays(monthlyPlan.value.restWeekdays)
+  if (!restWeekdays && monthlyPlan.value?.rows?.length) {
+    restWeekdays = currentMonthlyRestWeekdays()
+  }
+  if (!restWeekdays) {
+    const selected = await pickWeeklyRestWeekdays(currentWeeklyRestWeekdays(), {
+      title: `选择${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}休息日`,
+      helperText: '当前没有可复用的月计划休息日，请先选择机构休息日。系统会自动从周计划完成情况日期里过滤这些星期。',
+      confirmText: '确认并生成',
+    })
+    if (!selected?.length)
+      return
+    restWeekdays = normalizeRestWeekdays(selected)
+  }
+  selectedWeeklyRestWeekdays.value = restWeekdays
+  setMonthRestWeekdays(selectedExecutionMonth.value, restWeekdays)
   executionPlanGeneratingType.value = 'weekly'
   executionPlanRequestKey += 1
   const requestKey = executionPlanRequestKey
@@ -1385,6 +1561,7 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
         planType: 'weekly',
         targetMonthIndex: selectedExecutionMonth.value,
         targetWeekIndex: selectedExecutionWeekValue.value,
+        restWeekdays,
         sourcePlan,
         monthlyPlan: monthlyPlan.value,
       },
@@ -1477,7 +1654,7 @@ function selectExecutionNavigatorItem(type, monthIndex, weekIndex) {
   }
   if (typeof monthIndex === 'number')
     selectedExecutionMonth.value = clampExecutionMonth(monthIndex)
-  selectedExecutionWeek.value = Math.max(1, Math.min(weekCountForRange(executionMonthRangeForIndex(selectedExecutionMonth.value)), selectedExecutionWeek.value))
+  selectedExecutionWeek.value = Math.max(1, Math.min(weekCountForRange(executionMonthRangeForIndex(selectedExecutionMonth.value), executionRestWeekdaysForMonth(selectedExecutionMonth.value)), selectedExecutionWeek.value))
   if (type === 'monthly') {
     finishEditPlan()
     executionPlanView.value = 'monthly'
@@ -1527,18 +1704,39 @@ async function persistExecutionPlan(planType, plan, options = {}) {
 function applySavedExecutionPlansData(data) {
   const nextMonthlyPlans = {}
   const nextWeeklyPlans = {}
+  const nextMonthRestWeekdayOverrides = {}
   const monthlyItems = data?.monthlyPlans || []
   const weeklyItems = data?.weeklyPlans || []
   monthlyItems.forEach((item) => {
-    if (item?.targetMonthIndex && item.plan)
+    if (item?.targetMonthIndex && item.plan) {
       nextMonthlyPlans[String(clampExecutionMonth(item.targetMonthIndex))] = normalizeMonthlyPlanDatesForIndex(applyAssessmentPlanDateToMonthlyPlan(item.plan), item.targetMonthIndex)
+      if (Array.isArray(item.plan?.restWeekdays) && item.plan.restWeekdays.length)
+        nextMonthRestWeekdayOverrides[String(clampExecutionMonth(item.targetMonthIndex))] = normalizeRestWeekdays(item.plan.restWeekdays)
+    }
   })
   weeklyItems.forEach((item) => {
-    if (item?.targetMonthIndex && item?.targetWeekIndex && item.plan)
+    if (item?.targetMonthIndex && item?.targetWeekIndex && item.plan) {
       nextWeeklyPlans[`${clampExecutionMonth(item.targetMonthIndex)}-${Math.max(1, Number(item.targetWeekIndex || 1))}`] = normalizeWeeklyPlanDatesForKey(item.plan, `${item.targetMonthIndex}-${item.targetWeekIndex}`)
+      const monthKey = String(clampExecutionMonth(item.targetMonthIndex))
+      if (!nextMonthRestWeekdayOverrides[monthKey] && Array.isArray(item.plan?.restWeekdays) && item.plan.restWeekdays.length)
+        nextMonthRestWeekdayOverrides[monthKey] = normalizeRestWeekdays(item.plan.restWeekdays)
+    }
   })
   monthlyPlans.value = nextMonthlyPlans
   weeklyPlans.value = nextWeeklyPlans
+  monthlyRestWeekdayOverrides.value = nextMonthRestWeekdayOverrides
+  const currentMonthIndex = clampExecutionMonth(selectedExecutionMonth.value)
+  const currentWeekPlan = nextWeeklyPlans[executionWeekStorageKey.value]
+  if (Array.isArray(currentWeekPlan?.restWeekdays) && currentWeekPlan.restWeekdays.length) {
+    selectedWeeklyRestWeekdays.value = normalizeRestWeekdays(currentWeekPlan.restWeekdays)
+  }
+  else {
+    selectedWeeklyRestWeekdays.value = normalizeRestWeekdays(
+      nextMonthlyPlans[String(currentMonthIndex)]?.restWeekdays
+      || monthlyRestWeekdayOverrides.value[String(currentMonthIndex)]
+      || [7],
+    )
+  }
 }
 
 async function loadSavedExecutionPlans(durationMonths = planDuration.value) {
@@ -1770,7 +1968,7 @@ function buildStreamingPlanFromText(text) {
 }
 
 function buildExecutionPreviewWeekDates() {
-  return buildWeekDatesForRange(selectedExecutionWeekRange.value)
+  return buildWeekDatesForRange(selectedExecutionWeekRange.value, selectedWeeklyRestWeekdays.value)
 }
 
 function buildStreamingMonthlyPlanFromText(text) {
@@ -1846,7 +2044,9 @@ function normalizeStreamingMonthlyPlanPreview(plan = {}) {
 
 function normalizeMonthlyPlanDatesForIndex(plan = {}, monthIndex = selectedExecutionMonth.value) {
   const range = executionMonthRangeForIndex(monthIndex)
+  const restWeekdays = normalizeRestWeekdays(plan?.restWeekdays || executionRestWeekdaysForMonth(monthIndex))
   const nextPlan = deepClone(plan)
+  nextPlan.restWeekdays = restWeekdays
   nextPlan.meta = {
     ...(nextPlan.meta || {}),
     planDate: assessmentPlanDate.value || nextPlan.meta?.planDate || range.start,
@@ -1856,7 +2056,7 @@ function normalizeMonthlyPlanDatesForIndex(plan = {}, monthIndex = selectedExecu
     sourceTitle: nextPlan.meta?.sourceTitle || planTitle.value,
   }
   nextPlan.rows = (Array.isArray(nextPlan.rows) ? nextPlan.rows : []).map((row) => {
-    const items = normalizeMonthlyTrainingItemsForRange(row.trainingItems, range.start, range.end)
+    const items = normalizeMonthlyTrainingItemsForRange(row.trainingItems, range.start, range.end, restWeekdays, row?.shortGoal)
     return {
       ...row,
       trainingItems: items,
@@ -1865,13 +2065,70 @@ function normalizeMonthlyPlanDatesForIndex(plan = {}, monthIndex = selectedExecu
   return nextPlan
 }
 
-function normalizeMonthlyTrainingItemsForRange(rawItems = [], startDate, endDate) {
+function normalizeMonthlyTrainingItemsForRange(rawItems = [], startDate, endDate, restWeekdays = [7], shortGoal = '') {
   const sourceItems = Array.isArray(rawItems) && rawItems.length ? rawItems : [{ content: '', startEndDate: '' }]
-  return sourceItems.map((item, index) => ({
+  const weekRanges = calendarWeekRangesForRange({ start: startDate, end: endDate }, restWeekdays)
+  const expectedCount = Math.max(1, weekRanges.length || 1)
+  const normalizedItems = normalizeMonthlyTrainingItemCount(sourceItems, expectedCount, shortGoal)
+  return normalizedItems.map((item, index) => ({
     ...(item || {}),
     content: String(item?.content || '').trim(),
-    startEndDate: dateRangeForMonthlyItem(startDate, endDate, index, sourceItems.length) || '',
+    startEndDate: dateRangeForMonthlyItemByWeekRanges(weekRanges, startDate, endDate, index, normalizedItems.length) || '',
   }))
+}
+
+function normalizeMonthlyTrainingItemCount(rawItems = [], expectedCount = 1, shortGoal = '') {
+  const count = Math.max(1, Number(expectedCount || 1))
+  const items = (Array.isArray(rawItems) && rawItems.length ? rawItems : [{ content: '', startEndDate: '' }])
+    .map(item => ({
+      ...(item || {}),
+      content: String(item?.content || '').trim(),
+      startEndDate: String(item?.startEndDate || '').trim(),
+    }))
+  const buckets = Array.from({ length: count }, () => '')
+  items.forEach((item, index) => {
+    const content = String(item?.content || '').trim()
+    if (!content)
+      return
+    const targetIndex = Math.max(0, Math.min(count - 1, Math.floor(index * count / Math.max(items.length, 1))))
+    buckets[targetIndex] = mergeMonthlyTrainingItemContent(buckets[targetIndex], content)
+  })
+  const fallbackContent = String(shortGoal || '').trim() || '围绕短期目标开展结构化训练，记录提示等级、完成表现和泛化情况。'
+  let lastContent = ''
+  for (let index = 0; index < buckets.length; index++) {
+    if (!String(buckets[index] || '').trim()) {
+      if (lastContent)
+        buckets[index] = lastContent
+      continue
+    }
+    lastContent = buckets[index]
+  }
+  lastContent = ''
+  for (let index = buckets.length - 1; index >= 0; index--) {
+    if (!String(buckets[index] || '').trim()) {
+      if (lastContent)
+        buckets[index] = lastContent
+      continue
+    }
+    lastContent = buckets[index]
+  }
+  return buckets.map((content) => {
+    const normalizedContent = String(content || '').trim() || fallbackContent
+    return {
+      content: normalizedContent,
+      startEndDate: '',
+    }
+  })
+}
+
+function mergeMonthlyTrainingItemContent(existing = '', next = '') {
+  const current = String(existing || '').trim()
+  const value = String(next || '').trim()
+  if (!current)
+    return value
+  if (!value || current === value)
+    return current
+  return `${current}；${value}`
 }
 
 function buildStreamingWeeklyPlanFromText(text) {
@@ -1900,6 +2157,7 @@ function buildStreamingWeeklyPlanFromText(text) {
     return null
 
   const weekDates = buildExecutionPreviewWeekDates()
+  const restWeekdays = normalizeRestWeekdays(selectedWeeklyRestWeekdays.value)
   return normalizeStreamingWeeklyPlanPreview({
     title: extractJsonStringField(content, 'title') || `康复教学周计划日记录卡${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}`,
     student: {
@@ -1912,6 +2170,7 @@ function buildStreamingWeeklyPlanFromText(text) {
     trainingDate: weekTrainingDateText(weekDates),
     preparation: extractJsonStringField(content, 'preparation') || '正在生成训练前准备内容。',
     weekDates,
+    restWeekdays,
     rows: rows.map(row => ({
       ...row,
       completion: Array.isArray(row.completion) ? row.completion : Array.from({ length: weekDates.length }, () => ''),
@@ -1921,7 +2180,8 @@ function buildStreamingWeeklyPlanFromText(text) {
 }
 
 function normalizeStreamingWeeklyPlanPreview(plan = {}) {
-  const weekDates = buildExecutionPreviewWeekDates()
+  const restWeekdays = normalizeRestWeekdays(plan.restWeekdays || selectedWeeklyRestWeekdays.value)
+  const weekDates = buildWeekDatesForRange(selectedExecutionWeekRange.value, restWeekdays)
   const visibleDates = weekDates.filter(Boolean)
   const startDate = visibleDates[0] || selectedExecutionWeekRange.value.start
   const endDate = visibleDates[visibleDates.length - 1] || selectedExecutionWeekRange.value.end || startDate
@@ -1938,6 +2198,7 @@ function normalizeStreamingWeeklyPlanPreview(plan = {}) {
     trainingDate: plan.trainingDate || `${startDate} 至 ${endDate}`,
     preparation: plan.preparation || '正在生成训练前准备内容。',
     weekDates,
+    restWeekdays,
     rows: (Array.isArray(plan.rows) ? plan.rows : []).map(row => ({
       ...row,
       completion: Array.isArray(row.completion) ? row.completion : Array.from({ length: weekDates.length }, () => ''),
@@ -1952,7 +2213,8 @@ function normalizeWeeklyPlanDatesForKey(plan = {}, key = executionWeekStorageKey
   const monthIndex = clampExecutionMonth(monthText || selectedExecutionMonth.value)
   const weekIndex = Math.max(1, Number(weekText || selectedExecutionWeekValue.value || 1))
   const range = executionWeekRangeForMonth(monthIndex, weekIndex)
-  const weekDates = buildWeekDatesForRange(range)
+  const restWeekdays = normalizeRestWeekdays(plan.restWeekdays || selectedWeeklyRestWeekdays.value)
+  const weekDates = buildWeekDatesForRange(range, restWeekdays)
   const visibleDates = weekDates.filter(Boolean)
   const startDate = visibleDates[0] || range.start
   const endDate = visibleDates[visibleDates.length - 1] || range.end || startDate
@@ -1961,6 +2223,7 @@ function normalizeWeeklyPlanDatesForKey(plan = {}, key = executionWeekStorageKey
     ...nextPlan,
     trainingDate: weekTrainingDateText(weekDates, startDate, endDate),
     weekDates,
+    restWeekdays,
     rows: (Array.isArray(nextPlan.rows) ? nextPlan.rows : []).map(row => ({
       ...row,
       completion: normalizeCompletionValues(row.completion, weekDates.length),
@@ -1976,16 +2239,17 @@ function weekTrainingDateText(weekDates = [], fallbackStart = '', fallbackEnd = 
   return [startDate, endDate].filter(Boolean).join(' 至 ')
 }
 
-function buildWeekDatesForRange(range = {}) {
+function buildWeekDatesForRange(range = {}, restWeekdays = [7]) {
   const base = new Date(`${range.start || defaultPlanDateRange.value.start || formatDate(new Date())}T00:00:00`)
   const end = new Date(`${range.end || range.start}T00:00:00`)
   const start = Number.isNaN(base.getTime()) ? new Date() : base
+  const blockedWeekdays = new Set(normalizeRestWeekdays(restWeekdays).map(item => item === 7 ? 0 : item))
   const dates = []
   for (let index = 0; index < 7; index++) {
     const day = new Date(start.getFullYear(), start.getMonth(), start.getDate() + index)
     if (!Number.isNaN(end.getTime()) && day > end)
       break
-    if (day.getDay() !== 0)
+    if (!blockedWeekdays.has(day.getDay()))
       dates.push(formatLocalDate(day))
   }
   while (dates.length < 6)
@@ -2628,6 +2892,7 @@ function clearDisplayedPlanState() {
   executionPlanView.value = 'iep'
   selectedExecutionMonth.value = 1
   selectedExecutionWeek.value = 1
+  monthlyRestWeekdayOverrides.value = {}
   monthlyPlans.value = {}
   weeklyPlans.value = {}
   editingPlanView.value = ''
@@ -2710,6 +2975,14 @@ function resetIepState() {
   confirmingPlan.value = false
   savingExecutionPlan.value = false
   syncingPlanPeriod.value = false
+  weeklyRestDayEditorOpen.value = false
+  weeklyRestWeekdayDraft.value = [7]
+  selectedWeeklyRestWeekdays.value = [7]
+  monthlyRestWeekdayOverrides.value = {}
+  if (weeklyRestWeekdayResolver) {
+    weeklyRestWeekdayResolver(null)
+    weeklyRestWeekdayResolver = null
+  }
   clearDisplayedPlanState()
 }
 
@@ -3990,6 +4263,38 @@ onBeforeUnmount(() => {
         </div>
       </a-modal>
 
+      <a-modal
+        v-model:open="weeklyRestDayEditorOpen"
+        :title="weeklyRestDialogTitle"
+        :centered="true"
+        :width="440"
+        :mask-closable="false"
+        :ok-text="weeklyRestDialogConfirmText"
+        cancel-text="取消"
+        @ok="confirmWeeklyRestWeekdayDialog"
+        @cancel="closeWeeklyRestWeekdayDialog(null)"
+      >
+        <div class="period-editor period-editor--rest-day">
+          <div class="period-editor__result">
+            <strong>最多选择2个休息日</strong>
+            <span>{{ weeklyRestDialogHelperText }}</span>
+          </div>
+          <div class="rest-weekday-selector">
+            <button
+              v-for="weekday in [1, 2, 3, 4, 5, 6, 7]"
+              :key="weekday"
+              type="button"
+              class="rest-weekday-chip"
+              :class="{ 'rest-weekday-chip--active': weeklyRestWeekdayDraft.includes(weekday) }"
+              @click="toggleWeeklyRestWeekday(weekday)"
+            >
+              <span class="rest-weekday-chip__dot" />
+              <span>{{ ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][weekday - 1] }}</span>
+            </button>
+          </div>
+        </div>
+      </a-modal>
+
       <footer class="iep-modal__footer">
         <div class="footer-hint">
           <template v-if="isIepPreview">
@@ -4235,6 +4540,54 @@ onBeforeUnmount(() => {
     font-size: 13px;
     font-weight: 650;
   }
+}
+
+.period-editor--rest-day {
+  .period-editor__result {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 4px;
+  }
+}
+
+.rest-weekday-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.rest-weekday-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 92px;
+  padding: 10px 14px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+  background: #fffaf6;
+  border: 1px solid #e9d7cb;
+  border-radius: 10px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: #f59e0b;
+  }
+}
+
+.rest-weekday-chip--active {
+  color: #b45309;
+  background: #fff3e7;
+  border-color: #f59e0b;
+  box-shadow: 0 6px 16px rgba(245, 158, 11, 0.14);
+}
+
+.rest-weekday-chip__dot {
+  width: 8px;
+  height: 8px;
+  background: currentColor;
+  border-radius: 999px;
 }
 
 .summary-count {

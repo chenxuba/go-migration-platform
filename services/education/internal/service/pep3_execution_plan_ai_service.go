@@ -33,7 +33,12 @@ type pep3ExecutionPlanTarget struct {
 	DurationMonths int      `json:"durationMonths,omitempty"`
 	StartDate      string   `json:"startDate"`
 	EndDate        string   `json:"endDate"`
+	WeekStartDate  string   `json:"weekStartDate,omitempty"`
+	WeekEndDate    string   `json:"weekEndDate,omitempty"`
+	WeekRangeText  string   `json:"weekRangeText,omitempty"`
+	WeekRanges     []string `json:"weekRanges,omitempty"`
 	WeekDates      []string `json:"weekDates,omitempty"`
+	RestWeekdays   []int    `json:"restWeekdays,omitempty"`
 }
 
 type pep3ExecutionPlanPrepared struct {
@@ -56,6 +61,14 @@ func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, user
 	if planType != "monthly" && planType != "weekly" {
 		return pep3ExecutionPlanPrepared{}, errors.New("invalid execution plan type")
 	}
+	if planType == "monthly" {
+		req.RestWeekdays = normalizeExecutionPlanRestWeekdays(req.RestWeekdays)
+	} else if planType == "weekly" {
+		if len(req.RestWeekdays) == 0 && req.MonthlyPlan != nil && len(req.MonthlyPlan.RestWeekdays) > 0 {
+			req.RestWeekdays = append([]int(nil), req.MonthlyPlan.RestWeekdays...)
+		}
+		req.RestWeekdays = normalizeExecutionPlanRestWeekdays(req.RestWeekdays)
+	}
 	if len(req.SourcePlan.Rows) == 0 {
 		return pep3ExecutionPlanPrepared{}, errors.New("请先生成或选择IEP总计划")
 	}
@@ -69,7 +82,7 @@ func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, user
 	}
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
 	sourcePlan := normalizeExecutionSourceIEPPlan(req.SourcePlan, record, currentTeacherName, req.DurationMonths)
-	target := buildExecutionPlanTarget(sourcePlan, req.DurationMonths, req.TargetMonthIndex, req.TargetWeekIndex)
+	target := buildExecutionPlanTarget(sourcePlan, req.DurationMonths, req.TargetMonthIndex, req.TargetWeekIndex, req.RestWeekdays)
 	payload := pep3ExecutionPlanPromptPayload{
 		PlanType:    planType,
 		SourcePlan:  sourcePlan,
@@ -86,12 +99,12 @@ func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, user
 	switch planType {
 	case "monthly":
 		prepared.SystemPrompt = "你是儿童康复机构的月度教学计划生成助手。必须根据IEP总计划生成可执行月计划。"
-		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,trainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；每条短期目标至少2条trainingItems；每一条trainingItems必须有自己的startEndDate，日期必须落在target.startDate到target.endDate内；content必须具体到训练材料、活动、提示方式、步骤或泛化场景；不要照抄短期目标作为训练内容。"
-		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。"
+		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,trainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；target.weekRanges是本月后续周计划完成情况日期周期的唯一切分基准；每一条shortGoal必须生成与target.weekRanges数量完全一致的trainingItems，不多不少；第N条trainingItem的startEndDate必须直接等于target.weekRanges[N-1]，不能自己改写日期，不能把两个周区间合并成一条，也不能把一个周区间拆成多条；也就是说，一个周计划日记录卡的日期范围，必须对应月计划里一条trainingItem的起止日期区间。trainingItems.content必须体现逐周递进关系，写清训练材料、活动、提示方式、步骤或泛化场景，不要照抄短期目标本身。"
+		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。请严格按target.weekRanges逐周生成trainingItems：如果本月有3个周区间，就生成3条；有4个周区间，就生成4条；有5个周区间，就生成5条，并保证后续周计划可以一条一周直接承接。"
 	case "weekly":
 		prepared.SystemPrompt = "你是儿童康复机构的周计划日记录卡生成助手。必须根据IEP或月计划生成本周可执行训练记录卡。"
-		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, teacherName, courseName, trainingDate, preparation, weekDates[], rows[{project,content,completion[]}]。title必须写成“康复教学周计划日记录卡X月第X周”；必须基于monthlyPlan生成target.monthLabel和target.weekLabel对应周计划；如果monthlyPlan为空，则直接基于sourcePlan生成该周计划。weekDates必须使用target.weekDates；rows用于周计划日记录卡，project是训练项目，content是本周训练内容，completion长度必须等于weekDates长度且先留空字符串。"
-		prepared.Payload.GenerationNote = "周计划是某个月份某一周的执行记录卡，不写长期目标列；一次只生成target.weekIndex对应周次，不能批量生成其他周；训练内容要具体到本周能执行的活动、材料、提示和反应标准。没有月计划时允许直接从IEP总计划拆出本周安排，但必须保持依据清晰。"
+		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, teacherName, courseName, trainingDate, preparation, weekDates[], rows[{project,content,completion[]}]。title必须写成“康复教学周计划日记录卡X月第X周”；必须基于monthlyPlan生成target.monthLabel和target.weekLabel对应周计划；如果monthlyPlan为空，则直接基于sourcePlan生成该周计划。当前周区间以target.weekRangeText为准，weekDates必须严格使用target.weekDates；如果monthlyPlan存在，优先选用startEndDate覆盖target.weekRangeText的trainingItems作为本周训练依据，保证周计划内容与月计划中的周区间推进一致；rows用于周计划日记录卡，project是训练项目，content是本周训练内容，completion长度必须等于weekDates长度且先留空字符串。"
+		prepared.Payload.GenerationNote = "周计划是某个月份某一周的执行记录卡，不写长期目标列；一次只生成target.weekIndex对应周次，不能批量生成其他周；训练内容要具体到本周能执行的活动、材料、提示和反应标准。weekDates就是完成情况下面要展示的真实日期周期，必须与target.weekRangeText和月计划对应trainingItems的起止日期规则一致。没有月计划时允许直接从IEP总计划拆出本周安排，但必须保持依据清晰。"
 	}
 	return prepared, nil
 }
@@ -201,7 +214,7 @@ func callDeepSeekExecutionPlan(ctx context.Context, systemPrompt string, payload
 	if content == "" {
 		return errors.New("DeepSeek API returned empty content")
 	}
-	if err := json.Unmarshal([]byte(extractJSONContent(content)), result); err != nil {
+	if err := parseDeepSeekExecutionPlanResult(content, result); err != nil {
 		return fmt.Errorf("parse DeepSeek execution plan JSON: %w", err)
 	}
 	return nil
@@ -227,7 +240,7 @@ func buildDeepSeekExecutionPlanRequestBody(systemPrompt string, payload pep3Exec
 			{Role: "user", Content: string(payloadJSON)},
 		},
 		Temperature: 0.22,
-		MaxTokens:   4096,
+		MaxTokens:   8192,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
@@ -325,10 +338,45 @@ func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, p
 		}
 		return usage, errors.New("DeepSeek API returned empty content")
 	}
-	if err := json.Unmarshal([]byte(extractJSONContent(text)), result); err != nil {
+	if err := parseDeepSeekExecutionPlanResult(text, result); err != nil {
 		return usage, fmt.Errorf("parse DeepSeek execution plan JSON: %w", err)
 	}
 	return usage, nil
+}
+
+func parseDeepSeekExecutionPlanResult(content string, result any) error {
+	candidates := extractJSONContentCandidates(content)
+	if len(candidates) == 0 {
+		return errors.New("no complete JSON object")
+	}
+	var lastErr error
+	for _, candidate := range candidates {
+		if err := unmarshalDeepSeekExecutionPlanCandidate(candidate, result); err == nil {
+			return nil
+		} else {
+			lastErr = err
+		}
+	}
+	if lastErr == nil {
+		lastErr = errors.New("no complete JSON object")
+	}
+	return lastErr
+}
+
+func unmarshalDeepSeekExecutionPlanCandidate(candidate string, result any) error {
+	if err := json.Unmarshal([]byte(candidate), result); err == nil {
+		return nil
+	} else {
+		repaired := escapeBareControlCharsInJSONString(candidate)
+		if repaired == candidate {
+			return err
+		}
+		if repairedErr := json.Unmarshal([]byte(repaired), result); repairedErr == nil {
+			return nil
+		} else {
+			return err
+		}
+	}
 }
 
 func normalizeExecutionSourceIEPPlan(plan model.PEP3IEPPlanAIResult, record model.AssessmentRecordDetailVO, currentTeacherName string, durationMonths int) model.PEP3IEPPlanAIResult {
@@ -366,60 +414,68 @@ func normalizeExecutionSourceIEPPlan(plan model.PEP3IEPPlanAIResult, record mode
 	return plan
 }
 
-func buildExecutionPlanTarget(sourcePlan model.PEP3IEPPlanAIResult, durationMonths, targetMonthIndex, targetWeekIndex int) pep3ExecutionPlanTarget {
+func buildExecutionPlanTarget(sourcePlan model.PEP3IEPPlanAIResult, durationMonths, targetMonthIndex, targetWeekIndex int, restWeekdays []int) pep3ExecutionPlanTarget {
 	if durationMonths != 6 {
 		durationMonths = 3
+	}
+	monthRanges := executionMonthRangesForPlan(sourcePlan, durationMonths)
+	if len(monthRanges) == 0 {
+		periodStart, periodEnd := executionPlanPeriodRange(sourcePlan, durationMonths)
+		monthRanges = []pep3ExecutionMonthRange{{Start: periodStart, End: periodEnd}}
 	}
 	if targetMonthIndex < 1 {
 		targetMonthIndex = 1
 	}
-	if targetMonthIndex > durationMonths {
-		targetMonthIndex = durationMonths
+	if targetMonthIndex > len(monthRanges) {
+		targetMonthIndex = len(monthRanges)
 	}
-	startDate := firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.StartDate), time.Now().Format("2006-01-02"))
-	start := parseIEPPlanDateValue(startDate)
-	if start.IsZero() {
-		start = time.Now()
-	}
-	planStart := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
-	monthStart := planStart
-	if targetMonthIndex > 1 {
-		monthStart = time.Date(planStart.Year(), planStart.Month()+time.Month(targetMonthIndex-1), 1, 0, 0, 0, 0, time.Local)
-	}
-	planEnd := time.Date(planStart.Year(), planStart.Month()+time.Month(durationMonths), 0, 0, 0, 0, 0, time.Local)
-	monthEnd := time.Date(monthStart.Year(), monthStart.Month()+1, 0, 0, 0, 0, 0, time.Local)
-	if monthEnd.After(planEnd) {
-		monthEnd = planEnd
-	}
-	weekRanges := calendarWeekRangesForDateRange(monthStart, monthEnd)
+	monthRange := monthRanges[targetMonthIndex-1]
+	normalizedRestWeekdays := normalizeExecutionPlanRestWeekdays(restWeekdays)
+	weekRanges := calendarWeekRangesForDateRange(monthRange.Start, monthRange.End, normalizedRestWeekdays)
 	weekCount := len(weekRanges)
-	if weekCount <= 0 {
-		weekRanges = []pep3ExecutionWeekRange{{Start: monthStart, End: monthStart}}
+	if weekCount <= 0 && targetWeekIndex > 0 {
+		weekRanges = []pep3ExecutionWeekRange{{Start: monthRange.Start, End: monthRange.End}}
 		weekCount = 1
 	}
-	if targetWeekIndex < 1 {
-		targetWeekIndex = 1
+	weekIndex := 0
+	weekLabel := ""
+	weekDates := make([]string, 0, 7)
+	weekRangeStart := ""
+	weekRangeEnd := ""
+	weekRangeText := ""
+	weekRangeTexts := make([]string, 0, len(weekRanges))
+	for _, item := range weekRanges {
+		weekRangeTexts = append(weekRangeTexts, executionWeekRangeText(item))
 	}
-	if targetWeekIndex > weekCount {
-		targetWeekIndex = weekCount
-	}
-	weekRange := weekRanges[targetWeekIndex-1]
-	weekDates := make([]string, 0, 6)
-	for current := weekRange.Start; !current.After(weekRange.End); current = current.AddDate(0, 0, 1) {
-		if current.Weekday() == time.Sunday {
-			continue
+	if targetWeekIndex > 0 {
+		if targetWeekIndex > weekCount {
+			targetWeekIndex = weekCount
 		}
-		weekDates = append(weekDates, current.Format("2006-01-02"))
+		if targetWeekIndex < 1 {
+			targetWeekIndex = 1
+		}
+		weekRange := weekRanges[targetWeekIndex-1]
+		weekIndex = targetWeekIndex
+		weekLabel = fmt.Sprintf("第%d周", targetWeekIndex)
+		weekDates = buildWorkingWeekDatesForRange(weekRange, normalizedRestWeekdays)
+		weekRangeStart = weekRange.Start.Format("2006-01-02")
+		weekRangeEnd = weekRange.End.Format("2006-01-02")
+		weekRangeText = executionWeekRangeText(weekRange)
 	}
 	return pep3ExecutionPlanTarget{
 		MonthIndex:     targetMonthIndex,
-		MonthLabel:     fmt.Sprintf("%d月", int(monthStart.Month())),
-		WeekIndex:      targetWeekIndex,
-		WeekLabel:      fmt.Sprintf("第%d周", targetWeekIndex),
+		MonthLabel:     fmt.Sprintf("%d月", int(monthRange.Start.Month())),
+		WeekIndex:      weekIndex,
+		WeekLabel:      weekLabel,
 		DurationMonths: durationMonths,
-		StartDate:      monthStart.Format("2006-01-02"),
-		EndDate:        monthEnd.Format("2006-01-02"),
+		StartDate:      monthRange.Start.Format("2006-01-02"),
+		EndDate:        monthRange.End.Format("2006-01-02"),
+		WeekStartDate:  weekRangeStart,
+		WeekEndDate:    weekRangeEnd,
+		WeekRangeText:  weekRangeText,
+		WeekRanges:     weekRangeTexts,
 		WeekDates:      weekDates,
+		RestWeekdays:   normalizedRestWeekdays,
 	}
 }
 
@@ -441,6 +497,7 @@ func normalizePEP3MonthlyExecutionPlan(result model.PEP3MonthlyPlanAIResult, sou
 	result.Student.Name = firstNonEmptyExportValue(strings.TrimSpace(result.Student.Name), strings.TrimSpace(sourcePlan.Student.Name))
 	result.Student.Gender = firstNonEmptyExportValue(strings.TrimSpace(result.Student.Gender), strings.TrimSpace(sourcePlan.Student.Gender))
 	result.Student.BirthDate = firstNonEmptyExportValue(strings.TrimSpace(result.Student.BirthDate), strings.TrimSpace(sourcePlan.Student.BirthDate))
+	result.RestWeekdays = append([]int(nil), normalizeExecutionPlanRestWeekdays(target.RestWeekdays)...)
 	result.Meta.PlanDate = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.PlanDate), strings.TrimSpace(result.Meta.PlanDate), time.Now().Format("2006-01-02"))
 	result.Meta.Participant = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.Participant), strings.TrimSpace(result.Meta.Participant), currentTeacherName)
 	result.Meta.Implementer = firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.Implementer), strings.TrimSpace(result.Meta.Implementer), currentTeacherName)
@@ -482,15 +539,109 @@ func normalizePEP3MonthlyTrainingItems(row model.PEP3MonthlyPlanRow, target pep3
 	if len(items) == 0 {
 		items = append(items, model.PEP3MonthlyTrainingItem{Content: "围绕短期目标开展结构化训练，记录提示等级、完成表现和泛化情况。"})
 	}
+	items = normalizeMonthlyTrainingItemCount(items, expectedMonthlyTrainingItemCountForTarget(target), row.ShortGoal)
 	for index := range items {
-		if strings.TrimSpace(items[index].StartEndDate) == "" {
-			items[index].StartEndDate = firstNonEmptyExportValue(monthlyItemDateRange(target.StartDate, target.EndDate, index, len(items)), target.StartDate+" - "+target.EndDate)
-		}
+		items[index].StartEndDate = firstNonEmptyExportValue(
+			monthlyItemDateRangeForTarget(target, index, len(items)),
+			target.StartDate+" - "+target.EndDate,
+		)
 	}
 	return items
 }
 
+func expectedMonthlyTrainingItemCountForTarget(target pep3ExecutionPlanTarget) int {
+	expectedCount := len(parseExecutionWeekRanges(target.WeekRanges))
+	if expectedCount > 0 {
+		return expectedCount
+	}
+	return 1
+}
+
+func normalizeMonthlyTrainingItemCount(items []model.PEP3MonthlyTrainingItem, expectedCount int, shortGoal string) []model.PEP3MonthlyTrainingItem {
+	if expectedCount <= 0 {
+		expectedCount = 1
+	}
+	sourceItems := items
+	if len(sourceItems) == 0 {
+		sourceItems = []model.PEP3MonthlyTrainingItem{{Content: ""}}
+	}
+	mergedContents := make([]string, expectedCount)
+	for index, item := range sourceItems {
+		content := strings.TrimSpace(item.Content)
+		if content == "" {
+			continue
+		}
+		targetIndex := index * expectedCount / len(sourceItems)
+		if targetIndex < 0 {
+			targetIndex = 0
+		}
+		if targetIndex >= expectedCount {
+			targetIndex = expectedCount - 1
+		}
+		mergedContents[targetIndex] = mergeMonthlyTrainingItemContent(mergedContents[targetIndex], content)
+	}
+	fallbackContent := strings.TrimSpace(shortGoal)
+	if fallbackContent == "" {
+		fallbackContent = "围绕短期目标开展结构化训练，记录提示等级、完成表现和泛化情况。"
+	}
+	lastContent := ""
+	for index := range mergedContents {
+		if strings.TrimSpace(mergedContents[index]) == "" {
+			if lastContent != "" {
+				mergedContents[index] = lastContent
+			}
+			continue
+		}
+		lastContent = mergedContents[index]
+	}
+	lastContent = ""
+	for index := len(mergedContents) - 1; index >= 0; index-- {
+		if strings.TrimSpace(mergedContents[index]) == "" {
+			if lastContent != "" {
+				mergedContents[index] = lastContent
+			}
+			continue
+		}
+		lastContent = mergedContents[index]
+	}
+	normalized := make([]model.PEP3MonthlyTrainingItem, 0, expectedCount)
+	for index := range mergedContents {
+		content := strings.TrimSpace(mergedContents[index])
+		if content == "" {
+			content = fallbackContent
+		}
+		normalized = append(normalized, model.PEP3MonthlyTrainingItem{Content: content})
+	}
+	return normalized
+}
+
+func mergeMonthlyTrainingItemContent(existing, next string) string {
+	current := strings.TrimSpace(existing)
+	value := strings.TrimSpace(next)
+	if current == "" {
+		return value
+	}
+	if value == "" || current == value {
+		return current
+	}
+	return current + "；" + value
+}
+
 func monthlyItemDateRange(startText, endText string, itemIndex, itemCount int) string {
+	return monthlyItemDateRangeForWeekRanges(
+		calendarWeekRangesForDateRange(parseIEPPlanDateValue(startText), parseIEPPlanDateValue(endText), normalizeExecutionPlanRestWeekdays(nil)),
+		startText,
+		endText,
+		itemIndex,
+		itemCount,
+	)
+}
+
+func monthlyItemDateRangeForTarget(target pep3ExecutionPlanTarget, itemIndex, itemCount int) string {
+	return monthlyItemDateRangeForWeekRanges(parseExecutionWeekRanges(target.WeekRanges), target.StartDate, target.EndDate, itemIndex, itemCount)
+}
+
+func monthlyItemDateRangeForWeekRanges(weekRanges []pep3ExecutionWeekRange, startText, endText string, itemIndex, itemCount int) string {
 	if itemCount <= 0 {
 		itemCount = 1
 	}
@@ -500,19 +651,28 @@ func monthlyItemDateRange(startText, endText string, itemIndex, itemCount int) s
 	if itemIndex >= itemCount {
 		itemIndex = itemCount - 1
 	}
-	start := parseIEPPlanDateValue(startText)
-	end := parseIEPPlanDateValue(endText)
-	if start.IsZero() || end.IsZero() || end.Before(start) {
-		return strings.TrimSpace(startText + " - " + endText)
+	if len(weekRanges) == 0 {
+		start := parseIEPPlanDateValue(startText)
+		end := parseIEPPlanDateValue(endText)
+		if start.IsZero() || end.IsZero() || end.Before(start) {
+			return strings.TrimSpace(startText + " - " + endText)
+		}
+		return start.Format("2006-01-02") + " - " + end.Format("2006-01-02")
 	}
-	totalDays := int(end.Sub(start).Hours()/24) + 1
-	offsetStart := itemIndex * totalDays / itemCount
-	offsetEnd := ((itemIndex + 1) * totalDays / itemCount) - 1
-	if offsetEnd < offsetStart {
-		offsetEnd = offsetStart
+	weekCount := len(weekRanges)
+	startIndex := itemIndex * weekCount / itemCount
+	endIndex := ((itemIndex + 1) * weekCount / itemCount) - 1
+	if endIndex < startIndex {
+		endIndex = startIndex
 	}
-	itemStart := start.AddDate(0, 0, offsetStart)
-	itemEnd := start.AddDate(0, 0, offsetEnd)
+	if startIndex >= weekCount {
+		startIndex = weekCount - 1
+	}
+	if endIndex >= weekCount {
+		endIndex = weekCount - 1
+	}
+	itemStart := weekRanges[startIndex].Start
+	itemEnd := weekRanges[endIndex].End
 	return itemStart.Format("2006-01-02") + " - " + itemEnd.Format("2006-01-02")
 }
 
@@ -543,13 +703,8 @@ func normalizePEP3WeeklyExecutionPlan(result model.PEP3WeeklyPlanAIResult, sourc
 	result.TrainingDate = trainingDate
 	result.Preparation = firstNonEmptyExportValue(strings.TrimSpace(result.Preparation), "依据"+sourceTitle+"准备训练材料、强化物和提示卡，明确本周训练目标与记录方式。")
 	result.SourceTitle = firstNonEmptyExportValue(strings.TrimSpace(result.SourceTitle), sourceTitle)
+	result.RestWeekdays = append([]int(nil), normalizeExecutionPlanRestWeekdays(target.RestWeekdays)...)
 	result.WeekDates = append([]string(nil), target.WeekDates...)
-	if len(result.WeekDates) > 6 {
-		result.WeekDates = result.WeekDates[:6]
-	}
-	for len(result.WeekDates) < 6 {
-		result.WeekDates = append(result.WeekDates, "")
-	}
 	rows := make([]model.PEP3WeeklyPlanRow, 0, len(result.Rows))
 	for _, row := range result.Rows {
 		project := strings.TrimSpace(row.Project)
@@ -579,10 +734,148 @@ type pep3ExecutionWeekRange struct {
 	End   time.Time
 }
 
-func calendarWeekRangesForDateRange(start, end time.Time) []pep3ExecutionWeekRange {
+type pep3ExecutionMonthRange struct {
+	Start time.Time
+	End   time.Time
+}
+
+func executionPlanPeriodRange(sourcePlan model.PEP3IEPPlanAIResult, durationMonths int) (time.Time, time.Time) {
+	start := parseIEPPlanDateValue(firstNonEmptyExportValue(strings.TrimSpace(sourcePlan.Meta.StartDate), time.Now().Format("2006-01-02")))
+	if start.IsZero() {
+		start = time.Now()
+	}
+	start = time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
+	end := parseIEPPlanDateValue(strings.TrimSpace(sourcePlan.Meta.EndDate))
+	if end.IsZero() || end.Before(start) {
+		_, computedEnd := iepPlanDateRangeFromStart(start, durationMonths)
+		end = computedEnd
+	}
+	return start, time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.Local)
+}
+
+func executionMonthRangesForPlan(sourcePlan model.PEP3IEPPlanAIResult, durationMonths int) []pep3ExecutionMonthRange {
+	start, end := executionPlanPeriodRange(sourcePlan, durationMonths)
 	if start.IsZero() || end.IsZero() || end.Before(start) {
 		return nil
 	}
+	ranges := make([]pep3ExecutionMonthRange, 0, durationMonths+1)
+	cursor := time.Date(start.Year(), start.Month(), 1, 0, 0, 0, 0, time.Local)
+	for !cursor.After(end) {
+		monthStart := cursor
+		monthEnd := time.Date(cursor.Year(), cursor.Month()+1, 0, 0, 0, 0, 0, time.Local)
+		visibleStart := monthStart
+		if visibleStart.Before(start) {
+			visibleStart = start
+		}
+		visibleEnd := monthEnd
+		if visibleEnd.After(end) {
+			visibleEnd = end
+		}
+		if !visibleEnd.Before(visibleStart) {
+			ranges = append(ranges, pep3ExecutionMonthRange{Start: visibleStart, End: visibleEnd})
+		}
+		cursor = time.Date(cursor.Year(), cursor.Month()+1, 1, 0, 0, 0, 0, time.Local)
+	}
+	return ranges
+}
+
+func executionPlanMonthCount(sourcePlan model.PEP3IEPPlanAIResult, durationMonths int) int {
+	return len(executionMonthRangesForPlan(sourcePlan, durationMonths))
+}
+
+func normalizeExecutionPlanRestWeekdays(restWeekdays []int) []int {
+	source := restWeekdays
+	if len(source) == 0 {
+		source = []int{7}
+	}
+	seen := make(map[int]struct{}, len(source))
+	normalized := make([]int, 0, 2)
+	for _, value := range source {
+		if value < 1 || value > 7 {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		normalized = append(normalized, value)
+		if len(normalized) >= 2 {
+			break
+		}
+	}
+	if len(normalized) == 0 {
+		return []int{7}
+	}
+	return normalized
+}
+
+func inferWeeklyPlanRestWeekdays(plan model.PEP3WeeklyPlanAIResult) []int {
+	return normalizeExecutionPlanRestWeekdays(plan.RestWeekdays)
+}
+
+func weekdaySetFromSelection(restWeekdays []int) map[time.Weekday]struct{} {
+	set := make(map[time.Weekday]struct{}, len(restWeekdays))
+	for _, value := range normalizeExecutionPlanRestWeekdays(restWeekdays) {
+		var weekday time.Weekday
+		if value == 7 {
+			weekday = time.Sunday
+		} else {
+			weekday = time.Weekday(value)
+		}
+		set[weekday] = struct{}{}
+	}
+	return set
+}
+
+func buildWorkingWeekDatesForRange(weekRange pep3ExecutionWeekRange, restWeekdays []int) []string {
+	restSet := weekdaySetFromSelection(restWeekdays)
+	dates := make([]string, 0, 7)
+	for current := weekRange.Start; !current.After(weekRange.End); current = current.AddDate(0, 0, 1) {
+		if _, blocked := restSet[current.Weekday()]; blocked {
+			continue
+		}
+		dates = append(dates, current.Format("2006-01-02"))
+	}
+	return dates
+}
+
+func executionWeekRangeText(weekRange pep3ExecutionWeekRange) string {
+	if weekRange.Start.IsZero() || weekRange.End.IsZero() || weekRange.End.Before(weekRange.Start) {
+		return ""
+	}
+	return weekRange.Start.Format("2006-01-02") + " - " + weekRange.End.Format("2006-01-02")
+}
+
+func parseExecutionWeekRanges(texts []string) []pep3ExecutionWeekRange {
+	ranges := make([]pep3ExecutionWeekRange, 0, len(texts))
+	for _, text := range texts {
+		weekRange, ok := parseExecutionWeekRangeText(text)
+		if !ok {
+			continue
+		}
+		ranges = append(ranges, weekRange)
+	}
+	return ranges
+}
+
+func parseExecutionWeekRangeText(text string) (pep3ExecutionWeekRange, bool) {
+	parts := strings.Split(strings.TrimSpace(text), " - ")
+	if len(parts) != 2 {
+		return pep3ExecutionWeekRange{}, false
+	}
+	start := parseIEPPlanDateValue(parts[0])
+	end := parseIEPPlanDateValue(parts[1])
+	if start.IsZero() || end.IsZero() || end.Before(start) {
+		return pep3ExecutionWeekRange{}, false
+	}
+	return pep3ExecutionWeekRange{Start: start, End: end}, true
+}
+
+func calendarWeekRangesForDateRange(start, end time.Time, restWeekdays []int) []pep3ExecutionWeekRange {
+	if start.IsZero() || end.IsZero() || end.Before(start) {
+		return nil
+	}
+	restSet := weekdaySetFromSelection(restWeekdays)
 	ranges := make([]pep3ExecutionWeekRange, 0)
 	cursor := time.Date(start.Year(), start.Month(), start.Day(), 0, 0, 0, 0, time.Local)
 	normalizedEnd := time.Date(end.Year(), end.Month(), end.Day(), 0, 0, 0, 0, time.Local)
@@ -592,8 +885,8 @@ func calendarWeekRangesForDateRange(start, end time.Time) []pep3ExecutionWeekRan
 		if weekEnd.After(normalizedEnd) {
 			weekEnd = normalizedEnd
 		}
-		visibleStart, okStart := firstNonSundayBetweenDates(cursor, weekEnd)
-		visibleEnd, okEnd := lastNonSundayBetweenDates(weekEnd, cursor)
+		visibleStart, okStart := firstWorkingDayBetweenDates(cursor, weekEnd, restSet)
+		visibleEnd, okEnd := lastWorkingDayBetweenDates(weekEnd, cursor, restSet)
 		if okStart && okEnd && !visibleEnd.Before(visibleStart) {
 			ranges = append(ranges, pep3ExecutionWeekRange{Start: visibleStart, End: visibleEnd})
 		}
@@ -602,18 +895,18 @@ func calendarWeekRangesForDateRange(start, end time.Time) []pep3ExecutionWeekRan
 	return ranges
 }
 
-func firstNonSundayBetweenDates(start, end time.Time) (time.Time, bool) {
+func firstWorkingDayBetweenDates(start, end time.Time, restWeekdays map[time.Weekday]struct{}) (time.Time, bool) {
 	for current := start; !current.After(end); current = current.AddDate(0, 0, 1) {
-		if current.Weekday() != time.Sunday {
+		if _, blocked := restWeekdays[current.Weekday()]; !blocked {
 			return current, true
 		}
 	}
 	return time.Time{}, false
 }
 
-func lastNonSundayBetweenDates(start, end time.Time) (time.Time, bool) {
+func lastWorkingDayBetweenDates(start, end time.Time, restWeekdays map[time.Weekday]struct{}) (time.Time, bool) {
 	for current := start; !current.Before(end); current = current.AddDate(0, 0, -1) {
-		if current.Weekday() != time.Sunday {
+		if _, blocked := restWeekdays[current.Weekday()]; !blocked {
 			return current, true
 		}
 	}

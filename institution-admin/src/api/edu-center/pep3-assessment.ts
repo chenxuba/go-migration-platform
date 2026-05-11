@@ -917,6 +917,7 @@ export interface PEP3MonthlyPlanAIResult {
   title: string
   model?: string
   student: PEP3IEPPlanAIResult['student']
+  restWeekdays?: number[]
   meta: {
     planDate: string
     participant: string
@@ -947,6 +948,7 @@ export interface PEP3WeeklyPlanAIResult {
   trainingDate: string
   preparation: string
   weekDates: string[]
+  restWeekdays?: number[]
   rows: Array<{
     project: string
     content: string
@@ -998,6 +1000,7 @@ export function generatePEP3ExecutionPlanAIApi(data: {
   planType: 'monthly' | 'weekly'
   targetMonthIndex?: number | string
   targetWeekIndex?: number | string
+  restWeekdays?: number[]
   sourcePlan: PEP3IEPPlanAIResult
   monthlyPlan?: PEP3MonthlyPlanAIResult | null
 }) {
@@ -1027,6 +1030,7 @@ export async function generatePEP3ExecutionPlanAIStreamApi(
     planType: 'monthly' | 'weekly'
     targetMonthIndex?: number | string
     targetWeekIndex?: number | string
+    restWeekdays?: number[]
     sourcePlan: PEP3IEPPlanAIResult
     monthlyPlan?: PEP3MonthlyPlanAIResult | null
   },
