@@ -1833,8 +1833,16 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         builder: (BuildContext routeContext) => Scaffold(
           body: _IepLessonFullscreenViewport(
             child: _IepLessonSessionPage(
-              onBack: () => Navigator.of(routeContext).maybePop(),
               draft: draft,
+              planClient: widget.planClient,
+              onPlansSaved: (IepExecutionPlansSaved saved) {
+                if (!mounted) {
+                  return;
+                }
+                setState(() {
+                  _executionPlans = saved;
+                });
+              },
             ),
           ),
         ),
@@ -1878,6 +1886,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _IepPreviewMode.month => '$_previewMonth 月计划',
       _IepPreviewMode.week => '$_previewMonth 第$_previewWeek周',
     };
+    final int monthIndex = _previewMonthIndex();
     final DateTimeRange monthRange = _monthRangeInPeriod(
       periodStart: _periodStart,
       monthCount: _periodMonthCount,
@@ -1912,7 +1921,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
 
     final List<_IepLessonTaskDraft> tasks = <_IepLessonTaskDraft>[];
     if (weekPlan != null) {
-      for (final IepWeeklyPlanRow row in weekPlan.rows) {
+      for (int rowIndex = 0; rowIndex < weekPlan.rows.length; rowIndex++) {
+        final IepWeeklyPlanRow row = weekPlan.rows[rowIndex];
         final String project = row.project.trim();
         final String content = row.content.trim();
         if (project.isEmpty && content.isEmpty) {
@@ -1920,6 +1930,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         }
         tasks.add(
           _IepLessonTaskDraft(
+            sourceRowIndex: rowIndex,
             title: project.isEmpty ? '训练项目' : project,
             subtitle: content.isEmpty ? '待补充训练内容' : content,
             domain: _domainFromWeeklyProject(project),
@@ -1935,6 +1946,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     final List<_IepLessonTaskDraft> effectiveTasks = tasks.isEmpty
         ? <_IepLessonTaskDraft>[
             _IepLessonTaskDraft(
+              sourceRowIndex: -1,
               title: '待执行训练任务',
               subtitle: '当前周计划暂无可执行训练项，请先补充本周训练内容。',
               domain: '周计划',
@@ -1953,6 +1965,26 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         : tasks;
 
     return _IepLessonSessionDraft(
+      record: record,
+      durationMonths: _periodMonthCount,
+      targetMonthIndex: monthIndex,
+      targetWeekIndex: _previewWeek,
+      weeklyPlan: weekPlan ??
+          IepWeeklyPlan(
+            title: planTitle,
+            student: totalPlan?.student ??
+                IepPlanStudent(
+                  name: studentName,
+                  gender: gender,
+                  birthDate: record.birthDate.trim(),
+                ),
+            teacherName: teacherName.isEmpty ? '未设置老师' : teacherName,
+            courseName: courseName,
+            trainingDate: trainingDateLabel,
+            preparation: preparation,
+            weekDates: weekDates.map(_formatDateDash).toList(growable: false),
+            rows: const <IepWeeklyPlanRow>[],
+          ),
       studentName: studentName.isEmpty ? '未选择学员' : studentName,
       gender: gender,
       ageLabel: ageLabel,

@@ -2,6 +2,11 @@ part of 'iep_center_page.dart';
 
 class _IepLessonSessionDraft {
   const _IepLessonSessionDraft({
+    required this.record,
+    required this.durationMonths,
+    required this.targetMonthIndex,
+    required this.targetWeekIndex,
+    required this.weeklyPlan,
     required this.studentName,
     required this.gender,
     required this.ageLabel,
@@ -22,6 +27,11 @@ class _IepLessonSessionDraft {
         _weekDateOptions = weekDateOptions,
         _completionColumnLabels = completionColumnLabels;
 
+  final IepAssessmentRecordSummary record;
+  final int durationMonths;
+  final int targetMonthIndex;
+  final int targetWeekIndex;
+  final IepWeeklyPlan weeklyPlan;
   final String studentName;
   final String gender;
   final String ageLabel;
@@ -87,6 +97,7 @@ class _IepLessonFullscreenViewport extends StatelessWidget {
 
 class _IepLessonTaskDraft {
   const _IepLessonTaskDraft({
+    required this.sourceRowIndex,
     required this.title,
     required this.subtitle,
     required this.domain,
@@ -97,6 +108,7 @@ class _IepLessonTaskDraft {
     List<String>? completionCodes,
   }) : _completionCodes = completionCodes;
 
+  final int sourceRowIndex;
   final String title;
   final String subtitle;
   final String domain;
@@ -111,26 +123,38 @@ class _IepLessonTaskDraft {
 
 class _IepLessonSessionPage extends StatefulWidget {
   const _IepLessonSessionPage({
-    required this.onBack,
     required this.draft,
+    required this.planClient,
+    this.onPlansSaved,
   });
 
-  final VoidCallback onBack;
   final _IepLessonSessionDraft draft;
+  final IepPlanClient planClient;
+  final ValueChanged<IepExecutionPlansSaved>? onPlansSaved;
 
   @override
   State<_IepLessonSessionPage> createState() => _IepLessonSessionPageState();
 }
 
 class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
+  static const String _authTokenStorageKey = 'auth_token';
+
   int _selectedTaskIndex = 0;
   int _selectedDateIndex = 0;
   List<List<String>> _taskCompletionCodes = <List<String>>[];
   String _courseName = '康复教学';
+  late IepWeeklyPlan _weeklyPlan;
+  bool _weeklyPlanDirty = false;
+  bool _needsResave = false;
+  int _weeklyPlanRevision = 0;
+  Future<bool>? _activeSaveFuture;
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
 
   @override
   void initState() {
     super.initState();
+    _weeklyPlan = widget.draft.weeklyPlan;
     _taskCompletionCodes = _normalizedCompletionCodes(widget.draft);
     _selectedDateIndex = _initialSelectedDateIndexFor(widget.draft);
     _courseName = widget.draft.courseName.trim().isEmpty
@@ -142,12 +166,17 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
   void didUpdateWidget(covariant _IepLessonSessionPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(oldWidget.draft, widget.draft)) {
+      _weeklyPlan = widget.draft.weeklyPlan;
       _taskCompletionCodes = _normalizedCompletionCodes(widget.draft);
       _selectedTaskIndex = 0;
       _selectedDateIndex = _initialSelectedDateIndexFor(widget.draft);
       _courseName = widget.draft.courseName.trim().isEmpty
           ? '康复教学'
           : widget.draft.courseName.trim();
+      _weeklyPlanDirty = false;
+      _needsResave = false;
+      _weeklyPlanRevision = 0;
+      _activeSaveFuture = null;
     }
   }
 
@@ -178,6 +207,153 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     }).toList(growable: false);
   }
 
+  void _showMessage(
+    String message, {
+    PadMessageTone tone = PadMessageTone.info,
+  }) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 12,
+      key: 'iep-lesson-message',
+    );
+  }
+
+  IepWeeklyPlan _weeklyPlanWithCurrentState() {
+    final List<IepWeeklyPlanRow> rows = List<IepWeeklyPlanRow>.generate(
+      _weeklyPlan.rows.length,
+      (int rowIndex) {
+        final IepWeeklyPlanRow row = _weeklyPlan.rows[rowIndex];
+        List<String>? completionCodes;
+        for (int taskIndex = 0;
+            taskIndex < widget.draft.tasks.length;
+            taskIndex++) {
+          if (widget.draft.tasks[taskIndex].sourceRowIndex == rowIndex &&
+              taskIndex < _taskCompletionCodes.length) {
+            completionCodes = _taskCompletionCodes[taskIndex];
+            break;
+          }
+        }
+        return IepWeeklyPlanRow(
+          project: row.project,
+          content: row.content,
+          completion: completionCodes == null
+              ? List<String>.from(row.completion)
+              : List<String>.from(completionCodes),
+        );
+      },
+      growable: false,
+    );
+    return IepWeeklyPlan(
+      title: _weeklyPlan.title,
+      student: _weeklyPlan.student,
+      teacherName: _weeklyPlan.teacherName,
+      courseName: _courseName.trim().isEmpty ? '康复教学' : _courseName.trim(),
+      trainingDate: _weeklyPlan.trainingDate,
+      preparation: _weeklyPlan.preparation,
+      weekDates: List<String>.from(_weeklyPlan.weekDates),
+      rows: rows,
+    );
+  }
+
+  Future<bool> _saveWeeklyPlanNow({bool silent = false}) async {
+    final int revision = _weeklyPlanRevision;
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      if (token.trim().isEmpty) {
+        throw const IepPlanApiException('请先登录后再保存上课记录');
+      }
+      final IepExecutionPlansSaved saved =
+          await widget.planClient.saveWeeklyPlan(
+        token,
+        record: widget.draft.record,
+        durationMonths: widget.draft.durationMonths,
+        targetMonthIndex: widget.draft.targetMonthIndex,
+        targetWeekIndex: widget.draft.targetWeekIndex,
+        plan: _weeklyPlanWithCurrentState(),
+      );
+      if (!mounted) {
+        return true;
+      }
+      final IepWeeklyPlan? savedWeekPlan = saved.weekPlan(
+        widget.draft.targetMonthIndex,
+        widget.draft.targetWeekIndex,
+      );
+      setState(() {
+        if (revision == _weeklyPlanRevision) {
+          _weeklyPlanDirty = false;
+        }
+        if (savedWeekPlan != null) {
+          _weeklyPlan = savedWeekPlan;
+        }
+      });
+      widget.onPlansSaved?.call(saved);
+      if (!silent) {
+        _showMessage('上课记录已保存', tone: PadMessageTone.success);
+      }
+      if (_needsResave && mounted) {
+        _needsResave = false;
+        await _queueWeeklyPlanSave(silent: true);
+      }
+      return true;
+    } on IepPlanApiException catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      if (!silent) {
+        _showMessage(error.message);
+      }
+      return false;
+    } on Object catch (error) {
+      if (!mounted) {
+        return false;
+      }
+      if (!silent) {
+        _showMessage('保存上课记录失败：$error');
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _queueWeeklyPlanSave({bool silent = true}) {
+    final Future<bool>? active = _activeSaveFuture;
+    if (active != null) {
+      return active;
+    }
+    final Future<bool> future = _saveWeeklyPlanNow(silent: silent);
+    _activeSaveFuture = future;
+    future.whenComplete(() {
+      if (identical(_activeSaveFuture, future)) {
+        _activeSaveFuture = null;
+      }
+    });
+    return future;
+  }
+
+  Future<bool> _flushWeeklyPlanSave({bool silent = false}) async {
+    final Future<bool>? active = _activeSaveFuture;
+    if (active != null) {
+      return active;
+    }
+    if (!_weeklyPlanDirty) {
+      return true;
+    }
+    return _saveWeeklyPlanNow(silent: silent);
+  }
+
+  void _markWeeklyPlanDirty() {
+    _weeklyPlanRevision += 1;
+    _weeklyPlanDirty = true;
+    if (_activeSaveFuture != null) {
+      _needsResave = true;
+    }
+  }
+
   void _updateCompletionCode(String code) {
     if (_taskCompletionCodes.isEmpty) {
       return;
@@ -200,7 +376,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     next[taskIndex][dateIndex] = next[taskIndex][dateIndex] == code ? '' : code;
     setState(() {
       _taskCompletionCodes = next;
+      _markWeeklyPlanDirty();
     });
+    _queueWeeklyPlanSave();
   }
 
   Future<void> _editCourseName() async {
@@ -218,7 +396,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     }
     setState(() {
       _courseName = value;
+      _markWeeklyPlanDirty();
     });
+    _queueWeeklyPlanSave();
   }
 
   String _selectedDateLabelFor(_IepLessonSessionDraft draft) {
@@ -277,6 +457,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     }
     setState(() {
       _taskCompletionCodes = next;
+      _markWeeklyPlanDirty();
     });
   }
 
@@ -291,7 +472,11 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       selectedDateIndex: selectedDateIndex,
     );
     if (missingTaskIndexes.isEmpty) {
-      widget.onBack();
+      final bool saved = await _flushWeeklyPlanSave();
+      if (!mounted || !saved) {
+        return;
+      }
+      Navigator.of(context).maybePop();
       return;
     }
     final String? code = await showDialog<String>(
@@ -317,7 +502,19 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       taskIndexes: missingTaskIndexes,
       code: code,
     );
-    widget.onBack();
+    final bool saved = await _flushWeeklyPlanSave();
+    if (!mounted || !saved) {
+      return;
+    }
+    Navigator.of(context).maybePop();
+  }
+
+  Future<void> _handleBackPressed() async {
+    final bool saved = await _flushWeeklyPlanSave();
+    if (!mounted || !saved) {
+      return;
+    }
+    Navigator.of(context).maybePop();
   }
 
   @override
@@ -368,7 +565,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
                 right: 0,
                 top: 0,
                 child: _IepLessonTopBar(
-                  onBack: widget.onBack,
+                  onBack: _handleBackPressed,
                   draft: draft,
                   selectedDateLabel: selectedDateLabel,
                   onEndLesson: _handleEndLesson,
