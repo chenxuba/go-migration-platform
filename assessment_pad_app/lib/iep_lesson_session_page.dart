@@ -1,5 +1,7 @@
 part of 'iep_center_page.dart';
 
+enum _IepLessonEntryMode { session, edit }
+
 class _IepLessonSessionDraft {
   const _IepLessonSessionDraft({
     required this.record,
@@ -19,6 +21,7 @@ class _IepLessonSessionDraft {
     required this.initialSelectedDateIndex,
     required this.lessonDate,
     required this.lessonSession,
+    required this.entryMode,
     String? trainingDateLabel,
     List<String>? weekDateOptions,
     List<String>? completionColumnLabels,
@@ -46,6 +49,7 @@ class _IepLessonSessionDraft {
   final int initialSelectedDateIndex;
   final String lessonDate;
   final IepLessonSession lessonSession;
+  final _IepLessonEntryMode entryMode;
   final String? _trainingDateLabel;
   final List<String>? _weekDateOptions;
   final List<String>? _completionColumnLabels;
@@ -59,6 +63,12 @@ class _IepLessonSessionDraft {
 
   List<String> get completionColumnLabels =>
       _completionColumnLabels ?? const <String>[];
+
+  bool get managesSession => entryMode == _IepLessonEntryMode.session;
+
+  bool get isEditMode => entryMode == _IepLessonEntryMode.edit;
+
+  String get primaryActionLabel => managesSession ? '结束上课' : '完成修改';
 }
 
 enum _IepLessonSessionExitAction { paused, completed, back }
@@ -210,7 +220,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (_closingPage) {
+    if (_closingPage || !widget.draft.managesSession) {
       return;
     }
     switch (state) {
@@ -264,7 +274,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
 
   void _syncLessonRuntime() {
     _stopLessonRuntime();
-    if (!_lessonSession.isInProgress) {
+    if (!widget.draft.managesSession || !_lessonSession.isInProgress) {
       return;
     }
     _lessonClockTimer = Timer.periodic(const Duration(seconds: 1), (
@@ -500,7 +510,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   }
 
   Future<void> _pauseLessonSessionForLifecycle() async {
-    if (_closingPage || !_lessonSession.isInProgress) {
+    if (!widget.draft.managesSession ||
+        _closingPage ||
+        !_lessonSession.isInProgress) {
       return;
     }
     final bool saved = await _flushWeeklyPlanSave(silent: true);
@@ -514,7 +526,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   }
 
   Future<void> _resumeLessonSessionAfterLifecycle() async {
-    if (_closingPage) {
+    if (!widget.draft.managesSession || _closingPage) {
       return;
     }
     final bool resumed = await _startLessonSessionRemote(silent: true);
@@ -524,6 +536,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   }
 
   String _lessonStatusText() {
+    if (!widget.draft.managesSession) {
+      return '记录修改';
+    }
     final String duration = _formatLessonElapsed(_displayElapsedSeconds);
     if (_lessonSession.isCompleted) {
       return '已结束 $duration';
@@ -819,10 +834,12 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
         _closingPage = false;
         return;
       }
-      final bool completed = await _completeLessonSessionRemote();
-      if (!mounted || !completed) {
-        _closingPage = false;
-        return;
+      if (draft.managesSession) {
+        final bool completed = await _completeLessonSessionRemote();
+        if (!mounted || !completed) {
+          _closingPage = false;
+          return;
+        }
       }
       Navigator.of(context).pop(
         const _IepLessonSessionExitResult(
@@ -837,6 +854,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
         return PadDialogViewport(
           child: _IepLessonMissingRecordDialog(
             selectedDateLabel: _selectedDateLabelFor(draft),
+            primaryActionLabel: draft.primaryActionLabel,
             missingTasks: missingTaskIndexes
                 .where((int index) => index >= 0 && index < draft.tasks.length)
                 .map((int index) => draft.tasks[index])
@@ -862,10 +880,12 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       _closingPage = false;
       return;
     }
-    final bool completed = await _completeLessonSessionRemote();
-    if (!mounted || !completed) {
-      _closingPage = false;
-      return;
+    if (draft.managesSession) {
+      final bool completed = await _completeLessonSessionRemote();
+      if (!mounted || !completed) {
+        _closingPage = false;
+        return;
+      }
     }
     Navigator.of(context).pop(const _IepLessonSessionExitResult(
         _IepLessonSessionExitAction.completed));
@@ -881,17 +901,43 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       _closingPage = false;
       return;
     }
-    final bool paused = await _pauseLessonSessionRemote();
-    if (!mounted || !paused) {
-      _closingPage = false;
-      return;
+    if (widget.draft.managesSession && _lessonSession.isInProgress) {
+      final bool paused = await _pauseLessonSessionRemote();
+      if (!mounted || !paused) {
+        _closingPage = false;
+        return;
+      }
     }
     Navigator.of(context).pop(
-        const _IepLessonSessionExitResult(_IepLessonSessionExitAction.paused));
+      _IepLessonSessionExitResult(
+        widget.draft.managesSession
+            ? _IepLessonSessionExitAction.paused
+            : _IepLessonSessionExitAction.back,
+      ),
+    );
   }
 
   Future<void> _handlePauseLesson() async {
-    await _handleBackPressed();
+    if (!widget.draft.managesSession) {
+      return;
+    }
+    final bool saved = await _flushWeeklyPlanSave();
+    if (!mounted || !saved) {
+      return;
+    }
+    if (_lessonSession.isPaused) {
+      final bool resumed = await _startLessonSessionRemote();
+      if (!mounted || !resumed) {
+        return;
+      }
+      _showMessage('已继续上课', tone: PadMessageTone.success);
+      return;
+    }
+    final bool paused = await _pauseLessonSessionRemote();
+    if (!mounted || !paused) {
+      return;
+    }
+    _showMessage('已暂停上课', tone: PadMessageTone.success);
   }
 
   @override
@@ -955,6 +1001,15 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
                     draft: draft,
                     selectedDateLabel: selectedDateLabel,
                     statusText: _lessonStatusText(),
+                    showPauseAction: draft.managesSession,
+                    pauseActionLabel: _lessonSession.isPaused ? '继续上课' : '暂停',
+                    pauseActionIcon: _lessonSession.isPaused
+                        ? Icons.play_circle_outline_rounded
+                        : Icons.pause_circle_outline_rounded,
+                    primaryActionLabel: draft.primaryActionLabel,
+                    primaryActionIcon: draft.managesSession
+                        ? Icons.stop_circle_rounded
+                        : Icons.check_circle_rounded,
                     onEndLesson: _handleEndLesson,
                   ),
                 ),
@@ -1066,6 +1121,11 @@ class _IepLessonTopBar extends StatelessWidget {
     required this.draft,
     required this.selectedDateLabel,
     required this.statusText,
+    required this.showPauseAction,
+    required this.pauseActionLabel,
+    required this.pauseActionIcon,
+    required this.primaryActionLabel,
+    required this.primaryActionIcon,
     required this.onEndLesson,
   });
 
@@ -1074,6 +1134,11 @@ class _IepLessonTopBar extends StatelessWidget {
   final _IepLessonSessionDraft draft;
   final String selectedDateLabel;
   final String statusText;
+  final bool showPauseAction;
+  final String pauseActionLabel;
+  final IconData pauseActionIcon;
+  final String primaryActionLabel;
+  final IconData primaryActionIcon;
   final VoidCallback onEndLesson;
 
   @override
@@ -1106,19 +1171,23 @@ class _IepLessonTopBar extends StatelessWidget {
           _IepLessonMetaBadge(
             icon: Icons.schedule_rounded,
             text: statusText,
-            tone: _IepLessonBadgeTone.orange,
+            tone: draft.managesSession
+                ? _IepLessonBadgeTone.orange
+                : _IepLessonBadgeTone.neutral,
           ),
           const Spacer(),
+          if (showPauseAction) ...<Widget>[
+            _IepLessonActionButton(
+              label: pauseActionLabel,
+              icon: pauseActionIcon,
+              filled: false,
+              onTap: onPause,
+            ),
+            const SizedBox(width: 10),
+          ],
           _IepLessonActionButton(
-            label: '暂停',
-            icon: Icons.pause_circle_outline_rounded,
-            filled: false,
-            onTap: onPause,
-          ),
-          const SizedBox(width: 10),
-          _IepLessonActionButton(
-            label: '结束上课',
-            icon: Icons.stop_circle_rounded,
+            label: primaryActionLabel,
+            icon: primaryActionIcon,
             filled: true,
             onTap: onEndLesson,
           ),
@@ -1305,7 +1374,7 @@ class _IepLessonActionButton extends StatelessWidget {
   }
 }
 
-class _IepLessonTaskRail extends StatelessWidget {
+class _IepLessonTaskRail extends StatefulWidget {
   const _IepLessonTaskRail({
     required this.draft,
     required this.selectedIndex,
@@ -1323,8 +1392,91 @@ class _IepLessonTaskRail extends StatelessWidget {
   final ValueChanged<int> onTaskSelected;
 
   @override
+  State<_IepLessonTaskRail> createState() => _IepLessonTaskRailState();
+}
+
+class _IepLessonTaskRailState extends State<_IepLessonTaskRail> {
+  final ScrollController _scrollController = ScrollController();
+  final List<GlobalKey> _itemKeys = <GlobalKey>[];
+
+  @override
+  void initState() {
+    super.initState();
+    _syncItemKeys();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ensureSelectedItemVisible(animated: false);
+    });
+  }
+
+  @override
+  void didUpdateWidget(covariant _IepLessonTaskRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _syncItemKeys();
+    if (oldWidget.selectedIndex != widget.selectedIndex) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _ensureSelectedItemVisible(
+          animated: true,
+          preferEnd: widget.selectedIndex > oldWidget.selectedIndex,
+        );
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _syncItemKeys() {
+    final int targetLength = widget.draft.tasks.length;
+    if (_itemKeys.length == targetLength) {
+      return;
+    }
+    if (_itemKeys.length < targetLength) {
+      _itemKeys.addAll(
+        List<GlobalKey>.generate(
+          targetLength - _itemKeys.length,
+          (int _) => GlobalKey(),
+          growable: false,
+        ),
+      );
+      return;
+    }
+    _itemKeys.removeRange(targetLength, _itemKeys.length);
+  }
+
+  void _ensureSelectedItemVisible({
+    required bool animated,
+    bool preferEnd = false,
+  }) {
+    if (!mounted ||
+        !_scrollController.hasClients ||
+        widget.selectedIndex < 0 ||
+        widget.selectedIndex >= _itemKeys.length) {
+      return;
+    }
+    final BuildContext? itemContext =
+        _itemKeys[widget.selectedIndex].currentContext;
+    if (itemContext == null) {
+      return;
+    }
+    Scrollable.ensureVisible(
+      itemContext,
+      duration: animated ? const Duration(milliseconds: 220) : Duration.zero,
+      curve: Curves.easeOutCubic,
+      alignment: preferEnd ? .24 : .18,
+      alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final _IepLessonSessionDraft draft = widget.draft;
     final List<_IepLessonTaskDraft> tasks = draft.tasks;
+    final int selectedIndex = widget.selectedIndex;
+    final int selectedDateIndex = widget.selectedDateIndex;
+    final List<List<String>> completionCodes = widget.completionCodes;
     final String dayLabel = draft.weekDateOptions.isEmpty
         ? draft.trainingDateLabel
         : draft.weekDateOptions[selectedDateIndex];
@@ -1341,12 +1493,13 @@ class _IepLessonTaskRail extends StatelessWidget {
         children: <Widget>[
           _IepLessonTaskRailHeader(
             dayLabel: dayLabel,
-            recordedCount: recordedCount,
+            recordedCount: widget.recordedCount,
             totalCount: tasks.length,
           ),
           const SizedBox(height: 12),
           Expanded(
             child: SingleChildScrollView(
+              controller: _scrollController,
               physics: const BouncingScrollPhysics(),
               child: Column(
                 children: List<Widget>.generate(tasks.length, (int index) {
@@ -1360,6 +1513,7 @@ class _IepLessonTaskRail extends StatelessWidget {
                           ? taskCodes[selectedDateIndex].trim()
                           : '';
                   return Padding(
+                    key: _itemKeys[index],
                     padding: EdgeInsets.only(
                       bottom: index == tasks.length - 1 ? 0 : 6,
                     ),
@@ -1368,7 +1522,7 @@ class _IepLessonTaskRail extends StatelessWidget {
                       task: task,
                       selected: selected,
                       currentCode: currentCode,
-                      onTap: () => onTaskSelected(index),
+                      onTap: () => widget.onTaskSelected(index),
                     ),
                   );
                 }),
@@ -2001,10 +2155,12 @@ class _IepLessonCourseNameDialogState
 class _IepLessonMissingRecordDialog extends StatefulWidget {
   const _IepLessonMissingRecordDialog({
     required this.selectedDateLabel,
+    required this.primaryActionLabel,
     required this.missingTasks,
   });
 
   final String selectedDateLabel;
+  final String primaryActionLabel;
   final List<_IepLessonTaskDraft> missingTasks;
 
   @override
@@ -2052,7 +2208,7 @@ class _IepLessonMissingRecordDialogState
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        '${widget.selectedDateLabel} 仍有训练项目未填写完成情况，选择一个结果后可一键补记并结束上课。',
+                        '${widget.selectedDateLabel} 仍有训练项目未填写完成情况，选择一个结果后可一键补记并${widget.primaryActionLabel}。',
                         style: const TextStyle(
                           color: _IepColors.text,
                           fontSize: 12,
@@ -2099,7 +2255,7 @@ class _IepLessonMissingRecordDialogState
                   const SizedBox(width: 10),
                   Expanded(
                     child: Text(
-                      '当前还有 ${widget.missingTasks.length} 项未填写完成情况。如果本次训练结果一致，可直接选择一个记录结果，一键补记后结束上课。',
+                      '当前还有 ${widget.missingTasks.length} 项未填写完成情况。如果本次记录结果一致，可直接选择一个记录结果，一键补记后${widget.primaryActionLabel}。',
                       style: const TextStyle(
                         color: _IepColors.text,
                         fontSize: 12,
@@ -2144,7 +2300,7 @@ class _IepLessonMissingRecordDialogState
                 const SizedBox(width: 12),
                 Expanded(
                   child: _IepLessonDialogButton(
-                    label: '补记并结束',
+                    label: '补记并${widget.primaryActionLabel}',
                     primary: true,
                     onTap: _selectedCode.isEmpty
                         ? null
@@ -2585,7 +2741,7 @@ class _IepLessonRecordPanel extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    '结束上课后，可将本次记录回写到 ${draft.weekLabel} 中 $selectedDateLabel 的完成情况。',
+                    '${draft.primaryActionLabel}后，可将本次记录回写到 ${draft.weekLabel} 中 $selectedDateLabel 的完成情况。',
                     style: const TextStyle(
                       color: _IepColors.text,
                       fontSize: 12,

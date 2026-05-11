@@ -1845,6 +1845,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     final IepLessonSession? resumeSession = _currentLessonSession();
+    final bool editOnly = _lessonEntryUsesEditMode(weekPlan);
     final int? selectedDateIndex = resumeSession != null
         ? _selectedDateIndexForLessonSession(resumeSession, weekDates)
         : await _resolveLessonEntryDateIndex(weekPlan, weekDates);
@@ -1858,29 +1859,34 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (token.trim().isEmpty) {
         throw const IepPlanApiException('请先登录后再开始上课');
       }
-      final IepLessonSessionWeekState lessonSessionState =
-          await widget.planClient.startLessonSession(
-        token,
-        record: record,
-        durationMonths: _periodMonthCount,
-        targetMonthIndex: monthIndex,
-        targetWeekIndex: _previewWeek,
+      IepLessonSession lessonSession = IepLessonSession(
         lessonDate: lessonDate,
+        weekDateIndex: selectedDateIndex + 1,
       );
-      if (!mounted) {
-        return;
+      if (!editOnly) {
+        final IepLessonSessionWeekState lessonSessionState =
+            await widget.planClient.startLessonSession(
+          token,
+          record: record,
+          durationMonths: _periodMonthCount,
+          targetMonthIndex: monthIndex,
+          targetWeekIndex: _previewWeek,
+          lessonDate: lessonDate,
+        );
+        if (!mounted) {
+          return;
+        }
+        lessonSession = lessonSessionState.sessionForDate(lessonDate) ??
+            lessonSessionState.currentSession ??
+            IepLessonSession(
+              lessonDate: lessonDate,
+              weekDateIndex: selectedDateIndex + 1,
+              status: 'in_progress',
+            );
+        setState(() {
+          _lessonSessionState = lessonSessionState;
+        });
       }
-      final IepLessonSession lessonSession =
-          lessonSessionState.sessionForDate(lessonDate) ??
-              lessonSessionState.currentSession ??
-              IepLessonSession(
-                lessonDate: lessonDate,
-                weekDateIndex: selectedDateIndex + 1,
-                status: 'in_progress',
-              );
-      setState(() {
-        _lessonSessionState = lessonSessionState;
-      });
       final _IepLessonSessionDraft draft = _buildLessonSessionDraft(
         record: record,
         totalPlan: totalPlan,
@@ -1889,6 +1895,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         initialSelectedDateIndex: selectedDateIndex,
         lessonDate: lessonDate,
         lessonSession: lessonSession,
+        entryMode:
+            editOnly ? _IepLessonEntryMode.edit : _IepLessonEntryMode.session,
       );
       await Navigator.of(context).push<_IepLessonSessionExitResult>(
         MaterialPageRoute<_IepLessonSessionExitResult>(
@@ -2022,6 +2030,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     int initialSelectedDateIndex = 0,
     required String lessonDate,
     required IepLessonSession lessonSession,
+    required _IepLessonEntryMode entryMode,
   }) {
     final String studentName = totalPlan?.student.name.trim().isNotEmpty == true
         ? totalPlan!.student.name.trim()
@@ -2163,6 +2172,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       initialSelectedDateIndex: initialSelectedDateIndex,
       lessonDate: lessonDate,
       lessonSession: lessonSession,
+      entryMode: entryMode,
       trainingDateLabel: trainingDateLabel,
       weekDateOptions: weekDateOptions,
       completionColumnLabels: weekDateOptions,
@@ -2434,6 +2444,11 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       (DateTime item) => _formatDateDash(item) == session.lessonDate,
     );
     return matchedIndex < 0 ? 0 : matchedIndex;
+  }
+
+  bool _lessonEntryUsesEditMode(IepWeeklyPlan? weekPlan) {
+    final String label = _lessonEntryButtonLabel(weekPlan);
+    return label == '修改记录' || label == '修/补记录';
   }
 
   bool _canOpenLessonForSelectedWeek(IepWeeklyPlan? weekPlan) {
