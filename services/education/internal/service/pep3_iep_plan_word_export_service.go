@@ -303,7 +303,7 @@ func buildPEP3IEPPlanDocumentXML(plan iepPlanWordExport) string {
 }
 
 func buildIEPMainTable(plan iepPlanWordExport) string {
-	widths := []int{1038, 1472, 625, 877, 1260, 1562, 927, 2319}
+	widths := []int{1038, 1472, 625, 877, 1260, 2122, 927, 1759}
 	rows := plan.Rows
 	if len(rows) == 0 {
 		rows = buildIEPWordRowsFromDomains(plan)
@@ -327,7 +327,7 @@ func buildIEPMainTable(plan iepPlanWordExport) string {
 	builder.WriteString(buildIEPTableRowStart(560))
 	builder.WriteString(buildIEPCell([]string{"实施者"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{plan.PlannerName}, widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"实施", "起止日期"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"实施", "起止日期"}, widths[4], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
 	builder.WriteString(buildIEPCell([]string{plan.StartDate + " 至 " + plan.EndDate}, widths[5]+widths[6]+widths[7], iepPlanWordCellOptions{GridSpan: 3, Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(560))
@@ -348,14 +348,14 @@ func buildIEPMainTable(plan iepPlanWordExport) string {
 		builder.WriteString(buildIEPTableRowStart(660))
 		if rowSpan > 0 {
 			builder.WriteString(buildIEPCell(domainTextLines(row.Domain), widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
-			builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "restart", VAlign: "center", IndentLeft: 200, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
+			builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "restart", VAlign: "center", IndentLeft: 100, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
 		} else {
 			builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
 			builder.WriteString(buildIEPCell(nil, widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "continue"}))
 		}
-		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, VAlign: "center", IndentLeft: 200, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
+		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, VAlign: "center", IndentLeft: 120, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
 		builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
-		builder.WriteString(buildIEPCell([]string{row.StartEndDate}, widths[7], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
+		builder.WriteString(buildIEPCell(splitWordDateRangeLines(row.StartEndDate), widths[7], iepPlanWordCellOptions{Align: "center", VAlign: "center", CompactParagraph: true, LineSpacing: 200}))
 		builder.WriteString(`</w:tr>`)
 	}
 	builder.WriteString(`</w:tbl>`)
