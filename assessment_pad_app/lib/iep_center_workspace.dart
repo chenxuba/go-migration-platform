@@ -1822,25 +1822,19 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _showMessage('请先生成当前周计划后再开始上课');
       return;
     }
-    final DateTimeRange monthRange = _monthRangeInPeriod(
-      periodStart: _periodStart,
-      monthCount: _periodMonthCount,
-      monthDate: _monthDateFromLabel(
-        _periodStart,
-        _periodMonthCount,
-        _previewMonth,
-      ),
-    );
-    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
-        _weekDatesInMonthRange(monthRange, _previewWeek);
-    final DateTime today = _dateOnly(DateTime.now());
-    final int todayIndex = weekDates.indexWhere(
-      (DateTime day) => _dateOnly(day) == today,
-    );
-    if (todayIndex < 0) {
-      final String weekRangeText =
-          weekDates.isEmpty ? '当前周计划' : _weekRangeText(weekDates);
-      _showMessage('当前只支持从包含今天的周计划开始上课，当前选中：$weekRangeText');
+    final List<DateTime> weekDates = _selectedWeekDates(weekPlan);
+    if (weekDates.isEmpty) {
+      _showMessage('当前周计划缺少可记录日期');
+      return;
+    }
+    if (_selectedWeekIsFuture(weekPlan)) {
+      final String weekRangeText = _weekRangeText(weekDates);
+      _showMessage('当前周计划尚未到开始记录时间，当前选中：$weekRangeText');
+      return;
+    }
+    final int? selectedDateIndex =
+        await _resolveLessonEntryDateIndex(weekPlan, weekDates);
+    if (!mounted || selectedDateIndex == null) {
       return;
     }
     final _IepLessonSessionDraft draft = _buildLessonSessionDraft(
@@ -1848,7 +1842,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       totalPlan: totalPlan,
       monthPlan: monthPlan,
       weekPlan: weekPlan,
-      initialSelectedDateIndex: todayIndex,
+      initialSelectedDateIndex: selectedDateIndex,
     );
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
@@ -1869,6 +1863,93 @@ class _IepWorkspaceState extends State<_IepWorkspace>
           ),
         ),
       ),
+    );
+  }
+
+  Future<int?> _resolveLessonEntryDateIndex(
+    IepWeeklyPlan weekPlan,
+    List<DateTime> weekDates,
+  ) async {
+    final int todayIndex = _selectedWeekTodayIndex(weekPlan);
+    if (_selectedWeekIsPast(weekPlan)) {
+      return _showLessonDateSelectionDialog(
+        weekPlan: weekPlan,
+        weekDates: weekDates,
+        selectableIndexes: List<int>.generate(
+          weekDates.length,
+          (int index) => index,
+          growable: false,
+        ),
+        title: '选择修/补日期',
+        helperText: '当前周已过去，请选择需要补记或修改记录的日期。',
+      );
+    }
+    if (todayIndex < 0) {
+      return null;
+    }
+    if (todayIndex == 0) {
+      return todayIndex;
+    }
+    return _showLessonDateSelectionDialog(
+      weekPlan: weekPlan,
+      weekDates: weekDates,
+      selectableIndexes: List<int>.generate(
+        todayIndex + 1,
+        (int index) => index,
+        growable: false,
+      ),
+      title: '选择记录日期',
+      helperText: '可选择今天直接修改，也可选择本周此前日期进行补记或修改。',
+      preferredIndex: todayIndex,
+    );
+  }
+
+  Future<int?> _showLessonDateSelectionDialog({
+    required IepWeeklyPlan weekPlan,
+    required List<DateTime> weekDates,
+    required List<int> selectableIndexes,
+    required String title,
+    required String helperText,
+    int? preferredIndex,
+  }) async {
+    final List<_IepLessonDateOption> options =
+        selectableIndexes.map((int index) {
+      final DateTime date = weekDates[index];
+      final bool recorded = _selectedWeekDateHasRecordedEntry(weekPlan, index);
+      final int recordedTaskCount =
+          _selectedWeekDateRecordedTaskCount(weekPlan, index);
+      final bool today = _dateOnly(date) == _dateOnly(DateTime.now());
+      final String stateLabel = recorded
+          ? '已记录${recordedTaskCount > 0 ? ' $recordedTaskCount 项' : ''}'
+          : (today ? '今日待记录' : '待修/补');
+      return _IepLessonDateOption(
+        index: index,
+        label: _weekDateOptionLabel(date),
+        stateLabel: stateLabel,
+        recorded: recorded,
+        isToday: today,
+      );
+    }).toList(growable: false);
+    if (options.isEmpty) {
+      return null;
+    }
+    final int preferred = preferredIndex ?? options.first.index;
+    final int initialIndex = options.indexWhere(
+      (_IepLessonDateOption item) => item.index == preferred,
+    );
+    return showDialog<int>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepLessonDateSelectionDialog(
+            title: title,
+            helperText: helperText,
+            options: options,
+            initialSelectedIndex: initialIndex < 0 ? 0 : initialIndex,
+          ),
+        );
+      },
     );
   }
 
@@ -2121,9 +2202,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return '${_weekDateLabel(value)} ${weekdays[weekdayIndex]}';
   }
 
-  bool _canStartClassForSelectedWeek(IepWeeklyPlan? weekPlan) {
+  List<DateTime> _selectedWeekDates(IepWeeklyPlan? weekPlan) {
     if (weekPlan == null || _previewMode != _IepPreviewMode.week) {
-      return false;
+      return const <DateTime>[];
     }
     final DateTimeRange monthRange = _monthRangeInPeriod(
       periodStart: _periodStart,
@@ -2134,10 +2215,89 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _previewMonth,
       ),
     );
-    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
+    return _dateListFromStrings(weekPlan.weekDates) ??
         _weekDatesInMonthRange(monthRange, _previewWeek);
+  }
+
+  int _selectedWeekTodayIndex(IepWeeklyPlan? weekPlan) {
+    final List<DateTime> weekDates = _selectedWeekDates(weekPlan);
+    if (weekDates.isEmpty) {
+      return -1;
+    }
     final DateTime today = _dateOnly(DateTime.now());
-    return weekDates.any((DateTime item) => _dateOnly(item) == today);
+    return weekDates.indexWhere((DateTime item) => _dateOnly(item) == today);
+  }
+
+  bool _selectedWeekIsCurrent(IepWeeklyPlan? weekPlan) {
+    return _selectedWeekTodayIndex(weekPlan) >= 0;
+  }
+
+  bool _selectedWeekIsPast(IepWeeklyPlan? weekPlan) {
+    final List<DateTime> weekDates = _selectedWeekDates(weekPlan);
+    if (weekDates.isEmpty) {
+      return false;
+    }
+    final DateTime today = _dateOnly(DateTime.now());
+    return _dateOnly(weekDates.last).isBefore(today);
+  }
+
+  bool _selectedWeekIsFuture(IepWeeklyPlan? weekPlan) {
+    final List<DateTime> weekDates = _selectedWeekDates(weekPlan);
+    if (weekDates.isEmpty) {
+      return false;
+    }
+    final DateTime today = _dateOnly(DateTime.now());
+    return _dateOnly(weekDates.first).isAfter(today);
+  }
+
+  bool _canOpenLessonForSelectedWeek(IepWeeklyPlan? weekPlan) {
+    return weekPlan != null &&
+        _previewMode == _IepPreviewMode.week &&
+        _selectedWeekDates(weekPlan).isNotEmpty &&
+        !_selectedWeekIsFuture(weekPlan);
+  }
+
+  bool _selectedWeekDateHasRecordedEntry(
+    IepWeeklyPlan? weekPlan,
+    int dateIndex,
+  ) {
+    if (weekPlan == null || dateIndex < 0) {
+      return false;
+    }
+    return weekPlan.rows.any((IepWeeklyPlanRow row) {
+      if (dateIndex >= row.completion.length) {
+        return false;
+      }
+      return row.completion[dateIndex].trim().isNotEmpty;
+    });
+  }
+
+  int _selectedWeekDateRecordedTaskCount(
+      IepWeeklyPlan? weekPlan, int dateIndex) {
+    if (weekPlan == null || dateIndex < 0) {
+      return 0;
+    }
+    int count = 0;
+    for (final IepWeeklyPlanRow row in weekPlan.rows) {
+      if (dateIndex < row.completion.length &&
+          row.completion[dateIndex].trim().isNotEmpty) {
+        count += 1;
+      }
+    }
+    return count;
+  }
+
+  String _lessonEntryButtonLabel(IepWeeklyPlan? weekPlan) {
+    if (_previewMode != _IepPreviewMode.week || weekPlan == null) {
+      return '开始上课';
+    }
+    if (_selectedWeekIsCurrent(weekPlan)) {
+      return '修改记录';
+    }
+    if (_selectedWeekIsPast(weekPlan)) {
+      return _selectedWeekHasRecordedEntry(weekPlan) ? '修改记录' : '修/补记录';
+    }
+    return '开始上课';
   }
 
   bool _selectedWeekHasRecordedEntry(IepWeeklyPlan? weekPlan) {
@@ -2149,36 +2309,6 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         (String code) => code.trim().isNotEmpty,
       ),
     );
-  }
-
-  bool _selectedWeekHasTodayRecord(IepWeeklyPlan? weekPlan) {
-    if (weekPlan == null || _previewMode != _IepPreviewMode.week) {
-      return false;
-    }
-    final DateTimeRange monthRange = _monthRangeInPeriod(
-      periodStart: _periodStart,
-      monthCount: _periodMonthCount,
-      monthDate: _monthDateFromLabel(
-        _periodStart,
-        _periodMonthCount,
-        _previewMonth,
-      ),
-    );
-    final List<DateTime> weekDates = _dateListFromStrings(weekPlan.weekDates) ??
-        _weekDatesInMonthRange(monthRange, _previewWeek);
-    final DateTime today = _dateOnly(DateTime.now());
-    final int todayIndex = weekDates.indexWhere(
-      (DateTime item) => _dateOnly(item) == today,
-    );
-    if (todayIndex < 0) {
-      return false;
-    }
-    return weekPlan.rows.any((IepWeeklyPlanRow row) {
-      if (todayIndex >= row.completion.length) {
-        return false;
-      }
-      return row.completion[todayIndex].trim().isNotEmpty;
-    });
   }
 
   bool _hasAnyExecutionRecord() {
@@ -2215,9 +2345,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _executionPlans?.monthPlan(_previewMonthIndex());
     final IepWeeklyPlan? weekPlan =
         _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
-    final bool canStartClassToday = _canStartClassForSelectedWeek(weekPlan);
+    final bool canOpenLesson = _canOpenLessonForSelectedWeek(weekPlan);
     final bool weekHasAnyRecord = _selectedWeekHasRecordedEntry(weekPlan);
-    final bool weekHasTodayRecord = _selectedWeekHasTodayRecord(weekPlan);
     final bool hasAnyExecutionRecord = _hasAnyExecutionRecord();
     final bool totalPlanRegenerateDisabled =
         _totalPlanHasAnyWeeklyExecutionRecord();
@@ -2240,7 +2369,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     };
     final bool startClassEnabled = record != null &&
         _previewMode == _IepPreviewMode.week &&
-        canStartClassToday &&
+        canOpenLesson &&
         !_loadingPlan &&
         !_generatingPlan;
     final String title = _workspaceTitle(record, plan);
@@ -2263,7 +2392,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             previewWeek: _previewWeek,
             onStartClass: _openLessonSession,
             startClassEnabled: startClassEnabled,
-            startClassLabel: weekHasTodayRecord ? '修改记录' : '开始上课',
+            startClassLabel: _lessonEntryButtonLabel(weekPlan),
           ),
           const SizedBox(height: 10),
           _PlanToolbar(

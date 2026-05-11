@@ -387,6 +387,279 @@ class _IepDialogAction extends StatelessWidget {
   }
 }
 
+class _IepLessonDateOption {
+  const _IepLessonDateOption({
+    required this.index,
+    required this.label,
+    required this.stateLabel,
+    required this.recorded,
+    required this.isToday,
+  });
+
+  final int index;
+  final String label;
+  final String stateLabel;
+  final bool recorded;
+  final bool isToday;
+}
+
+class _IepLessonDateSelectionDialog extends StatefulWidget {
+  const _IepLessonDateSelectionDialog({
+    required this.title,
+    required this.helperText,
+    required this.options,
+    required this.initialSelectedIndex,
+  });
+
+  final String title;
+  final String helperText;
+  final List<_IepLessonDateOption> options;
+  final int initialSelectedIndex;
+
+  @override
+  State<_IepLessonDateSelectionDialog> createState() =>
+      _IepLessonDateSelectionDialogState();
+}
+
+class _IepLessonDateSelectionDialogState
+    extends State<_IepLessonDateSelectionDialog> {
+  late int _selectedIndex;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedIndex = widget.initialSelectedIndex.clamp(
+      0,
+      math.max(0, widget.options.length - 1),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      alignment: const Alignment(0, -0.08),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 680,
+        padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(22),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        widget.title,
+                        style: const TextStyle(
+                          color: _IepColors.ink,
+                          fontSize: 18,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      if (widget.helperText.trim().isNotEmpty) ...<Widget>[
+                        const SizedBox(height: 4),
+                        Text(
+                          widget.helperText,
+                          style: const TextStyle(
+                            color: _IepColors.text,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w700,
+                            height: 1.45,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            GridView.builder(
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              itemCount: widget.options.length,
+              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: 2,
+                crossAxisSpacing: 10,
+                mainAxisSpacing: 10,
+                mainAxisExtent: 76,
+              ),
+              itemBuilder: (BuildContext context, int index) {
+                final _IepLessonDateOption item = widget.options[index];
+                final bool selected = _selectedIndex == item.index;
+                final Color accent = item.recorded
+                    ? _IepColors.green
+                    : (item.isToday ? _IepColors.orangeDeep : _IepColors.muted);
+                return Material(
+                  color: Colors.transparent,
+                  borderRadius: BorderRadius.circular(14),
+                  child: InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedIndex = item.index;
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(14),
+                    child: Container(
+                      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? const Color(0xFFFFF1E6)
+                            : const Color(0xFFFFFBF7),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(
+                          color: selected
+                              ? _IepColors.orange
+                              : _IepColors.lightLine,
+                          width: selected ? 1.6 : 1,
+                        ),
+                        boxShadow: selected
+                            ? _iepShadow(
+                                color: const Color(0x18E96F43),
+                                blur: 10,
+                                offset: const Offset(0, 4),
+                              )
+                            : const <BoxShadow>[],
+                      ),
+                      child: Row(
+                        children: <Widget>[
+                          Container(
+                            width: 24,
+                            height: 24,
+                            alignment: Alignment.center,
+                            decoration: BoxDecoration(
+                              color: selected
+                                  ? _IepColors.orange.withOpacity(.14)
+                                  : accent.withOpacity(.10),
+                              shape: BoxShape.circle,
+                            ),
+                            child: Icon(
+                              selected
+                                  ? Icons.check_rounded
+                                  : (item.recorded
+                                      ? Icons.edit_note_rounded
+                                      : Icons.event_note_rounded),
+                              size: 14,
+                              color: selected ? _IepColors.orange : accent,
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: <Widget>[
+                                Row(
+                                  children: <Widget>[
+                                    Expanded(
+                                      child: Text(
+                                        item.label,
+                                        style: TextStyle(
+                                          color: selected
+                                              ? _IepColors.orangeDeep
+                                              : _IepColors.ink,
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w900,
+                                        ),
+                                      ),
+                                    ),
+                                    if (item.isToday)
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 8),
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 6,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: const Color(0xFFFFF0E4),
+                                          borderRadius:
+                                              BorderRadius.circular(999),
+                                        ),
+                                        child: const Text(
+                                          '今天',
+                                          style: TextStyle(
+                                            color: _IepColors.orangeDeep,
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w900,
+                                          ),
+                                        ),
+                                      ),
+                                  ],
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  item.stateLabel,
+                                  style: TextStyle(
+                                    color: selected
+                                        ? _IepColors.orangeDeep
+                                        : accent,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          if (selected)
+                            Container(
+                              width: 6,
+                              height: 28,
+                              margin: const EdgeInsets.only(left: 8),
+                              decoration: BoxDecoration(
+                                color: _IepColors.orange,
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _IepDialogAction(
+                    label: '取消',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _IepDialogAction(
+                    label: '进入记录',
+                    filled: true,
+                    onTap: () => Navigator.of(context).pop(_selectedIndex),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _IepRegenerateConfirmDialog extends StatelessWidget {
   const _IepRegenerateConfirmDialog();
 
