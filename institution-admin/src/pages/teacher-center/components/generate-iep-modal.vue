@@ -746,15 +746,60 @@ const activeEditingLabel = computed(() => {
 const monthlyDisplayRows = computed(() => {
   const rows = monthlyPlan.value?.rows || []
   const result = []
-  rows.forEach((row, rowIndex) => {
+  const rowMeta = rows.map((row) => {
     const items = normalizeMonthlyTrainingItems(row)
-    items.forEach((item, contentIndex) => {
+    return {
+      items,
+      contentRowSpan: items.length,
+      domainRowSpan: 0,
+      longGoalRowSpan: 0,
+      showDomainCell: false,
+      showLongGoalCell: false,
+    }
+  })
+
+  for (let start = 0; start < rows.length;) {
+    const domain = rows[start]?.domain
+    let domainEnd = start
+    let domainRowSpan = 0
+    while (domainEnd < rows.length && rows[domainEnd]?.domain === domain) {
+      domainRowSpan += rowMeta[domainEnd].contentRowSpan
+      domainEnd++
+    }
+    rowMeta[start].showDomainCell = true
+    rowMeta[start].domainRowSpan = domainRowSpan
+
+    for (let longGoalStart = start; longGoalStart < domainEnd;) {
+      const longGoal = rows[longGoalStart]?.longGoal
+      let longGoalEnd = longGoalStart
+      let longGoalRowSpan = 0
+      while (longGoalEnd < domainEnd && rows[longGoalEnd]?.longGoal === longGoal) {
+        longGoalRowSpan += rowMeta[longGoalEnd].contentRowSpan
+        longGoalEnd++
+      }
+      rowMeta[longGoalStart].showLongGoalCell = true
+      rowMeta[longGoalStart].longGoalRowSpan = longGoalRowSpan
+      longGoalStart = longGoalEnd
+    }
+
+    start = domainEnd
+  }
+
+  rows.forEach((row, rowIndex) => {
+    const meta = rowMeta[rowIndex]
+    meta.items.forEach((item, contentIndex) => {
+      const isFirstContent = contentIndex === 0
       result.push({
         ...row,
         rowIndex,
         contentIndex,
-        contentRowSpan: items.length,
-        showTargetCell: contentIndex === 0,
+        contentRowSpan: meta.contentRowSpan,
+        domainRowSpan: meta.domainRowSpan,
+        longGoalRowSpan: meta.longGoalRowSpan,
+        showDomainCell: meta.showDomainCell && isFirstContent,
+        showLongGoalCell: meta.showLongGoalCell && isFirstContent,
+        showShortGoalCell: isFirstContent,
+        showCourseFormCell: isFirstContent,
         trainingContent: item.content,
         trainingContentText: `${contentIndex + 1}. ${item.content}`,
         trainingStartEndDate: item.startEndDate,
@@ -3408,19 +3453,19 @@ onBeforeUnmount(() => {
                   }"
                   @click="selectMonthlyPlanRow(row.rowIndex, row.contentIndex)"
                 >
-                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-domain">
+                  <td v-if="row.showDomainCell" :rowspan="row.domainRowSpan" class="plan-cell-domain">
                     {{ row.domain }}
                   </td>
-                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">
+                  <td v-if="row.showLongGoalCell" colspan="2" :rowspan="row.longGoalRowSpan" class="plan-cell-text plan-cell-long">
                     {{ row.longGoal }}
                   </td>
-                  <td v-if="row.showTargetCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">
+                  <td v-if="row.showShortGoalCell" colspan="2" :rowspan="row.contentRowSpan" class="plan-cell-text plan-cell-long">
                     {{ row.shortGoal }}
                   </td>
                   <td colspan="4" class="plan-cell-text">
                     {{ row.trainingContentText }}
                   </td>
-                  <td v-if="row.showTargetCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">
+                  <td v-if="row.showCourseFormCell" :rowspan="row.contentRowSpan" class="plan-cell-center plan-cell-course">
                     {{ row.courseForm }}
                   </td>
                   <td colspan="2" class="plan-cell-center plan-cell-date monthly-plan-date-cell">

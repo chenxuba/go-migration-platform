@@ -1769,7 +1769,7 @@ class _MonthPlanTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final IepMonthlyPlan? currentPlan = plan;
-    final List<_MonthDomainData> domains = currentPlan?.rows
+    final List<_MonthDomainData> rows = currentPlan?.rows
             .map(_monthDomainFromPlanRow)
             .where((_MonthDomainData item) =>
                 item.domain.trim().isNotEmpty ||
@@ -1778,6 +1778,8 @@ class _MonthPlanTable extends StatelessWidget {
                     training.content.trim().isNotEmpty))
             .toList() ??
         _fallbackDomains;
+    final List<_MonthDomainGroupData> domainGroups =
+        _groupMonthDomainRows(rows);
     return Column(
       children: <Widget>[
         _WordTableTitle(
@@ -1792,7 +1794,7 @@ class _MonthPlanTable extends StatelessWidget {
             fallback: _formatZhRange(monthRange.start, monthRange.end),
           ),
         ),
-        _MonthPlanRows(domains: domains, monthRange: monthRange),
+        _MonthPlanRows(domainGroups: domainGroups, monthRange: monthRange),
       ],
     );
   }
@@ -1952,26 +1954,46 @@ class _MonthDocCellBox extends StatelessWidget {
 
 class _MonthPlanRows extends StatelessWidget {
   const _MonthPlanRows({
-    required this.domains,
+    required this.domainGroups,
     required this.monthRange,
   });
 
-  final List<_MonthDomainData> domains;
+  final List<_MonthDomainGroupData> domainGroups;
   final DateTimeRange monthRange;
 
   @override
   Widget build(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: domains.asMap().entries.map((entry) {
-        return _MonthDomainBlock(
+      children: domainGroups.asMap().entries.map((entry) {
+        return _MonthDomainGroupBlock(
           data: entry.value,
-          last: entry.key == domains.length - 1,
+          last: entry.key == domainGroups.length - 1,
           monthRange: monthRange,
         );
       }).toList(),
     );
   }
+}
+
+class _MonthDomainGroupData {
+  const _MonthDomainGroupData({
+    required this.domain,
+    required this.longGoalGroups,
+  });
+
+  final String domain;
+  final List<_MonthLongGoalGroupData> longGoalGroups;
+}
+
+class _MonthLongGoalGroupData {
+  const _MonthLongGoalGroupData({
+    required this.longGoal,
+    required this.rows,
+  });
+
+  final String longGoal;
+  final List<_MonthDomainData> rows;
 }
 
 class _MonthDomainData {
@@ -2009,23 +2031,76 @@ class _MonthTrainingData {
   }
 }
 
-class _MonthDomainBlock extends StatelessWidget {
-  const _MonthDomainBlock({
+class _MonthRowLayoutData {
+  const _MonthRowLayoutData({
+    required this.data,
+    required this.trainingRowHeights,
+    required this.blockHeight,
+  });
+
+  final _MonthDomainData data;
+  final List<double> trainingRowHeights;
+  final double blockHeight;
+}
+
+class _MonthLongGoalLayoutData {
+  const _MonthLongGoalLayoutData({
+    required this.data,
+    required this.rows,
+    required this.blockHeight,
+  });
+
+  final _MonthLongGoalGroupData data;
+  final List<_MonthRowLayoutData> rows;
+  final double blockHeight;
+}
+
+class _MonthDomainGroupBlock extends StatelessWidget {
+  const _MonthDomainGroupBlock({
     required this.data,
     required this.last,
     required this.monthRange,
   });
 
-  final _MonthDomainData data;
+  final _MonthDomainGroupData data;
   final bool last;
   final DateTimeRange monthRange;
 
   @override
   Widget build(BuildContext context) {
-    final List<double> rowHeights =
-        data.trainings.map((training) => training.rowHeight).toList();
-    final double blockHeight =
-        rowHeights.fold<double>(0, (double sum, double height) => sum + height);
+    final List<_MonthLongGoalLayoutData> longGoalLayouts =
+        data.longGoalGroups.map((_MonthLongGoalGroupData group) {
+      final List<_MonthRowLayoutData> rowLayouts =
+          group.rows.map((_MonthDomainData row) {
+        final List<double> trainingRowHeights =
+            row.trainings.map((training) => training.rowHeight).toList();
+        final double blockHeight = trainingRowHeights.fold<double>(
+          0,
+          (double sum, double height) => sum + height,
+        );
+        return _MonthRowLayoutData(
+          data: row,
+          trainingRowHeights: trainingRowHeights,
+          blockHeight: blockHeight,
+        );
+      }).toList();
+      final double blockHeight = rowLayouts.fold<double>(
+        0,
+        (double sum, _MonthRowLayoutData row) => sum + row.blockHeight,
+      );
+      return _MonthLongGoalLayoutData(
+        data: group,
+        rows: rowLayouts,
+        blockHeight: blockHeight,
+      );
+    }).toList();
+    final double blockHeight = longGoalLayouts.fold<double>(
+      0,
+      (double sum, _MonthLongGoalLayoutData item) => sum + item.blockHeight,
+    );
+    final List<_MonthRowLayoutData> allRows = longGoalLayouts
+        .expand((_MonthLongGoalLayoutData item) => item.rows)
+        .toList();
 
     return SizedBox(
       height: blockHeight,
@@ -2042,77 +2117,116 @@ class _MonthDomainBlock extends StatelessWidget {
           ),
           _FixedGridCell(
             columns: 2,
-            child: _MonthDocCellBox(
-              data: _MonthDocCellData(
-                text: data.longGoal,
-                columns: 2,
-                align: TextAlign.left,
-              ),
-              rowLast: last,
-            ),
-          ),
-          _FixedGridCell(
-            columns: 2,
-            child: _MonthDocCellBox(
-              data: _MonthDocCellData(
-                text: data.shortGoal,
-                columns: 2,
-                align: TextAlign.left,
-              ),
-              rowLast: last,
-            ),
-          ),
-          _FixedGridCell(
-            columns: 4,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: data.trainings.asMap().entries.map((entry) {
+              children: longGoalLayouts.asMap().entries.map((entry) {
                 return SizedBox(
-                  height: rowHeights[entry.key],
+                  height: entry.value.blockHeight,
                   child: _MonthDocCellBox(
                     data: _MonthDocCellData(
-                      text: entry.value.content,
-                      columns: 4,
+                      text: entry.value.data.longGoal,
+                      columns: 2,
                       align: TextAlign.left,
                     ),
-                    rowLast: last && entry.key == data.trainings.length - 1,
-                    verticalPadding: 3,
+                    rowLast: last && entry.key == longGoalLayouts.length - 1,
                   ),
                 );
               }).toList(),
             ),
           ),
           _FixedGridCell(
+            columns: 2,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: allRows.asMap().entries.map((entry) {
+                return SizedBox(
+                  height: entry.value.blockHeight,
+                  child: _MonthDocCellBox(
+                    data: _MonthDocCellData(
+                      text: entry.value.data.shortGoal,
+                      columns: 2,
+                      align: TextAlign.left,
+                    ),
+                    rowLast: last && entry.key == allRows.length - 1,
+                  ),
+                );
+              }).toList(),
+            ),
+          ),
+          _FixedGridCell(
+            columns: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: allRows.asMap().entries.expand((rowEntry) {
+                return rowEntry.value.trainingRowHeights.asMap().entries.map(
+                  (trainingEntry) {
+                    return SizedBox(
+                      height: trainingEntry.value,
+                      child: _MonthDocCellBox(
+                        data: _MonthDocCellData(
+                          text: rowEntry
+                              .value.data.trainings[trainingEntry.key].content,
+                          columns: 4,
+                          align: TextAlign.left,
+                        ),
+                        rowLast: last &&
+                            rowEntry.key == allRows.length - 1 &&
+                            trainingEntry.key ==
+                                rowEntry.value.trainingRowHeights.length - 1,
+                        verticalPadding: 3,
+                      ),
+                    );
+                  },
+                );
+              }).toList(),
+            ),
+          ),
+          _FixedGridCell(
             columns: 1,
-            child: _MonthDocCellBox(
-              data: _MonthDocCellData(
-                text: data.lesson,
-                columns: 1,
-                noWrap: true,
-              ),
-              rowLast: last,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: allRows.asMap().entries.map((entry) {
+                return SizedBox(
+                  height: entry.value.blockHeight,
+                  child: _MonthDocCellBox(
+                    data: _MonthDocCellData(
+                      text: entry.value.data.lesson,
+                      columns: 1,
+                      noWrap: true,
+                    ),
+                    rowLast: last && entry.key == allRows.length - 1,
+                  ),
+                );
+              }).toList(),
             ),
           ),
           _FixedGridCell(
             columns: 2,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: data.trainings.asMap().entries.map((entry) {
-                final String periodText = _monthTrainingPeriodText(
-                  monthRange,
-                  entry.key,
-                );
-                return SizedBox(
-                  height: rowHeights[entry.key],
-                  child: _MonthDocCellBox(
-                    data: _MonthDocCellData(
-                      text: periodText,
-                      columns: 2,
-                      last: true,
-                    ),
-                    rowLast: last && entry.key == data.trainings.length - 1,
-                    verticalPadding: 3,
-                  ),
+              children: allRows.asMap().entries.expand((rowEntry) {
+                return rowEntry.value.trainingRowHeights.asMap().entries.map(
+                  (trainingEntry) {
+                    final String periodText = _monthTrainingPeriodText(
+                      monthRange,
+                      trainingEntry.key,
+                    );
+                    return SizedBox(
+                      height: trainingEntry.value,
+                      child: _MonthDocCellBox(
+                        data: _MonthDocCellData(
+                          text: periodText,
+                          columns: 2,
+                          last: true,
+                        ),
+                        rowLast: last &&
+                            rowEntry.key == allRows.length - 1 &&
+                            trainingEntry.key ==
+                                rowEntry.value.trainingRowHeights.length - 1,
+                        verticalPadding: 3,
+                      ),
+                    );
+                  },
                 );
               }).toList(),
             ),

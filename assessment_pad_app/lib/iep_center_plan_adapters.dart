@@ -74,6 +74,72 @@ _MonthDomainData _monthDomainFromPlanRow(IepMonthlyPlanRow row) {
   );
 }
 
+List<_MonthDomainGroupData> _groupMonthDomainRows(List<_MonthDomainData> rows) {
+  if (rows.isEmpty) {
+    return const <_MonthDomainGroupData>[];
+  }
+
+  final List<_MonthDomainGroupData> result = <_MonthDomainGroupData>[];
+  String? activeDomainKey;
+  String activeDomainText = '';
+  final List<_MonthLongGoalGroupData> activeLongGoalGroups =
+      <_MonthLongGoalGroupData>[];
+  String? activeLongGoalKey;
+  String activeLongGoalText = '';
+  final List<_MonthDomainData> activeRows = <_MonthDomainData>[];
+
+  void flushLongGoal() {
+    if (activeLongGoalKey == null) {
+      return;
+    }
+    activeLongGoalGroups.add(
+      _MonthLongGoalGroupData(
+        longGoal: activeLongGoalText,
+        rows: List<_MonthDomainData>.from(activeRows),
+      ),
+    );
+    activeRows.clear();
+    activeLongGoalKey = null;
+    activeLongGoalText = '';
+  }
+
+  void flushDomain() {
+    if (activeDomainKey == null) {
+      return;
+    }
+    flushLongGoal();
+    result.add(
+      _MonthDomainGroupData(
+        domain: activeDomainText,
+        longGoalGroups:
+            List<_MonthLongGoalGroupData>.from(activeLongGoalGroups),
+      ),
+    );
+    activeLongGoalGroups.clear();
+    activeDomainKey = null;
+    activeDomainText = '';
+  }
+
+  for (final _MonthDomainData row in rows) {
+    final String domainKey = row.domain.trim();
+    final String longGoalKey = row.longGoal.trim();
+    if (activeDomainKey != domainKey) {
+      flushDomain();
+      activeDomainKey = domainKey;
+      activeDomainText = row.domain;
+    }
+    if (activeLongGoalKey != longGoalKey) {
+      flushLongGoal();
+      activeLongGoalKey = longGoalKey;
+      activeLongGoalText = row.longGoal;
+    }
+    activeRows.add(row);
+  }
+
+  flushDomain();
+  return result;
+}
+
 _WeekTrainingRow _weekTrainingRowFromPlanRow(IepWeeklyPlanRow row) {
   return _WeekTrainingRow(
     project: row.project,

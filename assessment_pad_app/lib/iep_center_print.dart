@@ -240,7 +240,7 @@ List<pw.Widget> _iepMonthPrintWidgets({
   required DateTimeRange monthRange,
 }) {
   const List<int> columns = _iepMonthPrintColumns;
-  final List<_MonthDomainData> domains = plan.rows
+  final List<_MonthDomainData> rows = plan.rows
       .map(_monthDomainFromPlanRow)
       .where((_MonthDomainData item) =>
           item.domain.trim().isNotEmpty ||
@@ -249,6 +249,7 @@ List<pw.Widget> _iepMonthPrintWidgets({
             (_MonthTrainingData training) => training.content.trim().isNotEmpty,
           ))
       .toList();
+  final List<_MonthDomainGroupData> domainGroups = _groupMonthDomainRows(rows);
   return <pw.Widget>[
     _iepPrintTitle(
       plan.title.trim().isEmpty ? '康复教学$monthLabel计划' : plan.title,
@@ -287,94 +288,87 @@ List<pw.Widget> _iepMonthPrintWidgets({
       _IepPrintCell('课程\n形式', 1, bold: true),
       _IepPrintCell('起止日期', 2, bold: true),
     ]),
-    ...domains.expand((domain) => _iepMonthDomainWidgets(
-        context, tableWidth, columns, domain, monthRange)),
+    ...domainGroups.expand((domainGroup) => _iepMonthDomainGroupWidgets(
+          context,
+          tableWidth,
+          columns,
+          domainGroup,
+          monthRange,
+        )),
   ];
 }
 
-List<pw.Widget> _iepMonthDomainWidgets(
+List<pw.Widget> _iepMonthDomainGroupWidgets(
   pw.Context context,
   double tableWidth,
   List<int> columns,
-  _MonthDomainData domain,
+  _MonthDomainGroupData domainGroup,
   DateTimeRange monthRange,
 ) {
-  final List<_MonthTrainingData> trainings = domain.trainings.isEmpty
-      ? <_MonthTrainingData>[const _MonthTrainingData('', '')]
-      : domain.trainings;
-  final List<double> rowHeights = trainings.map((training) {
-    return _iepMeasuredSpanningRowHeight(
-      context,
-      tableWidth,
-      columns,
-      <_IepSpanningCell>[
-        _IepSpanningCell(
-          startColumn: 5,
-          columnSpan: 4,
-          text: training.content,
-          align: pw.TextAlign.left,
-        ),
-        _IepSpanningCell(
-          startColumn: 10,
-          columnSpan: 2,
-          text: training.period,
-        ),
-      ],
-      minHeight: 42,
-    );
-  }).toList();
-  final double mergedHeight = math.max(
-    _iepMeasuredPrintCellHeight(
-      context,
-      _IepPrintCell(domain.longGoal, 2, align: pw.TextAlign.left),
-      _iepColumnWidth(columns, 1, 2, tableWidth),
-      minHeight: 80,
-    ),
-    _iepMeasuredPrintCellHeight(
-      context,
-      _IepPrintCell(domain.shortGoal, 2, align: pw.TextAlign.left),
-      _iepColumnWidth(columns, 3, 2, tableWidth),
-      minHeight: 80,
-    ),
-  );
-  final double rowsHeight =
-      rowHeights.fold<double>(0, (double sum, double item) => sum + item);
-  if (mergedHeight > rowsHeight && rowHeights.isNotEmpty) {
-    final double extra = (mergedHeight - rowsHeight) / rowHeights.length;
-    for (int index = 0; index < rowHeights.length; index += 1) {
-      rowHeights[index] += extra;
-    }
-  }
-  return <pw.Widget>[
-    _IepSpanningPrintTable(
-      columns: columns,
-      rowHeights: rowHeights,
-      mergedCells: <_IepSpanningMergedCell>[
-        _IepSpanningMergedCell(
-          startColumn: 0,
-          columnSpan: 1,
-          text: domain.domain,
-          bold: true,
-        ),
-        _IepSpanningMergedCell(
-          startColumn: 1,
-          columnSpan: 2,
-          text: domain.longGoal,
-          align: pw.TextAlign.left,
-        ),
-        _IepSpanningMergedCell(
-          startColumn: 3,
-          columnSpan: 2,
-          text: domain.shortGoal,
-          align: pw.TextAlign.left,
-        ),
-        _IepSpanningMergedCell(
-          startColumn: 9,
-          columnSpan: 1,
-          text: domain.lesson,
-        ),
-      ],
-      rowCells: trainings.asMap().entries.map((entry) {
+  final List<double> rowHeights = <double>[];
+  final List<List<_IepSpanningCell>> rowCells = <List<_IepSpanningCell>>[];
+  final List<_IepSpanningMergedCell> mergedCells = <_IepSpanningMergedCell>[];
+  final double domainWidth = _iepColumnWidth(columns, 0, 1, tableWidth);
+  final double longGoalWidth = _iepColumnWidth(columns, 1, 2, tableWidth);
+  final double shortGoalWidth = _iepColumnWidth(columns, 3, 2, tableWidth);
+  final double lessonWidth = _iepColumnWidth(columns, 9, 1, tableWidth);
+
+  for (final _MonthLongGoalGroupData longGoalGroup
+      in domainGroup.longGoalGroups) {
+    final int longGoalStart = rowHeights.length;
+    for (final _MonthDomainData row in longGoalGroup.rows) {
+      final List<_MonthTrainingData> trainings = row.trainings.isEmpty
+          ? <_MonthTrainingData>[const _MonthTrainingData('', '')]
+          : row.trainings;
+      final int rowStart = rowHeights.length;
+      final List<double> trainingHeights =
+          trainings.asMap().entries.map((entry) {
+        return _iepMeasuredSpanningRowHeight(
+          context,
+          tableWidth,
+          columns,
+          <_IepSpanningCell>[
+            _IepSpanningCell(
+              startColumn: 5,
+              columnSpan: 4,
+              text: entry.value.content,
+              align: pw.TextAlign.left,
+            ),
+            _IepSpanningCell(
+              startColumn: 10,
+              columnSpan: 2,
+              text: _monthTrainingPeriodText(monthRange, entry.key),
+            ),
+          ],
+          minHeight: 42,
+        );
+      }).toList();
+      final double shortGoalHeight = _iepMeasuredPrintCellHeight(
+        context,
+        _IepPrintCell(row.shortGoal, 2, align: pw.TextAlign.left),
+        shortGoalWidth,
+        minHeight: 80,
+      );
+      final double lessonHeight = _iepMeasuredPrintCellHeight(
+        context,
+        _IepPrintCell(row.lesson, 1),
+        lessonWidth,
+        minHeight: 42,
+      );
+      final double rowTargetHeight = math.max(shortGoalHeight, lessonHeight);
+      final double currentRowHeight = trainingHeights.fold<double>(
+        0,
+        (double sum, double item) => sum + item,
+      );
+      if (rowTargetHeight > currentRowHeight) {
+        final double extra =
+            (rowTargetHeight - currentRowHeight) / trainingHeights.length;
+        for (int index = 0; index < trainingHeights.length; index += 1) {
+          trainingHeights[index] += extra;
+        }
+      }
+      rowHeights.addAll(trainingHeights);
+      rowCells.addAll(trainings.asMap().entries.map((entry) {
         return <_IepSpanningCell>[
           _IepSpanningCell(
             startColumn: 5,
@@ -388,7 +382,95 @@ List<pw.Widget> _iepMonthDomainWidgets(
             text: _monthTrainingPeriodText(monthRange, entry.key),
           ),
         ];
-      }).toList(),
+      }));
+      final int rowSpan = trainingHeights.length;
+      mergedCells.add(
+        _IepSpanningMergedCell(
+          startColumn: 3,
+          columnSpan: 2,
+          startRow: rowStart,
+          rowSpan: rowSpan,
+          text: row.shortGoal,
+          align: pw.TextAlign.left,
+        ),
+      );
+      mergedCells.add(
+        _IepSpanningMergedCell(
+          startColumn: 9,
+          columnSpan: 1,
+          startRow: rowStart,
+          rowSpan: rowSpan,
+          text: row.lesson,
+        ),
+      );
+    }
+    final int longGoalRowSpan = rowHeights.length - longGoalStart;
+    if (longGoalRowSpan > 0) {
+      final double longGoalHeight = _iepMeasuredPrintCellHeight(
+        context,
+        _IepPrintCell(longGoalGroup.longGoal, 2, align: pw.TextAlign.left),
+        longGoalWidth,
+        minHeight: 80,
+      );
+      final double currentLongGoalHeight =
+          _iepRowHeightTotal(rowHeights, longGoalStart, rowHeights.length);
+      if (longGoalHeight > currentLongGoalHeight) {
+        _distributeIepRowHeightExtra(
+          rowHeights,
+          longGoalStart,
+          rowHeights.length,
+          longGoalHeight - currentLongGoalHeight,
+        );
+      }
+      mergedCells.add(
+        _IepSpanningMergedCell(
+          startColumn: 1,
+          columnSpan: 2,
+          startRow: longGoalStart,
+          rowSpan: longGoalRowSpan,
+          text: longGoalGroup.longGoal,
+          align: pw.TextAlign.left,
+        ),
+      );
+    }
+  }
+
+  if (rowHeights.isNotEmpty) {
+    final double domainHeight = _iepMeasuredPrintCellHeight(
+      context,
+      _IepPrintCell(domainGroup.domain, 1, bold: true),
+      domainWidth,
+      minHeight: 42,
+    );
+    final double currentDomainHeight =
+        _iepRowHeightTotal(rowHeights, 0, rowHeights.length);
+    if (domainHeight > currentDomainHeight) {
+      _distributeIepRowHeightExtra(
+        rowHeights,
+        0,
+        rowHeights.length,
+        domainHeight - currentDomainHeight,
+      );
+    }
+    mergedCells.insert(
+      0,
+      _IepSpanningMergedCell(
+        startColumn: 0,
+        columnSpan: 1,
+        startRow: 0,
+        rowSpan: rowHeights.length,
+        text: domainGroup.domain,
+        bold: true,
+      ),
+    );
+  }
+
+  return <pw.Widget>[
+    _IepSpanningPrintTable(
+      columns: columns,
+      rowHeights: rowHeights,
+      mergedCells: mergedCells,
+      rowCells: rowCells,
     ),
   ];
 }
@@ -568,9 +650,14 @@ class _IepSpanningMergedCell extends _IepSpanningCell {
     required super.startColumn,
     required super.columnSpan,
     required super.text,
+    this.startRow = 0,
+    this.rowSpan = -1,
     super.bold = false,
     super.align = pw.TextAlign.center,
   });
+
+  final int startRow;
+  final int rowSpan;
 }
 
 class _IepSpanningPrintTableContext extends pw.WidgetContext {
@@ -675,18 +762,27 @@ class _IepSpanningPrintTable extends pw.Widget with pw.SpanningWidget {
     final double segmentHeight = _segmentHeight(start, end);
 
     for (final _IepSpanningMergedCell cell in mergedCells) {
+      final int cellStart = cell.startRow.clamp(0, rowHeights.length);
+      final int cellEnd = cell.rowSpan < 0
+          ? rowHeights.length
+          : math.min(rowHeights.length, cellStart + cell.rowSpan);
+      final int visibleStart = math.max(cellStart, start);
+      final int visibleEnd = math.min(cellEnd, end);
+      if (visibleStart >= visibleEnd) {
+        continue;
+      }
       final PdfRect rect = _cellRect(
         xPositions,
         cell.startColumn,
         cell.columnSpan,
-        0,
-        segmentHeight,
+        _segmentHeight(visibleEnd, end),
+        _segmentHeight(visibleStart, visibleEnd),
       );
       _drawBorder(context, rect);
       _paintTextInRect(
         context,
         rect,
-        start == 0 ? cell.text : '',
+        visibleStart == cellStart ? cell.text : '',
         bold: cell.bold,
         align: cell.align,
       );
@@ -786,6 +882,31 @@ class _IepSpanningPrintTable extends pw.Widget with pw.SpanningWidget {
     );
     child.box = rect;
     child.paint(context);
+  }
+}
+
+double _iepRowHeightTotal(List<double> heights, int start, int end) {
+  return heights
+      .sublist(start, end)
+      .fold<double>(0, (double sum, double item) => sum + item);
+}
+
+void _distributeIepRowHeightExtra(
+  List<double> heights,
+  int start,
+  int end,
+  double extra,
+) {
+  if (extra <= 0) {
+    return;
+  }
+  final int span = end - start;
+  if (span <= 0) {
+    return;
+  }
+  final double delta = extra / span;
+  for (int index = start; index < end; index += 1) {
+    heights[index] += delta;
   }
 }
 

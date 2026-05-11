@@ -136,31 +136,117 @@ func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 	builder.WriteString(buildIEPCell([]string{"课程", "形式"}, widths[9], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{"起止日期"}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
 	builder.WriteString(`</w:tr>`)
-	for _, row := range plan.Rows {
-		items := monthlyTrainingItemsForWord(row, plan.Meta.StartDate, plan.Meta.EndDate)
-		for index, item := range items {
-			builder.WriteString(buildIEPTableRowStart(620))
-			if index == 0 {
-				builder.WriteString(buildIEPCell([]string{row.Domain}, widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
-				builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "restart", VAlign: "center", IndentLeft: 120}))
-				builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "restart", VAlign: "center", IndentLeft: 120}))
-			} else {
-				builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
-				builder.WriteString(buildIEPCell(nil, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "continue"}))
-				builder.WriteString(buildIEPCell(nil, sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "continue"}))
+	for _, domainGroup := range groupPEP3MonthlyPlanRows(plan.Rows) {
+		firstDomainRow := true
+		for _, longGoalGroup := range domainGroup.LongGoalGroups {
+			firstLongGoalRow := true
+			for _, row := range longGoalGroup.Rows {
+				items := monthlyTrainingItemsForWord(row, plan.Meta.StartDate, plan.Meta.EndDate)
+				for index, item := range items {
+					builder.WriteString(buildIEPTableRowStart(620))
+					if firstDomainRow && index == 0 {
+						builder.WriteString(buildIEPCell([]string{domainGroup.Domain}, widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
+					} else {
+						builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
+					}
+					if firstLongGoalRow && index == 0 {
+						builder.WriteString(buildIEPCell(splitWordLines(longGoalGroup.LongGoal), sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "restart", VAlign: "center", IndentLeft: 120}))
+					} else {
+						builder.WriteString(buildIEPCell(nil, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "continue"}))
+					}
+					if index == 0 {
+						builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "restart", VAlign: "center", IndentLeft: 120}))
+					} else {
+						builder.WriteString(buildIEPCell(nil, sumInts(widths[3], widths[4]), iepPlanWordCellOptions{GridSpan: 2, VMerge: "continue"}))
+					}
+					builder.WriteString(buildIEPCell(splitWordLines(fmt.Sprintf("%d. %s", index+1, item.Content)), sumInts(widths[5], widths[6], widths[7], widths[8]), iepPlanWordCellOptions{GridSpan: 4, VAlign: "center", IndentLeft: 120}))
+					if index == 0 {
+						builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[9], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
+					} else {
+						builder.WriteString(buildIEPCell(nil, widths[9], iepPlanWordCellOptions{VMerge: "continue"}))
+					}
+					builder.WriteString(buildIEPCell([]string{item.StartEndDate}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", CompactParagraph: true}))
+					builder.WriteString(`</w:tr>`)
+				}
+				firstDomainRow = false
+				firstLongGoalRow = false
 			}
-			builder.WriteString(buildIEPCell(splitWordLines(fmt.Sprintf("%d. %s", index+1, item.Content)), sumInts(widths[5], widths[6], widths[7], widths[8]), iepPlanWordCellOptions{GridSpan: 4, VAlign: "center", IndentLeft: 120}))
-			if index == 0 {
-				builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[9], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
-			} else {
-				builder.WriteString(buildIEPCell(nil, widths[9], iepPlanWordCellOptions{VMerge: "continue"}))
-			}
-			builder.WriteString(buildIEPCell([]string{item.StartEndDate}, sumInts(widths[10], widths[11]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", CompactParagraph: true}))
-			builder.WriteString(`</w:tr>`)
 		}
 	}
 	builder.WriteString(`</w:tbl>`)
 	return builder.String()
+}
+
+type pep3MonthlyPlanDomainGroup struct {
+	Domain         string
+	LongGoalGroups []pep3MonthlyPlanLongGoalGroup
+}
+
+type pep3MonthlyPlanLongGoalGroup struct {
+	LongGoal string
+	Rows     []model.PEP3MonthlyPlanRow
+}
+
+func groupPEP3MonthlyPlanRows(rows []model.PEP3MonthlyPlanRow) []pep3MonthlyPlanDomainGroup {
+	if len(rows) == 0 {
+		return nil
+	}
+	result := make([]pep3MonthlyPlanDomainGroup, 0)
+	var (
+		activeDomainKey    string
+		activeDomain       pep3MonthlyPlanDomainGroup
+		activeLongGoalKey  string
+		activeLongGoalRows []model.PEP3MonthlyPlanRow
+		activeLongGoalText string
+		hasDomain          bool
+		hasLongGoal        bool
+	)
+
+	flushLongGoal := func() {
+		if !hasLongGoal {
+			return
+		}
+		activeDomain.LongGoalGroups = append(activeDomain.LongGoalGroups, pep3MonthlyPlanLongGoalGroup{
+			LongGoal: activeLongGoalText,
+			Rows:     append([]model.PEP3MonthlyPlanRow(nil), activeLongGoalRows...),
+		})
+		activeLongGoalRows = activeLongGoalRows[:0]
+		activeLongGoalKey = ""
+		activeLongGoalText = ""
+		hasLongGoal = false
+	}
+
+	flushDomain := func() {
+		if !hasDomain {
+			return
+		}
+		flushLongGoal()
+		result = append(result, activeDomain)
+		activeDomain = pep3MonthlyPlanDomainGroup{}
+		activeDomainKey = ""
+		hasDomain = false
+	}
+
+	for _, row := range rows {
+		domainKey := strings.TrimSpace(row.Domain)
+		longGoalKey := strings.TrimSpace(row.LongGoal)
+		if !hasDomain || activeDomainKey != domainKey {
+			flushDomain()
+			activeDomainKey = domainKey
+			activeDomain = pep3MonthlyPlanDomainGroup{Domain: row.Domain}
+			hasDomain = true
+		}
+		if !hasLongGoal || activeLongGoalKey != longGoalKey {
+			flushLongGoal()
+			activeLongGoalKey = longGoalKey
+			activeLongGoalText = row.LongGoal
+			hasLongGoal = true
+		}
+		activeLongGoalRows = append(activeLongGoalRows, row)
+	}
+
+	flushDomain()
+	return result
 }
 
 func monthlyTrainingItemsForWord(row model.PEP3MonthlyPlanRow, startDate, endDate string) []model.PEP3MonthlyTrainingItem {
