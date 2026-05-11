@@ -126,12 +126,16 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
   int _selectedTaskIndex = 0;
   int _selectedDateIndex = 0;
   List<List<String>> _taskCompletionCodes = <List<String>>[];
+  String _courseName = '康复教学';
 
   @override
   void initState() {
     super.initState();
     _taskCompletionCodes = _normalizedCompletionCodes(widget.draft);
     _selectedDateIndex = _initialSelectedDateIndexFor(widget.draft);
+    _courseName = widget.draft.courseName.trim().isEmpty
+        ? '康复教学'
+        : widget.draft.courseName.trim();
   }
 
   @override
@@ -141,6 +145,9 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
       _taskCompletionCodes = _normalizedCompletionCodes(widget.draft);
       _selectedTaskIndex = 0;
       _selectedDateIndex = _initialSelectedDateIndexFor(widget.draft);
+      _courseName = widget.draft.courseName.trim().isEmpty
+          ? '康复教学'
+          : widget.draft.courseName.trim();
     }
   }
 
@@ -193,6 +200,24 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
     next[taskIndex][dateIndex] = next[taskIndex][dateIndex] == code ? '' : code;
     setState(() {
       _taskCompletionCodes = next;
+    });
+  }
+
+  Future<void> _editCourseName() async {
+    final String? value = await showDialog<String>(
+      context: context,
+      barrierDismissible: true,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepLessonCourseNameDialog(initialValue: _courseName),
+        );
+      },
+    );
+    if (!mounted || value == null || value == _courseName) {
+      return;
+    }
+    setState(() {
+      _courseName = value;
     });
   }
 
@@ -277,6 +302,8 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage> {
                   task: selectedTask,
                   taskIndex: selectedIndex,
                   selectedDateLabel: selectedDateLabel,
+                  courseName: _courseName,
+                  onEditCourseName: _editCourseName,
                   hasPreviousTask: tasks.isNotEmpty && selectedIndex > 0,
                   hasNextTask:
                       tasks.isNotEmpty && selectedIndex < tasks.length - 1,
@@ -692,33 +719,36 @@ class _IepLessonTaskCard extends StatelessWidget {
               border: Border.all(color: borderColor),
             ),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Container(
-                  width: 28,
-                  height: 28,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: leadingColor.withOpacity(selected ? .12 : .08),
-                    borderRadius: BorderRadius.circular(9),
+                Padding(
+                  padding: const EdgeInsets.only(top: 2),
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: leadingColor.withOpacity(selected ? .12 : .08),
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: recorded
+                        ? Text(
+                            currentCode,
+                            style: TextStyle(
+                              color: leadingColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          )
+                        : Text(
+                            '${index + 1}',
+                            style: TextStyle(
+                              color: leadingColor,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
                   ),
-                  child: recorded
-                      ? Text(
-                          currentCode,
-                          style: TextStyle(
-                            color: leadingColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        )
-                      : Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            color: leadingColor,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -859,6 +889,8 @@ class _IepLessonMainPanel extends StatelessWidget {
     required this.task,
     required this.taskIndex,
     required this.selectedDateLabel,
+    required this.courseName,
+    required this.onEditCourseName,
     required this.hasPreviousTask,
     required this.hasNextTask,
     required this.onPreviousTask,
@@ -869,6 +901,8 @@ class _IepLessonMainPanel extends StatelessWidget {
   final _IepLessonTaskDraft? task;
   final int taskIndex;
   final String selectedDateLabel;
+  final String courseName;
+  final VoidCallback onEditCourseName;
   final bool hasPreviousTask;
   final bool hasNextTask;
   final VoidCallback? onPreviousTask;
@@ -907,7 +941,8 @@ class _IepLessonMainPanel extends StatelessWidget {
                 const SizedBox(height: 10),
                 _IepLessonMetaStrip(
                   teacherName: draft.teacherName,
-                  courseName: draft.courseName,
+                  courseName: courseName,
+                  onEditCourseName: onEditCourseName,
                   selectedDateLabel: selectedDateLabel,
                 ),
                 const SizedBox(height: 12),
@@ -953,11 +988,13 @@ class _IepLessonMetaStrip extends StatelessWidget {
   const _IepLessonMetaStrip({
     required this.teacherName,
     required this.courseName,
+    required this.onEditCourseName,
     required this.selectedDateLabel,
   });
 
   final String teacherName;
   final String courseName;
+  final VoidCallback onEditCourseName;
   final String selectedDateLabel;
 
   @override
@@ -980,9 +1017,10 @@ class _IepLessonMetaStrip extends StatelessWidget {
           ),
           const _IepLessonMetaDivider(),
           Expanded(
-            child: _IepLessonMetaItem(
+            child: _IepLessonEditableMetaItem(
               label: '课程名称',
               value: courseName,
+              onTap: onEditCourseName,
             ),
           ),
           const _IepLessonMetaDivider(),
@@ -1038,6 +1076,67 @@ class _IepLessonMetaItem extends StatelessWidget {
   }
 }
 
+class _IepLessonEditableMetaItem extends StatelessWidget {
+  const _IepLessonEditableMetaItem({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _IepColors.muted,
+                  fontSize: 11,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 5),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      value.trim().isEmpty ? '-' : value.trim(),
+                      style: const TextStyle(
+                        color: _IepColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                        height: 1.35,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  const Icon(
+                    Icons.edit_outlined,
+                    size: 14,
+                    color: _IepColors.muted,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _IepLessonMetaDivider extends StatelessWidget {
   const _IepLessonMetaDivider();
 
@@ -1047,6 +1146,190 @@ class _IepLessonMetaDivider extends StatelessWidget {
       width: 1,
       height: 34,
       color: _IepColors.lightLine,
+    );
+  }
+}
+
+class _IepLessonCourseNameDialog extends StatefulWidget {
+  const _IepLessonCourseNameDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_IepLessonCourseNameDialog> createState() =>
+      _IepLessonCourseNameDialogState();
+}
+
+class _IepLessonCourseNameDialogState
+    extends State<_IepLessonCourseNameDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(
+      text: widget.initialValue.trim().isEmpty ? '康复教学' : widget.initialValue,
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      alignment: const Alignment(0, -0.18),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 420,
+        padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '编辑课程名称',
+                  style: TextStyle(
+                    color: _IepColors.ink,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            const Text(
+              '课程名称',
+              style: TextStyle(
+                color: _IepColors.text,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextField(
+              controller: _controller,
+              autofocus: true,
+              style: const TextStyle(
+                color: _IepColors.ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                height: 1.35,
+              ),
+              decoration: InputDecoration(
+                isDense: true,
+                filled: true,
+                fillColor: Colors.white,
+                hintText: '请输入课程名称',
+                hintStyle: const TextStyle(
+                  color: _IepColors.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 11,
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: _IepColors.line),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(
+                    color: _IepColors.orange,
+                    width: 1.2,
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 18),
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: _IepLessonDialogButton(
+                    label: '取消',
+                    primary: false,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: _IepLessonDialogButton(
+                    label: '确定',
+                    primary: true,
+                    onTap: () => Navigator.of(context).pop(
+                      _controller.text.trim().isEmpty
+                          ? '康复教学'
+                          : _controller.text.trim(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _IepLessonDialogButton extends StatelessWidget {
+  const _IepLessonDialogButton({
+    required this.label,
+    required this.primary,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Container(
+          height: 44,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: primary ? _IepColors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: primary ? _IepColors.orange : _IepColors.line,
+            ),
+          ),
+          child: Text(
+            label,
+            style: TextStyle(
+              color: primary ? Colors.white : _IepColors.text,
+              fontSize: 14,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1539,16 +1822,18 @@ class _IepLessonCodeGrid extends StatelessWidget {
         return Wrap(
           spacing: 12,
           runSpacing: 12,
-          children: codes.map((String code) {
+          children: List<Widget>.generate(codes.length, (int index) {
+            final String code = codes[index];
+            final bool isLast = index == codes.length - 1;
             return _IepLessonCodeCard(
               code: code,
               label: _lessonCodeLabel(code),
-              width: itemWidth,
+              width: isLast ? constraints.maxWidth : itemWidth,
               selected: currentCode == code,
               enabled: enabled,
               onTap: () => onCodeSelected(code),
             );
-          }).toList(),
+          }),
         );
       },
     );
