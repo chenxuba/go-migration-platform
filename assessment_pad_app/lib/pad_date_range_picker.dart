@@ -292,7 +292,8 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
               onSelect: _selectDay,
             ),
             const SizedBox(height: 18),
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
                 Text(
                   widget.helperText,
@@ -300,18 +301,24 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
                     color: _PickerColors.muted,
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
+                    height: 1.35,
                   ),
                 ),
-                const Spacer(),
-                _DialogActionButton(
-                  label: '取消',
-                  onTap: widget.onCancel,
-                ),
-                const SizedBox(width: 10),
-                _DialogActionButton(
-                  label: '确定',
-                  filled: true,
-                  onTap: () => widget.onSubmit(_selectedDate),
+                const SizedBox(height: 14),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    _DialogActionButton(
+                      label: '取消',
+                      onTap: widget.onCancel,
+                    ),
+                    const SizedBox(width: 10),
+                    _DialogActionButton(
+                      label: '确定',
+                      filled: true,
+                      onTap: () => widget.onSubmit(_selectedDate),
+                    ),
+                  ],
                 ),
               ],
             ),
