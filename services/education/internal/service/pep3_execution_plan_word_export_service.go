@@ -296,16 +296,16 @@ func buildPEP3WeeklyPlanTable(plan model.PEP3WeeklyPlanAIResult) string {
 	builder.WriteString(buildIEPCell([]string{plan.Student.BirthDate}, sumInts(widths[6], widths[7], widths[8], widths[9]), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center"}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(620))
-	builder.WriteString(buildIEPCell([]string{"任教", "老师"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"任教", "老师"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
 	builder.WriteString(buildIEPCell([]string{plan.TeacherName}, widths[1], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-	builder.WriteString(buildIEPCell([]string{"课程", "名称"}, widths[2], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"课程", "名称"}, widths[2], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
 	builder.WriteString(buildIEPCell(splitWordLines(plan.CourseName), widths[3], iepPlanWordCellOptions{Align: "center", VAlign: "center", CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{"训练日期"}, sumInts(widths[4], widths[5]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", NoWrap: true, Bold: true, CompactParagraph: true}))
 	builder.WriteString(buildIEPCell([]string{plan.TrainingDate}, sumInts(widths[6], widths[7], widths[8], widths[9]), iepPlanWordCellOptions{GridSpan: 4, Align: "center", VAlign: "center", NoWrap: true}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(760))
-	builder.WriteString(buildIEPCell([]string{"训练前", "准备"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
-	builder.WriteString(buildIEPCell(splitWordLines(plan.Preparation), sumInts(widths[1], widths[2], widths[3], widths[4], widths[5], widths[6], widths[7], widths[8], widths[9]), iepPlanWordCellOptions{GridSpan: 9, VAlign: "center", IndentLeft: 120, PaddingRight: 48, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
+	builder.WriteString(buildIEPCell([]string{"训练前", "准备"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
+	builder.WriteString(buildIEPCell(splitWordLines(plan.Preparation), sumInts(widths[1], widths[2], widths[3], widths[4], widths[5], widths[6], widths[7], widths[8], widths[9]), iepPlanWordCellOptions{GridSpan: 9, VAlign: "center", IndentLeft: 120, PaddingRight: 48, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 190}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(540))
 	builder.WriteString(buildIEPCell([]string{"训练项目"}, widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true}))
@@ -321,8 +321,8 @@ func buildPEP3WeeklyPlanTable(plan model.PEP3WeeklyPlanAIResult) string {
 	builder.WriteString(`</w:tr>`)
 	for _, row := range plan.Rows {
 		builder.WriteString(buildIEPTableRowStart(720))
-		builder.WriteString(buildIEPCell(splitWordLines(row.Project), widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center"}))
-		builder.WriteString(buildIEPCell(splitWordLines(row.Content), sumInts(widths[1], widths[2], widths[3]), iepPlanWordCellOptions{GridSpan: 3, VAlign: "center", IndentLeft: 120, PaddingRight: 48, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
+		builder.WriteString(buildIEPCell(splitWordLines(row.Project), widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", CompactParagraph: true, LineSpacing: 200}))
+		builder.WriteString(buildIEPCell(splitWordLines(row.Content), sumInts(widths[1], widths[2], widths[3]), iepPlanWordCellOptions{GridSpan: 3, VAlign: "center", IndentLeft: 120, PaddingRight: 48, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 190}))
 		for index := range weekDateLabels {
 			value := ""
 			if index < len(row.Completion) {
