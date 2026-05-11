@@ -161,6 +161,9 @@ class _IepLessonSessionPage extends StatefulWidget {
 class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
     with WidgetsBindingObserver {
   static const String _authTokenStorageKey = 'auth_token';
+  static const String _autoAdvanceTaskStorageKey =
+      'iep_lesson_auto_advance_task';
+  static const Duration _autoAdvanceTaskDelay = Duration(milliseconds: 320);
 
   int _selectedTaskIndex = 0;
   int _selectedDateIndex = 0;
@@ -169,12 +172,14 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   late IepWeeklyPlan _weeklyPlan;
   late IepLessonSession _lessonSession;
   int _displayElapsedSeconds = 0;
+  bool _autoAdvanceTask = false;
   bool _weeklyPlanDirty = false;
   bool _needsResave = false;
   int _weeklyPlanRevision = 0;
   Future<bool>? _activeSaveFuture;
   Timer? _lessonClockTimer;
   Timer? _lessonHeartbeatTimer;
+  Timer? _autoAdvanceTaskTimer;
   bool _sessionPausedByLifecycle = false;
   bool _closingPage = false;
   final PadMessageOverlayController _messageController =
@@ -192,6 +197,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
         : widget.draft.courseName.trim();
     _lessonSession = widget.draft.lessonSession;
     _displayElapsedSeconds = _lessonSession.elapsedSeconds;
+    _loadAutoAdvanceTaskPreference();
     _syncLessonRuntime();
   }
 
@@ -212,10 +218,67 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       _needsResave = false;
       _weeklyPlanRevision = 0;
       _activeSaveFuture = null;
+      _cancelAutoAdvanceTask();
       _sessionPausedByLifecycle = false;
       _closingPage = false;
       _syncLessonRuntime();
     }
+  }
+
+  Future<void> _loadAutoAdvanceTaskPreference() async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final bool value = prefs.getBool(_autoAdvanceTaskStorageKey) ?? false;
+    if (!mounted || value == _autoAdvanceTask) {
+      return;
+    }
+    setState(() {
+      _autoAdvanceTask = value;
+    });
+  }
+
+  Future<void> _updateAutoAdvanceTask(bool value) async {
+    if (_autoAdvanceTask == value) {
+      return;
+    }
+    if (!value) {
+      _cancelAutoAdvanceTask();
+    }
+    setState(() {
+      _autoAdvanceTask = value;
+    });
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoAdvanceTaskStorageKey, value);
+  }
+
+  void _cancelAutoAdvanceTask() {
+    _autoAdvanceTaskTimer?.cancel();
+    _autoAdvanceTaskTimer = null;
+  }
+
+  void _scheduleAutoAdvanceTask({
+    required int taskIndex,
+    required int dateIndex,
+    required String expectedCode,
+  }) {
+    _cancelAutoAdvanceTask();
+    _autoAdvanceTaskTimer = Timer(_autoAdvanceTaskDelay, () {
+      if (!mounted ||
+          !_autoAdvanceTask ||
+          taskIndex < 0 ||
+          taskIndex >= _taskCompletionCodes.length - 1 ||
+          _selectedTaskIndex != taskIndex) {
+        return;
+      }
+      final List<String> taskCodes = _taskCompletionCodes[taskIndex];
+      if (dateIndex < 0 ||
+          dateIndex >= taskCodes.length ||
+          taskCodes[dateIndex].trim() != expectedCode) {
+        return;
+      }
+      setState(() {
+        _selectedTaskIndex = taskIndex + 1;
+      });
+    });
   }
 
   @override
@@ -241,6 +304,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _cancelAutoAdvanceTask();
     _stopLessonRuntime();
     super.dispose();
   }
@@ -723,14 +787,28 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
       0,
       math.max(0, taskCodes.length - 1),
     );
+    final String previousCode = taskCodes[dateIndex].trim();
     final List<List<String>> next = _taskCompletionCodes
         .map((List<String> item) => List<String>.from(item))
         .toList(growable: false);
     next[taskIndex][dateIndex] = next[taskIndex][dateIndex] == code ? '' : code;
+    final String nextCode = next[taskIndex][dateIndex].trim();
+    final bool shouldAdvance = _autoAdvanceTask &&
+        nextCode.isNotEmpty &&
+        nextCode != previousCode &&
+        taskIndex < _taskCompletionCodes.length - 1;
     setState(() {
       _taskCompletionCodes = next;
       _markWeeklyPlanDirty();
     });
+    _cancelAutoAdvanceTask();
+    if (shouldAdvance) {
+      _scheduleAutoAdvanceTask(
+        taskIndex: taskIndex,
+        dateIndex: dateIndex,
+        expectedCode: nextCode,
+      );
+    }
     _queueWeeklyPlanSave();
   }
 
@@ -1025,6 +1103,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
                     recordedCount: recordedCount,
                     completionCodes: _taskCompletionCodes,
                     onTaskSelected: (int index) {
+                      _cancelAutoAdvanceTask();
                       setState(() {
                         _selectedTaskIndex = index;
                       });
@@ -1048,6 +1127,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
                         tasks.isNotEmpty && selectedIndex < tasks.length - 1,
                     onPreviousTask: tasks.isNotEmpty && selectedIndex > 0
                         ? () {
+                            _cancelAutoAdvanceTask();
                             setState(() {
                               _selectedTaskIndex = selectedIndex - 1;
                             });
@@ -1056,6 +1136,7 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
                     onNextTask:
                         tasks.isNotEmpty && selectedIndex < tasks.length - 1
                             ? () {
+                                _cancelAutoAdvanceTask();
                                 setState(() {
                                   _selectedTaskIndex = selectedIndex + 1;
                                 });
@@ -1076,6 +1157,10 @@ class _IepLessonSessionPageState extends State<_IepLessonSessionPage>
                         : const <String>[],
                     weekDateOptions: weekDateOptions,
                     selectedDateIndex: selectedDateIndex,
+                    autoAdvanceTask: _autoAdvanceTask,
+                    onAutoAdvanceTaskChanged: (bool value) {
+                      unawaited(_updateAutoAdvanceTask(value));
+                    },
                     onCodeSelected: _updateCompletionCode,
                     selectedDateLabel: selectedDateLabel,
                   ),
@@ -2588,6 +2673,8 @@ class _IepLessonRecordPanel extends StatelessWidget {
     required this.currentCodes,
     required this.weekDateOptions,
     required this.selectedDateIndex,
+    required this.autoAdvanceTask,
+    required this.onAutoAdvanceTaskChanged,
     required this.onCodeSelected,
     required this.selectedDateLabel,
   });
@@ -2597,6 +2684,8 @@ class _IepLessonRecordPanel extends StatelessWidget {
   final List<String> currentCodes;
   final List<String> weekDateOptions;
   final int selectedDateIndex;
+  final bool autoAdvanceTask;
+  final ValueChanged<bool> onAutoAdvanceTaskChanged;
   final ValueChanged<String> onCodeSelected;
   final String selectedDateLabel;
 
@@ -2622,13 +2711,55 @@ class _IepLessonRecordPanel extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          const Text(
-            '记录区域',
-            style: TextStyle(
-              color: _IepColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-            ),
+          Row(
+            children: <Widget>[
+              const Text(
+                '记录区域',
+                style: TextStyle(
+                  color: _IepColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding: const EdgeInsets.fromLTRB(10, 6, 6, 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFBF7),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _IepColors.lightLine),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[
+                    Text(
+                      '自动下一题',
+                      style: TextStyle(
+                        color: autoAdvanceTask
+                            ? _IepColors.orangeDeep
+                            : _IepColors.text,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      height: 22,
+                      child: FittedBox(
+                        fit: BoxFit.contain,
+                        child: Switch(
+                          value: autoAdvanceTask,
+                          activeColor: _IepColors.orange,
+                          materialTapTargetSize:
+                              MaterialTapTargetSize.shrinkWrap,
+                          onChanged: onAutoAdvanceTaskChanged,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 14),
           Expanded(
