@@ -59,6 +59,8 @@ type iepPlanWordCellOptions struct {
 	NoWrap           bool
 	Bold             bool
 	IndentLeft       int
+	PaddingLeft      int
+	PaddingRight     int
 	SpacingBefore    int
 	SpacingAfter     int
 	LineSpacing      int
@@ -329,10 +331,10 @@ func buildIEPMainTable(plan iepPlanWordExport) string {
 	builder.WriteString(buildIEPCell([]string{plan.StartDate + " 至 " + plan.EndDate}, widths[5]+widths[6]+widths[7], iepPlanWordCellOptions{GridSpan: 3, Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(buildIEPTableRowStart(560))
-	builder.WriteString(buildIEPCell([]string{"康复", "领域"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"康复", "领域"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
 	builder.WriteString(buildIEPCell([]string{"长期目标"}, widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{"短期目标"}, widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center", Bold: true}))
-	builder.WriteString(buildIEPCell([]string{"课程", "形式"}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
+	builder.WriteString(buildIEPCell([]string{"课程", "形式"}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
 	builder.WriteString(buildIEPCell([]string{"起止日期"}, widths[7], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, Bold: true, CompactParagraph: true}))
 	builder.WriteString(`</w:tr>`)
 
@@ -345,13 +347,13 @@ func buildIEPMainTable(plan iepPlanWordExport) string {
 		}
 		builder.WriteString(buildIEPTableRowStart(660))
 		if rowSpan > 0 {
-			builder.WriteString(buildIEPCell(domainTextLines(row.Domain), widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true, CompactParagraph: true}))
-			builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "restart", VAlign: "center", IndentLeft: 200}))
+			builder.WriteString(buildIEPCell(domainTextLines(row.Domain), widths[0], iepPlanWordCellOptions{VMerge: "restart", Align: "center", VAlign: "center", Bold: true, CompactParagraph: true, LineSpacing: 180}))
+			builder.WriteString(buildIEPCell(splitWordLines(row.LongGoal), widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "restart", VAlign: "center", IndentLeft: 200, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
 		} else {
 			builder.WriteString(buildIEPCell(nil, widths[0], iepPlanWordCellOptions{VMerge: "continue"}))
 			builder.WriteString(buildIEPCell(nil, widths[1]+widths[2]+widths[3], iepPlanWordCellOptions{GridSpan: 3, VMerge: "continue"}))
 		}
-		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, VAlign: "center", IndentLeft: 200}))
+		builder.WriteString(buildIEPCell(splitWordLines(row.ShortGoal), widths[4]+widths[5], iepPlanWordCellOptions{GridSpan: 2, VAlign: "center", IndentLeft: 200, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
 		builder.WriteString(buildIEPCell([]string{row.CourseForm}, widths[6], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 		builder.WriteString(buildIEPCell([]string{row.StartEndDate}, widths[7], iepPlanWordCellOptions{Align: "center", VAlign: "center", NoWrap: true, CompactParagraph: true}))
 		builder.WriteString(`</w:tr>`)
@@ -392,7 +394,7 @@ func buildIEPHomePlanTable(items []string) string {
 	builder.WriteString(buildIEPCell([]string{"家庭干预计划"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(`<w:tr>`)
-	builder.WriteString(buildIEPCell(lines, widths[0], iepPlanWordCellOptions{VAlign: "top", IndentLeft: 140}))
+	builder.WriteString(buildIEPCell(lines, widths[0], iepPlanWordCellOptions{VAlign: "top", IndentLeft: 140, SpacingBefore: 0, SpacingAfter: 0, LineSpacing: 220}))
 	builder.WriteString(`</w:tr>`)
 	builder.WriteString(`</w:tbl>`)
 	return builder.String()
@@ -442,6 +444,20 @@ func buildIEPCell(lines []string, width int, options iepPlanWordCellOptions) str
 	}
 	if options.NoWrap {
 		builder.WriteString(`<w:noWrap/>`)
+	}
+	if options.PaddingLeft > 0 || options.PaddingRight > 0 {
+		builder.WriteString(`<w:tcMar>`)
+		if options.PaddingLeft > 0 {
+			builder.WriteString(`<w:left w:w="`)
+			builder.WriteString(strconv.Itoa(options.PaddingLeft))
+			builder.WriteString(`" w:type="dxa"/>`)
+		}
+		if options.PaddingRight > 0 {
+			builder.WriteString(`<w:right w:w="`)
+			builder.WriteString(strconv.Itoa(options.PaddingRight))
+			builder.WriteString(`" w:type="dxa"/>`)
+		}
+		builder.WriteString(`</w:tcMar>`)
 	}
 	builder.WriteString(`</w:tcPr>`)
 	if len(lines) == 0 {
