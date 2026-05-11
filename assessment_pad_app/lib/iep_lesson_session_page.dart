@@ -832,105 +832,24 @@ class _IepLessonMainPanel extends StatelessWidget {
           : Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: <Widget>[
-                          Text(
-                            '训练内容',
-                            style: const TextStyle(
-                              color: _IepColors.ink,
-                              fontSize: 14,
-                              fontWeight: FontWeight.w900,
-                            ),
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            task!.title,
-                            style: const TextStyle(
-                              color: _IepColors.ink,
-                              fontSize: 24,
-                              fontWeight: FontWeight.w900,
-                              height: 1.2,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 10,
-                      ),
-                      constraints: const BoxConstraints(minWidth: 92),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFFFF8F1),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: const Color(0xFFF3DDC9)),
-                      ),
-                      child: Text(
-                        '第${taskIndex + 1}项',
-                        style: const TextStyle(
-                          color: _IepColors.orangeDeep,
-                          fontSize: 13,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                  ],
+                _IepLessonHeroCard(
+                  eyebrow: '当前训练',
+                  title: task!.title,
+                  content: task!.subtitle,
+                  indexLabel: '第${taskIndex + 1}项',
                 ),
-                const SizedBox(height: 14),
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _IepLessonInfoTile(
-                        label: '任教老师',
-                        value: draft.teacherName,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _IepLessonInfoTile(
-                        label: '课程名称',
-                        value: draft.courseName,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: _IepLessonInfoTile(
-                        label: '训练日期',
-                        value: selectedDateLabel,
-                      ),
-                    ),
-                  ],
+                const SizedBox(height: 10),
+                _IepLessonMetaStrip(
+                  teacherName: draft.teacherName,
+                  courseName: draft.courseName,
+                  selectedDateLabel: selectedDateLabel,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 12),
                 Expanded(
                   child: SingleChildScrollView(
                     physics: const BouncingScrollPhysics(),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        _IepLessonContentBlock(
-                          label: '训练前准备',
-                          value: draft.preparation,
-                          compact: true,
-                        ),
-                        const SizedBox(height: 12),
-                        _IepLessonContentBlock(
-                          label: '训练项目',
-                          value: task!.title,
-                        ),
-                        const SizedBox(height: 12),
-                        _IepLessonContentBlock(
-                          label: '训练内容',
-                          value: task!.subtitle,
-                          prominent: true,
-                        ),
-                      ],
+                    child: _IepLessonPreparationCard(
+                      preparation: draft.preparation,
                     ),
                   ),
                 ),
@@ -940,8 +859,57 @@ class _IepLessonMainPanel extends StatelessWidget {
   }
 }
 
-class _IepLessonInfoTile extends StatelessWidget {
-  const _IepLessonInfoTile({
+class _IepLessonMetaStrip extends StatelessWidget {
+  const _IepLessonMetaStrip({
+    required this.teacherName,
+    required this.courseName,
+    required this.selectedDateLabel,
+  });
+
+  final String teacherName;
+  final String courseName;
+  final String selectedDateLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFBF7),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _IepColors.lightLine),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _IepLessonMetaItem(
+              label: '任教老师',
+              value: teacherName,
+            ),
+          ),
+          const _IepLessonMetaDivider(),
+          Expanded(
+            child: _IepLessonMetaItem(
+              label: '课程名称',
+              value: courseName,
+            ),
+          ),
+          const _IepLessonMetaDivider(),
+          Expanded(
+            child: _IepLessonMetaItem(
+              label: '训练日期',
+              value: selectedDateLabel,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IepLessonMetaItem extends StatelessWidget {
+  const _IepLessonMetaItem({
     required this.label,
     required this.value,
   });
@@ -951,13 +919,8 @@ class _IepLessonInfoTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFBF7),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _IepColors.lightLine),
-      ),
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
@@ -969,12 +932,12 @@ class _IepLessonInfoTile extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 5),
           Text(
             value.trim().isEmpty ? '-' : value.trim(),
             style: const TextStyle(
               color: _IepColors.ink,
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w900,
               height: 1.35,
             ),
@@ -985,52 +948,159 @@ class _IepLessonInfoTile extends StatelessWidget {
   }
 }
 
-class _IepLessonContentBlock extends StatelessWidget {
-  const _IepLessonContentBlock({
-    required this.label,
-    required this.value,
-    this.prominent = false,
-    this.compact = false,
-  });
-
-  final String label;
-  final String value;
-  final bool prominent;
-  final bool compact;
+class _IepLessonMetaDivider extends StatelessWidget {
+  const _IepLessonMetaDivider();
 
   @override
   Widget build(BuildContext context) {
-    final double fontSize = prominent ? 22 : (compact ? 14 : 18);
-    final FontWeight weight = prominent ? FontWeight.w900 : FontWeight.w800;
+    return Container(
+      width: 1,
+      height: 34,
+      color: _IepColors.lightLine,
+    );
+  }
+}
+
+class _IepLessonHeroCard extends StatelessWidget {
+  const _IepLessonHeroCard({
+    required this.eyebrow,
+    required this.title,
+    required this.content,
+    required this.indexLabel,
+  });
+
+  final String eyebrow;
+  final String title;
+  final String content;
+  final String indexLabel;
+
+  @override
+  Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
       decoration: BoxDecoration(
-        color: prominent ? const Color(0xFFFFF8F1) : Colors.white,
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(
-          color: prominent ? const Color(0xFFF2D4BB) : _IepColors.line,
+        borderRadius: BorderRadius.circular(20),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: <Color>[Color(0xFFFFFCF8), Color(0xFFFFF4EA)],
         ),
+        border: Border.all(color: const Color(0xFFF2D9C6)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(.72),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: const Color(0xFFF0D7C5)),
+                ),
+                child: Text(
+                  eyebrow,
+                  style: const TextStyle(
+                    color: _IepColors.orangeDeep,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const Spacer(),
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF8F1),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFF0D7C5)),
+                ),
+                child: Text(
+                  indexLabel,
+                  style: const TextStyle(
+                    color: _IepColors.orangeDeep,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
           Text(
-            label,
+            title.trim().isEmpty ? '-' : title.trim(),
             style: const TextStyle(
-              color: _IepColors.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
+              color: _IepColors.ink,
+              fontSize: 26,
+              fontWeight: FontWeight.w900,
+              height: 1.22,
             ),
           ),
-          const SizedBox(height: 10),
+          const SizedBox(height: 12),
           Text(
-            value.trim().isEmpty ? '-' : value.trim(),
+            content.trim().isEmpty ? '-' : content.trim(),
+            style: const TextStyle(
+              color: _IepColors.text,
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              height: 1.65,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _IepLessonPreparationCard extends StatelessWidget {
+  const _IepLessonPreparationCard({
+    required this.preparation,
+  });
+
+  final String preparation;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _IepColors.line),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          const Text(
+            '训练前准备',
             style: TextStyle(
-              color: _IepColors.ink,
-              fontSize: fontSize,
-              fontWeight: weight,
-              height: prominent ? 1.55 : 1.6,
+              color: _IepColors.orangeDeep,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFAF6),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: _IepColors.lightLine),
+            ),
+            child: Text(
+              preparation.trim().isEmpty ? '-' : preparation.trim(),
+              style: const TextStyle(
+                color: _IepColors.text,
+                fontSize: 14,
+                fontWeight: FontWeight.w800,
+                height: 1.72,
+              ),
             ),
           ),
         ],
