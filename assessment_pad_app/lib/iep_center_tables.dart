@@ -175,6 +175,17 @@ class _IepTablePreview extends StatelessWidget {
       monthRange,
       weekNumber,
     );
+    final String contentSignature = Object.hashAll(<Object?>[
+      record?.id,
+      plan?.title,
+      plan?.meta.startDate,
+      plan?.meta.endDate,
+      plan?.rows.length,
+      monthPlan?.title,
+      monthPlan?.rows.length,
+      weekPlan?.title,
+      weekPlan?.rows.length,
+    ]).toString();
 
     Widget child;
     final String generationPlanLabel = switch (previewMode) {
@@ -277,7 +288,7 @@ class _IepTablePreview extends StatelessWidget {
       switchOutCurve: Curves.easeInCubic,
       child: KeyedSubtree(
         key: ValueKey<String>(
-          '${previewMode.name}|$month|$weekNumber|${generatingPlan ? 'generating' : 'stable'}|${loading ? 'loading' : 'ready'}|${error.trim()}',
+          '${previewMode.name}|$month|$weekNumber|${generatingPlan ? 'generating' : 'stable'}|${loading ? 'loading' : 'ready'}|${error.trim()}|$contentSignature',
         ),
         child: child,
       ),
@@ -1172,8 +1183,7 @@ class _WeekInfoRows extends StatelessWidget {
             ),
           ],
         ),
-        _WeekDocTableRow(
-          height: 54,
+        _WeekDocAutoTableRow(
           cells: <_WeekDocCellData>[
             _WeekDocCellData(text: '训练前\n准备', columns: 1, bold: true),
             _WeekDocCellData(
@@ -1298,6 +1308,107 @@ class _WeekDocTableRow extends StatelessWidget {
         }).toList(),
       ),
     );
+  }
+}
+
+class _WeekDocAutoTableRow extends StatelessWidget {
+  const _WeekDocAutoTableRow({required this.cells});
+
+  final List<_WeekDocCellData> cells;
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final double width =
+            constraints.maxWidth.isFinite ? constraints.maxWidth : 900;
+        return SizedBox(
+          height: _rowHeight(width),
+          child: _FixedGridRow(
+            columns: _WeekPlanTable._columns,
+            cells: cells.map((_WeekDocCellData cell) {
+              return _FixedGridCell(
+                columns: cell.columns,
+                child: _WeekDocCellBox(
+                  data: cell,
+                  verticalPadding: 4,
+                ),
+              );
+            }).toList(),
+          ),
+        );
+      },
+    );
+  }
+
+  double _rowHeight(double tableWidth) {
+    double maxHeight = 42;
+    int columnIndex = 0;
+    for (final _WeekDocCellData cell in cells) {
+      final double cellWidth = _DocRowMetrics.scaledColumnWidth(
+        tableWidth,
+        _WeekPlanTable._columns,
+        columnIndex,
+        cell.columns,
+      );
+      maxHeight = math.max(
+        maxHeight,
+        _DocRowMetrics.textHeight(
+          cell.text,
+          width: cellWidth,
+          fontSize: 10.8,
+          lineHeight: 1.18,
+          horizontalPadding: 14,
+          verticalPadding: 4,
+        ),
+      );
+      columnIndex += cell.columns;
+    }
+    return maxHeight;
+  }
+}
+
+class _DocRowMetrics {
+  const _DocRowMetrics._();
+
+  static double scaledColumnWidth(
+    double tableWidth,
+    List<int> columns,
+    int start,
+    int span,
+  ) {
+    final int totalFlex =
+        columns.fold<int>(0, (int sum, int width) => sum + width);
+    final int spanFlex = columns.skip(start).take(span).fold<int>(
+          0,
+          (int sum, int width) => sum + width,
+        );
+    return tableWidth * spanFlex / totalFlex;
+  }
+
+  static double textHeight(
+    String text, {
+    required double width,
+    required double fontSize,
+    required double lineHeight,
+    double horizontalPadding = 16,
+    double verticalPadding = 4,
+    double safety = 5,
+  }) {
+    final double maxWidth = math.max(24, width - horizontalPadding);
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: text.trim().isEmpty ? ' ' : text,
+        style: TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w700,
+          height: lineHeight,
+        ),
+      ),
+      textAlign: TextAlign.left,
+      textDirection: TextDirection.ltr,
+    )..layout(maxWidth: maxWidth);
+    return painter.height + verticalPadding * 2 + safety;
   }
 }
 

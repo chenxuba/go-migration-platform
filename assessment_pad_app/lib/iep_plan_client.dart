@@ -95,6 +95,22 @@ const String defaultIepErxinExecutionSavePath = String.fromEnvironment(
   'IEP_ERXIN_EXECUTION_SAVE_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/save',
 );
+const String defaultIepPep3PlanWordPath = String.fromEnvironment(
+  'IEP_PEP3_PLAN_WORD_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/word',
+);
+const String defaultIepErxinPlanWordPath = String.fromEnvironment(
+  'IEP_ERXIN_PLAN_WORD_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/word',
+);
+const String defaultIepPep3ExecutionWordPath = String.fromEnvironment(
+  'IEP_PEP3_EXECUTION_WORD_PATH',
+  defaultValue: '/api/v1/assessments/pep3/records/iep-plan/execution/word',
+);
+const String defaultIepErxinExecutionWordPath = String.fromEnvironment(
+  'IEP_ERXIN_EXECUTION_WORD_PATH',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/word',
+);
 
 class IepPlanApiException implements Exception {
   const IepPlanApiException(this.message, {this.unauthorized = false});
@@ -202,6 +218,25 @@ abstract interface class IepPlanClient {
     required int targetWeekIndex,
     required IepWeeklyPlan plan,
   });
+
+  Future<IepWordFile> downloadIepPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  });
+
+  Future<IepWordFile> downloadMonthlyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  });
+
+  Future<IepWordFile> downloadWeeklyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  });
 }
 
 class ApiIepPlanClient implements IepPlanClient {
@@ -229,6 +264,10 @@ class ApiIepPlanClient implements IepPlanClient {
     this.erxinExecutionAiStreamPath = defaultIepErxinExecutionAiStreamPath,
     this.pep3ExecutionSavePath = defaultIepPep3ExecutionSavePath,
     this.erxinExecutionSavePath = defaultIepErxinExecutionSavePath,
+    this.pep3PlanWordPath = defaultIepPep3PlanWordPath,
+    this.erxinPlanWordPath = defaultIepErxinPlanWordPath,
+    this.pep3ExecutionWordPath = defaultIepPep3ExecutionWordPath,
+    this.erxinExecutionWordPath = defaultIepErxinExecutionWordPath,
     this.httpClient,
   });
 
@@ -255,6 +294,10 @@ class ApiIepPlanClient implements IepPlanClient {
   final String erxinExecutionAiStreamPath;
   final String pep3ExecutionSavePath;
   final String erxinExecutionSavePath;
+  final String pep3PlanWordPath;
+  final String erxinPlanWordPath;
+  final String pep3ExecutionWordPath;
+  final String erxinExecutionWordPath;
   final http.Client? httpClient;
 
   @override
@@ -657,6 +700,70 @@ class ApiIepPlanClient implements IepPlanClient {
     return IepExecutionPlansSaved.fromJson(Map<String, dynamic>.from(data));
   }
 
+  @override
+  Future<IepWordFile> downloadIepPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return _downloadWordByPost(
+      _uri(_isErxinRecord(record) ? erxinPlanWordPath : pep3PlanWordPath),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'durationMonths': _normalizeDuration(durationMonths),
+        'plan': plan.toJson(),
+      },
+      fallbackName:
+          '${record.studentName.trim().isEmpty ? '学员' : record.studentName.trim()}-IEP.docx',
+    );
+  }
+
+  @override
+  Future<IepWordFile> downloadMonthlyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return _downloadWordByPost(
+      _uri(
+        _isErxinRecord(record) ? erxinExecutionWordPath : pep3ExecutionWordPath,
+      ),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'planType': 'monthly',
+        'monthlyPlan': plan.toJson(),
+        'weeklyPlan': null,
+      },
+      fallbackName:
+          '${record.studentName.trim().isEmpty ? '学员' : record.studentName.trim()}-月计划.docx',
+    );
+  }
+
+  @override
+  Future<IepWordFile> downloadWeeklyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return _downloadWordByPost(
+      _uri(
+        _isErxinRecord(record) ? erxinExecutionWordPath : pep3ExecutionWordPath,
+      ),
+      token,
+      <String, dynamic>{
+        'id': record.id,
+        'planType': 'weekly',
+        'monthlyPlan': null,
+        'weeklyPlan': plan.toJson(),
+      },
+      fallbackName:
+          '${record.studentName.trim().isEmpty ? '学员' : record.studentName.trim()}-周计划.docx',
+    );
+  }
+
   Stream<IepExecutionPlanGenerationEvent<T>> _generateExecutionPlanStream<T>(
     String token, {
     required IepAssessmentRecordSummary record,
@@ -783,6 +890,61 @@ class ApiIepPlanClient implements IepPlanClient {
     return _handleResponse(response);
   }
 
+  Future<IepWordFile> _downloadWordByPost(
+    Uri uri,
+    String token,
+    Map<String, dynamic> payload, {
+    required String fallbackName,
+  }) async {
+    final http.Client client = httpClient ?? http.Client();
+    final bool shouldCloseClient = httpClient == null;
+    final http.Response response;
+    try {
+      response = await client
+          .post(
+            uri,
+            headers: _headers(
+              token,
+              accept:
+                  'application/vnd.openxmlformats-officedocument.wordprocessingml.document, application/octet-stream, */*',
+            ),
+            body: jsonEncode(payload),
+          )
+          .timeout(const Duration(seconds: 60));
+    } on TimeoutException {
+      throw const IepPlanApiException('IEP计划接口响应超时，请检查网络');
+    } on Object catch (error) {
+      throw IepPlanApiException('无法连接IEP计划接口：$error');
+    } finally {
+      if (shouldCloseClient) {
+        client.close();
+      }
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = utf8.decode(response.bodyBytes).trim();
+      throw IepPlanApiException(
+        _messageFromPayload(body.isEmpty ? null : _tryDecodeJson(body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = utf8.decode(response.bodyBytes).trim();
+      throw IepPlanApiException(
+        _messageFromPayload(body.isEmpty ? null : _tryDecodeJson(body)) ??
+            '导出失败',
+      );
+    }
+    return IepWordFile(
+      fileName: _filenameFromContentDisposition(
+        response.headers['content-disposition'],
+      ),
+      contentType: response.headers['content-type'] ?? '',
+      bytes: response.bodyBytes,
+      fallbackName: fallbackName,
+    );
+  }
+
   Uri _uri(String path, [Map<String, String>? query]) {
     final String trimmedBase =
         educationBaseUrl.trim().replaceFirst(RegExp(r'/+$'), '');
@@ -830,6 +992,23 @@ class ApiIepPlanClient implements IepPlanClient {
     }
     return decoded;
   }
+}
+
+class IepWordFile {
+  const IepWordFile({
+    required this.fileName,
+    required this.contentType,
+    required this.bytes,
+    required this.fallbackName,
+  });
+
+  final String fileName;
+  final String contentType;
+  final List<int> bytes;
+  final String fallbackName;
+
+  String get resolvedFileName =>
+      fileName.trim().isEmpty ? fallbackName : fileName.trim();
 }
 
 enum IepPlanGenerationEventType { status, delta, done, error }
@@ -1626,6 +1805,19 @@ String? _messageFromPayload(Object? payload) {
     }
   }
   return null;
+}
+
+String _filenameFromContentDisposition(String? headerValue) {
+  final String text = '${headerValue ?? ''}';
+  final RegExpMatch? encodedMatch =
+      RegExp(r"filename\*=UTF-8''([^;]+)", caseSensitive: false)
+          .firstMatch(text);
+  if (encodedMatch != null) {
+    return Uri.decodeComponent(encodedMatch.group(1) ?? '').trim();
+  }
+  final RegExpMatch? match =
+      RegExp(r'filename="?([^";]+)"?', caseSensitive: false).firstMatch(text);
+  return (match?.group(1) ?? '').trim();
 }
 
 IepPlanGenerationEvent? _parseSseFrame(String frame) {

@@ -7,6 +7,9 @@ class _StudentQueuePanel extends StatefulWidget {
     required this.statusOverrides,
     required this.onRecordSelected,
     required this.onInitialLoadSettled,
+    this.initialAssessmentDateBegin = '',
+    this.initialAssessmentDateEnd = '',
+    super.key,
   });
 
   final IepAssessmentRecordClient recordClient;
@@ -14,6 +17,8 @@ class _StudentQueuePanel extends StatefulWidget {
   final Map<String, String> statusOverrides;
   final ValueChanged<IepAssessmentRecordSummary> onRecordSelected;
   final VoidCallback onInitialLoadSettled;
+  final String initialAssessmentDateBegin;
+  final String initialAssessmentDateEnd;
 
   @override
   State<_StudentQueuePanel> createState() => _StudentQueuePanelState();
@@ -27,11 +32,54 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
   String _error = '';
   int _totalCount = 0;
   _QueueFilter _filter = _QueueFilter.all;
+  String _searchKey = '';
+  String _assessmentDateBegin = '';
+  String _assessmentDateEnd = '';
 
   @override
   void initState() {
     super.initState();
+    _assessmentDateBegin = widget.initialAssessmentDateBegin.trim();
+    _assessmentDateEnd = widget.initialAssessmentDateEnd.trim();
     runAfterRouteEntrance(context, _loadRecords);
+  }
+
+  Future<void> applyQueryFilters({
+    String? searchKey,
+    String? assessmentDateBegin,
+    String? assessmentDateEnd,
+  }) async {
+    final String nextSearchKey =
+        searchKey == null ? _searchKey : searchKey.trim();
+    final String nextBegin = assessmentDateBegin == null
+        ? _assessmentDateBegin
+        : assessmentDateBegin.trim();
+    final String nextEnd = assessmentDateEnd == null
+        ? _assessmentDateEnd
+        : assessmentDateEnd.trim();
+    if (nextSearchKey == _searchKey &&
+        nextBegin == _assessmentDateBegin &&
+        nextEnd == _assessmentDateEnd) {
+      return;
+    }
+    setState(() {
+      _searchKey = nextSearchKey;
+      _assessmentDateBegin = nextBegin;
+      _assessmentDateEnd = nextEnd;
+    });
+    await _loadRecords();
+  }
+
+  Future<void> resetQueryFilters({
+    required String assessmentDateBegin,
+    required String assessmentDateEnd,
+  }) async {
+    setState(() {
+      _searchKey = '';
+      _assessmentDateBegin = assessmentDateBegin.trim();
+      _assessmentDateEnd = assessmentDateEnd.trim();
+    });
+    await _loadRecords();
   }
 
   Future<void> _loadRecords() async {
@@ -49,6 +97,9 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         token,
         pageIndex: 1,
         pageSize: 30,
+        searchKey: _searchKey,
+        assessmentDateBegin: _assessmentDateBegin,
+        assessmentDateEnd: _assessmentDateEnd,
       );
       if (!mounted) {
         return;
@@ -58,8 +109,7 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
         _totalCount = page.total;
         _loading = false;
       });
-      final IepAssessmentRecordSummary? selectedRecord =
-          _selectedRecordFrom(
+      final IepAssessmentRecordSummary? selectedRecord = _selectedRecordFrom(
         _visibleRecordsForWithOverrides(
           _filter,
           page.items,
@@ -115,8 +165,7 @@ class _StudentQueuePanelState extends State<_StudentQueuePanel> {
     setState(() {
       _filter = filter;
     });
-    final IepAssessmentRecordSummary? selectedRecord =
-        _selectedRecordFrom(
+    final IepAssessmentRecordSummary? selectedRecord = _selectedRecordFrom(
       _visibleRecordsForWithOverrides(
         filter,
         _records,
@@ -335,26 +384,24 @@ class _CompactStatsStrip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final int pendingCount = records
-        .where((IepAssessmentRecordSummary record) {
-          final String label = _QueueStatusStyle.fromPlanStatus(
-            _effectiveRecordStatus(record, statusOverrides),
-          ).label;
-          return label == '待生成' || label == '生成中';
-        })
-        .length;
+    final int pendingCount = records.where((IepAssessmentRecordSummary record) {
+      final String label = _QueueStatusStyle.fromPlanStatus(
+        _effectiveRecordStatus(record, statusOverrides),
+      ).label;
+      return label == '待生成' || label == '生成中';
+    }).length;
     final int awaitingConfirmCount = records
         .where((IepAssessmentRecordSummary record) =>
             _QueueStatusStyle.fromPlanStatus(
-                  _effectiveRecordStatus(record, statusOverrides),
-                ).label ==
+              _effectiveRecordStatus(record, statusOverrides),
+            ).label ==
             '待确认')
         .length;
     final int confirmedCount = records
         .where((IepAssessmentRecordSummary record) =>
             _QueueStatusStyle.fromPlanStatus(
-                  _effectiveRecordStatus(record, statusOverrides),
-                ).label ==
+              _effectiveRecordStatus(record, statusOverrides),
+            ).label ==
             '已确认')
         .length;
     final String totalText =
@@ -748,10 +795,9 @@ List<IepAssessmentRecordSummary> _visibleRecordsForWithOverrides(
   Map<String, String> statusOverrides,
 ) {
   return records.where((IepAssessmentRecordSummary record) {
-    final String status =
-        _QueueStatusStyle.fromPlanStatus(
-          _effectiveRecordStatus(record, statusOverrides),
-        ).label;
+    final String status = _QueueStatusStyle.fromPlanStatus(
+      _effectiveRecordStatus(record, statusOverrides),
+    ).label;
     return switch (filter) {
       _QueueFilter.all => true,
       _QueueFilter.pending => status == '待生成' || status == '生成中',

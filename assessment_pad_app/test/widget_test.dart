@@ -5167,6 +5167,34 @@ class _FakeIepPlanClient implements IepPlanClient {
       ],
     );
   }
+
+  @override
+  Future<IepWordFile> downloadIepPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-IEP.docx');
+  }
+
+  @override
+  Future<IepWordFile> downloadMonthlyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-月计划.docx');
+  }
+
+  @override
+  Future<IepWordFile> downloadWeeklyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-周计划.docx');
+  }
 }
 
 class _SlowFirstIepPlanClient extends _FakeIepPlanClient {
@@ -5891,6 +5919,44 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
   }) async {
     return IepExecutionPlansSaved.empty(durationMonths);
   }
+
+  @override
+  Future<IepWordFile> downloadIepPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required IepPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-IEP.docx');
+  }
+
+  @override
+  Future<IepWordFile> downloadMonthlyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepMonthlyPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-月计划.docx');
+  }
+
+  @override
+  Future<IepWordFile> downloadWeeklyPlanWord(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required IepWeeklyPlan plan,
+  }) async {
+    return _fakeIepWordFile('${record.studentName}-周计划.docx');
+  }
+}
+
+IepWordFile _fakeIepWordFile(String fileName) {
+  return IepWordFile(
+    fileName: fileName,
+    contentType:
+        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    bytes: const <int>[0x50, 0x4B, 0x03, 0x04],
+    fallbackName: fileName,
+  );
 }
 
 String _formatDateDashForTest(DateTime value) {

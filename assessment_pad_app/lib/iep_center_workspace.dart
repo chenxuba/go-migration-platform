@@ -46,6 +46,7 @@ class _IepGenerationSessionSnapshot {
 
 class _IepWorkspace extends StatefulWidget {
   const _IepWorkspace({
+    super.key,
     required this.record,
     required this.planClient,
     required this.queueBootstrapLoading,
@@ -83,6 +84,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   bool _loadingPlan = false;
   bool _hasCompletedInitialPlanLoad = false;
   bool _syncingPeriod = false;
+  bool _confirmingPlan = false;
   bool _generatingPlan = false;
   String _generationStatus = '';
   String _aiStreamText = '';
@@ -288,6 +290,152 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       plan: plan,
       updatedTime: _formatDateDash(DateTime.now()),
     );
+  }
+
+  List<String> _normalizedGoalLines(List<String> values) {
+    final List<String> lines = <String>[];
+    for (final String value in values) {
+      final List<String> segments = value
+          .replaceAll('\r\n', '\n')
+          .replaceAll('\r', '\n')
+          .split('\n')
+          .map((String item) => item.trim())
+          .where((String item) => item.isNotEmpty)
+          .toList();
+      for (final String segment in segments) {
+        if (!lines.contains(segment)) {
+          lines.add(segment);
+        }
+      }
+    }
+    return lines;
+  }
+
+  IepPlan _planPayloadForSave() {
+    final IepPlan? basePlan = _savedPlan?.plan;
+    final IepPlanMeta meta = basePlan?.meta ??
+        IepPlanMeta(
+          planDate: _formatDateDash(DateTime.now()),
+          participant: widget.record?.examinerName.trim() ?? '',
+          implementer: widget.record?.examinerName.trim() ?? '',
+          startDate: _formatDateDash(_periodStart),
+          endDate: _formatDateDash(_periodEnd),
+        );
+    final IepPlanStudent student = basePlan?.student ??
+        IepPlanStudent(
+          name: widget.record?.studentName.trim() ?? '',
+          gender: widget.record?.studentGender.trim() ?? '',
+          birthDate: widget.record?.birthDate.trim() ?? '',
+        );
+    final String title = basePlan?.title.trim().isNotEmpty == true
+        ? basePlan!.title.trim()
+        : '康复教学计划';
+    final List<IepPlanRow> rows = <IepPlanRow>[];
+    for (final _DocDomainData domain in _totalPlanDomains) {
+      final String domainName = domain.domain.trim();
+      final List<String> longGoals = _normalizedGoalLines(domain.longGoals);
+      final String longGoalText = longGoals.join('\n');
+      for (final _DocShortGoalData shortGoal in domain.shortGoals) {
+        final String goal = shortGoal.goal.trim();
+        if (goal.isEmpty) {
+          continue;
+        }
+        rows.add(
+          IepPlanRow(
+            domain: domainName,
+            longGoal: longGoalText,
+            shortGoal: goal,
+            courseForm: shortGoal.lesson.trim(),
+            startEndDate: shortGoal.period.trim(),
+          ),
+        );
+      }
+    }
+    return IepPlan(
+      title: title,
+      student: student,
+      meta: IepPlanMeta(
+        planDate: meta.planDate.trim().isNotEmpty
+            ? meta.planDate
+            : _formatDateDash(DateTime.now()),
+        participant: meta.participant,
+        implementer: meta.implementer,
+        startDate: _formatDateDash(_periodStart),
+        endDate: _formatDateDash(_periodEnd),
+      ),
+      rows: rows,
+    );
+  }
+
+  Future<void> requestConfirmIepPlan() async {
+    if (!mounted || _confirmingPlan || _generatingPlan || _loadingPlan) {
+      return;
+    }
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    final IepPlan plan = _planPayloadForSave();
+    if (plan.rows.isEmpty) {
+      _showMessage('请先生成或填写IEP总计划');
+      return;
+    }
+    setState(() {
+      _confirmingPlan = true;
+      _planError = '';
+    });
+    widget.onConfirmAvailabilityChanged(false);
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepPlanSaved savedPlan = await widget.planClient.saveIepPlan(
+        token,
+        record: record,
+        durationMonths: _periodMonthCount,
+        status: 'confirmed',
+        plan: plan,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _confirmingPlan = false;
+        _savedPlan = savedPlan;
+        _periodMonthCount = savedPlan.durationMonths == 6 ? 6 : 3;
+        _applyPeriodFromPlan(savedPlan.plan, record);
+        _totalPlanDomains = savedPlan.plan == null
+            ? <_DocDomainData>[]
+            : _docDomainsFromPlan(savedPlan.plan!);
+        _syncPreviewMonthToPeriod();
+      });
+      _notifyRecordStatus(record, savedPlan.status);
+      _syncConfirmAvailability(savedPlan);
+      _showMessage('IEP已确认生成', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _confirmingPlan = false;
+        _planError = error.message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      final String message = '确认IEP失败：$error';
+      setState(() {
+        _confirmingPlan = false;
+        _planError = message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
+    }
   }
 
   Future<void> _appendDeltaWithTypewriter(
@@ -1387,6 +1535,107 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     widget.onMessage(message, tone: tone);
   }
 
+  Future<void> exportCurrentPlanWord() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    try {
+      final IepWordFile file = await _exportWordFileForCurrentPreview(record);
+      final bool saved = await _saveWordFile(file);
+      if (saved) {
+        _showMessage('导出成功', tone: PadMessageTone.success);
+      }
+    } on IepPlanApiException catch (error) {
+      _showMessage(error.message);
+    } on Object catch (error) {
+      _showMessage('导出失败：$error');
+    }
+  }
+
+  Future<void> printCurrentPlan() async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    if (record == null) {
+      _showMessage('请先选择左侧评估记录');
+      return;
+    }
+    try {
+      final IepWordFile file = await _exportWordFileForCurrentPreview(record);
+      await _openWordFile(file);
+      _showMessage('已打开打印文件，请使用系统打印', tone: PadMessageTone.success);
+    } on IepPlanApiException catch (error) {
+      _showMessage(error.message);
+    } on Object catch (error) {
+      _showMessage('打印失败：$error');
+    }
+  }
+
+  Future<IepWordFile> _exportWordFileForCurrentPreview(
+    IepAssessmentRecordSummary record,
+  ) async {
+    final IepPlan? totalPlan = _savedPlan?.plan;
+    final IepMonthlyPlan? monthPlan =
+        _executionPlans?.monthPlan(_previewMonthIndex());
+    final IepWeeklyPlan? weekPlan =
+        _executionPlans?.weekPlan(_previewMonthIndex(), _previewWeek);
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    return switch (_previewMode) {
+      _IepPreviewMode.total => totalPlan == null
+          ? throw const IepPlanApiException('请先生成IEP总计划')
+          : widget.planClient.downloadIepPlanWord(
+              token,
+              record: record,
+              durationMonths: _periodMonthCount,
+              plan: _planPayloadForSave(),
+            ),
+      _IepPreviewMode.month => monthPlan == null
+          ? throw const IepPlanApiException('请先生成月计划')
+          : widget.planClient.downloadMonthlyPlanWord(
+              token,
+              record: record,
+              plan: monthPlan,
+            ),
+      _IepPreviewMode.week => weekPlan == null
+          ? throw const IepPlanApiException('请先生成周计划')
+          : widget.planClient.downloadWeeklyPlanWord(
+              token,
+              record: record,
+              plan: weekPlan,
+            ),
+    };
+  }
+
+  Future<File> _persistWordFile(IepWordFile file) async {
+    final Directory tempDir = await getTemporaryDirectory();
+    final String safeName = file.resolvedFileName.trim().isEmpty
+        ? 'iep-plan.docx'
+        : file.resolvedFileName.trim();
+    final File tempFile = File('${tempDir.path}/$safeName');
+    await tempFile.writeAsBytes(file.bytes, flush: true);
+    return tempFile;
+  }
+
+  Future<bool> _saveWordFile(IepWordFile file) async {
+    return DownloadedFileSaver.save(file);
+  }
+
+  Future<void> _openWordFile(IepWordFile file) async {
+    final File tempFile = await _persistWordFile(file);
+    final OpenResult result = await OpenFilex.open(
+      tempFile.path,
+      type: file.contentType.trim().isEmpty
+          ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          : file.contentType,
+    );
+    if (result.type != ResultType.done) {
+      throw IepPlanApiException(
+        result.message.trim().isEmpty ? '无法打开导出文件' : result.message.trim(),
+      );
+    }
+  }
+
   Future<void> _showGenerationCostDialog({
     required String planLabel,
     required double costAmountCny,
@@ -1972,7 +2221,7 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
     _hintController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 760),
-    )..repeat(reverse: true);
+    );
     _hintOffset = CurvedAnimation(
       parent: _hintController,
       curve: Curves.easeInOutCubic,
@@ -1996,6 +2245,17 @@ class _ScrollablePlanNavState extends State<_ScrollablePlanNav>
       _showLeftHint = nextLeft;
       _showRightHint = nextRight;
     });
+    _syncHintAnimation();
+  }
+
+  void _syncHintAnimation() {
+    final bool shouldAnimate = _showLeftHint || _showRightHint;
+    if (shouldAnimate && !_hintController.isAnimating) {
+      _hintController.repeat(reverse: true);
+    } else if (!shouldAnimate && _hintController.isAnimating) {
+      _hintController.stop();
+      _hintController.value = 0;
+    }
   }
 
   void _selectPlan(String plan) {

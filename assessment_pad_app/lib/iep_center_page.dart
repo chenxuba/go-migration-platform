@@ -1,9 +1,13 @@
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:open_filex/open_filex.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'iep_assessment_record_client.dart';
+import 'downloaded_file_saver.dart';
 import 'iep_plan_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
@@ -34,12 +38,31 @@ class IepCenterPage extends StatefulWidget {
 }
 
 class _IepCenterPageState extends State<IepCenterPage> {
+  final GlobalKey<_IepWorkspaceState> _workspaceKey =
+      GlobalKey<_IepWorkspaceState>();
+  final GlobalKey<_StudentQueuePanelState> _queueKey =
+      GlobalKey<_StudentQueuePanelState>();
   IepAssessmentRecordSummary? _selectedRecord;
   bool _queueBootstrapLoading = true;
   bool _showConfirmIep = false;
+  bool _confirmingIep = false;
+  bool _exportingWord = false;
+  bool _printingPlan = false;
+  late DateTimeRange _range;
+  int _searchResetSeed = 0;
   final Map<String, String> _recordStatusOverrides = <String, String>{};
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
+
+  @override
+  void initState() {
+    super.initState();
+    final DateTime today = _dateOnly(DateTime.now());
+    _range = DateTimeRange(
+      start: today.subtract(const Duration(days: 29)),
+      end: today,
+    );
+  }
 
   void _selectRecord(IepAssessmentRecordSummary record) {
     final IepAssessmentRecordSummary? current = _selectedRecord;
@@ -49,6 +72,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
     setState(() {
       _selectedRecord = record;
       _showConfirmIep = false;
+      _confirmingIep = false;
     });
   }
 
@@ -108,6 +132,111 @@ class _IepCenterPageState extends State<IepCenterPage> {
     );
   }
 
+  Future<void> _handleConfirmIepPressed() async {
+    final _IepWorkspaceState? workspaceState = _workspaceKey.currentState;
+    if (workspaceState == null || _confirmingIep) {
+      return;
+    }
+    setState(() {
+      _confirmingIep = true;
+    });
+    try {
+      await workspaceState.requestConfirmIepPlan();
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _confirmingIep = false;
+      });
+    }
+  }
+
+  Future<void> _handleExportWordPressed() async {
+    final _IepWorkspaceState? workspaceState = _workspaceKey.currentState;
+    if (workspaceState == null || _exportingWord) {
+      return;
+    }
+    setState(() {
+      _exportingWord = true;
+    });
+    try {
+      await workspaceState.exportCurrentPlanWord();
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _exportingWord = false;
+      });
+    }
+  }
+
+  Future<void> _handlePrintPressed() async {
+    final _IepWorkspaceState? workspaceState = _workspaceKey.currentState;
+    if (workspaceState == null || _printingPlan) {
+      return;
+    }
+    setState(() {
+      _printingPlan = true;
+    });
+    try {
+      await workspaceState.printCurrentPlan();
+    } finally {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _printingPlan = false;
+      });
+    }
+  }
+
+  Future<void> _handleRangePressed() async {
+    final DateTime today = _dateOnly(DateTime.now());
+    final DateTimeRange? picked = await showPadDateRangePicker(
+      context: context,
+      initialRange: _range,
+      today: today,
+      minDate: DateTime(today.year - 5),
+      maxDate: DateTime(today.year + 1, 12, 31),
+    );
+    if (picked == null || !mounted) {
+      return;
+    }
+    final DateTimeRange nextRange = DateTimeRange(
+      start: _dateOnly(picked.start),
+      end: _dateOnly(picked.end),
+    );
+    setState(() {
+      _range = nextRange;
+    });
+    _queueKey.currentState?.applyQueryFilters(
+      assessmentDateBegin: _formatDateDash(nextRange.start),
+      assessmentDateEnd: _formatDateDash(nextRange.end),
+    );
+  }
+
+  void _handleSearchSubmitted(String value) {
+    _queueKey.currentState?.applyQueryFilters(searchKey: value.trim());
+  }
+
+  void _handleResetFilters() {
+    final DateTime today = _dateOnly(DateTime.now());
+    final DateTimeRange nextRange = DateTimeRange(
+      start: today.subtract(const Duration(days: 29)),
+      end: today,
+    );
+    setState(() {
+      _range = nextRange;
+      _searchResetSeed += 1;
+    });
+    _queueKey.currentState?.resetQueryFilters(
+      assessmentDateBegin: _formatDateDash(nextRange.start),
+      assessmentDateEnd: _formatDateDash(nextRange.end),
+    );
+  }
+
   @override
   void dispose() {
     _messageController.dispose();
@@ -135,6 +264,17 @@ class _IepCenterPageState extends State<IepCenterPage> {
                   onBack: widget.onBack,
                   metrics: metrics,
                   showConfirmIep: _showConfirmIep,
+                  confirmingIep: _confirmingIep,
+                  exportingWord: _exportingWord,
+                  printingPlan: _printingPlan,
+                  range: _range,
+                  searchResetSeed: _searchResetSeed,
+                  onConfirmIep: _handleConfirmIepPressed,
+                  onExportWord: _handleExportWordPressed,
+                  onPrint: _handlePrintPressed,
+                  onRangeTap: _handleRangePressed,
+                  onSearchSubmitted: _handleSearchSubmitted,
+                  onResetFilters: _handleResetFilters,
                 ),
               ),
               Positioned(
@@ -143,11 +283,14 @@ class _IepCenterPageState extends State<IepCenterPage> {
                 width: metrics.leftWidth,
                 height: 660,
                 child: _StudentQueuePanel(
+                  key: _queueKey,
                   recordClient: widget.recordClient,
                   selectedRecord: _selectedRecord,
                   statusOverrides: _recordStatusOverrides,
                   onRecordSelected: _selectRecord,
                   onInitialLoadSettled: _handleQueueInitialLoadSettled,
+                  initialAssessmentDateBegin: _formatDateDash(_range.start),
+                  initialAssessmentDateEnd: _formatDateDash(_range.end),
                 ),
               ),
               Positioned(
@@ -156,6 +299,7 @@ class _IepCenterPageState extends State<IepCenterPage> {
                 width: metrics.contentWidth,
                 height: 660,
                 child: _IepWorkspace(
+                  key: _workspaceKey,
                   record: _selectedRecord,
                   planClient: widget.planClient,
                   queueBootstrapLoading: _queueBootstrapLoading,
@@ -416,11 +560,33 @@ class _IepTopBar extends StatelessWidget {
     required this.onBack,
     required this.metrics,
     required this.showConfirmIep,
+    required this.confirmingIep,
+    required this.exportingWord,
+    required this.printingPlan,
+    required this.range,
+    required this.searchResetSeed,
+    required this.onConfirmIep,
+    required this.onExportWord,
+    required this.onPrint,
+    required this.onRangeTap,
+    required this.onSearchSubmitted,
+    required this.onResetFilters,
   });
 
   final VoidCallback onBack;
   final _IepMetrics metrics;
   final bool showConfirmIep;
+  final bool confirmingIep;
+  final bool exportingWord;
+  final bool printingPlan;
+  final DateTimeRange range;
+  final int searchResetSeed;
+  final VoidCallback onConfirmIep;
+  final VoidCallback onExportWord;
+  final VoidCallback onPrint;
+  final VoidCallback onRangeTap;
+  final ValueChanged<String> onSearchSubmitted;
+  final VoidCallback onResetFilters;
 
   @override
   Widget build(BuildContext context) {
@@ -448,19 +614,47 @@ class _IepTopBar extends StatelessWidget {
           ),
           const Spacer(),
           if (!metrics.compact) ...<Widget>[
-            const _TopSelector(label: '近30天', width: 108),
+            _TopSelector(
+              label:
+                  '${_formatDateDash(range.start)} - ${_formatDateDash(range.end)}',
+              width: 250,
+              onTap: onRangeTap,
+            ),
             const SizedBox(width: 12),
           ],
-          _SearchBox(width: metrics.compact ? 194 : 224),
+          _IepSearchBox(
+            width: metrics.compact ? 204 : 248,
+            resetSeed: searchResetSeed,
+            onSubmitted: onSearchSubmitted,
+          ),
           const SizedBox(width: 12),
-          const _SoftActionButton(
-              icon: Icons.file_download_outlined, label: '导出Word'),
+          _SoftActionButton(
+            icon: Icons.restart_alt_rounded,
+            label: '重置',
+            onTap: onResetFilters,
+          ),
           const SizedBox(width: 10),
-          const _SoftActionButton(icon: Icons.print_rounded, label: '打印'),
+          _SoftActionButton(
+            icon: Icons.file_download_outlined,
+            label: exportingWord ? '导出中' : '导出Word',
+            loading: exportingWord,
+            onTap: exportingWord ? null : onExportWord,
+          ),
+          const SizedBox(width: 10),
+          _SoftActionButton(
+            icon: Icons.print_rounded,
+            label: printingPlan ? '打印中' : '打印',
+            loading: printingPlan,
+            onTap: printingPlan ? null : onPrint,
+          ),
           if (showConfirmIep) ...<Widget>[
             const SizedBox(width: 10),
-            const _PrimaryActionButton(
-                icon: Icons.check_circle_rounded, label: '确认IEP'),
+            _PrimaryActionButton(
+              icon: Icons.check_circle_rounded,
+              label: '确认IEP',
+              loading: confirmingIep,
+              onTap: confirmingIep ? null : onConfirmIep,
+            ),
           ],
         ],
       ),
@@ -500,55 +694,107 @@ class _IepBackButton extends StatelessWidget {
 }
 
 class _TopSelector extends StatelessWidget {
-  const _TopSelector({required this.label, required this.width});
+  const _TopSelector({
+    required this.label,
+    required this.width,
+    this.onTap,
+  });
 
   final String label;
   final double width;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: width,
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: Colors.white.withOpacity(.9),
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _IepColors.line),
-      ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Text(
-              label,
-              overflow: TextOverflow.ellipsis,
-              style: const TextStyle(
-                color: _IepColors.text,
-                fontSize: 13,
-                fontWeight: FontWeight.w800,
+        child: Container(
+          width: width,
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(.9),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _IepColors.line),
+          ),
+          child: Row(
+            children: <Widget>[
+              const Icon(
+                Icons.calendar_month_rounded,
+                color: _IepColors.muted,
+                size: 18,
               ),
-            ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _IepColors.text,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const Icon(
+                Icons.keyboard_arrow_down_rounded,
+                color: _IepColors.muted,
+                size: 20,
+              ),
+            ],
           ),
-          const Icon(
-            Icons.keyboard_arrow_down_rounded,
-            color: _IepColors.muted,
-            size: 20,
-          ),
-        ],
+        ),
       ),
     );
   }
 }
 
-class _SearchBox extends StatelessWidget {
-  const _SearchBox({required this.width});
+class _IepSearchBox extends StatefulWidget {
+  const _IepSearchBox({
+    required this.width,
+    required this.resetSeed,
+    required this.onSubmitted,
+  });
 
   final double width;
+  final int resetSeed;
+  final ValueChanged<String> onSubmitted;
+
+  @override
+  State<_IepSearchBox> createState() => _IepSearchBoxState();
+}
+
+class _IepSearchBoxState extends State<_IepSearchBox> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController();
+  }
+
+  @override
+  void didUpdateWidget(covariant _IepSearchBox oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.resetSeed != widget.resetSeed) {
+      _controller.clear();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      width: width,
+      width: widget.width,
       height: 38,
       padding: const EdgeInsets.symmetric(horizontal: 14),
       decoration: BoxDecoration(
@@ -556,94 +802,160 @@ class _SearchBox extends StatelessWidget {
         borderRadius: BorderRadius.circular(19),
         border: Border.all(color: _IepColors.line),
       ),
-      child: Row(
-        children: const <Widget>[
-          Icon(Icons.search_rounded, color: _IepColors.ink, size: 21),
-          SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              '搜索学员/评估老师',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                color: _IepColors.muted,
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+      child: TextField(
+        controller: _controller,
+        onSubmitted: widget.onSubmitted,
+        textInputAction: TextInputAction.search,
+        style: const TextStyle(
+          color: _IepColors.ink,
+          fontSize: 13,
+          fontWeight: FontWeight.w800,
+        ),
+        decoration: const InputDecoration(
+          isDense: true,
+          border: InputBorder.none,
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: _IepColors.ink,
+            size: 21,
           ),
-        ],
+          prefixIconConstraints: BoxConstraints(minWidth: 34),
+          hintText: '搜索学员姓名',
+          hintStyle: TextStyle(
+            color: _IepColors.muted,
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+          ),
+          contentPadding: EdgeInsets.fromLTRB(0, 10, 0, 10),
+        ),
       ),
     );
   }
 }
 
 class _SoftActionButton extends StatelessWidget {
-  const _SoftActionButton({required this.icon, required this.label});
+  const _SoftActionButton({
+    required this.icon,
+    required this.label,
+    this.loading = false,
+    this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final bool loading;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 13),
-      decoration: BoxDecoration(
-        color: _IepColors.orangeSoft,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(19),
-        border: Border.all(color: const Color(0xFFFFCDB5)),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: _IepColors.orangeDeep, size: 19),
-          const SizedBox(width: 5),
-          Text(
-            label,
-            style: const TextStyle(
-              color: _IepColors.orangeDeep,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-            ),
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            color: onTap == null
+                ? _IepColors.orangeSoft.withOpacity(.72)
+                : _IepColors.orangeSoft,
+            borderRadius: BorderRadius.circular(19),
+            border: Border.all(color: const Color(0xFFFFCDB5)),
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(
+                      _IepColors.orangeDeep,
+                    ),
+                  ),
+                )
+              else
+                Icon(icon, color: _IepColors.orangeDeep, size: 19),
+              const SizedBox(width: 5),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _IepColors.orangeDeep,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 }
 
 class _PrimaryActionButton extends StatelessWidget {
-  const _PrimaryActionButton({required this.icon, required this.label});
+  const _PrimaryActionButton({
+    required this.icon,
+    required this.label,
+    this.loading = false,
+    this.onTap,
+  });
 
   final IconData icon;
   final String label;
+  final bool loading;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 38,
-      padding: const EdgeInsets.symmetric(horizontal: 15),
-      decoration: BoxDecoration(
-        color: _IepColors.orange,
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(19),
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(19),
-        boxShadow: _iepShadow(
-          color: const Color(0x2CE96F43),
-          blur: 14,
-          offset: const Offset(0, 7),
-        ),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: Colors.white, size: 19),
-          const SizedBox(width: 6),
-          Text(
-            label,
-            style: const TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 15),
+          decoration: BoxDecoration(
+            color: onTap == null
+                ? _IepColors.orange.withOpacity(.72)
+                : _IepColors.orange,
+            borderRadius: BorderRadius.circular(19),
+            boxShadow: _iepShadow(
+              color: const Color(0x2CE96F43),
+              blur: 14,
+              offset: const Offset(0, 7),
             ),
           ),
-        ],
+          child: Row(
+            children: <Widget>[
+              if (loading)
+                const SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                  ),
+                )
+              else
+                Icon(icon, color: Colors.white, size: 19),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
