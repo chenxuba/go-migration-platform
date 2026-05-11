@@ -107,7 +107,7 @@ func buildPEP3WeeklyPlanDocumentXML(plan model.PEP3WeeklyPlanAIResult) string {
 func buildPEP3MonthlyPlanTable(plan model.PEP3MonthlyPlanAIResult) string {
 	widths := []int{806, 907, 907, 958, 957, 870, 870, 870, 870, 824, 620, 620}
 	var builder strings.Builder
-	builder.WriteString(buildIEPTableStart(widths))
+	builder.WriteString(buildIEPTableStartWithAlign(widths, "right"))
 	builder.WriteString(buildIEPTableRowStart(560))
 	builder.WriteString(buildIEPCell([]string{"姓名"}, widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", Bold: true}))
 	builder.WriteString(buildIEPCell([]string{plan.Student.Name}, sumInts(widths[1], widths[2]), iepPlanWordCellOptions{GridSpan: 2, Align: "center", VAlign: "center"}))

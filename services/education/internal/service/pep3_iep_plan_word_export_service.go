@@ -401,10 +401,20 @@ func buildIEPHomePlanTable(items []string) string {
 }
 
 func buildIEPTableStart(widths []int) string {
+	return buildIEPTableStartWithAlign(widths, "")
+}
+
+func buildIEPTableStartWithAlign(widths []int, align string) string {
 	var builder strings.Builder
 	builder.WriteString(`<w:tbl><w:tblPr><w:tblW w:w="`)
 	builder.WriteString(strconv.Itoa(sumInts(widths...)))
-	builder.WriteString(`" w:type="dxa"/><w:tblLayout w:type="fixed"/><w:tblCellMar><w:left w:w="24" w:type="dxa"/><w:right w:w="24" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid>`)
+	builder.WriteString(`" w:type="dxa"/><w:tblLayout w:type="fixed"/>`)
+	if strings.TrimSpace(align) != "" {
+		builder.WriteString(`<w:jc w:val="`)
+		builder.WriteString(align)
+		builder.WriteString(`"/>`)
+	}
+	builder.WriteString(`<w:tblCellMar><w:left w:w="24" w:type="dxa"/><w:right w:w="24" w:type="dxa"/></w:tblCellMar><w:tblBorders><w:top w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:left w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:right w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideH w:val="single" w:sz="8" w:space="0" w:color="000000"/><w:insideV w:val="single" w:sz="8" w:space="0" w:color="000000"/></w:tblBorders></w:tblPr><w:tblGrid>`)
 	for _, width := range widths {
 		builder.WriteString(`<w:gridCol w:w="`)
 		builder.WriteString(strconv.Itoa(width))
