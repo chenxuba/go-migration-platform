@@ -76,7 +76,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   int _previewWeek = 2;
   DateTime _periodStart = DateTime(2026, 5);
   DateTime? _periodEndOverride;
-  int _periodMonthCount = 3;
+  int _periodMonthCount = 6;
   _GoalEditRequest? _selectedGoal;
   List<_DocDomainData> _totalPlanDomains = <_DocDomainData>[];
   IepPlanSaved? _savedPlan;
@@ -93,7 +93,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _planError = '';
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
-  int _activeGenerationDurationMonths = 3;
+  int _activeGenerationDurationMonths = 6;
   final Map<String, _IepGenerationSessionSnapshot> _generationSessionsByRecord =
       <String, _IepGenerationSessionSnapshot>{};
   IepLessonSessionWeekState? _lessonSessionState;
