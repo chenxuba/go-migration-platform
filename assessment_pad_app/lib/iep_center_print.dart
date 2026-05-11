@@ -170,49 +170,36 @@ List<pw.Widget> _iepTotalDomainWidgets(
       rowHeights[index] += extra;
     }
   }
-  final double blockHeight =
-      rowHeights.fold<double>(0, (double sum, double item) => sum + item);
   return <pw.Widget>[
-    pw.NewPage(freeSpace: blockHeight),
-    pw.SizedBox(
-      height: blockHeight,
-      child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: <pw.Widget>[
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(domain.domain, 1, bold: true),
-            columnOffset: 0,
+    _IepSpanningPrintTable(
+      columns: columns,
+      rowHeights: rowHeights,
+      mergedCells: <_IepSpanningMergedCell>[
+        _IepSpanningMergedCell(
+          startColumn: 0,
+          columnSpan: 1,
+          text: domain.domain,
+          bold: true,
+        ),
+        _IepSpanningMergedCell(
+          startColumn: 1,
+          columnSpan: 3,
+          text: domain.longGoals.join('\n'),
+          align: pw.TextAlign.left,
+        ),
+      ],
+      rowCells: shortGoals.map((goal) {
+        return <_IepSpanningCell>[
+          _IepSpanningCell(
+            startColumn: 4,
+            columnSpan: 2,
+            text: goal.goal,
+            align: pw.TextAlign.left,
           ),
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(
-              domain.longGoals.join('\n'),
-              3,
-              align: pw.TextAlign.left,
-            ),
-            columnOffset: 1,
-          ),
-          pw.Expanded(
-            flex: _iepColumnFlex(columns, 4, 4),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: shortGoals.asMap().entries.map((entry) {
-                final _DocShortGoalData goal = entry.value;
-                return _iepPrintRow(
-                  columns.sublist(4),
-                  <_IepPrintCell>[
-                    _IepPrintCell(goal.goal, 2, align: pw.TextAlign.left),
-                    _IepPrintCell(goal.lesson, 1),
-                    _IepPrintCell(goal.period, 1),
-                  ],
-                  height: rowHeights[entry.key],
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
+          _IepSpanningCell(startColumn: 6, columnSpan: 1, text: goal.lesson),
+          _IepSpanningCell(startColumn: 7, columnSpan: 1, text: goal.period),
+        ];
+      }).toList(),
     ),
   ];
 }
@@ -302,72 +289,50 @@ List<pw.Widget> _iepMonthDomainWidgets(
       rowHeights[index] += extra;
     }
   }
-  final double blockHeight =
-      rowHeights.fold<double>(0, (double sum, double item) => sum + item);
   return <pw.Widget>[
-    pw.NewPage(freeSpace: blockHeight),
-    pw.SizedBox(
-      height: blockHeight,
-      child: pw.Row(
-        crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-        children: <pw.Widget>[
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(domain.domain, 1, bold: true),
-            columnOffset: 0,
+    _IepSpanningPrintTable(
+      columns: columns,
+      rowHeights: rowHeights,
+      mergedCells: <_IepSpanningMergedCell>[
+        _IepSpanningMergedCell(
+          startColumn: 0,
+          columnSpan: 1,
+          text: domain.domain,
+          bold: true,
+        ),
+        _IepSpanningMergedCell(
+          startColumn: 1,
+          columnSpan: 2,
+          text: domain.longGoal,
+          align: pw.TextAlign.left,
+        ),
+        _IepSpanningMergedCell(
+          startColumn: 3,
+          columnSpan: 2,
+          text: domain.shortGoal,
+          align: pw.TextAlign.left,
+        ),
+        _IepSpanningMergedCell(
+          startColumn: 9,
+          columnSpan: 1,
+          text: domain.lesson,
+        ),
+      ],
+      rowCells: trainings.asMap().entries.map((entry) {
+        return <_IepSpanningCell>[
+          _IepSpanningCell(
+            startColumn: 5,
+            columnSpan: 4,
+            text: entry.value.content,
+            align: pw.TextAlign.left,
           ),
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(domain.longGoal, 2, align: pw.TextAlign.left),
-            columnOffset: 1,
+          _IepSpanningCell(
+            startColumn: 10,
+            columnSpan: 2,
+            text: _monthTrainingPeriodText(monthRange, entry.key),
           ),
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(domain.shortGoal, 2, align: pw.TextAlign.left),
-            columnOffset: 3,
-          ),
-          pw.Expanded(
-            flex: _iepColumnFlex(columns, 5, 4),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: trainings.asMap().entries.map((entry) {
-                return _iepPrintRow(
-                  columns.sublist(5, 9),
-                  <_IepPrintCell>[
-                    _IepPrintCell(
-                      entry.value.content,
-                      4,
-                      align: pw.TextAlign.left,
-                    ),
-                  ],
-                  height: rowHeights[entry.key],
-                );
-              }).toList(),
-            ),
-          ),
-          _iepFlexCell(
-            columns,
-            _IepPrintCell(domain.lesson, 1),
-            columnOffset: 9,
-          ),
-          pw.Expanded(
-            flex: _iepColumnFlex(columns, 10, 2),
-            child: pw.Column(
-              crossAxisAlignment: pw.CrossAxisAlignment.stretch,
-              children: trainings.asMap().entries.map((entry) {
-                return _iepPrintRow(
-                  columns.sublist(10),
-                  <_IepPrintCell>[
-                    _IepPrintCell(
-                        _monthTrainingPeriodText(monthRange, entry.key), 2),
-                  ],
-                  height: rowHeights[entry.key],
-                );
-              }).toList(),
-            ),
-          ),
-        ],
-      ),
+        ];
+      }).toList(),
     ),
   ];
 }
@@ -509,6 +474,248 @@ class _IepPrintCell {
   final int columns;
   final bool bold;
   final pw.TextAlign align;
+}
+
+class _IepSpanningCell {
+  const _IepSpanningCell({
+    required this.startColumn,
+    required this.columnSpan,
+    required this.text,
+    this.bold = false,
+    this.align = pw.TextAlign.center,
+  });
+
+  final int startColumn;
+  final int columnSpan;
+  final String text;
+  final bool bold;
+  final pw.TextAlign align;
+}
+
+class _IepSpanningMergedCell extends _IepSpanningCell {
+  const _IepSpanningMergedCell({
+    required super.startColumn,
+    required super.columnSpan,
+    required super.text,
+    super.bold = false,
+    super.align = pw.TextAlign.center,
+  });
+}
+
+class _IepSpanningPrintTableContext extends pw.WidgetContext {
+  int firstRow = 0;
+  int lastRow = 0;
+
+  @override
+  void apply(covariant _IepSpanningPrintTableContext other) {
+    firstRow = other.firstRow;
+    lastRow = other.lastRow;
+  }
+
+  @override
+  _IepSpanningPrintTableContext clone() {
+    return _IepSpanningPrintTableContext()..apply(this);
+  }
+}
+
+class _IepSpanningPrintTable extends pw.Widget with pw.SpanningWidget {
+  _IepSpanningPrintTable({
+    required this.columns,
+    required this.rowHeights,
+    required this.mergedCells,
+    required this.rowCells,
+  });
+
+  final List<int> columns;
+  final List<double> rowHeights;
+  final List<_IepSpanningMergedCell> mergedCells;
+  final List<List<_IepSpanningCell>> rowCells;
+  final _IepSpanningPrintTableContext _context =
+      _IepSpanningPrintTableContext();
+
+  @override
+  bool get canSpan => true;
+
+  @override
+  bool get hasMoreWidgets => _context.lastRow < rowHeights.length;
+
+  @override
+  void restoreContext(covariant _IepSpanningPrintTableContext context) {
+    _context.firstRow = context.lastRow;
+    _context.lastRow = context.lastRow;
+  }
+
+  @override
+  pw.WidgetContext saveContext() {
+    return _context;
+  }
+
+  @override
+  void layout(
+    pw.Context context,
+    pw.BoxConstraints constraints, {
+    bool parentUsesSize = false,
+  }) {
+    final double width = constraints.hasBoundedWidth
+        ? constraints.maxWidth
+        : columns.fold<int>(0, (int sum, int item) => sum + item).toDouble();
+    final int start = _context.firstRow.clamp(0, rowHeights.length);
+    int end = start;
+    double height = 0;
+    final double maxHeight =
+        constraints.hasBoundedHeight ? constraints.maxHeight : double.infinity;
+
+    while (end < rowHeights.length) {
+      final double rowHeight = rowHeights[end];
+      if (height > 0 && height + rowHeight > maxHeight) {
+        break;
+      }
+      height += rowHeight;
+      end += 1;
+      if (height >= maxHeight) {
+        break;
+      }
+    }
+
+    if (end == start && start < rowHeights.length) {
+      height = math.min(rowHeights[start], maxHeight);
+      end = start + 1;
+    }
+
+    _context.firstRow = start;
+    _context.lastRow = end;
+    box = PdfRect(0, 0, width, height);
+  }
+
+  @override
+  void paint(pw.Context context) {
+    super.paint(context);
+    if (box == null || _context.lastRow <= _context.firstRow) {
+      return;
+    }
+    final Matrix4 transform = Matrix4.identity()..translate(box!.x, box!.y);
+    context.canvas
+      ..saveContext()
+      ..setTransform(transform);
+
+    final List<double> xPositions = _columnPositions(box!.width);
+    final int start = _context.firstRow;
+    final int end = _context.lastRow;
+    final double segmentHeight = _segmentHeight(start, end);
+
+    for (final _IepSpanningMergedCell cell in mergedCells) {
+      final PdfRect rect = _cellRect(
+        xPositions,
+        cell.startColumn,
+        cell.columnSpan,
+        0,
+        segmentHeight,
+      );
+      _drawBorder(context, rect);
+      _paintTextInRect(
+        context,
+        rect,
+        start == 0 ? cell.text : '',
+        bold: cell.bold,
+        align: cell.align,
+      );
+    }
+
+    double topCursor = segmentHeight;
+    for (int row = start; row < end; row += 1) {
+      final double rowHeight = rowHeights[row];
+      final double y = topCursor - rowHeight;
+      for (final _IepSpanningCell cell in rowCells[row]) {
+        final PdfRect rect = _cellRect(
+          xPositions,
+          cell.startColumn,
+          cell.columnSpan,
+          y,
+          rowHeight,
+        );
+        _drawBorder(context, rect);
+        _paintTextInRect(
+          context,
+          rect,
+          cell.text,
+          bold: cell.bold,
+          align: cell.align,
+        );
+      }
+      topCursor = y;
+    }
+
+    context.canvas.restoreContext();
+  }
+
+  List<double> _columnPositions(double width) {
+    final int total = columns.fold<int>(0, (int sum, int item) => sum + item);
+    double cursor = 0;
+    final List<double> positions = <double>[0];
+    for (final int column in columns) {
+      cursor += width * column / total;
+      positions.add(cursor);
+    }
+    return positions;
+  }
+
+  PdfRect _cellRect(
+    List<double> xPositions,
+    int startColumn,
+    int columnSpan,
+    double y,
+    double height,
+  ) {
+    final double x = xPositions[startColumn];
+    final double right = xPositions[startColumn + columnSpan];
+    return PdfRect(x, y, right - x, height);
+  }
+
+  double _segmentHeight(int start, int end) {
+    return rowHeights
+        .sublist(start, end)
+        .fold<double>(0, (double sum, double item) => sum + item);
+  }
+
+  void _drawBorder(pw.Context context, PdfRect rect) {
+    context.canvas
+      ..setStrokeColor(_iepPrintBorder)
+      ..setLineWidth(.55)
+      ..drawBox(rect)
+      ..strokePath();
+  }
+
+  void _paintTextInRect(
+    pw.Context context,
+    PdfRect rect,
+    String text, {
+    required bool bold,
+    required pw.TextAlign align,
+  }) {
+    final pw.Widget child = pw.Container(
+      alignment: align == pw.TextAlign.left
+          ? pw.Alignment.centerLeft
+          : pw.Alignment.center,
+      padding: const pw.EdgeInsets.symmetric(horizontal: 5, vertical: 4),
+      child: pw.Text(
+        text.trim().isEmpty ? ' ' : text,
+        textAlign: align,
+        style: pw.TextStyle(
+          color: bold ? _iepPrintInk : _iepPrintText,
+          fontSize: 7.8,
+          fontWeight: bold ? pw.FontWeight.bold : pw.FontWeight.normal,
+          lineSpacing: 1.1,
+          height: 1,
+        ),
+      ),
+    );
+    child.layout(
+      context,
+      pw.BoxConstraints.tightFor(width: rect.width, height: rect.height),
+    );
+    child.box = rect;
+    child.paint(context);
+  }
 }
 
 pw.Widget _iepPrintTitle(String title) {
