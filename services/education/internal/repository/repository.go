@@ -240,6 +240,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 	if err := ensureIEPPlanGenerationTaskTables(ctx, repo.db); err != nil {
 		return err
 	}
+	if err := ensureIEPExecutionGenerationTaskTables(ctx, repo.db); err != nil {
+		return err
+	}
 	if err := ensurePEP3ExecutionPlanTables(ctx, repo.db); err != nil {
 		return err
 	}

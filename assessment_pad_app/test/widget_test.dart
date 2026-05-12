@@ -4763,6 +4763,7 @@ class _FakeIepPlanClient implements IepPlanClient {
               gender: '-',
               birthDate: '2022-05-11',
             ),
+            restWeekdays: <int>[DateTime.sunday],
             meta: IepMonthlyPlanMeta(
               planDate: '2026-05-07',
               participant: '陈瑞',
@@ -4805,6 +4806,7 @@ class _FakeIepPlanClient implements IepPlanClient {
             trainingDate: '2026-05-01 至 2026-05-02',
             preparation: '平衡木、记录表',
             weekDates: <String>['2026-05-01', '2026-05-02'],
+            restWeekdays: <int>[DateTime.sunday],
             rows: <IepWeeklyPlanRow>[
               IepWeeklyPlanRow(
                 project: '平衡木行走',
@@ -4825,6 +4827,7 @@ class _FakeIepPlanClient implements IepPlanClient {
     required int durationMonths,
     required int sourceDurationMonths,
     required DateTime startDate,
+    String syncMode = 'dates_only',
   }) async {
     _startDate = DateTime(startDate.year, startDate.month, startDate.day);
     final DateTime endDate =
@@ -5000,6 +5003,7 @@ class _FakeIepPlanClient implements IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
     required int targetMonthIndex,
+    List<int> restWeekdays = const <int>[],
     required IepPlan sourcePlan,
   }) async* {
     generateMonthlyPlanCalls += 1;
@@ -5019,6 +5023,7 @@ class _FakeIepPlanClient implements IepPlanClient {
           gender: record.studentGender,
           birthDate: record.birthDate,
         ),
+        restWeekdays: restWeekdays,
         meta: IepMonthlyPlanMeta(
           planDate: '2026-05-07',
           participant: '陈瑞',
@@ -5056,6 +5061,7 @@ class _FakeIepPlanClient implements IepPlanClient {
     required int targetWeekIndex,
     required IepPlan sourcePlan,
     IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
   }) async* {
     generateWeeklyPlanCalls += 1;
     final int monthNumber = 4 + targetMonthIndex;
@@ -5077,6 +5083,7 @@ class _FakeIepPlanClient implements IepPlanClient {
         trainingDate: '2026-05-01 至 2026-05-02',
         preparation: '平衡木、记录表',
         weekDates: const <String>['2026-05-01', '2026-05-02'],
+        restWeekdays: restWeekdays,
         rows: const <IepWeeklyPlanRow>[
           IepWeeklyPlanRow(
             project: '平衡木行走',
@@ -5122,6 +5129,7 @@ class _FakeIepPlanClient implements IepPlanClient {
                   trainingDate: '2026-05-01 至 2026-05-02',
                   preparation: '平衡木、记录表',
                   weekDates: <String>['2026-05-01', '2026-05-02'],
+                  restWeekdays: <int>[DateTime.sunday],
                   rows: <IepWeeklyPlanRow>[
                     IepWeeklyPlanRow(
                       project: '平衡木行走',
@@ -5333,6 +5341,116 @@ class _FakeIepPlanClient implements IepPlanClient {
     required IepWeeklyPlan plan,
   }) async {
     return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask> createExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String planType,
+    required int targetMonthIndex,
+    int targetWeekIndex = 0,
+    required IepPlan sourcePlan,
+    IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
+  }) async {
+    return IepExecutionPlanGenerationTask(
+      taskId: 'fake-execution-$planType-${record.id}-$targetMonthIndex-$targetWeekIndex',
+      status: 'running',
+      durationMonths: durationMonths,
+      planType: planType,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      restWeekdays: restWeekdays,
+      message: planType == 'weekly' ? '正在准备周计划生成上下文' : '正在准备月度计划生成上下文',
+    );
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask> fetchExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    return IepExecutionPlanGenerationTask(
+      taskId: taskId,
+      status: 'failed',
+      durationMonths: 3,
+      planType: 'monthly',
+      error: '测试任务已结束',
+    );
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String planType,
+    required int targetMonthIndex,
+    int targetWeekIndex = 0,
+  }) async {
+    return null;
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<dynamic>>
+      watchExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
+    if (taskId.contains('weekly')) {
+      yield* generateWeeklyPlanStream(
+        token,
+        record: record,
+        durationMonths: 3,
+        targetMonthIndex: 1,
+        targetWeekIndex: 1,
+        sourcePlan: lastSavedPlan ??
+            IepPlan(
+              title: '康复教学季度计划',
+              student: IepPlanStudent(
+                name: record.studentName,
+                gender: record.studentGender,
+                birthDate: record.birthDate,
+              ),
+              meta: IepPlanMeta(
+                planDate: record.assessmentDate,
+                participant: record.examinerName,
+                implementer: record.examinerName,
+                startDate: '2026-05-01',
+                endDate: '2026-07-31',
+              ),
+              rows: const <IepPlanRow>[],
+            ),
+      );
+      return;
+    }
+    yield* generateMonthlyPlanStream(
+      token,
+      record: record,
+      durationMonths: 3,
+      targetMonthIndex: 1,
+      sourcePlan: lastSavedPlan ??
+          IepPlan(
+            title: '康复教学季度计划',
+            student: IepPlanStudent(
+              name: record.studentName,
+              gender: record.studentGender,
+              birthDate: record.birthDate,
+            ),
+            meta: IepPlanMeta(
+              planDate: record.assessmentDate,
+              participant: record.examinerName,
+              implementer: record.examinerName,
+              startDate: '2026-05-01',
+              endDate: '2026-07-31',
+            ),
+            rows: const <IepPlanRow>[],
+          ),
+    );
   }
 }
 
@@ -5886,6 +6004,7 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required int durationMonths,
     required int sourceDurationMonths,
     required DateTime startDate,
+    String syncMode = 'dates_only',
   }) async {
     return IepPlanPeriodSyncResult.empty(durationMonths);
   }
@@ -6016,6 +6135,7 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
     required int targetMonthIndex,
+    List<int> restWeekdays = const <int>[],
     required IepPlan sourcePlan,
   }) async* {
     yield IepExecutionPlanGenerationEvent<IepMonthlyPlan>.error('未实现');
@@ -6031,8 +6151,73 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required int targetWeekIndex,
     required IepPlan sourcePlan,
     IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
   }) async* {
     yield IepExecutionPlanGenerationEvent<IepWeeklyPlan>.error('未实现');
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask> createExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String planType,
+    required int targetMonthIndex,
+    int targetWeekIndex = 0,
+    required IepPlan sourcePlan,
+    IepMonthlyPlan? monthlyPlan,
+    List<int> restWeekdays = const <int>[],
+  }) async {
+    return IepExecutionPlanGenerationTask(
+      taskId: 'empty-execution-$planType-${record.id}',
+      status: 'running',
+      durationMonths: durationMonths,
+      planType: planType,
+      targetMonthIndex: targetMonthIndex,
+      targetWeekIndex: targetWeekIndex,
+      restWeekdays: restWeekdays,
+    );
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask> fetchExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async {
+    return IepExecutionPlanGenerationTask(
+      taskId: taskId,
+      status: 'failed',
+      durationMonths: 3,
+      planType: 'monthly',
+      error: '测试任务已结束',
+    );
+  }
+
+  @override
+  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+    required String planType,
+    required int targetMonthIndex,
+    int targetWeekIndex = 0,
+  }) async {
+    return null;
+  }
+
+  @override
+  Stream<IepExecutionPlanGenerationEvent<dynamic>>
+      watchExecutionPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
+    if (taskId.contains('weekly')) {
+      yield IepExecutionPlanGenerationEvent<dynamic>.error('未实现');
+      return;
+    }
+    yield IepExecutionPlanGenerationEvent<dynamic>.error('未实现');
   }
 
   @override

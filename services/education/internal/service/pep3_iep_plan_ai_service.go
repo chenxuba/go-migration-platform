@@ -413,7 +413,7 @@ func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string,
 	if systemPrompt == "" {
 		systemPrompt = pep3IEPPlanSystemPrompt()
 	}
-	return json.Marshal(deepSeekChatRequest{
+	request := deepSeekChatRequest{
 		Model: deepSeekIEPPlanModel,
 		Messages: []deepSeekChatMessage{
 			{
@@ -430,10 +430,13 @@ func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string,
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
-		Thinking:      &deepSeekThinking{Type: "disabled"},
-		StreamOptions: &deepSeekStreamOptions{IncludeUsage: stream},
-		Stream:        stream,
-	})
+		Thinking: &deepSeekThinking{Type: "disabled"},
+		Stream:   stream,
+	}
+	if stream {
+		request.StreamOptions = &deepSeekStreamOptions{IncludeUsage: true}
+	}
+	return json.Marshal(request)
 }
 
 func pep3IEPPlanSystemPrompt() string {

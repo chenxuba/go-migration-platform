@@ -20,16 +20,25 @@ class _IepGenerationResult {
 }
 
 class _ExecutionPlanGenerationResult<T> {
-  const _ExecutionPlanGenerationResult(this.plan, this.costAmountCny);
+  const _ExecutionPlanGenerationResult(
+    this.plan,
+    this.costAmountCny, {
+    this.savedExecutionPlans,
+  });
 
   final T plan;
   final double costAmountCny;
+  final IepExecutionPlansSaved? savedExecutionPlans;
 }
 
 class _IepGenerationSessionSnapshot {
   const _IepGenerationSessionSnapshot({
     required this.taskId,
     required this.durationMonths,
+    required this.previewMode,
+    required this.monthLabel,
+    required this.weekIndex,
+    required this.restWeekdays,
     required this.status,
     required this.streamText,
     required this.progress,
@@ -38,6 +47,10 @@ class _IepGenerationSessionSnapshot {
 
   final String taskId;
   final int durationMonths;
+  final _IepPreviewMode previewMode;
+  final String monthLabel;
+  final int weekIndex;
+  final List<int> restWeekdays;
   final String status;
   final String streamText;
   final double progress;
@@ -94,6 +107,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
   int _activeGenerationDurationMonths = 6;
+  _IepPreviewMode _activeGenerationPreviewMode = _IepPreviewMode.total;
+  String _activeGenerationMonthLabel = '';
+  int _activeGenerationWeekIndex = 0;
   List<int> _activeWeeklyRestWeekdays = <int>[DateTime.sunday];
   final Map<int, List<int>> _monthlyRestWeekdayOverrides = <int, List<int>>{};
   final Map<String, _IepGenerationSessionSnapshot> _generationSessionsByRecord =
@@ -160,6 +176,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generatingPlan = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
+      _activeGenerationPreviewMode = _IepPreviewMode.total;
+      _activeGenerationMonthLabel = '';
+      _activeGenerationWeekIndex = 0;
       _activeWeeklyRestWeekdays = <int>[DateTime.sunday];
       _monthlyRestWeekdayOverrides.clear();
       ++_loadTicket;
@@ -191,6 +210,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _generatingPlan = false;
         _activeGenerationTaskId = '';
         _activeGenerationRecordKey = '';
+        _activeGenerationPreviewMode = _IepPreviewMode.total;
+        _activeGenerationMonthLabel = '';
+        _activeGenerationWeekIndex = 0;
         _hasCompletedInitialPlanLoad = false;
       });
       widget.onConfirmAvailabilityChanged(false);
@@ -220,12 +242,56 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             _IepGenerationSessionSnapshot(
           taskId: activeTask.taskId,
           durationMonths: activeTask.durationMonths == 6 ? 6 : 3,
+          previewMode: _IepPreviewMode.total,
+          monthLabel: '',
+          weekIndex: 0,
+          restWeekdays: const <int>[DateTime.sunday],
           status: activeTask.message.trim().isEmpty
               ? 'AI正在生成IEP计划'
               : activeTask.message.trim(),
           streamText: activeTask.streamText,
           progress: _streamGenerationProgress(activeTask.streamText),
           costAmountCny: activeTask.costAmountCny,
+        );
+        _generationSessionsByRecord[_recordGenerationKey(record)] = session;
+        if (_restoreGenerationSessionFor(record)) {
+          return;
+        }
+      }
+      final IepExecutionPlanGenerationTask? activeExecutionTask =
+          await _fetchActiveExecutionGenerationTask(token, record);
+      if (!mounted || ticket != _loadTicket) {
+        return;
+      }
+      if (activeExecutionTask != null &&
+          !activeExecutionTask.isDone &&
+          !activeExecutionTask.isFailed &&
+          activeExecutionTask.taskId.trim().isNotEmpty) {
+        final _IepPreviewMode previewMode =
+            activeExecutionTask.planType == 'weekly'
+                ? _IepPreviewMode.week
+                : _IepPreviewMode.month;
+        final List<String> months = _periodMonths;
+        final String monthLabel = activeExecutionTask.targetMonthIndex > 0 &&
+                activeExecutionTask.targetMonthIndex <= months.length
+            ? months[activeExecutionTask.targetMonthIndex - 1]
+            : _previewMonth;
+        final _IepGenerationSessionSnapshot session =
+            _IepGenerationSessionSnapshot(
+          taskId: activeExecutionTask.taskId,
+          durationMonths: activeExecutionTask.durationMonths == 6 ? 6 : 3,
+          previewMode: previewMode,
+          monthLabel: monthLabel,
+          weekIndex: activeExecutionTask.targetWeekIndex,
+          restWeekdays: activeExecutionTask.restWeekdays,
+          status: activeExecutionTask.message.trim().isEmpty
+              ? (previewMode == _IepPreviewMode.week
+                  ? 'AI正在生成周计划'
+                  : 'AI正在生成月计划')
+              : activeExecutionTask.message.trim(),
+          streamText: activeExecutionTask.streamText,
+          progress: _streamGenerationProgress(activeExecutionTask.streamText),
+          costAmountCny: activeExecutionTask.costAmountCny,
         );
         _generationSessionsByRecord[_recordGenerationKey(record)] = session;
         if (_restoreGenerationSessionFor(record)) {
@@ -294,6 +360,43 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     final bool canConfirm = savedPlan?.hasContent == true &&
         savedPlan?.status.trim() != 'confirmed';
     widget.onConfirmAvailabilityChanged(canConfirm);
+  }
+
+  Future<IepExecutionPlanGenerationTask?> _fetchActiveExecutionGenerationTask(
+    String token,
+    IepAssessmentRecordSummary record,
+  ) async {
+    final int monthIndex = _previewMonthIndex();
+    final IepExecutionPlanGenerationTask? weeklyTask =
+        await widget.planClient.fetchActiveExecutionPlanGenerationTask(
+      token,
+      record: record,
+      durationMonths: _periodMonthCount,
+      planType: 'weekly',
+      targetMonthIndex: monthIndex,
+      targetWeekIndex: _previewWeek,
+    );
+    if (weeklyTask != null &&
+        !weeklyTask.isDone &&
+        !weeklyTask.isFailed &&
+        weeklyTask.taskId.trim().isNotEmpty) {
+      return weeklyTask;
+    }
+    final IepExecutionPlanGenerationTask? monthlyTask =
+        await widget.planClient.fetchActiveExecutionPlanGenerationTask(
+      token,
+      record: record,
+      durationMonths: _periodMonthCount,
+      planType: 'monthly',
+      targetMonthIndex: monthIndex,
+    );
+    if (monthlyTask != null &&
+        !monthlyTask.isDone &&
+        !monthlyTask.isFailed &&
+        monthlyTask.taskId.trim().isNotEmpty) {
+      return monthlyTask;
+    }
+    return null;
   }
 
   IepPlanSaved _draftSavedPlan(IepPlan plan) {
@@ -478,6 +581,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     _generationSessionsByRecord[recordKey] = _IepGenerationSessionSnapshot(
       taskId: _activeGenerationTaskId,
       durationMonths: _activeGenerationDurationMonths,
+      previewMode: _activeGenerationPreviewMode,
+      monthLabel: _activeGenerationMonthLabel,
+      weekIndex: _activeGenerationWeekIndex,
+      restWeekdays: List<int>.from(_activeWeeklyRestWeekdays),
       status: _generationStatus,
       streamText: _aiStreamText,
       progress: _generationProgress,
@@ -509,6 +616,17 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _activeGenerationTaskId = session.taskId;
       _activeGenerationRecordKey = _recordGenerationKey(record);
       _activeGenerationDurationMonths = session.durationMonths;
+      _activeGenerationPreviewMode = session.previewMode;
+      _activeGenerationMonthLabel = session.monthLabel;
+      _activeGenerationWeekIndex = session.weekIndex;
+      _activeWeeklyRestWeekdays = List<int>.from(session.restWeekdays);
+      _previewMode = session.previewMode;
+      if (session.monthLabel.trim().isNotEmpty) {
+        _previewMonth = session.monthLabel;
+      }
+      if (session.weekIndex > 0) {
+        _previewWeek = session.weekIndex;
+      }
       _generationStatus = session.status;
       _aiStreamText = session.streamText;
       _generationProgress = session.progress;
@@ -523,7 +641,13 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted) {
         return;
       }
-      _resumeIepPlanGenerationTask(showMessage: false);
+      switch (session.previewMode) {
+        case _IepPreviewMode.total:
+          _resumeIepPlanGenerationTask(showMessage: false);
+        case _IepPreviewMode.month:
+        case _IepPreviewMode.week:
+          _resumeExecutionPlanGenerationTask(showMessage: false);
+      }
     });
     return true;
   }
@@ -536,7 +660,13 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     if (_hasResumableGenerationTask) {
-      await _resumeIepPlanGenerationTask(showMessage: showMessage);
+      switch (_activeGenerationPreviewMode) {
+        case _IepPreviewMode.total:
+          await _resumeIepPlanGenerationTask(showMessage: showMessage);
+        case _IepPreviewMode.month:
+        case _IepPreviewMode.week:
+          await _resumeExecutionPlanGenerationTask(showMessage: showMessage);
+      }
       return;
     }
     _restoreGenerationSessionFor(record);
@@ -552,7 +682,13 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     if (_hasResumableGenerationTask) {
-      await _resumeIepPlanGenerationTask(showMessage: false);
+      switch (_activeGenerationPreviewMode) {
+        case _IepPreviewMode.total:
+          await _resumeIepPlanGenerationTask(showMessage: false);
+        case _IepPreviewMode.month:
+        case _IepPreviewMode.week:
+          await _resumeExecutionPlanGenerationTask(showMessage: false);
+      }
       return;
     }
     if (_restoreGenerationSessionFor(record)) {
@@ -685,7 +821,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
             event.costAmountCny,
           );
         });
-        return _ExecutionPlanGenerationResult<T>(plan, event.costAmountCny);
+        return _ExecutionPlanGenerationResult<T>(
+          plan,
+          event.costAmountCny,
+          savedExecutionPlans: switch (plan) {
+            final IepExecutionPlansSaved saved => saved,
+            _ => null,
+          },
+        );
       case IepExecutionPlanGenerationEventType.error:
         throw IepPlanApiException(
           event.message.trim().isEmpty ? 'AI生成失败' : event.message.trim(),
@@ -862,6 +1005,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     ++_loadTicket;
     final int monthIndex = _previewMonthIndex();
     IepMonthlyPlan? finalPlan;
+    IepExecutionPlansSaved? savedPlansFromTask;
     setState(() {
       _activeWeeklyRestWeekdays = List<int>.from(restWeekdays);
       _monthlyRestWeekdayOverrides[monthIndex] = List<int>.from(restWeekdays);
@@ -889,6 +1033,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = .08;
       _generationCostAmountCny = 0;
       _planError = '';
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = _recordGenerationKey(record);
+      _activeGenerationDurationMonths = _periodMonthCount;
+      _activeGenerationPreviewMode = _IepPreviewMode.month;
+      _activeGenerationMonthLabel = _previewMonth;
+      _activeGenerationWeekIndex = 0;
     });
     _notifyRecordStatus(record, 'generating');
     widget.onConfirmAvailabilityChanged(false);
@@ -896,18 +1046,33 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
-      await for (final IepExecutionPlanGenerationEvent<IepMonthlyPlan> event
-          in widget.planClient.generateMonthlyPlanStream(
+      final IepExecutionPlanGenerationTask task =
+          await widget.planClient.createExecutionPlanGenerationTask(
         token,
         record: record,
         durationMonths: _periodMonthCount,
+        planType: 'monthly',
         targetMonthIndex: monthIndex,
-        restWeekdays: restWeekdays,
         sourcePlan: sourcePlan,
+        restWeekdays: restWeekdays,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _activeGenerationTaskId = task.taskId;
+      });
+      await for (final IepExecutionPlanGenerationEvent<dynamic> rawEvent
+          in widget.planClient.watchExecutionPlanGenerationTask(
+        token,
+        record: record,
+        taskId: task.taskId,
       )) {
         if (!mounted || ticket != _generationTicket) {
           return;
         }
+        final IepExecutionPlanGenerationEvent<IepMonthlyPlan> event =
+            _castExecutionEvent<IepMonthlyPlan>(rawEvent);
         final _ExecutionPlanGenerationResult<IepMonthlyPlan>? result =
             await _handleExecutionGenerationEvent<IepMonthlyPlan>(
           event,
@@ -915,6 +1080,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
           statusLabel: 'AI正在生成月计划',
         );
         finalPlan = result?.plan ?? finalPlan;
+        savedPlansFromTask = result?.savedExecutionPlans ?? savedPlansFromTask;
       }
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -922,8 +1088,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      final IepExecutionPlansSaved saved =
-          await widget.planClient.saveMonthlyPlan(
+      savedPlansFromTask ??= await widget.planClient.saveMonthlyPlan(
         token,
         record: record,
         durationMonths: _periodMonthCount,
@@ -934,12 +1099,15 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final double actualCostAmountCny = _generationCostAmountCny;
+      final IepExecutionPlansSaved saved = savedPlansFromTask;
       _syncMonthlyRestWeekdayOverridesFromExecutionPlans(saved);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '';
         _aiStreamText = '';
         _generationProgress = 1;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
         _executionPlans = saved;
       });
       _notifyRecordStatus(record, _savedPlan?.status);
@@ -952,6 +1120,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -965,6 +1134,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = '月计划生成失败：$error';
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -1010,6 +1180,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     final int ticket = ++_generationTicket;
     ++_loadTicket;
     IepWeeklyPlan? finalPlan;
+    IepExecutionPlansSaved? savedPlansFromTask;
     setState(() {
       _activeWeeklyRestWeekdays = List<int>.from(effectiveRestWeekdays);
       _monthlyRestWeekdayOverrides[monthIndex] =
@@ -1021,6 +1192,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = .08;
       _generationCostAmountCny = 0;
       _planError = '';
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = _recordGenerationKey(record);
+      _activeGenerationDurationMonths = _periodMonthCount;
+      _activeGenerationPreviewMode = _IepPreviewMode.week;
+      _activeGenerationMonthLabel = _previewMonth;
+      _activeGenerationWeekIndex = _previewWeek;
     });
     _notifyRecordStatus(record, 'generating');
     widget.onConfirmAvailabilityChanged(false);
@@ -1028,20 +1205,35 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
       final String token = prefs.getString(_authTokenStorageKey) ?? '';
-      await for (final IepExecutionPlanGenerationEvent<IepWeeklyPlan> event
-          in widget.planClient.generateWeeklyPlanStream(
+      final IepExecutionPlanGenerationTask task =
+          await widget.planClient.createExecutionPlanGenerationTask(
         token,
         record: record,
         durationMonths: _periodMonthCount,
+        planType: 'weekly',
         targetMonthIndex: monthIndex,
         targetWeekIndex: _previewWeek,
         sourcePlan: sourcePlan,
         monthlyPlan: monthlyPlan,
         restWeekdays: effectiveRestWeekdays,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      setState(() {
+        _activeGenerationTaskId = task.taskId;
+      });
+      await for (final IepExecutionPlanGenerationEvent<dynamic> rawEvent
+          in widget.planClient.watchExecutionPlanGenerationTask(
+        token,
+        record: record,
+        taskId: task.taskId,
       )) {
         if (!mounted || ticket != _generationTicket) {
           return;
         }
+        final IepExecutionPlanGenerationEvent<IepWeeklyPlan> event =
+            _castExecutionEvent<IepWeeklyPlan>(rawEvent);
         final _ExecutionPlanGenerationResult<IepWeeklyPlan>? result =
             await _handleExecutionGenerationEvent<IepWeeklyPlan>(
           event,
@@ -1049,6 +1241,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
           statusLabel: 'AI正在生成周计划',
         );
         finalPlan = result?.plan ?? finalPlan;
+        savedPlansFromTask = result?.savedExecutionPlans ?? savedPlansFromTask;
       }
       if (!mounted || ticket != _generationTicket) {
         return;
@@ -1057,14 +1250,15 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
       final IepExecutionPlansSaved saved =
-          await widget.planClient.saveWeeklyPlan(
-        token,
-        record: record,
-        durationMonths: _periodMonthCount,
-        targetMonthIndex: monthIndex,
-        targetWeekIndex: _previewWeek,
-        plan: finalPlan,
-      );
+          savedPlansFromTask ??
+              await widget.planClient.saveWeeklyPlan(
+                token,
+                record: record,
+                durationMonths: _periodMonthCount,
+                targetMonthIndex: monthIndex,
+                targetWeekIndex: _previewWeek,
+                plan: finalPlan,
+              );
       if (!mounted || ticket != _generationTicket) {
         return;
       }
@@ -1075,6 +1269,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _generationStatus = '';
         _aiStreamText = '';
         _generationProgress = 1;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
         _executionPlans = saved;
       });
       _notifyRecordStatus(record, _savedPlan?.status);
@@ -1087,6 +1283,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -1100,6 +1297,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = '周计划生成失败：$error';
+      _storeCurrentGenerationSession(record);
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
@@ -1273,6 +1471,192 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return null;
   }
 
+  Future<_ExecutionPlanGenerationResult<dynamic>?>
+      _applyExecutionGenerationTaskSnapshot(
+    IepExecutionPlanGenerationTask task, {
+    required int ticket,
+  }) async {
+    if (task.streamText.isNotEmpty && task.streamText != _aiStreamText) {
+      setState(() {
+        _aiStreamText = task.streamText;
+        _generationProgress = math.max(
+          _generationProgress,
+          _streamGenerationProgress(_aiStreamText),
+        );
+      });
+    }
+    if (task.isFailed) {
+      throw IepPlanApiException(task.error.isEmpty ? 'AI生成失败' : task.error);
+    }
+    final String statusLabel = task.planType == 'weekly' ? 'AI正在生成周计划' : 'AI正在生成月计划';
+    if (task.isDone) {
+      final dynamic plan = task.savedPlan ?? task.plan;
+      if (plan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      setState(() {
+        _generationProgress = math.max(_generationProgress, .99);
+        _generationStatus =
+            task.message.trim().isEmpty ? '生成完成，正在自动保存草稿' : task.message.trim();
+        _generationCostAmountCny = math.max(
+          _generationCostAmountCny,
+          task.costAmountCny,
+        );
+      });
+      return _ExecutionPlanGenerationResult<dynamic>(
+        plan,
+        task.costAmountCny,
+        savedExecutionPlans: task.savedExecutionPlans,
+      );
+    }
+    setState(() {
+      _generationStatus =
+          task.message.trim().isEmpty ? statusLabel : task.message.trim();
+      _generationCostAmountCny = math.max(
+        _generationCostAmountCny,
+        task.costAmountCny,
+      );
+    });
+    return null;
+  }
+
+  Future<void> _resumeExecutionPlanGenerationTask({
+    bool showMessage = true,
+  }) async {
+    final IepAssessmentRecordSummary? record = widget.record;
+    final String taskId = _activeGenerationTaskId.trim();
+    if (record == null || taskId.isEmpty) {
+      return;
+    }
+    if (_activeGenerationRecordKey != _recordGenerationKey(record)) {
+      return;
+    }
+    final int ticket = ++_generationTicket;
+    ++_loadTicket;
+    dynamic finalPlan;
+    IepExecutionPlansSaved? savedPlans;
+    double actualCostAmountCny = 0;
+    final bool isWeekly = _activeGenerationPreviewMode == _IepPreviewMode.week;
+    setState(() {
+      _loadingPlan = false;
+      _generatingPlan = true;
+      _planError = '';
+      _generationStatus = '正在重新连接AI生成任务';
+      if (_generationProgress < .12) {
+        _generationProgress = .12;
+      }
+    });
+    _notifyRecordStatus(record, 'generating');
+    widget.onConfirmAvailabilityChanged(false);
+    if (showMessage) {
+      _showMessage('正在重新连接AI生成任务');
+    }
+    try {
+      final SharedPreferences prefs = await SharedPreferences.getInstance();
+      final String token = prefs.getString(_authTokenStorageKey) ?? '';
+      final IepExecutionPlanGenerationTask latest =
+          await widget.planClient.fetchExecutionPlanGenerationTask(
+        token,
+        record: record,
+        taskId: taskId,
+      );
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final _ExecutionPlanGenerationResult<dynamic>? latestResult =
+          await _applyExecutionGenerationTaskSnapshot(latest, ticket: ticket);
+      finalPlan = latestResult?.plan ?? finalPlan;
+      savedPlans = latestResult?.savedExecutionPlans ?? savedPlans;
+      if (latestResult == null && !latest.isDone) {
+        await for (final IepExecutionPlanGenerationEvent<dynamic> rawEvent
+            in widget.planClient.watchExecutionPlanGenerationTask(
+          token,
+          record: record,
+          taskId: taskId,
+        )) {
+          if (!mounted || ticket != _generationTicket) {
+            return;
+          }
+          final _ExecutionPlanGenerationResult<dynamic>? result =
+              await _handleExecutionGenerationEvent<dynamic>(
+            rawEvent,
+            ticket: ticket,
+            statusLabel: isWeekly ? 'AI正在生成周计划' : 'AI正在生成月计划',
+          );
+          finalPlan = result?.plan ?? finalPlan;
+          savedPlans = result?.savedExecutionPlans ?? savedPlans;
+          if (result != null) {
+            actualCostAmountCny = result.costAmountCny;
+          }
+        }
+      }
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      if (finalPlan == null) {
+        throw const IepPlanApiException('AI生成未返回计划数据');
+      }
+      if (savedPlans == null) {
+        throw const IepPlanApiException('AI生成已完成，但未返回已保存的计划数据');
+      }
+      _applyGeneratedExecutionPlans(record: record, saved: savedPlans);
+      await _showGenerationCostDialog(
+        planLabel: isWeekly ? '周计划' : '月计划',
+        costAmountCny:
+            actualCostAmountCny > 0 ? actualCostAmountCny : _generationCostAmountCny,
+      );
+    } on IepPlanApiException catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      _storeCurrentGenerationSession(record);
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成连接已断开';
+        _planError = _savedPlan?.hasContent == true ? '' : error.message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted || ticket != _generationTicket) {
+        return;
+      }
+      final String message = 'AI生成重连失败：$error';
+      _storeCurrentGenerationSession(record);
+      setState(() {
+        _generatingPlan = false;
+        _generationStatus = '生成连接已断开';
+        _planError = _savedPlan?.hasContent == true ? '' : message;
+      });
+      _notifyRecordStatus(record, _savedPlan?.status);
+      _syncConfirmAvailability(_savedPlan);
+      _showMessage(message);
+    }
+  }
+
+  void _applyGeneratedExecutionPlans({
+    required IepAssessmentRecordSummary record,
+    required IepExecutionPlansSaved saved,
+  }) {
+    _generationSessionsByRecord.remove(_recordGenerationKey(record));
+    _syncMonthlyRestWeekdayOverridesFromExecutionPlans(saved);
+    setState(() {
+      _generatingPlan = false;
+      _generationStatus = '';
+      _aiStreamText = '';
+      _generationProgress = 1;
+      _activeGenerationTaskId = '';
+      _activeGenerationRecordKey = '';
+      _activeGenerationPreviewMode = _IepPreviewMode.total;
+      _activeGenerationMonthLabel = '';
+      _activeGenerationWeekIndex = 0;
+      _executionPlans = saved;
+    });
+    _notifyRecordStatus(record, _savedPlan?.status);
+    _syncConfirmAvailability(_savedPlan);
+  }
+
   void _applyGeneratedPlan({
     required IepAssessmentRecordSummary record,
     required IepPlan plan,
@@ -1287,6 +1671,9 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = 1;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = '';
+      _activeGenerationPreviewMode = _IepPreviewMode.total;
+      _activeGenerationMonthLabel = '';
+      _activeGenerationWeekIndex = 0;
       _savedPlan = savedPlan;
       _executionPlans = IepExecutionPlansSaved.empty(
         savedPlan.durationMonths == 6 ? 6 : 3,
@@ -1489,7 +1876,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (draft == null || !mounted) {
       return;
     }
-    await _syncPeriodStart(draft.start);
+    await _syncPeriodStart(
+      draft.start,
+      syncMode: draft.syncMode,
+    );
   }
 
   Future<void> _showRegeneratePlanConfirmDialog() async {
@@ -1613,7 +2003,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return _normalizeWeeklyRestWeekdays(result);
   }
 
-  Future<void> _syncPeriodStart(DateTime start) async {
+  Future<void> _syncPeriodStart(
+    DateTime start, {
+    String syncMode = 'dates_only',
+  }) async {
     final IepAssessmentRecordSummary? record = widget.record;
     if (record == null) {
       _showMessage('请先选择左侧评估记录');
@@ -1643,12 +2036,16 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         durationMonths: _periodMonthCount,
         sourceDurationMonths: sourceDurationMonths,
         startDate: nextStart,
+        syncMode: syncMode,
       );
       if (!mounted) {
         return;
       }
       _applySyncedPlanBundle(result.iepPlan, result.executionPlans, record);
-      _showMessage('计划周期和关联月/周计划日期已同步保存', tone: PadMessageTone.success);
+      final String successMessage = syncMode == 'supplement_new_weeks'
+          ? '计划周期已同步，新增周训练内容已补齐'
+          : '计划周期已同步，受影响的月计划/周计划已重置为待生成';
+      _showMessage(successMessage, tone: PadMessageTone.success);
     } on IepPlanApiException catch (error) {
       if (!mounted) {
         return;
@@ -1923,6 +2320,30 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         );
       },
     );
+  }
+
+  IepExecutionPlanGenerationEvent<T> _castExecutionEvent<T>(
+    IepExecutionPlanGenerationEvent<dynamic> event,
+  ) {
+    switch (event.type) {
+      case IepExecutionPlanGenerationEventType.status:
+        return IepExecutionPlanGenerationEvent<T>.statusWithCost(
+          event.message,
+          event.costAmountCny,
+        );
+      case IepExecutionPlanGenerationEventType.delta:
+        return IepExecutionPlanGenerationEvent<T>.deltaWithCost(
+          event.text,
+          event.costAmountCny,
+        );
+      case IepExecutionPlanGenerationEventType.done:
+        return IepExecutionPlanGenerationEvent<T>.done(
+          event.data as T,
+          costAmountCny: event.costAmountCny,
+        );
+      case IepExecutionPlanGenerationEventType.error:
+        return IepExecutionPlanGenerationEvent<T>.error(event.message);
+    }
   }
 
   void _showTotalPlan() {

@@ -49,6 +49,26 @@ type PEP3ExecutionPlanGenerateRequest struct {
 	MonthlyPlan      *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
 }
 
+type PEP3ExecutionPlanGenerationTaskVO struct {
+	Exists              bool                     `json:"exists,omitempty"`
+	TaskID              string                   `json:"taskId"`
+	Status              string                   `json:"status"`
+	Message             string                   `json:"message,omitempty"`
+	StreamText          string                   `json:"streamText,omitempty"`
+	Usage               *DeepSeekUsageVO         `json:"usage,omitempty"`
+	CostAmountCNY       float64                  `json:"costAmountCny,omitempty"`
+	DurationMonths      int                      `json:"durationMonths,omitempty"`
+	PlanType            string                   `json:"planType,omitempty"`
+	TargetMonthIndex    int                      `json:"targetMonthIndex,omitempty"`
+	TargetWeekIndex     int                      `json:"targetWeekIndex,omitempty"`
+	RestWeekdays        []int                    `json:"restWeekdays,omitempty"`
+	MonthlyPlan         *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
+	WeeklyPlan          *PEP3WeeklyPlanAIResult  `json:"weeklyPlan,omitempty"`
+	SavedExecutionPlans *PEP3ExecutionPlanSavedVO `json:"savedExecutionPlans,omitempty"`
+	Error               string                   `json:"error,omitempty"`
+	UpdatedTime         string                   `json:"updatedTime,omitempty"`
+}
+
 type PEP3ExecutionPlanWordExportRequest struct {
 	ID          int64                    `json:"id,omitempty"`
 	PlanType    string                   `json:"planType"`
@@ -136,6 +156,7 @@ type PEP3IEPPlanPeriodSyncRequest struct {
 	SourceDurationMonths int    `json:"sourceDurationMonths,omitempty"`
 	StartDate            string `json:"startDate,omitempty"`
 	StartMonth           string `json:"startMonth,omitempty"`
+	SyncMode             string `json:"syncMode,omitempty"`
 }
 
 type PEP3IEPPlanPeriodSyncVO struct {

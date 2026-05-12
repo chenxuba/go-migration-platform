@@ -25,6 +25,7 @@ type Service struct {
 	wechatOfficial     *weChatOfficialClient
 	wechatMiniProgram  *weChatMiniProgramClient
 	iepGenerationTasks *iepPlanGenerationTaskStore
+	iepExecutionGenerationTasks *iepExecutionGenerationTaskStore
 }
 
 func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, searchClient *search.Client, messageClient *messaging.Client, qiniuClient *qiniux.Client) *Service {
@@ -37,6 +38,7 @@ func New(store *customization.Store, repo *repository.Repository, tokenManager *
 		messageClient:      messageClient,
 		qiniuClient:        qiniuClient,
 		iepGenerationTasks: newIEPPlanGenerationTaskStore(),
+		iepExecutionGenerationTasks: newIEPExecutionGenerationTaskStore(),
 	}
 }
 

@@ -1,9 +1,13 @@
 part of 'iep_center_page.dart';
 
 class _IepPeriodDraft {
-  const _IepPeriodDraft({required this.start});
+  const _IepPeriodDraft({
+    required this.start,
+    required this.syncMode,
+  });
 
   final DateTime start;
+  final String syncMode;
 }
 
 class _IepPeriodEditDialog extends StatefulWidget {
@@ -49,7 +53,21 @@ class _IepPeriodEditDialogState extends State<_IepPeriodEditDialog> {
   }
 
   void _submit() {
-    Navigator.of(context).pop(_IepPeriodDraft(start: _start));
+    Navigator.of(context).pop(
+      _IepPeriodDraft(
+        start: _start,
+        syncMode: 'dates_only',
+      ),
+    );
+  }
+
+  void _submitAndSupplement() {
+    Navigator.of(context).pop(
+      _IepPeriodDraft(
+        start: _start,
+        syncMode: 'supplement_new_weeks',
+      ),
+    );
   }
 
   @override
@@ -153,9 +171,14 @@ class _IepPeriodEditDialogState extends State<_IepPeriodEditDialog> {
                 ),
                 const SizedBox(width: 10),
                 _IepDialogAction(
-                  label: '确认同步',
-                  filled: true,
+                  label: '仅同步日期',
                   onTap: _submit,
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: '确认并补齐',
+                  filled: true,
+                  onTap: _submitAndSupplement,
                 ),
               ],
             ),

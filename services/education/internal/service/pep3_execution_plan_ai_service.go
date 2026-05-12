@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -225,7 +227,7 @@ func buildDeepSeekExecutionPlanRequestBody(systemPrompt string, payload pep3Exec
 	if err != nil {
 		return nil, err
 	}
-	return json.Marshal(deepSeekChatRequest{
+	request := deepSeekChatRequest{
 		Model: deepSeekIEPPlanModel,
 		Messages: []deepSeekChatMessage{
 			{
@@ -244,10 +246,13 @@ func buildDeepSeekExecutionPlanRequestBody(systemPrompt string, payload pep3Exec
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
-		Thinking:      &deepSeekThinking{Type: "disabled"},
-		StreamOptions: &deepSeekStreamOptions{IncludeUsage: stream},
-		Stream:        stream,
-	})
+		Thinking: &deepSeekThinking{Type: "disabled"},
+		Stream:   stream,
+	}
+	if stream {
+		request.StreamOptions = &deepSeekStreamOptions{IncludeUsage: true}
+	}
+	return json.Marshal(request)
 }
 
 func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, payload pep3ExecutionPlanPromptPayload, result any, onDelta func(string) error) (*model.DeepSeekUsageVO, error) {
@@ -565,6 +570,9 @@ func normalizeMonthlyTrainingItemCount(items []model.PEP3MonthlyTrainingItem, ex
 	if len(sourceItems) == 0 {
 		sourceItems = []model.PEP3MonthlyTrainingItem{{Content: ""}}
 	}
+	if len(sourceItems) < expectedCount {
+		return expandMonthlyTrainingItems(sourceItems, expectedCount, shortGoal)
+	}
 	mergedContents := make([]string, expectedCount)
 	for index, item := range sourceItems {
 		content := strings.TrimSpace(item.Content)
@@ -613,6 +621,178 @@ func normalizeMonthlyTrainingItemCount(items []model.PEP3MonthlyTrainingItem, ex
 		normalized = append(normalized, model.PEP3MonthlyTrainingItem{Content: content})
 	}
 	return normalized
+}
+
+func expandMonthlyTrainingItems(items []model.PEP3MonthlyTrainingItem, expectedCount int, shortGoal string) []model.PEP3MonthlyTrainingItem {
+	if expectedCount <= 0 {
+		expectedCount = 1
+	}
+	sourceItems := items
+	if len(sourceItems) == 0 {
+		sourceItems = []model.PEP3MonthlyTrainingItem{{Content: ""}}
+	}
+	if len(sourceItems) == 1 {
+		return expandSingleMonthlyTrainingItem(strings.TrimSpace(sourceItems[0].Content), expectedCount, shortGoal)
+	}
+	positions := monthlyTrainingAnchorPositions(len(sourceItems), expectedCount)
+	normalized := make([]model.PEP3MonthlyTrainingItem, expectedCount)
+	anchors := make(map[int]string, len(sourceItems))
+	for index, item := range sourceItems {
+		content := strings.TrimSpace(item.Content)
+		position := positions[index]
+		anchors[position] = content
+		normalized[position] = model.PEP3MonthlyTrainingItem{Content: content}
+	}
+	for index := 0; index < expectedCount; index++ {
+		if strings.TrimSpace(normalized[index].Content) != "" {
+			continue
+		}
+		prevIndex, prevContent, hasPrev := nearestMonthlyTrainingAnchorBefore(anchors, index)
+		nextIndex, nextContent, hasNext := nearestMonthlyTrainingAnchorAfter(anchors, index)
+		normalized[index] = model.PEP3MonthlyTrainingItem{
+			Content: synthesizeExpandedMonthlyTrainingContent(
+				shortGoal,
+				index,
+				expectedCount,
+				prevIndex,
+				prevContent,
+				nextIndex,
+				nextContent,
+				hasPrev,
+				hasNext,
+			),
+		}
+	}
+	return normalized
+}
+
+func expandSingleMonthlyTrainingItem(content string, expectedCount int, shortGoal string) []model.PEP3MonthlyTrainingItem {
+	normalized := make([]model.PEP3MonthlyTrainingItem, 0, expectedCount)
+	base := strings.TrimSpace(content)
+	for index := 0; index < expectedCount; index++ {
+		if index == 0 && base != "" {
+			normalized = append(normalized, model.PEP3MonthlyTrainingItem{Content: base})
+			continue
+		}
+		normalized = append(normalized, model.PEP3MonthlyTrainingItem{
+			Content: synthesizeExpandedMonthlyTrainingContent(
+				shortGoal,
+				index,
+				expectedCount,
+				0,
+				base,
+				0,
+				"",
+				base != "",
+				false,
+			),
+		})
+	}
+	return normalized
+}
+
+func monthlyTrainingAnchorPositions(sourceCount, expectedCount int) []int {
+	if sourceCount <= 0 {
+		return nil
+	}
+	if expectedCount <= 1 || sourceCount == 1 {
+		return []int{0}
+	}
+	positions := make([]int, sourceCount)
+	last := -1
+	for index := 0; index < sourceCount; index++ {
+		position := int(math.Round(float64(index*(expectedCount-1)) / float64(sourceCount-1)))
+		if position <= last {
+			position = last + 1
+		}
+		maxAllowed := expectedCount - (sourceCount - index)
+		if position > maxAllowed {
+			position = maxAllowed
+		}
+		positions[index] = position
+		last = position
+	}
+	return positions
+}
+
+func nearestMonthlyTrainingAnchorBefore(anchors map[int]string, index int) (int, string, bool) {
+	for cursor := index - 1; cursor >= 0; cursor-- {
+		if content, ok := anchors[cursor]; ok && strings.TrimSpace(content) != "" {
+			return cursor, content, true
+		}
+	}
+	return 0, "", false
+}
+
+func nearestMonthlyTrainingAnchorAfter(anchors map[int]string, index int) (int, string, bool) {
+	for cursor := index + 1; cursor < len(anchors)+8; cursor++ {
+		if content, ok := anchors[cursor]; ok && strings.TrimSpace(content) != "" {
+			return cursor, content, true
+		}
+	}
+	return 0, "", false
+}
+
+var monthlyWeekPrefixPattern = regexp.MustCompile(`^第[一二三四五六七八九十0-9]+周[：:、，,\s]*`)
+
+func synthesizeExpandedMonthlyTrainingContent(shortGoal string, index, total, prevIndex int, prevContent string, nextIndex int, nextContent string, hasPrev, hasNext bool) string {
+	stageLabel, stageFocus := monthlyTrainingStageDescriptor(index, total)
+	shortGoalSnippet := monthlyTrainingContentSnippet(shortGoal)
+	prevSnippet := monthlyTrainingContentSnippet(prevContent)
+	nextSnippet := monthlyTrainingContentSnippet(nextContent)
+	switch {
+	case hasPrev && hasNext && prevSnippet != "" && nextSnippet != "" && prevSnippet != nextSnippet:
+		if nextIndex-prevIndex > 1 && index < nextIndex {
+			return fmt.Sprintf("%s：围绕%s，在“%s”基础上过渡到“%s”，%s。", stageLabel, shortGoalSnippet, prevSnippet, nextSnippet, stageFocus)
+		}
+		return fmt.Sprintf("%s：围绕%s，在“%s”基础上继续推进，%s。", stageLabel, shortGoalSnippet, prevSnippet, stageFocus)
+	case hasPrev && prevSnippet != "":
+		return fmt.Sprintf("%s：围绕%s，在“%s”基础上继续推进，%s。", stageLabel, shortGoalSnippet, prevSnippet, stageFocus)
+	case hasNext && nextSnippet != "":
+		return fmt.Sprintf("%s：围绕%s，先进行前置导入，聚焦“%s”，%s。", stageLabel, shortGoalSnippet, nextSnippet, stageFocus)
+	case shortGoalSnippet != "":
+		return fmt.Sprintf("%s：围绕%s，%s。", stageLabel, shortGoalSnippet, stageFocus)
+	default:
+		return fmt.Sprintf("%s：围绕当前短期目标开展训练，%s。", stageLabel, stageFocus)
+	}
+}
+
+func monthlyTrainingStageDescriptor(index, total int) (string, string) {
+	if total <= 1 {
+		return "本周训练", "完成结构化练习并记录提示等级、准确率与泛化表现"
+	}
+	progress := float64(index) / float64(total-1)
+	switch {
+	case progress <= 0.2:
+		return "导入建立", "先熟悉材料与规则，在示范和较高提示下完成基础尝试"
+	case progress <= 0.45:
+		return "分步练习", "在口语或手势提示下完成关键步骤，逐步减少辅助"
+	case progress <= 0.7:
+		return "强化提升", "增加连续完成次数与准确率，提升任务稳定性"
+	case progress <= 0.9:
+		return "独立巩固", "提高独立完成比例，并关注不同指令下的保持表现"
+	default:
+		return "泛化维持", "切换材料或场景进行泛化训练，巩固本月目标表现"
+	}
+}
+
+func monthlyTrainingContentSnippet(content string) string {
+	value := strings.TrimSpace(content)
+	if value == "" {
+		return ""
+	}
+	value = monthlyWeekPrefixPattern.ReplaceAllString(value, "")
+	for _, separator := range []string{"。", "；", ";", "\n"} {
+		if index := strings.Index(value, separator); index > 0 {
+			value = strings.TrimSpace(value[:index])
+			break
+		}
+	}
+	runes := []rune(value)
+	if len(runes) > 26 {
+		value = strings.TrimSpace(string(runes[:26]))
+	}
+	return strings.Trim(value, "：:，,；; ")
 }
 
 func mergeMonthlyTrainingItemContent(existing, next string) string {

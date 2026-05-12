@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -952,6 +953,75 @@ func (handler *Handler) pep3AssessmentRecordExecutionPlanAI(w http.ResponseWrite
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) pep3AssessmentRecordExecutionPlanAITask(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3ExecutionPlanGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CreatePEP3ExecutionPlanGenerationTask(claims.UserID, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordExecutionPlanAITaskDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	taskID := strings.TrimSpace(r.URL.Query().Get("taskId"))
+	result, err := handler.service.GetExecutionPlanGenerationTask(claims.UserID, taskID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordExecutionPlanAITaskActive(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	req, err := parseExecutionPlanActiveTaskRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetPEP3ActiveExecutionPlanGenerationTask(claims.UserID, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) pep3AssessmentRecordExecutionPlanAITaskStream(w http.ResponseWriter, r *http.Request) {
+	handler.executionPlanGenerationTaskStream(w, r)
+}
+
 func (handler *Handler) pep3AssessmentRecordExecutionPlanAIStream(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -1011,6 +1081,80 @@ func (handler *Handler) pep3AssessmentRecordExecutionPlanAIStream(w http.Respons
 		"data":          result,
 		"costAmountCny": costAmountCny,
 	})
+}
+
+func parseExecutionPlanActiveTaskRequest(r *http.Request) (model.PEP3ExecutionPlanGenerateRequest, error) {
+	query := r.URL.Query()
+	recordID, err := strconv.ParseInt(strings.TrimSpace(query.Get("id")), 10, 64)
+	if err != nil || recordID <= 0 {
+		return model.PEP3ExecutionPlanGenerateRequest{}, errors.New("invalid id")
+	}
+	durationMonths := parsePEP3IEPPlanDurationQuery(r)
+	targetMonthIndex, _ := strconv.Atoi(strings.TrimSpace(query.Get("targetMonthIndex")))
+	targetWeekIndex, _ := strconv.Atoi(strings.TrimSpace(query.Get("targetWeekIndex")))
+	return model.PEP3ExecutionPlanGenerateRequest{
+		ID:               recordID,
+		DurationMonths:   durationMonths,
+		PlanType:         strings.TrimSpace(query.Get("planType")),
+		TargetMonthIndex: targetMonthIndex,
+		TargetWeekIndex:  targetWeekIndex,
+	}, nil
+}
+
+func (handler *Handler) executionPlanGenerationTaskStream(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	taskID := strings.TrimSpace(r.URL.Query().Get("taskId"))
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, http.StatusInternalServerError, "streaming is not supported", ctx.RequestID)
+		return
+	}
+	ch, unsubscribe, snapshot, err := handler.service.SubscribeExecutionPlanGenerationTask(claims.UserID, taskID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	defer unsubscribe()
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	if err := writePEP3IEPPlanSSE(w, flusher, "status", map[string]any{"type": "status", "data": snapshot}); err != nil {
+		return
+	}
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case item, ok := <-ch:
+			if !ok {
+				return
+			}
+			event := "status"
+			if item.Status == "done" {
+				event = "done"
+			} else if item.Status == "failed" {
+				event = "error"
+			}
+			if err := writePEP3IEPPlanSSE(w, flusher, event, map[string]any{"type": event, "data": item}); err != nil {
+				return
+			}
+			if item.Status == "done" || item.Status == "failed" {
+				return
+			}
+		}
+	}
 }
 
 func (handler *Handler) pep3AssessmentRecordExecutionPlanDetail(w http.ResponseWriter, r *http.Request) {
