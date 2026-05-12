@@ -54,6 +54,8 @@ type pep3ExecutionPlanPrepared struct {
 	CurrentTeacherName string
 }
 
+const monthlySourceTrainingItemCount = 5
+
 func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest) (pep3ExecutionPlanPrepared, error) {
 	if ctx == nil {
 		ctx = context.Background()
@@ -103,8 +105,8 @@ func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, user
 	switch planType {
 	case "monthly":
 		prepared.SystemPrompt = "你是儿童康复机构的月度教学计划生成助手。必须根据IEP总计划生成可执行月计划。"
-		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,candidateTrainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；candidateTrainingItems是全月候选训练内容池，固定输出target.candidateWeekCount条，不受target.weekRanges实际展示周数影响；第N条candidateTrainingItem的startEndDate必须直接等于target.candidateWeekRanges[N-1]；candidateTrainingItems.content必须体现由浅入深的全月递进关系，写清训练材料、活动、提示方式、步骤或泛化场景，不要照抄短期目标本身，也不要在内容开头写“第一周/第二周/第三周/第四周/第五周”这类周序号。不要输出trainingItems字段。"
-		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。target.candidateWeekRanges代表该月完整候选训练节奏，固定为4条或5条；系统会再根据target.weekRanges把候选池映射成当前实际展示周次，并用于后续周计划承接。你只负责把candidateTrainingItems按全月 progression 生成好。"
+		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,candidateTrainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；candidateTrainingItems是整个月计划后续复用的源数据源，固定输出target.candidateWeekCount条；第N条candidateTrainingItem的startEndDate必须直接等于target.candidateWeekRanges[N-1]；candidateTrainingItems.content必须体现由浅入深的全月递进关系，写清训练材料、活动、提示方式、步骤或泛化场景，不要照抄短期目标本身，也不要在内容开头写“第一周/第二周/第三周/第四周/第五周”这类周序号。5条candidateTrainingItems必须逐条不同，尤其相邻两条不得重复，也不能只是替换日期或少量词语。若第一条是月初短周，只写导入/基线观察；第二条必须在目标、材料、提示等级或训练场景上较第一条明显推进。不要输出trainingItems字段。"
+		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。target.candidateWeekRanges代表该月固定5条的月度源数据源，后续修改总计划周期时，系统会根据target.weekRanges从这5条源数据里映射出当前实际展示周次，并用于后续周计划承接。你只负责把candidateTrainingItems按全月 progression 生成好。"
 	case "weekly":
 		prepared.SystemPrompt = "你是儿童康复机构的周计划日记录卡生成助手。必须根据IEP或月计划生成本周可执行训练记录卡。"
 		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, teacherName, courseName, trainingDate, preparation, weekDates[], rows[{project,content,completion[]}]。title必须写成“康复教学周计划日记录卡X月第X周”；必须基于monthlyPlan生成target.monthLabel和target.weekLabel对应周计划；如果monthlyPlan为空，则直接基于sourcePlan生成该周计划。当前周区间以target.weekRangeText为准，weekDates必须严格使用target.weekDates；如果monthlyPlan存在，优先选用startEndDate覆盖target.weekRangeText的trainingItems作为本周训练依据，保证周计划内容与月计划中的周区间推进一致；rows用于周计划日记录卡，project是训练项目，content是本周训练内容，completion长度必须等于weekDates长度且先留空字符串。"
@@ -1218,24 +1220,27 @@ func candidateWeekRangesForMonthRange(monthDate time.Time, restWeekdays []int) [
 	if len(baseWeekRanges) == 0 {
 		return nil
 	}
-	return rebalanceWeekRangesForCount(
+	if len(baseWeekRanges) == monthlySourceTrainingItemCount {
+		return cloneExecutionWeekRanges(baseWeekRanges)
+	}
+	if len(baseWeekRanges) > monthlySourceTrainingItemCount {
+		return rebalanceWeekRangesForCount(
+			baseWeekRanges,
+			monthlySourceTrainingItemCount,
+		)
+	}
+	return expandWeekRangesForMonthlySourceCount(
 		baseWeekRanges,
-		candidateWeekCountFromBaseWeekRanges(baseWeekRanges),
+		monthlySourceTrainingItemCount,
+		restWeekdays,
 	)
 }
 
 func candidateWeekCountFromBaseWeekRanges(weekRanges []pep3ExecutionWeekRange) int {
-	count := len(weekRanges)
-	switch {
-	case count <= 0:
-		return 4
-	case count < 4:
-		return 4
-	case count > 5:
-		return 5
-	default:
-		return count
+	if len(weekRanges) == 0 {
+		return 0
 	}
+	return monthlySourceTrainingItemCount
 }
 
 func rebalanceWeekRangesForCount(
@@ -1272,6 +1277,103 @@ func rebalanceWeekRangesForCount(
 		})
 	}
 	return result
+}
+
+func cloneExecutionWeekRanges(weekRanges []pep3ExecutionWeekRange) []pep3ExecutionWeekRange {
+	result := make([]pep3ExecutionWeekRange, len(weekRanges))
+	copy(result, weekRanges)
+	return result
+}
+
+func expandWeekRangesForMonthlySourceCount(
+	weekRanges []pep3ExecutionWeekRange,
+	targetCount int,
+	restWeekdays []int,
+) []pep3ExecutionWeekRange {
+	if len(weekRanges) == 0 {
+		return nil
+	}
+	result := cloneExecutionWeekRanges(weekRanges)
+	for len(result) < targetCount {
+		splitIndex := longestSplittableWeekRangeIndex(result, restWeekdays)
+		if splitIndex < 0 {
+			break
+		}
+		left, right, ok := splitWeekRangeByWorkingDates(result[splitIndex], restWeekdays)
+		if !ok {
+			break
+		}
+		next := make([]pep3ExecutionWeekRange, 0, len(result)+1)
+		next = append(next, result[:splitIndex]...)
+		next = append(next, left, right)
+		next = append(next, result[splitIndex+1:]...)
+		result = next
+	}
+	return result
+}
+
+func longestSplittableWeekRangeIndex(
+	weekRanges []pep3ExecutionWeekRange,
+	restWeekdays []int,
+) int {
+	bestIndex := -1
+	bestWorkingDayCount := 0
+	bestCalendarDayCount := 0
+	for index, weekRange := range weekRanges {
+		workingDates := workingDatesForRange(weekRange, restWeekdays)
+		if len(workingDates) < 2 {
+			continue
+		}
+		calendarDayCount := int(weekRange.End.Sub(weekRange.Start).Hours()/24) + 1
+		if len(workingDates) > bestWorkingDayCount ||
+			(len(workingDates) == bestWorkingDayCount && calendarDayCount > bestCalendarDayCount) {
+			bestIndex = index
+			bestWorkingDayCount = len(workingDates)
+			bestCalendarDayCount = calendarDayCount
+		}
+	}
+	return bestIndex
+}
+
+func splitWeekRangeByWorkingDates(
+	weekRange pep3ExecutionWeekRange,
+	restWeekdays []int,
+) (pep3ExecutionWeekRange, pep3ExecutionWeekRange, bool) {
+	workingDates := workingDatesForRange(weekRange, restWeekdays)
+	if len(workingDates) < 2 {
+		return pep3ExecutionWeekRange{}, pep3ExecutionWeekRange{}, false
+	}
+	mid := len(workingDates) / 2
+	left := pep3ExecutionWeekRange{
+		Start: workingDates[0],
+		End:   workingDates[mid-1],
+	}
+	right := pep3ExecutionWeekRange{
+		Start: workingDates[mid],
+		End:   workingDates[len(workingDates)-1],
+	}
+	if left.End.Before(left.Start) || right.End.Before(right.Start) {
+		return pep3ExecutionWeekRange{}, pep3ExecutionWeekRange{}, false
+	}
+	return left, right, true
+}
+
+func workingDatesForRange(
+	weekRange pep3ExecutionWeekRange,
+	restWeekdays []int,
+) []time.Time {
+	if weekRange.Start.IsZero() || weekRange.End.IsZero() || weekRange.End.Before(weekRange.Start) {
+		return nil
+	}
+	restSet := weekdaySetFromSelection(restWeekdays)
+	dates := make([]time.Time, 0, 7)
+	for current := weekRange.Start; !current.After(weekRange.End); current = current.AddDate(0, 0, 1) {
+		if _, blocked := restSet[current.Weekday()]; blocked {
+			continue
+		}
+		dates = append(dates, current)
+	}
+	return dates
 }
 
 func normalizeExecutionPlanRestWeekdays(restWeekdays []int) []int {

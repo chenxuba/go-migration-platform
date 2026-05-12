@@ -182,7 +182,13 @@ func (svc *Service) createExecutionPlanGenerationTask(kind iepPlanGenerationTask
 		targetMonthIndex,
 		targetWeekIndex,
 	); err == nil && exists {
-		return svc.executionTaskSnapshotFromEntity(active), nil
+		active, expired, expireErr := svc.expireStaleIEPExecutionGenerationTask(active, userID)
+		if expireErr != nil {
+			return model.PEP3ExecutionPlanGenerationTaskVO{}, expireErr
+		}
+		if !expired {
+			return svc.executionTaskSnapshotFromEntity(active), nil
+		}
 	} else if err != nil {
 		return model.PEP3ExecutionPlanGenerationTaskVO{}, err
 	}
@@ -245,6 +251,13 @@ func (svc *Service) getActiveExecutionPlanGenerationTask(kind iepPlanGenerationT
 		return model.PEP3ExecutionPlanGenerationTaskVO{}, err
 	}
 	if !exists {
+		return model.PEP3ExecutionPlanGenerationTaskVO{Exists: false}, nil
+	}
+	entity, expired, err := svc.expireStaleIEPExecutionGenerationTask(entity, userID)
+	if err != nil {
+		return model.PEP3ExecutionPlanGenerationTaskVO{}, err
+	}
+	if expired {
 		return model.PEP3ExecutionPlanGenerationTaskVO{Exists: false}, nil
 	}
 	return svc.executionTaskSnapshotFromEntity(entity), nil
@@ -376,7 +389,30 @@ func (svc *Service) requireExecutionPlanGenerationTask(userID int64, taskID stri
 	if !exists || entity.UserID != userID {
 		return repository.IEPExecutionGenerationTaskEntity{}, errors.New("AI生成任务不存在或已过期")
 	}
+	entity, _, err = svc.expireStaleIEPExecutionGenerationTask(entity, userID)
+	if err != nil {
+		return repository.IEPExecutionGenerationTaskEntity{}, err
+	}
 	return entity, nil
+}
+
+func (svc *Service) expireStaleIEPExecutionGenerationTask(
+	entity repository.IEPExecutionGenerationTaskEntity,
+	userID int64,
+) (repository.IEPExecutionGenerationTaskEntity, bool, error) {
+	if !isIEPGenerationTaskStale(entity.Status, entity.UpdatedTime) {
+		return entity, false, nil
+	}
+	entity.Status = iepPlanGenerationTaskFailed
+	entity.Message = iepGenerationTaskExpiredMessage
+	entity.Error = iepGenerationTaskExpiredError
+	entity.UpdatedBy = userID
+	entity.UpdatedTime = ptrTime(time.Now())
+	if err := svc.repo.UpdateIEPExecutionGenerationTask(context.Background(), entity); err != nil {
+		return repository.IEPExecutionGenerationTaskEntity{}, false, err
+	}
+	svc.publishExecutionTaskSnapshot(entity)
+	return entity, true, nil
 }
 
 func (svc *Service) persistAndPublishExecutionTask(entity repository.IEPExecutionGenerationTaskEntity) error {

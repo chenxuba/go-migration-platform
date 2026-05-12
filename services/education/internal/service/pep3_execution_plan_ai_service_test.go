@@ -113,6 +113,30 @@ func TestBuildExecutionPlanTargetIncludesFullMonthCandidateWeekRanges(t *testing
 	}
 }
 
+func TestCandidateWeekRangesForMonthRangeExpandsFourWeekMonthToFiveDistinctSourceRanges(t *testing.T) {
+	monthDate := parseIEPPlanDateValue("2026-02-01")
+
+	ranges := candidateWeekRangesForMonthRange(monthDate, []int{6, 7})
+
+	if len(ranges) != 5 {
+		t.Fatalf("expected 5 source ranges, got %d", len(ranges))
+	}
+	seen := make(map[string]struct{}, len(ranges))
+	for index, item := range ranges {
+		text := executionWeekRangeText(item)
+		if text == "" {
+			t.Fatalf("range %d is empty", index)
+		}
+		if _, ok := seen[text]; ok {
+			t.Fatalf("duplicate source range found: %s", text)
+		}
+		seen[text] = struct{}{}
+		if index > 0 && item.Start.Before(ranges[index-1].Start) {
+			t.Fatalf("ranges are out of order: %#v", ranges)
+		}
+	}
+}
+
 func TestNormalizePEP3MonthlyTrainingItemsSelectsVisibleSubsetFromCandidatePool(t *testing.T) {
 	sourcePlan := model.PEP3IEPPlanAIResult{
 		Meta: model.PEP3IEPPlanMeta{

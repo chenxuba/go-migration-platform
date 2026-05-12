@@ -178,7 +178,13 @@ func (svc *Service) createIEPPlanGenerationTask(kind iepPlanGenerationTaskKind, 
 		req.ID,
 		string(kind),
 	); err == nil && exists {
-		return svc.taskSnapshotFromEntity(active), nil
+		active, expired, expireErr := svc.expireStaleIEPPlanGenerationTask(active, userID)
+		if expireErr != nil {
+			return model.PEP3IEPPlanGenerationTaskVO{}, expireErr
+		}
+		if !expired {
+			return svc.taskSnapshotFromEntity(active), nil
+		}
 	} else if err != nil {
 		return model.PEP3IEPPlanGenerationTaskVO{}, err
 	}
@@ -228,6 +234,13 @@ func (svc *Service) getActiveIEPPlanGenerationTask(kind iepPlanGenerationTaskKin
 		return model.PEP3IEPPlanGenerationTaskVO{}, err
 	}
 	if !exists {
+		return model.PEP3IEPPlanGenerationTaskVO{Exists: false}, nil
+	}
+	entity, expired, err := svc.expireStaleIEPPlanGenerationTask(entity, userID)
+	if err != nil {
+		return model.PEP3IEPPlanGenerationTaskVO{}, err
+	}
+	if expired {
 		return model.PEP3IEPPlanGenerationTaskVO{Exists: false}, nil
 	}
 	return svc.taskSnapshotFromEntity(entity), nil
@@ -349,7 +362,30 @@ func (svc *Service) requireIEPPlanGenerationTask(userID int64, taskID string) (r
 	if !exists || entity.UserID != userID {
 		return repository.IEPPlanGenerationTaskEntity{}, errors.New("AI生成任务不存在或已过期")
 	}
+	entity, _, err = svc.expireStaleIEPPlanGenerationTask(entity, userID)
+	if err != nil {
+		return repository.IEPPlanGenerationTaskEntity{}, err
+	}
 	return entity, nil
+}
+
+func (svc *Service) expireStaleIEPPlanGenerationTask(
+	entity repository.IEPPlanGenerationTaskEntity,
+	userID int64,
+) (repository.IEPPlanGenerationTaskEntity, bool, error) {
+	if !isIEPGenerationTaskStale(entity.Status, entity.UpdatedTime) {
+		return entity, false, nil
+	}
+	entity.Status = iepPlanGenerationTaskFailed
+	entity.Message = iepGenerationTaskExpiredMessage
+	entity.Error = iepGenerationTaskExpiredError
+	entity.UpdatedBy = userID
+	entity.UpdatedTime = ptrTime(time.Now())
+	if err := svc.repo.UpdateIEPPlanGenerationTask(context.Background(), entity); err != nil {
+		return repository.IEPPlanGenerationTaskEntity{}, false, err
+	}
+	svc.publishTaskSnapshot(entity)
+	return entity, true, nil
 }
 
 func (svc *Service) persistAndPublishTask(entity repository.IEPPlanGenerationTaskEntity) error {
