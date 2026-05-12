@@ -101,8 +101,8 @@ func (svc *Service) preparePEP3ExecutionPlanGeneration(ctx context.Context, user
 	switch planType {
 	case "monthly":
 		prepared.SystemPrompt = "你是儿童康复机构的月度教学计划生成助手。必须根据IEP总计划生成可执行月计划。"
-		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,trainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；target.weekRanges是本月后续周计划完成情况日期周期的唯一切分基准；每一条shortGoal必须生成与target.weekRanges数量完全一致的trainingItems，不多不少；第N条trainingItem的startEndDate必须直接等于target.weekRanges[N-1]，不能自己改写日期，不能把两个周区间合并成一条，也不能把一个周区间拆成多条；也就是说，一个周计划日记录卡的日期范围，必须对应月计划里一条trainingItem的起止日期区间。trainingItems.content必须体现逐周递进关系，写清训练材料、活动、提示方式、步骤或泛化场景，不要照抄短期目标本身。"
-		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。请严格按target.weekRanges逐周生成trainingItems：如果本月有3个周区间，就生成3条；有4个周区间，就生成4条；有5个周区间，就生成5条，并保证后续周计划可以一条一周直接承接。"
+		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate,monthLabel,sourceTitle}, rows[{domain,longGoal,shortGoal,trainingItems[{content,startEndDate}],courseForm}]。title必须写成“康复教学X月计划”；必须基于sourcePlan的康复领域、长期目标、短期目标拆解target.monthLabel当月执行内容；target.weekRanges是本月后续周计划完成情况日期周期的唯一切分基准；每一条shortGoal必须生成与target.weekRanges数量完全一致的trainingItems，不多不少；第N条trainingItem的startEndDate必须直接等于target.weekRanges[N-1]，不能自己改写日期，不能把两个周区间合并成一条，也不能把一个周区间拆成多条；也就是说，一个周计划日记录卡的日期范围，必须对应月计划里一条trainingItem的起止日期区间。trainingItems.content必须体现逐周递进关系，写清训练材料、活动、提示方式、步骤或泛化场景，不要照抄短期目标本身，也不要在内容开头写“第一周/第二周/第三周/第四周/第五周”这类周序号。"
+		prepared.Payload.GenerationNote = "月计划是IEP总计划中某一个自然月的执行拆解，一次只生成target.monthIndex对应月份；不批量生成其他月份，不重新创造长期目标和领域；短期目标来自总IEP，本月只选取目标月份相关内容。请严格按target.weekRanges逐周生成trainingItems：如果本月有3个周区间，就生成3条；有4个周区间，就生成4条；有5个周区间，就生成5条，并保证后续周计划可以一条一周直接承接。每条trainingItems.content只写该周的具体训练动作，不要附带“第X周”标题。"
 	case "weekly":
 		prepared.SystemPrompt = "你是儿童康复机构的周计划日记录卡生成助手。必须根据IEP或月计划生成本周可执行训练记录卡。"
 		prepared.Payload.OutputRequest = "只输出JSON：title, student{name,gender,birthDate}, teacherName, courseName, trainingDate, preparation, weekDates[], rows[{project,content,completion[]}]。title必须写成“康复教学周计划日记录卡X月第X周”；必须基于monthlyPlan生成target.monthLabel和target.weekLabel对应周计划；如果monthlyPlan为空，则直接基于sourcePlan生成该周计划。当前周区间以target.weekRangeText为准，weekDates必须严格使用target.weekDates；如果monthlyPlan存在，优先选用startEndDate覆盖target.weekRangeText的trainingItems作为本周训练依据，保证周计划内容与月计划中的周区间推进一致；rows用于周计划日记录卡，project是训练项目，content是本周训练内容，completion长度必须等于weekDates长度且先留空字符串。"
@@ -532,7 +532,7 @@ func normalizePEP3MonthlyExecutionPlan(result model.PEP3MonthlyPlanAIResult, sou
 func normalizePEP3MonthlyTrainingItems(row model.PEP3MonthlyPlanRow, target pep3ExecutionPlanTarget) []model.PEP3MonthlyTrainingItem {
 	items := make([]model.PEP3MonthlyTrainingItem, 0, len(row.TrainingItems))
 	for _, item := range row.TrainingItems {
-		content := strings.TrimSpace(item.Content)
+		content := normalizeMonthlyTrainingItemContent(item.Content)
 		if content == "" {
 			continue
 		}
@@ -575,7 +575,7 @@ func normalizeMonthlyTrainingItemCount(items []model.PEP3MonthlyTrainingItem, ex
 	}
 	mergedContents := make([]string, expectedCount)
 	for index, item := range sourceItems {
-		content := strings.TrimSpace(item.Content)
+		content := normalizeMonthlyTrainingItemContent(item.Content)
 		if content == "" {
 			continue
 		}
@@ -614,7 +614,7 @@ func normalizeMonthlyTrainingItemCount(items []model.PEP3MonthlyTrainingItem, ex
 	}
 	normalized := make([]model.PEP3MonthlyTrainingItem, 0, expectedCount)
 	for index := range mergedContents {
-		content := strings.TrimSpace(mergedContents[index])
+		content := normalizeMonthlyTrainingItemContent(mergedContents[index])
 		if content == "" {
 			content = fallbackContent
 		}
@@ -632,13 +632,17 @@ func expandMonthlyTrainingItems(items []model.PEP3MonthlyTrainingItem, expectedC
 		sourceItems = []model.PEP3MonthlyTrainingItem{{Content: ""}}
 	}
 	if len(sourceItems) == 1 {
-		return expandSingleMonthlyTrainingItem(strings.TrimSpace(sourceItems[0].Content), expectedCount, shortGoal)
+		return expandSingleMonthlyTrainingItem(
+			normalizeMonthlyTrainingItemContent(sourceItems[0].Content),
+			expectedCount,
+			shortGoal,
+		)
 	}
 	positions := monthlyTrainingAnchorPositions(len(sourceItems), expectedCount)
 	normalized := make([]model.PEP3MonthlyTrainingItem, expectedCount)
 	anchors := make(map[int]string, len(sourceItems))
 	for index, item := range sourceItems {
-		content := strings.TrimSpace(item.Content)
+		content := normalizeMonthlyTrainingItemContent(item.Content)
 		position := positions[index]
 		anchors[position] = content
 		normalized[position] = model.PEP3MonthlyTrainingItem{Content: content}
@@ -668,7 +672,7 @@ func expandMonthlyTrainingItems(items []model.PEP3MonthlyTrainingItem, expectedC
 
 func expandSingleMonthlyTrainingItem(content string, expectedCount int, shortGoal string) []model.PEP3MonthlyTrainingItem {
 	normalized := make([]model.PEP3MonthlyTrainingItem, 0, expectedCount)
-	base := strings.TrimSpace(content)
+	base := normalizeMonthlyTrainingItemContent(content)
 	for index := 0; index < expectedCount; index++ {
 		if index == 0 && base != "" {
 			normalized = append(normalized, model.PEP3MonthlyTrainingItem{Content: base})
@@ -733,27 +737,38 @@ func nearestMonthlyTrainingAnchorAfter(anchors map[int]string, index int) (int, 
 	return 0, "", false
 }
 
-var monthlyWeekPrefixPattern = regexp.MustCompile(`^第[一二三四五六七八九十0-9]+周[：:、，,\s]*`)
+var monthlyWeekPrefixPattern = regexp.MustCompile(`^(?:第)?[一二三四五六七八九十0-9]+周(?:训练内容|训练项目|内容|安排)?[：:、，,\s]*`)
+var monthlyTrainingStagePrefixPattern = regexp.MustCompile(`^(?:导入建立|分步练习|强化提升|独立巩固|泛化维持|本周训练)[：:、，,\s]*`)
+
+func normalizeMonthlyTrainingItemContent(content string) string {
+	value := strings.TrimSpace(content)
+	if value == "" {
+		return ""
+	}
+	value = monthlyWeekPrefixPattern.ReplaceAllString(value, "")
+	value = monthlyTrainingStagePrefixPattern.ReplaceAllString(value, "")
+	return strings.TrimSpace(value)
+}
 
 func synthesizeExpandedMonthlyTrainingContent(shortGoal string, index, total, prevIndex int, prevContent string, nextIndex int, nextContent string, hasPrev, hasNext bool) string {
-	stageLabel, stageFocus := monthlyTrainingStageDescriptor(index, total)
+	_, stageFocus := monthlyTrainingStageDescriptor(index, total)
 	shortGoalSnippet := monthlyTrainingContentSnippet(shortGoal)
 	prevSnippet := monthlyTrainingContentSnippet(prevContent)
 	nextSnippet := monthlyTrainingContentSnippet(nextContent)
 	switch {
 	case hasPrev && hasNext && prevSnippet != "" && nextSnippet != "" && prevSnippet != nextSnippet:
 		if nextIndex-prevIndex > 1 && index < nextIndex {
-			return fmt.Sprintf("%s：围绕%s，在“%s”基础上过渡到“%s”，%s。", stageLabel, shortGoalSnippet, prevSnippet, nextSnippet, stageFocus)
+			return fmt.Sprintf("围绕%s，在“%s”基础上过渡到“%s”，%s。", shortGoalSnippet, prevSnippet, nextSnippet, stageFocus)
 		}
-		return fmt.Sprintf("%s：围绕%s，在“%s”基础上继续推进，%s。", stageLabel, shortGoalSnippet, prevSnippet, stageFocus)
+		return fmt.Sprintf("围绕%s，在“%s”基础上继续推进，%s。", shortGoalSnippet, prevSnippet, stageFocus)
 	case hasPrev && prevSnippet != "":
-		return fmt.Sprintf("%s：围绕%s，在“%s”基础上继续推进，%s。", stageLabel, shortGoalSnippet, prevSnippet, stageFocus)
+		return fmt.Sprintf("围绕%s，在“%s”基础上继续推进，%s。", shortGoalSnippet, prevSnippet, stageFocus)
 	case hasNext && nextSnippet != "":
-		return fmt.Sprintf("%s：围绕%s，先进行前置导入，聚焦“%s”，%s。", stageLabel, shortGoalSnippet, nextSnippet, stageFocus)
+		return fmt.Sprintf("围绕%s，先进行前置导入，聚焦“%s”，%s。", shortGoalSnippet, nextSnippet, stageFocus)
 	case shortGoalSnippet != "":
-		return fmt.Sprintf("%s：围绕%s，%s。", stageLabel, shortGoalSnippet, stageFocus)
+		return fmt.Sprintf("围绕%s，%s。", shortGoalSnippet, stageFocus)
 	default:
-		return fmt.Sprintf("%s：围绕当前短期目标开展训练，%s。", stageLabel, stageFocus)
+		return fmt.Sprintf("围绕当前短期目标开展训练，%s。", stageFocus)
 	}
 }
 
@@ -777,11 +792,10 @@ func monthlyTrainingStageDescriptor(index, total int) (string, string) {
 }
 
 func monthlyTrainingContentSnippet(content string) string {
-	value := strings.TrimSpace(content)
+	value := normalizeMonthlyTrainingItemContent(content)
 	if value == "" {
 		return ""
 	}
-	value = monthlyWeekPrefixPattern.ReplaceAllString(value, "")
 	for _, separator := range []string{"。", "；", ";", "\n"} {
 		if index := strings.Index(value, separator); index > 0 {
 			value = strings.TrimSpace(value[:index])
@@ -796,8 +810,8 @@ func monthlyTrainingContentSnippet(content string) string {
 }
 
 func mergeMonthlyTrainingItemContent(existing, next string) string {
-	current := strings.TrimSpace(existing)
-	value := strings.TrimSpace(next)
+	current := normalizeMonthlyTrainingItemContent(existing)
+	value := normalizeMonthlyTrainingItemContent(next)
 	if current == "" {
 		return value
 	}

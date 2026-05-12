@@ -1876,10 +1876,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (draft == null || !mounted) {
       return;
     }
-    await _syncPeriodStart(
-      draft.start,
-      syncMode: draft.syncMode,
-    );
+    await _syncPeriodStart(draft.start);
   }
 
   Future<void> _showRegeneratePlanConfirmDialog() async {
@@ -2003,10 +2000,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     return _normalizeWeeklyRestWeekdays(result);
   }
 
-  Future<void> _syncPeriodStart(
-    DateTime start, {
-    String syncMode = 'dates_only',
-  }) async {
+  Future<void> _syncPeriodStart(DateTime start) async {
     final IepAssessmentRecordSummary? record = widget.record;
     if (record == null) {
       _showMessage('请先选择左侧评估记录');
@@ -2036,16 +2030,12 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         durationMonths: _periodMonthCount,
         sourceDurationMonths: sourceDurationMonths,
         startDate: nextStart,
-        syncMode: syncMode,
       );
       if (!mounted) {
         return;
       }
       _applySyncedPlanBundle(result.iepPlan, result.executionPlans, record);
-      final String successMessage = syncMode == 'supplement_new_weeks'
-          ? '计划周期已同步，新增周训练内容已补齐'
-          : '计划周期已同步，受影响的月计划/周计划已重置为待生成';
-      _showMessage(successMessage, tone: PadMessageTone.success);
+      _showMessage('计划周期已同步，月计划和周计划日期已重算', tone: PadMessageTone.success);
     } on IepPlanApiException catch (error) {
       if (!mounted) {
         return;

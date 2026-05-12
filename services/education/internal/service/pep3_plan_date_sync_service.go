@@ -82,7 +82,6 @@ func (svc *Service) syncIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodS
 	}
 
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
-	syncMode := normalizeIEPPlanPeriodSyncMode(req.SyncMode)
 	previousPlan := planEntity.Plan
 	nextPlan := syncPEP3IEPPlanPeriodDates(planEntity.Plan, record, durationMonths, periodStart)
 	executionPlans, err := svc.buildPEP3PeriodExecutionPlanEntities(
@@ -95,7 +94,6 @@ func (svc *Service) syncIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodS
 		nextPlan,
 		currentTeacherName,
 		userID,
-		syncMode,
 	)
 	if err != nil {
 		return model.PEP3IEPPlanPeriodSyncVO{}, err
@@ -124,20 +122,6 @@ func (svc *Service) syncIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodS
 		IEPPlan:        iepPlan,
 		ExecutionPlans: executionSaved,
 	}, nil
-}
-
-const (
-	iepPlanPeriodSyncModeDatesOnly         = "dates_only"
-	iepPlanPeriodSyncModeSupplementNewWeeks = "supplement_new_weeks"
-)
-
-func normalizeIEPPlanPeriodSyncMode(value string) string {
-	switch strings.TrimSpace(value) {
-	case iepPlanPeriodSyncModeSupplementNewWeeks:
-		return iepPlanPeriodSyncModeSupplementNewWeeks
-	default:
-		return iepPlanPeriodSyncModeDatesOnly
-	}
 }
 
 func validateIEPPlanPeriodDuration(durationMonths int) (int, error) {
@@ -200,7 +184,6 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 	nextPlan model.PEP3IEPPlanAIResult,
 	currentTeacherName string,
 	userID int64,
-	syncMode string,
 ) ([]repository.PEP3ExecutionPlanEntity, error) {
 	sourceEntitiesByKey := make(map[string]repository.PEP3ExecutionPlanEntity)
 	targetEntities, err := svc.repo.ListPEP3ExecutionPlans(ctx, instID, recordID, durationMonths)
@@ -226,8 +209,6 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 
 	result := make([]repository.PEP3ExecutionPlanEntity, 0, len(sourceEntities))
 	monthlyPlans := make(map[int]model.PEP3MonthlyPlanAIResult)
-	supplementedMonths := make(map[int]struct{})
-	resetMonths := make(map[int]struct{})
 	monthCount := executionPlanMonthCount(nextPlan, durationMonths)
 	if monthCount <= 0 {
 		monthCount = 1
@@ -245,33 +226,8 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 			return nil, fmt.Errorf("parse monthly execution plan: %w", err)
 		}
 		restWeekdays := normalizeExecutionPlanRestWeekdays(plan.RestWeekdays)
-		oldTarget := buildExecutionPlanTarget(previousPlan, durationMonths, monthIndex, 0, restWeekdays)
 		newTarget := buildExecutionPlanTarget(nextPlan, durationMonths, monthIndex, 0, restWeekdays)
-		if monthWeekRangesChanged(oldTarget, newTarget) {
-			switch syncMode {
-			case iepPlanPeriodSyncModeSupplementNewWeeks:
-				supplementedPlan, supplementErr := svc.supplementPEP3MonthlyPlanForPeriodSync(
-					ctx,
-					userID,
-					recordID,
-					durationMonths,
-					monthIndex,
-					nextPlan,
-					plan,
-					newTarget,
-				)
-				if supplementErr != nil {
-					return nil, supplementErr
-				}
-				plan = supplementedPlan
-				supplementedMonths[monthIndex] = struct{}{}
-			default:
-				resetMonths[monthIndex] = struct{}{}
-				continue
-			}
-		} else {
-			plan = syncPEP3MonthlyPlanPeriodDates(plan, nextPlan, newTarget, currentTeacherName)
-		}
+		plan = syncPEP3MonthlyPlanPeriodDates(plan, nextPlan, newTarget, currentTeacherName)
 		monthlyPlans[newTarget.MonthIndex] = plan
 		raw, err := json.Marshal(plan)
 		if err != nil {
@@ -298,12 +254,6 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 		if monthIndex < 1 || monthIndex > monthCount {
 			continue
 		}
-		if _, reset := resetMonths[monthIndex]; reset {
-			continue
-		}
-		if _, supplemented := supplementedMonths[monthIndex]; supplemented {
-			continue
-		}
 		var plan model.PEP3WeeklyPlanAIResult
 		if err := json.Unmarshal(entity.PlanJSON, &plan); err != nil {
 			return nil, fmt.Errorf("parse weekly execution plan: %w", err)
@@ -316,14 +266,7 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 		if len(plan.RestWeekdays) == 0 && monthlyPlan != nil && len(monthlyPlan.RestWeekdays) > 0 {
 			restWeekdays = normalizeExecutionPlanRestWeekdays(monthlyPlan.RestWeekdays)
 		}
-		oldTarget := buildExecutionPlanTarget(previousPlan, durationMonths, monthIndex, entity.TargetWeekIndex, restWeekdays)
 		target := buildExecutionPlanTarget(nextPlan, durationMonths, monthIndex, entity.TargetWeekIndex, restWeekdays)
-		if monthWeekRangesChanged(
-			buildExecutionPlanTarget(previousPlan, durationMonths, monthIndex, 0, restWeekdays),
-			buildExecutionPlanTarget(nextPlan, durationMonths, monthIndex, 0, restWeekdays),
-		) || weeklyTargetChanged(oldTarget, target) {
-			continue
-		}
 		if currentMonthlyPlan, ok := monthlyPlans[target.MonthIndex]; ok {
 			monthlyPlan = &currentMonthlyPlan
 		}
@@ -345,102 +288,6 @@ func (svc *Service) buildPEP3PeriodExecutionPlanEntities(
 		})
 	}
 	return result, nil
-}
-
-func monthWeekRangesChanged(left, right pep3ExecutionPlanTarget) bool {
-	if len(left.WeekRanges) != len(right.WeekRanges) {
-		return true
-	}
-	for index := range left.WeekRanges {
-		if strings.TrimSpace(left.WeekRanges[index]) != strings.TrimSpace(right.WeekRanges[index]) {
-			return true
-		}
-	}
-	return false
-}
-
-func weeklyTargetChanged(left, right pep3ExecutionPlanTarget) bool {
-	if strings.TrimSpace(left.WeekRangeText) != strings.TrimSpace(right.WeekRangeText) {
-		return true
-	}
-	if len(left.WeekDates) != len(right.WeekDates) {
-		return true
-	}
-	for index := range left.WeekDates {
-		if strings.TrimSpace(left.WeekDates[index]) != strings.TrimSpace(right.WeekDates[index]) {
-			return true
-		}
-	}
-	return false
-}
-
-func (svc *Service) supplementPEP3MonthlyPlanForPeriodSync(
-	ctx context.Context,
-	userID, recordID int64,
-	durationMonths, targetMonthIndex int,
-	sourcePlan model.PEP3IEPPlanAIResult,
-	existingPlan model.PEP3MonthlyPlanAIResult,
-	target pep3ExecutionPlanTarget,
-) (model.PEP3MonthlyPlanAIResult, error) {
-	generatedAny, err := svc.GeneratePEP3ExecutionPlanWithAI(ctx, userID, model.PEP3ExecutionPlanGenerateRequest{
-		ID:               recordID,
-		DurationMonths:   durationMonths,
-		PlanType:         pep3ExecutionPlanTypeMonthly,
-		TargetMonthIndex: targetMonthIndex,
-		RestWeekdays:     target.RestWeekdays,
-		SourcePlan:       sourcePlan,
-	})
-	if err != nil {
-		return model.PEP3MonthlyPlanAIResult{}, fmt.Errorf("补齐新增周训练内容失败：%w", err)
-	}
-	generatedPlan, ok := generatedAny.(model.PEP3MonthlyPlanAIResult)
-	if !ok {
-		return model.PEP3MonthlyPlanAIResult{}, errors.New("补齐新增周训练内容失败：AI返回结果类型异常")
-	}
-	return mergeSupplementedPEP3MonthlyPlan(existingPlan, generatedPlan), nil
-}
-
-func mergeSupplementedPEP3MonthlyPlan(
-	existingPlan model.PEP3MonthlyPlanAIResult,
-	generatedPlan model.PEP3MonthlyPlanAIResult,
-) model.PEP3MonthlyPlanAIResult {
-	result := generatedPlan
-	existingRowsByKey := make(map[string]model.PEP3MonthlyPlanRow, len(existingPlan.Rows))
-	for _, row := range existingPlan.Rows {
-		existingRowsByKey[monthlyPlanRowIdentity(row)] = row
-	}
-	for rowIndex := range result.Rows {
-		row := result.Rows[rowIndex]
-		existingRow, ok := existingRowsByKey[monthlyPlanRowIdentity(row)]
-		if !ok {
-			continue
-		}
-		existingItemsByRange := make(map[string]model.PEP3MonthlyTrainingItem, len(existingRow.TrainingItems))
-		for _, item := range existingRow.TrainingItems {
-			rangeText := strings.TrimSpace(item.StartEndDate)
-			if rangeText == "" || strings.TrimSpace(item.Content) == "" {
-				continue
-			}
-			existingItemsByRange[rangeText] = item
-		}
-		if strings.TrimSpace(existingRow.CourseForm) != "" {
-			row.CourseForm = existingRow.CourseForm
-		}
-		for itemIndex := range row.TrainingItems {
-			rangeText := strings.TrimSpace(row.TrainingItems[itemIndex].StartEndDate)
-			if existingItem, exists := existingItemsByRange[rangeText]; exists {
-				row.TrainingItems[itemIndex] = existingItem
-			}
-		}
-		result.Rows[rowIndex] = row
-	}
-	return result
-}
-
-func monthlyPlanRowIdentity(row model.PEP3MonthlyPlanRow) string {
-	return strings.TrimSpace(row.Domain) + "\n" +
-		strings.TrimSpace(row.LongGoal) + "\n" +
-		strings.TrimSpace(row.ShortGoal)
 }
 
 func pep3ExecutionPlanEntityKey(entity repository.PEP3ExecutionPlanEntity) string {

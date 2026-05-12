@@ -39,6 +39,34 @@ func TestNormalizePEP3MonthlyTrainingItemsAlignsTrainingItemCountAndDatesToWeekR
 	}
 }
 
+func TestNormalizePEP3MonthlyTrainingItemsStripsWeekAndStagePrefixes(t *testing.T) {
+	target := pep3ExecutionPlanTarget{
+		StartDate:  "2026-05-11",
+		EndDate:    "2026-05-31",
+		WeekRanges: []string{"2026-05-11 - 2026-05-15", "2026-05-18 - 2026-05-22", "2026-05-25 - 2026-05-29"},
+	}
+	row := model.PEP3MonthlyPlanRow{
+		ShortGoal: "提升分类能力",
+		TrainingItems: []model.PEP3MonthlyTrainingItem{
+			{Content: "第一周：按颜色分类积木", StartEndDate: "2026-05-11 - 2026-05-15"},
+			{Content: "强化提升：按大小分类玩具", StartEndDate: "2026-05-18 - 2026-05-22"},
+			{Content: "第三周训练内容：按形状分类卡片", StartEndDate: "2026-05-25 - 2026-05-29"},
+		},
+	}
+
+	items := normalizePEP3MonthlyTrainingItems(row, target)
+
+	if items[0].Content != "按颜色分类积木" {
+		t.Fatalf("unexpected first content: %s", items[0].Content)
+	}
+	if items[1].Content != "按大小分类玩具" {
+		t.Fatalf("unexpected second content: %s", items[1].Content)
+	}
+	if items[2].Content != "按形状分类卡片" {
+		t.Fatalf("unexpected third content: %s", items[2].Content)
+	}
+}
+
 func TestBuildExecutionPlanTargetIncludesMonthWeekRangesAndSelectedWeekRange(t *testing.T) {
 	sourcePlan := model.PEP3IEPPlanAIResult{
 		Meta: model.PEP3IEPPlanMeta{
