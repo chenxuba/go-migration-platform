@@ -94,8 +94,7 @@ const String defaultIepPep3ExecutionAiTaskPath = String.fromEnvironment(
 );
 const String defaultIepErxinExecutionAiTaskPath = String.fromEnvironment(
   'IEP_ERXIN_EXECUTION_AI_TASK_PATH',
-  defaultValue:
-      '/api/v1/assessments/erxin/records/iep-plan/execution/ai/tasks',
+  defaultValue: '/api/v1/assessments/erxin/records/iep-plan/execution/ai/tasks',
 );
 const String defaultIepPep3ExecutionAiTaskActivePath = String.fromEnvironment(
   'IEP_PEP3_EXECUTION_AI_TASK_ACTIVE_PATH',
@@ -328,7 +327,8 @@ abstract interface class IepPlanClient {
     required String taskId,
   });
 
-  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+  Future<IepExecutionPlanGenerationTask?>
+      fetchActiveExecutionPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -982,7 +982,8 @@ class ApiIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+  Future<IepExecutionPlanGenerationTask?>
+      fetchActiveExecutionPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -1810,7 +1811,8 @@ class IepExecutionPlanGenerationTask {
   factory IepExecutionPlanGenerationTask.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> monthlyPlanJson = _mapFrom(json['monthlyPlan']);
     final Map<String, dynamic> weeklyPlanJson = _mapFrom(json['weeklyPlan']);
-    final Map<String, dynamic> savedJson = _mapFrom(json['savedExecutionPlans']);
+    final Map<String, dynamic> savedJson =
+        _mapFrom(json['savedExecutionPlans']);
     return IepExecutionPlanGenerationTask(
       exists: json.containsKey('exists') ? _boolFrom(json['exists']) : true,
       taskId: _stringFrom(json['taskId']),
@@ -1826,11 +1828,11 @@ class IepExecutionPlanGenerationTask {
       monthlyPlan: monthlyPlanJson.isEmpty
           ? null
           : IepMonthlyPlan.fromJson(monthlyPlanJson),
-      weeklyPlan:
-          weeklyPlanJson.isEmpty ? null : IepWeeklyPlan.fromJson(weeklyPlanJson),
-      savedExecutionPlans: savedJson.isEmpty
+      weeklyPlan: weeklyPlanJson.isEmpty
           ? null
-          : IepExecutionPlansSaved.fromJson(savedJson),
+          : IepWeeklyPlan.fromJson(weeklyPlanJson),
+      savedExecutionPlans:
+          savedJson.isEmpty ? null : IepExecutionPlansSaved.fromJson(savedJson),
       error: _stringFrom(json['error']),
       updatedTime: _stringFrom(json['updatedTime']),
     );
@@ -2404,6 +2406,7 @@ class IepMonthlyPlanRow {
     required this.domain,
     required this.longGoal,
     required this.shortGoal,
+    required this.candidateTrainingItems,
     required this.trainingItems,
     required this.courseForm,
   });
@@ -2413,6 +2416,9 @@ class IepMonthlyPlanRow {
       domain: _stringFrom(json['domain']),
       longGoal: _stringFrom(json['longGoal']),
       shortGoal: _stringFrom(json['shortGoal']),
+      candidateTrainingItems: _listFrom(json['candidateTrainingItems'])
+          .map(IepMonthlyTrainingItem.fromJson)
+          .toList(),
       trainingItems: _listFrom(json['trainingItems'])
           .map(IepMonthlyTrainingItem.fromJson)
           .toList(),
@@ -2423,6 +2429,7 @@ class IepMonthlyPlanRow {
   final String domain;
   final String longGoal;
   final String shortGoal;
+  final List<IepMonthlyTrainingItem> candidateTrainingItems;
   final List<IepMonthlyTrainingItem> trainingItems;
   final String courseForm;
 
@@ -2431,6 +2438,9 @@ class IepMonthlyPlanRow {
       'domain': domain,
       'longGoal': longGoal,
       'shortGoal': shortGoal,
+      'candidateTrainingItems': candidateTrainingItems
+          .map((IepMonthlyTrainingItem item) => item.toJson())
+          .toList(),
       'trainingItems': trainingItems
           .map((IepMonthlyTrainingItem item) => item.toJson())
           .toList(),
@@ -2805,10 +2815,12 @@ List<IepExecutionPlanGenerationEvent<dynamic>> _parseExecutionTaskSseFrame(
   String frame,
   String lastStreamText,
 ) {
-  final IepExecutionPlanGenerationTask? task = _executionTaskFromSseFrame(frame);
+  final IepExecutionPlanGenerationTask? task =
+      _executionTaskFromSseFrame(frame);
   if (task == null) {
     final IepExecutionPlanGenerationEvent<dynamic>? event =
-        _parseExecutionSseFrame<dynamic>(frame, (Map<String, dynamic> json) => json);
+        _parseExecutionSseFrame<dynamic>(
+            frame, (Map<String, dynamic> json) => json);
     return event == null
         ? const <IepExecutionPlanGenerationEvent<dynamic>>[]
         : <IepExecutionPlanGenerationEvent<dynamic>>[event];

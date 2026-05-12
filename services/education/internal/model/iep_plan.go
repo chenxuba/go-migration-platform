@@ -50,23 +50,23 @@ type PEP3ExecutionPlanGenerateRequest struct {
 }
 
 type PEP3ExecutionPlanGenerationTaskVO struct {
-	Exists              bool                     `json:"exists,omitempty"`
-	TaskID              string                   `json:"taskId"`
-	Status              string                   `json:"status"`
-	Message             string                   `json:"message,omitempty"`
-	StreamText          string                   `json:"streamText,omitempty"`
-	Usage               *DeepSeekUsageVO         `json:"usage,omitempty"`
-	CostAmountCNY       float64                  `json:"costAmountCny,omitempty"`
-	DurationMonths      int                      `json:"durationMonths,omitempty"`
-	PlanType            string                   `json:"planType,omitempty"`
-	TargetMonthIndex    int                      `json:"targetMonthIndex,omitempty"`
-	TargetWeekIndex     int                      `json:"targetWeekIndex,omitempty"`
-	RestWeekdays        []int                    `json:"restWeekdays,omitempty"`
-	MonthlyPlan         *PEP3MonthlyPlanAIResult `json:"monthlyPlan,omitempty"`
-	WeeklyPlan          *PEP3WeeklyPlanAIResult  `json:"weeklyPlan,omitempty"`
+	Exists              bool                      `json:"exists,omitempty"`
+	TaskID              string                    `json:"taskId"`
+	Status              string                    `json:"status"`
+	Message             string                    `json:"message,omitempty"`
+	StreamText          string                    `json:"streamText,omitempty"`
+	Usage               *DeepSeekUsageVO          `json:"usage,omitempty"`
+	CostAmountCNY       float64                   `json:"costAmountCny,omitempty"`
+	DurationMonths      int                       `json:"durationMonths,omitempty"`
+	PlanType            string                    `json:"planType,omitempty"`
+	TargetMonthIndex    int                       `json:"targetMonthIndex,omitempty"`
+	TargetWeekIndex     int                       `json:"targetWeekIndex,omitempty"`
+	RestWeekdays        []int                     `json:"restWeekdays,omitempty"`
+	MonthlyPlan         *PEP3MonthlyPlanAIResult  `json:"monthlyPlan,omitempty"`
+	WeeklyPlan          *PEP3WeeklyPlanAIResult   `json:"weeklyPlan,omitempty"`
 	SavedExecutionPlans *PEP3ExecutionPlanSavedVO `json:"savedExecutionPlans,omitempty"`
-	Error               string                   `json:"error,omitempty"`
-	UpdatedTime         string                   `json:"updatedTime,omitempty"`
+	Error               string                    `json:"error,omitempty"`
+	UpdatedTime         string                    `json:"updatedTime,omitempty"`
 }
 
 type PEP3ExecutionPlanWordExportRequest struct {
@@ -222,11 +222,12 @@ type PEP3MonthlyPlanMeta struct {
 }
 
 type PEP3MonthlyPlanRow struct {
-	Domain        string                    `json:"domain"`
-	LongGoal      string                    `json:"longGoal"`
-	ShortGoal     string                    `json:"shortGoal"`
-	TrainingItems []PEP3MonthlyTrainingItem `json:"trainingItems"`
-	CourseForm    string                    `json:"courseForm"`
+	Domain                 string                    `json:"domain"`
+	LongGoal               string                    `json:"longGoal"`
+	ShortGoal              string                    `json:"shortGoal"`
+	CandidateTrainingItems []PEP3MonthlyTrainingItem `json:"candidateTrainingItems,omitempty"`
+	TrainingItems          []PEP3MonthlyTrainingItem `json:"trainingItems"`
+	CourseForm             string                    `json:"courseForm"`
 }
 
 type PEP3MonthlyTrainingItem struct {
