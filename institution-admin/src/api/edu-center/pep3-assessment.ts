@@ -32,6 +32,47 @@ export interface PageResult<T> {
   size: number
 }
 
+export type PEP3IEPMaterialScope = 'institution' | 'platform' | string
+
+export interface PEP3IEPMaterialMatchCandidate {
+  ruleId?: number
+  goalMaterialId?: number
+  libraryScope?: PEP3IEPMaterialScope
+  itemNo: number
+  itemTitle?: string
+  domainCode?: string
+  domain?: string
+  scoreValue: number
+  scoreLabel?: string
+  scoreDescription?: string
+  resultMeaning?: string
+  generatePolicy?: string
+  priority?: number
+  longGoal?: string
+  shortGoal?: string
+  courseForm?: string
+  trainingMaterials?: PEP3IEPTrainingMaterial[]
+  aiInstruction?: string
+}
+
+export interface PEP3IEPTrainingMaterial {
+  id?: number
+  libraryScope: PEP3IEPMaterialScope
+  instId?: number
+  goalMaterialId?: number
+  trainingProject: string
+  trainingContent: string
+  priority?: number
+  status?: string
+}
+
+export interface PEP3IEPMaterialMatchResult {
+  recordId?: number
+  studentName?: string
+  candidateCount: number
+  candidates: PEP3IEPMaterialMatchCandidate[]
+}
+
 export interface PEP3ItemScoreInput {
   itemNo: number
   score: 0 | 1 | 2 | number
@@ -673,6 +714,10 @@ export function scorePEP3AssessmentApi(data: PEP3ScoreRequest) {
   return usePost<PEP3ScoreResponse>('/api/v1/assessments/pep3/score', data)
 }
 
+export function previewPEP3IEPMaterialMatchApi(id: number | string) {
+  return useGet<PEP3IEPMaterialMatchResult>('/api/v1/assessments/pep3/iep-material/records/match-preview', { id })
+}
+
 export function savePEP3AssessmentDraftApi(data: PEP3DraftSaveRequest) {
   return usePost<PEP3AssessmentDraftDetail>('/api/v1/assessments/pep3/drafts/save', data)
 }
@@ -910,6 +955,9 @@ export interface PEP3IEPPlanAIResult {
     shortGoal: string
     courseForm: string
     startEndDate: string
+    ruleIds?: number[]
+    goalMaterialIds?: number[]
+    trainingMaterialIds?: number[]
   }>
 }
 

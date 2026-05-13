@@ -389,12 +389,24 @@ function openQuestionBankPage(record: LooseScaleRecord) {
   })
 }
 
-function handleSearch() {
-  appliedKeyword.value = keyword.value.trim()
+function isPEP3Scale(record: LooseScaleRecord) {
+  return String(asScaleRecord(record).code || '').trim().toUpperCase() === 'PEP3'
 }
 
-function handlePendingAction(actionName: string) {
-  messageService.info(`${actionName}功能暂未开放`)
+function openPEP3IEPMaterialPage(record: LooseScaleRecord) {
+  const scale = asScaleRecord(record)
+  router.push({
+    name: 'PlatformPEP3IEPMaterials',
+    query: {
+      scaleCode: scale.code,
+      scaleVersion: scale.currentVersion,
+      scaleId: String(scale.id),
+    },
+  })
+}
+
+function handleSearch() {
+  appliedKeyword.value = keyword.value.trim()
 }
 
 function resetResourceForm() {
@@ -793,8 +805,7 @@ onMounted(() => {
               </a>
 
               <a-dropdown
-                v-if="hasAccess([
-                  PlatformAccessEnum.scaleManageIepTarget,
+                v-if="(isPEP3Scale(record) && hasAccess(PlatformAccessEnum.scaleManageIepTarget)) || hasAccess([
                   PlatformAccessEnum.scaleManageReference,
                   PlatformAccessEnum.scaleManageThanks,
                 ])"
@@ -807,8 +818,8 @@ onMounted(() => {
                 </a>
                 <template #overlay>
                   <a-menu class="scale-actions__menu">
-                    <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageIepTarget)" key="iep" @click="handlePendingAction('IEP目标库')">
-                      IEP目标库
+                    <a-menu-item v-if="isPEP3Scale(record) && hasAccess(PlatformAccessEnum.scaleManageIepTarget)" key="pep3IepMaterials" @click="openPEP3IEPMaterialPage(record)">
+                      IEP素材库
                     </a-menu-item>
                     <a-menu-item v-if="hasAccess(PlatformAccessEnum.scaleManageReference)" key="references" @click="openReferenceManage(record)">
                       引用文献

@@ -129,6 +129,142 @@ export function updateScaleQuestionBankItemApi(data: ScaleQuestionBankItem & { s
   return usePost<boolean, ScaleQuestionBankItem & { scaleCode: string, scaleVersion: string }>('/api/v1/platform/scales/question-bank/items/update', data, { silentError: true })
 }
 
+export interface PlatformPageRequestModel {
+  pageIndex: number
+  pageSize: number
+}
+
+export interface PlatformPageResult<T> {
+  items: T[]
+  total: number
+  current: number
+  size: number
+}
+
+export type PEP3IEPMaterialStatus = 'active' | 'inactive' | string
+
+export interface PEP3IEPMaterialQuery {
+  materialType?: 'long_term' | 'short_term' | string
+  parentGoalMaterialId?: number
+  goalMaterialId?: number
+  domainCode?: string
+  domain?: string
+  courseForm?: string
+  status?: PEP3IEPMaterialStatus
+  keyword?: string
+}
+
+export interface PEP3IEPItemOptionRuleQuery {
+  itemNo?: number
+  scoreValue?: number
+  domainCode?: string
+  domain?: string
+  status?: PEP3IEPMaterialStatus
+  keyword?: string
+}
+
+export interface PEP3IEPItemOptionRulePageRequest {
+  pageRequestModel: PlatformPageRequestModel
+  queryModel: PEP3IEPItemOptionRuleQuery
+}
+
+export interface PEP3IEPMaterialPageRequest {
+  pageRequestModel: PlatformPageRequestModel
+  queryModel: PEP3IEPMaterialQuery
+}
+
+export interface PEP3IEPGoalMaterial {
+  id?: number
+  libraryScope: 'platform' | string
+  instId?: number
+  materialType?: 'long_term' | 'short_term' | string
+  parentGoalMaterialId?: number
+  domainCode?: string
+  domain?: string
+  longGoal: string
+  shortGoal: string
+  courseForm?: string
+  ageMinMonths?: number
+  ageMaxMonths?: number
+  difficultyLevel?: number
+  applicableScoreValues?: string
+  priority?: number
+  status?: PEP3IEPMaterialStatus
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface PEP3IEPItemOptionRule {
+  id?: number
+  libraryScope: 'platform' | string
+  instId?: number
+  itemNo: number
+  itemTitle?: string
+  domainCode?: string
+  domain?: string
+  scoreValue: number
+  scoreLabel?: string
+  scoreDescription?: string
+  resultMeaning?: string
+  generatePolicy?: string
+  priority?: number
+  aiInstruction?: string
+  status?: PEP3IEPMaterialStatus
+  goalMaterialIds?: number[]
+  goalMaterials?: PEP3IEPGoalMaterial[]
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface PEP3IEPTrainingMaterial {
+  id?: number
+  libraryScope: 'platform' | string
+  instId?: number
+  goalMaterialId?: number
+  trainingProject: string
+  trainingContent: string
+  priority?: number
+  status?: PEP3IEPMaterialStatus
+  createdTime?: string
+  updatedTime?: string
+}
+
+export function pagePlatformPEP3IEPMaterialRulesApi(data: PEP3IEPItemOptionRulePageRequest) {
+  return usePost<PlatformPageResult<PEP3IEPItemOptionRule>>('/api/v1/platform/scales/pep3-iep-material/rules/page', data, { silentError: true })
+}
+
+export function savePlatformPEP3IEPMaterialRuleApi(data: PEP3IEPItemOptionRule) {
+  return usePost<PEP3IEPItemOptionRule>('/api/v1/platform/scales/pep3-iep-material/rules/save', data)
+}
+
+export function deletePlatformPEP3IEPMaterialRuleApi(id: number) {
+  return usePost<{ deleted: boolean }>('/api/v1/platform/scales/pep3-iep-material/rules/delete', { id })
+}
+
+export function pagePlatformPEP3IEPMaterialGoalsApi(data: PEP3IEPMaterialPageRequest) {
+  return usePost<PlatformPageResult<PEP3IEPGoalMaterial>>('/api/v1/platform/scales/pep3-iep-material/goals/page', data, { silentError: true })
+}
+
+export function savePlatformPEP3IEPMaterialGoalApi(data: PEP3IEPGoalMaterial) {
+  return usePost<PEP3IEPGoalMaterial>('/api/v1/platform/scales/pep3-iep-material/goals/save', data)
+}
+
+export function deletePlatformPEP3IEPMaterialGoalApi(id: number) {
+  return usePost<{ deleted: boolean }>('/api/v1/platform/scales/pep3-iep-material/goals/delete', { id })
+}
+
+export function pagePlatformPEP3IEPMaterialTrainingApi(data: PEP3IEPMaterialPageRequest) {
+  return usePost<PlatformPageResult<PEP3IEPTrainingMaterial>>('/api/v1/platform/scales/pep3-iep-material/training/page', data, { silentError: true })
+}
+
+export function savePlatformPEP3IEPMaterialTrainingApi(data: PEP3IEPTrainingMaterial) {
+  return usePost<PEP3IEPTrainingMaterial>('/api/v1/platform/scales/pep3-iep-material/training/save', data)
+}
+
+export function deletePlatformPEP3IEPMaterialTrainingApi(id: number) {
+  return usePost<{ deleted: boolean }>('/api/v1/platform/scales/pep3-iep-material/training/delete', { id })
+}
+
 export interface ScaleMutationPayload {
   id?: number
   name: string

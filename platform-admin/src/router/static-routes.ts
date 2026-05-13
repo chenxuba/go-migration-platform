@@ -78,6 +78,18 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: '/platform/scales/pep3-iep-materials',
+    name: 'PlatformPEP3IEPMaterials',
+    component: () => import('~/pages/platform/scales/pep3-iep-materials/index.vue'),
+    meta: {
+      title: 'PEP3 IEP素材库',
+      access: [PlatformAccessEnum.scaleManageIepTarget],
+      hideInMenu: true,
+      hideInBreadcrumb: true,
+      parentKeys: ['/platform/scales'],
+    },
+  },
+  {
     path: '/platform/dicts',
     name: 'PlatformDicts',
     component: () => import('~/pages/platform/dicts/index.vue'),

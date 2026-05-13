@@ -54,6 +54,7 @@ func New(db *sql.DB) *Repository {
 	_ = repo.ensureInstUserTeacherColumn(context.Background())
 	_ = repo.ensureInstUserSupervisorColumn(context.Background())
 	_ = repo.ensureScaleLibrarySchema(context.Background())
+	_ = ensurePEP3IEPMaterialTables(context.Background(), db)
 	return repo
 }
 
@@ -235,6 +236,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 		return err
 	}
 	if err := ensurePEP3IEPPlanTables(ctx, repo.db); err != nil {
+		return err
+	}
+	if err := ensurePEP3IEPMaterialTables(ctx, repo.db); err != nil {
 		return err
 	}
 	if err := ensureIEPPlanGenerationTaskTables(ctx, repo.db); err != nil {

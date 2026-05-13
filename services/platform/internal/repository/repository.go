@@ -463,6 +463,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := repo.ensureScaleQuestionBankSchema(context.Background()); err != nil {
 		return nil, err
 	}
+	if err := ensurePEP3IEPMaterialTables(context.Background(), db); err != nil {
+		return nil, err
+	}
 	if err := repo.ensurePlatformDictSchema(context.Background()); err != nil {
 		return nil, err
 	}

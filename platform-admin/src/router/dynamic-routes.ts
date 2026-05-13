@@ -113,7 +113,7 @@ const routes: RouteRecordRaw[] = [
       title: '量表配置',
       icon: 'ProfileOutlined',
       tenantRoles: ['platform_admin', 'platform_staff'],
-      access: [PlatformAccessEnum.scaleConfig, PlatformAccessEnum.scaleManage],
+      access: [PlatformAccessEnum.scaleConfig, PlatformAccessEnum.scaleManage, PlatformAccessEnum.scaleManageIepTarget],
     },
     component: basicRouteMap.RouteView,
     children: [
@@ -135,6 +135,18 @@ const routes: RouteRecordRaw[] = [
           title: '题库管理',
           tenantRoles: ['platform_admin', 'platform_staff'],
           access: [PlatformAccessEnum.scaleManageQuestionBank],
+          hideInMenu: true,
+          parentKeys: ['/platform/scales'],
+        },
+      },
+      {
+        path: '/platform/scales/pep3-iep-materials',
+        name: 'PlatformPEP3IEPMaterials',
+        component: () => import('~/pages/platform/scales/pep3-iep-materials/index.vue'),
+        meta: {
+          title: 'PEP3 IEP素材库',
+          tenantRoles: ['platform_admin', 'platform_staff'],
+          access: [PlatformAccessEnum.scaleManageIepTarget],
           hideInMenu: true,
           parentKeys: ['/platform/scales'],
         },

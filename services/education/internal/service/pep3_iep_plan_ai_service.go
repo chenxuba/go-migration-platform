@@ -30,19 +30,22 @@ const (
 var iepGoalNumberPrefixPattern = regexp.MustCompile(`(^|\s)(?:\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*`)
 
 type iepShortGoalItem struct {
-	goal       string
-	courseForm string
+	goal                string
+	courseForm          string
+	ruleIDs             []int64
+	goalMaterialIDs     []int64
+	trainingMaterialIDs []int64
 }
 
 type deepSeekChatRequest struct {
-	Model          string                `json:"model"`
-	Messages       []deepSeekChatMessage `json:"messages"`
-	Temperature    float64               `json:"temperature,omitempty"`
-	MaxTokens      int                   `json:"max_tokens,omitempty"`
-	ResponseFormat map[string]string     `json:"response_format,omitempty"`
-	Thinking       *deepSeekThinking     `json:"thinking,omitempty"`
+	Model          string                 `json:"model"`
+	Messages       []deepSeekChatMessage  `json:"messages"`
+	Temperature    float64                `json:"temperature,omitempty"`
+	MaxTokens      int                    `json:"max_tokens,omitempty"`
+	ResponseFormat map[string]string      `json:"response_format,omitempty"`
+	Thinking       *deepSeekThinking      `json:"thinking,omitempty"`
 	StreamOptions  *deepSeekStreamOptions `json:"stream_options,omitempty"`
-	Stream         bool                  `json:"stream,omitempty"`
+	Stream         bool                   `json:"stream,omitempty"`
 }
 
 type deepSeekChatMessage struct {
@@ -92,11 +95,12 @@ type deepSeekChatStreamChunk struct {
 }
 
 type pep3IEPPlanPromptPayload struct {
-	Student        pep3IEPPlanPromptStudent           `json:"student"`
-	Assessment     pep3IEPPlanPromptAssessment        `json:"assessment"`
-	Interpretation *model.ERXinReportInterpretationVO `json:"interpretation,omitempty"`
-	RehabRecords   []pep3IEPPlanPromptRehabRecord     `json:"rehabRecords"`
-	OutputRequest  pep3IEPPlanPromptOutput            `json:"outputRequest"`
+	Student            pep3IEPPlanPromptStudent             `json:"student"`
+	Assessment         pep3IEPPlanPromptAssessment          `json:"assessment"`
+	Interpretation     *model.ERXinReportInterpretationVO   `json:"interpretation,omitempty"`
+	RehabRecords       []pep3IEPPlanPromptRehabRecord       `json:"rehabRecords"`
+	MaterialCandidates []pep3IEPPlanPromptMaterialCandidate `json:"materialCandidates,omitempty"`
+	OutputRequest      pep3IEPPlanPromptOutput              `json:"outputRequest"`
 }
 
 type pep3IEPPlanPromptStudent struct {
@@ -132,6 +136,31 @@ type pep3IEPPlanPromptRehabRecord struct {
 	Performance    string   `json:"performance,omitempty"`
 	Suggestion     string   `json:"suggestion,omitempty"`
 	ParentFeedback string   `json:"parentFeedback,omitempty"`
+}
+
+type pep3IEPPlanPromptMaterialCandidate struct {
+	RuleID            int64                               `json:"ruleId,omitempty"`
+	GoalMaterialID    int64                               `json:"goalMaterialId,omitempty"`
+	ItemNo            int                                 `json:"itemNo"`
+	ItemTitle         string                              `json:"itemTitle,omitempty"`
+	Domain            string                              `json:"domain,omitempty"`
+	Score             int                                 `json:"score"`
+	ScoreLabel        string                              `json:"scoreLabel,omitempty"`
+	ScoreDescription  string                              `json:"scoreDescription,omitempty"`
+	ResultMeaning     string                              `json:"resultMeaning,omitempty"`
+	GeneratePolicy    string                              `json:"generatePolicy,omitempty"`
+	Priority          int                                 `json:"priority,omitempty"`
+	LongGoal          string                              `json:"longGoal"`
+	ShortGoal         string                              `json:"shortGoal"`
+	CourseForm        string                              `json:"courseForm,omitempty"`
+	TrainingMaterials []pep3IEPPlanPromptTrainingMaterial `json:"trainingMaterials,omitempty"`
+	AIInstruction     string                              `json:"aiInstruction,omitempty"`
+}
+
+type pep3IEPPlanPromptTrainingMaterial struct {
+	TrainingMaterialID int64  `json:"trainingMaterialId,omitempty"`
+	TrainingProject    string `json:"trainingProject"`
+	TrainingContent    string `json:"trainingContent"`
 }
 
 type pep3IEPPlanPromptOutput struct {
@@ -171,7 +200,12 @@ func (svc *Service) GeneratePEP3IEPPlanWithAI(userID int64, recordID int64, dura
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
 	}
+	materialCandidates, err := svc.matchPEP3IEPMaterialCandidatesForRecord(context.Background(), instID, record)
+	if err != nil {
+		return model.PEP3IEPPlanAIResult{}, err
+	}
 	payload := buildPEP3IEPPlanPromptPayload(record, interpretation, rehabRows, durationMonths)
+	payload.MaterialCandidates = buildPEP3IEPPlanPromptMaterialCandidates(materialCandidates, 80)
 	result, err := callDeepSeekIEPPlan(context.Background(), payload)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
@@ -213,7 +247,12 @@ func (svc *Service) GeneratePEP3IEPPlanWithAIStream(ctx context.Context, userID 
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
+	materialCandidates, err := svc.matchPEP3IEPMaterialCandidatesForRecord(ctx, instID, record)
+	if err != nil {
+		return model.PEP3IEPPlanAIResult{}, nil, err
+	}
 	payload := buildPEP3IEPPlanPromptPayload(record, interpretation, rehabRows, durationMonths)
+	payload.MaterialCandidates = buildPEP3IEPPlanPromptMaterialCandidates(materialCandidates, 80)
 	result, usage, err := callDeepSeekIEPPlanStream(ctx, payload, onDelta)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, usage, err
@@ -239,13 +278,78 @@ func buildPEP3IEPPlanPromptPayload(record model.AssessmentRecordDetailVO, interp
 		OutputRequest: pep3IEPPlanPromptOutput{
 			Title:          iepPlanTitle(durationMonths),
 			DurationMonths: durationMonths,
-			RequiredSchema: "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate}, rows[{domain,longGoal,shortGoal,courseForm,startEndDate}]。rows是表格行，不要输出家庭干预计划。每个康复领域至少3行rows；每行shortGoal只能放1条短期目标；同一领域longGoal必须完全相同，写成至少2条编号长期目标并用\\n分隔；courseForm必须根据评估结果和近期训练记录判断，常见值为个训、集体课；startEndDate按自然月份阶段填写，不能每行都写整个计划周期。",
+			RequiredSchema: "只输出JSON：title, student{name,gender,birthDate}, meta{planDate,participant,implementer,startDate,endDate}, rows[{domain,longGoal,shortGoal,courseForm,startEndDate,ruleIds?,goalMaterialIds?,trainingMaterialIds?}]。rows是表格行，不要输出家庭干预计划和训练内容。每个康复领域至少3行rows；每行shortGoal只能放1条短期目标；同一领域longGoal必须完全相同，写成至少2条编号长期目标并用\\n分隔；courseForm必须根据评估结果、素材候选和近期训练记录判断，常见值为个训、集体课；startEndDate按自然月份阶段填写，不能每行都写整个计划周期。materialCandidates.trainingMaterials仅用于理解短期目标后续可拆解的训练方向，不要输出到总IEP正文；使用materialCandidates生成某行时，把对应ruleId、goalMaterialId和trainingMaterialId写入ruleIds、goalMaterialIds、trainingMaterialIds。",
 		},
 	}
 	if !erxinReportInterpretationIsEmpty(interpretation) {
 		payload.Interpretation = &interpretation
 	}
 	return payload
+}
+
+func buildPEP3IEPPlanPromptMaterialCandidates(candidates []model.PEP3IEPMaterialMatchCandidate, limit int) []pep3IEPPlanPromptMaterialCandidate {
+	if len(candidates) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 80
+	}
+	out := make([]pep3IEPPlanPromptMaterialCandidate, 0, minInt(len(candidates), limit))
+	for _, candidate := range candidates {
+		longGoal := strings.TrimSpace(candidate.LongGoal)
+		shortGoal := strings.TrimSpace(candidate.ShortGoal)
+		if longGoal == "" || shortGoal == "" {
+			continue
+		}
+		out = append(out, pep3IEPPlanPromptMaterialCandidate{
+			RuleID:            candidate.RuleID,
+			GoalMaterialID:    candidate.GoalMaterialID,
+			ItemNo:            candidate.ItemNo,
+			ItemTitle:         strings.TrimSpace(candidate.ItemTitle),
+			Domain:            strings.TrimSpace(candidate.Domain),
+			Score:             candidate.ScoreValue,
+			ScoreLabel:        strings.TrimSpace(candidate.ScoreLabel),
+			ScoreDescription:  strings.TrimSpace(candidate.ScoreDescription),
+			ResultMeaning:     strings.TrimSpace(candidate.ResultMeaning),
+			GeneratePolicy:    strings.TrimSpace(candidate.GeneratePolicy),
+			Priority:          candidate.Priority,
+			LongGoal:          longGoal,
+			ShortGoal:         shortGoal,
+			CourseForm:        strings.TrimSpace(candidate.CourseForm),
+			TrainingMaterials: buildPEP3IEPPlanPromptTrainingMaterials(candidate.TrainingMaterials, 6),
+			AIInstruction:     strings.TrimSpace(candidate.AIInstruction),
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
+}
+
+func buildPEP3IEPPlanPromptTrainingMaterials(items []model.PEP3IEPTrainingMaterial, limit int) []pep3IEPPlanPromptTrainingMaterial {
+	if len(items) == 0 {
+		return nil
+	}
+	if limit <= 0 {
+		limit = len(items)
+	}
+	out := make([]pep3IEPPlanPromptTrainingMaterial, 0, minInt(len(items), limit))
+	for _, item := range items {
+		project := strings.TrimSpace(item.TrainingProject)
+		content := strings.TrimSpace(item.TrainingContent)
+		if project == "" || content == "" {
+			continue
+		}
+		out = append(out, pep3IEPPlanPromptTrainingMaterial{
+			TrainingMaterialID: item.ID,
+			TrainingProject:    project,
+			TrainingContent:    content,
+		})
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out
 }
 
 func (svc *Service) currentIEPPlanTeacherName(ctx context.Context, userID int64) string {
@@ -443,8 +547,10 @@ func pep3IEPPlanSystemPrompt() string {
 	return strings.Join([]string{
 		"你是儿童康复机构的IEP计划生成助手。",
 		"根据PEP-3评估结果、可用的报告解读和近期儿童训练记录，生成可落地的康复教学计划；如果没有报告解读，就只依据测评结果和训练记录生成。",
+		"如果输入包含materialCandidates，优先从素材候选中挑选目标：score=1优先生成主要目标，score=0生成前备或基础目标，score=2通常跳过或仅用于维持泛化；素材不足时再结合测评和训练记录补充。",
 		"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
 		"表格结构只能是：康复领域、长期目标、短期目标、课程形式、起止日期。",
+		"使用素材候选生成目标时，应保留对应ruleId和goalMaterialId到该行的ruleIds、goalMaterialIds；这两个字段是可选数组，不要展示在目标文字里。",
 		"不要输出家庭干预计划。长期目标和短期目标要具体、可训练、可观察。",
 		"每个康复领域至少输出3行短期目标，一行只能放1条短期目标。",
 		"同一康复领域的longGoal要写成同一个字符串，至少包含2条长期目标，用\\n分隔并编号；同领域每行longGoal保持完全相同，便于合并成一个单元格。",
@@ -850,8 +956,11 @@ func normalizeIEPPlanAIRows(rows []model.PEP3IEPPlanRow, stageRanges []string, d
 		courseForm := normalizeIEPCourseForm(row.CourseForm)
 		for _, shortGoal := range splitIEPGoalLines(row.ShortGoal) {
 			group.shortGoals = appendUniqueShortGoalItems(group.shortGoals, iepShortGoalItem{
-				goal:       shortGoal,
-				courseForm: firstNonEmptyExportValue(courseForm, defaultCourseForm, inferIEPCourseFormFromText(shortGoal, group.domain)),
+				goal:                shortGoal,
+				courseForm:          firstNonEmptyExportValue(courseForm, defaultCourseForm, inferIEPCourseFormFromText(shortGoal, group.domain)),
+				ruleIDs:             append([]int64(nil), row.RuleIDs...),
+				goalMaterialIDs:     append([]int64(nil), row.GoalMaterialIDs...),
+				trainingMaterialIDs: append([]int64(nil), row.TrainingMaterialIDs...),
 			})
 		}
 	}
@@ -866,11 +975,14 @@ func normalizeIEPPlanAIRows(rows []model.PEP3IEPPlanRow, stageRanges []string, d
 		longGoalText := numberedIEPGoalText(longGoals)
 		for index, shortGoal := range shortGoals {
 			normalized = append(normalized, model.PEP3IEPPlanRow{
-				Domain:       group.domain,
-				LongGoal:     longGoalText,
-				ShortGoal:    shortGoal.goal,
-				CourseForm:   firstNonEmptyExportValue(shortGoal.courseForm, defaultCourseForm, inferIEPCourseFormFromText(shortGoal.goal, group.domain), "个训"),
-				StartEndDate: stageDateForGoal(stageRanges, index, len(shortGoals)),
+				Domain:              group.domain,
+				LongGoal:            longGoalText,
+				ShortGoal:           shortGoal.goal,
+				CourseForm:          firstNonEmptyExportValue(shortGoal.courseForm, defaultCourseForm, inferIEPCourseFormFromText(shortGoal.goal, group.domain), "个训"),
+				StartEndDate:        stageDateForGoal(stageRanges, index, len(shortGoals)),
+				RuleIDs:             uniqueIEPInt64IDs(shortGoal.ruleIDs),
+				GoalMaterialIDs:     uniqueIEPInt64IDs(shortGoal.goalMaterialIDs),
+				TrainingMaterialIDs: uniqueIEPInt64IDs(shortGoal.trainingMaterialIDs),
 			})
 		}
 	}
@@ -924,8 +1036,11 @@ func appendUniqueShortGoalItems(items []iepShortGoalItem, additions ...iepShortG
 			continue
 		}
 		exists := false
-		for _, existing := range items {
-			if existing.goal == addition.goal {
+		for index := range items {
+			if items[index].goal == addition.goal {
+				items[index].ruleIDs = appendUniqueIEPInt64IDs(items[index].ruleIDs, addition.ruleIDs...)
+				items[index].goalMaterialIDs = appendUniqueIEPInt64IDs(items[index].goalMaterialIDs, addition.goalMaterialIDs...)
+				items[index].trainingMaterialIDs = appendUniqueIEPInt64IDs(items[index].trainingMaterialIDs, addition.trainingMaterialIDs...)
 				exists = true
 				break
 			}
@@ -935,6 +1050,32 @@ func appendUniqueShortGoalItems(items []iepShortGoalItem, additions ...iepShortG
 		}
 	}
 	return items
+}
+
+func appendUniqueIEPInt64IDs(values []int64, additions ...int64) []int64 {
+	for _, addition := range additions {
+		if addition <= 0 {
+			continue
+		}
+		exists := false
+		for _, value := range values {
+			if value == addition {
+				exists = true
+				break
+			}
+		}
+		if !exists {
+			values = append(values, addition)
+		}
+	}
+	return values
+}
+
+func uniqueIEPInt64IDs(values []int64) []int64 {
+	if len(values) == 0 {
+		return nil
+	}
+	return appendUniqueIEPInt64IDs(nil, values...)
 }
 
 func ensureIEPLongGoalLines(domain string, goals []string) []string {

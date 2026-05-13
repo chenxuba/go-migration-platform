@@ -195,11 +195,14 @@ type PEP3IEPPlanMeta struct {
 }
 
 type PEP3IEPPlanRow struct {
-	Domain       string `json:"domain"`
-	LongGoal     string `json:"longGoal"`
-	ShortGoal    string `json:"shortGoal"`
-	CourseForm   string `json:"courseForm"`
-	StartEndDate string `json:"startEndDate"`
+	Domain              string  `json:"domain"`
+	LongGoal            string  `json:"longGoal"`
+	ShortGoal           string  `json:"shortGoal"`
+	CourseForm          string  `json:"courseForm"`
+	StartEndDate        string  `json:"startEndDate"`
+	RuleIDs             []int64 `json:"ruleIds,omitempty"`
+	GoalMaterialIDs     []int64 `json:"goalMaterialIds,omitempty"`
+	TrainingMaterialIDs []int64 `json:"trainingMaterialIds,omitempty"`
 }
 
 type PEP3MonthlyPlanAIResult struct {
