@@ -216,6 +216,60 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialA
 	return result, nil
 }
 
+func (svc *Service) GeneratePlatformPEP3IEPMaterialAIBatch(req model.PEP3IEPMaterialAIBatchGenerateRequest) (model.PEP3IEPMaterialAIBatchGenerateResult, error) {
+	count := req.Count
+	if count <= 0 {
+		count = 5
+	}
+	if count > 10 {
+		count = 10
+	}
+	if req.Target != "short_goal" && req.Target != "training" {
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New("批量生成暂只支持短期目标和训练内容")
+	}
+
+	base := req.PEP3IEPMaterialAIGenerateRequest
+	result := model.PEP3IEPMaterialAIBatchGenerateResult{
+		Items: make([]model.PEP3IEPMaterialAIGenerateResult, 0, count),
+	}
+	maxAttempts := count * 3
+	if maxAttempts < count {
+		maxAttempts = count
+	}
+	for attempt := 0; attempt < maxAttempts && len(result.Items) < count; attempt++ {
+		nextReq := base
+		nextReq.ExistingShortGoals = append([]string{}, base.ExistingShortGoals...)
+		nextReq.ExistingTrainingProjects = append([]string{}, base.ExistingTrainingProjects...)
+		nextReq.ExistingTrainingContents = append([]string{}, base.ExistingTrainingContents...)
+		for _, item := range result.Items {
+			if item.ShortGoal != "" {
+				nextReq.ExistingShortGoals = append(nextReq.ExistingShortGoals, item.ShortGoal)
+			}
+			if item.TrainingProject != "" {
+				nextReq.ExistingTrainingProjects = append(nextReq.ExistingTrainingProjects, item.TrainingProject)
+			}
+			if item.TrainingContent != "" {
+				nextReq.ExistingTrainingContents = append(nextReq.ExistingTrainingContents, item.TrainingContent)
+			}
+		}
+
+		item, err := svc.GeneratePlatformPEP3IEPMaterialAI(nextReq)
+		if err != nil {
+			result.Failed++
+			result.LastError = err.Error()
+			continue
+		}
+		result.Items = append(result.Items, item)
+	}
+	if len(result.Items) == 0 {
+		if result.LastError != "" {
+			return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New(result.LastError)
+		}
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New("AI批量生成失败，请重试")
+	}
+	return result, nil
+}
+
 func (svc *Service) preparePlatformPEP3IEPMaterialAIRequest(req model.PEP3IEPMaterialAIGenerateRequest) (model.PEP3IEPMaterialAIGenerateRequest, error) {
 	req.Target = strings.TrimSpace(req.Target)
 	req.Domain = strings.TrimSpace(req.Domain)

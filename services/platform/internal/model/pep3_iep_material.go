@@ -123,3 +123,14 @@ type PEP3IEPMaterialAIGenerateResult struct {
 	TrainingContent string `json:"trainingContent,omitempty"`
 	Source          string `json:"source,omitempty"`
 }
+
+type PEP3IEPMaterialAIBatchGenerateRequest struct {
+	PEP3IEPMaterialAIGenerateRequest
+	Count int `json:"count"`
+}
+
+type PEP3IEPMaterialAIBatchGenerateResult struct {
+	Items     []PEP3IEPMaterialAIGenerateResult `json:"items"`
+	Failed    int                               `json:"failed"`
+	LastError string                            `json:"lastError,omitempty"`
+}

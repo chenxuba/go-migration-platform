@@ -5,6 +5,7 @@ import { Modal } from 'ant-design-vue'
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import {
+  batchGeneratePlatformPEP3IEPMaterialAIApi,
   deletePlatformPEP3IEPMaterialGoalApi,
   deletePlatformPEP3IEPMaterialRuleApi,
   deletePlatformPEP3IEPMaterialTrainingApi,
@@ -36,6 +37,17 @@ interface RuleForm extends Omit<PEP3IEPItemOptionRule, 'domainCode' | 'itemNo' |
   longGoal: string
 }
 
+type AIBatchMode = 'short_goal' | 'training'
+
+interface AIBatchPreviewRow {
+  id: string
+  selected: boolean
+  shortGoal?: string
+  courseForm?: string
+  trainingProject?: string
+  trainingContent?: string
+}
+
 const router = useRouter()
 const keyword = ref('')
 const status = ref('')
@@ -46,8 +58,15 @@ const materialDrawerOpen = ref(false)
 const shortGoalDrawerOpen = ref(false)
 const shortGoalModalOpen = ref(false)
 const trainingModalOpen = ref(false)
+const aiBatchModalOpen = ref(false)
 const shortGoalLoading = ref(false)
 const trainingLoading = ref(false)
+const aiBatchLoading = ref(false)
+const aiBatchSaving = ref(false)
+const aiBatchMode = ref<AIBatchMode>('training')
+const aiBatchCount = ref(5)
+const aiBatchRows = ref<AIBatchPreviewRow[]>([])
+const aiBatchLastError = ref('')
 const aiGenerating = reactive({
   longGoal: false,
   shortGoal: false,
@@ -201,6 +220,39 @@ const trainingColumns: TableColumnsType = [
   { title: '状态', dataIndex: 'status', key: 'status', width: 88 },
   { title: '操作', key: 'action', width: 120, fixed: 'right' },
 ]
+
+const aiBatchModalTitle = computed(() => aiBatchMode.value === 'short_goal' ? 'AI批量生成短期目标' : 'AI批量生成训练内容')
+
+const aiBatchHelpText = computed(() => {
+  if (aiBatchMode.value === 'short_goal')
+    return '根据当前题目选项和长期目标，一次生成多条短期目标和课程形式。生成结果先预览，勾选后再保存。'
+  return '根据当前短期目标，一次生成多条训练项目和训练内容。生成结果先预览，勾选后再保存。'
+})
+
+const aiBatchColumns = computed<TableColumnsType>(() => {
+  if (aiBatchMode.value === 'short_goal') {
+    return [
+      { title: '短期目标', dataIndex: 'shortGoal', key: 'shortGoal' },
+      { title: '课程形式', dataIndex: 'courseForm', key: 'courseForm', width: 150 },
+    ]
+  }
+  return [
+    { title: '训练项目', dataIndex: 'trainingProject', key: 'trainingProject', width: 220 },
+    { title: '训练内容', dataIndex: 'trainingContent', key: 'trainingContent' },
+  ]
+})
+
+const aiBatchSelectedCount = computed(() => aiBatchRows.value.filter(item => item.selected).length)
+
+const aiBatchRowSelection = computed(() => ({
+  selectedRowKeys: aiBatchRows.value.filter(item => item.selected).map(item => item.id),
+  onChange: (keys: Array<string | number>) => {
+    const selected = new Set(keys.map(key => String(key)))
+    aiBatchRows.value.forEach((item) => {
+      item.selected = selected.has(item.id)
+    })
+  },
+}))
 
 function unwrap<T>(res: any): T {
   return (res?.data ?? res?.result ?? res) as T
@@ -602,6 +654,202 @@ async function generateTraining() {
     messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
   } finally {
     aiGenerating.training = false
+  }
+}
+
+function resetAIBatch(mode: AIBatchMode) {
+  aiBatchMode.value = mode
+  aiBatchCount.value = 5
+  aiBatchRows.value = []
+  aiBatchLastError.value = ''
+}
+
+function openBatchShortGoalModal() {
+  if (!activeLongGoal.value?.id) {
+    messageService.warning('请先保存长期目标')
+    return
+  }
+  const context = currentRuleAIContext()
+  if (!Number(context.itemNo)) {
+    messageService.warning('缺少题目信息')
+    return
+  }
+  if (context.scoreValue === undefined || context.scoreValue === null) {
+    messageService.warning('缺少选项信息')
+    return
+  }
+  resetAIBatch('short_goal')
+  aiBatchModalOpen.value = true
+}
+
+function openBatchTrainingModal() {
+  if (!activeShortGoal.value?.id) {
+    messageService.warning('请先选择短期目标')
+    return
+  }
+  resetAIBatch('training')
+  aiBatchModalOpen.value = true
+}
+
+function buildAIBatchRequest() {
+  const context = currentRuleAIContext()
+  if (aiBatchMode.value === 'short_goal') {
+    const longGoal = activeLongGoal.value?.longGoal || shortGoalForm.longGoal
+    return {
+      target: 'short_goal' as const,
+      count: Number(aiBatchCount.value || 5),
+      ...context,
+      longGoal,
+      existingShortGoals: existingShortGoalsForAI(),
+    }
+  }
+  const shortGoal = activeShortGoal.value?.shortGoal || shortGoalForm.shortGoal
+  return {
+    target: 'training' as const,
+    count: Number(aiBatchCount.value || 5),
+    ...context,
+    longGoal: activeLongGoal.value?.longGoal || shortGoalForm.longGoal || '',
+    shortGoal,
+    courseForm: activeShortGoal.value?.courseForm || shortGoalForm.courseForm,
+    existingTrainingProjects: existingTrainingProjectsForAI(),
+    existingTrainingContents: existingTrainingContentsForAI(),
+  }
+}
+
+function validateAIBatchRequest() {
+  if (aiBatchMode.value === 'short_goal') {
+    if (!activeLongGoal.value?.id)
+      return '请先保存长期目标'
+    const context = currentRuleAIContext()
+    if (!Number(context.itemNo))
+      return '缺少题目信息'
+    if (context.scoreValue === undefined || context.scoreValue === null)
+      return '缺少选项信息'
+  } else if (!activeShortGoal.value?.id) {
+    return '请先选择短期目标'
+  }
+  if (Number(aiBatchCount.value) < 1)
+    return '生成数量不能小于1'
+  return ''
+}
+
+async function runAIBatchGenerate() {
+  const warning = validateAIBatchRequest()
+  if (warning) {
+    messageService.warning(warning)
+    return
+  }
+  aiBatchLoading.value = true
+  aiBatchLastError.value = ''
+  try {
+    const result = unwrap<{
+      items: PEP3IEPMaterialAIGenerateResult[]
+      failed: number
+      lastError?: string
+    }>(await batchGeneratePlatformPEP3IEPMaterialAIApi(buildAIBatchRequest()))
+    aiBatchRows.value = (result.items || []).map((item: PEP3IEPMaterialAIGenerateResult, index: number) => ({
+      id: `${Date.now()}-${index}`,
+      selected: true,
+      shortGoal: item.shortGoal || '',
+      courseForm: item.courseForm || undefined,
+      trainingProject: item.trainingProject || '',
+      trainingContent: item.trainingContent || '',
+    }))
+    aiBatchLastError.value = result.lastError || ''
+    if (result.failed > 0 && result.items?.length)
+      messageService.warning(`已生成 ${result.items.length} 条，另有 ${result.failed} 次生成未通过校验`)
+    else
+      messageService.success(`已生成 ${result.items?.length || 0} 条`)
+  } catch (error: any) {
+    aiBatchRows.value = []
+    messageService.error(error?.response?.data?.message || error?.message || 'AI批量生成失败')
+  } finally {
+    aiBatchLoading.value = false
+  }
+}
+
+function selectedAIBatchRows() {
+  return aiBatchRows.value.filter(item => item.selected)
+}
+
+function validateAIBatchPreviewRows(rows: AIBatchPreviewRow[]) {
+  if (!rows.length)
+    return '请先选择要保存的数据'
+  if (aiBatchMode.value === 'short_goal') {
+    if (rows.some(item => !String(item.shortGoal || '').trim()))
+      return '短期目标不能为空'
+    if (rows.some(item => !String(item.courseForm || '').trim()))
+      return '课程形式不能为空'
+  } else {
+    if (rows.some(item => !String(item.trainingProject || '').trim()))
+      return '训练项目不能为空'
+    if (rows.some(item => !String(item.trainingContent || '').trim()))
+      return '训练内容不能为空'
+  }
+  return ''
+}
+
+async function saveAIBatchRows() {
+  const rows = selectedAIBatchRows()
+  const warning = validateAIBatchPreviewRows(rows)
+  if (warning) {
+    messageService.warning(warning)
+    return
+  }
+  aiBatchSaving.value = true
+  let saved = 0
+  let failed = 0
+  try {
+    if (aiBatchMode.value === 'short_goal') {
+      for (const row of rows) {
+        try {
+          await savePlatformPEP3IEPMaterialGoalApi({
+            libraryScope: 'platform',
+            instId: 0,
+            materialType: 'short_term',
+            parentGoalMaterialId: Number(activeLongGoal.value?.id || 0),
+            domainCode: activeLongGoal.value?.domainCode || '',
+            domain: activeLongGoal.value?.domain || '',
+            longGoal: activeLongGoal.value?.longGoal || '',
+            shortGoal: String(row.shortGoal || '').trim(),
+            courseForm: String(row.courseForm || '').trim(),
+            priority: 100,
+            status: 'active',
+          })
+          saved++
+        } catch {
+          failed++
+        }
+      }
+      await loadShortGoals(Number(activeLongGoal.value?.id || 0))
+      await fetchCurrent()
+    } else {
+      for (const row of rows) {
+        try {
+          await savePlatformPEP3IEPMaterialTrainingApi({
+            libraryScope: 'platform',
+            instId: 0,
+            goalMaterialId: Number(activeShortGoal.value?.id || 0),
+            trainingProject: String(row.trainingProject || '').trim(),
+            trainingContent: String(row.trainingContent || '').trim(),
+            priority: 100,
+            status: 'active',
+          })
+          saved++
+        } catch {
+          failed++
+        }
+      }
+      await loadTrainingRows(Number(activeShortGoal.value?.id || 0))
+    }
+    if (saved > 0)
+      messageService.success(`已保存 ${saved} 条`)
+    if (failed > 0)
+      messageService.warning(`${failed} 条保存失败，请检查后重试`)
+    if (saved > 0 && failed === 0)
+      aiBatchModalOpen.value = false
+  } finally {
+    aiBatchSaving.value = false
   }
 }
 
@@ -1175,9 +1423,14 @@ onMounted(() => {
           <div class="section-title">
             短期目标
           </div>
-          <a-button type="primary" size="small" :icon="h(PlusOutlined)" @click="openCreateShortGoalModal">
-            新增短期目标
-          </a-button>
+          <a-space>
+            <a-button size="small" :icon="h(ThunderboltOutlined)" @click="openBatchShortGoalModal">
+              AI批量生成
+            </a-button>
+            <a-button type="primary" size="small" :icon="h(PlusOutlined)" @click="openCreateShortGoalModal">
+              新增短期目标
+            </a-button>
+          </a-space>
         </div>
         <a-table
           row-key="id"
@@ -1210,15 +1463,19 @@ onMounted(() => {
             <div class="section-title">
               训练内容
             </div>
-            <a-button
-              v-if="activeShortGoal"
-              type="primary"
-              size="small"
-              :icon="h(PlusOutlined)"
-              @click="openCreateTrainingModal()"
-            >
-              新增训练内容
-            </a-button>
+            <a-space v-if="activeShortGoal">
+              <a-button size="small" :icon="h(ThunderboltOutlined)" @click="openBatchTrainingModal">
+                AI批量生成
+              </a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :icon="h(PlusOutlined)"
+                @click="openCreateTrainingModal()"
+              >
+                新增训练内容
+              </a-button>
+            </a-space>
           </div>
           <a-alert
             v-if="!activeShortGoal"
@@ -1365,6 +1622,74 @@ onMounted(() => {
           <a-button type="primary" :loading="saving" @click="saveTraining">
             保存
           </a-button>
+        </div>
+      </template>
+    </PlatformModalShell>
+
+    <PlatformModalShell
+      v-model:open="aiBatchModalOpen"
+      :title="aiBatchModalTitle"
+      :width="960"
+      scrollable
+    >
+      <div class="batch-generate-box">
+        <a-alert type="info" show-icon :message="aiBatchHelpText" />
+        <div class="batch-toolbar">
+          <div class="batch-count">
+            <span>生成数量</span>
+            <a-input-number v-model:value="aiBatchCount" :min="1" :max="10" />
+          </div>
+          <a-button type="primary" :loading="aiBatchLoading" :icon="h(ThunderboltOutlined)" @click="runAIBatchGenerate">
+            开始生成
+          </a-button>
+        </div>
+        <a-alert
+          v-if="aiBatchLastError"
+          type="warning"
+          show-icon
+          :message="`部分生成未通过校验：${aiBatchLastError}`"
+        />
+        <a-table
+          row-key="id"
+          size="small"
+          class="batch-preview-table"
+          :columns="aiBatchColumns"
+          :data-source="aiBatchRows"
+          :loading="aiBatchLoading"
+          :pagination="false"
+          :row-selection="aiBatchRowSelection"
+          :scroll="{ x: 820 }"
+        >
+          <template #emptyText>
+            设置数量后点击开始生成，结果会显示在这里。
+          </template>
+          <template #bodyCell="{ column, record }">
+            <template v-if="column.key === 'shortGoal'">
+              <a-textarea v-model:value="record.shortGoal" :rows="3" placeholder="短期目标" />
+            </template>
+            <template v-else-if="column.key === 'courseForm'">
+              <a-select v-model:value="record.courseForm" class="full" :options="courseFormOptions" placeholder="课程形式" />
+            </template>
+            <template v-else-if="column.key === 'trainingProject'">
+              <a-input v-model:value="record.trainingProject" placeholder="训练项目" />
+            </template>
+            <template v-else-if="column.key === 'trainingContent'">
+              <a-textarea v-model:value="record.trainingContent" :rows="3" placeholder="训练内容" />
+            </template>
+          </template>
+        </a-table>
+      </div>
+      <template #footer>
+        <div class="modal-footer batch-footer">
+          <span>已选择 {{ aiBatchSelectedCount }} 条</span>
+          <a-space>
+            <a-button @click="aiBatchModalOpen = false">
+              取消
+            </a-button>
+            <a-button type="primary" :disabled="!aiBatchSelectedCount" :loading="aiBatchSaving" @click="saveAIBatchRows">
+              保存选中
+            </a-button>
+          </a-space>
         </div>
       </template>
     </PlatformModalShell>
@@ -1563,6 +1888,42 @@ onMounted(() => {
   justify-content: flex-end;
   gap: 10px;
   width: 100%;
+}
+
+.batch-generate-box {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 4px;
+}
+
+.batch-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 14px;
+  background: #f9fafb;
+  border: 1px solid #eef0f4;
+  border-radius: 8px;
+}
+
+.batch-count {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: #374151;
+  font-size: 14px;
+}
+
+.batch-preview-table :deep(.ant-table-cell) {
+  vertical-align: top;
+}
+
+.batch-footer {
+  align-items: center;
+  justify-content: space-between;
+  color: #6b7280;
 }
 
 .scope-hint {

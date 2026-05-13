@@ -300,6 +300,20 @@ export function generatePlatformPEP3IEPMaterialAIApi(data: PEP3IEPMaterialAIGene
   return usePost<PEP3IEPMaterialAIGenerateResult, PEP3IEPMaterialAIGenerateRequest>('/api/v1/platform/scales/pep3-iep-material/ai/generate', data)
 }
 
+export interface PEP3IEPMaterialAIBatchGenerateRequest extends PEP3IEPMaterialAIGenerateRequest {
+  count: number
+}
+
+export interface PEP3IEPMaterialAIBatchGenerateResult {
+  items: PEP3IEPMaterialAIGenerateResult[]
+  failed: number
+  lastError?: string
+}
+
+export function batchGeneratePlatformPEP3IEPMaterialAIApi(data: PEP3IEPMaterialAIBatchGenerateRequest) {
+  return usePost<PEP3IEPMaterialAIBatchGenerateResult, PEP3IEPMaterialAIBatchGenerateRequest>('/api/v1/platform/scales/pep3-iep-material/ai/batch-generate', data)
+}
+
 export interface PEP3IEPMaterialImportColumn {
   key: string
   title: string
