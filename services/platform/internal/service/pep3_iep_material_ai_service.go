@@ -16,7 +16,10 @@ import (
 	"go-migration-platform/services/platform/internal/model"
 )
 
-var platformPEP3IEPGoalTimePrefixPattern = regexp.MustCompile(`^\s*(?:在)?(?:未来)?(?:\d+|[一二三四五六七八九十半]+)\s*(?:个)?(?:月|周|星期|年)(?:内|后|期间)?[，,、\s]*`)
+var (
+	platformPEP3IEPGoalTimePrefixPattern    = regexp.MustCompile(`^\s*(?:在)?(?:未来)?(?:\d+|[一二三四五六七八九十半]+)\s*(?:个)?(?:月|周|星期|年)(?:内|后|期间)?[，,、\s]*`)
+	platformPEP3IEPAwkwardHelpingExpression = regexp.MustCompile(`儿童(?:帮忙|帮助|帮)[“"‘']`)
+)
 
 const (
 	platformPEP3IEPMaterialAIBaseURLDefault         = "https://ai.yiqiu.dev/v1"
@@ -318,8 +321,9 @@ func platformPEP3IEPMaterialAISystemPrompt() string {
 8. 如果输入里有 existingShortGoals、existingTrainingProjects、existingTrainingContents，必须避开已有目标、训练项目、材料组合、提示语和活动方式，生成明显不同的一条。
 9. 不要只做同义改写；要换泛化方向、换材料、换场景或换任务形式。
 10. 不要写“自然情境”“相关活动”“能力点”这类空话。
-11. 短期目标必须同时输出课程形式，只能是“个训”或“集体课”。
-12. 不要输出题号，不要输出解释，只返回JSON对象。`)
+11. 中文必须通顺，儿童后面要接明确动作，例如“儿童完成打开和组装”“儿童尝试拧开和扣上”；不要把游戏情境直接接在“帮/帮助/帮忙”后面，例如不要写“儿童帮‘修理小车’”这类省略动作、读不通的表达。
+12. 短期目标必须同时输出课程形式，只能是“个训”或“集体课”。
+13. 不要输出题号，不要输出解释，只返回JSON对象。`)
 }
 
 func platformPEP3IEPMaterialAIOutputRule(target string) string {
@@ -329,7 +333,7 @@ func platformPEP3IEPMaterialAIOutputRule(target string) string {
 	case "short_goal":
 		return `只返回 {"shortGoal":"...","courseForm":"个训或集体课"}。短期目标要从题目泛化到同类任务，可包含提示方式和达标标准，不写时间周期或训练步骤；必须避开 existingShortGoals 中已有表达和任务方向。示例：{"shortGoal":"儿童能在口头提示下扶稳物品并旋转打开常见旋拧材料，连续3次中至少完成2次。","courseForm":"个训"}`
 	case "training":
-		return `只返回 {"trainingProject":"...","trainingContent":"..."}。训练项目写泛化功能名称，不要只写题目名；训练内容控制在60-100个汉字，一段话写完，不要使用“材料：”“步骤：”“提示方式：”“完成标准：”这些标签，不要写多轮次数标准；必须避开 existingTrainingProjects 和 existingTrainingContents 中已有的材料、提示语、活动方式。示例：{"trainingProject":"旋拧类双手操作","trainingContent":"准备儿童容易握持的水瓶、小罐和旋钮玩具，教师只用口头提示“扶住、转一转”，让儿童完成打开和关上；更换不同大小和松紧的材料练习泛化。"}`
+		return `只返回 {"trainingProject":"...","trainingContent":"..."}。训练项目写泛化功能名称，不要只写题目名；训练内容控制在60-100个汉字，一段话写完，不要使用“材料：”“步骤：”“提示方式：”“完成标准：”这些标签，不要写多轮次数标准；必须避开 existingTrainingProjects 和 existingTrainingContents 中已有的材料、提示语、活动方式；句子必须读得通，避免“儿童帮……”这类缺少动作的表达。示例：{"trainingProject":"旋拧类双手操作","trainingContent":"准备儿童容易握持的水瓶、小罐和旋钮玩具，教师只用口头提示“扶住、转一转”，让儿童完成打开和关上；更换不同大小和松紧的材料练习泛化。"}`
 	default:
 		return `只返回JSON对象`
 	}
@@ -410,6 +414,9 @@ func validatePlatformPEP3IEPMaterialAIResult(req model.PEP3IEPMaterialAIGenerate
 		if isOverDetailedPlatformPEP3IEPTrainingContent(result.TrainingContent) {
 			return errors.New("AI生成的训练内容过细，请重新生成")
 		}
+		if hasAwkwardPlatformPEP3IEPTrainingWording(result.TrainingContent) {
+			return errors.New("AI生成的训练内容表述不通顺，请重新生成")
+		}
 		if isTooSimilarPlatformPEP3IEPText(result.TrainingProject, req.ExistingTrainingProjects, 0.8) ||
 			isTooSimilarPlatformPEP3IEPText(result.TrainingContent, req.ExistingTrainingContents, 0.55) {
 			return errors.New("AI生成的训练内容与已有内容过于相似，请重新生成")
@@ -449,6 +456,14 @@ func isOverDetailedPlatformPEP3IEPTrainingContent(text string) bool {
 		}
 	}
 	return false
+}
+
+func hasAwkwardPlatformPEP3IEPTrainingWording(text string) bool {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return false
+	}
+	return platformPEP3IEPAwkwardHelpingExpression.MatchString(text)
 }
 
 func isTooSimilarPlatformPEP3IEPText(candidate string, existing []string, threshold float64) bool {
