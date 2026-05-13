@@ -90,7 +90,7 @@ func applyCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	header.Set("Access-Control-Allow-Origin", origin)
 	header.Set("Access-Control-Allow-Credentials", "true")
 	header.Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Tenant-Domain, X-Tenant-ID, X-Request-ID, Accept-Language")
+	header.Set("Access-Control-Allow-Headers", "Authorization, Content-Type, X-Tenant-Domain, X-Tenant-ID, X-Request-ID, X-Access-Token, Accept-Language")
 	header.Set("Access-Control-Max-Age", "86400")
 	header.Add("Vary", "Origin")
 }

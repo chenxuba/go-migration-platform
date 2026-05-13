@@ -1,0 +1,58 @@
+[
+  {
+    "scale_code": "SP",
+    "scale_name": "感知觉",
+    "sort_no": 1,
+    "item_count": 55,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "GM",
+    "scale_name": "粗大动作",
+    "sort_no": 2,
+    "item_count": 72,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "FM",
+    "scale_name": "精细动作",
+    "sort_no": 3,
+    "item_count": 66,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "LC",
+    "scale_name": "语言与沟通",
+    "sort_no": 4,
+    "item_count": 79,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "COG",
+    "scale_name": "认知",
+    "sort_no": 5,
+    "item_count": 55,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "SOC",
+    "scale_name": "社会交往",
+    "sort_no": 6,
+    "item_count": 47,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "ADL",
+    "scale_name": "生活自理",
+    "sort_no": 7,
+    "item_count": 67,
+    "score_type": "PEF"
+  },
+  {
+    "scale_code": "EB",
+    "scale_name": "情绪与行为",
+    "sort_no": 8,
+    "item_count": 52,
+    "score_type": "AMS"
+  }
+]

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:assessment_pad_app/assessment_scale_client.dart';
+import 'package:assessment_pad_app/autismdev_assessment_client.dart';
 import 'package:assessment_pad_app/chinese_ime_engine.dart';
 import 'package:assessment_pad_app/erxin_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
@@ -17,12 +18,14 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
     required this.onBack,
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.erxinClient,
+    this.autismDevClient,
     super.key,
   });
 
   final VoidCallback onBack;
   final AssessmentScaleClient scaleClient;
   final ErxinAssessmentClient? erxinClient;
+  final AutismDevAssessmentClient? autismDevClient;
 
   @override
   State<AssessmentScaleCategoryScreen> createState() =>
@@ -284,17 +287,26 @@ class _AssessmentScaleCategoryScreenState
               pageSize: 100,
               latestOnly: true,
             );
+      final AssessmentDraftPage autismDevDrafts = widget.autismDevClient == null
+          ? AssessmentDraftPage.empty
+          : await widget.autismDevClient!.fetchDraftsPage(
+              token,
+              pageSize: 100,
+              latestOnly: true,
+            );
       final List<AssessmentDraftSummary> mergedDrafts =
           <AssessmentDraftSummary>[
         ...pep3Drafts.items,
         ...erxinDrafts.items,
+        ...autismDevDrafts.items,
       ]..sort(_compareDraftUpdatedDesc);
       if (!mounted) {
         return;
       }
       setState(() {
         _drafts = mergedDrafts;
-        _draftCount = pep3Drafts.total + erxinDrafts.total;
+        _draftCount =
+            pep3Drafts.total + erxinDrafts.total + autismDevDrafts.total;
         _draftsLoading = false;
         _draftErrorMessage = null;
       });
@@ -511,6 +523,27 @@ class _AssessmentScaleCategoryScreenState
     if (student == null || !scale.available) {
       return;
     }
+    if (_isAutismDevScale(scale)) {
+      final String? validationMessage =
+          _validateAutismDevLaunch(scale, student);
+      if (validationMessage != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(validationMessage)),
+        );
+        return;
+      }
+      _openAutismDevAssessment(
+        AutismDevAssessmentLaunchArgs(
+          studentId: student.id,
+          studentName: student.displayName,
+          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          birthDate: student.birthDate,
+          assessmentDate: _todayIsoDate(),
+          scaleName: scale.name,
+        ),
+      );
+      return;
+    }
     if (_isErxinScale(scale)) {
       final String? validationMessage = _validateErxinLaunch(scale, student);
       if (validationMessage != null) {
@@ -552,6 +585,20 @@ class _AssessmentScaleCategoryScreenState
   }
 
   void _openDraft(AssessmentDraftSummary draft) {
+    if (_isAutismDevDraft(draft)) {
+      _openAutismDevAssessment(
+        AutismDevAssessmentLaunchArgs(
+          draftId: draft.id,
+          studentName: draft.studentName,
+          assessmentDate: _todayIsoDate(),
+          examinerName: draft.examinerName,
+          scaleName: draft.assessmentName.trim().isEmpty
+              ? '孤独症儿童发展评估表'
+              : draft.assessmentName.trim(),
+        ),
+      );
+      return;
+    }
     if (_isErxinDraft(draft)) {
       _openErxinAssessment(
         ErxinAssessmentLaunchArgs(
@@ -591,6 +638,10 @@ class _AssessmentScaleCategoryScreenState
 
   void _openErxinAssessment(ErxinAssessmentLaunchArgs args) {
     Navigator.of(context).pushNamed('/erxin-assessment', arguments: args);
+  }
+
+  void _openAutismDevAssessment(AutismDevAssessmentLaunchArgs args) {
+    Navigator.of(context).pushNamed('/autismdev-assessment', arguments: args);
   }
 
   void _openSearchKeyboard() {
@@ -2049,6 +2100,17 @@ bool _isErxinScale(AssessmentScaleItem scale) {
   );
 }
 
+bool _isAutismDevScale(AssessmentScaleItem scale) {
+  return _isAutismDevText(
+    <String>[
+      scale.executionEntry,
+      scale.apiPackage,
+      scale.code,
+      scale.name,
+    ].join(' '),
+  );
+}
+
 bool _isPep3Draft(AssessmentDraftSummary draft) {
   return _isPep3Text(
     <String>[
@@ -2060,6 +2122,15 @@ bool _isPep3Draft(AssessmentDraftSummary draft) {
 
 bool _isErxinDraft(AssessmentDraftSummary draft) {
   return _isErxinText(
+    <String>[
+      draft.assessmentCode,
+      draft.assessmentName,
+    ].join(' '),
+  );
+}
+
+bool _isAutismDevDraft(AssessmentDraftSummary draft) {
+  return _isAutismDevText(
     <String>[
       draft.assessmentCode,
       draft.assessmentName,
@@ -2098,6 +2169,14 @@ bool _isErxinText(String value) {
   return normalized.contains('erxin2') || normalized.contains('erxin');
 }
 
+bool _isAutismDevText(String value) {
+  final String normalized =
+      value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+  return normalized.contains('autismdev') ||
+      normalized.contains('孤独症儿童发展评估') ||
+      normalized.contains('孤独症发展评估');
+}
+
 String? _validateErxinLaunch(
   AssessmentScaleItem scale,
   AssessmentStudentCandidate student,
@@ -2116,6 +2195,43 @@ String? _validateErxinLaunch(
   final int maxMonths = scale.ageMaxMonths > 0
       ? math.min(scale.ageMaxMonths, erxinMaxSupportedAgeMonths)
       : erxinMaxSupportedAgeMonths;
+  final DateTime minDate = DateTime(
+    birth.year + (minMonths ~/ 12),
+    birth.month + (minMonths % 12),
+    birth.day,
+  );
+  final DateTime maxDate = DateTime(
+    birth.year + (maxMonths ~/ 12),
+    birth.month + (maxMonths % 12),
+    birth.day,
+  );
+  if (assessmentDate.isBefore(minDate)) {
+    return '当前年龄未达到${scale.name}适用范围，不能开始测评';
+  }
+  if (assessmentDate.isAfter(maxDate)) {
+    return '当前年龄已超过6岁，超出${scale.name}适用范围，不能开始测评';
+  }
+  return null;
+}
+
+String? _validateAutismDevLaunch(
+  AssessmentScaleItem scale,
+  AssessmentStudentCandidate student,
+) {
+  const int autismDevMaxSupportedAgeMonths = 72;
+  final String birthDate = student.birthDate.trim();
+  if (birthDate.isEmpty || birthDate == '未知') {
+    return '该量表需要儿童出生日期，缺少出生日期不能开始测评';
+  }
+  final DateTime? birth = DateTime.tryParse(birthDate);
+  if (birth == null) {
+    return '出生日期格式不正确，不能开始测评';
+  }
+  final DateTime assessmentDate = DateTime.parse(_todayIsoDate());
+  final int minMonths = scale.ageMinMonths;
+  final int maxMonths = scale.ageMaxMonths > 0
+      ? math.min(scale.ageMaxMonths, autismDevMaxSupportedAgeMonths)
+      : autismDevMaxSupportedAgeMonths;
   final DateTime minDate = DateTime(
     birth.year + (minMonths ~/ 12),
     birth.month + (minMonths % 12),

@@ -4778,6 +4778,7 @@ class _FakeIepPlanClient implements IepPlanClient {
                 domain: '大肌肉',
                 longGoal: '提升动态平衡与协调能力',
                 shortGoal: '能在平衡木上独立行走3米',
+                candidateTrainingItems: <IepMonthlyTrainingItem>[],
                 trainingItems: <IepMonthlyTrainingItem>[
                   IepMonthlyTrainingItem(
                     content: '平衡木行走训练',
@@ -5038,6 +5039,7 @@ class _FakeIepPlanClient implements IepPlanClient {
             domain: '大肌肉',
             longGoal: '提升动态平衡与协调能力',
             shortGoal: '能在平衡木上独立行走3米',
+            candidateTrainingItems: <IepMonthlyTrainingItem>[],
             trainingItems: <IepMonthlyTrainingItem>[
               IepMonthlyTrainingItem(
                 content: '平衡木交替步态训练',

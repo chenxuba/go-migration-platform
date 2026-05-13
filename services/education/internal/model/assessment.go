@@ -624,6 +624,127 @@ type ERXinAssessmentDraftSubmitVO struct {
 	Record      AssessmentRecordDetailVO `json:"record"`
 }
 
+type AutismDevAssessmentFormTemplateVO struct {
+	TemplateCode    string                         `json:"templateCode"`
+	TemplateVersion string                         `json:"templateVersion"`
+	Title           string                         `json:"title"`
+	ScaleCode       string                         `json:"scaleCode"`
+	ScaleVersion    string                         `json:"scaleVersion"`
+	SourceStandard  string                         `json:"sourceStandard,omitempty"`
+	SourcePDF       string                         `json:"sourcePdf,omitempty"`
+	DataStatus      string                         `json:"dataStatus,omitempty"`
+	Sources         []string                       `json:"sources,omitempty"`
+	ItemCount       int                            `json:"itemCount"`
+	ScoreOptions    []AutismDevScoreOption         `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField      `json:"basicFields"`
+	Domains         []AutismDevAssessmentDomain    `json:"domains"`
+	DomainGroups    []AutismDevAssessmentItemGroup `json:"domainGroups"`
+	SubmitContract  AutismDevSubmitContract        `json:"submitContract"`
+}
+
+type AutismDevAssessmentFormTemplateSummaryVO struct {
+	TemplateCode    string                                `json:"templateCode"`
+	TemplateVersion string                                `json:"templateVersion"`
+	Title           string                                `json:"title"`
+	ScaleCode       string                                `json:"scaleCode"`
+	ScaleVersion    string                                `json:"scaleVersion"`
+	SourceStandard  string                                `json:"sourceStandard,omitempty"`
+	SourcePDF       string                                `json:"sourcePdf,omitempty"`
+	DataStatus      string                                `json:"dataStatus,omitempty"`
+	Sources         []string                              `json:"sources,omitempty"`
+	ItemCount       int                                   `json:"itemCount"`
+	ScoreOptions    []AutismDevScoreOption                `json:"scoreOptions"`
+	BasicFields     []PEP3AssessmentFormField             `json:"basicFields"`
+	Domains         []AutismDevAssessmentDomain           `json:"domains"`
+	DomainGroups    []AutismDevAssessmentItemGroupSummary `json:"domainGroups"`
+	SubmitContract  AutismDevSubmitContract               `json:"submitContract"`
+}
+
+type AutismDevAssessmentDomain struct {
+	DomainCode string `json:"domainCode"`
+	DomainName string `json:"domainName"`
+	SortNo     int    `json:"sortNo"`
+	ItemCount  int    `json:"itemCount"`
+	ScoreType  string `json:"scoreType"`
+}
+
+type AutismDevAssessmentItemGroup struct {
+	GroupCode  string                    `json:"groupCode"`
+	Title      string                    `json:"title"`
+	DomainCode string                    `json:"domainCode"`
+	DomainName string                    `json:"domainName"`
+	ScoreType  string                    `json:"scoreType"`
+	ItemCount  int                       `json:"itemCount"`
+	Items      []AutismDevAssessmentItem `json:"items"`
+}
+
+type AutismDevAssessmentItemGroupSummary struct {
+	GroupCode  string                           `json:"groupCode"`
+	Title      string                           `json:"title"`
+	DomainCode string                           `json:"domainCode"`
+	DomainName string                           `json:"domainName"`
+	ScoreType  string                           `json:"scoreType"`
+	ItemCount  int                              `json:"itemCount"`
+	Items      []AutismDevAssessmentItemSummary `json:"items"`
+}
+
+type AutismDevAssessmentItemSummary struct {
+	ItemNo          int      `json:"itemNo"`
+	DomainItemNo    int      `json:"domainItemNo"`
+	ItemTitle       string   `json:"itemTitle"`
+	TestItem        string   `json:"testItem"`
+	AgeSegment      string   `json:"ageSegment,omitempty"`
+	AgeMinMonth     int      `json:"ageMinMonth"`
+	AgeMaxMonth     int      `json:"ageMaxMonth"`
+	DomainCode      string   `json:"domainCode"`
+	DomainName      string   `json:"domainName"`
+	ScoreType       string   `json:"scoreType"`
+	AssessmentModes []string `json:"assessmentModes,omitempty"`
+}
+
+type AutismDevAssessmentItem struct {
+	ItemNo          int                    `json:"itemNo"`
+	DomainItemNo    int                    `json:"domainItemNo"`
+	ItemTitle       string                 `json:"itemTitle"`
+	TestItem        string                 `json:"testItem"`
+	AgeSegment      string                 `json:"ageSegment,omitempty"`
+	AgeMinMonth     int                    `json:"ageMinMonth"`
+	AgeMaxMonth     int                    `json:"ageMaxMonth"`
+	DomainCode      string                 `json:"domainCode"`
+	DomainName      string                 `json:"domainName"`
+	ScoreType       string                 `json:"scoreType"`
+	ScoreOptions    []AutismDevScoreOption `json:"scoreOptions"`
+	AssessmentModes []string               `json:"assessmentModes,omitempty"`
+	Method          string                 `json:"method,omitempty"`
+	PassCriteria    string                 `json:"passCriteria,omitempty"`
+	SourcePDF       string                 `json:"sourcePdf,omitempty"`
+	SourcePages     []int                  `json:"sourcePages,omitempty"`
+	OCRStatus       string                 `json:"ocrStatus,omitempty"`
+}
+
+type AutismDevScoreOption struct {
+	Value       string `json:"value"`
+	Label       string `json:"label"`
+	Description string `json:"description,omitempty"`
+	ScoreType   string `json:"scoreType,omitempty"`
+}
+
+type AutismDevSubmitContract struct {
+	ScoreEndpoint        string   `json:"scoreEndpoint"`
+	CreateRecordEndpoint string   `json:"createRecordEndpoint,omitempty"`
+	DateFormat           string   `json:"dateFormat"`
+	ItemScoreListKey     string   `json:"itemScoreListKey"`
+	RequiredBaseFields   []string `json:"requiredBaseFields"`
+	AllowedItemScores    []string `json:"allowedItemScores"`
+}
+
+type AutismDevAssessmentDraftSubmitVO struct {
+	DraftID     int64                    `json:"draftId"`
+	RecordID    int64                    `json:"recordId"`
+	DraftStatus string                   `json:"draftStatus"`
+	Record      AssessmentRecordDetailVO `json:"record"`
+}
+
 type ERXinReportVO struct {
 	Record          AssessmentRecordSummaryVO `json:"record"`
 	TemplateCode    string                    `json:"templateCode"`

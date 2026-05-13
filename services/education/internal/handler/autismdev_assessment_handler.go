@@ -1,0 +1,762 @@
+package handler
+
+import (
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"sort"
+	"strconv"
+	"strings"
+
+	"go-migration-platform/pkg/autismdevscore"
+	"go-migration-platform/pkg/httpx"
+	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/services/education/internal/service"
+)
+
+type autismDevScoreRequest struct {
+	BirthDate      string                      `json:"birthDate"`
+	AssessmentDate string                      `json:"assessmentDate"`
+	ItemScores     map[int]string              `json:"itemScores,omitempty"`
+	ItemScoreList  []autismDevItemScoreRequest `json:"itemScoreList,omitempty"`
+}
+
+type autismDevItemScoreRequest struct {
+	ItemNo int    `json:"itemNo"`
+	Score  string `json:"score"`
+	Remark string `json:"remark,omitempty"`
+}
+
+type autismDevItemRemarkRequest struct {
+	ItemNo int    `json:"itemNo"`
+	Remark string `json:"remark"`
+}
+
+type autismDevAssessmentDraftSaveRequest struct {
+	ID             int64                        `json:"id,omitempty"`
+	StudentID      int64                        `json:"studentId,omitempty"`
+	StudentName    string                       `json:"studentName,omitempty"`
+	ExaminerName   string                       `json:"examinerName,omitempty"`
+	Remark         string                       `json:"remark,omitempty"`
+	BirthDate      string                       `json:"birthDate,omitempty"`
+	AssessmentDate string                       `json:"assessmentDate,omitempty"`
+	ItemScores     map[int]string               `json:"itemScores,omitempty"`
+	ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
+	ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+}
+
+type autismDevAssessmentRecordCreateRequest struct {
+	ID             int64                        `json:"id,omitempty"`
+	StudentID      int64                        `json:"studentId,omitempty"`
+	StudentName    string                       `json:"studentName,omitempty"`
+	ExaminerName   string                       `json:"examinerName,omitempty"`
+	Remark         string                       `json:"remark,omitempty"`
+	BirthDate      string                       `json:"birthDate"`
+	AssessmentDate string                       `json:"assessmentDate"`
+	ItemScores     map[int]string               `json:"itemScores,omitempty"`
+	ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
+	ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+}
+
+type autismDevAssessmentRecordConfigUpdateRequest struct {
+	ID             int64  `json:"id"`
+	ExaminerName   string `json:"examinerName"`
+	AssessmentDate string `json:"assessmentDate"`
+}
+
+type autismDevAssessmentDraftItemSaveRequest struct {
+	DraftID int64   `json:"draftId"`
+	ItemNo  int     `json:"itemNo"`
+	Score   *string `json:"score"`
+	Remark  *string `json:"remark,omitempty"`
+}
+
+type autismDevAssessmentDeleteRequest struct {
+	ID int64 `json:"id"`
+}
+
+func (handler *Handler) scoreAutismDev(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevScoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	input, err := req.toAssessmentInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.ScoreAutismDev(input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) saveAutismDevAssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentDraftSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	input, err := req.toDraftSaveInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.SaveAutismDevAssessmentDraft(claims.UserID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) saveAutismDevAssessmentDraftItem(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentDraftItemSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.DraftID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "draftId is required", ctx.RequestID)
+		return
+	}
+	if req.ItemNo <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "itemNo is required", ctx.RequestID)
+		return
+	}
+	if req.Score == nil || strings.TrimSpace(*req.Score) == "" {
+		httpx.WriteError(w, http.StatusBadRequest, "score is required", ctx.RequestID)
+		return
+	}
+	normalizedScore := normalizeAutismDevRequestScore(*req.Score)
+	result, err := handler.service.SaveAutismDevAssessmentDraftItem(claims.UserID, service.AutismDevAssessmentDraftItemSaveInput{
+		DraftID: req.DraftID,
+		ItemNo:  req.ItemNo,
+		Score:   &normalizedScore,
+		Remark:  req.Remark,
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentDraftDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetAutismDevAssessmentDraft(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentDraftsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query, err := decodeAssessmentDraftPageQuery(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.PageAutismDevAssessmentDrafts(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) deleteAutismDevAssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.DeleteAutismDevAssessmentDraft(claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) submitAutismDevAssessmentDraft(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.SubmitAutismDevAssessmentDraft(claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) createAutismDevAssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentRecordCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	input, err := req.toRecordSaveInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.CreateAutismDevAssessmentRecord(claims.UserID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updateAutismDevAssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentRecordCreateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	input, err := req.toRecordSaveInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdateAutismDevAssessmentRecord(claims.UserID, req.ID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) updateAutismDevAssessmentRecordConfig(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentRecordConfigUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	assessmentDate, err := parseERXinDate(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdateAutismDevAssessmentRecordConfig(claims.UserID, req.ID, service.AutismDevAssessmentRecordConfigInput{
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		AssessmentDate: assessmentDate,
+	})
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentRecordDetail(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+	if err != nil || id <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetAutismDevAssessmentRecord(claims.UserID, id)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentRecordsPage(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query, err := decodeAssessmentRecordPageQuery(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.PageAutismDevAssessmentRecords(claims.UserID, query)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentRecordCategoryStats(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	query, err := decodeAssessmentRecordPageQuery(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.SummarizeAutismDevAssessmentRecordCategories(claims.UserID, query.QueryModel)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) deleteAutismDevAssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req autismDevAssessmentDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.DeleteAutismDevAssessmentRecord(claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentFormTemplate(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetAutismDevAssessmentFormTemplate()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentFormTemplateSummary(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetAutismDevAssessmentFormTemplateSummary()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) autismDevAssessmentFormTemplateItem(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requireAuth(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	itemNo, err := strconv.Atoi(strings.TrimSpace(r.URL.Query().Get("itemNo")))
+	if err != nil || itemNo <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid itemNo", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GetAutismDevAssessmentFormTemplateItem(itemNo)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (req autismDevScoreRequest) toAssessmentInput() (autismdevscore.AssessmentInput, error) {
+	birthDate, err := parseERXinDate(req.BirthDate, "birthDate")
+	if err != nil {
+		return autismdevscore.AssessmentInput{}, err
+	}
+	assessmentDate, err := parseERXinDate(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		return autismdevscore.AssessmentInput{}, err
+	}
+	itemScores, err := normalizeAutismDevItemScores(req.ItemScores, req.ItemScoreList)
+	if err != nil {
+		return autismdevscore.AssessmentInput{}, err
+	}
+	if len(itemScores) == 0 {
+		return autismdevscore.AssessmentInput{}, fmt.Errorf("itemScores or itemScoreList is required")
+	}
+	return autismdevscore.AssessmentInput{
+		BirthDate:      birthDate,
+		AssessmentDate: assessmentDate,
+		ItemScores:     itemScores,
+	}, nil
+}
+
+func (req autismDevAssessmentDraftSaveRequest) toDraftSaveInput() (service.AutismDevAssessmentDraftSaveInput, error) {
+	birthDate, err := parseOptionalERXinDate(req.BirthDate, "birthDate")
+	if err != nil {
+		return service.AutismDevAssessmentDraftSaveInput{}, err
+	}
+	assessmentDate, err := parseOptionalERXinDate(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		return service.AutismDevAssessmentDraftSaveInput{}, err
+	}
+	itemScores, err := normalizeAutismDevItemScores(req.ItemScores, req.ItemScoreList)
+	if err != nil {
+		return service.AutismDevAssessmentDraftSaveInput{}, err
+	}
+	itemRemarks := normalizeAutismDevItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
+	return service.AutismDevAssessmentDraftSaveInput{
+		ID:             req.ID,
+		StudentID:      req.StudentID,
+		StudentName:    strings.TrimSpace(req.StudentName),
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		Remark:         strings.TrimSpace(req.Remark),
+		BirthDate:      birthDate,
+		AssessmentDate: assessmentDate,
+		ItemScores:     itemScores,
+		InputSnapshot:  req.normalizedSnapshot(itemScores, itemRemarks),
+	}, nil
+}
+
+func (req autismDevAssessmentRecordCreateRequest) toRecordSaveInput() (service.AutismDevAssessmentRecordSaveInput, error) {
+	scoreReq := req.toScoreRequest()
+	scoreInput, err := scoreReq.toAssessmentInput()
+	if err != nil {
+		return service.AutismDevAssessmentRecordSaveInput{}, err
+	}
+	itemRemarks := normalizeAutismDevItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
+	return service.AutismDevAssessmentRecordSaveInput{
+		StudentID:     req.StudentID,
+		StudentName:   strings.TrimSpace(req.StudentName),
+		ExaminerName:  strings.TrimSpace(req.ExaminerName),
+		Remark:        strings.TrimSpace(req.Remark),
+		ScoreInput:    scoreInput,
+		InputSnapshot: req.normalizedSnapshot(scoreInput.ItemScores, itemRemarks),
+	}, nil
+}
+
+func (req autismDevAssessmentRecordCreateRequest) toScoreRequest() autismDevScoreRequest {
+	return autismDevScoreRequest{
+		BirthDate:      req.BirthDate,
+		AssessmentDate: req.AssessmentDate,
+		ItemScores:     req.ItemScores,
+		ItemScoreList:  req.ItemScoreList,
+	}
+}
+
+func (req autismDevAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]string, itemRemarks map[int]string) any {
+	normalizedScoreList := autismDevItemScoreListFromMap(itemScores, itemRemarks)
+	normalizedRemarkList := autismDevItemRemarkListFromMap(itemRemarks)
+	return struct {
+		ID             int64                        `json:"id,omitempty"`
+		StudentID      int64                        `json:"studentId,omitempty"`
+		StudentName    string                       `json:"studentName,omitempty"`
+		ExaminerName   string                       `json:"examinerName,omitempty"`
+		Remark         string                       `json:"remark,omitempty"`
+		BirthDate      string                       `json:"birthDate,omitempty"`
+		AssessmentDate string                       `json:"assessmentDate,omitempty"`
+		ItemScores     map[int]string               `json:"itemScores,omitempty"`
+		ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
+		ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+	}{
+		ID:             req.ID,
+		StudentID:      req.StudentID,
+		StudentName:    strings.TrimSpace(req.StudentName),
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		Remark:         strings.TrimSpace(req.Remark),
+		BirthDate:      strings.TrimSpace(req.BirthDate),
+		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
+		ItemScores:     itemScores,
+		ItemScoreList:  normalizedScoreList,
+		ItemRemarks:    itemRemarks,
+		ItemRemarkList: normalizedRemarkList,
+	}
+}
+
+func (req autismDevAssessmentRecordCreateRequest) normalizedSnapshot(itemScores map[int]string, itemRemarks map[int]string) any {
+	normalizedScoreList := autismDevItemScoreListFromMap(itemScores, itemRemarks)
+	normalizedRemarkList := autismDevItemRemarkListFromMap(itemRemarks)
+	return struct {
+		ID             int64                        `json:"id,omitempty"`
+		StudentID      int64                        `json:"studentId,omitempty"`
+		StudentName    string                       `json:"studentName,omitempty"`
+		ExaminerName   string                       `json:"examinerName,omitempty"`
+		Remark         string                       `json:"remark,omitempty"`
+		BirthDate      string                       `json:"birthDate"`
+		AssessmentDate string                       `json:"assessmentDate"`
+		ItemScores     map[int]string               `json:"itemScores,omitempty"`
+		ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
+		ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+	}{
+		ID:             req.ID,
+		StudentID:      req.StudentID,
+		StudentName:    strings.TrimSpace(req.StudentName),
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		Remark:         strings.TrimSpace(req.Remark),
+		BirthDate:      strings.TrimSpace(req.BirthDate),
+		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
+		ItemScores:     itemScores,
+		ItemScoreList:  normalizedScoreList,
+		ItemRemarks:    itemRemarks,
+		ItemRemarkList: normalizedRemarkList,
+	}
+}
+
+func normalizeAutismDevItemScores(itemScores map[int]string, itemScoreList []autismDevItemScoreRequest) (map[int]string, error) {
+	normalized := make(map[int]string, len(itemScores)+len(itemScoreList))
+	for itemNo, score := range itemScores {
+		if itemNo <= 0 {
+			return nil, fmt.Errorf("itemScores contains invalid itemNo %d", itemNo)
+		}
+		normalizedScore := normalizeAutismDevRequestScore(score)
+		if normalizedScore == "" {
+			return nil, fmt.Errorf("itemScores contains empty score for itemNo %d", itemNo)
+		}
+		normalized[itemNo] = normalizedScore
+	}
+	for _, item := range itemScoreList {
+		if item.ItemNo <= 0 {
+			return nil, fmt.Errorf("itemScoreList contains invalid itemNo %d", item.ItemNo)
+		}
+		normalizedScore := normalizeAutismDevRequestScore(item.Score)
+		if normalizedScore == "" {
+			return nil, fmt.Errorf("itemScoreList contains empty score for itemNo %d", item.ItemNo)
+		}
+		normalized[item.ItemNo] = normalizedScore
+	}
+	return normalized, nil
+}
+
+func normalizeAutismDevItemRemarks(itemRemarks map[int]string, itemRemarkList []autismDevItemRemarkRequest, itemScoreList []autismDevItemScoreRequest) map[int]string {
+	out := make(map[int]string, len(itemRemarks)+len(itemRemarkList)+len(itemScoreList))
+	for itemNo, remark := range itemRemarks {
+		normalized := strings.TrimSpace(remark)
+		if itemNo > 0 && normalized != "" {
+			out[itemNo] = normalized
+		}
+	}
+	for _, item := range itemRemarkList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	for _, item := range itemScoreList {
+		if item.ItemNo <= 0 {
+			continue
+		}
+		remark := strings.TrimSpace(item.Remark)
+		if remark == "" {
+			continue
+		}
+		out[item.ItemNo] = remark
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func autismDevItemScoreListFromMap(itemScores map[int]string, itemRemarks map[int]string) []autismDevItemScoreRequest {
+	if len(itemScores) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemScores))
+	for itemNo := range itemScores {
+		itemNos = append(itemNos, itemNo)
+	}
+	sort.Ints(itemNos)
+	out := make([]autismDevItemScoreRequest, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		out = append(out, autismDevItemScoreRequest{
+			ItemNo: itemNo,
+			Score:  normalizeAutismDevRequestScore(itemScores[itemNo]),
+			Remark: strings.TrimSpace(itemRemarks[itemNo]),
+		})
+	}
+	return out
+}
+
+func autismDevItemRemarkListFromMap(itemRemarks map[int]string) []autismDevItemRemarkRequest {
+	if len(itemRemarks) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemRemarks))
+	for itemNo, remark := range itemRemarks {
+		if itemNo <= 0 || strings.TrimSpace(remark) == "" {
+			continue
+		}
+		itemNos = append(itemNos, itemNo)
+	}
+	if len(itemNos) == 0 {
+		return nil
+	}
+	sort.Ints(itemNos)
+	out := make([]autismDevItemRemarkRequest, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		remark := strings.TrimSpace(itemRemarks[itemNo])
+		if remark == "" {
+			continue
+		}
+		out = append(out, autismDevItemRemarkRequest{ItemNo: itemNo, Remark: remark})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizeAutismDevRequestScore(score string) string {
+	return strings.ToUpper(strings.TrimSpace(score))
+}

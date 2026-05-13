@@ -888,6 +888,53 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		}
 	}
 
+	autismDevScaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
+		Name:               "孤独症儿童发展评估表（试行）",
+		Code:               "AUTISMDEV",
+		Category:           "标准化测评",
+		Scenario:           "现场测评",
+		AgeRange:           "0岁-6岁",
+		AgeMinMonths:       0,
+		AgeMaxMonths:       72,
+		Duration:           "60-120分钟",
+		DurationMinMinutes: 60,
+		DurationMaxMinutes: 120,
+		CurrentVersion:     "2010-revised-trainer",
+		ItemCount:          493,
+		DomainCount:        8,
+		InstitutionCount:   0,
+		MonthUsage:         0,
+		DataStatus:         "题库、评分规则和教育端接口已串联；前端工作台待接入",
+		Summary:            "面向0岁至6岁孤独症儿童的发展评估表，覆盖感知觉、动作、语言沟通、认知、社会交往、生活自理及情绪行为。",
+		ExecutionEntry:     "机构端 /teacherCenter/scale-library",
+		APIPackage:         "/api/v1/assessments/autismdev/*",
+		Sort:               3,
+	})
+	if err != nil {
+		return err
+	}
+	if err := repo.repairAutismDevScaleCatalog(ctx, autismDevScaleID); err != nil {
+		return err
+	}
+	autismDevReferences := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "中国残疾人联合会康复部《孤独症儿童发展评估表（试行）》使用手册及评估量表。",
+			Sort:    1,
+		},
+		{
+			Content: "孤独症儿童发展评估表结构化题库、领域划分和 P/E/F/X、A/M/S 评分规则。",
+			Sort:    2,
+		},
+	}
+	for _, item := range autismDevReferences {
+		if err := repo.ensureScaleReferenceSeed(ctx, autismDevScaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -930,6 +977,32 @@ func (repo *Repository) repairERXinScaleCatalog(ctx context.Context, scaleID int
 		    sort = 2,
 		    update_time = NOW()
 		WHERE id = ? AND scale_code = 'ERXIN2' AND del_flag = 0
+	`, scaleID)
+	return err
+}
+
+func (repo *Repository) repairAutismDevScaleCatalog(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET scale_name = '孤独症儿童发展评估表（试行）',
+		    category = '标准化测评',
+		    scenario = '现场测评',
+		    age_range = '0岁-6岁',
+		    age_min_months = 0,
+		    age_max_months = 72,
+		    estimated_duration = '60-120分钟',
+		    duration_min_minutes = 60,
+		    duration_max_minutes = 120,
+		    current_version = '2010-revised-trainer',
+		    item_count = 493,
+		    domain_count = 8,
+		    data_status = '题库、评分规则和教育端接口已串联；前端工作台待接入',
+		    summary = '面向0岁至6岁孤独症儿童的发展评估表，覆盖感知觉、动作、语言沟通、认知、社会交往、生活自理及情绪行为。',
+		    execution_entry = '机构端 /teacherCenter/scale-library',
+		    api_package = '/api/v1/assessments/autismdev/*',
+		    sort = 3,
+		    update_time = NOW()
+		WHERE id = ? AND scale_code = 'AUTISMDEV' AND del_flag = 0
 	`, scaleID)
 	return err
 }

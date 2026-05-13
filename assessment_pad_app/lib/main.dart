@@ -10,6 +10,8 @@ import 'assessment_scale_client.dart';
 import 'assessment_scale_category_page.dart';
 import 'assessment_report_list_page.dart';
 import 'auth_client.dart';
+import 'autismdev_assessment_client.dart';
+import 'autismdev_assessment_page.dart';
 import 'erxin_assessment_client.dart';
 import 'erxin_assessment_page.dart';
 import 'home_client.dart';
@@ -59,6 +61,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.pep3Client = const ApiPep3AssessmentClient(),
     this.erxinClient = const ApiErxinAssessmentClient(),
+    this.autismDevClient = const ApiAutismDevAssessmentClient(),
     this.iepRecordClient = const ApiIepAssessmentRecordClient(),
     this.iepPlanClient = const ApiIepPlanClient(),
     this.timetableClient = const ApiTimetableClient(),
@@ -70,6 +73,7 @@ class AssessmentPadApp extends StatelessWidget {
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient pep3Client;
   final ErxinAssessmentClient erxinClient;
+  final AutismDevAssessmentClient autismDevClient;
   final IepAssessmentRecordClient iepRecordClient;
   final IepPlanClient iepPlanClient;
   final TimetableClient timetableClient;
@@ -156,6 +160,7 @@ class AssessmentPadApp extends StatelessWidget {
               child: AssessmentScaleCategoryScreen(
                 scaleClient: scaleClient,
                 erxinClient: erxinClient,
+                autismDevClient: autismDevClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -194,6 +199,25 @@ class AssessmentPadApp extends StatelessWidget {
               child: ErxinAssessmentPage(
                 args: args,
                 client: erxinClient,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/autismdev-assessment':
+        final Object? rawArgs = settings.arguments;
+        final AutismDevAssessmentLaunchArgs args =
+            rawArgs is AutismDevAssessmentLaunchArgs
+                ? rawArgs
+                : const AutismDevAssessmentLaunchArgs();
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            resizeToAvoidBottomInset: false,
+            body: PadViewport(
+              child: AutismDevAssessmentPage(
+                args: args,
+                client: autismDevClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
