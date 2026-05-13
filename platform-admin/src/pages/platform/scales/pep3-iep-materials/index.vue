@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
-import { CloseOutlined, InfoCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, InfoCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onMounted, reactive, ref } from 'vue'
+import { useRouter } from 'vue-router'
 import {
   deletePlatformPEP3IEPMaterialGoalApi,
   deletePlatformPEP3IEPMaterialRuleApi,
@@ -33,6 +34,7 @@ interface RuleForm extends Omit<PEP3IEPItemOptionRule, 'domainCode' | 'itemNo' |
   longGoal: string
 }
 
+const router = useRouter()
 const keyword = ref('')
 const status = ref('')
 const loading = ref(false)
@@ -810,6 +812,9 @@ onMounted(() => {
       <a-space>
         <a-button :icon="h(ReloadOutlined)" @click="fetchCurrent">
           刷新
+        </a-button>
+        <a-button :icon="h(UploadOutlined)" @click="router.push('/platform/scales/pep3-iep-materials/import')">
+          批量导入
         </a-button>
         <a-button type="primary" :icon="h(PlusOutlined)" @click="openCreate">
           新增题目选项长期目标

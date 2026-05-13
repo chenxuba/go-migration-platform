@@ -133,6 +133,14 @@ func (svc *Service) normalizePlatformPEP3IEPItemOptionRule(item model.PEP3IEPIte
 	if !ok {
 		return model.PEP3IEPItemOptionRule{}, errors.New("PEP-3题目不存在")
 	}
+	providedDomainCode := strings.TrimSpace(item.DomainCode)
+	providedDomainName := strings.TrimSpace(item.Domain)
+	if providedDomainCode != "" && !strings.EqualFold(providedDomainCode, assessmentItem.DomainCode) {
+		return model.PEP3IEPItemOptionRule{}, errors.New("题目不属于所选领域")
+	}
+	if providedDomainCode == "" && providedDomainName != "" && strings.TrimSpace(assessmentItem.DomainName) != "" && providedDomainName != strings.TrimSpace(assessmentItem.DomainName) {
+		return model.PEP3IEPItemOptionRule{}, errors.New("题目不属于所选领域")
+	}
 	item.LibraryScope = "platform"
 	item.InstID = 0
 	item.Status = normalizePlatformPEP3IEPMaterialStatus(item.Status)

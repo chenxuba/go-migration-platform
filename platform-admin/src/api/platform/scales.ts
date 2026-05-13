@@ -1,3 +1,6 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+
 export interface ScaleInstitutionRow {
   name: string
   contact: string
@@ -263,6 +266,121 @@ export function savePlatformPEP3IEPMaterialTrainingApi(data: PEP3IEPTrainingMate
 
 export function deletePlatformPEP3IEPMaterialTrainingApi(id: number) {
   return usePost<{ deleted: boolean }>('/api/v1/platform/scales/pep3-iep-material/training/delete', { id })
+}
+
+export interface PEP3IEPMaterialImportColumn {
+  key: string
+  title: string
+  required: boolean
+  fieldType: number
+  options?: string[]
+}
+
+export interface PEP3IEPMaterialImportCell {
+  key: string
+  title: string
+  value: string
+  selectedId?: string | number
+  error?: string
+}
+
+export interface PEP3IEPMaterialImportRow {
+  id: string
+  rowNo: number
+  hasError: boolean
+  cells: PEP3IEPMaterialImportCell[]
+  status: number
+  result?: string
+}
+
+export interface PEP3IEPMaterialImportTaskDetail {
+  id: string
+  fileName: string
+  uploadStaffId: string
+  uploadStaffName: string
+  executeStaffId?: string
+  executeStaffName?: string
+  totalRows: number
+  executedRows: number
+  deletedRows: number
+  errorRows: number
+  createdTime?: string
+  confirmTime?: string
+  completeTime?: string
+  status: number
+  instName: string
+}
+
+export interface PEP3IEPMaterialImportTaskRecordListResult {
+  list: PEP3IEPMaterialImportRow[]
+  total: number
+  columns: PEP3IEPMaterialImportColumn[]
+}
+
+export interface PEP3IEPMaterialImportTaskListResult {
+  list: PEP3IEPMaterialImportTaskDetail[]
+  total: number
+}
+
+export function buildPlatformPEP3IEPMaterialImportTemplateApi(data: Record<string, unknown> = {}) {
+  return useGet<string>('/api/v1/platform/scales/pep3-iep-material/import-template', data)
+}
+
+export function uploadPlatformPEP3IEPMaterialImportApi(data: FormData) {
+  return usePost<{ fileUrl: string, fileName: string }, FormData>('/api/v1/platform/scales/pep3-iep-material/import-upload', data, {
+    headers: {
+      'Content-Type': 'multipart/form-data;charset=UTF-8',
+    },
+  })
+}
+
+export function submitPlatformPEP3IEPMaterialImportTaskApi(data: { fileUrl: string, fileName: string }) {
+  return usePost<string>('/api/v1/platform/scales/pep3-iep-material/import-tasks/submit', data)
+}
+
+export function getPlatformPEP3IEPMaterialImportTaskDetailApi(params: { taskId: string }) {
+  return useGet<PEP3IEPMaterialImportTaskDetail>('/api/v1/platform/scales/pep3-iep-material/import-tasks/detail', params)
+}
+
+export function getPlatformPEP3IEPMaterialImportTaskListApi() {
+  return useGet<PEP3IEPMaterialImportTaskListResult>('/api/v1/platform/scales/pep3-iep-material/import-tasks/list')
+}
+
+export function clearPlatformPEP3IEPMaterialImportTaskListApi() {
+  return usePost<boolean>('/api/v1/platform/scales/pep3-iep-material/import-tasks/clear')
+}
+
+export function deletePlatformPEP3IEPMaterialImportTaskApi(data: { taskId: string }) {
+  return usePost<boolean>('/api/v1/platform/scales/pep3-iep-material/import-tasks/delete', data)
+}
+
+export function getPlatformPEP3IEPMaterialImportTaskRecordListApi(data: {
+  queryModel: { taskId: string, type: number }
+  sortModel?: string
+  pageRequestModel?: { needTotal?: boolean, pageSize?: number, pageIndex?: number, skipCount?: number }
+}) {
+  return usePost<PEP3IEPMaterialImportTaskRecordListResult>('/api/v1/platform/scales/pep3-iep-material/import-tasks/records', data)
+}
+
+export function batchSavePlatformPEP3IEPMaterialImportTaskRecordsApi(data: { taskId: string, records: PEP3IEPMaterialImportRow[] }) {
+  return usePost<PEP3IEPMaterialImportRow[]>('/api/v1/platform/scales/pep3-iep-material/import-tasks/batch-save-records', data)
+}
+
+export function startPlatformPEP3IEPMaterialImportTaskApi(data: { taskId: string }) {
+  return usePost<boolean>('/api/v1/platform/scales/pep3-iep-material/import-tasks/start', data)
+}
+
+export async function downloadPlatformPEP3IEPMaterialImportTemplateFileApi(url: string) {
+  const token = useAuthorization()
+  const response = await axios.get(url, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+    },
+  })
+  return response
 }
 
 export interface ScaleMutationPayload {

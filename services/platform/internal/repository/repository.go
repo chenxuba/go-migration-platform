@@ -466,6 +466,9 @@ func New(db *sql.DB) (*Repository, error) {
 	if err := ensurePEP3IEPMaterialTables(context.Background(), db); err != nil {
 		return nil, err
 	}
+	if err := ensurePEP3IEPMaterialImportTables(context.Background(), db); err != nil {
+		return nil, err
+	}
 	if err := repo.ensurePlatformDictSchema(context.Background()); err != nil {
 		return nil, err
 	}
@@ -1583,6 +1586,10 @@ func (repo *Repository) GetScaleQuestionBank(ctx context.Context, scaleCode, sca
 	}
 	if err := rows.Err(); err != nil {
 		return model.ScaleQuestionBank{}, err
+	}
+	if scaleCode == "PEP3" {
+		result.Items = append(result.Items, pep3CaregiverQuestionBankItems()...)
+		sort.Slice(result.Items, func(i, j int) bool { return result.Items[i].ItemNo < result.Items[j].ItemNo })
 	}
 	result.ItemCount = len(result.Items)
 	return result, nil
