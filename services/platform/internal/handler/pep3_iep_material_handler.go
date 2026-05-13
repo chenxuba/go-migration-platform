@@ -160,6 +160,28 @@ func (handler *Handler) platformPEP3IEPMaterialTrainingDelete(w http.ResponseWri
 	handler.handlePlatformPEP3IEPMaterialDelete(w, r, handler.service.DeletePlatformPEP3IEPTrainingMaterial)
 }
 
+func (handler *Handler) platformPEP3IEPMaterialAIGenerate(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.PEP3IEPMaterialAIGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.GeneratePlatformPEP3IEPMaterialAI(req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) handlePlatformPEP3IEPMaterialDelete(w http.ResponseWriter, r *http.Request, deleteFn func(id int64) error) {
 	ctx := tenant.FromContext(r.Context())
 	if _, ok := handler.requirePlatformManage(w, r, ctx); !ok {

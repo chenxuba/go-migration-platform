@@ -268,6 +268,38 @@ export function deletePlatformPEP3IEPMaterialTrainingApi(id: number) {
   return usePost<{ deleted: boolean }>('/api/v1/platform/scales/pep3-iep-material/training/delete', { id })
 }
 
+export type PEP3IEPMaterialAIGenerateTarget = 'long_goal' | 'short_goal' | 'training'
+
+export interface PEP3IEPMaterialAIGenerateRequest {
+  target: PEP3IEPMaterialAIGenerateTarget
+  domain?: string
+  domainCode?: string
+  itemNo?: number
+  itemTitle?: string
+  scoreValue?: number
+  scoreLabel?: string
+  scoreDescription?: string
+  longGoal?: string
+  shortGoal?: string
+  courseForm?: string
+  existingShortGoals?: string[]
+  existingTrainingProjects?: string[]
+  existingTrainingContents?: string[]
+}
+
+export interface PEP3IEPMaterialAIGenerateResult {
+  longGoal?: string
+  shortGoal?: string
+  courseForm?: string
+  trainingProject?: string
+  trainingContent?: string
+  source?: string
+}
+
+export function generatePlatformPEP3IEPMaterialAIApi(data: PEP3IEPMaterialAIGenerateRequest) {
+  return usePost<PEP3IEPMaterialAIGenerateResult, PEP3IEPMaterialAIGenerateRequest>('/api/v1/platform/scales/pep3-iep-material/ai/generate', data)
+}
+
 export interface PEP3IEPMaterialImportColumn {
   key: string
   title: string

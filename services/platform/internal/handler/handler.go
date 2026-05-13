@@ -75,6 +75,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/training/page", handler.platformPEP3IEPMaterialTrainingPage)
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/training/save", handler.platformPEP3IEPMaterialTrainingSave)
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/training/delete", handler.platformPEP3IEPMaterialTrainingDelete)
+	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/ai/generate", handler.platformPEP3IEPMaterialAIGenerate)
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/import-template", handler.platformPEP3IEPMaterialImportTemplate)
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/import-template/file", handler.platformPEP3IEPMaterialImportTemplateFile)
 	mux.HandleFunc("/api/v1/platform/scales/pep3-iep-material/import-upload", handler.platformPEP3IEPMaterialImportUpload)

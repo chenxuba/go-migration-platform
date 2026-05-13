@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { TableColumnsType } from 'ant-design-vue'
-import { CloseOutlined, InfoCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons-vue'
+import { CloseOutlined, InfoCircleOutlined, PlusOutlined, ReloadOutlined, SearchOutlined, ThunderboltOutlined, UploadOutlined } from '@ant-design/icons-vue'
 import { Modal } from 'ant-design-vue'
 import { computed, h, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -8,6 +8,7 @@ import {
   deletePlatformPEP3IEPMaterialGoalApi,
   deletePlatformPEP3IEPMaterialRuleApi,
   deletePlatformPEP3IEPMaterialTrainingApi,
+  generatePlatformPEP3IEPMaterialAIApi,
   getScaleQuestionBankApi,
   pagePlatformPEP3IEPMaterialGoalsApi,
   pagePlatformPEP3IEPMaterialRulesApi,
@@ -15,6 +16,7 @@ import {
   savePlatformPEP3IEPMaterialGoalApi,
   savePlatformPEP3IEPMaterialRuleApi,
   savePlatformPEP3IEPMaterialTrainingApi,
+  type PEP3IEPMaterialAIGenerateResult,
   type PEP3IEPGoalMaterial,
   type PEP3IEPItemOptionRule,
   type PEP3IEPTrainingMaterial,
@@ -46,6 +48,11 @@ const shortGoalModalOpen = ref(false)
 const trainingModalOpen = ref(false)
 const shortGoalLoading = ref(false)
 const trainingLoading = ref(false)
+const aiGenerating = reactive({
+  longGoal: false,
+  shortGoal: false,
+  training: false,
+})
 
 const questionBank = ref<ScaleQuestionBank | null>(null)
 const totalRows = ref<PEP3IEPItemOptionRule[]>([])
@@ -447,6 +454,155 @@ function applyScoreToRule() {
 function selectedScoreOption() {
   const options = selectedQuestion.value?.scoreOptions?.length ? selectedQuestion.value.scoreOptions : fallbackScoreOptions
   return options.find(item => Number(item.value) === Number(ruleForm.scoreValue))
+}
+
+function normalizedScoreValue(value: unknown) {
+  if (value === undefined || value === null || value === '')
+    return undefined
+  const numberValue = Number(value)
+  return Number.isNaN(numberValue) ? undefined : numberValue
+}
+
+function currentRuleAIContext() {
+  const record = activeRule.value
+  return {
+    domain: record?.domain || shortGoalForm.domain || activeLongGoal.value?.domain || ruleForm.domain || '',
+    domainCode: record?.domainCode || shortGoalForm.domainCode || activeLongGoal.value?.domainCode || ruleForm.domainCode || '',
+    itemNo: normalizedScoreValue(record?.itemNo ?? ruleForm.itemNo),
+    itemTitle: record?.itemTitle || ruleForm.itemTitle || '',
+    scoreValue: normalizedScoreValue(record?.scoreValue ?? ruleForm.scoreValue),
+    scoreLabel: record?.scoreLabel || ruleForm.scoreLabel || '',
+    scoreDescription: record?.scoreDescription || ruleForm.scoreDescription || '',
+  }
+}
+
+function compactExistingTexts(values: string[]) {
+  const seen = new Set<string>()
+  const result: string[] = []
+  for (const value of values) {
+    const text = String(value || '').trim()
+    if (!text || seen.has(text))
+      continue
+    seen.add(text)
+    result.push(text)
+    if (result.length >= 20)
+      break
+  }
+  return result
+}
+
+function existingShortGoalsForAI() {
+  const currentID = Number(shortGoalForm.id || 0)
+  return compactExistingTexts(shortGoalRows.value
+    .filter(item => !currentID || Number(item.id) !== currentID)
+    .map(item => item.shortGoal))
+}
+
+function existingTrainingProjectsForAI() {
+  const currentID = Number(trainingForm.id || 0)
+  return compactExistingTexts(trainingRows.value
+    .filter(item => !currentID || Number(item.id) !== currentID)
+    .map(item => item.trainingProject))
+}
+
+function existingTrainingContentsForAI() {
+  const currentID = Number(trainingForm.id || 0)
+  return compactExistingTexts(trainingRows.value
+    .filter(item => !currentID || Number(item.id) !== currentID)
+    .map(item => item.trainingContent))
+}
+
+async function generateLongGoal() {
+  if (!Number(ruleForm.itemNo)) {
+    messageService.warning('请先选择题目')
+    return
+  }
+  if (ruleForm.scoreValue === undefined || ruleForm.scoreValue === null) {
+    messageService.warning('请先选择选项')
+    return
+  }
+  aiGenerating.longGoal = true
+  try {
+    const result = unwrap<PEP3IEPMaterialAIGenerateResult>(await generatePlatformPEP3IEPMaterialAIApi({
+      target: 'long_goal',
+      domain: ruleForm.domain,
+      domainCode: ruleForm.domainCode,
+      itemNo: Number(ruleForm.itemNo),
+      itemTitle: ruleForm.itemTitle,
+      scoreValue: Number(ruleForm.scoreValue),
+      scoreLabel: ruleForm.scoreLabel,
+      scoreDescription: ruleForm.scoreDescription,
+    }))
+    if (result.longGoal)
+      ruleForm.longGoal = result.longGoal
+  } catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
+  } finally {
+    aiGenerating.longGoal = false
+  }
+}
+
+async function generateShortGoal() {
+  const context = currentRuleAIContext()
+  const longGoal = activeLongGoal.value?.longGoal || shortGoalForm.longGoal
+  if (!Number(context.itemNo)) {
+    messageService.warning('缺少题目信息')
+    return
+  }
+  if (context.scoreValue === undefined || context.scoreValue === null) {
+    messageService.warning('缺少选项信息')
+    return
+  }
+  if (!String(longGoal || '').trim()) {
+    messageService.warning('请先保存或填写长期目标')
+    return
+  }
+  aiGenerating.shortGoal = true
+  try {
+    const result = unwrap<PEP3IEPMaterialAIGenerateResult>(await generatePlatformPEP3IEPMaterialAIApi({
+      target: 'short_goal',
+      ...context,
+      longGoal,
+      existingShortGoals: existingShortGoalsForAI(),
+    }))
+    if (result.shortGoal)
+      shortGoalForm.shortGoal = result.shortGoal
+    if (result.courseForm)
+      shortGoalForm.courseForm = result.courseForm
+  } catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
+  } finally {
+    aiGenerating.shortGoal = false
+  }
+}
+
+async function generateTraining() {
+  const context = currentRuleAIContext()
+  const shortGoal = activeShortGoal.value?.shortGoal || shortGoalForm.shortGoal
+  if (!String(shortGoal || '').trim()) {
+    messageService.warning('请先选择或填写短期目标')
+    return
+  }
+  aiGenerating.training = true
+  try {
+    const result = unwrap<PEP3IEPMaterialAIGenerateResult>(await generatePlatformPEP3IEPMaterialAIApi({
+      target: 'training',
+      ...context,
+      longGoal: activeLongGoal.value?.longGoal || shortGoalForm.longGoal || '',
+      shortGoal,
+      courseForm: activeShortGoal.value?.courseForm || shortGoalForm.courseForm,
+      existingTrainingProjects: existingTrainingProjectsForAI(),
+      existingTrainingContents: existingTrainingContentsForAI(),
+    }))
+    if (result.trainingProject)
+      trainingForm.trainingProject = result.trainingProject
+    if (result.trainingContent)
+      trainingForm.trainingContent = result.trainingContent
+  } catch (error: any) {
+    messageService.error(error?.response?.data?.message || error?.message || 'AI生成失败')
+  } finally {
+    aiGenerating.training = false
+  }
 }
 
 function scoreOptionText(option?: ScaleQuestionBankScoreOption) {
@@ -950,7 +1106,24 @@ onMounted(() => {
           <a-form-item label="选项" required>
             <a-select v-model:value="ruleForm.scoreValue" :options="scoreOptions" placeholder="请选择选项" @change="applyScoreToRule" />
           </a-form-item>
-          <a-form-item label="长期目标" required>
+          <a-form-item required>
+            <template #label>
+              <div class="form-label-action">
+                <span>长期目标</span>
+                <a-button
+                  type="link"
+                  size="small"
+                  class="ai-generate-btn"
+                  :loading="aiGenerating.longGoal"
+                  @click="generateLongGoal"
+                >
+                  <template #icon>
+                    <ThunderboltOutlined />
+                  </template>
+                  AI生成
+                </a-button>
+              </div>
+            </template>
             <a-textarea v-model:value="ruleForm.longGoal" :rows="5" placeholder="填写该题目选项对应的长期目标" />
           </a-form-item>
         </a-form>
@@ -1100,7 +1273,24 @@ onMounted(() => {
       scrollable
     >
       <a-form layout="vertical" class="modal-form">
-        <a-form-item label="短期目标" required>
+        <a-form-item required>
+          <template #label>
+            <div class="form-label-action">
+              <span>短期目标</span>
+              <a-button
+                type="link"
+                size="small"
+                class="ai-generate-btn"
+                :loading="aiGenerating.shortGoal"
+                @click="generateShortGoal"
+              >
+                <template #icon>
+                  <ThunderboltOutlined />
+                </template>
+                AI生成
+              </a-button>
+            </div>
+          </template>
           <a-textarea v-model:value="shortGoalForm.shortGoal" :rows="4" placeholder="请输入该长期目标下的短期目标" />
         </a-form-item>
         <a-row :gutter="16">
@@ -1143,8 +1333,25 @@ onMounted(() => {
         <a-form-item label="训练项目" required>
           <a-input v-model:value="trainingForm.trainingProject" placeholder="请输入训练项目，例如：平衡木行走" />
         </a-form-item>
-        <a-form-item label="训练内容" required>
-          <a-textarea v-model:value="trainingForm.trainingContent" :rows="4" placeholder="请输入具体训练内容、材料、提示方式和练习要求" />
+        <a-form-item required>
+          <template #label>
+            <div class="form-label-action">
+              <span>训练内容</span>
+              <a-button
+                type="link"
+                size="small"
+                class="ai-generate-btn"
+                :loading="aiGenerating.training"
+                @click="generateTraining"
+              >
+                <template #icon>
+                  <ThunderboltOutlined />
+                </template>
+                AI生成
+              </a-button>
+            </div>
+          </template>
+          <a-textarea v-model:value="trainingForm.trainingContent" :rows="4" placeholder="请输入简明训练活动，例如：准备材料、教师提示、儿童操作和泛化方式" />
         </a-form-item>
         <a-form-item label="状态">
           <a-select v-model:value="trainingForm.status" :options="materialStatusOptions" placeholder="请选择状态" />
@@ -1320,6 +1527,25 @@ onMounted(() => {
 
 .modal-form {
   padding-top: 4px;
+}
+
+.form-label-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  gap: 12px;
+}
+
+.ai-generate-btn {
+  height: 22px;
+  padding: 0;
+  font-size: 13px;
+  line-height: 22px;
+}
+
+.ai-generate-btn :deep(.anticon) {
+  font-size: 13px;
 }
 
 .readonly-goal {

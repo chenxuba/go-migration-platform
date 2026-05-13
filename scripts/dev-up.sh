@@ -11,6 +11,11 @@ if [[ ! -x "$GO" ]]; then
 fi
 
 mkdir -p .runlogs
+if [[ -f .runlogs/platform-ai.env ]]; then
+  set -a
+  source .runlogs/platform-ai.env
+  set +a
+fi
 
 ensure_port_free() {
   local port="$1"

@@ -97,3 +97,29 @@ type PEP3IEPTrainingMaterial struct {
 	CreatedTime     *time.Time `json:"createdTime,omitempty"`
 	UpdatedTime     *time.Time `json:"updatedTime,omitempty"`
 }
+
+type PEP3IEPMaterialAIGenerateRequest struct {
+	Target                   string   `json:"target"`
+	Domain                   string   `json:"domain,omitempty"`
+	DomainCode               string   `json:"domainCode,omitempty"`
+	ItemNo                   int      `json:"itemNo,omitempty"`
+	ItemTitle                string   `json:"itemTitle,omitempty"`
+	ScoreValue               *int     `json:"scoreValue,omitempty"`
+	ScoreLabel               string   `json:"scoreLabel,omitempty"`
+	ScoreDescription         string   `json:"scoreDescription,omitempty"`
+	LongGoal                 string   `json:"longGoal,omitempty"`
+	ShortGoal                string   `json:"shortGoal,omitempty"`
+	CourseForm               string   `json:"courseForm,omitempty"`
+	ExistingShortGoals       []string `json:"existingShortGoals,omitempty"`
+	ExistingTrainingProjects []string `json:"existingTrainingProjects,omitempty"`
+	ExistingTrainingContents []string `json:"existingTrainingContents,omitempty"`
+}
+
+type PEP3IEPMaterialAIGenerateResult struct {
+	LongGoal        string `json:"longGoal,omitempty"`
+	ShortGoal       string `json:"shortGoal,omitempty"`
+	CourseForm      string `json:"courseForm,omitempty"`
+	TrainingProject string `json:"trainingProject,omitempty"`
+	TrainingContent string `json:"trainingContent,omitempty"`
+	Source          string `json:"source,omitempty"`
+}
