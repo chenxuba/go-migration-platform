@@ -84,7 +84,12 @@ type platformPEP3IEPMaterialAIPromptPayload struct {
 	ExistingShortGoals       []string `json:"existingShortGoals,omitempty"`
 	ExistingTrainingProjects []string `json:"existingTrainingProjects,omitempty"`
 	ExistingTrainingContents []string `json:"existingTrainingContents,omitempty"`
+	Count                    int      `json:"count,omitempty"`
 	OutputRule               string   `json:"outputRule"`
+}
+
+type platformPEP3IEPMaterialAIBatchResultPayload struct {
+	Items []model.PEP3IEPMaterialAIGenerateResult `json:"items"`
 }
 
 func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialAIGenerateRequest) (model.PEP3IEPMaterialAIGenerateResult, error) {
@@ -94,28 +99,6 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialA
 	}
 	if err := validatePlatformPEP3IEPMaterialAIRequest(prepared); err != nil {
 		return model.PEP3IEPMaterialAIGenerateResult{}, err
-	}
-
-	apiKey := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_API_KEY"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-	if apiKey == "" {
-		return model.PEP3IEPMaterialAIGenerateResult{}, errors.New("AI密钥未配置，请设置 PEP3_IEP_MATERIAL_AI_API_KEY")
-	}
-
-	baseURL := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_BASE_URL"))
-	if baseURL == "" {
-		baseURL = platformPEP3IEPMaterialAIBaseURLDefault
-	}
-	endpoint := buildPlatformPEP3IEPMaterialAIEndpoint(baseURL)
-	modelName := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_MODEL"))
-	if modelName == "" {
-		modelName = platformPEP3IEPMaterialAIModelDefault
-	}
-	reasoningEffort := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_REASONING_EFFORT"))
-	if reasoningEffort == "" {
-		reasoningEffort = platformPEP3IEPMaterialAIReasoningEffortDefault
 	}
 
 	payload := platformPEP3IEPMaterialAIPromptPayload{
@@ -135,9 +118,49 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialA
 		ExistingTrainingContents: prepared.ExistingTrainingContents,
 		OutputRule:               platformPEP3IEPMaterialAIOutputRule(prepared.Target),
 	}
-	payloadJSON, err := json.Marshal(payload)
+	content, err := requestPlatformPEP3IEPMaterialAIContent(payload)
 	if err != nil {
 		return model.PEP3IEPMaterialAIGenerateResult{}, err
+	}
+
+	result, err := parsePlatformPEP3IEPMaterialAIResult(content)
+	if err != nil {
+		return model.PEP3IEPMaterialAIGenerateResult{}, err
+	}
+	result = normalizePlatformPEP3IEPMaterialAIResult(result)
+	if err := validatePlatformPEP3IEPMaterialAIResult(prepared, result); err != nil {
+		return model.PEP3IEPMaterialAIGenerateResult{}, err
+	}
+	result.Source = "ai"
+	return result, nil
+}
+
+func requestPlatformPEP3IEPMaterialAIContent(payload any) (string, error) {
+	apiKey := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_API_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if apiKey == "" {
+		return "", errors.New("AI密钥未配置，请设置 PEP3_IEP_MATERIAL_AI_API_KEY")
+	}
+
+	baseURL := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_BASE_URL"))
+	if baseURL == "" {
+		baseURL = platformPEP3IEPMaterialAIBaseURLDefault
+	}
+	endpoint := buildPlatformPEP3IEPMaterialAIEndpoint(baseURL)
+	modelName := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_MODEL"))
+	if modelName == "" {
+		modelName = platformPEP3IEPMaterialAIModelDefault
+	}
+	reasoningEffort := strings.TrimSpace(os.Getenv("PEP3_IEP_MATERIAL_AI_REASONING_EFFORT"))
+	if reasoningEffort == "" {
+		reasoningEffort = platformPEP3IEPMaterialAIReasoningEffortDefault
+	}
+
+	payloadJSON, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
 	}
 	requestBody, err := json.Marshal(platformPEP3IEPMaterialAIResponsesRequest{
 		Model: modelName,
@@ -162,14 +185,14 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialA
 		},
 	})
 	if err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
+		return "", err
 	}
 
 	requestCtx, cancel := context.WithTimeout(context.Background(), platformPEP3IEPMaterialAITimeout)
 	defer cancel()
 	httpReq, err := http.NewRequestWithContext(requestCtx, http.MethodPost, endpoint, bytes.NewReader(requestBody))
 	if err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
+		return "", err
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Authorization", "Bearer "+apiKey)
@@ -177,43 +200,33 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAI(req model.PEP3IEPMaterialA
 	resp, err := (&http.Client{Timeout: platformPEP3IEPMaterialAITimeout + 5*time.Second}).Do(httpReq)
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(requestCtx.Err(), context.DeadlineExceeded) {
-			return model.PEP3IEPMaterialAIGenerateResult{}, fmt.Errorf("AI生成超时（%d秒）", int(platformPEP3IEPMaterialAITimeout.Seconds()))
+			return "", fmt.Errorf("AI生成超时（%d秒）", int(platformPEP3IEPMaterialAITimeout.Seconds()))
 		}
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
+		return "", err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return model.PEP3IEPMaterialAIGenerateResult{}, fmt.Errorf("AI接口返回 %d：%s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", fmt.Errorf("AI接口返回 %d：%s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var aiResponse platformPEP3IEPMaterialAIResponsesResponse
 	if err := json.Unmarshal(body, &aiResponse); err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
+		return "", err
 	}
 	if aiResponse.Error != nil && strings.TrimSpace(aiResponse.Error.Message) != "" {
-		return model.PEP3IEPMaterialAIGenerateResult{}, errors.New(aiResponse.Error.Message)
+		return "", errors.New(aiResponse.Error.Message)
 	}
 
 	content := extractPlatformPEP3IEPMaterialAIResponseText(aiResponse)
 	if content == "" {
-		return model.PEP3IEPMaterialAIGenerateResult{}, errors.New("AI接口返回内容为空")
+		return "", errors.New("AI接口返回内容为空")
 	}
-
-	result, err := parsePlatformPEP3IEPMaterialAIResult(content)
-	if err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
-	}
-	result = normalizePlatformPEP3IEPMaterialAIResult(result)
-	if err := validatePlatformPEP3IEPMaterialAIResult(prepared, result); err != nil {
-		return model.PEP3IEPMaterialAIGenerateResult{}, err
-	}
-	result.Source = "ai"
-	return result, nil
+	return content, nil
 }
 
 func (svc *Service) GeneratePlatformPEP3IEPMaterialAIBatch(req model.PEP3IEPMaterialAIBatchGenerateRequest) (model.PEP3IEPMaterialAIBatchGenerateResult, error) {
@@ -227,45 +240,69 @@ func (svc *Service) GeneratePlatformPEP3IEPMaterialAIBatch(req model.PEP3IEPMate
 	if req.Target != "short_goal" && req.Target != "training" {
 		return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New("批量生成暂只支持短期目标和训练内容")
 	}
+	prepared, err := svc.preparePlatformPEP3IEPMaterialAIRequest(req.PEP3IEPMaterialAIGenerateRequest)
+	if err != nil {
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, err
+	}
+	if err := validatePlatformPEP3IEPMaterialAIRequest(prepared); err != nil {
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, err
+	}
 
-	base := req.PEP3IEPMaterialAIGenerateRequest
+	payload := platformPEP3IEPMaterialAIPromptPayload{
+		Target:                   prepared.Target,
+		Domain:                   prepared.Domain,
+		DomainCode:               prepared.DomainCode,
+		ItemNo:                   prepared.ItemNo,
+		ItemTitle:                prepared.ItemTitle,
+		ScoreValue:               platformPEP3IEPMaterialScoreValue(prepared),
+		ScoreLabel:               prepared.ScoreLabel,
+		ScoreDescription:         prepared.ScoreDescription,
+		LongGoal:                 prepared.LongGoal,
+		ShortGoal:                prepared.ShortGoal,
+		CourseForm:               prepared.CourseForm,
+		ExistingShortGoals:       prepared.ExistingShortGoals,
+		ExistingTrainingProjects: prepared.ExistingTrainingProjects,
+		ExistingTrainingContents: prepared.ExistingTrainingContents,
+		Count:                    count,
+		OutputRule:               platformPEP3IEPMaterialAIBatchOutputRule(prepared.Target, count),
+	}
+	content, err := requestPlatformPEP3IEPMaterialAIContent(payload)
+	if err != nil {
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, err
+	}
+
+	batch, err := parsePlatformPEP3IEPMaterialAIBatchResult(content)
+	if err != nil {
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, err
+	}
 	result := model.PEP3IEPMaterialAIBatchGenerateResult{
 		Items: make([]model.PEP3IEPMaterialAIGenerateResult, 0, count),
 	}
-	maxAttempts := count * 3
-	if maxAttempts < count {
-		maxAttempts = count
-	}
-	for attempt := 0; attempt < maxAttempts && len(result.Items) < count; attempt++ {
-		nextReq := base
-		nextReq.ExistingShortGoals = append([]string{}, base.ExistingShortGoals...)
-		nextReq.ExistingTrainingProjects = append([]string{}, base.ExistingTrainingProjects...)
-		nextReq.ExistingTrainingContents = append([]string{}, base.ExistingTrainingContents...)
-		for _, item := range result.Items {
-			if item.ShortGoal != "" {
-				nextReq.ExistingShortGoals = append(nextReq.ExistingShortGoals, item.ShortGoal)
-			}
-			if item.TrainingProject != "" {
-				nextReq.ExistingTrainingProjects = append(nextReq.ExistingTrainingProjects, item.TrainingProject)
-			}
-			if item.TrainingContent != "" {
-				nextReq.ExistingTrainingContents = append(nextReq.ExistingTrainingContents, item.TrainingContent)
-			}
-		}
-
-		item, err := svc.GeneratePlatformPEP3IEPMaterialAI(nextReq)
-		if err != nil {
+	validateReq := prepared
+	for _, item := range batch.Items {
+		item = normalizePlatformPEP3IEPMaterialAIResult(item)
+		if err := validatePlatformPEP3IEPMaterialAIResult(validateReq, item); err != nil {
 			result.Failed++
 			result.LastError = err.Error()
 			continue
 		}
+		item.Source = "ai"
 		result.Items = append(result.Items, item)
+		if item.ShortGoal != "" {
+			validateReq.ExistingShortGoals = append(validateReq.ExistingShortGoals, item.ShortGoal)
+		}
+		if item.TrainingProject != "" {
+			validateReq.ExistingTrainingProjects = append(validateReq.ExistingTrainingProjects, item.TrainingProject)
+		}
+		if item.TrainingContent != "" {
+			validateReq.ExistingTrainingContents = append(validateReq.ExistingTrainingContents, item.TrainingContent)
+		}
+		if len(result.Items) >= count {
+			break
+		}
 	}
 	if len(result.Items) == 0 {
-		if result.LastError != "" {
-			return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New(result.LastError)
-		}
-		return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New("AI批量生成失败，请重试")
+		return model.PEP3IEPMaterialAIBatchGenerateResult{}, errors.New("AI批量生成结果未通过校验，请重试")
 	}
 	return result, nil
 }
@@ -393,6 +430,17 @@ func platformPEP3IEPMaterialAIOutputRule(target string) string {
 	}
 }
 
+func platformPEP3IEPMaterialAIBatchOutputRule(target string, count int) string {
+	switch target {
+	case "short_goal":
+		return fmt.Sprintf(`只返回 {"items":[{"shortGoal":"...","courseForm":"个训或集体课"}]}。必须生成%d条，短期目标之间要明显不同；每条都要从题目泛化到同类任务，可包含提示方式和达标标准，不写时间周期或训练步骤；必须避开 existingShortGoals 中已有表达和任务方向。`, count)
+	case "training":
+		return fmt.Sprintf(`只返回 {"items":[{"trainingProject":"...","trainingContent":"..."}]}。必须生成%d条，训练项目写泛化功能名称；每条训练内容控制在60-100个汉字，一段话写完；不同条目要换材料、换提示语、换活动方式或换场景；不要使用“材料：”“步骤：”“提示方式：”“完成标准：”这些标签，不要写多轮次数标准；句子必须读得通，避免“儿童帮……”这类缺少动作的表达；必须避开 existingTrainingProjects 和 existingTrainingContents 中已有内容。`, count)
+	default:
+		return `只返回 {"items":[]}`
+	}
+}
+
 func parsePlatformPEP3IEPMaterialAIResult(content string) (model.PEP3IEPMaterialAIGenerateResult, error) {
 	candidate := strings.TrimSpace(content)
 	if !strings.HasPrefix(candidate, "{") {
@@ -405,6 +453,25 @@ func parsePlatformPEP3IEPMaterialAIResult(content string) (model.PEP3IEPMaterial
 	var result model.PEP3IEPMaterialAIGenerateResult
 	if err := json.Unmarshal([]byte(candidate), &result); err != nil {
 		return model.PEP3IEPMaterialAIGenerateResult{}, fmt.Errorf("解析AI结果失败：%w", err)
+	}
+	return result, nil
+}
+
+func parsePlatformPEP3IEPMaterialAIBatchResult(content string) (platformPEP3IEPMaterialAIBatchResultPayload, error) {
+	candidate := strings.TrimSpace(content)
+	if !strings.HasPrefix(candidate, "{") {
+		start := strings.Index(candidate, "{")
+		end := strings.LastIndex(candidate, "}")
+		if start >= 0 && end > start {
+			candidate = candidate[start : end+1]
+		}
+	}
+	var result platformPEP3IEPMaterialAIBatchResultPayload
+	if err := json.Unmarshal([]byte(candidate), &result); err != nil {
+		return platformPEP3IEPMaterialAIBatchResultPayload{}, fmt.Errorf("解析AI批量结果失败：%w", err)
+	}
+	if len(result.Items) == 0 {
+		return platformPEP3IEPMaterialAIBatchResultPayload{}, errors.New("AI批量结果为空")
 	}
 	return result, nil
 }
