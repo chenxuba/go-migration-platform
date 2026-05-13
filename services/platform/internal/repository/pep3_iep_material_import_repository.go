@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"strings"
+	"unicode"
 
 	"go-migration-platform/services/platform/internal/model"
 )
@@ -460,24 +462,41 @@ func ensurePlatformPEP3IEPRuleGoalRelTx(ctx context.Context, tx *sql.Tx, ruleID,
 }
 
 func findOrCreatePlatformPEP3IEPShortGoalTx(ctx context.Context, tx *sql.Tx, userID int64, input PlatformPEP3IEPMaterialImportSaveInput, status string, parentID int64) (int64, error) {
-	var id int64
-	err := tx.QueryRowContext(ctx, `
-		SELECT id
+	targetShortGoalKey := pep3IEPImportTextMatchKey(input.ShortGoal)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(short_goal, ''), IFNULL(course_form, '')
 		FROM pep3_iep_goal_material
 		WHERE library_scope = 'platform' AND inst_id = 0 AND material_type = 'short_term'
-		  AND parent_goal_material_id = ? AND short_goal = ? AND course_form = ? AND del_flag = 0
+		  AND parent_goal_material_id = ? AND del_flag = 0
 		ORDER BY id ASC
-		LIMIT 1
-	`, parentID, input.ShortGoal, input.CourseForm).Scan(&id)
-	if err == nil {
+	`, parentID)
+	if err != nil {
+		return 0, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id         int64
+			shortGoal  string
+			courseForm string
+		)
+		if err := rows.Scan(&id, &shortGoal, &courseForm); err != nil {
+			return 0, err
+		}
+		if strings.TrimSpace(courseForm) != strings.TrimSpace(input.CourseForm) {
+			continue
+		}
+		if pep3IEPImportTextMatchKey(shortGoal) != targetShortGoalKey {
+			continue
+		}
 		_, _ = tx.ExecContext(ctx, `
 			UPDATE pep3_iep_goal_material
-			SET domain_code = ?, domain = ?, long_goal = ?, status = ?, update_id = ?, update_time = NOW()
+			SET domain_code = ?, domain = ?, long_goal = ?, short_goal = ?, course_form = ?, status = ?, update_id = ?, update_time = NOW()
 			WHERE id = ? AND del_flag = 0
-		`, input.DomainCode, input.Domain, input.LongGoal, status, userID, id)
+		`, input.DomainCode, input.Domain, input.LongGoal, input.ShortGoal, input.CourseForm, status, userID, id)
 		return id, nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if err := rows.Err(); err != nil {
 		return 0, err
 	}
 	result, err := tx.ExecContext(ctx, `
@@ -494,24 +513,39 @@ func findOrCreatePlatformPEP3IEPShortGoalTx(ctx context.Context, tx *sql.Tx, use
 }
 
 func findOrCreatePlatformPEP3IEPTrainingTx(ctx context.Context, tx *sql.Tx, userID int64, input PlatformPEP3IEPMaterialImportSaveInput, status string, shortGoalID int64) error {
-	var id int64
-	err := tx.QueryRowContext(ctx, `
-		SELECT id
+	targetProjectKey := pep3IEPImportTextMatchKey(input.TrainingProject)
+	targetContentKey := pep3IEPImportTextMatchKey(input.TrainingContent)
+	rows, err := tx.QueryContext(ctx, `
+		SELECT id, IFNULL(training_project, ''), IFNULL(training_content, '')
 		FROM pep3_iep_training_material
 		WHERE library_scope = 'platform' AND inst_id = 0 AND goal_material_id = ?
-		  AND training_project = ? AND training_content = ? AND del_flag = 0
+		  AND del_flag = 0
 		ORDER BY id ASC
-		LIMIT 1
-	`, shortGoalID, input.TrainingProject, input.TrainingContent).Scan(&id)
-	if err == nil {
+	`, shortGoalID)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var (
+			id              int64
+			trainingProject string
+			trainingContent string
+		)
+		if err := rows.Scan(&id, &trainingProject, &trainingContent); err != nil {
+			return err
+		}
+		if pep3IEPImportTextMatchKey(trainingProject) != targetProjectKey || pep3IEPImportTextMatchKey(trainingContent) != targetContentKey {
+			continue
+		}
 		_, _ = tx.ExecContext(ctx, `
 			UPDATE pep3_iep_training_material
-			SET status = ?, update_id = ?, update_time = NOW()
+			SET training_project = ?, training_content = ?, status = ?, update_id = ?, update_time = NOW()
 			WHERE id = ? AND del_flag = 0
-		`, status, userID, id)
+		`, input.TrainingProject, input.TrainingContent, status, userID, id)
 		return nil
 	}
-	if !errors.Is(err, sql.ErrNoRows) {
+	if err := rows.Err(); err != nil {
 		return err
 	}
 	_, err = tx.ExecContext(ctx, `
@@ -521,6 +555,22 @@ func findOrCreatePlatformPEP3IEPTrainingTx(ctx context.Context, tx *sql.Tx, user
 		) VALUES ('platform', 0, ?, ?, ?, 100, ?, ?, ?, NOW(), NOW(), 0)
 	`, shortGoalID, input.TrainingProject, input.TrainingContent, status, userID, userID)
 	return err
+}
+
+func pep3IEPImportTextMatchKey(text string) string {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return ""
+	}
+	var builder strings.Builder
+	builder.Grow(len(text))
+	for _, r := range text {
+		if unicode.IsSpace(r) {
+			continue
+		}
+		builder.WriteRune(r)
+	}
+	return builder.String()
 }
 
 func platformPEP3IEPDefaultResultMeaning(score int) string {

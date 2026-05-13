@@ -295,7 +295,7 @@ func pep3IEPImportAppendGroupKey(input repository.PlatformPEP3IEPMaterialImportS
 		strings.TrimSpace(input.DomainCode),
 		input.ItemNo,
 		input.ScoreValue,
-		strings.TrimSpace(input.LongGoal),
+		normalizePEP3IEPImportMatchKey(input.LongGoal),
 	)
 }
 
@@ -385,11 +385,11 @@ func buildPEP3IEPImportSaveInputFromRow(row model.PEP3IEPMaterialImportRow, look
 		ScoreValue:       score,
 		ScoreLabel:       scoreLabel,
 		ScoreDescription: scoreDescription,
-		LongGoal:         strings.TrimSpace(rowData["长期目标"]),
-		ShortGoal:        strings.TrimSpace(rowData["短期目标"]),
+		LongGoal:         normalizePEP3IEPImportDisplayText(rowData["长期目标"]),
+		ShortGoal:        normalizePEP3IEPImportDisplayText(rowData["短期目标"]),
 		CourseForm:       strings.TrimSpace(rowData["课程形式"]),
-		TrainingProject:  strings.TrimSpace(rowData["训练项目"]),
-		TrainingContent:  strings.TrimSpace(rowData["训练内容"]),
+		TrainingProject:  normalizePEP3IEPImportDisplayText(rowData["训练项目"]),
+		TrainingContent:  normalizePEP3IEPImportDisplayText(rowData["训练内容"]),
 		Status:           pep3IEPImportStatusValue(rowData["状态"]),
 	}, nil
 }
