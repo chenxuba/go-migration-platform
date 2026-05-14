@@ -116,7 +116,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
             studentName: _studentName.trim().isEmpty ? '-' : _studentName,
             studentAge: _studentAgeText,
             assessmentDate: _assessmentDate.isEmpty ? '未设置日期' : _assessmentDate,
-            examinerName: _examinerName.trim().isEmpty ? '当前老师' : _examinerName,
+            examinerName: _examinerName.trim().isEmpty ? '-' : _examinerName,
             autoSaveText: _autoSaveText,
             saving: _saving,
             submitting: _submitting,

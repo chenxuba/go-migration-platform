@@ -132,7 +132,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
             studentName: _studentName.trim().isEmpty ? '-' : _studentName,
             age: _studentAgeText,
             assessmentDate: _assessmentDate,
-            examinerName: _examinerName.trim().isEmpty ? '当前老师' : _examinerName,
+            examinerName: _examinerName.trim().isEmpty ? '-' : _examinerName,
             autoSaveText: _autoSaveText,
             saving: _savingDraft,
             submitting: _submitting,
