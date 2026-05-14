@@ -1830,7 +1830,7 @@ class _AutismDevRightRail extends StatelessWidget {
     return Container(
       decoration: _panelDecoration(),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
@@ -1878,9 +1878,7 @@ class _AutismDevRightRail extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
                 decoration: InputDecoration(
-                  hintText: item.scoreType.toUpperCase() == 'AMS'
-                      ? '可记录情境、反应强度或持续时间'
-                      : '可记录提示层级、辅助方式或备注',
+                  hintText: '请输入备注',
                   hintStyle: const TextStyle(
                     color: _AutismDevColors.muted,
                     fontSize: 12,
