@@ -373,6 +373,10 @@ class AutismDevItemSummary {
     required this.domainItemNo,
     required this.itemTitle,
     required this.testItem,
+    required this.assessmentRange,
+    required this.materials,
+    required this.method,
+    required this.passCriteria,
     required this.ageSegment,
     required this.ageMinMonth,
     required this.ageMaxMonth,
@@ -388,6 +392,10 @@ class AutismDevItemSummary {
       domainItemNo: _intFrom(json['domainItemNo']),
       itemTitle: '${json['itemTitle'] ?? ''}',
       testItem: '${json['testItem'] ?? ''}',
+      assessmentRange: '${json['assessmentRange'] ?? ''}',
+      materials: '${json['materials'] ?? ''}',
+      method: '${json['method'] ?? ''}',
+      passCriteria: '${json['passCriteria'] ?? ''}',
       ageSegment: '${json['ageSegment'] ?? ''}',
       ageMinMonth: _intFrom(json['ageMinMonth']),
       ageMaxMonth: _intFrom(json['ageMaxMonth']),
@@ -402,6 +410,10 @@ class AutismDevItemSummary {
   final int domainItemNo;
   final String itemTitle;
   final String testItem;
+  final String assessmentRange;
+  final String materials;
+  final String method;
+  final String passCriteria;
   final String ageSegment;
   final int ageMinMonth;
   final int ageMaxMonth;
@@ -417,6 +429,10 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
     required super.domainItemNo,
     required super.itemTitle,
     required super.testItem,
+    required super.assessmentRange,
+    required super.materials,
+    required super.method,
+    required super.passCriteria,
     required super.ageSegment,
     required super.ageMinMonth,
     required super.ageMaxMonth,
@@ -424,8 +440,6 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
     required super.domainName,
     required super.scoreType,
     required super.assessmentModes,
-    required this.method,
-    required this.passCriteria,
     required this.scoreOptions,
   });
 
@@ -435,6 +449,10 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
       domainItemNo: _intFrom(json['domainItemNo']),
       itemTitle: '${json['itemTitle'] ?? ''}',
       testItem: '${json['testItem'] ?? ''}',
+      assessmentRange: '${json['assessmentRange'] ?? ''}',
+      materials: '${json['materials'] ?? ''}',
+      method: '${json['method'] ?? ''}',
+      passCriteria: '${json['passCriteria'] ?? ''}',
       ageSegment: '${json['ageSegment'] ?? ''}',
       ageMinMonth: _intFrom(json['ageMinMonth']),
       ageMaxMonth: _intFrom(json['ageMaxMonth']),
@@ -442,8 +460,6 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
       domainName: '${json['domainName'] ?? ''}',
       scoreType: '${json['scoreType'] ?? ''}',
       assessmentModes: _stringListFrom(json['assessmentModes']),
-      method: '${json['method'] ?? ''}',
-      passCriteria: '${json['passCriteria'] ?? ''}',
       scoreOptions: _listFrom(json['scoreOptions'])
           .map((Map<String, dynamic> item) =>
               AutismDevScoreOption.fromJson(item))
@@ -456,6 +472,10 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
     domainItemNo: 0,
     itemTitle: '',
     testItem: '',
+    assessmentRange: '',
+    materials: '',
+    method: '',
+    passCriteria: '',
     ageSegment: '',
     ageMinMonth: 0,
     ageMaxMonth: 0,
@@ -463,13 +483,9 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
     domainName: '',
     scoreType: '',
     assessmentModes: <String>[],
-    method: '',
-    passCriteria: '',
     scoreOptions: <AutismDevScoreOption>[],
   );
 
-  final String method;
-  final String passCriteria;
   final List<AutismDevScoreOption> scoreOptions;
 }
 

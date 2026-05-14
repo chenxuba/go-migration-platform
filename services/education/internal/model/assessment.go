@@ -693,6 +693,10 @@ type AutismDevAssessmentItemSummary struct {
 	DomainItemNo    int      `json:"domainItemNo"`
 	ItemTitle       string   `json:"itemTitle"`
 	TestItem        string   `json:"testItem"`
+	AssessmentRange string   `json:"assessmentRange,omitempty"`
+	Materials       string   `json:"materials,omitempty"`
+	Method          string   `json:"method,omitempty"`
+	PassCriteria    string   `json:"passCriteria,omitempty"`
 	AgeSegment      string   `json:"ageSegment,omitempty"`
 	AgeMinMonth     int      `json:"ageMinMonth"`
 	AgeMaxMonth     int      `json:"ageMaxMonth"`
@@ -707,6 +711,8 @@ type AutismDevAssessmentItem struct {
 	DomainItemNo    int                    `json:"domainItemNo"`
 	ItemTitle       string                 `json:"itemTitle"`
 	TestItem        string                 `json:"testItem"`
+	AssessmentRange string                 `json:"assessmentRange,omitempty"`
+	Materials       string                 `json:"materials,omitempty"`
 	AgeSegment      string                 `json:"ageSegment,omitempty"`
 	AgeMinMonth     int                    `json:"ageMinMonth"`
 	AgeMaxMonth     int                    `json:"ageMaxMonth"`

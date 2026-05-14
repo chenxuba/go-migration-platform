@@ -55,6 +55,8 @@ type ItemDefinition struct {
 	DomainItemNo    int      `json:"domain_item_no"`
 	ItemTitle       string   `json:"item_title"`
 	TestItem        string   `json:"test_item"`
+	AssessmentRange string   `json:"assessment_range"`
+	Materials       string   `json:"materials"`
 	AgeSegment      string   `json:"age_segment"`
 	AgeMinMonth     int      `json:"age_min_month"`
 	AgeMaxMonth     int      `json:"age_max_month"`

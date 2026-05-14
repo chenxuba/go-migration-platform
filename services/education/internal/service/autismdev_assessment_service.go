@@ -20,7 +20,7 @@ const (
 	autismDevItemBankFile    = "autismdev-item-bank-draft.json"
 	autismDevDomainMapFile   = "autismdev-domain-map.json"
 	autismDevMetadataFile    = "autismdev-scale-metadata.json"
-	autismDevStaticRevision  = "draft-2026-05-13"
+	autismDevStaticRevision  = "draft-2026-05-14"
 	autismDevDraftDataStatus = "draft"
 )
 
@@ -401,6 +401,8 @@ func buildAutismDevAssessmentItem(item autismdevscore.ItemDefinition) model.Auti
 		DomainItemNo:    item.DomainItemNo,
 		ItemTitle:       strings.TrimSpace(item.ItemTitle),
 		TestItem:        strings.TrimSpace(nonEmptyString(item.TestItem, item.ItemTitle)),
+		AssessmentRange: strings.TrimSpace(item.AssessmentRange),
+		Materials:       strings.TrimSpace(item.Materials),
 		AgeSegment:      strings.TrimSpace(item.AgeSegment),
 		AgeMinMonth:     item.AgeMinMonth,
 		AgeMaxMonth:     item.AgeMaxMonth,
@@ -423,6 +425,10 @@ func buildAutismDevAssessmentItemSummary(item autismdevscore.ItemDefinition) mod
 		DomainItemNo:    item.DomainItemNo,
 		ItemTitle:       strings.TrimSpace(item.ItemTitle),
 		TestItem:        strings.TrimSpace(nonEmptyString(item.TestItem, item.ItemTitle)),
+		AssessmentRange: strings.TrimSpace(item.AssessmentRange),
+		Materials:       strings.TrimSpace(item.Materials),
+		Method:          strings.TrimSpace(item.Method),
+		PassCriteria:    strings.TrimSpace(item.PassCriteria),
 		AgeSegment:      strings.TrimSpace(item.AgeSegment),
 		AgeMinMonth:     item.AgeMinMonth,
 		AgeMaxMonth:     item.AgeMaxMonth,

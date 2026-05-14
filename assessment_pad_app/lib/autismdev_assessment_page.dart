@@ -39,7 +39,6 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       PadMessageOverlayController();
 
   AutismDevTemplateSummary _template = AutismDevTemplateSummary.empty;
-  AutismDevDraftProgress _draftProgress = AutismDevDraftProgress.empty;
   String _token = '';
   String _studentName = '';
   String _studentAge = '';
@@ -53,6 +52,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   bool _loading = true;
   bool _saving = false;
   bool _submitting = false;
+  bool _autoNext = true;
   String _errorMessage = '';
   String _autoSaveText = '等待作答';
 
@@ -181,7 +181,6 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     _examinerName = detail.examinerName.trim().isNotEmpty
         ? detail.examinerName.trim()
         : _examinerName;
-    _draftProgress = detail.progress;
     _itemScores
       ..clear()
       ..addAll(detail.input.itemScores);
@@ -214,6 +213,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
 
   int get _answeredCount => _itemScores.length;
 
+  int get _missingCount => math.max(_totalCount - _answeredCount, 0);
+
   int get _totalCount {
     if (_template.itemCount > 0) {
       return _template.itemCount;
@@ -224,12 +225,16 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     );
   }
 
-  double get _progressPercent {
-    if (_totalCount <= 0) {
-      return 0;
-    }
-    return (_answeredCount / _totalCount).clamp(0, 1).toDouble();
+  int get _currentIndex {
+    final int index = _allItems.indexWhere(
+      (AutismDevItemSummary item) => item.itemNo == _selectedItemNo,
+    );
+    return index < 0 ? 0 : index;
   }
+
+  bool get _hasPreviousItem => _currentIndex > 0;
+
+  bool get _hasNextItem => _currentIndex < _allItems.length - 1;
 
   List<AutismDevScoreOption> get _currentScoreOptions {
     final AutismDevAssessmentItem? detail = _selectedDetail;
@@ -242,34 +247,6 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         .where((AutismDevScoreOption option) =>
             option.scoreType.toUpperCase() == scoreType.toUpperCase())
         .toList();
-  }
-
-  void _selectDomain(String domainCode) {
-    AutismDevDomainGroup? group;
-    for (final AutismDevDomainGroup item in _template.domainGroups) {
-      if (item.domainCode == domainCode) {
-        group = item;
-        break;
-      }
-    }
-    if (group == null) {
-      return;
-    }
-    final AutismDevDomainGroup selectedGroup = group;
-    final int nextItemNo = selectedGroup.items
-        .map((AutismDevItemSummary item) => item.itemNo)
-        .firstWhere(
-          (int itemNo) => !_itemScores.containsKey(itemNo),
-          orElse: () => selectedGroup.items.isNotEmpty
-              ? selectedGroup.items.first.itemNo
-              : 0,
-        );
-    setState(() {
-      _selectedDomainCode = domainCode;
-      _selectedItemNo = nextItemNo;
-    });
-    _syncRemarkController();
-    _prefetchSelectedItem();
   }
 
   void _selectItem(AutismDevItemSummary item) {
@@ -285,6 +262,17 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     final String remark = _itemRemarks[_selectedItemNo] ?? '';
     if (_remarkController.text != remark) {
       _remarkController.text = remark;
+    }
+  }
+
+  void _syncCurrentRemarkToState() {
+    final int itemNo = _selectedItemNo;
+    if (itemNo <= 0) {
+      return;
+    }
+    final String remark = _remarkController.text.trim();
+    if (remark.isNotEmpty || _itemScores.containsKey(itemNo)) {
+      _itemRemarks[itemNo] = remark;
     }
   }
 
@@ -356,7 +344,6 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       }
       setState(() {
         _draftId = detail.id;
-        _draftProgress = detail.progress;
         _itemScores
           ..clear()
           ..addAll(detail.input.itemScores);
@@ -393,10 +380,64 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     }
   }
 
+  Future<void> _saveDraft() async {
+    if (_saving) {
+      return;
+    }
+    if (_token.trim().isEmpty) {
+      _showMessage('请先登录后再保存');
+      return;
+    }
+    _syncCurrentRemarkToState();
+    setState(() {
+      _saving = true;
+      _autoSaveText = '保存中...';
+    });
+    try {
+      final AutismDevDraftDetail detail =
+          await widget.client.saveDraft(_token, _draftPayload());
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _draftId = detail.id;
+        _itemScores
+          ..clear()
+          ..addAll(detail.input.itemScores);
+        _itemRemarks
+          ..clear()
+          ..addAll(detail.input.itemRemarks);
+        _saving = false;
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
+      });
+      _syncRemarkController();
+      _showMessage('草稿已保存', tone: PadMessageTone.success);
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _autoSaveText = '保存失败';
+      });
+      _showMessage(error.message);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _autoSaveText = '保存失败';
+      });
+      _showMessage('保存失败：$error');
+    }
+  }
+
   Future<void> _submitDraft() async {
     if (_submitting) {
       return;
     }
+    _syncCurrentRemarkToState();
     if (_totalCount > 0 && _answeredCount < _totalCount) {
       _showMessage('还有 ${_totalCount - _answeredCount} 道题未评分，完成后再提交');
       return;
@@ -407,7 +448,6 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         final AutismDevDraftDetail detail =
             await widget.client.saveDraft(_token, _draftPayload());
         _draftId = detail.id;
-        _draftProgress = detail.progress;
       }
       await widget.client.submitDraft(_token, _draftId);
       if (!mounted) {
@@ -477,6 +517,18 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     }
   }
 
+  void _jumpToMissing() {
+    final int itemNo = _firstUnansweredItemNo();
+    if (itemNo <= 0) {
+      _showMessage('当前没有缺题', tone: PadMessageTone.success);
+      return;
+    }
+    final AutismDevItemSummary? item = _summaryByNo(itemNo);
+    if (item != null) {
+      _selectItem(item);
+    }
+  }
+
   List<AutismDevItemSummary> get _allItems {
     return _template.domainGroups
         .expand((AutismDevDomainGroup group) => group.items)
@@ -533,27 +585,24 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   Widget build(BuildContext context) {
     return ColoredBox(
       color: _AutismDevColors.page,
-      child: Row(
+      child: Column(
         children: <Widget>[
-          _AutismDevRail(onBack: widget.onBack),
-          Expanded(
-            child: Column(
-              children: <Widget>[
-                _AutismDevTopBar(
-                  title: widget.args.scaleName.trim().isEmpty
-                      ? '孤独症儿童发展评估'
-                      : widget.args.scaleName.trim(),
-                  subtitle:
-                      '现场测评工作台 / ${_assessmentDate.isEmpty ? '未设置日期' : _assessmentDate}',
-                  studentName:
-                      _studentName.trim().isEmpty ? '未选择儿童' : _studentName,
-                  studentAge: _studentAge.trim().isEmpty ? '年龄未知' : _studentAge,
-                  draftId: _draftId,
-                ),
-                Expanded(child: _buildBody()),
-              ],
-            ),
+          _AutismDevTopBar(
+            title: widget.args.scaleName.trim().isEmpty
+                ? '孤独症儿童发展评估'
+                : widget.args.scaleName.trim(),
+            studentName: _studentName.trim().isEmpty ? '-' : _studentName,
+            studentAge: _studentAge.trim().isEmpty ? '未知' : _studentAge,
+            assessmentDate: _assessmentDate.isEmpty ? '未设置日期' : _assessmentDate,
+            examinerName: _examinerName.trim().isEmpty ? '当前老师' : _examinerName,
+            autoSaveText: _autoSaveText,
+            saving: _saving,
+            submitting: _submitting,
+            onBack: widget.onBack,
+            onSave: _saveDraft,
+            onSubmit: _submitDraft,
           ),
+          Expanded(child: _buildBody()),
         ],
       ),
     );
@@ -581,144 +630,63 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         onAction: widget.onBack,
       );
     }
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
-      child: Row(
-        children: <Widget>[
-          SizedBox(
-            width: 298,
-            child: _AutismDevDomainPanel(
-              groups: _template.domainGroups,
-              selectedDomainCode: _selectedDomainCode,
-              itemScores: _itemScores,
-              onSelectDomain: _selectDomain,
-              answeredCount: _answeredCount,
-              totalCount: _totalCount,
-              progressPercent: _progressPercent,
+    return Column(
+      children: <Widget>[
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(10, 10, 10, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(
+                  width: 226,
+                  child: _AutismDevDomainPanel(
+                    groups: _template.domainGroups,
+                    selectedDomainCode: _selectedDomainCode,
+                    selectedItemNo: _selectedItemNo,
+                    itemScores: _itemScores,
+                    onSelectItem: _selectItem,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: _AutismDevWorkspacePanel(
+                    group: group,
+                    item: summary,
+                    detail: _selectedDetail,
+                    selectedScore: _itemScores[_selectedItemNo],
+                    scoreOptions: _currentScoreOptions,
+                    onScore: (String score) =>
+                        _selectScore(score, moveNext: _autoNext),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 238,
+                  child: _AutismDevRightRail(
+                    item: summary,
+                    remarkController: _remarkController,
+                    answeredCount: _answeredCount,
+                    totalCount: _totalCount,
+                    missingCount: _missingCount,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: _AutismDevWorkspacePanel(
-              group: group,
-              item: summary,
-              detail: _selectedDetail,
-              selectedScore: _itemScores[_selectedItemNo],
-              itemScores: _itemScores,
-              onSelectItem: _selectItem,
-              onPrevious: _goPreviousItem,
-              onNext: _goNextItem,
-            ),
-          ),
-          const SizedBox(width: 10),
-          SizedBox(
-            width: 296,
-            child: _AutismDevScorePanel(
-              item: summary,
-              options: _currentScoreOptions,
-              selectedScore: _itemScores[_selectedItemNo],
-              remarkController: _remarkController,
-              saving: _saving,
-              submitting: _submitting,
-              autoSaveText: _autoSaveText,
-              progress: _draftProgress,
-              answeredCount: _answeredCount,
-              totalCount: _totalCount,
-              onScore: (String score) => _selectScore(score),
-              onSave: () => _saveCurrentItem(moveNext: false),
-              onSaveNext: () => _saveCurrentItem(moveNext: true),
-              onSubmit: _submitDraft,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutismDevRail extends StatelessWidget {
-  const _AutismDevRail({required this.onBack});
-
-  final VoidCallback onBack;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 84,
-      decoration: const BoxDecoration(
-        color: _AutismDevColors.rail,
-        border: Border(
-          right: BorderSide(color: _AutismDevColors.line),
         ),
-      ),
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 24),
-          Material(
-            color: _AutismDevColors.railActive,
-            borderRadius: BorderRadius.circular(8),
-            child: InkWell(
-              borderRadius: BorderRadius.circular(8),
-              onTap: onBack,
-              child: const SizedBox(
-                width: 44,
-                height: 44,
-                child: Icon(Icons.arrow_back, color: Colors.white, size: 22),
-              ),
-            ),
-          ),
-          const SizedBox(height: 52),
-          const _RailItem(
-            icon: Icons.fact_check_outlined,
-            label: '任务',
-            active: true,
-          ),
-          const _RailItem(icon: Icons.history, label: '记录'),
-          const _RailItem(icon: Icons.analytics_outlined, label: '报告'),
-          const _RailItem(icon: Icons.folder_shared_outlined, label: '档案'),
-        ],
-      ),
-    );
-  }
-}
-
-class _RailItem extends StatelessWidget {
-  const _RailItem({
-    required this.icon,
-    required this.label,
-    this.active = false,
-  });
-
-  final IconData icon;
-  final String label;
-  final bool active;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color contentColor =
-        active ? _AutismDevColors.orangeDeep : _AutismDevColors.body;
-    return Container(
-      width: 58,
-      margin: const EdgeInsets.only(bottom: 22),
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      decoration: BoxDecoration(
-        color: active ? _AutismDevColors.railItem : Colors.transparent,
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: <Widget>[
-          Icon(icon, size: 23, color: contentColor),
-          const SizedBox(height: 7),
-          Text(
-            label,
-            style: TextStyle(
-              color: contentColor,
-              fontSize: 13,
-              fontWeight: active ? FontWeight.w900 : FontWeight.w700,
-            ),
-          ),
-        ],
-      ),
+        _AutismDevFooter(
+          current: _currentIndex + 1,
+          total: _totalCount,
+          hasPrevious: _hasPreviousItem,
+          hasNext: _hasNextItem,
+          autoNext: _autoNext,
+          onPrevious: _goPreviousItem,
+          onNext: _goNextItem,
+          onJumpMissing: _jumpToMissing,
+          onToggleAutoNext: (bool value) => setState(() => _autoNext = value),
+        ),
+      ],
     );
   }
 }
@@ -726,191 +694,440 @@ class _RailItem extends StatelessWidget {
 class _AutismDevTopBar extends StatelessWidget {
   const _AutismDevTopBar({
     required this.title,
-    required this.subtitle,
     required this.studentName,
     required this.studentAge,
-    required this.draftId,
+    required this.assessmentDate,
+    required this.examinerName,
+    required this.autoSaveText,
+    required this.saving,
+    required this.submitting,
+    required this.onBack,
+    required this.onSave,
+    required this.onSubmit,
   });
 
   final String title;
-  final String subtitle;
   final String studentName;
   final String studentAge;
-  final int draftId;
+  final String assessmentDate;
+  final String examinerName;
+  final String autoSaveText;
+  final bool saving;
+  final bool submitting;
+  final VoidCallback onBack;
+  final VoidCallback onSave;
+  final VoidCallback onSubmit;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 74,
-      padding: const EdgeInsets.symmetric(horizontal: 28),
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.96),
         border: Border.all(color: _AutismDevColors.line),
-        borderRadius: const BorderRadius.vertical(
-          bottom: Radius.circular(12),
-        ),
-        boxShadow: const <BoxShadow>[
-          BoxShadow(
-            color: Color(0x16B05F32),
-            blurRadius: 16,
-            offset: Offset(0, 9),
-          ),
-        ],
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+        boxShadow: _autismDevShadow(color: const Color(0x16B05F32), blur: 16),
       ),
-      child: Row(
-        children: <Widget>[
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  title,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool compact = constraints.maxWidth < 1120;
+          return Row(
+            children: <Widget>[
+              _HeaderIconButton(
+                icon: Icons.chevron_left_rounded,
+                onTap: onBack,
+              ),
+              const SizedBox(width: 10),
+              SizedBox(
+                width: compact ? 246 : 308,
+                child: Text(
+                  '$title 测评工作台',
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _AutismDevColors.ink,
-                    fontSize: 25,
+                    fontSize: 23,
                     height: 1,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
-                const SizedBox(height: 8),
-                Text(
-                  subtitle,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _AutismDevColors.muted,
-                    fontSize: 14,
-                    height: 1,
-                    fontWeight: FontWeight.w600,
-                  ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Row(
+                  children: <Widget>[
+                    Expanded(
+                      child: _HeaderMeta(label: '儿童', value: studentName),
+                    ),
+                    Expanded(
+                      child: _HeaderMeta(label: '年龄', value: studentAge),
+                    ),
+                    Expanded(
+                      flex: 2,
+                      child: _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    ),
+                    Expanded(
+                      child: _HeaderMeta(label: '施测者', value: examinerName),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-          Container(
-            width: 306,
-            height: 44,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(
-              color: _AutismDevColors.softPanel,
-              border: Border.all(color: _AutismDevColors.line),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              children: <Widget>[
-                Expanded(
+              ),
+              if (autoSaveText.trim().isNotEmpty)
+                SizedBox(
+                  width: compact ? 82 : 112,
                   child: Text(
-                    '$studentName  $studentAge',
+                    autoSaveText,
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.right,
                     style: const TextStyle(
-                      color: _AutismDevColors.ink,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
+                      color: _AutismDevColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ),
-                Text(
-                  draftId > 0 ? '草稿 #$draftId' : '新测评',
-                  style: const TextStyle(
-                    color: _AutismDevColors.body,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+              const SizedBox(width: 10),
+              _TopActionButton(
+                label: '保存草稿',
+                icon: Icons.save_outlined,
+                loading: saving,
+                filled: false,
+                onTap: onSave,
+              ),
+              const SizedBox(width: 9),
+              _TopActionButton(
+                label: '提交记录',
+                icon: Icons.fact_check_outlined,
+                loading: submitting,
+                filled: true,
+                onTap: onSubmit,
+              ),
+            ],
+          );
+        },
       ),
     );
   }
 }
 
-class _AutismDevDomainPanel extends StatelessWidget {
+class _HeaderMeta extends StatelessWidget {
+  const _HeaderMeta({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(left: 10),
+      padding: const EdgeInsets.only(left: 10),
+      decoration: const BoxDecoration(
+        border: Border(left: BorderSide(color: _AutismDevColors.line)),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.centerLeft,
+        child: Text.rich(
+          TextSpan(
+            children: <InlineSpan>[
+              TextSpan(text: '$label：'),
+              TextSpan(
+                text: value,
+                style: const TextStyle(fontWeight: FontWeight.w900),
+              ),
+            ],
+          ),
+          maxLines: 1,
+          style: const TextStyle(
+            color: _AutismDevColors.body,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w700,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _HeaderIconButton extends StatelessWidget {
+  const _HeaderIconButton({required this.icon, required this.onTap});
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        child: Ink(
+          width: 46,
+          height: 46,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: _AutismDevColors.line),
+          ),
+          child: Icon(
+            icon,
+            color: _AutismDevColors.body,
+            size: 34,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _TopActionButton extends StatelessWidget {
+  const _TopActionButton({
+    required this.label,
+    required this.icon,
+    required this.loading,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool loading;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: loading ? null : onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            color: filled ? _AutismDevColors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _AutismDevColors.orange),
+            boxShadow: filled
+                ? _autismDevShadow(
+                    color: const Color(0x28E96F43),
+                    blur: 12,
+                    offset: const Offset(0, 5),
+                  )
+                : null,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (loading)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: filled ? Colors.white : _AutismDevColors.orange,
+                  ),
+                )
+              else
+                Icon(
+                  icon,
+                  size: 17,
+                  color: filled ? Colors.white : _AutismDevColors.orange,
+                ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: TextStyle(
+                  color: filled ? Colors.white : _AutismDevColors.orangeDeep,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDomainPanel extends StatefulWidget {
   const _AutismDevDomainPanel({
     required this.groups,
     required this.selectedDomainCode,
+    required this.selectedItemNo,
     required this.itemScores,
-    required this.onSelectDomain,
-    required this.answeredCount,
-    required this.totalCount,
-    required this.progressPercent,
+    required this.onSelectItem,
   });
 
   final List<AutismDevDomainGroup> groups;
   final String selectedDomainCode;
+  final int selectedItemNo;
   final Map<int, String> itemScores;
-  final ValueChanged<String> onSelectDomain;
-  final int answeredCount;
-  final int totalCount;
-  final double progressPercent;
+  final ValueChanged<AutismDevItemSummary> onSelectItem;
+
+  @override
+  State<_AutismDevDomainPanel> createState() => _AutismDevDomainPanelState();
+}
+
+class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
+  static const double _domainHeaderExtent = 68;
+  static const double _questionItemExtent = 34;
+
+  final ScrollController _scrollController = ScrollController();
+  final Set<String> _expandedDomainCodes = <String>{};
+
+  @override
+  void initState() {
+    super.initState();
+    _expandSelectedDomain();
+    _scheduleSelectedItemScroll();
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutismDevDomainPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _expandedDomainCodes.retainWhere(_hasDomainCode);
+    final bool selectionChanged =
+        oldWidget.selectedItemNo != widget.selectedItemNo ||
+            oldWidget.selectedDomainCode != widget.selectedDomainCode;
+    if (selectionChanged) {
+      final bool needsExpansion =
+          !_expandedDomainCodes.contains(widget.selectedDomainCode);
+      _expandSelectedDomain();
+      _scheduleSelectedItemScroll(waitForExpansion: needsExpansion);
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  bool _hasDomainCode(String domainCode) {
+    return widget.groups.any(
+      (AutismDevDomainGroup group) => group.domainCode == domainCode,
+    );
+  }
+
+  void _expandSelectedDomain() {
+    if (widget.selectedDomainCode.trim().isNotEmpty) {
+      _expandedDomainCodes.add(widget.selectedDomainCode);
+    }
+  }
+
+  void _toggleDomain(AutismDevDomainGroup group) {
+    final String domainCode = group.domainCode;
+    final bool expanded = _expandedDomainCodes.contains(domainCode);
+    setState(() {
+      if (expanded) {
+        _expandedDomainCodes.remove(domainCode);
+      } else {
+        _expandedDomainCodes.add(domainCode);
+      }
+    });
+  }
+
+  void _scheduleSelectedItemScroll({bool waitForExpansion = false}) {
+    if (waitForExpansion) {
+      Future<void>.delayed(const Duration(milliseconds: 260), () {
+        _scrollSelectedItemIntoView();
+      });
+      return;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      _scrollSelectedItemIntoView();
+    });
+  }
+
+  void _scrollSelectedItemIntoView() {
+    if (!mounted || widget.selectedItemNo <= 0) {
+      return;
+    }
+    _scrollSelectedItemByOffset();
+  }
+
+  bool _scrollSelectedItemByOffset() {
+    if (!_scrollController.hasClients) {
+      return false;
+    }
+    double offset = 0;
+    for (final AutismDevDomainGroup group in widget.groups) {
+      final bool expanded = _expandedDomainCodes.contains(group.domainCode);
+      final int itemIndex = group.items.indexWhere(
+        (AutismDevItemSummary item) => item.itemNo == widget.selectedItemNo,
+      );
+      if (itemIndex >= 0) {
+        final double itemTop =
+            offset + _domainHeaderExtent + itemIndex * _questionItemExtent;
+        final double itemBottom = itemTop + _questionItemExtent;
+        final double viewTop = _scrollController.offset;
+        final double viewBottom =
+            viewTop + _scrollController.position.viewportDimension;
+        if (itemTop >= viewTop + 10 && itemBottom <= viewBottom - 10) {
+          return true;
+        }
+        final double target = itemTop - 42;
+        final double nextOffset =
+            target.clamp(0.0, _scrollController.position.maxScrollExtent);
+        final double distance = (nextOffset - _scrollController.offset).abs();
+        if (distance > _scrollController.position.viewportDimension * 1.2) {
+          _scrollController.jumpTo(nextOffset);
+        } else {
+          _scrollController.animateTo(
+            nextOffset,
+            duration: const Duration(milliseconds: 160),
+            curve: Curves.easeOutCubic,
+          );
+        }
+        return true;
+      }
+      offset += _domainHeaderExtent;
+      if (expanded) {
+        offset += 7 + group.items.length * _questionItemExtent;
+      }
+    }
+    return false;
+  }
+
+  Widget _buildDomainTile(AutismDevDomainGroup group) {
+    final int done = group.items
+        .where((AutismDevItemSummary item) =>
+            widget.itemScores.containsKey(item.itemNo))
+        .length;
+    return _AutismDevDomainTile(
+      group: group,
+      done: done,
+      expanded: _expandedDomainCodes.contains(group.domainCode),
+      selected: group.domainCode == widget.selectedDomainCode,
+      itemScores: widget.itemScores,
+      selectedItemNo: widget.selectedItemNo,
+      onTap: () => _toggleDomain(group),
+      onTapItem: widget.onSelectItem,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: _panelDecoration(),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                const Text(
-                  '领域任务',
-                  style: TextStyle(
-                    color: _AutismDevColors.ink,
-                    fontSize: 22,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 14),
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(5),
-                  child: LinearProgressIndicator(
-                    value: progressPercent,
-                    minHeight: 10,
-                    backgroundColor: const Color(0xFFE7EBF3),
-                    color: _AutismDevColors.blue,
-                  ),
-                ),
-                const SizedBox(height: 10),
-                Text(
-                  '已完成 $answeredCount/$totalCount',
-                  style: const TextStyle(
-                    color: _AutismDevColors.body,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const Divider(height: 1, color: _AutismDevColors.line),
+          const _AutismDevSidebarHeader(),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.all(14),
-              itemBuilder: (BuildContext context, int index) {
-                final AutismDevDomainGroup group = groups[index];
-                final int done = group.items
-                    .where((AutismDevItemSummary item) =>
-                        itemScores.containsKey(item.itemNo))
-                    .length;
-                return _AutismDevDomainTile(
-                  group: group,
-                  done: done,
-                  selected: group.domainCode == selectedDomainCode,
-                  onTap: () => onSelectDomain(group.domainCode),
-                );
-              },
-              separatorBuilder: (_, __) => const SizedBox(height: 10),
-              itemCount: groups.length,
+            child: ListView(
+              controller: _scrollController,
+              padding: EdgeInsets.zero,
+              children: <Widget>[
+                for (final AutismDevDomainGroup group in widget.groups)
+                  _buildDomainTile(group),
+              ],
             ),
           ),
         ],
@@ -923,14 +1140,22 @@ class _AutismDevDomainTile extends StatelessWidget {
   const _AutismDevDomainTile({
     required this.group,
     required this.done,
+    required this.expanded,
     required this.selected,
+    required this.itemScores,
+    required this.selectedItemNo,
     required this.onTap,
+    required this.onTapItem,
   });
 
   final AutismDevDomainGroup group;
   final int done;
+  final bool expanded;
   final bool selected;
+  final Map<int, String> itemScores;
+  final int selectedItemNo;
   final VoidCallback onTap;
+  final ValueChanged<AutismDevItemSummary> onTapItem;
 
   @override
   Widget build(BuildContext context) {
@@ -938,33 +1163,39 @@ class _AutismDevDomainTile extends StatelessWidget {
     final double progress = group.itemCount <= 0
         ? 0
         : (done / group.itemCount).clamp(0, 1).toDouble();
-    return Material(
-      color: selected ? color.withOpacity(.08) : Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? color.withOpacity(.7) : _AutismDevColors.line,
-              width: selected ? 1.5 : 1,
-            ),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFFFFBF8) : Colors.transparent,
+        border: const Border(
+          bottom: BorderSide(color: _AutismDevColors.lineSoft),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
+            child: SizedBox(
+              height: 28,
+              child: Row(
                 children: <Widget>[
-                  Container(
-                    width: 10,
-                    height: 10,
-                    decoration: BoxDecoration(
-                      color: color,
-                      borderRadius: BorderRadius.circular(5),
+                  AnimatedRotation(
+                    turns: expanded ? .25 : 0,
+                    duration: const Duration(milliseconds: 220),
+                    curve: Curves.easeInOutCubic,
+                    child: const Icon(
+                      Icons.chevron_right_rounded,
+                      size: 20,
+                      color: _AutismDevColors.ink,
                     ),
+                  ),
+                  const SizedBox(width: 4),
+                  Container(
+                    width: 9,
+                    height: 9,
+                    decoration:
+                        BoxDecoration(color: color, shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
@@ -973,46 +1204,274 @@ class _AutismDevDomainTile extends StatelessWidget {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        color: selected ? color : _AutismDevColors.ink,
-                        fontSize: 16,
-                        fontWeight: FontWeight.w900,
+                        color: selected
+                            ? _AutismDevColors.orangeDeep
+                            : _AutismDevColors.ink,
+                        fontSize: 13,
+                        height: 1,
+                        fontWeight:
+                            selected ? FontWeight.w900 : FontWeight.w800,
                       ),
                     ),
                   ),
                   Text(
                     '$done/${group.itemCount}',
                     style: const TextStyle(
-                      color: _AutismDevColors.body,
-                      fontSize: 13,
+                      color: _AutismDevColors.muted,
+                      fontSize: 12,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
-              const SizedBox(height: 10),
-              ClipRRect(
-                borderRadius: BorderRadius.circular(4),
-                child: LinearProgressIndicator(
-                  value: progress,
-                  minHeight: 7,
-                  color: color,
-                  backgroundColor: const Color(0xFFE9EDF5),
+            ),
+          ),
+          const SizedBox(height: 7),
+          Row(
+            children: <Widget>[
+              const SizedBox(width: 28),
+              Expanded(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(99),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 5,
+                    color: _AutismDevColors.orange,
+                    backgroundColor: const Color(0xFFF2E6DC),
+                  ),
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                group.scoreType.toUpperCase() == 'AMS'
-                    ? 'A/M/S 临床判断评分'
-                    : 'P/E/F/X 发展项目评分',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _AutismDevColors.muted,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
+              const SizedBox(width: 9),
+              SizedBox(
+                width: 34,
+                child: Text(
+                  '${(progress * 100).round()}%',
+                  textAlign: TextAlign.right,
+                  style: const TextStyle(
+                    color: _AutismDevColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
                 ),
               ),
             ],
+          ),
+          _AutismDevQuestionDrawer(
+            expanded: expanded,
+            group: group,
+            itemScores: itemScores,
+            selectedItemNo: selectedItemNo,
+            onTapItem: onTapItem,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevQuestionDrawer extends StatefulWidget {
+  const _AutismDevQuestionDrawer({
+    required this.expanded,
+    required this.group,
+    required this.itemScores,
+    required this.selectedItemNo,
+    required this.onTapItem,
+  });
+
+  final bool expanded;
+  final AutismDevDomainGroup group;
+  final Map<int, String> itemScores;
+  final int selectedItemNo;
+  final ValueChanged<AutismDevItemSummary> onTapItem;
+
+  @override
+  State<_AutismDevQuestionDrawer> createState() =>
+      _AutismDevQuestionDrawerState();
+}
+
+class _AutismDevQuestionDrawerState extends State<_AutismDevQuestionDrawer> {
+  late bool _renderItems;
+
+  @override
+  void initState() {
+    super.initState();
+    _renderItems = widget.expanded;
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutismDevQuestionDrawer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.expanded && !_renderItems) {
+      _renderItems = true;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget list = _renderItems
+        ? Column(
+            children: <Widget>[
+              const SizedBox(height: 7),
+              for (final AutismDevItemSummary item in widget.group.items)
+                _AutismDevQuestionNavItem(
+                  key: ValueKey<int>(item.itemNo),
+                  item: item,
+                  active: item.itemNo == widget.selectedItemNo,
+                  done: widget.itemScores.containsKey(item.itemNo),
+                  onTap: () => widget.onTapItem(item),
+                ),
+            ],
+          )
+        : const SizedBox.shrink();
+    return TweenAnimationBuilder<double>(
+      tween: Tween<double>(end: widget.expanded ? 1 : 0),
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeInOutCubic,
+      child: list,
+      onEnd: () {
+        if (!widget.expanded && _renderItems && mounted) {
+          setState(() => _renderItems = false);
+        }
+      },
+      builder: (BuildContext context, double factor, Widget? child) {
+        return ClipRect(
+          child: Align(
+            alignment: Alignment.topCenter,
+            heightFactor: factor,
+            child: IgnorePointer(
+              ignoring: !widget.expanded,
+              child: child,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _AutismDevSidebarHeader extends StatelessWidget {
+  const _AutismDevSidebarHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 48,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: const BoxDecoration(
+        border: Border(bottom: BorderSide(color: _AutismDevColors.lineSoft)),
+      ),
+      child: const Row(
+        children: <Widget>[
+          Text(
+            '领域任务',
+            style: TextStyle(
+              color: _AutismDevColors.ink,
+              fontSize: 16,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Spacer(),
+          Icon(Icons.tune_rounded, size: 18, color: _AutismDevColors.muted),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevQuestionNavItem extends StatelessWidget {
+  const _AutismDevQuestionNavItem({
+    required this.item,
+    required this.active,
+    required this.done,
+    required this.onTap,
+    super.key,
+  });
+
+  final AutismDevItemSummary item;
+  final bool active;
+  final bool done;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 18, top: 3),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(10),
+          child: Ink(
+            height: 31,
+            padding: const EdgeInsets.symmetric(horizontal: 9),
+            decoration: BoxDecoration(
+              color: active ? const Color(0xFFFFEEE5) : Colors.transparent,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: <Widget>[
+                SizedBox(
+                  width: 42,
+                  child: Text(
+                    '第 ${item.itemNo}',
+                    maxLines: 1,
+                    style: TextStyle(
+                      color: active
+                          ? _AutismDevColors.orangeDeep
+                          : _AutismDevColors.body,
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Text(
+                    _displayItemTitle(item),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: active
+                          ? _AutismDevColors.orangeDeep
+                          : _AutismDevColors.body,
+                      fontSize: 12,
+                      fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 7),
+                if (done)
+                  const Icon(
+                    Icons.check_circle_rounded,
+                    size: 17,
+                    color: _AutismDevColors.green,
+                  )
+                else
+                  Container(
+                    width: 15,
+                    height: 15,
+                    decoration: BoxDecoration(
+                      color: active ? _AutismDevColors.orange : Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: active
+                            ? _AutismDevColors.orange
+                            : const Color(0xFFCAB8AA),
+                      ),
+                    ),
+                    child: active
+                        ? const Center(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                shape: BoxShape.circle,
+                              ),
+                              child: SizedBox(width: 5, height: 5),
+                            ),
+                          )
+                        : null,
+                  ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1026,243 +1485,132 @@ class _AutismDevWorkspacePanel extends StatelessWidget {
     required this.item,
     required this.detail,
     required this.selectedScore,
-    required this.itemScores,
-    required this.onSelectItem,
-    required this.onPrevious,
-    required this.onNext,
+    required this.scoreOptions,
+    required this.onScore,
   });
 
   final AutismDevDomainGroup group;
   final AutismDevItemSummary item;
   final AutismDevAssessmentItem? detail;
   final String? selectedScore;
-  final Map<int, String> itemScores;
-  final ValueChanged<AutismDevItemSummary> onSelectItem;
-  final VoidCallback onPrevious;
-  final VoidCallback onNext;
+  final List<AutismDevScoreOption> scoreOptions;
+  final ValueChanged<String> onScore;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: _panelDecoration(),
-      child: Column(
-        children: <Widget>[
-          Expanded(
-            child: SingleChildScrollView(
-              padding: const EdgeInsets.fromLTRB(28, 24, 28, 20),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: 38,
+              child: Row(
                 children: <Widget>[
-                  Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          '#${item.itemNo} ${_displayItemTitle(item)}',
-                          style: const TextStyle(
-                            color: _AutismDevColors.ink,
-                            fontSize: 28,
-                            height: 1.15,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
+                  Expanded(
+                    child: Text(
+                      '第 ${item.itemNo} 项  ${_displayItemTitle(item)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _AutismDevColors.ink,
+                        fontSize: 23,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
                       ),
-                      if (selectedScore != null)
-                        _ScoreBadge(score: selectedScore!),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 8,
-                    children: <Widget>[
-                      _Chip(
-                          label: group.domainName,
-                          color: _domainColor(group.domainCode)),
-                      _Chip(
-                        label: item.scoreType.toUpperCase() == 'AMS'
-                            ? '情绪行为'
-                            : '发展项目',
-                        color: item.scoreType.toUpperCase() == 'AMS'
-                            ? _AutismDevColors.red
-                            : _AutismDevColors.blue,
-                      ),
-                      if (item.ageSegment.trim().isNotEmpty)
-                        _Chip(
-                            label: item.ageSegment,
-                            color: _AutismDevColors.body),
-                    ],
-                  ),
-                  const SizedBox(height: 30),
-                  _SectionBlock(
-                    title:
-                        item.scoreType.toUpperCase() == 'AMS' ? '观察问题' : '评估项目',
-                    body: _detailText(detail?.testItem, item.testItem),
-                    boxed: true,
-                  ),
-                  const SizedBox(height: 24),
-                  _SectionBlock(
-                    title: '评估方法',
-                    body: _detailText(
-                      detail?.method,
-                      item.scoreType.toUpperCase() == 'AMS'
-                          ? '结合现场观察、访谈和活动中的自然反应进行临床判断。'
-                          : '按题目要求进行结构化或自然情境观察，并记录儿童的独立完成程度。',
                     ),
                   ),
-                  const SizedBox(height: 24),
-                  _SectionBlock(
-                    title: '评分标准',
-                    body: _detailText(
-                      detail?.passCriteria,
-                      item.scoreType.toUpperCase() == 'AMS'
-                          ? 'A=没有异常；M=轻度异常；S=重度异常。'
-                          : 'P=通过，记1分；E=中间反应，不计分，可作为训练目标；F=不通过，记0分；X=不适用，不计分。',
-                    ),
+                  const SizedBox(width: 10),
+                  SizedBox(
+                    width: 46,
+                    height: 38,
+                    child: selectedScore == null
+                        ? const SizedBox.shrink()
+                        : _ScoreBadge(score: selectedScore!),
+                  ),
+                  const SizedBox(width: 8),
+                  _DomainChip(
+                    code: group.domainCode,
+                    name: group.domainName,
                   ),
                 ],
               ),
             ),
-          ),
-          Container(
-            height: 154,
-            padding: const EdgeInsets.fromLTRB(20, 14, 20, 16),
-            decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: _AutismDevColors.line)),
+            const SizedBox(height: 16),
+            Expanded(
+              child: ListView(
+                padding: EdgeInsets.zero,
+                physics: const BouncingScrollPhysics(),
+                children: <Widget>[
+                  _AutismDevItemDetailCard(item: item, detail: detail),
+                ],
+              ),
             ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '${group.domainName}项目',
-                        style: const TextStyle(
-                          color: _AutismDevColors.ink,
-                          fontSize: 15,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    IconButton(
-                      tooltip: '上一题',
-                      onPressed: onPrevious,
-                      icon: const Icon(Icons.chevron_left),
-                      color: _AutismDevColors.body,
-                    ),
-                    IconButton(
-                      tooltip: '下一题',
-                      onPressed: onNext,
-                      icon: const Icon(Icons.chevron_right),
-                      color: _AutismDevColors.body,
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemBuilder: (BuildContext context, int index) {
-                      final AutismDevItemSummary row = group.items[index];
-                      return _BottomItemCard(
-                        item: row,
-                        selected: row.itemNo == item.itemNo,
-                        score: itemScores[row.itemNo],
-                        onTap: () => onSelectItem(row),
-                      );
-                    },
-                    separatorBuilder: (_, __) => const SizedBox(width: 10),
-                    itemCount: group.items.length,
-                  ),
-                ),
-              ],
+            const SizedBox(height: 10),
+            _AutismDevScoreDock(
+              scoreOptions: scoreOptions,
+              selectedScore: selectedScore,
+              onScore: onScore,
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 }
 
-class _AutismDevScorePanel extends StatelessWidget {
-  const _AutismDevScorePanel({
+class _AutismDevRightRail extends StatelessWidget {
+  const _AutismDevRightRail({
     required this.item,
-    required this.options,
-    required this.selectedScore,
     required this.remarkController,
-    required this.saving,
-    required this.submitting,
-    required this.autoSaveText,
-    required this.progress,
     required this.answeredCount,
     required this.totalCount,
-    required this.onScore,
-    required this.onSave,
-    required this.onSaveNext,
-    required this.onSubmit,
+    required this.missingCount,
   });
 
   final AutismDevItemSummary item;
-  final List<AutismDevScoreOption> options;
-  final String? selectedScore;
   final TextEditingController remarkController;
-  final bool saving;
-  final bool submitting;
-  final String autoSaveText;
-  final AutismDevDraftProgress progress;
   final int answeredCount;
   final int totalCount;
-  final ValueChanged<String> onScore;
-  final VoidCallback onSave;
-  final VoidCallback onSaveNext;
-  final VoidCallback onSubmit;
+  final int missingCount;
 
   @override
   Widget build(BuildContext context) {
-    final int missing = math.max(totalCount - answeredCount, 0);
     return Container(
       decoration: _panelDecoration(),
-      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        physics: const BouncingScrollPhysics(),
         children: <Widget>[
-          const Text(
-            '本项评分',
-            style: TextStyle(
-              color: _AutismDevColors.ink,
-              fontSize: 22,
-              height: 1,
-              fontWeight: FontWeight.w900,
-            ),
+          _ProgressSummary(
+            answeredCount: answeredCount,
+            totalCount: totalCount,
+            missing: missingCount,
           ),
-          const SizedBox(height: 18),
-          for (final AutismDevScoreOption option in options)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _ScoreOptionButton(
-                option: option,
-                selected: selectedScore == option.value,
-                onTap: () => onScore(option.value),
-              ),
-            ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 16),
           const Text(
-            '观察记录',
+            '备注',
             style: TextStyle(
               color: _AutismDevColors.ink,
-              fontSize: 17,
+              fontSize: 16,
               fontWeight: FontWeight.w900,
             ),
           ),
           const SizedBox(height: 10),
           SizedBox(
-            height: 112,
+            height: 66,
             child: TextField(
               controller: remarkController,
-              maxLines: null,
-              expands: true,
+              minLines: 2,
+              maxLines: 2,
+              onTapOutside: (_) {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
+              onEditingComplete: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+              },
               textAlignVertical: TextAlignVertical.top,
               style: const TextStyle(
                 color: _AutismDevColors.body,
@@ -1272,98 +1620,85 @@ class _AutismDevScorePanel extends StatelessWidget {
               ),
               decoration: InputDecoration(
                 hintText: item.scoreType.toUpperCase() == 'AMS'
-                    ? '记录触发情境、反应强度和持续时间'
-                    : '记录提示层级、辅助方式或训练目标候选',
+                    ? '可记录情境、反应强度或持续时间'
+                    : '可记录提示层级、辅助方式或备注',
                 hintStyle: const TextStyle(color: _AutismDevColors.muted),
                 filled: true,
                 fillColor: _AutismDevColors.softPanel,
-                contentPadding: const EdgeInsets.all(14),
+                contentPadding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
                 enabledBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
                   borderSide: const BorderSide(color: _AutismDevColors.line),
                 ),
                 focusedBorder: OutlineInputBorder(
                   borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: _AutismDevColors.blue),
+                  borderSide: const BorderSide(color: _AutismDevColors.orange),
                 ),
               ),
             ),
-          ),
-          const SizedBox(height: 18),
-          _ProgressSummary(
-            answeredCount: answeredCount,
-            totalCount: totalCount,
-            missing: missing,
-            backendPercent: progress.completionPercent,
-          ),
-          const Spacer(),
-          Text(
-            autoSaveText,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              color: _AutismDevColors.muted,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            width: double.infinity,
-            height: 48,
-            child: FilledButton.icon(
-              onPressed: saving ? null : onSaveNext,
-              icon: saving
-                  ? const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.save_outlined, size: 19),
-              label: Text(saving ? '保存中' : '保存并下一题'),
-              style: FilledButton.styleFrom(
-                backgroundColor: _AutismDevColors.ink,
-                foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8),
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: saving ? null : onSave,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _AutismDevColors.body,
-                    side: const BorderSide(color: _AutismDevColors.line),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: const Text('保存'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: submitting ? null : onSubmit,
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: _AutismDevColors.blue,
-                    side: const BorderSide(color: _AutismDevColors.blue),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                  ),
-                  child: Text(submitting ? '提交中' : '提交'),
-                ),
-              ),
-            ],
           ),
         ],
       ),
+    );
+  }
+}
+
+class _AutismDevScoreDock extends StatelessWidget {
+  const _AutismDevScoreDock({
+    required this.scoreOptions,
+    required this.selectedScore,
+    required this.onScore,
+  });
+
+  final List<AutismDevScoreOption> scoreOptions;
+  final String? selectedScore;
+  final ValueChanged<String> onScore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const Row(
+          children: <Widget>[
+            Text(
+              '评分',
+              style: TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Spacer(),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            const double spacing = 12;
+            final bool singleColumn = constraints.maxWidth < 460;
+            final double cardWidth = scoreOptions.length == 1 || singleColumn
+                ? constraints.maxWidth
+                : (constraints.maxWidth - spacing) / 2;
+            return Wrap(
+              spacing: spacing,
+              runSpacing: 8,
+              children: <Widget>[
+                for (final AutismDevScoreOption option in scoreOptions)
+                  SizedBox(
+                    width: cardWidth,
+                    child: _ScoreOptionButton(
+                      option: option,
+                      selected: selectedScore == option.value,
+                      onTap: () => onScore(option.value),
+                    ),
+                  ),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -1383,30 +1718,44 @@ class _ScoreOptionButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color color = _scoreColor(option.value);
     return Material(
-      color: selected ? color : Colors.white,
-      borderRadius: BorderRadius.circular(8),
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        borderRadius: BorderRadius.circular(8),
+        borderRadius: BorderRadius.circular(10),
         onTap: onTap,
-        child: Container(
-          height: 64,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Ink(
+          height: 78,
+          padding: const EdgeInsets.fromLTRB(13, 9, 11, 9),
           decoration: BoxDecoration(
-            border: Border.all(color: color, width: selected ? 0 : 1.4),
-            borderRadius: BorderRadius.circular(8),
+            color: selected ? color.withOpacity(.08) : Colors.white,
+            border: Border.all(
+              color: selected ? color : _AutismDevColors.line,
+              width: selected ? 1.5 : 1,
+            ),
+            borderRadius: BorderRadius.circular(10),
           ),
           child: Row(
             children: <Widget>[
-              Text(
-                option.value,
-                style: TextStyle(
-                  color: selected ? Colors.white : color,
-                  fontSize: 26,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
+              Container(
+                width: 36,
+                height: 36,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: color.withOpacity(selected ? .14 : .08),
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: color.withOpacity(.38)),
+                ),
+                child: Text(
+                  option.value,
+                  style: TextStyle(
+                    color: color,
+                    fontSize: 21,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
-              const SizedBox(width: 16),
+              const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
@@ -1414,29 +1763,35 @@ class _ScoreOptionButton extends StatelessWidget {
                   children: <Widget>[
                     Text(
                       _optionTitle(option),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                       style: TextStyle(
-                        color: selected ? Colors.white : _AutismDevColors.ink,
-                        fontSize: 17,
+                        color: _AutismDevColors.ink,
+                        fontSize: 14,
+                        height: 1.12,
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(height: 5),
+                    const SizedBox(height: 4),
                     Text(
                       option.description,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                      maxLines: 2,
                       style: TextStyle(
-                        color: selected
-                            ? Colors.white.withOpacity(.82)
-                            : _AutismDevColors.muted,
-                        fontSize: 12,
+                        color: _AutismDevColors.muted,
+                        fontSize: 10.5,
+                        height: 1.12,
                         fontWeight: FontWeight.w700,
                       ),
                     ),
                   ],
                 ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                selected
+                    ? Icons.check_circle_rounded
+                    : Icons.radio_button_unchecked_rounded,
+                color: selected ? color : const Color(0xFFCAB8AA),
+                size: 20,
               ),
             ],
           ),
@@ -1451,71 +1806,242 @@ class _ProgressSummary extends StatelessWidget {
     required this.answeredCount,
     required this.totalCount,
     required this.missing,
-    required this.backendPercent,
   });
 
   final int answeredCount;
   final int totalCount;
   final int missing;
-  final double backendPercent;
 
   @override
   Widget build(BuildContext context) {
     final double percent = totalCount <= 0 ? 0 : answeredCount / totalCount;
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: _AutismDevColors.softPanel,
-        border: Border.all(color: _AutismDevColors.line),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Column(
-        children: <Widget>[
-          Row(
-            children: <Widget>[
-              const Expanded(
-                child: Text(
-                  '全量进度',
-                  style: TextStyle(
-                    color: _AutismDevColors.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
+    final double normalizedPercent = percent.clamp(0, 1).toDouble();
+    final int percentText = (normalizedPercent * 100).round();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        const Text(
+          '当前进度',
+          style: TextStyle(
+            color: _AutismDevColors.ink,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 14),
+        Row(
+          children: <Widget>[
+            SizedBox(
+              width: 82,
+              height: 82,
+              child: CustomPaint(
+                painter: _AutismDevDonutPainter(percent: percentText),
+                child: Center(
+                  child: Text(
+                    '$percentText%',
+                    style: const TextStyle(
+                      color: _AutismDevColors.ink,
+                      fontSize: 21,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
               ),
-              Text(
-                '${(percent * 100).round()}%',
-                style: const TextStyle(
-                  color: _AutismDevColors.blue,
-                  fontSize: 15,
-                  fontWeight: FontWeight.w900,
-                ),
+            ),
+            const SizedBox(width: 16),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  _ProgressText(
+                    label: '已完成',
+                    value: '$answeredCount / $totalCount 项',
+                  ),
+                  const SizedBox(height: 10),
+                  _ProgressText(
+                    label: '缺题',
+                    value: '$missing 项',
+                    danger: true,
+                  ),
+                ],
               ),
-            ],
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ProgressText extends StatelessWidget {
+  const _ProgressText({
+    required this.label,
+    required this.value,
+    this.danger = false,
+  });
+
+  final String label;
+  final String value;
+  final bool danger;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: _AutismDevColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
           ),
-          const SizedBox(height: 10),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(5),
-            child: LinearProgressIndicator(
-              value: percent.clamp(0, 1).toDouble(),
-              minHeight: 9,
-              color: _AutismDevColors.blue,
-              backgroundColor: const Color(0xFFE1E6EF),
+        ),
+        const SizedBox(height: 5),
+        Text(
+          value,
+          style: TextStyle(
+            color:
+                danger ? const Color(0xFFE04438) : _AutismDevColors.orangeDeep,
+            fontSize: 16,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AutismDevDonutPainter extends CustomPainter {
+  const _AutismDevDonutPainter({required this.percent});
+
+  final int percent;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = Offset(size.width / 2, size.height / 2);
+    final double radius = math.min(size.width, size.height) / 2 - 6;
+    final Paint track = Paint()
+      ..color = const Color(0xFFE9DDD3)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round;
+    final Paint progress = Paint()
+      ..color = _AutismDevColors.orange
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 10
+      ..strokeCap = StrokeCap.round;
+    canvas.drawCircle(center, radius, track);
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: radius),
+      -math.pi / 2,
+      math.pi * 2 * percent.clamp(0, 100) / 100,
+      false,
+      progress,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _AutismDevDonutPainter oldDelegate) {
+    return oldDelegate.percent != percent;
+  }
+}
+
+class _AutismDevFooter extends StatelessWidget {
+  const _AutismDevFooter({
+    required this.current,
+    required this.total,
+    required this.hasPrevious,
+    required this.hasNext,
+    required this.autoNext,
+    required this.onPrevious,
+    required this.onNext,
+    required this.onJumpMissing,
+    required this.onToggleAutoNext,
+  });
+
+  final int current;
+  final int total;
+  final bool hasPrevious;
+  final bool hasNext;
+  final bool autoNext;
+  final VoidCallback onPrevious;
+  final VoidCallback onNext;
+  final VoidCallback onJumpMissing;
+  final ValueChanged<bool> onToggleAutoNext;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.97),
+        border: Border.all(color: _AutismDevColors.line),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        boxShadow: _autismDevShadow(color: const Color(0x14B05F32), blur: 16),
+      ),
+      child: Row(
+        children: <Widget>[
+          _FooterButton(
+            label: '上一题',
+            icon: Icons.chevron_left_rounded,
+            enabled: hasPrevious,
+            onTap: onPrevious,
+          ),
+          const Spacer(),
+          Text.rich(
+            TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: '$current',
+                  style: const TextStyle(
+                    color: _AutismDevColors.ink,
+                    fontSize: 27,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                TextSpan(
+                  text: ' / $total',
+                  style: const TextStyle(
+                    color: _AutismDevColors.body,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(height: 10),
-          Row(
-            children: <Widget>[
-              Expanded(
-                  child: _SmallMetric(label: '完成', value: '$answeredCount')),
-              Expanded(child: _SmallMetric(label: '未评', value: '$missing')),
-              Expanded(
-                child: _SmallMetric(
-                  label: '服务端',
-                  value: '${backendPercent.round()}%',
-                ),
-              ),
-            ],
+          const Spacer(),
+          _FooterButton(
+            label: '下一题',
+            icon: Icons.chevron_right_rounded,
+            enabled: hasNext,
+            filled: true,
+            reverseIcon: true,
+            onTap: onNext,
+          ),
+          const SizedBox(width: 14),
+          _FooterButton(
+            label: '跳到缺题',
+            icon: Icons.swipe_right_alt_rounded,
+            enabled: true,
+            onTap: onJumpMissing,
+          ),
+          const SizedBox(width: 22),
+          const Text(
+            '自动下一题',
+            style: TextStyle(
+              color: _AutismDevColors.body,
+              fontSize: 13,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Switch(
+            value: autoNext,
+            activeColor: _AutismDevColors.orange,
+            onChanged: onToggleAutoNext,
           ),
         ],
       ),
@@ -1523,181 +2049,333 @@ class _ProgressSummary extends StatelessWidget {
   }
 }
 
-class _SmallMetric extends StatelessWidget {
-  const _SmallMetric({required this.label, required this.value});
+class _FooterButton extends StatelessWidget {
+  const _FooterButton({
+    required this.label,
+    required this.icon,
+    required this.enabled,
+    required this.onTap,
+    this.filled = false,
+    this.reverseIcon = false,
+  });
 
+  final String label;
+  final IconData icon;
+  final bool enabled;
+  final VoidCallback onTap;
+  final bool filled;
+  final bool reverseIcon;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color textColor = filled ? Colors.white : _AutismDevColors.orangeDeep;
+    final List<Widget> children = <Widget>[
+      Icon(icon, size: 22, color: textColor),
+      const SizedBox(width: 8),
+      Text(
+        label,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 15,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    ];
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          width: filled ? 140 : 128,
+          height: 38,
+          decoration: BoxDecoration(
+            color: filled
+                ? _AutismDevColors.orange
+                : enabled
+                    ? Colors.white
+                    : const Color(0xFFF7F1ED),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color:
+                  enabled ? _AutismDevColors.orange : const Color(0xFFE2D6CE),
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: reverseIcon ? children.reversed.toList() : children,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevItemDetailCard extends StatelessWidget {
+  const _AutismDevItemDetailCard({
+    required this.item,
+    required this.detail,
+  });
+
+  final AutismDevItemSummary item;
+  final AutismDevAssessmentItem? detail;
+
+  @override
+  Widget build(BuildContext context) {
+    final AutismDevAssessmentItem? currentDetail = detail;
+    final String rangeText = _assessmentRangeText(item, currentDetail);
+    final String ageText =
+        _detailText(currentDetail?.ageSegment, item.ageSegment);
+    final String methodText =
+        _nonEmptyDetailText(currentDetail?.method, item.method);
+    final String criteriaText =
+        _nonEmptyDetailText(currentDetail?.passCriteria, item.passCriteria);
+    final List<_AutismDevDetailField> cards = <_AutismDevDetailField>[
+      _AutismDevDetailField(
+        icon: Icons.inventory_2_outlined,
+        label: '评估材料',
+        value: _detailText(currentDetail?.materials, item.materials),
+      ),
+      _AutismDevDetailField(
+        icon: Icons.assignment_outlined,
+        label: '评估方法',
+        value: methodText.isEmpty ? ' ' : methodText,
+      ),
+      _AutismDevDetailField(
+        icon: Icons.article_outlined,
+        label: '评分标准',
+        value: criteriaText.isEmpty ? ' ' : _criteriaDisplayText(criteriaText),
+      ),
+    ];
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool compact = constraints.maxWidth < 540;
+            if (compact) {
+              return Column(
+                children: <Widget>[
+                  _AutismDevMetaCard(
+                    icon: Icons.account_tree_outlined,
+                    label: '评估范围',
+                    value: rangeText,
+                  ),
+                  const SizedBox(height: 10),
+                  _AutismDevMetaCard(
+                    icon: Icons.calendar_month_outlined,
+                    label: '参考年龄',
+                    value: ageText,
+                  ),
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Expanded(
+                  child: _AutismDevMetaCard(
+                    icon: Icons.account_tree_outlined,
+                    label: '评估范围',
+                    value: rangeText,
+                  ),
+                ),
+                const SizedBox(width: 10),
+                SizedBox(
+                  width: 158,
+                  child: _AutismDevMetaCard(
+                    icon: Icons.calendar_month_outlined,
+                    label: '参考年龄',
+                    value: ageText,
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 10),
+        for (final _AutismDevDetailField card in cards)
+          _AutismDevDetailInfoCard(field: card),
+      ],
+    );
+  }
+}
+
+class _AutismDevDetailField {
+  const _AutismDevDetailField({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
+  final String label;
+  final String value;
+}
+
+class _AutismDevMetaCard extends StatelessWidget {
+  const _AutismDevMetaCard({
+    required this.icon,
+    required this.label,
+    required this.value,
+  });
+
+  final IconData icon;
   final String label;
   final String value;
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          value,
-          style: const TextStyle(
-            color: _AutismDevColors.ink,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
+    return Container(
+      constraints: const BoxConstraints(minHeight: 70),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: _autismDevDetailCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 17,
+                height: 17,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEFE6),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFFFFCFB6)),
+                ),
+                child: Icon(
+                  icon,
+                  size: 12,
+                  color: _AutismDevColors.orange,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: _AutismDevColors.ink,
+                  fontSize: 13,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 3),
-        Text(
-          label,
-          style: const TextStyle(
-            color: _AutismDevColors.muted,
-            fontSize: 11,
-            fontWeight: FontWeight.w700,
+          const SizedBox(height: 8),
+          Text(
+            value,
+            style: const TextStyle(
+              color: _AutismDevColors.body,
+              fontSize: 14,
+              height: 1.28,
+              fontWeight: FontWeight.w800,
+            ),
           ),
-        ),
-      ],
+        ],
+      ),
     );
   }
 }
 
-class _SectionBlock extends StatelessWidget {
-  const _SectionBlock({
-    required this.title,
-    required this.body,
-    this.boxed = false,
-  });
+class _AutismDevDetailInfoCard extends StatelessWidget {
+  const _AutismDevDetailInfoCard({required this.field});
 
-  final String title;
-  final String body;
-  final bool boxed;
+  final _AutismDevDetailField field;
 
   @override
   Widget build(BuildContext context) {
-    final TextStyle bodyStyle = const TextStyle(
-      color: _AutismDevColors.body,
-      fontSize: 18,
-      height: 1.58,
-      fontWeight: FontWeight.w600,
-    );
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Text(
-          title,
-          style: const TextStyle(
-            color: _AutismDevColors.ink,
-            fontSize: 20,
-            height: 1,
-            fontWeight: FontWeight.w900,
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      decoration: _autismDevDetailCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Container(
+                width: 17,
+                height: 17,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFEFE6),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(color: const Color(0xFFFFCFB6)),
+                ),
+                child: Icon(
+                  field.icon,
+                  size: 12,
+                  color: _AutismDevColors.orange,
+                ),
+              ),
+              const SizedBox(width: 7),
+              Text(
+                field.label,
+                style: const TextStyle(
+                  color: _AutismDevColors.ink,
+                  fontSize: 16,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-        ),
-        const SizedBox(height: 12),
-        if (boxed)
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: _AutismDevColors.softPanel,
-              border: Border.all(color: _AutismDevColors.line),
-              borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 11),
+          Text(
+            field.value,
+            style: const TextStyle(
+              color: _AutismDevColors.body,
+              fontSize: 14,
+              height: 1.55,
+              fontWeight: FontWeight.w700,
             ),
-            child: Text(body, style: bodyStyle),
-          )
-        else
-          Text(body, style: bodyStyle),
-      ],
+          ),
+        ],
+      ),
     );
   }
 }
 
-class _Chip extends StatelessWidget {
-  const _Chip({required this.label, required this.color});
+BoxDecoration _autismDevDetailCardDecoration() {
+  return BoxDecoration(
+    color: Colors.white.withOpacity(.94),
+    borderRadius: BorderRadius.circular(10),
+    border: Border.all(color: _AutismDevColors.line),
+    boxShadow: _autismDevShadow(
+      color: const Color(0x0FB05F32),
+      blur: 12,
+      offset: const Offset(0, 6),
+    ),
+  );
+}
 
-  final String label;
-  final Color color;
+class _DomainChip extends StatelessWidget {
+  const _DomainChip({required this.code, required this.name});
+
+  final String code;
+  final String name;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: color.withOpacity(.08),
-        border: Border.all(color: color.withOpacity(.25)),
-        borderRadius: BorderRadius.circular(15),
+        color: const Color(0xFFFFF1E8),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: const Color(0xFFFFC8AD)),
       ),
-      child: Center(
-        child: Text(
-          label,
-          style: TextStyle(
-            color: color,
-            fontSize: 13,
-            height: 1,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _BottomItemCard extends StatelessWidget {
-  const _BottomItemCard({
-    required this.item,
-    required this.selected,
-    required this.score,
-    required this.onTap,
-  });
-
-  final AutismDevItemSummary item;
-  final bool selected;
-  final String? score;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: selected ? _AutismDevColors.blue.withOpacity(.08) : Colors.white,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: onTap,
-        child: Container(
-          width: 178,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            border: Border.all(
-              color: selected ? _AutismDevColors.blue : _AutismDevColors.line,
-            ),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Text(
-                    '${item.itemNo}',
-                    style: const TextStyle(
-                      color: _AutismDevColors.muted,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const Spacer(),
-                  if (score != null) _ScoreBadge(score: score!, compact: true),
-                ],
-              ),
-              const SizedBox(height: 8),
-              Text(
-                _displayItemTitle(item),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  color: _AutismDevColors.ink,
-                  fontSize: 14,
-                  height: 1.2,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ],
-          ),
+      child: Text(
+        '${code.trim()} ${name.trim()}'.trim(),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _AutismDevColors.orangeDeep,
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -1705,30 +2383,26 @@ class _BottomItemCard extends StatelessWidget {
 }
 
 class _ScoreBadge extends StatelessWidget {
-  const _ScoreBadge({
-    required this.score,
-    this.compact = false,
-  });
+  const _ScoreBadge({required this.score});
 
   final String score;
-  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final Color color = _scoreColor(score);
     return Container(
-      width: compact ? 26 : 42,
-      height: compact ? 24 : 34,
+      width: 46,
+      height: 38,
       decoration: BoxDecoration(
         color: color,
-        borderRadius: BorderRadius.circular(compact ? 12 : 17),
+        borderRadius: BorderRadius.circular(19),
       ),
       child: Center(
         child: Text(
           score,
-          style: TextStyle(
+          style: const TextStyle(
             color: Colors.white,
-            fontSize: compact ? 13 : 17,
+            fontSize: 18,
             height: 1,
             fontWeight: FontWeight.w900,
           ),
@@ -1809,13 +2483,11 @@ class _AutismDevStateBody extends StatelessWidget {
 
 class _AutismDevColors {
   static const Color page = Color(0xFFFFF7EE);
-  static const Color rail = Color(0xFFFFFBF4);
-  static const Color railItem = Color(0xFFFFE9DB);
-  static const Color railActive = Color(0xFFE96F43);
   static const Color ink = Color(0xFF432B22);
   static const Color body = Color(0xFF7F665A);
   static const Color muted = Color(0xFFBBA99C);
   static const Color line = Color(0xFFF0DACB);
+  static const Color lineSoft = Color(0xFFF6E7DC);
   static const Color softPanel = Color(0xFFFFFBF4);
   static const Color blue = Color(0xFF3F82D2);
   static const Color green = Color(0xFF6F9F70);
@@ -1827,18 +2499,22 @@ class _AutismDevColors {
   static const Color pink = Color(0xFFD0578B);
 }
 
+List<BoxShadow> _autismDevShadow({
+  Color color = const Color(0x18000000),
+  double blur = 18,
+  Offset offset = const Offset(0, 9),
+}) {
+  return <BoxShadow>[
+    BoxShadow(color: color, blurRadius: blur, offset: offset),
+  ];
+}
+
 BoxDecoration _panelDecoration() {
   return BoxDecoration(
     color: Colors.white.withOpacity(.92),
     border: Border.all(color: _AutismDevColors.line),
     borderRadius: BorderRadius.circular(8),
-    boxShadow: <BoxShadow>[
-      BoxShadow(
-        color: const Color(0x16B05F32),
-        blurRadius: 16,
-        offset: const Offset(0, 9),
-      ),
-    ],
+    boxShadow: _autismDevShadow(color: const Color(0x12B05F32), blur: 15),
   );
 }
 
@@ -1899,9 +2575,46 @@ String _displayItemTitle(AutismDevItemSummary item) {
       : item.testItem.trim();
 }
 
-String _detailText(String? preferred, String fallback) {
+String _assessmentRangeText(
+  AutismDevItemSummary item,
+  AutismDevAssessmentItem? detail,
+) {
+  final String range = (detail?.assessmentRange ?? item.assessmentRange).trim();
+  return range.isEmpty ? '-' : range;
+}
+
+String _detailText(String? preferred, [String fallback = '']) {
   final String value = (preferred ?? '').trim();
-  return value.isNotEmpty ? value : fallback.trim();
+  if (value.isNotEmpty) {
+    return value;
+  }
+  final String fallbackValue = fallback.trim();
+  return fallbackValue.isNotEmpty ? fallbackValue : '-';
+}
+
+String _nonEmptyDetailText(String? preferred, [String fallback = '']) {
+  final String value = (preferred ?? '').trim();
+  if (value.isNotEmpty) {
+    return value;
+  }
+  return fallback.trim();
+}
+
+List<String> _criteriaDisplayLines(String? value) {
+  final String text = _detailText(value);
+  if (text == '-') {
+    return const <String>[];
+  }
+  return text
+      .split(RegExp(r'[\r\n]+'))
+      .map((String line) => line.trim())
+      .where((String line) => line.isNotEmpty)
+      .toList();
+}
+
+String _criteriaDisplayText(String? value) {
+  final List<String> lines = _criteriaDisplayLines(value);
+  return lines.isEmpty ? '-' : lines.join('；');
 }
 
 String _dateOnlyText(String value) {
