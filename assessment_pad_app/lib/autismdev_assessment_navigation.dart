@@ -629,10 +629,10 @@ class _ScopeEditNotice extends StatelessWidget {
         border: Border.all(color: const Color(0xFFF0D6B0)),
       ),
       child: const Text(
-        '自定义可只选 1 个领域。应用后工作台、缺题和进度只按所选领域计算。',
+        '自定义可只选一个领域，应用后将重新统计数量与进度',
         style: TextStyle(
           color: Color(0xFF8D642B),
-          fontSize: 12,
+          fontSize: 11,
           height: 1.35,
           fontWeight: FontWeight.w800,
         ),
@@ -728,15 +728,6 @@ class _ScopeDomainRow extends StatelessWidget {
                         ),
                       ),
                     ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(
-                  '${group.itemCount}题',
-                  style: const TextStyle(
-                    color: _AutismDevColors.orangeDeep,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w900,
                   ),
                 ),
               ],
