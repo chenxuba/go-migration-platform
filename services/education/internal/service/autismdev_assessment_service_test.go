@@ -24,6 +24,15 @@ func TestBuildAutismDevAssessmentFormTemplateSummary(t *testing.T) {
 	if len(template.DomainGroups) != 8 || len(template.DomainGroups[0].Items) != 55 {
 		t.Fatalf("unexpected domain groups: groups=%d firstItems=%d", len(template.DomainGroups), len(template.DomainGroups[0].Items))
 	}
+	if template.DomainGroups[0].DomainCode != autismdevscore.DomainSensory {
+		t.Fatalf("unexpected first domain code: %s", template.DomainGroups[0].DomainCode)
+	}
+	if template.DomainGroups[0].DomainName != "感知觉" || template.DomainGroups[0].Title != "感知觉" {
+		t.Fatalf("domain display name should not include code: title=%q domain=%q", template.DomainGroups[0].Title, template.DomainGroups[0].DomainName)
+	}
+	if template.DomainGroups[0].Items[0].DomainName != "感知觉" {
+		t.Fatalf("item domain display name should not include code: %q", template.DomainGroups[0].Items[0].DomainName)
+	}
 }
 
 func TestBuildAutismDevAssessmentDraftProgressComplete(t *testing.T) {

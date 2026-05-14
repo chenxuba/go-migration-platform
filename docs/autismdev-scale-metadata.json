@@ -1,9 +1,9 @@
 {
   "scale_code": "AUTISMDEV",
-  "scale_name": "孤独症儿童发展评估表（试行）",
+  "scale_name": "孤独症儿童发展评估表",
   "scale_version": "2010-revised-trainer",
   "source_pdf": "孤独症儿童发展评估量表.pdf; 孤独症儿童发展评估表——使用手册(最终版).pdf; 孤独症儿童发展评估——评估表封面及目录(最终版).pdf",
-  "source_standard": "中国残疾人联合会康复部《孤独症儿童发展评估表（试行）》",
+  "source_standard": "中国残疾人联合会康复部《孤独症儿童发展评估表》",
   "item_count": 493,
   "domain_count": 8,
   "data_status": "draft",

@@ -316,9 +316,13 @@ class AutismDevDomain {
   });
 
   factory AutismDevDomain.fromJson(Map<String, dynamic> json) {
+    final String domainCode = '${json['domainCode'] ?? ''}';
     return AutismDevDomain(
-      domainCode: '${json['domainCode'] ?? ''}',
-      domainName: '${json['domainName'] ?? ''}',
+      domainCode: domainCode,
+      domainName: _autismDevDomainDisplayName(
+        '${json['domainName'] ?? ''}',
+        domainCode,
+      ),
       sortNo: _intFrom(json['sortNo']),
       itemCount: _intFrom(json['itemCount']),
       scoreType: '${json['scoreType'] ?? ''}',
@@ -344,11 +348,16 @@ class AutismDevDomainGroup {
   });
 
   factory AutismDevDomainGroup.fromJson(Map<String, dynamic> json) {
+    final String domainCode = '${json['domainCode'] ?? ''}';
+    final String domainName = _autismDevDomainDisplayName(
+      '${json['domainName'] ?? ''}',
+      domainCode,
+    );
     return AutismDevDomainGroup(
       groupCode: '${json['groupCode'] ?? ''}',
-      title: '${json['title'] ?? ''}',
-      domainCode: '${json['domainCode'] ?? ''}',
-      domainName: '${json['domainName'] ?? ''}',
+      title: _autismDevDomainDisplayName('${json['title'] ?? ''}', domainCode),
+      domainCode: domainCode,
+      domainName: domainName,
       scoreType: '${json['scoreType'] ?? ''}',
       itemCount: _intFrom(json['itemCount']),
       items: _listFrom(json['items'])
@@ -387,6 +396,7 @@ class AutismDevItemSummary {
   });
 
   factory AutismDevItemSummary.fromJson(Map<String, dynamic> json) {
+    final String domainCode = '${json['domainCode'] ?? ''}';
     return AutismDevItemSummary(
       itemNo: _intFrom(json['itemNo']),
       domainItemNo: _intFrom(json['domainItemNo']),
@@ -399,8 +409,11 @@ class AutismDevItemSummary {
       ageSegment: '${json['ageSegment'] ?? ''}',
       ageMinMonth: _intFrom(json['ageMinMonth']),
       ageMaxMonth: _intFrom(json['ageMaxMonth']),
-      domainCode: '${json['domainCode'] ?? ''}',
-      domainName: '${json['domainName'] ?? ''}',
+      domainCode: domainCode,
+      domainName: _autismDevDomainDisplayName(
+        '${json['domainName'] ?? ''}',
+        domainCode,
+      ),
       scoreType: '${json['scoreType'] ?? ''}',
       assessmentModes: _stringListFrom(json['assessmentModes']),
     );
@@ -444,6 +457,7 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
   });
 
   factory AutismDevAssessmentItem.fromJson(Map<String, dynamic> json) {
+    final String domainCode = '${json['domainCode'] ?? ''}';
     return AutismDevAssessmentItem(
       itemNo: _intFrom(json['itemNo']),
       domainItemNo: _intFrom(json['domainItemNo']),
@@ -456,8 +470,11 @@ class AutismDevAssessmentItem extends AutismDevItemSummary {
       ageSegment: '${json['ageSegment'] ?? ''}',
       ageMinMonth: _intFrom(json['ageMinMonth']),
       ageMaxMonth: _intFrom(json['ageMaxMonth']),
-      domainCode: '${json['domainCode'] ?? ''}',
-      domainName: '${json['domainName'] ?? ''}',
+      domainCode: domainCode,
+      domainName: _autismDevDomainDisplayName(
+        '${json['domainName'] ?? ''}',
+        domainCode,
+      ),
       scoreType: '${json['scoreType'] ?? ''}',
       assessmentModes: _stringListFrom(json['assessmentModes']),
       scoreOptions: _listFrom(json['scoreOptions'])
@@ -841,6 +858,30 @@ List<String> _stringListFrom(Object? raw) {
     }).toList();
   }
   return <String>[];
+}
+
+String _autismDevDomainDisplayName(String raw, String domainCode) {
+  final String name = raw.trim();
+  final String code = domainCode.trim();
+  if (name.isEmpty || code.isEmpty) {
+    return name;
+  }
+  final String escapedCode = RegExp.escape(code);
+  String cleaned = name
+      .replaceFirst(
+        RegExp('^\\s*$escapedCode\\s*[-_/：:]*\\s*', caseSensitive: false),
+        '',
+      )
+      .replaceFirst(
+        RegExp('\\s*[（(]\\s*$escapedCode\\s*[）)]\\s*\$', caseSensitive: false),
+        '',
+      )
+      .replaceFirst(
+        RegExp('\\s*[-_/：:]*\\s*$escapedCode\\s*\$', caseSensitive: false),
+        '',
+      )
+      .trim();
+  return cleaned.isEmpty ? name : cleaned;
 }
 
 int _intFrom(Object? raw) {

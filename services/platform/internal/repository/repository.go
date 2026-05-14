@@ -889,7 +889,7 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 	}
 
 	autismDevScaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
-		Name:               "孤独症儿童发展评估表（试行）",
+		Name:               "孤独症儿童发展评估表",
 		Code:               "AUTISMDEV",
 		Category:           "标准化测评",
 		Scenario:           "现场测评",
@@ -921,7 +921,7 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		Sort    int
 	}{
 		{
-			Content: "中国残疾人联合会康复部《孤独症儿童发展评估表（试行）》使用手册及评估量表。",
+			Content: "中国残疾人联合会康复部《孤独症儿童发展评估表》使用手册及评估量表。",
 			Sort:    1,
 		},
 		{
@@ -984,7 +984,7 @@ func (repo *Repository) repairERXinScaleCatalog(ctx context.Context, scaleID int
 func (repo *Repository) repairAutismDevScaleCatalog(ctx context.Context, scaleID int64) error {
 	_, err := repo.db.ExecContext(ctx, `
 		UPDATE sys_scale
-		SET scale_name = '孤独症儿童发展评估表（试行）',
+		SET scale_name = '孤独症儿童发展评估表',
 		    category = '标准化测评',
 		    scenario = '现场测评',
 		    age_range = '0岁-6岁',

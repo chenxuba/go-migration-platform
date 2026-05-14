@@ -625,9 +625,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       child: Column(
         children: <Widget>[
           _AutismDevTopBar(
-            title: widget.args.scaleName.trim().isEmpty
-                ? '孤独症儿童发展评估'
-                : widget.args.scaleName.trim(),
+            title: _autismDevScaleTitle(widget.args.scaleName),
             studentName: _studentName.trim().isEmpty ? '-' : _studentName,
             studentAge: _studentAge.trim().isEmpty ? '未知' : _studentAge,
             assessmentDate: _assessmentDate.isEmpty ? '未设置日期' : _assessmentDate,
@@ -781,37 +779,27 @@ class _AutismDevTopBar extends StatelessWidget {
                 onTap: onBack,
               ),
               const SizedBox(width: 10),
-              SizedBox(
-                width: compact ? 246 : 308,
-                child: Text(
-                  '$title 测评工作台',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _AutismDevColors.ink,
-                    fontSize: 23,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Row(
                   children: <Widget>[
                     Expanded(
-                      child: _HeaderMeta(label: '儿童', value: studentName),
+                      child: Text(
+                        '$title 测评工作台',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _AutismDevColors.ink,
+                          fontSize: 23,
+                          height: 1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
                     ),
-                    Expanded(
-                      child: _HeaderMeta(label: '年龄', value: studentAge),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: _HeaderMeta(label: '测评日期', value: assessmentDate),
-                    ),
-                    Expanded(
-                      child: _HeaderMeta(label: '施测者', value: examinerName),
-                    ),
+                    const SizedBox(width: 10),
+                    _HeaderMeta(label: '儿童', value: studentName),
+                    _HeaderMeta(label: '年龄', value: studentAge),
+                    _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    _HeaderMeta(label: '施测者', value: examinerName),
                   ],
                 ),
               ),
@@ -1076,6 +1064,13 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
     }
   }
 
+  void _collapseAllDomains() {
+    if (_expandedDomainCode.isEmpty) {
+      return;
+    }
+    setState(() => _expandedDomainCode = '');
+  }
+
   void _keepDomainHeaderVisible(String domainCode) {
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
       if (!mounted ||
@@ -1173,7 +1168,10 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
       decoration: _panelDecoration(),
       child: Column(
         children: <Widget>[
-          const _AutismDevSidebarHeader(),
+          _AutismDevSidebarHeader(
+            canCollapse: _expandedDomainCode.isNotEmpty,
+            onCollapseAll: _collapseAllDomains,
+          ),
           Expanded(
             child: SingleChildScrollView(
               controller: _scrollController,
@@ -1235,90 +1233,93 @@ class _AutismDevDomainTile extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          Column(
+          Material(
             key: headerKey,
-            children: <Widget>[
-              InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(8),
-                child: SizedBox(
-                  height: 28,
-                  child: Row(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
+                children: <Widget>[
+                  SizedBox(
+                    height: 28,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          expanded
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.chevron_right_rounded,
+                          size: 20,
+                          color: _AutismDevColors.ink,
+                        ),
+                        const SizedBox(width: 4),
+                        Container(
+                          width: 9,
+                          height: 9,
+                          decoration: BoxDecoration(
+                              color: color, shape: BoxShape.circle),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            group.domainName,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              color: selected
+                                  ? _AutismDevColors.orangeDeep
+                                  : _AutismDevColors.ink,
+                              fontSize: 13,
+                              height: 1,
+                              fontWeight:
+                                  selected ? FontWeight.w900 : FontWeight.w800,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '$done/${group.itemCount}',
+                          style: const TextStyle(
+                            color: _AutismDevColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 7),
+                  Row(
                     children: <Widget>[
-                      Icon(
-                        expanded
-                            ? Icons.keyboard_arrow_down_rounded
-                            : Icons.chevron_right_rounded,
-                        size: 20,
-                        color: _AutismDevColors.ink,
-                      ),
-                      const SizedBox(width: 4),
-                      Container(
-                        width: 9,
-                        height: 9,
-                        decoration:
-                            BoxDecoration(color: color, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 8),
+                      const SizedBox(width: 28),
                       Expanded(
-                        child: Text(
-                          group.domainName,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: selected
-                                ? _AutismDevColors.orangeDeep
-                                : _AutismDevColors.ink,
-                            fontSize: 13,
-                            height: 1,
-                            fontWeight:
-                                selected ? FontWeight.w900 : FontWeight.w800,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 4,
+                            color: _AutismDevColors.orange.withOpacity(.46),
+                            backgroundColor: const Color(0xFFF6EEE8),
                           ),
                         ),
                       ),
-                      Text(
-                        '$done/${group.itemCount}',
-                        style: const TextStyle(
-                          color: _AutismDevColors.muted,
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
+                      const SizedBox(width: 9),
+                      SizedBox(
+                        width: 34,
+                        child: Text(
+                          '${(progress * 100).round()}%',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: _AutismDevColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ],
                   ),
-                ),
-              ),
-              const SizedBox(height: 7),
-              Row(
-                children: <Widget>[
-                  const SizedBox(width: 28),
-                  Expanded(
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(99),
-                      child: LinearProgressIndicator(
-                        value: progress,
-                        minHeight: 5,
-                        color: _AutismDevColors.orange,
-                        backgroundColor: const Color(0xFFF2E6DC),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 9),
-                  SizedBox(
-                    width: 34,
-                    child: Text(
-                      '${(progress * 100).round()}%',
-                      textAlign: TextAlign.right,
-                      style: const TextStyle(
-                        color: _AutismDevColors.muted,
-                        fontSize: 12,
-                        fontWeight: FontWeight.w800,
-                      ),
-                    ),
-                  ),
                 ],
               ),
-            ],
+            ),
           ),
           if (expanded) ...<Widget>[
             const SizedBox(height: 7),
@@ -1562,7 +1563,13 @@ class _AutismDevRangeOption {
 }
 
 class _AutismDevSidebarHeader extends StatelessWidget {
-  const _AutismDevSidebarHeader();
+  const _AutismDevSidebarHeader({
+    required this.canCollapse,
+    required this.onCollapseAll,
+  });
+
+  final bool canCollapse;
+  final VoidCallback onCollapseAll;
 
   @override
   Widget build(BuildContext context) {
@@ -1572,9 +1579,9 @@ class _AutismDevSidebarHeader extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _AutismDevColors.lineSoft)),
       ),
-      child: const Row(
+      child: Row(
         children: <Widget>[
-          Text(
+          const Text(
             '领域任务',
             style: TextStyle(
               color: _AutismDevColors.ink,
@@ -1582,8 +1589,39 @@ class _AutismDevSidebarHeader extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          Spacer(),
-          Icon(Icons.tune_rounded, size: 18, color: _AutismDevColors.muted),
+          const Spacer(),
+          Tooltip(
+            message: '全部收起',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: canCollapse ? onCollapseAll : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Ink(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: canCollapse
+                        ? const Color(0xFFFFF7F2)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: canCollapse
+                          ? const Color(0xFFFFD7C4)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.unfold_less_rounded,
+                    size: 19,
+                    color: canCollapse
+                        ? _AutismDevColors.orangeDeep
+                        : _AutismDevColors.muted.withOpacity(.38),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1736,7 +1774,6 @@ class _AutismDevWorkspacePanel extends StatelessWidget {
                   ),
                   const SizedBox(width: 8),
                   _DomainChip(
-                    code: group.domainCode,
                     name: group.domainName,
                   ),
                 ],
@@ -2581,9 +2618,8 @@ BoxDecoration _autismDevDetailCardDecoration() {
 }
 
 class _DomainChip extends StatelessWidget {
-  const _DomainChip({required this.code, required this.name});
+  const _DomainChip({required this.name});
 
-  final String code;
   final String name;
 
   @override
@@ -2598,7 +2634,7 @@ class _DomainChip extends StatelessWidget {
         border: Border.all(color: const Color(0xFFFFC8AD)),
       ),
       child: Text(
-        '${code.trim()} ${name.trim()}'.trim(),
+        name.trim(),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
         style: const TextStyle(
@@ -2772,6 +2808,13 @@ String _displayItemTitle(AutismDevItemSummary item) {
   return item.itemTitle.trim().isNotEmpty
       ? item.itemTitle.trim()
       : item.testItem.trim();
+}
+
+String _autismDevScaleTitle(String raw) {
+  final String title = raw.trim().isEmpty ? '孤独症儿童发展评估' : raw.trim();
+  final String cleaned =
+      title.replaceFirst(RegExp(r'\s*[（(]?\s*试行\s*[）)]?\s*$'), '').trim();
+  return cleaned.isEmpty ? title : cleaned;
 }
 
 String _assessmentRangeText(

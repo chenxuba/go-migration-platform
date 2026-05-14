@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -16,7 +17,7 @@ import (
 const (
 	autismDevScaleCode       = autismdevscore.ScaleCode
 	autismDevScaleVersion    = autismdevscore.DefaultScaleVersion
-	autismDevAssessmentName  = "孤独症儿童发展评估表（试行）"
+	autismDevAssessmentName  = "孤独症儿童发展评估表"
 	autismDevItemBankFile    = "autismdev-item-bank-draft.json"
 	autismDevDomainMapFile   = "autismdev-domain-map.json"
 	autismDevMetadataFile    = "autismdev-scale-metadata.json"
@@ -340,9 +341,10 @@ func autismDevSubmitContract() model.AutismDevSubmitContract {
 func autismDevAssessmentDomains(domains []autismDevDomainDefinition) []model.AutismDevAssessmentDomain {
 	out := make([]model.AutismDevAssessmentDomain, 0, len(domains))
 	for _, domain := range domains {
+		domainCode := strings.TrimSpace(domain.ScaleCode)
 		out = append(out, model.AutismDevAssessmentDomain{
-			DomainCode: strings.TrimSpace(domain.ScaleCode),
-			DomainName: strings.TrimSpace(domain.ScaleName),
+			DomainCode: domainCode,
+			DomainName: autismDevDomainDisplayName(domain.ScaleName, domainCode),
 			SortNo:     domain.SortNo,
 			ItemCount:  domain.ItemCount,
 			ScoreType:  strings.TrimSpace(domain.ScoreType),
@@ -356,15 +358,16 @@ func autismDevAssessmentDomainGroups(items []autismdevscore.ItemDefinition, doma
 	groups := make([]model.AutismDevAssessmentItemGroup, 0, len(domains))
 	for _, domain := range domains {
 		domainCode := strings.TrimSpace(domain.ScaleCode)
+		domainName := autismDevDomainDisplayName(domain.ScaleName, domainCode)
 		groupItems := make([]model.AutismDevAssessmentItem, 0, len(itemsByDomain[domainCode]))
 		for _, item := range itemsByDomain[domainCode] {
 			groupItems = append(groupItems, buildAutismDevAssessmentItem(item))
 		}
 		groups = append(groups, model.AutismDevAssessmentItemGroup{
 			GroupCode:  "domain_" + strings.ToLower(domainCode),
-			Title:      strings.TrimSpace(domain.ScaleName),
+			Title:      domainName,
 			DomainCode: domainCode,
-			DomainName: strings.TrimSpace(domain.ScaleName),
+			DomainName: domainName,
 			ScoreType:  strings.TrimSpace(domain.ScoreType),
 			ItemCount:  len(groupItems),
 			Items:      groupItems,
@@ -378,15 +381,16 @@ func autismDevAssessmentDomainGroupSummaries(items []autismdevscore.ItemDefiniti
 	groups := make([]model.AutismDevAssessmentItemGroupSummary, 0, len(domains))
 	for _, domain := range domains {
 		domainCode := strings.TrimSpace(domain.ScaleCode)
+		domainName := autismDevDomainDisplayName(domain.ScaleName, domainCode)
 		groupItems := make([]model.AutismDevAssessmentItemSummary, 0, len(itemsByDomain[domainCode]))
 		for _, item := range itemsByDomain[domainCode] {
 			groupItems = append(groupItems, buildAutismDevAssessmentItemSummary(item))
 		}
 		groups = append(groups, model.AutismDevAssessmentItemGroupSummary{
 			GroupCode:  "domain_" + strings.ToLower(domainCode),
-			Title:      strings.TrimSpace(domain.ScaleName),
+			Title:      domainName,
 			DomainCode: domainCode,
-			DomainName: strings.TrimSpace(domain.ScaleName),
+			DomainName: domainName,
 			ScoreType:  strings.TrimSpace(domain.ScoreType),
 			ItemCount:  len(groupItems),
 			Items:      groupItems,
@@ -396,6 +400,7 @@ func autismDevAssessmentDomainGroupSummaries(items []autismdevscore.ItemDefiniti
 }
 
 func buildAutismDevAssessmentItem(item autismdevscore.ItemDefinition) model.AutismDevAssessmentItem {
+	domainCode := strings.TrimSpace(item.DomainCode)
 	return model.AutismDevAssessmentItem{
 		ItemNo:          item.ItemNo,
 		DomainItemNo:    item.DomainItemNo,
@@ -406,8 +411,8 @@ func buildAutismDevAssessmentItem(item autismdevscore.ItemDefinition) model.Auti
 		AgeSegment:      strings.TrimSpace(item.AgeSegment),
 		AgeMinMonth:     item.AgeMinMonth,
 		AgeMaxMonth:     item.AgeMaxMonth,
-		DomainCode:      strings.TrimSpace(item.DomainCode),
-		DomainName:      strings.TrimSpace(item.DomainName),
+		DomainCode:      domainCode,
+		DomainName:      autismDevDomainDisplayName(item.DomainName, domainCode),
 		ScoreType:       strings.TrimSpace(item.ScoreType),
 		ScoreOptions:    autismDevScoreOptionsForType(item.ScoreType),
 		AssessmentModes: append([]string(nil), item.AssessmentModes...),
@@ -420,6 +425,7 @@ func buildAutismDevAssessmentItem(item autismdevscore.ItemDefinition) model.Auti
 }
 
 func buildAutismDevAssessmentItemSummary(item autismdevscore.ItemDefinition) model.AutismDevAssessmentItemSummary {
+	domainCode := strings.TrimSpace(item.DomainCode)
 	return model.AutismDevAssessmentItemSummary{
 		ItemNo:          item.ItemNo,
 		DomainItemNo:    item.DomainItemNo,
@@ -432,8 +438,8 @@ func buildAutismDevAssessmentItemSummary(item autismdevscore.ItemDefinition) mod
 		AgeSegment:      strings.TrimSpace(item.AgeSegment),
 		AgeMinMonth:     item.AgeMinMonth,
 		AgeMaxMonth:     item.AgeMaxMonth,
-		DomainCode:      strings.TrimSpace(item.DomainCode),
-		DomainName:      strings.TrimSpace(item.DomainName),
+		DomainCode:      domainCode,
+		DomainName:      autismDevDomainDisplayName(item.DomainName, domainCode),
 		ScoreType:       strings.TrimSpace(item.ScoreType),
 		AssessmentModes: append([]string(nil), item.AssessmentModes...),
 	}
@@ -448,4 +454,21 @@ func autismDevItemsByDomain(items []autismdevscore.ItemDefinition) map[string][]
 		sort.Slice(out[domainCode], func(i, j int) bool { return out[domainCode][i].ItemNo < out[domainCode][j].ItemNo })
 	}
 	return out
+}
+
+func autismDevDomainDisplayName(raw, domainCode string) string {
+	name := strings.TrimSpace(raw)
+	code := strings.TrimSpace(domainCode)
+	if name == "" || code == "" {
+		return name
+	}
+	escapedCode := regexp.QuoteMeta(code)
+	cleaned := regexp.MustCompile(`(?i)^\s*`+escapedCode+`\s*[-_/：:]*\s*`).ReplaceAllString(name, "")
+	cleaned = regexp.MustCompile(`(?i)\s*[（(]\s*`+escapedCode+`\s*[）)]\s*$`).ReplaceAllString(cleaned, "")
+	cleaned = regexp.MustCompile(`(?i)\s*[-_/：:]*\s*`+escapedCode+`\s*$`).ReplaceAllString(cleaned, "")
+	cleaned = strings.TrimSpace(cleaned)
+	if cleaned == "" {
+		return name
+	}
+	return cleaned
 }
