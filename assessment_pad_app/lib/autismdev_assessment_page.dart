@@ -46,6 +46,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   String _assessmentDate = '';
   String _examinerName = '';
   String _selectedDomainCode = '';
+  String _selectedRangeFilter = '';
   int _selectedItemNo = 0;
   int _studentId = 0;
   int _draftId = 0;
@@ -125,6 +126,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
             ? _firstUnansweredItemNo()
             : _firstItemNoInDomain(_selectedDomainCode);
       }
+      _selectedRangeFilter = '';
       _syncRemarkController();
       setState(() {
         _loading = false;
@@ -251,8 +253,43 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
 
   void _selectItem(AutismDevItemSummary item) {
     setState(() {
+      if (_selectedRangeFilter.isNotEmpty &&
+          _assessmentRangeBucket(item) != _selectedRangeFilter) {
+        _selectedRangeFilter = '';
+      }
       _selectedItemNo = item.itemNo;
       _selectedDomainCode = item.domainCode;
+    });
+    _syncRemarkController();
+    _prefetchSelectedItem();
+  }
+
+  void _selectRangeFilter(String rangeFilter) {
+    final AutismDevDomainGroup? group = _selectedGroup;
+    if (group == null) {
+      return;
+    }
+    final String nextFilter = rangeFilter.trim();
+    if (nextFilter.isEmpty) {
+      setState(() => _selectedRangeFilter = '');
+      return;
+    }
+    final List<AutismDevItemSummary> filteredItems = group.items
+        .where((AutismDevItemSummary item) =>
+            _assessmentRangeBucket(item) == nextFilter)
+        .toList(growable: false);
+    if (filteredItems.isEmpty) {
+      setState(() => _selectedRangeFilter = nextFilter);
+      return;
+    }
+    final AutismDevItemSummary target = filteredItems.firstWhere(
+      (AutismDevItemSummary item) => !_itemScores.containsKey(item.itemNo),
+      orElse: () => filteredItems.first,
+    );
+    setState(() {
+      _selectedRangeFilter = nextFilter;
+      _selectedItemNo = target.itemNo;
+      _selectedDomainCode = target.domainCode;
     });
     _syncRemarkController();
     _prefetchSelectedItem();
@@ -643,6 +680,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
                   child: _AutismDevDomainPanel(
                     groups: _template.domainGroups,
                     selectedDomainCode: _selectedDomainCode,
+                    selectedRangeFilter: _selectedRangeFilter,
                     selectedItemNo: _selectedItemNo,
                     itemScores: _itemScores,
                     onSelectItem: _selectItem,
@@ -664,11 +702,15 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
                 SizedBox(
                   width: 238,
                   child: _AutismDevRightRail(
+                    group: group,
                     item: summary,
                     remarkController: _remarkController,
+                    selectedRangeFilter: _selectedRangeFilter,
+                    itemScores: _itemScores,
                     answeredCount: _answeredCount,
                     totalCount: _totalCount,
                     missingCount: _missingCount,
+                    onSelectRangeFilter: _selectRangeFilter,
                   ),
                 ),
               ],
@@ -960,6 +1002,7 @@ class _AutismDevDomainPanel extends StatefulWidget {
   const _AutismDevDomainPanel({
     required this.groups,
     required this.selectedDomainCode,
+    required this.selectedRangeFilter,
     required this.selectedItemNo,
     required this.itemScores,
     required this.onSelectItem,
@@ -967,6 +1010,7 @@ class _AutismDevDomainPanel extends StatefulWidget {
 
   final List<AutismDevDomainGroup> groups;
   final String selectedDomainCode;
+  final String selectedRangeFilter;
   final int selectedItemNo;
   final Map<int, String> itemScores;
   final ValueChanged<AutismDevItemSummary> onSelectItem;
@@ -976,31 +1020,32 @@ class _AutismDevDomainPanel extends StatefulWidget {
 }
 
 class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
-  static const double _domainHeaderExtent = 68;
-  static const double _questionItemExtent = 34;
-
   final ScrollController _scrollController = ScrollController();
-  final Set<String> _expandedDomainCodes = <String>{};
+  final GlobalKey _activeNavItemKey = GlobalKey();
+  final Map<String, GlobalKey> _domainHeaderKeys = <String, GlobalKey>{};
+  String _expandedDomainCode = '';
 
   @override
   void initState() {
     super.initState();
-    _expandSelectedDomain();
-    _scheduleSelectedItemScroll();
+    _syncExpandedDomain();
+    _keepActiveItemVisible();
   }
 
   @override
   void didUpdateWidget(covariant _AutismDevDomainPanel oldWidget) {
     super.didUpdateWidget(oldWidget);
-    _expandedDomainCodes.retainWhere(_hasDomainCode);
-    final bool selectionChanged =
-        oldWidget.selectedItemNo != widget.selectedItemNo ||
-            oldWidget.selectedDomainCode != widget.selectedDomainCode;
-    if (selectionChanged) {
-      final bool needsExpansion =
-          !_expandedDomainCodes.contains(widget.selectedDomainCode);
-      _expandSelectedDomain();
-      _scheduleSelectedItemScroll(waitForExpansion: needsExpansion);
+    _domainHeaderKeys
+        .removeWhere((String code, GlobalKey key) => !_hasDomainCode(code));
+    final bool selectedDomainChanged =
+        oldWidget.selectedDomainCode != widget.selectedDomainCode;
+    final bool selectedItemChanged =
+        oldWidget.selectedItemNo != widget.selectedItemNo;
+    if (selectedDomainChanged || !_hasDomainCode(_expandedDomainCode)) {
+      _syncExpandedDomain();
+    }
+    if (selectedDomainChanged || selectedItemChanged) {
+      _keepActiveItemVisible();
     }
   }
 
@@ -1016,84 +1061,83 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
     );
   }
 
-  void _expandSelectedDomain() {
-    if (widget.selectedDomainCode.trim().isNotEmpty) {
-      _expandedDomainCodes.add(widget.selectedDomainCode);
-    }
+  void _syncExpandedDomain() {
+    _expandedDomainCode = widget.selectedDomainCode.trim();
   }
 
   void _toggleDomain(AutismDevDomainGroup group) {
     final String domainCode = group.domainCode;
-    final bool expanded = _expandedDomainCodes.contains(domainCode);
+    final bool opening = _expandedDomainCode != domainCode;
     setState(() {
-      if (expanded) {
-        _expandedDomainCodes.remove(domainCode);
-      } else {
-        _expandedDomainCodes.add(domainCode);
-      }
+      _expandedDomainCode = opening ? domainCode : '';
     });
+    if (opening) {
+      _keepDomainHeaderVisible(domainCode);
+    }
   }
 
-  void _scheduleSelectedItemScroll({bool waitForExpansion = false}) {
-    if (waitForExpansion) {
-      Future<void>.delayed(const Duration(milliseconds: 260), () {
-        _scrollSelectedItemIntoView();
-      });
-      return;
-    }
+  void _keepDomainHeaderVisible(String domainCode) {
     WidgetsBinding.instance.addPostFrameCallback((Duration _) {
-      _scrollSelectedItemIntoView();
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          domainCode.trim().isEmpty) {
+        return;
+      }
+      final BuildContext? headerContext =
+          _domainHeaderKeys[domainCode]?.currentContext;
+      if (headerContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        headerContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: .02,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
     });
   }
 
-  void _scrollSelectedItemIntoView() {
-    if (!mounted || widget.selectedItemNo <= 0) {
-      return;
-    }
-    _scrollSelectedItemByOffset();
+  void _keepActiveItemVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          widget.selectedItemNo <= 0) {
+        return;
+      }
+      final BuildContext? itemContext = _activeNavItemKey.currentContext;
+      if (itemContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        itemContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: .34,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
   }
 
-  bool _scrollSelectedItemByOffset() {
-    if (!_scrollController.hasClients) {
-      return false;
+  List<AutismDevItemSummary> _visibleItemsForGroup(
+    AutismDevDomainGroup group,
+  ) {
+    final String rangeFilter = _rangeFilterForGroup(group);
+    if (rangeFilter.isEmpty) {
+      return group.items;
     }
-    double offset = 0;
-    for (final AutismDevDomainGroup group in widget.groups) {
-      final bool expanded = _expandedDomainCodes.contains(group.domainCode);
-      final int itemIndex = group.items.indexWhere(
-        (AutismDevItemSummary item) => item.itemNo == widget.selectedItemNo,
-      );
-      if (itemIndex >= 0) {
-        final double itemTop =
-            offset + _domainHeaderExtent + itemIndex * _questionItemExtent;
-        final double itemBottom = itemTop + _questionItemExtent;
-        final double viewTop = _scrollController.offset;
-        final double viewBottom =
-            viewTop + _scrollController.position.viewportDimension;
-        if (itemTop >= viewTop + 10 && itemBottom <= viewBottom - 10) {
-          return true;
-        }
-        final double target = itemTop - 42;
-        final double nextOffset =
-            target.clamp(0.0, _scrollController.position.maxScrollExtent);
-        final double distance = (nextOffset - _scrollController.offset).abs();
-        if (distance > _scrollController.position.viewportDimension * 1.2) {
-          _scrollController.jumpTo(nextOffset);
-        } else {
-          _scrollController.animateTo(
-            nextOffset,
-            duration: const Duration(milliseconds: 160),
-            curve: Curves.easeOutCubic,
-          );
-        }
-        return true;
-      }
-      offset += _domainHeaderExtent;
-      if (expanded) {
-        offset += 7 + group.items.length * _questionItemExtent;
-      }
+    return group.items
+        .where((AutismDevItemSummary item) =>
+            _assessmentRangeBucket(item) == rangeFilter)
+        .toList(growable: false);
+  }
+
+  String _rangeFilterForGroup(AutismDevDomainGroup group) {
+    if (group.domainCode == widget.selectedDomainCode &&
+        widget.selectedRangeFilter.trim().isNotEmpty) {
+      return widget.selectedRangeFilter.trim();
     }
-    return false;
+    return '';
   }
 
   Widget _buildDomainTile(AutismDevDomainGroup group) {
@@ -1101,13 +1145,23 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
         .where((AutismDevItemSummary item) =>
             widget.itemScores.containsKey(item.itemNo))
         .length;
+    final List<AutismDevItemSummary> visibleItems =
+        _visibleItemsForGroup(group);
     return _AutismDevDomainTile(
       group: group,
+      headerKey: _domainHeaderKeys.putIfAbsent(
+        group.domainCode,
+        () => GlobalKey(
+          debugLabel: 'autismdev-domain-header-${group.domainCode}',
+        ),
+      ),
+      visibleItems: visibleItems,
       done: done,
-      expanded: _expandedDomainCodes.contains(group.domainCode),
+      expanded: _expandedDomainCode == group.domainCode,
       selected: group.domainCode == widget.selectedDomainCode,
       itemScores: widget.itemScores,
       selectedItemNo: widget.selectedItemNo,
+      activeItemKey: _activeNavItemKey,
       onTap: () => _toggleDomain(group),
       onTapItem: widget.onSelectItem,
     );
@@ -1121,13 +1175,15 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
         children: <Widget>[
           const _AutismDevSidebarHeader(),
           Expanded(
-            child: ListView(
+            child: SingleChildScrollView(
               controller: _scrollController,
-              padding: EdgeInsets.zero,
-              children: <Widget>[
-                for (final AutismDevDomainGroup group in widget.groups)
-                  _buildDomainTile(group),
-              ],
+              physics: const BouncingScrollPhysics(),
+              child: Column(
+                children: <Widget>[
+                  for (final AutismDevDomainGroup group in widget.groups)
+                    _buildDomainTile(group),
+                ],
+              ),
             ),
           ),
         ],
@@ -1139,21 +1195,27 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
 class _AutismDevDomainTile extends StatelessWidget {
   const _AutismDevDomainTile({
     required this.group,
+    required this.headerKey,
+    required this.visibleItems,
     required this.done,
     required this.expanded,
     required this.selected,
     required this.itemScores,
     required this.selectedItemNo,
+    required this.activeItemKey,
     required this.onTap,
     required this.onTapItem,
   });
 
   final AutismDevDomainGroup group;
+  final Key headerKey;
+  final List<AutismDevItemSummary> visibleItems;
   final int done;
   final bool expanded;
   final bool selected;
   final Map<int, String> itemScores;
   final int selectedItemNo;
+  final GlobalKey activeItemKey;
   final VoidCallback onTap;
   final ValueChanged<AutismDevItemSummary> onTapItem;
 
@@ -1173,180 +1235,330 @@ class _AutismDevDomainTile extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          InkWell(
-            onTap: onTap,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              height: 28,
-              child: Row(
+          Column(
+            key: headerKey,
+            children: <Widget>[
+              InkWell(
+                onTap: onTap,
+                borderRadius: BorderRadius.circular(8),
+                child: SizedBox(
+                  height: 28,
+                  child: Row(
+                    children: <Widget>[
+                      Icon(
+                        expanded
+                            ? Icons.keyboard_arrow_down_rounded
+                            : Icons.chevron_right_rounded,
+                        size: 20,
+                        color: _AutismDevColors.ink,
+                      ),
+                      const SizedBox(width: 4),
+                      Container(
+                        width: 9,
+                        height: 9,
+                        decoration:
+                            BoxDecoration(color: color, shape: BoxShape.circle),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          group.domainName,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: selected
+                                ? _AutismDevColors.orangeDeep
+                                : _AutismDevColors.ink,
+                            fontSize: 13,
+                            height: 1,
+                            fontWeight:
+                                selected ? FontWeight.w900 : FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                      Text(
+                        '$done/${group.itemCount}',
+                        style: const TextStyle(
+                          color: _AutismDevColors.muted,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(height: 7),
+              Row(
                 children: <Widget>[
-                  AnimatedRotation(
-                    turns: expanded ? .25 : 0,
-                    duration: const Duration(milliseconds: 220),
-                    curve: Curves.easeInOutCubic,
-                    child: const Icon(
-                      Icons.chevron_right_rounded,
-                      size: 20,
-                      color: _AutismDevColors.ink,
-                    ),
-                  ),
-                  const SizedBox(width: 4),
-                  Container(
-                    width: 9,
-                    height: 9,
-                    decoration:
-                        BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 28),
                   Expanded(
-                    child: Text(
-                      group.domainName,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        color: selected
-                            ? _AutismDevColors.orangeDeep
-                            : _AutismDevColors.ink,
-                        fontSize: 13,
-                        height: 1,
-                        fontWeight:
-                            selected ? FontWeight.w900 : FontWeight.w800,
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(99),
+                      child: LinearProgressIndicator(
+                        value: progress,
+                        minHeight: 5,
+                        color: _AutismDevColors.orange,
+                        backgroundColor: const Color(0xFFF2E6DC),
                       ),
                     ),
                   ),
-                  Text(
-                    '$done/${group.itemCount}',
-                    style: const TextStyle(
-                      color: _AutismDevColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
+                  const SizedBox(width: 9),
+                  SizedBox(
+                    width: 34,
+                    child: Text(
+                      '${(progress * 100).round()}%',
+                      textAlign: TextAlign.right,
+                      style: const TextStyle(
+                        color: _AutismDevColors.muted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                      ),
                     ),
                   ),
                 ],
               ),
-            ),
-          ),
-          const SizedBox(height: 7),
-          Row(
-            children: <Widget>[
-              const SizedBox(width: 28),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: progress,
-                    minHeight: 5,
-                    color: _AutismDevColors.orange,
-                    backgroundColor: const Color(0xFFF2E6DC),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              SizedBox(
-                width: 34,
-                child: Text(
-                  '${(progress * 100).round()}%',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: _AutismDevColors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
             ],
           ),
-          _AutismDevQuestionDrawer(
-            expanded: expanded,
-            group: group,
-            itemScores: itemScores,
-            selectedItemNo: selectedItemNo,
-            onTapItem: onTapItem,
-          ),
+          if (expanded) ...<Widget>[
+            const SizedBox(height: 7),
+            for (final AutismDevItemSummary item in visibleItems)
+              _AutismDevQuestionNavItem(
+                key: item.itemNo == selectedItemNo
+                    ? activeItemKey
+                    : ValueKey<int>(item.itemNo),
+                item: item,
+                active: item.itemNo == selectedItemNo,
+                done: itemScores.containsKey(item.itemNo),
+                onTap: () => onTapItem(item),
+              ),
+          ],
         ],
       ),
     );
   }
 }
 
-class _AutismDevQuestionDrawer extends StatefulWidget {
-  const _AutismDevQuestionDrawer({
-    required this.expanded,
+class _AutismDevRangeQuickFilter extends StatelessWidget {
+  const _AutismDevRangeQuickFilter({
     required this.group,
+    required this.selectedRangeFilter,
     required this.itemScores,
-    required this.selectedItemNo,
-    required this.onTapItem,
+    required this.onSelectRangeFilter,
   });
 
-  final bool expanded;
-  final AutismDevDomainGroup group;
+  final AutismDevDomainGroup? group;
+  final String selectedRangeFilter;
   final Map<int, String> itemScores;
-  final int selectedItemNo;
-  final ValueChanged<AutismDevItemSummary> onTapItem;
-
-  @override
-  State<_AutismDevQuestionDrawer> createState() =>
-      _AutismDevQuestionDrawerState();
-}
-
-class _AutismDevQuestionDrawerState extends State<_AutismDevQuestionDrawer> {
-  late bool _renderItems;
-
-  @override
-  void initState() {
-    super.initState();
-    _renderItems = widget.expanded;
-  }
-
-  @override
-  void didUpdateWidget(covariant _AutismDevQuestionDrawer oldWidget) {
-    super.didUpdateWidget(oldWidget);
-    if (widget.expanded && !_renderItems) {
-      _renderItems = true;
-    }
-  }
+  final ValueChanged<String> onSelectRangeFilter;
 
   @override
   Widget build(BuildContext context) {
-    final Widget list = _renderItems
-        ? Column(
-            children: <Widget>[
-              const SizedBox(height: 7),
-              for (final AutismDevItemSummary item in widget.group.items)
-                _AutismDevQuestionNavItem(
-                  key: ValueKey<int>(item.itemNo),
-                  item: item,
-                  active: item.itemNo == widget.selectedItemNo,
-                  done: widget.itemScores.containsKey(item.itemNo),
-                  onTap: () => widget.onTapItem(item),
+    final List<_AutismDevRangeOption> options =
+        _rangeOptionsForGroup(group, itemScores);
+    final int total = group?.itemCount ?? 0;
+    final int done = group?.items
+            .where((AutismDevItemSummary item) =>
+                itemScores.containsKey(item.itemNo))
+            .length ??
+        0;
+    final String title = (group?.domainName ?? '').trim();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                title.isEmpty ? '分类' : title,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _AutismDevColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
                 ),
-            ],
-          )
-        : const SizedBox.shrink();
-    return TweenAnimationBuilder<double>(
-      tween: Tween<double>(end: widget.expanded ? 1 : 0),
-      duration: const Duration(milliseconds: 220),
-      curve: Curves.easeInOutCubic,
-      child: list,
-      onEnd: () {
-        if (!widget.expanded && _renderItems && mounted) {
-          setState(() => _renderItems = false);
-        }
-      },
-      builder: (BuildContext context, double factor, Widget? child) {
-        return ClipRect(
-          child: Align(
-            alignment: Alignment.topCenter,
-            heightFactor: factor,
-            child: IgnorePointer(
-              ignoring: !widget.expanded,
-              child: child,
+              ),
             ),
-          ),
-        );
-      },
+            const SizedBox(width: 8),
+            Text(
+              '${options.length}类',
+              style: const TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        Expanded(
+          child: options.isEmpty
+              ? const Center(
+                  child: Text(
+                    '暂无分类',
+                    style: TextStyle(
+                      color: _AutismDevColors.muted,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                )
+              : ClipRect(
+                  child: Stack(
+                    children: <Widget>[
+                      Scrollbar(
+                        child: ListView.separated(
+                          padding: const EdgeInsets.only(bottom: 26),
+                          physics: const BouncingScrollPhysics(),
+                          itemBuilder: (BuildContext context, int index) {
+                            if (index == 0) {
+                              return _AutismDevRangeListItem(
+                                label: '全部',
+                                total: total,
+                                done: done,
+                                active: selectedRangeFilter.trim().isEmpty,
+                                onTap: () => onSelectRangeFilter(''),
+                              );
+                            }
+                            final _AutismDevRangeOption option =
+                                options[index - 1];
+                            return _AutismDevRangeListItem(
+                              label: option.label,
+                              total: option.total,
+                              done: option.done,
+                              active:
+                                  selectedRangeFilter.trim() == option.label,
+                              onTap: () => onSelectRangeFilter(option.label),
+                            );
+                          },
+                          separatorBuilder: (BuildContext context, int index) =>
+                              const SizedBox(height: 7),
+                          itemCount: options.length + 1,
+                        ),
+                      ),
+                      const Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: IgnorePointer(
+                          child: DecoratedBox(
+                            decoration: BoxDecoration(
+                              gradient: LinearGradient(
+                                begin: Alignment.topCenter,
+                                end: Alignment.bottomCenter,
+                                colors: <Color>[
+                                  Color(0x00FFFFFF),
+                                  Color(0xF6FFFFFF),
+                                ],
+                              ),
+                            ),
+                            child: SizedBox(height: 30),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+        ),
+      ],
     );
   }
+}
+
+class _AutismDevRangeListItem extends StatelessWidget {
+  const _AutismDevRangeListItem({
+    required this.label,
+    required this.total,
+    required this.done,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final int total;
+  final int done;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Ink(
+          height: 39,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color:
+                active ? _AutismDevColors.orange : _AutismDevColors.softPanel,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: active ? _AutismDevColors.orange : _AutismDevColors.line,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 7,
+                height: 7,
+                decoration: BoxDecoration(
+                  color: active ? Colors.white : _AutismDevColors.orange,
+                  shape: BoxShape.circle,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: active ? Colors.white : _AutismDevColors.ink,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                height: 22,
+                padding: const EdgeInsets.symmetric(horizontal: 7),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: active ? Colors.white.withOpacity(.16) : Colors.white,
+                  borderRadius: BorderRadius.circular(11),
+                  border: Border.all(
+                    color: active
+                        ? Colors.white.withOpacity(.26)
+                        : _AutismDevColors.lineSoft,
+                  ),
+                ),
+                child: Text(
+                  '$done/$total',
+                  style: TextStyle(
+                    color: active ? Colors.white : _AutismDevColors.body,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevRangeOption {
+  _AutismDevRangeOption(this.label);
+
+  final String label;
+  int total = 0;
+  int done = 0;
 }
 
 class _AutismDevSidebarHeader extends StatelessWidget {
@@ -1522,14 +1734,6 @@ class _AutismDevWorkspacePanel extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 10),
-                  SizedBox(
-                    width: 46,
-                    height: 38,
-                    child: selectedScore == null
-                        ? const SizedBox.shrink()
-                        : _ScoreBadge(score: selectedScore!),
-                  ),
                   const SizedBox(width: 8),
                   _DomainChip(
                     code: group.domainCode,
@@ -1563,81 +1767,106 @@ class _AutismDevWorkspacePanel extends StatelessWidget {
 
 class _AutismDevRightRail extends StatelessWidget {
   const _AutismDevRightRail({
+    required this.group,
     required this.item,
     required this.remarkController,
+    required this.selectedRangeFilter,
+    required this.itemScores,
     required this.answeredCount,
     required this.totalCount,
     required this.missingCount,
+    required this.onSelectRangeFilter,
   });
 
+  final AutismDevDomainGroup group;
   final AutismDevItemSummary item;
   final TextEditingController remarkController;
+  final String selectedRangeFilter;
+  final Map<int, String> itemScores;
   final int answeredCount;
   final int totalCount;
   final int missingCount;
+  final ValueChanged<String> onSelectRangeFilter;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       decoration: _panelDecoration(),
-      child: ListView(
+      child: Padding(
         padding: const EdgeInsets.all(16),
-        physics: const BouncingScrollPhysics(),
-        children: <Widget>[
-          _ProgressSummary(
-            answeredCount: answeredCount,
-            totalCount: totalCount,
-            missing: missingCount,
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            '备注',
-            style: TextStyle(
-              color: _AutismDevColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            _ProgressSummary(
+              answeredCount: answeredCount,
+              totalCount: totalCount,
+              missing: missingCount,
             ),
-          ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 66,
-            child: TextField(
-              controller: remarkController,
-              minLines: 2,
-              maxLines: 2,
-              onTapOutside: (_) {
-                FocusManager.instance.primaryFocus?.unfocus();
-              },
-              onEditingComplete: () {
-                FocusManager.instance.primaryFocus?.unfocus();
-              },
-              textAlignVertical: TextAlignVertical.top,
-              style: const TextStyle(
-                color: _AutismDevColors.body,
-                fontSize: 15,
-                height: 1.35,
-                fontWeight: FontWeight.w600,
-              ),
-              decoration: InputDecoration(
-                hintText: item.scoreType.toUpperCase() == 'AMS'
-                    ? '可记录情境、反应强度或持续时间'
-                    : '可记录提示层级、辅助方式或备注',
-                hintStyle: const TextStyle(color: _AutismDevColors.muted),
-                filled: true,
-                fillColor: _AutismDevColors.softPanel,
-                contentPadding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: _AutismDevColors.line),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(8),
-                  borderSide: const BorderSide(color: _AutismDevColors.orange),
-                ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: _AutismDevRangeQuickFilter(
+                group: group,
+                selectedRangeFilter: selectedRangeFilter,
+                itemScores: itemScores,
+                onSelectRangeFilter: onSelectRangeFilter,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 16),
+            const Text(
+              '备注',
+              style: TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 66,
+              child: TextField(
+                controller: remarkController,
+                minLines: 2,
+                maxLines: 2,
+                onTapOutside: (_) {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                },
+                onEditingComplete: () {
+                  FocusManager.instance.primaryFocus?.unfocus();
+                },
+                textAlignVertical: TextAlignVertical.top,
+                style: const TextStyle(
+                  color: _AutismDevColors.body,
+                  fontSize: 15,
+                  height: 1.35,
+                  fontWeight: FontWeight.w600,
+                ),
+                decoration: InputDecoration(
+                  hintText: item.scoreType.toUpperCase() == 'AMS'
+                      ? '可记录情境、反应强度或持续时间'
+                      : '可记录提示层级、辅助方式或备注',
+                  hintStyle: const TextStyle(
+                    color: _AutismDevColors.muted,
+                    fontSize: 12,
+                    height: 1.25,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  filled: true,
+                  fillColor: _AutismDevColors.softPanel,
+                  contentPadding: const EdgeInsets.fromLTRB(12, 9, 12, 9),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: const BorderSide(color: _AutismDevColors.line),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide:
+                        const BorderSide(color: _AutismDevColors.orange),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -2382,36 +2611,6 @@ class _DomainChip extends StatelessWidget {
   }
 }
 
-class _ScoreBadge extends StatelessWidget {
-  const _ScoreBadge({required this.score});
-
-  final String score;
-
-  @override
-  Widget build(BuildContext context) {
-    final Color color = _scoreColor(score);
-    return Container(
-      width: 46,
-      height: 38,
-      decoration: BoxDecoration(
-        color: color,
-        borderRadius: BorderRadius.circular(19),
-      ),
-      child: Center(
-        child: Text(
-          score,
-          style: const TextStyle(
-            color: Colors.white,
-            fontSize: 18,
-            height: 1,
-            fontWeight: FontWeight.w900,
-          ),
-        ),
-      ),
-    );
-  }
-}
-
 class _AutismDevLoadingBody extends StatelessWidget {
   const _AutismDevLoadingBody();
 
@@ -2581,6 +2780,42 @@ String _assessmentRangeText(
 ) {
   final String range = (detail?.assessmentRange ?? item.assessmentRange).trim();
   return range.isEmpty ? '-' : range;
+}
+
+String _assessmentRangeBucket(AutismDevItemSummary item) {
+  final List<String> parts = item.assessmentRange
+      .split('/')
+      .map((String part) => part.trim())
+      .where((String part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (parts.length >= 2) {
+    return parts[1];
+  }
+  if (parts.isNotEmpty) {
+    return parts.first;
+  }
+  return '未分类';
+}
+
+List<_AutismDevRangeOption> _rangeOptionsForGroup(
+  AutismDevDomainGroup? group,
+  Map<int, String> itemScores,
+) {
+  if (group == null) {
+    return const <_AutismDevRangeOption>[];
+  }
+  final Map<String, _AutismDevRangeOption> optionByLabel =
+      <String, _AutismDevRangeOption>{};
+  for (final AutismDevItemSummary item in group.items) {
+    final String label = _assessmentRangeBucket(item);
+    final _AutismDevRangeOption option =
+        optionByLabel.putIfAbsent(label, () => _AutismDevRangeOption(label));
+    option.total += 1;
+    if (itemScores.containsKey(item.itemNo)) {
+      option.done += 1;
+    }
+  }
+  return optionByLabel.values.toList(growable: false);
 }
 
 String _detailText(String? preferred, [String fallback = '']) {
