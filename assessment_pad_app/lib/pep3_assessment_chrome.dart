@@ -30,8 +30,8 @@ class _Pep3Header extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 18),
+      constraints: const BoxConstraints(minHeight: 58),
+      padding: const EdgeInsets.fromLTRB(18, 8, 18, 8),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.96),
         border: Border.all(color: _Pep3Colors.line),
@@ -47,7 +47,10 @@ class _Pep3Header extends StatelessWidget {
                   icon: Icons.chevron_left_rounded, onTap: onBack),
               const SizedBox(width: 10),
               Expanded(
-                child: Row(
+                child: Wrap(
+                  spacing: 10,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: <Widget>[
                     Text(
                       '$title 测评工作台',
@@ -60,7 +63,6 @@ class _Pep3Header extends StatelessWidget {
                         fontWeight: FontWeight.w900,
                       ),
                     ),
-                    const SizedBox(width: 10),
                     _HeaderMeta(label: '儿童', value: studentName),
                     _HeaderMeta(label: '年龄', value: age),
                     _HeaderMeta(label: '测评日期', value: assessmentDate),
@@ -116,7 +118,6 @@ class _HeaderMeta extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(left: 10),
       padding: const EdgeInsets.only(left: 10),
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _Pep3Colors.line)),

@@ -1777,6 +1777,13 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
   }
 
   String _resolvedStudentAgeText() {
+    final String calculated = formatAssessmentAgeText(
+      birthDate: _birthDate,
+      assessmentDate: _assessmentDate,
+    );
+    if (calculated.isNotEmpty) {
+      return calculated;
+    }
     final String explicit = _studentAge.trim();
     if (explicit.isNotEmpty && explicit != '未知') {
       return explicit;

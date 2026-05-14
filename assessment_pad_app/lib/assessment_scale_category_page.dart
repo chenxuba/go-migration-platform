@@ -10,6 +10,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'assessment_age_formatter.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'route_bootstrap.dart';
@@ -538,11 +539,12 @@ class _AssessmentScaleCategoryScreenState
       }
     }
     if (isAutismDevScale) {
+      final String studentAge = _studentAgeLabel(student);
       _openAutismDevAssessment(
         AutismDevAssessmentLaunchArgs(
           studentId: student.id,
           studentName: student.displayName,
-          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
           scaleName: scale.name,
@@ -551,11 +553,12 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     if (isErxinScale) {
+      final String studentAge = _studentAgeLabel(student);
       _openErxinAssessment(
         ErxinAssessmentLaunchArgs(
           studentId: student.id,
           studentName: student.displayName,
-          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
           scaleName: scale.name,
@@ -564,11 +567,12 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     if (isPep3Scale) {
+      final String studentAge = _studentAgeLabel(student);
       _openPep3Assessment(
         Pep3AssessmentLaunchArgs(
           studentId: student.id,
           studentName: student.displayName,
-          studentAge: student.age.trim().isEmpty ? '未知' : student.age.trim(),
+          studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
           scaleName: scale.name,
@@ -2022,8 +2026,17 @@ class _StudentChipActionHint extends StatelessWidget {
 }
 
 String _studentEchoLabel(AssessmentStudentCandidate student) {
-  final String age = student.age.trim().isNotEmpty ? student.age.trim() : '未知';
-  return '${student.displayName} * $age';
+  return '${student.displayName} * ${_studentAgeLabel(student)}';
+}
+
+String _studentAgeLabel(AssessmentStudentCandidate student) {
+  final String fallback =
+      student.age.trim().isNotEmpty ? student.age.trim() : '未知';
+  return formatAssessmentAgeText(
+    birthDate: student.birthDate,
+    assessmentDate: _todayIsoDate(),
+    fallback: fallback,
+  );
 }
 
 const List<_StudentStatusTabOption> _studentStatusTabOptions =
@@ -2974,7 +2987,9 @@ class _StudentDialogItem extends StatelessWidget {
                 ),
               ),
               Expanded(child: _StudentDialogCell(student.gender)),
-              Expanded(flex: 2, child: _StudentDialogCell(student.age)),
+              Expanded(
+                  flex: 2,
+                  child: _StudentDialogCell(_studentAgeLabel(student))),
               Expanded(
                   flex: 2, child: _StudentDialogCell(student.contactPhone)),
               Expanded(

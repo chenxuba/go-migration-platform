@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_draft_resume_dialog.dart';
+import 'assessment_age_formatter.dart';
 import 'assessment_scale_client.dart';
 import 'autismdev_assessment_client.dart';
 import 'pad_responsive.dart';
@@ -113,7 +114,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
           _AutismDevTopBar(
             title: _autismDevScaleTitle(widget.args.scaleName),
             studentName: _studentName.trim().isEmpty ? '-' : _studentName,
-            studentAge: _studentAge.trim().isEmpty ? '未知' : _studentAge,
+            studentAge: _studentAgeText,
             assessmentDate: _assessmentDate.isEmpty ? '未设置日期' : _assessmentDate,
             examinerName: _examinerName.trim().isEmpty ? '当前老师' : _examinerName,
             autoSaveText: _autoSaveText,
@@ -126,6 +127,16 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
           Expanded(child: _buildBody()),
         ],
       ),
+    );
+  }
+
+  String get _studentAgeText {
+    final String fallback =
+        _studentAge.trim().isEmpty ? '未知' : _studentAge.trim();
+    return formatAssessmentAgeText(
+      birthDate: _birthDate,
+      assessmentDate: _assessmentDate,
+      fallback: fallback,
     );
   }
 }

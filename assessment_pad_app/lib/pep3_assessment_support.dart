@@ -166,36 +166,10 @@ String _shortDateLabel(String value) {
 }
 
 String _assessmentAgeText(String birthDate, String assessmentDate) {
-  final DateTime? birth = DateTime.tryParse(birthDate);
-  final DateTime? target = DateTime.tryParse(assessmentDate);
-  if (birth == null || target == null || birth.isAfter(target)) {
-    return '';
-  }
-  int years = target.year - birth.year;
-  DateTime anchor = DateTime(birth.year + years, birth.month, birth.day);
-  if (anchor.isAfter(target)) {
-    years -= 1;
-    anchor = DateTime(birth.year + years, birth.month, birth.day);
-  }
-  int months = (target.year - anchor.year) * 12 + target.month - anchor.month;
-  DateTime monthAnchor =
-      DateTime(anchor.year, anchor.month + months, anchor.day);
-  if (monthAnchor.isAfter(target)) {
-    months -= 1;
-    monthAnchor = DateTime(anchor.year, anchor.month + months, anchor.day);
-  }
-  final int days = target.difference(monthAnchor).inDays;
-  final List<String> parts = <String>[];
-  if (years > 0) {
-    parts.add('$years岁');
-  }
-  if (months > 0) {
-    parts.add('$months月');
-  }
-  if (days > 0 || parts.isEmpty) {
-    parts.add('$days天');
-  }
-  return parts.join('');
+  return formatAssessmentAgeText(
+    birthDate: birthDate,
+    assessmentDate: assessmentDate,
+  );
 }
 
 bool _isEmptyRecordValue(dynamic value) {

@@ -2485,6 +2485,60 @@ void main() {
     expect(find.text('王安全 * 未知'), findsOneWidget);
   });
 
+  testWidgets('student selector and echo show day-level age from birth date',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final DateTime today = DateTime.now();
+    final DateTime birthDate = DateTime(today.year - 4, today.month, today.day)
+        .subtract(const Duration(days: 3));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              studentCandidates: <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 24,
+                  shortName: '周',
+                  name: '周小天',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '4岁',
+                  birthDate: _formatDateDashForTest(birthDate),
+                  contactPhone: '妈妈 136****0024',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('4岁3天'), findsOneWidget);
+
+    await tester.tap(find.text('周小天'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('周小天 * 4岁3天'), findsOneWidget);
+  });
+
   testWidgets('ERXin scale blocks launch when student is over six years old',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -3854,6 +3908,44 @@ void main() {
     expect(find.text('PEP-3 测评工作台'), findsOneWidget);
     expect(find.text('记录册页面'), findsOneWidget);
     expect(find.textContaining('旋开瓶盖'), findsWidgets);
+  });
+
+  testWidgets('PEP3 workbench header shows day-level age before full month',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final DateTime today = DateTime.now();
+    final DateTime birthDate = DateTime(today.year - 4, today.month, today.day)
+        .subtract(const Duration(days: 3));
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Pep3AssessmentPage(
+            args: Pep3AssessmentLaunchArgs(
+              studentId: 24,
+              studentName: '周小天',
+              studentAge: '4岁',
+              birthDate: _formatDateDashForTest(birthDate),
+              assessmentDate: _formatDateDashForTest(today),
+            ),
+            client: _FakePep3AssessmentClient(),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.textContaining('4岁3天', findRichText: true), findsOneWidget);
   });
 
   testWidgets('PEP3 workbench prompts when latest draft exists',
