@@ -16,28 +16,29 @@ import (
 )
 
 type Service struct {
-	store              *customization.Store
-	repo               *repository.Repository
-	tokenManager       *authx.TokenManager
-	searchClient       *search.Client
-	messageClient      *messaging.Client
-	qiniuClient        *qiniux.Client
-	wechatOfficial     *weChatOfficialClient
-	wechatMiniProgram  *weChatMiniProgramClient
-	iepGenerationTasks *iepPlanGenerationTaskStore
+	store                       *customization.Store
+	repo                        *repository.Repository
+	tokenManager                *authx.TokenManager
+	searchClient                *search.Client
+	messageClient               *messaging.Client
+	qiniuClient                 *qiniux.Client
+	wechatOfficial              *weChatOfficialClient
+	wechatMiniProgram           *weChatMiniProgramClient
+	iepGenerationTasks          *iepPlanGenerationTaskStore
 	iepExecutionGenerationTasks *iepExecutionGenerationTaskStore
 }
 
 func New(store *customization.Store, repo *repository.Repository, tokenManager *authx.TokenManager, searchClient *search.Client, messageClient *messaging.Client, qiniuClient *qiniux.Client) *Service {
 	configurePEP3StaticDataRepository(repo)
+	configureAutismDevStaticDataRepository(repo)
 	return &Service{
-		store:              store,
-		repo:               repo,
-		tokenManager:       tokenManager,
-		searchClient:       searchClient,
-		messageClient:      messageClient,
-		qiniuClient:        qiniuClient,
-		iepGenerationTasks: newIEPPlanGenerationTaskStore(),
+		store:                       store,
+		repo:                        repo,
+		tokenManager:                tokenManager,
+		searchClient:                searchClient,
+		messageClient:               messageClient,
+		qiniuClient:                 qiniuClient,
+		iepGenerationTasks:          newIEPPlanGenerationTaskStore(),
 		iepExecutionGenerationTasks: newIEPExecutionGenerationTaskStore(),
 	}
 }

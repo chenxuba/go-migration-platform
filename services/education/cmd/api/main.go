@@ -66,6 +66,9 @@ func main() {
 	if err := svc.EnsurePEP3ScaleData(context.Background()); err != nil {
 		panic(err)
 	}
+	if err := svc.EnsureAutismDevScaleData(context.Background()); err != nil {
+		panic(err)
+	}
 	svc.ConfigureWeChatOfficial(service.WeChatOfficialConfig{
 		AppID:                   cfg.WeChatOfficialAppID,
 		Secret:                  cfg.WeChatOfficialSecret,

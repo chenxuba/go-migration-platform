@@ -68,10 +68,10 @@ type autismDevDomainDefinition struct {
 }
 
 var (
-	autismDevEngineOnce    sync.Once
-	autismDevEngine        *autismdevscore.Engine
-	autismDevEngineInfo    AutismDevScoreDataInfo
-	autismDevEngineLoadErr error
+	autismDevStaticDataMu             sync.RWMutex
+	autismDevStaticDataCache          autismDevStaticData
+	autismDevStaticDataCacheSignature string
+	autismDevStaticDataCacheReady     bool
 )
 
 func (svc *Service) ScoreAutismDev(input autismdevscore.AssessmentInput) (AutismDevScoreResponse, error) {
@@ -111,13 +111,7 @@ func (svc *Service) GetAutismDevAssessmentFormTemplateItem(itemNo int) (model.Au
 }
 
 func loadAutismDevEngine() (*autismdevscore.Engine, AutismDevScoreDataInfo, error) {
-	autismDevEngineOnce.Do(func() {
-		autismDevEngine, autismDevEngineInfo, autismDevEngineLoadErr = buildAutismDevEngine()
-	})
-	if autismDevEngineLoadErr != nil {
-		return nil, AutismDevScoreDataInfo{}, autismDevEngineLoadErr
-	}
-	return autismDevEngine, autismDevEngineInfo, nil
+	return buildAutismDevEngine()
 }
 
 func buildAutismDevEngine() (*autismdevscore.Engine, AutismDevScoreDataInfo, error) {
@@ -181,11 +175,60 @@ func buildAutismDevAssessmentFormTemplateSummary() (model.AutismDevAssessmentFor
 }
 
 func loadAutismDevStaticData() (autismDevStaticData, error) {
+	if data, loaded, err := loadAutismDevStaticDataFromConfiguredDB(); loaded || err != nil {
+		if err != nil {
+			return autismDevStaticData{}, err
+		}
+		return data, nil
+	}
+	return loadAutismDevFallbackStaticData()
+}
+
+func loadAutismDevFallbackStaticData() (autismDevStaticData, error) {
 	dataDir, err := resolveAutismDevDataDir()
 	if err != nil {
 		return autismDevStaticData{}, err
 	}
+	signature, err := autismDevDataFilesSignature(dataDir)
+	if err != nil {
+		return autismDevStaticData{}, err
+	}
 
+	autismDevStaticDataMu.RLock()
+	if autismDevStaticDataCacheReady &&
+		autismDevStaticDataCacheSignature == signature {
+		data := autismDevStaticDataCache
+		autismDevStaticDataMu.RUnlock()
+		return data, nil
+	}
+	autismDevStaticDataMu.RUnlock()
+
+	autismDevStaticDataMu.Lock()
+	defer autismDevStaticDataMu.Unlock()
+	if autismDevStaticDataCacheReady &&
+		autismDevStaticDataCacheSignature == signature {
+		return autismDevStaticDataCache, nil
+	}
+
+	data, err := loadAutismDevStaticDataFromFiles(dataDir)
+	if err != nil {
+		return autismDevStaticData{}, err
+	}
+	autismDevStaticDataCache = data
+	autismDevStaticDataCacheSignature = signature
+	autismDevStaticDataCacheReady = true
+	return data, nil
+}
+
+func resetAutismDevFallbackStaticDataCache() {
+	autismDevStaticDataMu.Lock()
+	defer autismDevStaticDataMu.Unlock()
+	autismDevStaticDataCache = autismDevStaticData{}
+	autismDevStaticDataCacheSignature = ""
+	autismDevStaticDataCacheReady = false
+}
+
+func loadAutismDevStaticDataFromFiles(dataDir string) (autismDevStaticData, error) {
 	items, err := autismdevscore.LoadItemDefinitionsFile(filepath.Join(dataDir, autismDevItemBankFile))
 	if err != nil {
 		return autismDevStaticData{}, fmt.Errorf("load AutismDev item bank: %w", err)
@@ -222,6 +265,27 @@ func loadAutismDevJSONFile(path string, out any) error {
 		return fmt.Errorf("decode %s: %w", filepath.Base(path), err)
 	}
 	return nil
+}
+
+func autismDevDataFilesSignature(dataDir string) (string, error) {
+	var builder strings.Builder
+	for _, name := range []string{autismDevItemBankFile, autismDevDomainMapFile, autismDevMetadataFile} {
+		path := filepath.Join(dataDir, name)
+		info, err := os.Stat(path)
+		if err != nil {
+			return "", err
+		}
+		if info.IsDir() {
+			return "", fmt.Errorf("AutismDev data file %s is a directory", path)
+		}
+		builder.WriteString(name)
+		builder.WriteString(":")
+		builder.WriteString(fmt.Sprint(info.Size()))
+		builder.WriteString(":")
+		builder.WriteString(fmt.Sprint(info.ModTime().UnixNano()))
+		builder.WriteString(";")
+	}
+	return builder.String(), nil
 }
 
 func resolveAutismDevDataDir() (string, error) {

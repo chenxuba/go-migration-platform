@@ -53,6 +53,7 @@ CREATE TABLE IF NOT EXISTS assessment_scale_dataset (
   scale_version VARCHAR(64) NOT NULL DEFAULT '',
   data_status VARCHAR(1000) NOT NULL DEFAULT '',
   sources_json LONGTEXT NOT NULL,
+  metadata_json LONGTEXT NULL,
   create_id BIGINT NOT NULL DEFAULT 0,
   update_id BIGINT NOT NULL DEFAULT 0,
   create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,

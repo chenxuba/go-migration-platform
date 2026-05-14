@@ -14,6 +14,7 @@ type AssessmentScaleDatasetEntity struct {
 	ScaleVersion string
 	DataStatus   string
 	Sources      []string
+	Metadata     json.RawMessage
 }
 
 type AssessmentScaleItemEntity struct {
@@ -56,6 +57,7 @@ func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
 			scale_version VARCHAR(64) NOT NULL DEFAULT '',
 			data_status VARCHAR(1000) NOT NULL DEFAULT '',
 			sources_json LONGTEXT NOT NULL,
+			metadata_json LONGTEXT NULL,
 			create_id BIGINT NOT NULL DEFAULT 0,
 			update_id BIGINT NOT NULL DEFAULT 0,
 			create_time DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -64,6 +66,9 @@ func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
 			UNIQUE KEY uk_assessment_scale_dataset (scale_code, scale_version)
 		)
 	`); err != nil {
+		return err
+	}
+	if err := ensureAssessmentScaleDatasetMetadataColumn(ctx, db); err != nil {
 		return err
 	}
 	if _, err := db.ExecContext(ctx, `
@@ -143,6 +148,27 @@ func ensureAssessmentScaleTables(ctx context.Context, db *sql.DB) error {
 	return err
 }
 
+func ensureAssessmentScaleDatasetMetadataColumn(ctx context.Context, db *sql.DB) error {
+	var count int
+	if err := db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM information_schema.COLUMNS
+		WHERE TABLE_SCHEMA = DATABASE()
+		  AND TABLE_NAME = 'assessment_scale_dataset'
+		  AND COLUMN_NAME = 'metadata_json'
+	`).Scan(&count); err != nil {
+		return err
+	}
+	if count > 0 {
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `
+		ALTER TABLE assessment_scale_dataset
+		ADD COLUMN metadata_json LONGTEXT NULL AFTER sources_json
+	`)
+	return err
+}
+
 func (repo *Repository) HasAssessmentScaleStaticData(ctx context.Context, scaleCode, scaleVersion string) (bool, error) {
 	scaleCode = strings.TrimSpace(scaleCode)
 	scaleVersion = strings.TrimSpace(scaleVersion)
@@ -188,6 +214,7 @@ func (repo *Repository) ReplaceAssessmentScaleStaticData(ctx context.Context, da
 	if err != nil {
 		return fmt.Errorf("marshal assessment scale sources: %w", err)
 	}
+	metadataRaw := strings.TrimSpace(string(data.Dataset.Metadata))
 	tx, err := repo.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -199,15 +226,16 @@ func (repo *Repository) ReplaceAssessmentScaleStaticData(ctx context.Context, da
 	}()
 	if _, err = tx.ExecContext(ctx, `
 		INSERT INTO assessment_scale_dataset (
-			scale_code, scale_version, data_status, sources_json, create_id, update_id, create_time, update_time, del_flag
-		) VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+			scale_code, scale_version, data_status, sources_json, metadata_json, create_id, update_id, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
 		ON DUPLICATE KEY UPDATE
 			data_status = VALUES(data_status),
 			sources_json = VALUES(sources_json),
+			metadata_json = VALUES(metadata_json),
 			update_id = VALUES(update_id),
 			update_time = NOW(),
 			del_flag = 0
-	`, scaleCode, scaleVersion, strings.TrimSpace(data.Dataset.DataStatus), string(sourcesRaw), operatorID, operatorID); err != nil {
+	`, scaleCode, scaleVersion, strings.TrimSpace(data.Dataset.DataStatus), string(sourcesRaw), metadataRaw, operatorID, operatorID); err != nil {
 		return err
 	}
 	for _, table := range []string{"assessment_scale_item", "assessment_scale_domain", "assessment_scale_item_record_field", "assessment_scale_norm_record"} {
@@ -304,16 +332,20 @@ func (repo *Repository) GetAssessmentScaleDataset(ctx context.Context, scaleCode
 	var (
 		data       AssessmentScaleDatasetEntity
 		sourcesRaw string
+		metadata   sql.NullString
 	)
 	if err := repo.db.QueryRowContext(ctx, `
-		SELECT scale_code, scale_version, data_status, sources_json
+		SELECT scale_code, scale_version, data_status, sources_json, metadata_json
 		FROM assessment_scale_dataset
 		WHERE scale_code = ? AND scale_version = ? AND del_flag = 0
 		LIMIT 1
-	`, strings.TrimSpace(scaleCode), strings.TrimSpace(scaleVersion)).Scan(&data.ScaleCode, &data.ScaleVersion, &data.DataStatus, &sourcesRaw); err != nil {
+	`, strings.TrimSpace(scaleCode), strings.TrimSpace(scaleVersion)).Scan(&data.ScaleCode, &data.ScaleVersion, &data.DataStatus, &sourcesRaw, &metadata); err != nil {
 		return AssessmentScaleDatasetEntity{}, err
 	}
 	_ = json.Unmarshal([]byte(sourcesRaw), &data.Sources)
+	if metadata.Valid {
+		data.Metadata = json.RawMessage(metadata.String)
+	}
 	return data, nil
 }
 

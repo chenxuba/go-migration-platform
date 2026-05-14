@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 
 import 'assessment_scale_client.dart';
@@ -113,11 +114,39 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
   final http.Client? httpClient;
 
   static final http.Client _sharedHttpClient = http.Client();
+  static final Map<String, Future<AutismDevTemplateSummary>>
+      _templateSummaryRequests = <String, Future<AutismDevTemplateSummary>>{};
 
   http.Client get _client => httpClient ?? _sharedHttpClient;
 
   @override
   Future<AutismDevTemplateSummary> fetchTemplateSummary(String token) async {
+    final String cacheKey = '$educationBaseUrl|$templateSummaryPath';
+    if (httpClient == null) {
+      final Future<AutismDevTemplateSummary>? pending =
+          _templateSummaryRequests[cacheKey];
+      if (pending != null) {
+        return pending;
+      }
+    }
+    final Future<AutismDevTemplateSummary> request =
+        _fetchTemplateSummaryFromNetwork(token);
+    if (httpClient == null) {
+      _templateSummaryRequests[cacheKey] = request;
+    }
+    try {
+      return await request;
+    } finally {
+      if (httpClient == null &&
+          identical(_templateSummaryRequests[cacheKey], request)) {
+        _templateSummaryRequests.remove(cacheKey);
+      }
+    }
+  }
+
+  Future<AutismDevTemplateSummary> _fetchTemplateSummaryFromNetwork(
+    String token,
+  ) async {
     final http.Client client = _client;
     final Object? data = await _getJson(
       client,
@@ -737,7 +766,7 @@ Future<Object?> _getJson(
   } on Object catch (error) {
     throw AssessmentScaleApiException('$fallbackMessage：$error');
   }
-  return _handleResponse(response, fallbackMessage: fallbackMessage);
+  return await _handleResponse(response, fallbackMessage: fallbackMessage);
 }
 
 Future<Object?> _postJson(
@@ -757,22 +786,15 @@ Future<Object?> _postJson(
   } on Object catch (error) {
     throw AssessmentScaleApiException('$fallbackMessage：$error');
   }
-  return _handleResponse(response, fallbackMessage: fallbackMessage);
+  return await _handleResponse(response, fallbackMessage: fallbackMessage);
 }
 
-Object? _handleResponse(
+Future<Object?> _handleResponse(
   http.Response response, {
   required String fallbackMessage,
-}) {
+}) async {
   final String body = utf8.decode(response.bodyBytes);
-  Object? decoded;
-  if (body.trim().isNotEmpty) {
-    try {
-      decoded = jsonDecode(body);
-    } on Object {
-      decoded = null;
-    }
-  }
+  final Object? decoded = await _decodeResponse(body);
   if (response.statusCode == 401 || response.statusCode == 403) {
     throw AssessmentScaleApiException(
       _messageFromPayload(decoded) ?? '登录已失效，请重新登录',
@@ -792,6 +814,24 @@ Object? _handleResponse(
   }
   return decoded;
 }
+
+const int _autismDevBackgroundDecodeThreshold = 24 * 1024;
+
+Future<Object?> _decodeResponse(String body) async {
+  if (body.trim().isEmpty) {
+    return null;
+  }
+  try {
+    if (body.length >= _autismDevBackgroundDecodeThreshold) {
+      return await compute(_decodeJsonPayload, body);
+    }
+    return _decodeJsonPayload(body);
+  } on Object {
+    return null;
+  }
+}
+
+Object? _decodeJsonPayload(String body) => jsonDecode(body);
 
 Uri _uri(String base, String path, [Map<String, String>? query]) {
   final Uri baseUri = Uri.parse(base);
