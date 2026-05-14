@@ -373,6 +373,21 @@ func (repo *Repository) ListAssessmentScaleItems(ctx context.Context, scaleCode,
 	return out, rows.Err()
 }
 
+func (repo *Repository) GetAssessmentScaleItem(ctx context.Context, scaleCode, scaleVersion string, itemNo int) (AssessmentScaleItemEntity, error) {
+	var item AssessmentScaleItemEntity
+	var raw string
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT item_no, item_json
+		FROM assessment_scale_item
+		WHERE scale_code = ? AND scale_version = ? AND item_no = ? AND del_flag = 0
+		LIMIT 1
+	`, strings.TrimSpace(scaleCode), strings.TrimSpace(scaleVersion), itemNo).Scan(&item.ItemNo, &raw); err != nil {
+		return AssessmentScaleItemEntity{}, err
+	}
+	item.Raw = json.RawMessage(raw)
+	return item, nil
+}
+
 func (repo *Repository) ListAssessmentScaleDomains(ctx context.Context, scaleCode, scaleVersion string) ([]AssessmentScaleDomainEntity, error) {
 	rows, err := repo.db.QueryContext(ctx, `
 		SELECT domain_code, sort_no, domain_json

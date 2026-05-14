@@ -98,6 +98,12 @@ func (svc *Service) GetAutismDevAssessmentFormTemplateSummary() (model.AutismDev
 }
 
 func (svc *Service) GetAutismDevAssessmentFormTemplateItem(itemNo int) (model.AutismDevAssessmentItem, error) {
+	if item, loaded, err := loadAutismDevTemplateItemFromConfiguredDB(itemNo); loaded || err != nil {
+		if err != nil {
+			return model.AutismDevAssessmentItem{}, err
+		}
+		return buildAutismDevAssessmentItem(item), nil
+	}
 	data, err := loadAutismDevStaticData()
 	if err != nil {
 		return model.AutismDevAssessmentItem{}, err
@@ -494,7 +500,6 @@ func buildAutismDevAssessmentItemSummary(item autismdevscore.ItemDefinition) mod
 		ItemNo:          item.ItemNo,
 		DomainItemNo:    item.DomainItemNo,
 		ItemTitle:       strings.TrimSpace(item.ItemTitle),
-		TestItem:        strings.TrimSpace(nonEmptyString(item.TestItem, item.ItemTitle)),
 		AssessmentRange: strings.TrimSpace(item.AssessmentRange),
 		Materials:       strings.TrimSpace(item.Materials),
 		Method:          strings.TrimSpace(item.Method),

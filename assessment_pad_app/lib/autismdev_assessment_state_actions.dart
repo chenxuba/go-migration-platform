@@ -322,8 +322,13 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
 
   AutismDevItemSummary? get _selectedSummary => _summaryByNo(_selectedItemNo);
 
-  AutismDevAssessmentItem? get _selectedDetail =>
-      _itemDetailCache[_selectedItemNo];
+  AutismDevAssessmentItem? get _selectedDetail {
+    final AutismDevAssessmentItem? detail = _itemDetailCache[_selectedItemNo];
+    if (detail == null || !_isUsableItemDetail(detail, _selectedItemNo)) {
+      return null;
+    }
+    return detail;
+  }
 
   int get _fullAnsweredCount => _allItems
       .where(
@@ -490,8 +495,15 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     int itemNo, {
     required bool updateStateOnComplete,
   }) {
-    if (itemNo <= 0 || _itemDetailCache.containsKey(itemNo)) {
+    if (itemNo <= 0) {
       return;
+    }
+    final AutismDevAssessmentItem? cached = _itemDetailCache[itemNo];
+    if (cached != null) {
+      if (_isUsableItemDetail(cached, itemNo)) {
+        return;
+      }
+      _itemDetailCache.remove(itemNo);
     }
     final Future<AutismDevAssessmentItem> future = _itemDetailFetches[itemNo] ??
         widget.client
@@ -500,6 +512,10 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     _itemDetailFetches[itemNo] = future;
     unawaited(
       future.then<void>((AutismDevAssessmentItem item) {
+        if (!_isUsableItemDetail(item, itemNo)) {
+          _itemDetailCache.remove(itemNo);
+          return;
+        }
         if (!mounted) {
           _itemDetailCache[itemNo] = item;
           return;
@@ -511,6 +527,10 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
         }
       }, onError: (Object _) {}),
     );
+  }
+
+  bool _isUsableItemDetail(AutismDevAssessmentItem item, int itemNo) {
+    return itemNo > 0 && item.itemNo == itemNo;
   }
 
   Future<void> _selectScore(String score, {bool moveNext = false}) async {

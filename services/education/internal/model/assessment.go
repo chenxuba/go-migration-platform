@@ -692,7 +692,7 @@ type AutismDevAssessmentItemSummary struct {
 	ItemNo          int      `json:"itemNo"`
 	DomainItemNo    int      `json:"domainItemNo"`
 	ItemTitle       string   `json:"itemTitle"`
-	TestItem        string   `json:"testItem"`
+	TestItem        string   `json:"testItem,omitempty"`
 	AssessmentRange string   `json:"assessmentRange,omitempty"`
 	Materials       string   `json:"materials,omitempty"`
 	Method          string   `json:"method,omitempty"`

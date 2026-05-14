@@ -189,6 +189,28 @@ func loadAutismDevStaticDataFromDB(ctx context.Context, repo *repository.Reposit
 	}, nil
 }
 
+func loadAutismDevTemplateItemFromConfiguredDB(itemNo int) (autismdevscore.ItemDefinition, bool, error) {
+	repo := currentAutismDevStaticDataRepository()
+	if repo == nil {
+		return autismdevscore.ItemDefinition{}, false, nil
+	}
+	row, err := repo.GetAssessmentScaleItem(context.Background(), autismDevScaleCode, autismDevScaleVersion, itemNo)
+	if err != nil {
+		if isAutismDevStaticDataFallbackError(err) {
+			return autismdevscore.ItemDefinition{}, false, nil
+		}
+		return autismdevscore.ItemDefinition{}, true, err
+	}
+	var item autismdevscore.ItemDefinition
+	if err := json.Unmarshal(row.Raw, &item); err != nil {
+		return autismdevscore.ItemDefinition{}, true, fmt.Errorf("decode AutismDev DB item %d: %w", row.ItemNo, err)
+	}
+	if item.ItemNo == 0 {
+		item.ItemNo = row.ItemNo
+	}
+	return item, true, nil
+}
+
 func autismDevStaticDataEntity(data autismDevStaticData) repository.AssessmentScaleStaticDataEntity {
 	items := make([]repository.AssessmentScaleItemEntity, 0, len(data.items))
 	for _, item := range data.items {
