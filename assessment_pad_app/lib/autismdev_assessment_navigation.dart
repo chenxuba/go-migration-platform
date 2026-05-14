@@ -722,7 +722,7 @@ class _ScopeDomainRow extends StatelessWidget {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: _AutismDevColors.muted,
-                          fontSize: 11,
+                          fontSize: 10,
                           height: 1,
                           fontWeight: FontWeight.w800,
                         ),
