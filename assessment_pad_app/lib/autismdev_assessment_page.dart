@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
 import 'autismdev_assessment_client.dart';
+import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 
 class AutismDevAssessmentPage extends StatefulWidget {
@@ -24,6 +25,8 @@ class AutismDevAssessmentPage extends StatefulWidget {
   State<AutismDevAssessmentPage> createState() =>
       _AutismDevAssessmentPageState();
 }
+
+enum _AutismDevQuestionDisplayPreference { all, matchingAge, ageAndBelow }
 
 class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   static const String _authTokenStorageKey = 'auth_token';
@@ -54,6 +57,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   bool _saving = false;
   bool _submitting = false;
   bool _autoNext = true;
+  _AutismDevQuestionDisplayPreference _questionDisplayPreference =
+      _AutismDevQuestionDisplayPreference.ageAndBelow;
   String _errorMessage = '';
   String _autoSaveText = '等待作答';
 
@@ -104,9 +109,9 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       }
       _token = token;
       _template = template;
-      _selectedDomainCode = template.domainGroups.isNotEmpty
-          ? template.domainGroups.first.domainCode
-          : '';
+      final List<AutismDevDomainGroup> displayGroups = _displayDomainGroups;
+      _selectedDomainCode =
+          displayGroups.isNotEmpty ? displayGroups.first.domainCode : '';
       _selectedItemNo = _firstItemNoInDomain(_selectedDomainCode);
       if (_draftId > 0) {
         final AutismDevDraftDetail detail =
@@ -121,12 +126,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
           _applyDraftDetail(detail);
         }
       }
-      if (_selectedItemNo <= 0) {
-        _selectedItemNo = _firstUnansweredItemNo() > 0
-            ? _firstUnansweredItemNo()
-            : _firstItemNoInDomain(_selectedDomainCode);
-      }
       _selectedRangeFilter = '';
+      _ensureSelectedDisplayItem();
       _syncRemarkController();
       setState(() {
         _loading = false;
@@ -198,14 +199,12 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   }
 
   AutismDevDomainGroup? get _selectedGroup {
-    for (final AutismDevDomainGroup group in _template.domainGroups) {
+    for (final AutismDevDomainGroup group in _displayDomainGroups) {
       if (group.domainCode == _selectedDomainCode) {
         return group;
       }
     }
-    return _template.domainGroups.isNotEmpty
-        ? _template.domainGroups.first
-        : null;
+    return _displayDomainGroups.isNotEmpty ? _displayDomainGroups.first : null;
   }
 
   AutismDevItemSummary? get _selectedSummary => _summaryByNo(_selectedItemNo);
@@ -213,11 +212,17 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   AutismDevAssessmentItem? get _selectedDetail =>
       _itemDetailCache[_selectedItemNo];
 
-  int get _answeredCount => _itemScores.length;
+  int get _fullAnsweredCount => _allItems
+      .where(
+          (AutismDevItemSummary item) => _itemScores.containsKey(item.itemNo))
+      .length;
 
-  int get _missingCount => math.max(_totalCount - _answeredCount, 0);
+  int get _visibleAnsweredCount => _displayItems
+      .where(
+          (AutismDevItemSummary item) => _itemScores.containsKey(item.itemNo))
+      .length;
 
-  int get _totalCount {
+  int get _fullTotalCount {
     if (_template.itemCount > 0) {
       return _template.itemCount;
     }
@@ -227,8 +232,19 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     );
   }
 
+  int get _visibleTotalCount => _displayItems.length;
+
+  int get _visibleMissingCount =>
+      math.max(_visibleTotalCount - _visibleAnsweredCount, 0);
+
+  int? get _studentAgeMonths => _resolvedStudentAgeMonths(
+        birthDate: _birthDate,
+        assessmentDate: _assessmentDate,
+        ageText: _studentAge,
+      );
+
   int get _currentIndex {
-    final int index = _allItems.indexWhere(
+    final int index = _displayItems.indexWhere(
       (AutismDevItemSummary item) => item.itemNo == _selectedItemNo,
     );
     return index < 0 ? 0 : index;
@@ -236,7 +252,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
 
   bool get _hasPreviousItem => _currentIndex > 0;
 
-  bool get _hasNextItem => _currentIndex < _allItems.length - 1;
+  bool get _hasNextItem => _currentIndex < _displayItems.length - 1;
 
   List<AutismDevScoreOption> get _currentScoreOptions {
     final AutismDevAssessmentItem? detail = _selectedDetail;
@@ -290,6 +306,32 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       _selectedRangeFilter = nextFilter;
       _selectedItemNo = target.itemNo;
       _selectedDomainCode = target.domainCode;
+    });
+    _syncRemarkController();
+    _prefetchSelectedItem();
+  }
+
+  Future<void> _openQuestionPreferenceDialog() async {
+    final _AutismDevQuestionDisplayPreference? selected =
+        await showDialog<_AutismDevQuestionDisplayPreference>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(.28),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _QuestionPreferenceDialog(
+            selected: _questionDisplayPreference,
+            studentAgeMonths: _studentAgeMonths,
+          ),
+        );
+      },
+    );
+    if (selected == null || selected == _questionDisplayPreference) {
+      return;
+    }
+    setState(() {
+      _questionDisplayPreference = selected;
+      _selectedRangeFilter = '';
+      _ensureSelectedDisplayItem();
     });
     _syncRemarkController();
     _prefetchSelectedItem();
@@ -475,8 +517,10 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       return;
     }
     _syncCurrentRemarkToState();
-    if (_totalCount > 0 && _answeredCount < _totalCount) {
-      _showMessage('还有 ${_totalCount - _answeredCount} 道题未评分，完成后再提交');
+    if (_fullTotalCount > 0 && _fullAnsweredCount < _fullTotalCount) {
+      _showMessage(
+        '还有 ${_fullTotalCount - _fullAnsweredCount} 道题未评分，完成后再提交',
+      );
       return;
     }
     setState(() => _submitting = true);
@@ -536,21 +580,21 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   }
 
   void _goNextItem() {
-    final List<AutismDevItemSummary> allItems = _allItems;
-    final int currentIndex = allItems.indexWhere(
+    final List<AutismDevItemSummary> displayItems = _displayItems;
+    final int currentIndex = displayItems.indexWhere(
         (AutismDevItemSummary item) => item.itemNo == _selectedItemNo);
-    if (currentIndex >= 0 && currentIndex < allItems.length - 1) {
-      final AutismDevItemSummary next = allItems[currentIndex + 1];
+    if (currentIndex >= 0 && currentIndex < displayItems.length - 1) {
+      final AutismDevItemSummary next = displayItems[currentIndex + 1];
       _selectItem(next);
     }
   }
 
   void _goPreviousItem() {
-    final List<AutismDevItemSummary> allItems = _allItems;
-    final int currentIndex = allItems.indexWhere(
+    final List<AutismDevItemSummary> displayItems = _displayItems;
+    final int currentIndex = displayItems.indexWhere(
         (AutismDevItemSummary item) => item.itemNo == _selectedItemNo);
     if (currentIndex > 0) {
-      _selectItem(allItems[currentIndex - 1]);
+      _selectItem(displayItems[currentIndex - 1]);
     }
   }
 
@@ -572,25 +616,95 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         .toList();
   }
 
+  List<AutismDevDomainGroup> get _displayDomainGroups {
+    return _template.domainGroups
+        .map(_displayGroupForPreference)
+        .where((AutismDevDomainGroup group) => group.items.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<AutismDevItemSummary> get _displayItems {
+    return _displayDomainGroups
+        .expand((AutismDevDomainGroup group) => group.items)
+        .toList(growable: false);
+  }
+
+  AutismDevDomainGroup _displayGroupForPreference(
+    AutismDevDomainGroup group,
+  ) {
+    final List<AutismDevItemSummary> items = group.items
+        .where(_shouldDisplayItemForPreference)
+        .toList(growable: false);
+    return AutismDevDomainGroup(
+      groupCode: group.groupCode,
+      title: group.title,
+      domainCode: group.domainCode,
+      domainName: group.domainName,
+      scoreType: group.scoreType,
+      itemCount: items.length,
+      items: items,
+    );
+  }
+
+  bool _shouldDisplayItemForPreference(AutismDevItemSummary item) {
+    if (_isEmotionBehaviorItem(item) ||
+        _questionDisplayPreference == _AutismDevQuestionDisplayPreference.all) {
+      return true;
+    }
+    final int? ageMonths = _studentAgeMonths;
+    if (ageMonths == null) {
+      return true;
+    }
+    final int minMonth = item.ageMinMonth;
+    final int maxMonth = item.ageMaxMonth;
+    if (minMonth <= 0 && maxMonth <= 0) {
+      return true;
+    }
+    return switch (_questionDisplayPreference) {
+      _AutismDevQuestionDisplayPreference.all => true,
+      _AutismDevQuestionDisplayPreference.matchingAge =>
+        minMonth <= ageMonths && (maxMonth <= 0 || ageMonths <= maxMonth),
+      _AutismDevQuestionDisplayPreference.ageAndBelow => minMonth <= ageMonths,
+    };
+  }
+
   int _firstItemNoInDomain(String domainCode) {
-    for (final AutismDevDomainGroup group in _template.domainGroups) {
+    for (final AutismDevDomainGroup group in _displayDomainGroups) {
       if (group.domainCode == domainCode && group.items.isNotEmpty) {
         return group.items.first.itemNo;
       }
     }
-    return _template.domainGroups.isNotEmpty &&
-            _template.domainGroups.first.items.isNotEmpty
-        ? _template.domainGroups.first.items.first.itemNo
-        : 0;
+    return _displayItems.isNotEmpty ? _displayItems.first.itemNo : 0;
   }
 
   int _firstUnansweredItemNo() {
-    for (final AutismDevItemSummary item in _allItems) {
+    for (final AutismDevItemSummary item in _displayItems) {
       if (!_itemScores.containsKey(item.itemNo)) {
         return item.itemNo;
       }
     }
     return 0;
+  }
+
+  void _ensureSelectedDisplayItem() {
+    final List<AutismDevItemSummary> displayItems = _displayItems;
+    if (displayItems.isEmpty) {
+      _selectedItemNo = 0;
+      _selectedDomainCode = '';
+      return;
+    }
+    for (final AutismDevItemSummary item in displayItems) {
+      if (item.itemNo == _selectedItemNo) {
+        _selectedDomainCode = item.domainCode;
+        return;
+      }
+    }
+    final AutismDevItemSummary target = displayItems.firstWhere(
+      (AutismDevItemSummary item) => !_itemScores.containsKey(item.itemNo),
+      orElse: () => displayItems.first,
+    );
+    _selectedItemNo = target.itemNo;
+    _selectedDomainCode = target.domainCode;
   }
 
   AutismDevItemSummary? _summaryByNo(int itemNo) {
@@ -676,7 +790,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
                 SizedBox(
                   width: 226,
                   child: _AutismDevDomainPanel(
-                    groups: _template.domainGroups,
+                    groups: _displayDomainGroups,
                     selectedDomainCode: _selectedDomainCode,
                     selectedRangeFilter: _selectedRangeFilter,
                     selectedItemNo: _selectedItemNo,
@@ -687,11 +801,11 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
                 const SizedBox(width: 10),
                 Expanded(
                   child: _AutismDevWorkspacePanel(
-                    group: group,
                     item: summary,
                     detail: _selectedDetail,
                     selectedScore: _itemScores[_selectedItemNo],
                     scoreOptions: _currentScoreOptions,
+                    onOpenQuestionPreference: _openQuestionPreferenceDialog,
                     onScore: (String score) =>
                         _selectScore(score, moveNext: _autoNext),
                   ),
@@ -705,9 +819,9 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
                     remarkController: _remarkController,
                     selectedRangeFilter: _selectedRangeFilter,
                     itemScores: _itemScores,
-                    answeredCount: _answeredCount,
-                    totalCount: _totalCount,
-                    missingCount: _missingCount,
+                    answeredCount: _visibleAnsweredCount,
+                    totalCount: _visibleTotalCount,
+                    missingCount: _visibleMissingCount,
                     onSelectRangeFilter: _selectRangeFilter,
                   ),
                 ),
@@ -717,7 +831,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         ),
         _AutismDevFooter(
           current: _currentIndex + 1,
-          total: _totalCount,
+          total: _visibleTotalCount,
           hasPrevious: _hasPreviousItem,
           hasNext: _hasNextItem,
           autoNext: _autoNext,
@@ -1731,19 +1845,19 @@ class _AutismDevQuestionNavItem extends StatelessWidget {
 
 class _AutismDevWorkspacePanel extends StatelessWidget {
   const _AutismDevWorkspacePanel({
-    required this.group,
     required this.item,
     required this.detail,
     required this.selectedScore,
     required this.scoreOptions,
+    required this.onOpenQuestionPreference,
     required this.onScore,
   });
 
-  final AutismDevDomainGroup group;
   final AutismDevItemSummary item;
   final AutismDevAssessmentItem? detail;
   final String? selectedScore;
   final List<AutismDevScoreOption> scoreOptions;
+  final VoidCallback onOpenQuestionPreference;
   final ValueChanged<String> onScore;
 
   @override
@@ -1773,8 +1887,8 @@ class _AutismDevWorkspacePanel extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(width: 8),
-                  _DomainChip(
-                    name: group.domainName,
+                  _QuestionPreferenceChip(
+                    onTap: onOpenQuestionPreference,
                   ),
                 ],
               ),
@@ -2615,30 +2729,223 @@ BoxDecoration _autismDevDetailCardDecoration() {
   );
 }
 
-class _DomainChip extends StatelessWidget {
-  const _DomainChip({required this.name});
+class _QuestionPreferenceChip extends StatelessWidget {
+  const _QuestionPreferenceChip({required this.onTap});
 
-  final String name;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: 30,
-      padding: const EdgeInsets.symmetric(horizontal: 11),
-      alignment: Alignment.center,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFF1E8),
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
         borderRadius: BorderRadius.circular(9),
-        border: Border.all(color: const Color(0xFFFFC8AD)),
+        child: Container(
+          height: 30,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF1E8),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(color: const Color(0xFFFFC8AD)),
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(
+                Icons.tune_rounded,
+                size: 15,
+                color: _AutismDevColors.orangeDeep,
+              ),
+              SizedBox(width: 5),
+              Text(
+                '题目偏好配置',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: _AutismDevColors.orangeDeep,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
-      child: Text(
-        name.trim(),
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: const TextStyle(
-          color: _AutismDevColors.orangeDeep,
-          fontSize: 13,
-          fontWeight: FontWeight.w900,
+    );
+  }
+}
+
+class _QuestionPreferenceDialog extends StatefulWidget {
+  const _QuestionPreferenceDialog({
+    required this.selected,
+    required this.studentAgeMonths,
+  });
+
+  final _AutismDevQuestionDisplayPreference selected;
+  final int? studentAgeMonths;
+
+  @override
+  State<_QuestionPreferenceDialog> createState() =>
+      _QuestionPreferenceDialogState();
+}
+
+class _QuestionPreferenceDialogState extends State<_QuestionPreferenceDialog> {
+  late _AutismDevQuestionDisplayPreference _selected = widget.selected;
+
+  void _confirm() {
+    Navigator.of(context).pop(_selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String ageLabel = widget.studentAgeMonths == null
+        ? '当前月龄未知'
+        : '当前月龄：${widget.studentAgeMonths}月';
+    return Center(
+      child: SizedBox(
+        width: 560,
+        child: Material(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const Text(
+                  '题目偏好配置',
+                  style: TextStyle(
+                    color: _AutismDevColors.ink,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  '$ageLabel，情绪与行为始终展示',
+                  style: const TextStyle(
+                    color: _AutismDevColors.body,
+                    fontSize: 14,
+                    height: 1.2,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                _PreferenceOptionTile(
+                  title: '展示所有题目',
+                  selected:
+                      _selected == _AutismDevQuestionDisplayPreference.all,
+                  onTap: () => setState(
+                    () => _selected = _AutismDevQuestionDisplayPreference.all,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _PreferenceOptionTile(
+                  title: '展示匹配月龄的题目',
+                  selected: _selected ==
+                      _AutismDevQuestionDisplayPreference.matchingAge,
+                  onTap: () => setState(
+                    () => _selected =
+                        _AutismDevQuestionDisplayPreference.matchingAge,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                _PreferenceOptionTile(
+                  title: '展示匹配月龄及以下的题目',
+                  selected: _selected ==
+                      _AutismDevQuestionDisplayPreference.ageAndBelow,
+                  onTap: () => setState(
+                    () => _selected =
+                        _AutismDevQuestionDisplayPreference.ageAndBelow,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Row(
+                  children: <Widget>[
+                    const Spacer(),
+                    TextButton(
+                      onPressed: () => Navigator.of(context).pop(),
+                      child: const Text('取消'),
+                    ),
+                    const SizedBox(width: 10),
+                    FilledButton(
+                      onPressed: _confirm,
+                      child: const Text('确认'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreferenceOptionTile extends StatelessWidget {
+  const _PreferenceOptionTile({
+    required this.title,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String title;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent =
+        selected ? _AutismDevColors.orange : _AutismDevColors.line;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          height: 52,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFF2EA) : const Color(0xFFFDF8F4),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: accent),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 18,
+                height: 18,
+                decoration: BoxDecoration(
+                  color: selected ? _AutismDevColors.orange : Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: accent, width: 1.5),
+                ),
+                child: selected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 13,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    color: selected
+                        ? _AutismDevColors.orangeDeep
+                        : _AutismDevColors.ink,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -2891,6 +3198,55 @@ List<String> _criteriaDisplayLines(String? value) {
 String _criteriaDisplayText(String? value) {
   final List<String> lines = _criteriaDisplayLines(value);
   return lines.isEmpty ? '-' : lines.join('；');
+}
+
+bool _isEmotionBehaviorItem(AutismDevItemSummary item) {
+  return item.domainCode.trim().toUpperCase() == 'EB' ||
+      item.scoreType.trim().toUpperCase() == 'AMS';
+}
+
+int? _resolvedStudentAgeMonths({
+  required String birthDate,
+  required String assessmentDate,
+  required String ageText,
+}) {
+  final int? dateAge = _ageMonthsFromDates(birthDate, assessmentDate);
+  if (dateAge != null) {
+    return dateAge;
+  }
+  return _ageMonthsFromText(ageText);
+}
+
+int? _ageMonthsFromDates(String birthDate, String assessmentDate) {
+  final DateTime? birth = DateTime.tryParse(_dateOnlyText(birthDate));
+  final DateTime? target = DateTime.tryParse(_dateOnlyText(assessmentDate));
+  if (birth == null || target == null || birth.isAfter(target)) {
+    return null;
+  }
+  int months = (target.year - birth.year) * 12 + target.month - birth.month;
+  if (target.day < birth.day) {
+    months -= 1;
+  }
+  return math.max(months, 0);
+}
+
+int? _ageMonthsFromText(String ageText) {
+  final String text = ageText.trim();
+  if (text.isEmpty || text == '未知') {
+    return null;
+  }
+  final RegExpMatch? monthMatch = RegExp(r'(\d+)\s*(?:个)?月').firstMatch(text);
+  if (monthMatch != null) {
+    return int.tryParse(monthMatch.group(1)!);
+  }
+  final RegExpMatch? yearMonthMatch =
+      RegExp(r'(\d+)\s*岁\s*(\d+)?').firstMatch(text);
+  if (yearMonthMatch != null) {
+    final int years = int.tryParse(yearMonthMatch.group(1)!) ?? 0;
+    final int months = int.tryParse(yearMonthMatch.group(2) ?? '') ?? 0;
+    return years * 12 + months;
+  }
+  return int.tryParse(text);
 }
 
 String _dateOnlyText(String value) {
