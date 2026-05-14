@@ -69,6 +69,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   int _studentId = 0;
   int _draftId = 0;
   int _detectedDraftDetailDraftId = 0;
+  int _draftDetectionSerial = 0;
   bool _draftDialogShown = false;
   bool _loading = true;
   bool _saving = false;

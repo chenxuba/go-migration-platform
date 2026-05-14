@@ -2,6 +2,7 @@ part of 'autismdev_assessment_page.dart';
 
 extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
   Future<void> _initialize() async {
+    final int draftDetectionSerial = _draftDetectionSerial + 1;
     setState(() {
       _loading = true;
       _errorMessage = '';
@@ -9,6 +10,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       _detectedDraftDetailDraftId = 0;
       _detectedDraftDetailRequest = null;
       _draftDialogShown = false;
+      _draftDetectionSerial = draftDetectionSerial;
     });
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token =
@@ -25,9 +27,28 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return;
     }
     try {
-      final AutismDevTemplateSummary template =
-          await widget.client.fetchTemplateSummary(token);
+      final Future<AssessmentDraftSummary?>? detectedDraftRequest = _draftId > 0
+          ? null
+          : _findLatestDraft(token).then<AssessmentDraftSummary?>(
+              (AssessmentDraftSummary? draft) => draft,
+              onError: (Object _, StackTrace __) => null,
+            );
+      final AutismDevTemplateSummary template;
+      AutismDevDraftDetail? launchDraftDetail;
+      if (_draftId > 0) {
+        final List<Object> result = await Future.wait<Object>(<Future<Object>>[
+          widget.client.fetchTemplateSummary(token),
+          widget.client.fetchDraftDetail(token, _draftId),
+        ]);
+        template = result[0] as AutismDevTemplateSummary;
+        launchDraftDetail = result[1] as AutismDevDraftDetail;
+      } else {
+        template = await widget.client.fetchTemplateSummary(token);
+      }
       if (!mounted) {
+        return;
+      }
+      if (draftDetectionSerial != _draftDetectionSerial) {
         return;
       }
       _token = token;
@@ -36,13 +57,8 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       _selectedDomainCode =
           displayGroups.isNotEmpty ? displayGroups.first.domainCode : '';
       _selectedItemNo = _firstItemNoInDomain(_selectedDomainCode);
-      if (_draftId > 0) {
-        final AutismDevDraftDetail detail =
-            await widget.client.fetchDraftDetail(token, _draftId);
-        _applyDraftDetail(detail);
-      } else {
-        _detectedDraft = await _findLatestDraft(token);
-        _prefetchDetectedDraftDetail(token, _detectedDraft);
+      if (launchDraftDetail != null) {
+        _applyDraftDetail(launchDraftDetail);
       }
       _selectedRangeFilter = '';
       _ensureSelectedDisplayItem();
@@ -52,7 +68,15 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
         _autoSaveText = _draftId > 0 ? '已载入草稿' : '已准备';
       });
       _prefetchSelectedItem();
-      _showDetectedDraftDialogIfNeeded();
+      if (detectedDraftRequest != null) {
+        unawaited(
+          _completeDetectedDraftLookup(
+            token,
+            detectedDraftRequest,
+            draftDetectionSerial,
+          ),
+        );
+      }
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;
@@ -86,6 +110,20 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return null;
     }
     return page.items.first;
+  }
+
+  Future<void> _completeDetectedDraftLookup(
+    String token,
+    Future<AssessmentDraftSummary?> request,
+    int serial,
+  ) async {
+    final AssessmentDraftSummary? draft = await request;
+    if (!mounted || serial != _draftDetectionSerial || _draftId > 0) {
+      return;
+    }
+    _detectedDraft = draft;
+    _prefetchDetectedDraftDetail(token, draft);
+    _showDetectedDraftDialogIfNeeded();
   }
 
   void _prefetchDetectedDraftDetail(
@@ -180,6 +218,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return;
     }
     setState(() {
+      _draftDetectionSerial += 1;
       _detectedDraft = null;
       _detectedDraftDetailDraftId = 0;
       _detectedDraftDetailRequest = null;

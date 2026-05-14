@@ -112,9 +112,13 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
   final String draftSubmitPath;
   final http.Client? httpClient;
 
+  static final http.Client _sharedHttpClient = http.Client();
+
+  http.Client get _client => httpClient ?? _sharedHttpClient;
+
   @override
   Future<AutismDevTemplateSummary> fetchTemplateSummary(String token) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _getJson(
       client,
       _uri(educationBaseUrl, templateSummaryPath),
@@ -132,7 +136,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
     String token, {
     required int itemNo,
   }) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _getJson(
       client,
       _uri(
@@ -154,7 +158,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
     String token,
     Map<String, dynamic> payload,
   ) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _postJson(
       client,
       _uri(educationBaseUrl, draftSavePath),
@@ -176,7 +180,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
     int studentId = 0,
     bool latestOnly = true,
   }) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _postJson(
       client,
       _uri(educationBaseUrl, draftsPagePath),
@@ -203,7 +207,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
 
   @override
   Future<AutismDevDraftDetail> fetchDraftDetail(String token, int id) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _getJson(
       client,
       _uri(
@@ -225,7 +229,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
     String token,
     Map<String, dynamic> payload,
   ) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     final Object? data = await _postJson(
       client,
       _uri(educationBaseUrl, draftItemSavePath),
@@ -241,7 +245,7 @@ class ApiAutismDevAssessmentClient extends AutismDevAssessmentClient {
 
   @override
   Future<void> submitDraft(String token, int draftId) async {
-    final http.Client client = httpClient ?? http.Client();
+    final http.Client client = _client;
     await _postJson(
       client,
       _uri(educationBaseUrl, draftSubmitPath),
