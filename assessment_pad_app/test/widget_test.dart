@@ -2538,6 +2538,113 @@ void main() {
     expect(find.text('儿心量表-II 测评'), findsNothing);
   });
 
+  testWidgets('PEP3 scale blocks launch using backend age max months',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              scaleItems: const <AssessmentScaleItem>[_pep3ScaleItem],
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 32,
+                  shortName: '李',
+                  name: '李明轩',
+                  avatarUrl: '',
+                  gender: '男',
+                  age: '7岁6个月',
+                  birthDate: '2018-11-13',
+                  contactPhone: '妈妈 136****0032',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('李明轩'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pump();
+
+    expect(find.textContaining('超过7岁5个月'), findsOneWidget);
+    expect(find.text('PEP-3 测评工作台'), findsNothing);
+  });
+
+  testWidgets(
+      'Autism development scale blocks launch using backend age max months',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              scaleItems: const <AssessmentScaleItem>[_autismDevScaleItem],
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 33,
+                  shortName: '赵',
+                  name: '赵超龄',
+                  avatarUrl: '',
+                  gender: '女',
+                  age: '7岁',
+                  birthDate: '2018-01-01',
+                  contactPhone: '妈妈 136****0033',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('赵超龄'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pump();
+
+    expect(find.textContaining('超过6岁'), findsOneWidget);
+    expect(find.text('孤独症儿童发展评估表测评工作台'), findsNothing);
+  });
+
   testWidgets('ERXin workbench shows structured loading shell while loading',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -5358,7 +5465,8 @@ class _FakeIepPlanClient implements IepPlanClient {
     List<int> restWeekdays = const <int>[],
   }) async {
     return IepExecutionPlanGenerationTask(
-      taskId: 'fake-execution-$planType-${record.id}-$targetMonthIndex-$targetWeekIndex',
+      taskId:
+          'fake-execution-$planType-${record.id}-$targetMonthIndex-$targetWeekIndex',
       status: 'running',
       durationMonths: durationMonths,
       planType: planType,
@@ -5385,7 +5493,8 @@ class _FakeIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+  Future<IepExecutionPlanGenerationTask?>
+      fetchActiveExecutionPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -6197,7 +6306,8 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
   }
 
   @override
-  Future<IepExecutionPlanGenerationTask?> fetchActiveExecutionPlanGenerationTask(
+  Future<IepExecutionPlanGenerationTask?>
+      fetchActiveExecutionPlanGenerationTask(
     String token, {
     required IepAssessmentRecordSummary record,
     required int durationMonths,
@@ -6649,6 +6759,62 @@ const List<AssessmentStudentCandidate> _defaultStudentCandidates =
     latestAssessment: '未测评',
   ),
 ];
+
+const AssessmentScaleItem _pep3ScaleItem = AssessmentScaleItem(
+  id: 1,
+  name: 'PEP-3语言理解评核量表',
+  code: 'PEP3-CVP',
+  category: '语言与沟通能力',
+  scenario: '语言沟通',
+  ageRange: '2岁6个月-7岁5个月',
+  ageMinMonths: 30,
+  ageMaxMonths: 89,
+  duration: '25分钟',
+  durationMinMinutes: 20,
+  durationMaxMinutes: 30,
+  currentVersion: '2026',
+  itemCount: 56,
+  domainCount: 1,
+  monthUsage: 5,
+  usageCount: 12,
+  latestUse: '2026-05-04',
+  dataStatus: 'ready',
+  status: 'available',
+  statusText: '可用',
+  updatedAt: '2026-05-04 10:00:00',
+  summary: '语言理解评核',
+  posterUrl: '',
+  executionEntry: 'pep3',
+  apiPackage: 'pep3',
+);
+
+const AssessmentScaleItem _autismDevScaleItem = AssessmentScaleItem(
+  id: 4,
+  name: '孤独症儿童发展评估表',
+  code: 'AUTISMDEV',
+  category: '标准化测评',
+  scenario: '现场测评',
+  ageRange: '0岁-6岁',
+  ageMinMonths: 0,
+  ageMaxMonths: 72,
+  duration: '40-60分钟',
+  durationMinMinutes: 40,
+  durationMaxMinutes: 60,
+  currentVersion: '2010-revised-trainer',
+  itemCount: 133,
+  domainCount: 8,
+  monthUsage: 0,
+  usageCount: 0,
+  latestUse: '',
+  dataStatus: 'ready',
+  status: 'available',
+  statusText: '可用',
+  updatedAt: '2026-05-13 10:00:00',
+  summary: '孤独症儿童发展评估',
+  posterUrl: '',
+  executionEntry: 'autismdev',
+  apiPackage: 'autismdev',
+);
 
 const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
   id: 3,

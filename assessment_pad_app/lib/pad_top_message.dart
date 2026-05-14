@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 enum PadMessageTone {
   info,
   success,
+  error,
 }
 
 extension PadMessageToneView on PadMessageTone {
@@ -14,6 +15,8 @@ extension PadMessageToneView on PadMessageTone {
         return Icons.info_outline_rounded;
       case PadMessageTone.success:
         return Icons.check_circle_outline_rounded;
+      case PadMessageTone.error:
+        return Icons.error_outline_rounded;
     }
   }
 
@@ -23,6 +26,8 @@ extension PadMessageToneView on PadMessageTone {
         return const Color(0xFFC95735);
       case PadMessageTone.success:
         return const Color(0xFF6F9F70);
+      case PadMessageTone.error:
+        return const Color(0xFFD92D20);
     }
   }
 
@@ -32,6 +37,8 @@ extension PadMessageToneView on PadMessageTone {
         return const Color(0xFF432B22);
       case PadMessageTone.success:
         return const Color(0xFF426D44);
+      case PadMessageTone.error:
+        return const Color(0xFF7A271A);
     }
   }
 
@@ -41,6 +48,8 @@ extension PadMessageToneView on PadMessageTone {
         return const Color(0xFFFFF8EE);
       case PadMessageTone.success:
         return const Color(0xFFF0FAEF);
+      case PadMessageTone.error:
+        return const Color(0xFFFFF1F0);
     }
   }
 
@@ -50,6 +59,8 @@ extension PadMessageToneView on PadMessageTone {
         return const Color(0xFFF0DDC9);
       case PadMessageTone.success:
         return const Color(0xFFCBEACB);
+      case PadMessageTone.error:
+        return const Color(0xFFFFB4AB);
     }
   }
 }
@@ -158,9 +169,9 @@ class PadTopMessage extends StatelessWidget {
               curve: Curves.easeOutCubic,
               child: Container(
                 key: messageKey,
-                constraints: const BoxConstraints(maxWidth: 430),
+                constraints: const BoxConstraints(maxWidth: 680),
                 margin: EdgeInsets.only(top: topMargin),
-                padding: const EdgeInsets.fromLTRB(14, 10, 16, 10),
+                padding: const EdgeInsets.fromLTRB(14, 11, 16, 11),
                 decoration: BoxDecoration(
                   color: tone.background,
                   border: Border.all(color: tone.border),
@@ -175,18 +186,20 @@ class PadTopMessage extends StatelessWidget {
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: <Widget>[
-                    Icon(tone.icon, color: tone.foreground, size: 18),
+                    Padding(
+                      padding: const EdgeInsets.only(top: 1),
+                      child: Icon(tone.icon, color: tone.foreground, size: 18),
+                    ),
                     const SizedBox(width: 8),
                     Flexible(
                       child: Text(
                         message,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
                         style: TextStyle(
                           color: tone.textColor,
                           fontSize: 13,
-                          height: 1.1,
+                          height: 1.35,
                           fontWeight: FontWeight.w900,
                         ),
                       ),

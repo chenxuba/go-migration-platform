@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'pad_responsive.dart';
+import 'pad_top_message.dart';
 import 'route_bootstrap.dart';
 
 class AssessmentScaleCategoryScreen extends StatefulWidget {
@@ -50,6 +51,8 @@ class _AssessmentScaleCategoryScreenState
       <AssessmentStudentCandidate>[];
   final Map<int, List<AssessmentStudentCandidate>> _studentCandidatesByStatus =
       <int, List<AssessmentStudentCandidate>>{};
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
   AssessmentStudentCandidate? _selectedStudent;
   AssessmentScaleLibrarySummary _summary =
       const AssessmentScaleLibrarySummary();
@@ -89,6 +92,7 @@ class _AssessmentScaleCategoryScreenState
   @override
   void dispose() {
     _searchDebounceTimer?.cancel();
+    _messageController.dispose();
     super.dispose();
   }
 
@@ -523,15 +527,17 @@ class _AssessmentScaleCategoryScreenState
     if (student == null || !scale.available) {
       return;
     }
-    if (_isAutismDevScale(scale)) {
-      final String? validationMessage =
-          _validateAutismDevLaunch(scale, student);
+    final bool isAutismDevScale = _isAutismDevScale(scale);
+    final bool isErxinScale = _isErxinScale(scale);
+    final bool isPep3Scale = _isPep3Scale(scale);
+    if (isAutismDevScale || isErxinScale || isPep3Scale) {
+      final String? validationMessage = _validateScaleLaunch(scale, student);
       if (validationMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(validationMessage)),
-        );
+        _showMessage(validationMessage, tone: PadMessageTone.error);
         return;
       }
+    }
+    if (isAutismDevScale) {
       _openAutismDevAssessment(
         AutismDevAssessmentLaunchArgs(
           studentId: student.id,
@@ -544,14 +550,7 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
-    if (_isErxinScale(scale)) {
-      final String? validationMessage = _validateErxinLaunch(scale, student);
-      if (validationMessage != null) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(validationMessage)),
-        );
-        return;
-      }
+    if (isErxinScale) {
       _openErxinAssessment(
         ErxinAssessmentLaunchArgs(
           studentId: student.id,
@@ -564,7 +563,7 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
-    if (_isPep3Scale(scale)) {
+    if (isPep3Scale) {
       _openPep3Assessment(
         Pep3AssessmentLaunchArgs(
           studentId: student.id,
@@ -577,11 +576,7 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('${scale.name} 的作答页待接入'),
-      ),
-    );
+    _showMessage('${scale.name} 的作答页待接入');
   }
 
   void _openDraft(AssessmentDraftSummary draft) {
@@ -627,8 +622,22 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('${draft.assessmentName} 的作答页待接入')),
+    _showMessage('${draft.assessmentName} 的作答页待接入');
+  }
+
+  void _showMessage(
+    String message, {
+    PadMessageTone tone = PadMessageTone.info,
+  }) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 12,
+      key: 'scale-category-top-message',
     );
   }
 
@@ -2241,11 +2250,10 @@ bool _isAutismDevText(String value) {
       normalized.contains('孤独症发展评估');
 }
 
-String? _validateErxinLaunch(
+String? _validateScaleLaunch(
   AssessmentScaleItem scale,
   AssessmentStudentCandidate student,
 ) {
-  const int erxinMaxSupportedAgeMonths = 72;
   final String birthDate = student.birthDate.trim();
   if (birthDate.isEmpty || birthDate == '未知') {
     return '该量表需要儿童出生日期，缺少出生日期不能开始测评';
@@ -2256,63 +2264,43 @@ String? _validateErxinLaunch(
   }
   final DateTime assessmentDate = DateTime.parse(_todayIsoDate());
   final int minMonths = scale.ageMinMonths;
-  final int maxMonths = scale.ageMaxMonths > 0
-      ? math.min(scale.ageMaxMonths, erxinMaxSupportedAgeMonths)
-      : erxinMaxSupportedAgeMonths;
-  final DateTime minDate = DateTime(
-    birth.year + (minMonths ~/ 12),
-    birth.month + (minMonths % 12),
-    birth.day,
-  );
-  final DateTime maxDate = DateTime(
-    birth.year + (maxMonths ~/ 12),
-    birth.month + (maxMonths % 12),
-    birth.day,
-  );
-  if (assessmentDate.isBefore(minDate)) {
-    return '当前年龄未达到${scale.name}适用范围，不能开始测评';
+  final int maxMonths = scale.ageMaxMonths;
+  if (minMonths > 0) {
+    final DateTime minDate = _dateAfterMonths(birth, minMonths);
+    if (assessmentDate.isBefore(minDate)) {
+      return '当前年龄未达到${scale.name}适用范围，不能开始测评';
+    }
   }
-  if (assessmentDate.isAfter(maxDate)) {
-    return '当前年龄已超过6岁，超出${scale.name}适用范围，不能开始测评';
+  if (maxMonths > 0) {
+    final DateTime maxDate = _dateAfterMonths(birth, maxMonths);
+    if (assessmentDate.isAfter(maxDate)) {
+      return '当前年龄已超过${_formatAgeLimit(maxMonths)}，超出${scale.name}适用范围，不能开始测评';
+    }
   }
   return null;
 }
 
-String? _validateAutismDevLaunch(
-  AssessmentScaleItem scale,
-  AssessmentStudentCandidate student,
-) {
-  const int autismDevMaxSupportedAgeMonths = 72;
-  final String birthDate = student.birthDate.trim();
-  if (birthDate.isEmpty || birthDate == '未知') {
-    return '该量表需要儿童出生日期，缺少出生日期不能开始测评';
-  }
-  final DateTime? birth = DateTime.tryParse(birthDate);
-  if (birth == null) {
-    return '出生日期格式不正确，不能开始测评';
-  }
-  final DateTime assessmentDate = DateTime.parse(_todayIsoDate());
-  final int minMonths = scale.ageMinMonths;
-  final int maxMonths = scale.ageMaxMonths > 0
-      ? math.min(scale.ageMaxMonths, autismDevMaxSupportedAgeMonths)
-      : autismDevMaxSupportedAgeMonths;
-  final DateTime minDate = DateTime(
-    birth.year + (minMonths ~/ 12),
-    birth.month + (minMonths % 12),
-    birth.day,
+DateTime _dateAfterMonths(DateTime date, int months) {
+  return DateTime(
+    date.year + (months ~/ 12),
+    date.month + (months % 12),
+    date.day,
   );
-  final DateTime maxDate = DateTime(
-    birth.year + (maxMonths ~/ 12),
-    birth.month + (maxMonths % 12),
-    birth.day,
-  );
-  if (assessmentDate.isBefore(minDate)) {
-    return '当前年龄未达到${scale.name}适用范围，不能开始测评';
+}
+
+String _formatAgeLimit(int months) {
+  if (months <= 0) {
+    return '适用年龄';
   }
-  if (assessmentDate.isAfter(maxDate)) {
-    return '当前年龄已超过6岁，超出${scale.name}适用范围，不能开始测评';
+  final int years = months ~/ 12;
+  final int remainingMonths = months % 12;
+  if (years == 0) {
+    return '$remainingMonths个月';
   }
-  return null;
+  if (remainingMonths == 0) {
+    return '$years岁';
+  }
+  return '$years岁$remainingMonths个月';
 }
 
 String _todayIsoDate() {

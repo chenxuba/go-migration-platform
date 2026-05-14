@@ -134,20 +134,71 @@ class _QuestionPreferenceDialogState extends State<_QuestionPreferenceDialog> {
                 ),
                 const SizedBox(height: 18),
                 Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
                   children: <Widget>[
-                    const Spacer(),
-                    TextButton(
-                      onPressed: () => Navigator.of(context).pop(),
-                      child: const Text('取消'),
+                    _QuestionPreferenceDialogButton(
+                      label: '取消',
+                      primary: false,
+                      onTap: () => Navigator.of(context).pop(),
                     ),
-                    const SizedBox(width: 10),
-                    FilledButton(
-                      onPressed: _confirm,
-                      child: const Text('确认'),
+                    const SizedBox(width: 12),
+                    _QuestionPreferenceDialogButton(
+                      label: '确认',
+                      primary: true,
+                      onTap: _confirm,
                     ),
                   ],
                 ),
               ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuestionPreferenceDialogButton extends StatelessWidget {
+  const _QuestionPreferenceDialogButton({
+    required this.label,
+    required this.primary,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool primary;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color background = primary ? _AutismDevColors.orange : Colors.white;
+    final Color foreground =
+        primary ? Colors.white : _AutismDevColors.orangeDeep;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          width: 112,
+          height: 42,
+          decoration: BoxDecoration(
+            color: background,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: primary ? _AutismDevColors.orange : _AutismDevColors.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
             ),
           ),
         ),
