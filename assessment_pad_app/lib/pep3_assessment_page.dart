@@ -1025,6 +1025,12 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
                       controller: _leftScrollController,
                       activeItemKey: _activeNavItemKey,
                       groupKeys: _pageGroupKeys,
+                      onCollapseAll: () {
+                        if (_expandedGroupKey.isEmpty) {
+                          return;
+                        }
+                        setState(() => _expandedGroupKey = '');
+                      },
                       onToggleGroup: (String key) {
                         final bool opening = _expandedGroupKey != key;
                         setState(() {
@@ -1629,6 +1635,7 @@ class _Pep3PageSidebar extends StatelessWidget {
     required this.controller,
     required this.activeItemKey,
     required this.groupKeys,
+    required this.onCollapseAll,
     required this.onToggleGroup,
     required this.onTapItem,
   });
@@ -1640,6 +1647,7 @@ class _Pep3PageSidebar extends StatelessWidget {
   final ScrollController controller;
   final GlobalKey activeItemKey;
   final Map<String, GlobalKey> groupKeys;
+  final VoidCallback onCollapseAll;
   final ValueChanged<String> onToggleGroup;
   final ValueChanged<int> onTapItem;
 
@@ -1648,7 +1656,10 @@ class _Pep3PageSidebar extends StatelessWidget {
     return _RailCard(
       child: Column(
         children: <Widget>[
-          const _SidebarHeader(),
+          _SidebarHeader(
+            canCollapse: expandedGroupKey.isNotEmpty,
+            onCollapseAll: onCollapseAll,
+          ),
           Expanded(
             child: SingleChildScrollView(
               controller: controller,
@@ -1693,7 +1704,13 @@ class _Pep3PageSidebar extends StatelessWidget {
 }
 
 class _SidebarHeader extends StatelessWidget {
-  const _SidebarHeader();
+  const _SidebarHeader({
+    required this.canCollapse,
+    required this.onCollapseAll,
+  });
+
+  final bool canCollapse;
+  final VoidCallback onCollapseAll;
 
   @override
   Widget build(BuildContext context) {
@@ -1703,9 +1720,9 @@ class _SidebarHeader extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _Pep3Colors.lineSoft)),
       ),
-      child: const Row(
+      child: Row(
         children: <Widget>[
-          Text(
+          const Text(
             '记录册页面',
             style: TextStyle(
               color: _Pep3Colors.ink,
@@ -1713,8 +1730,39 @@ class _SidebarHeader extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          Spacer(),
-          Icon(Icons.tune_rounded, size: 18, color: _Pep3Colors.muted),
+          const Spacer(),
+          Tooltip(
+            message: '全部收起',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: canCollapse ? onCollapseAll : null,
+                borderRadius: BorderRadius.circular(8),
+                child: Ink(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: canCollapse
+                        ? const Color(0xFFFFF7F2)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: canCollapse
+                          ? const Color(0xFFFFD7C4)
+                          : Colors.transparent,
+                    ),
+                  ),
+                  child: Icon(
+                    Icons.unfold_less_rounded,
+                    size: 19,
+                    color: canCollapse
+                        ? _Pep3Colors.orangeDeep
+                        : _Pep3Colors.muted.withOpacity(.38),
+                  ),
+                ),
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1756,76 +1804,82 @@ class _PageGroup extends StatelessWidget {
       ),
       child: Column(
         children: <Widget>[
-          InkWell(
-            onTap: onToggle,
-            borderRadius: BorderRadius.circular(8),
-            child: SizedBox(
-              height: 26,
-              child: Row(
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onToggle,
+              borderRadius: BorderRadius.circular(8),
+              child: Column(
                 children: <Widget>[
-                  Icon(
-                    expanded
-                        ? Icons.keyboard_arrow_down_rounded
-                        : Icons.chevron_right_rounded,
-                    size: 20,
-                    color: _Pep3Colors.ink,
+                  SizedBox(
+                    height: 26,
+                    child: Row(
+                      children: <Widget>[
+                        Icon(
+                          expanded
+                              ? Icons.keyboard_arrow_down_rounded
+                              : Icons.chevron_right_rounded,
+                          size: 20,
+                          color: _Pep3Colors.ink,
+                        ),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            group.displayTitle,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: _Pep3Colors.ink,
+                              fontSize: 13,
+                              height: 1,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        Text(
+                          '$done/$total 题',
+                          style: const TextStyle(
+                            color: _Pep3Colors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(width: 4),
-                  Expanded(
-                    child: Text(
-                      group.displayTitle,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        color: _Pep3Colors.ink,
-                        fontSize: 13,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
+                  const SizedBox(height: 7),
+                  Row(
+                    children: <Widget>[
+                      const SizedBox(width: 26),
+                      Expanded(
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(99),
+                          child: LinearProgressIndicator(
+                            value: percent / 100,
+                            minHeight: 4,
+                            color: _Pep3Colors.orange.withOpacity(.46),
+                            backgroundColor: const Color(0xFFF6EEE8),
+                          ),
+                        ),
                       ),
-                    ),
-                  ),
-                  Text(
-                    '$done/$total 题',
-                    style: const TextStyle(
-                      color: _Pep3Colors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
+                      const SizedBox(width: 9),
+                      SizedBox(
+                        width: 34,
+                        child: Text(
+                          '$percent%',
+                          textAlign: TextAlign.right,
+                          style: const TextStyle(
+                            color: _Pep3Colors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 ],
               ),
             ),
-          ),
-          const SizedBox(height: 7),
-          Row(
-            children: <Widget>[
-              const SizedBox(width: 26),
-              Expanded(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(99),
-                  child: LinearProgressIndicator(
-                    value: percent / 100,
-                    minHeight: 5,
-                    backgroundColor: const Color(0xFFF2E6DC),
-                    valueColor:
-                        const AlwaysStoppedAnimation<Color>(_Pep3Colors.orange),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 9),
-              SizedBox(
-                width: 34,
-                child: Text(
-                  '$percent%',
-                  textAlign: TextAlign.right,
-                  style: const TextStyle(
-                    color: _Pep3Colors.muted,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
           ),
           if (expanded) ...<Widget>[
             const SizedBox(height: 7),
