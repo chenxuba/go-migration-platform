@@ -11,6 +11,7 @@ import 'package:printing/printing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_scale_client.dart';
+import 'autismdev_assessment_client.dart';
 import 'erxin_assessment_client.dart';
 import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
@@ -28,6 +29,12 @@ class AssessmentReportListScreen extends StatefulWidget {
       recordsPagePath: defaultErxinRecordsPagePath,
       recordCategoryStatsPath: defaultErxinRecordCategoryStatsPath,
     ),
+    this.autismDevRecordClient = const ApiPep3AssessmentClient(
+      recordsPagePath: defaultAutismDevRecordsPagePath,
+      recordCategoryStatsPath: defaultAutismDevRecordCategoryStatsPath,
+      recordDetailPath: defaultAutismDevRecordDetailPath,
+      recordConfigUpdatePath: defaultAutismDevRecordConfigUpdatePath,
+    ),
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.staffClient = const ApiTimetableClient(),
     super.key,
@@ -37,6 +44,7 @@ class AssessmentReportListScreen extends StatefulWidget {
   final AssessmentScaleClient scaleClient;
   final Pep3AssessmentClient recordClient;
   final Pep3AssessmentClient erxinRecordClient;
+  final Pep3AssessmentClient autismDevRecordClient;
   final ErxinAssessmentClient erxinClient;
   final TimetableClient staffClient;
 
@@ -266,11 +274,22 @@ class _AssessmentReportListScreenState
           assessmentDateBegin: assessmentDateBegin,
           assessmentDateEnd: assessmentDateEnd,
         ),
+        widget.autismDevRecordClient.fetchRecordsPage(
+          token,
+          pageIndex: pageIndex,
+          pageSize: pageSize,
+          assessmentCode: '',
+          scaleCategory: scaleCategory,
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
       ],
     );
     final List<Pep3RecordSummary> items = <Pep3RecordSummary>[
       ...pages[0].items,
       ...pages[1].items,
+      ...pages[2].items,
     ]..sort(_compareRecordSummaryDesc);
     final List<Pep3RecordSummary> visibleItems =
         items.take(pageSize).toList(growable: false);
@@ -300,6 +319,13 @@ class _AssessmentReportListScreenState
           assessmentDateEnd: assessmentDateEnd,
         ),
         widget.erxinRecordClient.fetchRecordCategoryStats(
+          token,
+          assessmentCode: '',
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+        widget.autismDevRecordClient.fetchRecordCategoryStats(
           token,
           assessmentCode: '',
           searchKey: searchKey,
@@ -399,6 +425,10 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
+    if (_isAutismDevRecord(record)) {
+      _showMessage('孤独症儿童发展评估表报告预览待接入');
+      return;
+    }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
@@ -489,6 +519,10 @@ class _AssessmentReportListScreenState
     return record.assessmentCode.trim().toUpperCase() == 'ERXIN2';
   }
 
+  bool _isAutismDevRecord(Pep3RecordSummary record) {
+    return record.assessmentCode.trim().toUpperCase() == 'AUTISMDEV';
+  }
+
   Future<_RecordConfigDetail> _loadRecordConfigDetail(
     String token,
     Pep3RecordSummary record,
@@ -496,6 +530,20 @@ class _AssessmentReportListScreenState
     if (_isErxinRecord(record)) {
       final ErxinRecordDetail detail =
           await widget.erxinClient.fetchRecordDetail(token, record.id);
+      return _RecordConfigDetail(
+        currentExaminerName: detail.examinerName,
+        currentAssessmentDate: detail.assessmentDate,
+        originalExaminerName: detail.input.examinerName,
+        originalAssessmentDate:
+            _originalAssessmentDateText(record) ?? record.assessmentDate,
+      );
+    }
+    if (_isAutismDevRecord(record)) {
+      final Pep3RecordDetail detail =
+          await widget.autismDevRecordClient.fetchRecordDetail(
+        token,
+        record.id,
+      );
       return _RecordConfigDetail(
         currentExaminerName: detail.examinerName,
         currentAssessmentDate: detail.assessmentDate,
@@ -550,6 +598,14 @@ class _AssessmentReportListScreenState
         examinerName: detail.examinerName,
         createdTime: detail.createdTime,
         updatedTime: detail.updatedTime,
+      );
+    }
+    if (_isAutismDevRecord(record)) {
+      return widget.autismDevRecordClient.updateRecordConfig(
+        token,
+        record.id,
+        examinerName: examinerName,
+        assessmentDate: assessmentDate,
       );
     }
     return widget.recordClient.updateRecordConfig(

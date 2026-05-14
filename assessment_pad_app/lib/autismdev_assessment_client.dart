@@ -34,6 +34,22 @@ const String defaultAutismDevDraftSubmitPath = String.fromEnvironment(
   'AUTISMDEV_DRAFT_SUBMIT_PATH',
   defaultValue: '/api/v1/assessments/autismdev/drafts/submit',
 );
+const String defaultAutismDevRecordsPagePath = String.fromEnvironment(
+  'AUTISMDEV_RECORDS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/page',
+);
+const String defaultAutismDevRecordCategoryStatsPath = String.fromEnvironment(
+  'AUTISMDEV_RECORD_CATEGORY_STATS_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/category-stats',
+);
+const String defaultAutismDevRecordDetailPath = String.fromEnvironment(
+  'AUTISMDEV_RECORD_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/detail',
+);
+const String defaultAutismDevRecordConfigUpdatePath = String.fromEnvironment(
+  'AUTISMDEV_RECORD_CONFIG_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/config/update',
+);
 
 class AutismDevAssessmentLaunchArgs {
   const AutismDevAssessmentLaunchArgs({
