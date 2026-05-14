@@ -164,10 +164,8 @@ class _DomainRow extends StatelessWidget {
                       child: LinearProgressIndicator(
                         value: percent.clamp(0, 1),
                         minHeight: 4,
-                        backgroundColor: const Color(0xFFF2E6DC),
-                        valueColor: AlwaysStoppedAnimation<Color>(
-                          complete ? _ErxinColors.green : _ErxinColors.blue,
-                        ),
+                        color: _ErxinColors.orange.withOpacity(.46),
+                        backgroundColor: const Color(0xFFF6EEE8),
                       ),
                     ),
                   ),
