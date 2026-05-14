@@ -40,6 +40,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   final TextEditingController _remarkController = TextEditingController();
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
+  Future<AutismDevDraftDetail?>? _saveDraftFuture;
 
   AutismDevTemplateSummary _template = AutismDevTemplateSummary.empty;
   AssessmentDraftSummary? _detectedDraft;
@@ -61,6 +62,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   bool _saving = false;
   bool _submitting = false;
   bool _autoNext = true;
+  bool _saveDraftFutureSilent = false;
+  bool _saveDraftJoinedByManual = false;
   _AutismDevQuestionDisplayPreference _questionDisplayPreference =
       _AutismDevQuestionDisplayPreference.ageAndBelow;
   String _errorMessage = '';
@@ -285,6 +288,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     if (draft.id <= 0 || _token.trim().isEmpty) {
       return false;
     }
+    setState(() => _autoSaveText = '正在恢复草稿...');
     try {
       final AutismDevDraftDetail detail =
           await _resolveDetectedDraftDetail(draft);
@@ -499,18 +503,45 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
 
   void _prefetchSelectedItem() {
     final int itemNo = _selectedItemNo;
+    _prefetchItemDetail(itemNo, updateStateOnComplete: true);
+    _prefetchNextItem();
+  }
+
+  void _prefetchNextItem() {
+    final List<AutismDevItemSummary> displayItems = _displayItems;
+    final int nextIndex = _currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= displayItems.length) {
+      return;
+    }
+    _prefetchItemDetail(
+      displayItems[nextIndex].itemNo,
+      updateStateOnComplete: false,
+    );
+  }
+
+  void _prefetchItemDetail(
+    int itemNo, {
+    required bool updateStateOnComplete,
+  }) {
     if (itemNo <= 0 || _itemDetailCache.containsKey(itemNo)) {
       return;
     }
     final Future<AutismDevAssessmentItem> future = _itemDetailFetches[itemNo] ??
-        widget.client.fetchTemplateItem(_token, itemNo: itemNo);
+        widget.client
+            .fetchTemplateItem(_token, itemNo: itemNo)
+            .whenComplete(() => _itemDetailFetches.remove(itemNo));
     _itemDetailFetches[itemNo] = future;
     unawaited(
       future.then<void>((AutismDevAssessmentItem item) {
         if (!mounted) {
+          _itemDetailCache[itemNo] = item;
           return;
         }
-        setState(() => _itemDetailCache[itemNo] = item);
+        if (updateStateOnComplete || _selectedItemNo == itemNo) {
+          setState(() => _itemDetailCache[itemNo] = item);
+        } else {
+          _itemDetailCache[itemNo] = item;
+        }
       }, onError: (Object _) {}),
     );
   }
@@ -602,6 +633,49 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   }
 
   Future<AutismDevDraftDetail?> _saveDraft({bool silent = false}) async {
+    final Future<AutismDevDraftDetail?>? inFlight = _saveDraftFuture;
+    if (inFlight != null) {
+      if (!silent && _saveDraftFutureSilent && !_saveDraftJoinedByManual) {
+        _saveDraftJoinedByManual = true;
+        return _joinSilentDraftSave(inFlight);
+      }
+      return inFlight;
+    }
+    late final Future<AutismDevDraftDetail?> trackedFuture;
+    _saveDraftFutureSilent = silent;
+    _saveDraftJoinedByManual = false;
+    trackedFuture = _performSaveDraft(silent: silent).whenComplete(() {
+      if (identical(_saveDraftFuture, trackedFuture)) {
+        _saveDraftFuture = null;
+        _saveDraftFutureSilent = false;
+        _saveDraftJoinedByManual = false;
+      }
+    });
+    _saveDraftFuture = trackedFuture;
+    return trackedFuture;
+  }
+
+  Future<AutismDevDraftDetail?> _joinSilentDraftSave(
+    Future<AutismDevDraftDetail?> inFlight,
+  ) async {
+    if (mounted) {
+      setState(() => _autoSaveText = '草稿保存中...');
+    }
+    final AutismDevDraftDetail? detail = await inFlight;
+    if (!mounted) {
+      return detail;
+    }
+    if (detail == null) {
+      _showMessage('保存草稿失败，请稍后重试');
+      return null;
+    }
+    _showMessage('草稿已保存', tone: PadMessageTone.success);
+    return detail;
+  }
+
+  Future<AutismDevDraftDetail?> _performSaveDraft({
+    required bool silent,
+  }) async {
     if (_saving) {
       return null;
     }
@@ -1057,10 +1131,18 @@ class _AutismDevTopBar extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 10),
-                    _HeaderMeta(label: '儿童', value: studentName),
-                    _HeaderMeta(label: '年龄', value: studentAge),
-                    _HeaderMeta(label: '测评日期', value: assessmentDate),
-                    _HeaderMeta(label: '施测者', value: examinerName),
+                    Flexible(
+                      child: _HeaderMeta(label: '儿童', value: studentName),
+                    ),
+                    Flexible(
+                      child: _HeaderMeta(label: '年龄', value: studentAge),
+                    ),
+                    Flexible(
+                      child: _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    ),
+                    Flexible(
+                      child: _HeaderMeta(label: '施测者', value: examinerName),
+                    ),
                   ],
                 ),
               ),
@@ -2896,27 +2978,48 @@ class _AutismDevDraftResumeDialog extends StatefulWidget {
 
 class _AutismDevDraftResumeDialogState
     extends State<_AutismDevDraftResumeDialog> {
-  bool _continuing = false;
+  static const Duration _closeDuration = Duration(milliseconds: 140);
 
-  void _handleRestart() {
-    if (_continuing) {
+  bool _continuing = false;
+  bool _closing = false;
+
+  Future<void> _closeAfterShrink({VoidCallback? afterClosed}) async {
+    if (_closing) {
+      return;
+    }
+    setState(() => _closing = true);
+    await Future<void>.delayed(_closeDuration);
+    if (!mounted) {
       return;
     }
     Navigator.of(context).pop();
-    unawaited(widget.onRestart());
+    afterClosed?.call();
+  }
+
+  Future<void> _handleRestart() async {
+    if (_continuing || _closing) {
+      return;
+    }
+    await _closeAfterShrink(afterClosed: () {
+      unawaited(widget.onRestart());
+    });
   }
 
   Future<void> _handleContinue() async {
-    if (_continuing) {
+    if (_continuing || _closing) {
       return;
     }
     setState(() => _continuing = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_continuing) {
+      return;
+    }
     final bool restored = await widget.onContinue();
     if (!mounted) {
       return;
     }
     if (restored) {
-      Navigator.of(context).pop();
+      await _closeAfterShrink();
       return;
     }
     setState(() => _continuing = false);
@@ -2926,90 +3029,100 @@ class _AutismDevDraftResumeDialogState
   Widget build(BuildContext context) {
     final int answered = widget.draft.answeredItemCount;
     final int total = math.max(widget.total, answered);
-    return Dialog(
-      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
-      backgroundColor: Colors.transparent,
-      child: Container(
-        width: 520,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(14),
-          boxShadow: _autismDevShadow(
-            color: const Color(0x33000000),
-            blur: 30,
-            offset: const Offset(0, 18),
-          ),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            const Padding(
-              padding: EdgeInsets.fromLTRB(20, 20, 20, 20),
-              child: Text(
-                '发现未完成草稿',
-                style: TextStyle(
-                  color: _AutismDevColors.ink,
-                  fontSize: 19,
-                  height: 1,
-                  fontWeight: FontWeight.w900,
-                ),
+    return AnimatedOpacity(
+      opacity: _closing ? 0 : 1,
+      duration: _closeDuration,
+      curve: Curves.easeInCubic,
+      child: AnimatedScale(
+        scale: _closing ? .92 : 1,
+        duration: _closeDuration,
+        curve: Curves.easeInCubic,
+        child: Dialog(
+          insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+          backgroundColor: Colors.transparent,
+          child: Container(
+            width: 520,
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(14),
+              boxShadow: _autismDevShadow(
+                color: const Color(0x33000000),
+                blur: 30,
+                offset: const Offset(0, 18),
               ),
             ),
-            const Divider(height: 1, color: _AutismDevColors.lineSoft),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(30, 30, 30, 30),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  const Text(
-                    '当前儿童存在一份未提交的孤独症儿童发展评估表草稿。',
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(20, 20, 20, 20),
+                  child: Text(
+                    '发现未完成草稿',
                     style: TextStyle(
                       color: _AutismDevColors.ink,
-                      fontSize: 15,
-                      height: 1.2,
-                      fontWeight: FontWeight.w800,
+                      fontSize: 19,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 22),
-                  Container(
-                    width: double.infinity,
-                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFFBF7),
-                      borderRadius: BorderRadius.circular(10),
-                      border: Border.all(color: _AutismDevColors.line),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: <Widget>[
-                        _AutismDevDraftResumeMeta(
-                          label: '已完成',
-                          value: '$answered / $total 题',
+                ),
+                const Divider(height: 1, color: _AutismDevColors.lineSoft),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 30, 30, 30),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      const Text(
+                        '当前儿童存在一份未提交的孤独症儿童发展评估表草稿。',
+                        style: TextStyle(
+                          color: _AutismDevColors.ink,
+                          fontSize: 15,
+                          height: 1.2,
+                          fontWeight: FontWeight.w800,
                         ),
-                        const SizedBox(height: 13),
-                        _AutismDevDraftResumeMeta(
-                          label: '更新时间',
-                          value: _formatAutismDevDateTime(
-                            widget.draft.updatedTime,
-                          ),
+                      ),
+                      const SizedBox(height: 22),
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFBF7),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: _AutismDevColors.line),
                         ),
-                      ],
-                    ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            _AutismDevDraftResumeMeta(
+                              label: '已完成',
+                              value: '$answered / $total 题',
+                            ),
+                            const SizedBox(height: 13),
+                            _AutismDevDraftResumeMeta(
+                              label: '更新时间',
+                              value: _formatAutismDevDateTime(
+                                widget.draft.updatedTime,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+                const Divider(height: 1, color: _AutismDevColors.lineSoft),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+                  child: _AutismDevDraftResumeActionArea(
+                    continuing: _continuing,
+                    onRestart: _handleRestart,
+                    onContinue: _handleContinue,
+                  ),
+                ),
+              ],
             ),
-            const Divider(height: 1, color: _AutismDevColors.lineSoft),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
-              child: _AutismDevDraftResumeActionArea(
-                continuing: _continuing,
-                onRestart: _handleRestart,
-                onContinue: _handleContinue,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -3035,8 +3148,9 @@ class _AutismDevDraftResumeActionArea extends StatelessWidget {
         width: 236,
         height: 42,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          reverseDuration: const Duration(milliseconds: 120),
+          duration:
+              continuing ? Duration.zero : const Duration(milliseconds: 120),
+          reverseDuration: Duration.zero,
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeOutCubic,
           layoutBuilder: (
@@ -3052,6 +3166,9 @@ class _AutismDevDraftResumeActionArea extends StatelessWidget {
             );
           },
           transitionBuilder: (Widget child, Animation<double> animation) {
+            if (continuing) {
+              return child;
+            }
             return FadeTransition(opacity: animation, child: child);
           },
           child: continuing
@@ -3425,13 +3542,613 @@ class _AutismDevLoadingBody extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: SizedBox(
-        width: 34,
-        height: 34,
-        child: CircularProgressIndicator(strokeWidth: 3),
+    return const Column(
+      children: <Widget>[
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(10, 10, 10, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(width: 226, child: _AutismDevSidebarSkeleton()),
+                SizedBox(width: 10),
+                Expanded(child: _AutismDevQuestionSkeleton()),
+                SizedBox(width: 10),
+                SizedBox(width: 238, child: _AutismDevRightRailSkeleton()),
+              ],
+            ),
+          ),
+        ),
+        _AutismDevFooterSkeleton(),
+      ],
+    );
+  }
+}
+
+class _AutismDevSidebarSkeleton extends StatelessWidget {
+  const _AutismDevSidebarSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _panelDecoration(),
+      child: Column(
+        children: <Widget>[
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: _AutismDevColors.lineSoft),
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                const Text(
+                  '领域任务',
+                  style: TextStyle(
+                    color: _AutismDevColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                _AutismDevSkeletonBlock(width: 30, height: 30, radius: 8),
+              ],
+            ),
+          ),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                children: const <Widget>[
+                  _AutismDevLoadingDomainRow(selected: true, expanded: true),
+                  _AutismDevLoadingDomainRow(selected: false),
+                  _AutismDevLoadingDomainRow(selected: false),
+                  _AutismDevLoadingDomainRow(selected: false),
+                  _AutismDevLoadingDomainRow(selected: false),
+                  _AutismDevLoadingDomainRow(selected: false),
+                ],
+              ),
+            ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+class _AutismDevLoadingDomainRow extends StatelessWidget {
+  const _AutismDevLoadingDomainRow({
+    required this.selected,
+    this.expanded = false,
+  });
+
+  final bool selected;
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
+      decoration: BoxDecoration(
+        color: selected ? const Color(0xFFFFFBF8) : Colors.transparent,
+        border: const Border(
+          bottom: BorderSide(color: _AutismDevColors.lineSoft),
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _AutismDevSkeletonBlock(width: 20, height: 20, radius: 7),
+              const SizedBox(width: 4),
+              _AutismDevSkeletonBlock(width: 9, height: 9, radius: 99),
+              const SizedBox(width: 8),
+              const Expanded(
+                child: _AutismDevSkeletonBlock(widthFactor: .72, height: 13),
+              ),
+              const SizedBox(width: 9),
+              _AutismDevSkeletonBlock(width: 34, height: 12, radius: 6),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Row(
+            children: <Widget>[
+              const SizedBox(width: 28),
+              const Expanded(
+                child: _AutismDevSkeletonBlock(height: 4, radius: 99),
+              ),
+              const SizedBox(width: 9),
+              _AutismDevSkeletonBlock(width: 28, height: 12, radius: 6),
+            ],
+          ),
+          if (expanded) ...const <Widget>[
+            SizedBox(height: 9),
+            _AutismDevLoadingNavRow(),
+            _AutismDevLoadingNavRow(),
+            _AutismDevLoadingNavRow(),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevLoadingNavRow extends StatelessWidget {
+  const _AutismDevLoadingNavRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(left: 18, top: 3),
+      child: SizedBox(
+        height: 31,
+        child: Row(
+          children: <Widget>[
+            _AutismDevSkeletonBlock(width: 42, height: 12),
+            const SizedBox(width: 8),
+            const Expanded(
+              child: _AutismDevSkeletonBlock(widthFactor: .72, height: 12),
+            ),
+            const SizedBox(width: 7),
+            _AutismDevSkeletonBlock(width: 15, height: 15, radius: 99),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevQuestionSkeleton extends StatelessWidget {
+  const _AutismDevQuestionSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _panelDecoration(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 18, 16, 14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            SizedBox(
+              height: 38,
+              child: Row(
+                children: <Widget>[
+                  const Expanded(
+                    child: _AutismDevSkeletonBlock(
+                      widthFactor: .68,
+                      height: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Container(
+                    height: 30,
+                    padding: const EdgeInsets.symmetric(horizontal: 11),
+                    alignment: Alignment.center,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFF1E8),
+                      borderRadius: BorderRadius.circular(9),
+                      border: Border.all(color: const Color(0xFFFFC8AD)),
+                    ),
+                    child: const Text(
+                      '题目偏好配置',
+                      style: TextStyle(
+                        color: _AutismDevColors.orangeDeep,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Expanded(
+              child: SingleChildScrollView(
+                physics: NeverScrollableScrollPhysics(),
+                child: Column(
+                  children: <Widget>[
+                    _AutismDevLoadingMetaRow(),
+                    SizedBox(height: 10),
+                    _AutismDevLoadingDetailCard(title: '评估材料', height: 68),
+                    _AutismDevLoadingDetailCard(title: '评估方法', height: 78),
+                    _AutismDevLoadingDetailCard(title: '评分标准', height: 78),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 10),
+            const _AutismDevScoreSkeleton(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevLoadingMetaRow extends StatelessWidget {
+  const _AutismDevLoadingMetaRow();
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: const <Widget>[
+        Expanded(child: _AutismDevLoadingMetaCard(label: '评估范围')),
+        SizedBox(width: 10),
+        SizedBox(
+          width: 158,
+          child: _AutismDevLoadingMetaCard(label: '参考年龄'),
+        ),
+      ],
+    );
+  }
+}
+
+class _AutismDevLoadingMetaCard extends StatelessWidget {
+  const _AutismDevLoadingMetaCard({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      constraints: const BoxConstraints(minHeight: 70),
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: _autismDevDetailCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            label,
+            style: const TextStyle(
+              color: _AutismDevColors.ink,
+              fontSize: 13,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          const _AutismDevSkeletonBlock(widthFactor: .8, height: 13),
+          const SizedBox(height: 7),
+          const _AutismDevSkeletonBlock(widthFactor: .52, height: 13),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevLoadingDetailCard extends StatelessWidget {
+  const _AutismDevLoadingDetailCard({
+    required this.title,
+    required this.height,
+  });
+
+  final String title;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      constraints: BoxConstraints(minHeight: height),
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 14),
+      decoration: _autismDevDetailCardDecoration(),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Text(
+            title,
+            style: const TextStyle(
+              color: _AutismDevColors.ink,
+              fontSize: 16,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 13),
+          const _AutismDevSkeletonBlock(widthFactor: .92, height: 12),
+          const SizedBox(height: 8),
+          const _AutismDevSkeletonBlock(widthFactor: .68, height: 12),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevScoreSkeleton extends StatelessWidget {
+  const _AutismDevScoreSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        const Row(
+          children: <Widget>[
+            Text(
+              '评分',
+              style: TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            Spacer(),
+          ],
+        ),
+        const SizedBox(height: 8),
+        LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            const double spacing = 12;
+            final bool singleColumn = constraints.maxWidth < 430;
+            final double cardWidth = singleColumn
+                ? constraints.maxWidth
+                : (constraints.maxWidth - spacing) / 2;
+            return Wrap(
+              spacing: spacing,
+              runSpacing: 8,
+              children: <Widget>[
+                SizedBox(
+                  width: cardWidth,
+                  child: const _AutismDevScoreCardSkeleton(),
+                ),
+                SizedBox(
+                  width: cardWidth,
+                  child: const _AutismDevScoreCardSkeleton(),
+                ),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
+
+class _AutismDevScoreCardSkeleton extends StatelessWidget {
+  const _AutismDevScoreCardSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 78,
+      padding: const EdgeInsets.fromLTRB(13, 9, 11, 9),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: _AutismDevColors.line),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: const <Widget>[
+          _AutismDevSkeletonBlock(width: 36, height: 36, radius: 18),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _AutismDevSkeletonBlock(widthFactor: .72, height: 14),
+                SizedBox(height: 8),
+                _AutismDevSkeletonBlock(widthFactor: .9, height: 11),
+              ],
+            ),
+          ),
+          SizedBox(width: 8),
+          _AutismDevSkeletonBlock(width: 20, height: 20, radius: 99),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevRightRailSkeleton extends StatelessWidget {
+  const _AutismDevRightRailSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: _panelDecoration(),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const Text(
+              '当前进度',
+              style: TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Row(
+              children: const <Widget>[
+                _AutismDevSkeletonBlock(width: 82, height: 82, radius: 99),
+                SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      _AutismDevSkeletonBlock(width: 62, height: 12),
+                      SizedBox(height: 8),
+                      _AutismDevSkeletonBlock(widthFactor: .82, height: 16),
+                      SizedBox(height: 12),
+                      _AutismDevSkeletonBlock(width: 40, height: 12),
+                      SizedBox(height: 8),
+                      _AutismDevSkeletonBlock(widthFactor: .58, height: 16),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 16),
+            const Expanded(child: _AutismDevRangeSkeleton()),
+            const SizedBox(height: 16),
+            const Text(
+              '备注',
+              style: TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 16,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 10),
+            const _AutismDevSkeletonBlock(height: 66, radius: 8),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevRangeSkeleton extends StatelessWidget {
+  const _AutismDevRangeSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: const <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                '分类',
+                style: TextStyle(
+                  color: _AutismDevColors.ink,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            _AutismDevSkeletonBlock(width: 28, height: 12),
+          ],
+        ),
+        SizedBox(height: 10),
+        _AutismDevRangeListSkeleton(active: true),
+        SizedBox(height: 7),
+        _AutismDevRangeListSkeleton(active: false),
+        SizedBox(height: 7),
+        _AutismDevRangeListSkeleton(active: false),
+        SizedBox(height: 7),
+        _AutismDevRangeListSkeleton(active: false),
+      ],
+    );
+  }
+}
+
+class _AutismDevRangeListSkeleton extends StatelessWidget {
+  const _AutismDevRangeListSkeleton({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 39,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFFFF1E8) : _AutismDevColors.softPanel,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: active ? const Color(0xFFFFC8AD) : _AutismDevColors.line,
+        ),
+      ),
+      child: Row(
+        children: const <Widget>[
+          _AutismDevSkeletonBlock(width: 7, height: 7, radius: 99),
+          SizedBox(width: 8),
+          Expanded(
+              child: _AutismDevSkeletonBlock(widthFactor: .72, height: 12)),
+          SizedBox(width: 8),
+          _AutismDevSkeletonBlock(width: 38, height: 22, radius: 11),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevFooterSkeleton extends StatelessWidget {
+  const _AutismDevFooterSkeleton();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.97),
+        border: Border.all(color: _AutismDevColors.line),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+        boxShadow: _autismDevShadow(
+          color: const Color(0x14B05F32),
+          blur: 16,
+        ),
+      ),
+      child: FittedBox(
+        fit: BoxFit.scaleDown,
+        alignment: Alignment.center,
+        child: SizedBox(
+          width: 984,
+          child: Row(
+            children: const <Widget>[
+              _AutismDevSkeletonBlock(width: 128, height: 38, radius: 10),
+              Spacer(),
+              _AutismDevSkeletonBlock(width: 80, height: 27),
+              Spacer(),
+              _AutismDevSkeletonBlock(width: 140, height: 38, radius: 10),
+              SizedBox(width: 14),
+              _AutismDevSkeletonBlock(width: 128, height: 38, radius: 10),
+              SizedBox(width: 22),
+              _AutismDevSkeletonBlock(width: 66, height: 13),
+              SizedBox(width: 8),
+              _AutismDevSkeletonBlock(width: 50, height: 30, radius: 99),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevSkeletonBlock extends StatelessWidget {
+  const _AutismDevSkeletonBlock({
+    this.width,
+    this.widthFactor,
+    required this.height,
+    this.radius = 6,
+  });
+
+  final double? width;
+  final double? widthFactor;
+  final double height;
+  final double radius;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget block = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3E6DB),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+    final double? factor = widthFactor;
+    if (factor != null) {
+      return FractionallySizedBox(
+        widthFactor: factor,
+        alignment: Alignment.centerLeft,
+        child: block,
+      );
+    }
+    return block;
   }
 }
 
