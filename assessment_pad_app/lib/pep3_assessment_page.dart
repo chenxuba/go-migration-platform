@@ -1308,8 +1308,9 @@ class _DraftResumeActionArea extends StatelessWidget {
         width: 236,
         height: 42,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          reverseDuration: const Duration(milliseconds: 120),
+          duration:
+              continuing ? Duration.zero : const Duration(milliseconds: 120),
+          reverseDuration: Duration.zero,
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeOutCubic,
           layoutBuilder: (
@@ -1325,6 +1326,9 @@ class _DraftResumeActionArea extends StatelessWidget {
             );
           },
           transitionBuilder: (Widget child, Animation<double> animation) {
+            if (continuing) {
+              return child;
+            }
             return FadeTransition(opacity: animation, child: child);
           },
           child: continuing

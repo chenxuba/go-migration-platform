@@ -2589,6 +2589,10 @@ class _ErxinDraftResumeDialogState extends State<_ErxinDraftResumeDialog> {
       return;
     }
     setState(() => _continuing = true);
+    await WidgetsBinding.instance.endOfFrame;
+    if (!mounted || !_continuing) {
+      return;
+    }
     final bool restored = await widget.onContinue();
     if (!mounted) {
       return;
@@ -2710,8 +2714,9 @@ class _ErxinDraftResumeActionArea extends StatelessWidget {
         width: 236,
         height: 42,
         child: AnimatedSwitcher(
-          duration: const Duration(milliseconds: 180),
-          reverseDuration: const Duration(milliseconds: 120),
+          duration:
+              continuing ? Duration.zero : const Duration(milliseconds: 120),
+          reverseDuration: Duration.zero,
           switchInCurve: Curves.easeOutCubic,
           switchOutCurve: Curves.easeOutCubic,
           layoutBuilder: (
@@ -2727,6 +2732,9 @@ class _ErxinDraftResumeActionArea extends StatelessWidget {
             );
           },
           transitionBuilder: (Widget child, Animation<double> animation) {
+            if (continuing) {
+              return child;
+            }
             return FadeTransition(opacity: animation, child: child);
           },
           child: continuing
@@ -4317,8 +4325,7 @@ class _DomainSidebar extends StatelessWidget {
   Widget build(BuildContext context) {
     final _DomainProgress selectedProgress = progressForDomain(selectedCode);
     final bool selectedComplete = domainCompleteForDomain(selectedCode);
-    final bool selectedVisibleComplete =
-        selectedProgress.total > 0 &&
+    final bool selectedVisibleComplete = selectedProgress.total > 0 &&
         selectedProgress.answered >= selectedProgress.total;
     return Container(
       width: 214,
@@ -4397,8 +4404,8 @@ class _DomainRow extends StatelessWidget {
         : visibleComplete
             ? '待推进'
             : progress.answered > 0
-            ? '测查中'
-            : '待测';
+                ? '测查中'
+                : '待测';
     final Color statusColor = complete
         ? _ErxinColors.green
         : (selected || visibleComplete)
