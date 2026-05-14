@@ -1902,47 +1902,111 @@ class _StudentChip extends StatelessWidget {
     final bool hasStudent = selected != null;
     final String label =
         selected == null ? '未选择学员' : _studentEchoLabel(selected);
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(15),
-        child: Ink(
-          width: 202,
-          height: 46,
-          padding: const EdgeInsets.symmetric(horizontal: 18),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(.86),
-            borderRadius: BorderRadius.circular(15),
-            border: Border.all(
-              color: hasStudent ? _ScaleColors.orange : _ScaleColors.line,
-              width: hasStudent ? 1.3 : 1,
-            ),
-          ),
-          child: Row(
-            children: <Widget>[
-              Icon(
-                Icons.person_outline_rounded,
-                size: 23,
-                color: hasStudent ? _ScaleColors.orange : _ScaleColors.text,
+    return Tooltip(
+      message: hasStudent ? '点击切换学员' : '点击选择学员',
+      waitDuration: const Duration(milliseconds: 260),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(15),
+          child: Ink(
+            width: 228,
+            height: 46,
+            padding: const EdgeInsets.only(left: 17, right: 10),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(.86),
+              borderRadius: BorderRadius.circular(15),
+              border: Border.all(
+                color: hasStudent ? _ScaleColors.orange : _ScaleColors.line,
+                width: hasStudent ? 1.3 : 1,
               ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(
-                    color:
-                        hasStudent ? _ScaleColors.orangeDeep : _ScaleColors.ink,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
+            ),
+            child: Row(
+              children: <Widget>[
+                Icon(
+                  Icons.person_outline_rounded,
+                  size: 23,
+                  color: hasStudent ? _ScaleColors.orange : _ScaleColors.text,
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: hasStudent
+                          ? _ScaleColors.orangeDeep
+                          : _ScaleColors.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(width: 8),
+                _StudentChipActionHint(
+                  icon: hasStudent
+                      ? Icons.swap_horiz_rounded
+                      : Icons.person_search_rounded,
+                  label: hasStudent ? '切换' : '选择',
+                  active: hasStudent,
+                ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _StudentChipActionHint extends StatelessWidget {
+  const _StudentChipActionHint({
+    required this.icon,
+    required this.label,
+    required this.active,
+  });
+
+  final IconData icon;
+  final String label;
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground =
+        active ? _ScaleColors.orangeDeep : _ScaleColors.text;
+    return Container(
+      height: 28,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFFFF1E8) : const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(
+          color: active ? const Color(0xFFFFD6C2) : _ScaleColors.lineSoft,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Icon(icon, size: 15, color: foreground),
+          const SizedBox(width: 3),
+          Text(
+            label,
+            maxLines: 1,
+            strutStyle: const StrutStyle(
+              fontSize: 12,
+              height: 1,
+              forceStrutHeight: true,
+            ),
+            style: TextStyle(
+              color: foreground,
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4787,6 +4851,12 @@ _CoverType _coverTypeForScale(AssessmentScaleItem item) {
   if (target.contains('pep') || target.contains('book')) {
     return _CoverType.book;
   }
+  if (target.contains('孤独症') ||
+      target.contains('自闭症') ||
+      target.contains('autism') ||
+      target.contains('asd')) {
+    return _CoverType.autism;
+  }
   if (target.contains('社交') ||
       target.contains('social') ||
       target.contains('情绪')) {
@@ -5016,7 +5086,7 @@ class _ChooseButton extends StatelessWidget {
   }
 }
 
-enum _CoverType { book, talk, screen, express, social, review }
+enum _CoverType { book, talk, screen, express, social, autism, review }
 
 class _ScaleCoverPainter extends CustomPainter {
   const _ScaleCoverPainter({required this.type});
@@ -5049,6 +5119,8 @@ class _ScaleCoverPainter extends CustomPainter {
         _drawExpress(canvas, size);
       case _CoverType.social:
         _drawSocial(canvas, size);
+      case _CoverType.autism:
+        _drawAutism(canvas, size);
       case _CoverType.review:
         _drawReview(canvas, size);
     }
@@ -5066,6 +5138,8 @@ class _ScaleCoverPainter extends CustomPainter {
         return const <Color>[Color(0xFFFFF6E1), Color(0xFFFFDFA7)];
       case _CoverType.social:
         return const <Color>[Color(0xFFF6F3EA), Color(0xFFDDECCF)];
+      case _CoverType.autism:
+        return const <Color>[Color(0xFFF0F8F4), Color(0xFFCFE9DF)];
       case _CoverType.review:
         return const <Color>[Color(0xFFFFF2EA), Color(0xFFF8D5C9)];
     }
@@ -5238,6 +5312,69 @@ class _ScaleCoverPainter extends CustomPainter {
     }
   }
 
+  void _drawAutism(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final Paint pathPaint = Paint()
+      ..color = const Color(0xFF63A999).withOpacity(.34)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(w * .24, h * .33)
+        ..cubicTo(w * .35, h * .2, w * .46, h * .46, w * .58, h * .31)
+        ..cubicTo(w * .67, h * .2, w * .75, h * .3, w * .83, h * .2),
+      pathPaint,
+    );
+
+    _drawChild(canvas, Offset(w * .38, h * .56),
+        shirt: const Color(0xFF70A7A0));
+
+    final Offset puzzleCenter = Offset(w * .68, h * .55);
+    _drawPuzzlePiece(
+      canvas,
+      Rect.fromCenter(
+        center: puzzleCenter.translate(-24, -17),
+        width: 48,
+        height: 42,
+      ),
+      const Color(0xFFE96F43),
+    );
+    _drawPuzzlePiece(
+      canvas,
+      Rect.fromCenter(
+        center: puzzleCenter.translate(24, -17),
+        width: 48,
+        height: 42,
+      ),
+      const Color(0xFFF0B849),
+    );
+    _drawPuzzlePiece(
+      canvas,
+      Rect.fromCenter(
+        center: puzzleCenter.translate(0, 23),
+        width: 48,
+        height: 42,
+      ),
+      const Color(0xFF3F82D2),
+    );
+
+    final Paint dot = Paint()..color = Colors.white.withOpacity(.9);
+    for (final Offset point in <Offset>[
+      Offset(w * .2, h * .34),
+      Offset(w * .58, h * .3),
+      Offset(w * .84, h * .2),
+    ]) {
+      canvas.drawCircle(point, 8, dot);
+      canvas.drawCircle(
+        point,
+        4,
+        Paint()..color = const Color(0xFF63A999),
+      );
+    }
+  }
+
   void _drawReview(Canvas canvas, Size size) {
     final double w = size.width;
     final double h = size.height;
@@ -5346,6 +5483,35 @@ class _ScaleCoverPainter extends CustomPainter {
         Paint()..color = dotColor.withOpacity(.72),
       );
     }
+  }
+
+  void _drawPuzzlePiece(Canvas canvas, Rect rect, Color color) {
+    final double r = math.min(rect.width, rect.height) * .16;
+    final double notch = math.min(rect.width, rect.height) * .14;
+    final Path path = Path()
+      ..moveTo(rect.left + r, rect.top)
+      ..lineTo(rect.center.dx - notch, rect.top)
+      ..arcToPoint(
+        Offset(rect.center.dx + notch, rect.top),
+        radius: Radius.circular(notch),
+        clockwise: false,
+      )
+      ..lineTo(rect.right - r, rect.top)
+      ..quadraticBezierTo(rect.right, rect.top, rect.right, rect.top + r)
+      ..lineTo(rect.right, rect.bottom - r)
+      ..quadraticBezierTo(rect.right, rect.bottom, rect.right - r, rect.bottom)
+      ..lineTo(rect.left + r, rect.bottom)
+      ..quadraticBezierTo(rect.left, rect.bottom, rect.left, rect.bottom - r)
+      ..lineTo(rect.left, rect.top + r)
+      ..quadraticBezierTo(rect.left, rect.top, rect.left + r, rect.top)
+      ..close();
+    canvas.drawShadow(path, const Color(0x302A5C4D), 4, false);
+    canvas.drawPath(path, Paint()..color = color.withOpacity(.9));
+    canvas.drawCircle(
+      Offset(rect.left + rect.width * .72, rect.top + rect.height * .62),
+      notch * .62,
+      Paint()..color = Colors.white.withOpacity(.38),
+    );
   }
 
   void _drawCompactSpeechBubble(
