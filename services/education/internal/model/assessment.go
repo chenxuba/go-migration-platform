@@ -109,19 +109,20 @@ type PEP3AssessmentDraftSubmitVO struct {
 }
 
 type PEP3AssessmentDraftProgress struct {
-	ItemCount              int                  `json:"itemCount"`
-	AnsweredItemCount      int                  `json:"answeredItemCount"`
-	MissingItemCount       int                  `json:"missingItemCount"`
-	RawScoreCount          int                  `json:"rawScoreCount"`
-	CaregiverRawScoreCount int                  `json:"caregiverRawScoreCount"`
-	TotalInputCount        int                  `json:"totalInputCount"`
-	CompletedInputCount    int                  `json:"completedInputCount"`
-	CompletionPercent      float64              `json:"completionPercent"`
-	Complete               bool                 `json:"complete"`
-	CanScore               bool                 `json:"canScore"`
-	MissingRequiredFields  []string             `json:"missingRequiredFields,omitempty"`
-	MissingItemNos         []int                `json:"missingItemNos,omitempty"`
-	DomainProgress         []PEP3DomainProgress `json:"domainProgress,omitempty"`
+	ItemCount                 int                  `json:"itemCount"`
+	AnsweredItemCount         int                  `json:"answeredItemCount"`
+	MissingItemCount          int                  `json:"missingItemCount"`
+	RawScoreCount             int                  `json:"rawScoreCount"`
+	CaregiverRawScoreCount    int                  `json:"caregiverRawScoreCount"`
+	TotalInputCount           int                  `json:"totalInputCount"`
+	CompletedInputCount       int                  `json:"completedInputCount"`
+	CompletionPercent         float64              `json:"completionPercent"`
+	Complete                  bool                 `json:"complete"`
+	CanScore                  bool                 `json:"canScore"`
+	QuestionDisplayPreference string               `json:"questionDisplayPreference,omitempty"`
+	MissingRequiredFields     []string             `json:"missingRequiredFields,omitempty"`
+	MissingItemNos            []int                `json:"missingItemNos,omitempty"`
+	DomainProgress            []PEP3DomainProgress `json:"domainProgress,omitempty"`
 }
 
 type PEP3DomainProgress struct {

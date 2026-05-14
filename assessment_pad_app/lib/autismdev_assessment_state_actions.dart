@@ -121,7 +121,13 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     if (!mounted || serial != _draftDetectionSerial || _draftId > 0) {
       return;
     }
-    _detectedDraft = draft;
+    setState(() {
+      _detectedDraft = draft;
+      if (draft != null) {
+        _applyDetectedDraftQuestionDisplayPreference(draft);
+        _ensureSelectedDisplayItem();
+      }
+    });
     _prefetchDetectedDraftDetail(token, draft);
     _showDetectedDraftDialogIfNeeded();
   }
@@ -145,7 +151,17 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     _detectedDraftDetailRequest = request;
     unawaited(
       request.then<void>(
-        (AutismDevDraftDetail _) {},
+        (AutismDevDraftDetail detail) {
+          if (!mounted ||
+              _detectedDraftDetailDraftId != draft.id ||
+              _detectedDraft?.id != draft.id) {
+            return;
+          }
+          setState(() {
+            _applyDraftQuestionDisplayPreference(detail);
+            _ensureSelectedDisplayItem();
+          });
+        },
         onError: (Object _, StackTrace __) {},
       ),
     );
@@ -172,7 +188,11 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return;
     }
     final int answered = draft.answeredItemCount;
-    final int total = math.max(_fullTotalCount, answered);
+    final int progressTotal = draft.progressItemCount;
+    final int total = math.max(
+      progressTotal > 0 ? progressTotal : _visibleTotalCount,
+      answered,
+    );
     _draftDialogShown = true;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) {
@@ -226,6 +246,8 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       _itemScores.clear();
       _itemRemarks.clear();
       _selectedRangeFilter = '';
+      _questionDisplayPreference =
+          _AutismDevQuestionDisplayPreference.ageAndBelow;
       _scopeMode = _AutismDevAssessmentScopeMode.full;
       _selectedScopeDomainCodes.clear();
       _draftScopeMode = _scopeMode;
@@ -311,6 +333,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       ..clear()
       ..addAll(detail.input.itemRemarks);
     _applyDraftScopeInput(detail.input);
+    _applyDraftQuestionDisplayPreference(detail);
     final int firstUnanswered = _firstUnansweredItemNo();
     if (firstUnanswered > 0) {
       _selectedItemNo = firstUnanswered;
@@ -344,6 +367,14 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
 
   String get _scopeModeName =>
       _scopeMode == _AutismDevAssessmentScopeMode.custom ? 'custom' : 'full';
+
+  String get _questionDisplayPreferenceName {
+    return switch (_questionDisplayPreference) {
+      _AutismDevQuestionDisplayPreference.all => 'all',
+      _AutismDevQuestionDisplayPreference.matchingAge => 'matchingAge',
+      _AutismDevQuestionDisplayPreference.ageAndBelow => 'ageAndBelow',
+    };
+  }
 
   List<String> get _scopeDomainCodesForPayload {
     if (!_isCustomScope) {
@@ -392,25 +423,68 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     _editingScope = false;
   }
 
-  int get _fullAnsweredCount => _allItems
-      .where(
-          (AutismDevItemSummary item) => _itemScores.containsKey(item.itemNo))
-      .length;
+  void _applyDraftQuestionDisplayPreference(AutismDevDraftDetail detail) {
+    final _AutismDevQuestionDisplayPreference? preference =
+        _questionDisplayPreferenceFromName(
+              detail.input.questionDisplayPreference,
+            ) ??
+            _questionDisplayPreferenceFromName(
+              detail.progress.questionDisplayPreference,
+            );
+    if (preference != null) {
+      _questionDisplayPreference = preference;
+      _selectedRangeFilter = '';
+    }
+  }
+
+  void _applyDetectedDraftQuestionDisplayPreference(
+    AssessmentDraftSummary draft,
+  ) {
+    final _AutismDevQuestionDisplayPreference? preference =
+        _questionDisplayPreferenceFromName(
+              draft.progressQuestionDisplayPreference,
+            ) ??
+            _questionDisplayPreferenceFromItemCount(draft.progressItemCount);
+    if (preference != null) {
+      _questionDisplayPreference = preference;
+      _selectedRangeFilter = '';
+    }
+  }
+
+  _AutismDevQuestionDisplayPreference? _questionDisplayPreferenceFromName(
+    String raw,
+  ) {
+    return switch (raw.trim()) {
+      'all' => _AutismDevQuestionDisplayPreference.all,
+      'matchingAge' => _AutismDevQuestionDisplayPreference.matchingAge,
+      'ageAndBelow' => _AutismDevQuestionDisplayPreference.ageAndBelow,
+      _ => null,
+    };
+  }
+
+  _AutismDevQuestionDisplayPreference? _questionDisplayPreferenceFromItemCount(
+    int itemCount,
+  ) {
+    if (itemCount <= 0) {
+      return null;
+    }
+    for (final _AutismDevQuestionDisplayPreference preference
+        in _AutismDevQuestionDisplayPreference.values) {
+      final int count = _allItems
+          .where((AutismDevItemSummary item) =>
+              _shouldDisplayItemForQuestionPreference(item, preference))
+          .length;
+      if (count == itemCount) {
+        return preference;
+      }
+    }
+    return null;
+  }
 
   int get _visibleAnsweredCount => _displayItems
       .where(
           (AutismDevItemSummary item) => _itemScores.containsKey(item.itemNo))
       .length;
-
-  int get _fullTotalCount {
-    if (_template.itemCount > 0) {
-      return _template.itemCount;
-    }
-    return _template.domainGroups.fold<int>(
-      0,
-      (int total, AutismDevDomainGroup group) => total + group.items.length,
-    );
-  }
 
   int get _visibleTotalCount => _displayItems.length;
 
@@ -584,6 +658,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     });
     _syncRemarkController();
     _prefetchSelectedItem();
+    unawaited(_saveDraft(silent: true));
   }
 
   void _syncRemarkController() {
@@ -665,23 +740,50 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
   }
 
   Future<void> _selectScore(String score, {bool moveNext = false}) async {
-    if (_selectedItemNo <= 0) {
+    if (_selectedItemNo <= 0 || _submitting) {
       return;
     }
+    final int itemNo = _selectedItemNo;
+    final String remark = _remarkController.text.trim();
     setState(() {
-      _itemScores[_selectedItemNo] = score;
-      _itemRemarks[_selectedItemNo] = _remarkController.text.trim();
+      _itemScores[itemNo] = score;
+      _itemRemarks[itemNo] = remark;
     });
-    await _saveCurrentItem(moveNext: moveNext, silent: true);
+    final Future<void>? previousSave = _currentItemSaveFuture;
+    late final Future<void> trackedSave;
+    trackedSave = (() async {
+      if (previousSave != null) {
+        await previousSave;
+      }
+      final Future<AutismDevDraftDetail?>? draftSave = _saveDraftFuture;
+      if (draftSave != null) {
+        await draftSave;
+      }
+      await _saveCurrentItem(
+        itemNo: itemNo,
+        score: score,
+        remark: remark,
+        moveNext: moveNext,
+        silent: true,
+      );
+    })()
+        .whenComplete(() {
+      if (identical(_currentItemSaveFuture, trackedSave)) {
+        _currentItemSaveFuture = null;
+      }
+    });
+    _currentItemSaveFuture = trackedSave;
+    await trackedSave;
   }
 
   Future<void> _saveCurrentItem({
+    required int itemNo,
+    required String score,
+    required String remark,
     bool moveNext = false,
     bool silent = false,
   }) async {
-    final int itemNo = _selectedItemNo;
-    final String? score = _itemScores[itemNo];
-    if (itemNo <= 0 || score == null || score.trim().isEmpty) {
+    if (itemNo <= 0 || score.trim().isEmpty) {
       _showMessage('请先选择本题评分');
       return;
     }
@@ -692,7 +794,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     setState(() {
       _saving = true;
       _autoSaveText = '保存中...';
-      _itemRemarks[itemNo] = _remarkController.text.trim();
+      _itemRemarks[itemNo] = remark;
     });
     try {
       final AutismDevDraftDetail detail;
@@ -705,7 +807,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
             'draftId': _draftId,
             'itemNo': itemNo,
             'score': score,
-            'remark': _remarkController.text.trim(),
+            'remark': remark,
           },
         );
       }
@@ -714,17 +816,12 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       }
       setState(() {
         _draftId = detail.id;
-        _itemScores
-          ..clear()
-          ..addAll(detail.input.itemScores);
-        _itemRemarks
-          ..clear()
-          ..addAll(detail.input.itemRemarks);
+        _mergeDraftDetailInput(detail);
         _saving = false;
         _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
       _syncRemarkController();
-      if (moveNext) {
+      if (moveNext && _selectedItemNo == itemNo) {
         _goNextItem();
       } else if (!silent) {
         _showMessage('已保存本题', tone: PadMessageTone.success);
@@ -773,6 +870,19 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     return trackedFuture;
   }
 
+  void _mergeDraftDetailInput(AutismDevDraftDetail detail) {
+    final Map<int, String> localScores = Map<int, String>.from(_itemScores);
+    final Map<int, String> localRemarks = Map<int, String>.from(_itemRemarks);
+    _itemScores
+      ..clear()
+      ..addAll(detail.input.itemScores)
+      ..addAll(localScores);
+    _itemRemarks
+      ..clear()
+      ..addAll(detail.input.itemRemarks)
+      ..addAll(localRemarks);
+  }
+
   Future<AutismDevDraftDetail?> _joinSilentDraftSave(
     Future<AutismDevDraftDetail?> inFlight,
   ) async {
@@ -814,12 +924,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       }
       setState(() {
         _draftId = detail.id;
-        _itemScores
-          ..clear()
-          ..addAll(detail.input.itemScores);
-        _itemRemarks
-          ..clear()
-          ..addAll(detail.input.itemRemarks);
+        _mergeDraftDetailInput(detail);
         _saving = false;
         _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
@@ -872,11 +977,27 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     }
     setState(() => _submitting = true);
     try {
-      if (_draftId <= 0) {
-        final AutismDevDraftDetail detail =
-            await widget.client.saveDraft(_token, _draftPayload());
-        _draftId = detail.id;
+      final Future<void>? itemSave = _currentItemSaveFuture;
+      if (itemSave != null) {
+        await itemSave;
       }
+      final Future<AutismDevDraftDetail?>? draftSave = _saveDraftFuture;
+      if (draftSave != null) {
+        await draftSave;
+      }
+      if (!mounted) {
+        return;
+      }
+      final AutismDevDraftDetail? detail = await _saveDraft(silent: true);
+      if (!mounted) {
+        return;
+      }
+      if (detail == null || detail.id <= 0) {
+        setState(() => _submitting = false);
+        _showMessage('提交前保存草稿失败，请稍后重试');
+        return;
+      }
+      _draftId = detail.id;
       await widget.client.submitDraft(_token, _draftId);
       if (!mounted) {
         return;
@@ -912,6 +1033,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       'assessmentDate': _assessmentDate.trim(),
       'scopeMode': _scopeModeName,
       'scopeDomainCodes': _scopeDomainCodesForPayload,
+      'questionDisplayPreference': _questionDisplayPreferenceName,
       'itemScoreList': _itemScoreList(),
     };
   }
@@ -1007,8 +1129,18 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
   }
 
   bool _shouldDisplayItemForPreference(AutismDevItemSummary item) {
+    return _shouldDisplayItemForQuestionPreference(
+      item,
+      _questionDisplayPreference,
+    );
+  }
+
+  bool _shouldDisplayItemForQuestionPreference(
+    AutismDevItemSummary item,
+    _AutismDevQuestionDisplayPreference preference,
+  ) {
     if (_isEmotionBehaviorItem(item) ||
-        _questionDisplayPreference == _AutismDevQuestionDisplayPreference.all) {
+        preference == _AutismDevQuestionDisplayPreference.all) {
       return true;
     }
     final int? ageMonths = _studentAgeMonths;
@@ -1020,7 +1152,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     if (minMonth <= 0 && maxMonth <= 0) {
       return true;
     }
-    return switch (_questionDisplayPreference) {
+    return switch (preference) {
       _AutismDevQuestionDisplayPreference.all => true,
       _AutismDevQuestionDisplayPreference.matchingAge =>
         minMonth <= ageMonths && (maxMonth <= 0 || ageMonths <= maxMonth),

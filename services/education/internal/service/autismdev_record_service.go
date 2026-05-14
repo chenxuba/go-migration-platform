@@ -144,7 +144,12 @@ func (svc *Service) syncAutismDevSubmittedDraftAfterRecordUpdate(userID, instID,
 		}
 		return err
 	}
-	progress, err := buildAutismDevAssessmentDraftProgress(&input.ScoreInput.BirthDate, &input.ScoreInput.AssessmentDate, input.ScoreInput.ItemScores)
+	progress, err := buildAutismDevAssessmentDraftProgress(
+		&input.ScoreInput.BirthDate,
+		&input.ScoreInput.AssessmentDate,
+		input.ScoreInput.QuestionDisplayPreference,
+		input.ScoreInput.ItemScores,
+	)
 	if err != nil {
 		return err
 	}

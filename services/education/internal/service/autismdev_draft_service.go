@@ -17,15 +17,16 @@ import (
 )
 
 type AutismDevAssessmentDraftSaveInput struct {
-	ID             int64
-	StudentID      int64
-	StudentName    string
-	ExaminerName   string
-	Remark         string
-	BirthDate      *time.Time
-	AssessmentDate *time.Time
-	ItemScores     map[int]string
-	InputSnapshot  any
+	ID                        int64
+	StudentID                 int64
+	StudentName               string
+	ExaminerName              string
+	Remark                    string
+	BirthDate                 *time.Time
+	AssessmentDate            *time.Time
+	QuestionDisplayPreference string
+	ItemScores                map[int]string
+	InputSnapshot             any
 }
 
 type AutismDevAssessmentDraftItemSaveInput struct {
@@ -36,10 +37,11 @@ type AutismDevAssessmentDraftItemSaveInput struct {
 }
 
 type autismDevSavedInputSnapshot struct {
-	ItemScores     map[int]string             `json:"itemScores,omitempty"`
-	ItemScoreList  []autismDevSavedItemScore  `json:"itemScoreList,omitempty"`
-	ItemRemarks    map[int]string             `json:"itemRemarks,omitempty"`
-	ItemRemarkList []autismDevSavedItemRemark `json:"itemRemarkList,omitempty"`
+	QuestionDisplayPreference string                     `json:"questionDisplayPreference,omitempty"`
+	ItemScores                map[int]string             `json:"itemScores,omitempty"`
+	ItemScoreList             []autismDevSavedItemScore  `json:"itemScoreList,omitempty"`
+	ItemRemarks               map[int]string             `json:"itemRemarks,omitempty"`
+	ItemRemarkList            []autismDevSavedItemRemark `json:"itemRemarkList,omitempty"`
 }
 
 type autismDevSavedItemScore struct {
@@ -64,7 +66,7 @@ func (svc *Service) SaveAutismDevAssessmentDraft(userID int64, input AutismDevAs
 	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	progress, err := buildAutismDevAssessmentDraftProgress(input.BirthDate, input.AssessmentDate, input.ItemScores)
+	progress, err := buildAutismDevAssessmentDraftProgress(input.BirthDate, input.AssessmentDate, input.QuestionDisplayPreference, input.ItemScores)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -148,7 +150,7 @@ func (svc *Service) SaveAutismDevAssessmentDraftItem(userID int64, input AutismD
 			itemRemarks[input.ItemNo] = normalizedRemark
 		}
 	}
-	progress, err := buildAutismDevAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores)
+	progress, err := buildAutismDevAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, decodeSavedAutismDevQuestionDisplayPreference(draft.InputJSON), itemScores)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -238,7 +240,8 @@ func (svc *Service) SubmitAutismDevAssessmentDraft(userID, draftID int64) (model
 	if len(itemScores) == 0 {
 		return model.AutismDevAssessmentDraftSubmitVO{}, errors.New("draft item scores are required before submit")
 	}
-	progress, err := buildAutismDevAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores)
+	questionDisplayPreference := decodeSavedAutismDevQuestionDisplayPreference(draft.InputJSON)
+	progress, err := buildAutismDevAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, questionDisplayPreference, itemScores)
 	if err != nil {
 		return model.AutismDevAssessmentDraftSubmitVO{}, err
 	}
@@ -254,9 +257,10 @@ func (svc *Service) SubmitAutismDevAssessmentDraft(userID, draftID int64) (model
 		ExaminerName: draft.ExaminerName,
 		Remark:       draft.Remark,
 		ScoreInput: autismdevscore.AssessmentInput{
-			BirthDate:      *draft.BirthDate,
-			AssessmentDate: *draft.AssessmentDate,
-			ItemScores:     itemScores,
+			BirthDate:                 *draft.BirthDate,
+			AssessmentDate:            *draft.AssessmentDate,
+			QuestionDisplayPreference: questionDisplayPreference,
+			ItemScores:                itemScores,
 		},
 		InputSnapshot: json.RawMessage(draft.InputJSON),
 	})
@@ -278,20 +282,24 @@ func (svc *Service) SubmitAutismDevAssessmentDraft(userID, draftID int64) (model
 	}, nil
 }
 
-func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time, itemScores map[int]string) (model.PEP3AssessmentDraftProgress, error) {
+func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time, questionDisplayPreference string, itemScores map[int]string) (model.PEP3AssessmentDraftProgress, error) {
 	data, err := loadAutismDevStaticData()
 	if err != nil {
 		return model.PEP3AssessmentDraftProgress{}, err
 	}
+	normalizedPreference := autismdevscore.NormalizeQuestionDisplayPreference(questionDisplayPreference)
 
 	itemByNo := make(map[int]autismdevscore.ItemDefinition, len(data.items))
 	itemCountByDomain := make(map[string]int, len(data.domains))
 	answeredByDomain := make(map[string]int, len(data.domains))
 	rawScoreByDomain := make(map[string]int, len(data.domains))
 	answeredItems := make(map[int]bool, len(itemScores))
+	requiredItemNos := autismDevRequiredItemNos(data.items, birthDate, assessmentDate, normalizedPreference)
 	for _, item := range data.items {
 		itemByNo[item.ItemNo] = item
-		itemCountByDomain[item.DomainCode]++
+		if requiredItemNos[item.ItemNo] {
+			itemCountByDomain[item.DomainCode]++
+		}
 	}
 	for itemNo, rawScore := range itemScores {
 		item, ok := itemByNo[itemNo]
@@ -301,6 +309,9 @@ func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time,
 		score := normalizeAutismDevScore(rawScore)
 		if !autismdevscore.ScoreAllowedForItem(score, item) {
 			return model.PEP3AssessmentDraftProgress{}, fmt.Errorf("item %d score %q is not allowed for %s", itemNo, rawScore, item.ScoreType)
+		}
+		if !requiredItemNos[itemNo] {
+			continue
 		}
 		if !answeredItems[itemNo] {
 			answeredItems[itemNo] = true
@@ -327,7 +338,7 @@ func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time,
 
 	missingItemNos := make([]int, 0)
 	for _, item := range data.items {
-		if !answeredItems[item.ItemNo] {
+		if requiredItemNos[item.ItemNo] && !answeredItems[item.ItemNo] {
 			missingItemNos = append(missingItemNos, item.ItemNo)
 		}
 	}
@@ -347,11 +358,11 @@ func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time,
 			AnsweredItemCount: answeredByDomain[domainCode],
 			RawScore:          &rawScore,
 			MaxRawScore:       &maxRawScore,
-			Complete:          answeredByDomain[domainCode] >= itemCountByDomain[domainCode] && itemCountByDomain[domainCode] > 0,
+			Complete:          itemCountByDomain[domainCode] == 0 || answeredByDomain[domainCode] >= itemCountByDomain[domainCode],
 		})
 	}
 
-	totalInputCount := len(data.items) + 2
+	totalInputCount := len(requiredItemNos) + 2
 	completedInputCount := len(answeredItems)
 	if birthDate != nil && !birthDate.IsZero() {
 		completedInputCount++
@@ -365,18 +376,47 @@ func buildAutismDevAssessmentDraftProgress(birthDate, assessmentDate *time.Time,
 	}
 
 	return model.PEP3AssessmentDraftProgress{
-		ItemCount:             len(data.items),
-		AnsweredItemCount:     len(answeredItems),
-		MissingItemCount:      len(missingItemNos),
-		TotalInputCount:       totalInputCount,
-		CompletedInputCount:   completedInputCount,
-		CompletionPercent:     completionPercent,
-		Complete:              scoreComplete,
-		CanScore:              scoreComplete,
-		MissingRequiredFields: missingRequiredFields,
-		MissingItemNos:        missingItemNos,
-		DomainProgress:        domainProgress,
+		ItemCount:                 len(requiredItemNos),
+		AnsweredItemCount:         len(answeredItems),
+		MissingItemCount:          len(missingItemNos),
+		TotalInputCount:           totalInputCount,
+		CompletedInputCount:       completedInputCount,
+		CompletionPercent:         completionPercent,
+		Complete:                  scoreComplete,
+		CanScore:                  scoreComplete,
+		QuestionDisplayPreference: normalizedPreference,
+		MissingRequiredFields:     missingRequiredFields,
+		MissingItemNos:            missingItemNos,
+		DomainProgress:            domainProgress,
 	}, nil
+}
+
+func autismDevRequiredItemNos(items []autismdevscore.ItemDefinition, birthDate, assessmentDate *time.Time, questionDisplayPreference string) map[int]bool {
+	required := make(map[int]bool, len(items))
+	normalizedPreference := autismdevscore.NormalizeQuestionDisplayPreference(questionDisplayPreference)
+	if normalizedPreference == autismdevscore.QuestionDisplayPreferenceAll ||
+		birthDate == nil ||
+		assessmentDate == nil ||
+		birthDate.IsZero() ||
+		assessmentDate.IsZero() {
+		for _, item := range items {
+			required[item.ItemNo] = true
+		}
+		return required
+	}
+	age, err := autismdevscore.AgeAt(*birthDate, *assessmentDate)
+	if err != nil {
+		for _, item := range items {
+			required[item.ItemNo] = true
+		}
+		return required
+	}
+	for _, item := range items {
+		if autismdevscore.ItemRequiredForQuestionDisplayPreference(item, age, normalizedPreference) {
+			required[item.ItemNo] = true
+		}
+	}
+	return required
 }
 
 func autismDevDraftStatus(progress model.PEP3AssessmentDraftProgress) string {
@@ -467,6 +507,14 @@ func decodeSavedAutismDevInputRemarks(raw json.RawMessage) (map[int]string, erro
 		}
 	}
 	return out, nil
+}
+
+func decodeSavedAutismDevQuestionDisplayPreference(raw json.RawMessage) string {
+	var snapshot autismDevSavedInputSnapshot
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &snapshot)
+	}
+	return autismdevscore.NormalizeQuestionDisplayPreference(snapshot.QuestionDisplayPreference)
 }
 
 func mergeAutismDevDraftInputSnapshot(raw json.RawMessage, itemScores map[int]string, itemRemarks map[int]string) (any, error) {

@@ -299,11 +299,14 @@ class AssessmentDraftSummary {
     required this.answeredItemCount,
     required this.rawScoreCount,
     required this.completionPercent,
+    required this.progressItemCount,
+    required this.progressQuestionDisplayPreference,
     required this.createdTime,
     required this.updatedTime,
   });
 
   factory AssessmentDraftSummary.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> progress = _mapFrom(json['progress']);
     return AssessmentDraftSummary(
       id: _intFrom(json['id']),
       studentName: '${json['studentName'] ?? ''}',
@@ -315,6 +318,9 @@ class AssessmentDraftSummary {
       answeredItemCount: _intFrom(json['answeredItemCount']),
       rawScoreCount: _intFrom(json['rawScoreCount']),
       completionPercent: _doubleFrom(json['completionPercent']),
+      progressItemCount: _intFrom(progress['itemCount']),
+      progressQuestionDisplayPreference:
+          '${progress['questionDisplayPreference'] ?? ''}',
       createdTime: '${json['createdTime'] ?? ''}',
       updatedTime: '${json['updatedTime'] ?? ''}',
     );
@@ -330,6 +336,8 @@ class AssessmentDraftSummary {
   final int answeredItemCount;
   final int rawScoreCount;
   final double completionPercent;
+  final int progressItemCount;
+  final String progressQuestionDisplayPreference;
   final String createdTime;
   final String updatedTime;
 

@@ -51,7 +51,7 @@ func TestBuildAutismDevAssessmentDraftProgressComplete(t *testing.T) {
 	}
 	birthDate := time.Date(2021, 5, 1, 0, 0, 0, 0, time.UTC)
 	assessmentDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
-	progress, err := buildAutismDevAssessmentDraftProgress(&birthDate, &assessmentDate, itemScores)
+	progress, err := buildAutismDevAssessmentDraftProgress(&birthDate, &assessmentDate, autismdevscore.QuestionDisplayPreferenceAll, itemScores)
 	if err != nil {
 		t.Fatalf("buildAutismDevAssessmentDraftProgress returned error: %v", err)
 	}
@@ -60,5 +60,50 @@ func TestBuildAutismDevAssessmentDraftProgressComplete(t *testing.T) {
 	}
 	if progress.AnsweredItemCount != autismdevscore.ExpectedItemDefinition || progress.MissingItemCount != 0 {
 		t.Fatalf("unexpected progress counts: answered=%d missing=%d", progress.AnsweredItemCount, progress.MissingItemCount)
+	}
+}
+
+func TestBuildAutismDevAssessmentDraftProgressUsesQuestionDisplayPreference(t *testing.T) {
+	data, err := loadAutismDevStaticData()
+	if err != nil {
+		t.Fatalf("loadAutismDevStaticData returned error: %v", err)
+	}
+	birthDate := time.Date(2021, 5, 1, 0, 0, 0, 0, time.UTC)
+	assessmentDate := time.Date(2025, 5, 1, 0, 0, 0, 0, time.UTC)
+	requiredItemNos := autismDevRequiredItemNos(
+		data.items,
+		&birthDate,
+		&assessmentDate,
+		autismdevscore.QuestionDisplayPreferenceAgeAndBelow,
+	)
+	if len(requiredItemNos) <= 0 || len(requiredItemNos) >= len(data.items) {
+		t.Fatalf("expected age-and-below range to be a subset, got %d/%d", len(requiredItemNos), len(data.items))
+	}
+	itemScores := make(map[int]string, len(requiredItemNos))
+	for _, item := range data.items {
+		if !requiredItemNos[item.ItemNo] {
+			continue
+		}
+		switch item.ScoreType {
+		case autismdevscore.ScoreTypeAMS:
+			itemScores[item.ItemNo] = autismdevscore.ScoreA
+		default:
+			itemScores[item.ItemNo] = autismdevscore.ScoreP
+		}
+	}
+	progress, err := buildAutismDevAssessmentDraftProgress(
+		&birthDate,
+		&assessmentDate,
+		autismdevscore.QuestionDisplayPreferenceAgeAndBelow,
+		itemScores,
+	)
+	if err != nil {
+		t.Fatalf("buildAutismDevAssessmentDraftProgress returned error: %v", err)
+	}
+	if !progress.Complete || !progress.CanScore {
+		t.Fatalf("expected complete age-and-below progress: %+v", progress)
+	}
+	if progress.ItemCount != len(requiredItemNos) || progress.AnsweredItemCount != len(requiredItemNos) || progress.MissingItemCount != 0 {
+		t.Fatalf("unexpected progress counts: item=%d answered=%d missing=%d required=%d", progress.ItemCount, progress.AnsweredItemCount, progress.MissingItemCount, len(requiredItemNos))
 	}
 }

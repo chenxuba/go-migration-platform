@@ -27,6 +27,10 @@ const (
 	DefaultScaleVersion    = "2010-revised-trainer"
 	MaxSupportedAgeMonths  = 72
 	ExpectedItemDefinition = 493
+
+	QuestionDisplayPreferenceAll         = "all"
+	QuestionDisplayPreferenceMatchingAge = "matchingAge"
+	QuestionDisplayPreferenceAgeAndBelow = "ageAndBelow"
 )
 
 var DomainOrder = []string{
@@ -80,9 +84,10 @@ type Age struct {
 }
 
 type AssessmentInput struct {
-	BirthDate      time.Time
-	AssessmentDate time.Time
-	ItemScores     map[int]string
+	BirthDate                 time.Time
+	AssessmentDate            time.Time
+	QuestionDisplayPreference string
+	ItemScores                map[int]string
 }
 
 type AssessmentResult struct {

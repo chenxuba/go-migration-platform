@@ -91,6 +91,34 @@ func TestScoreRejectsChildrenOverSixYearsOld(t *testing.T) {
 	}
 }
 
+func TestScoreUsesQuestionDisplayPreference(t *testing.T) {
+	engine, err := NewEngine([]ItemDefinition{
+		{ItemNo: 1, DomainCode: DomainSensory, DomainName: "感知觉", ScoreType: ScoreTypePEF, AgeMinMonth: 0, AgeMaxMonth: 12},
+		{ItemNo: 2, DomainCode: DomainSensory, DomainName: "感知觉", ScoreType: ScoreTypePEF, AgeMinMonth: 24, AgeMaxMonth: 36},
+		{ItemNo: 3, DomainCode: DomainSensory, DomainName: "感知觉", ScoreType: ScoreTypePEF, AgeMinMonth: 60, AgeMaxMonth: 72},
+		{ItemNo: 4, DomainCode: DomainEmotionBehavior, DomainName: "情绪与行为", ScoreType: ScoreTypeAMS},
+	})
+	if err != nil {
+		t.Fatalf("NewEngine returned error: %v", err)
+	}
+	result, err := engine.Score(AssessmentInput{
+		BirthDate:                 time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC),
+		AssessmentDate:            time.Date(2023, 1, 1, 0, 0, 0, 0, time.UTC),
+		QuestionDisplayPreference: QuestionDisplayPreferenceAgeAndBelow,
+		ItemScores: map[int]string{
+			1: "P",
+			2: "P",
+			4: "A",
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+	if !result.Complete || result.ItemCount != 3 || result.MissingItemCount != 0 {
+		t.Fatalf("expected age-and-below range complete, got item=%d missing=%d complete=%v", result.ItemCount, result.MissingItemCount, result.Complete)
+	}
+}
+
 func fixtureItems() []ItemDefinition {
 	return []ItemDefinition{
 		{ItemNo: 1, DomainCode: DomainSensory, DomainName: "感知觉", ScoreType: ScoreTypePEF},

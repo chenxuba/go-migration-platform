@@ -88,16 +88,17 @@ func (e *Engine) Score(input AssessmentInput) (AssessmentResult, error) {
 	if age.TotalMonths > MaxSupportedAgeMonths {
 		return AssessmentResult{}, fmt.Errorf("actual age exceeds autism development scale supported range 0-6 years")
 	}
+	questionDisplayPreference := NormalizeQuestionDisplayPreference(input.QuestionDisplayPreference)
 
 	result := AssessmentResult{
-		Age:       age,
-		ItemCount: len(e.items),
-		Complete:  true,
-		Domains:   make([]DomainResult, 0, len(DomainOrder)),
+		Age:      age,
+		Complete: true,
+		Domains:  make([]DomainResult, 0, len(DomainOrder)),
 	}
 	for _, domainCode := range DomainOrder {
-		domainResult := e.scoreDomain(domainCode, normalizedScores)
+		domainResult := e.scoreDomain(domainCode, normalizedScores, age, questionDisplayPreference)
 		result.Domains = append(result.Domains, domainResult)
+		result.ItemCount += domainResult.ItemCount
 		result.AnsweredItemCount += domainResult.AnsweredItemCount
 		result.MissingItemCount += domainResult.MissingItemCount
 		if !domainResult.Complete {
@@ -136,7 +137,7 @@ func (e *Engine) Score(input AssessmentInput) (AssessmentResult, error) {
 	return result, nil
 }
 
-func (e *Engine) scoreDomain(domainCode string, itemScores map[int]string) DomainResult {
+func (e *Engine) scoreDomain(domainCode string, itemScores map[int]string, age Age, questionDisplayPreference string) DomainResult {
 	items := e.itemsByDomain[domainCode]
 	domainName := e.domainNames[domainCode]
 	if domainName == "" {
@@ -150,11 +151,14 @@ func (e *Engine) scoreDomain(domainCode string, itemScores map[int]string) Domai
 		DomainCode:         domainCode,
 		DomainName:         domainName,
 		ScoreType:          scoreType,
-		ItemCount:          len(items),
 		Complete:           true,
 		MissingItemNumbers: []int{},
 	}
 	for _, item := range items {
+		if !ItemRequiredForQuestionDisplayPreference(item, age, questionDisplayPreference) {
+			continue
+		}
+		result.ItemCount++
 		score, ok := itemScores[item.ItemNo]
 		if !ok {
 			result.MissingItemCount++
@@ -200,6 +204,38 @@ func (e *Engine) scoreDomain(domainCode string, itemScores map[int]string) Domai
 		result.MissingItemNumbers = nil
 	}
 	return result
+}
+
+func NormalizeQuestionDisplayPreference(raw string) string {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "all":
+		return QuestionDisplayPreferenceAll
+	case "matchingage", "matching_age", "matching-age":
+		return QuestionDisplayPreferenceMatchingAge
+	case "ageandbelow", "age_and_below", "age-and-below":
+		return QuestionDisplayPreferenceAgeAndBelow
+	default:
+		return QuestionDisplayPreferenceAgeAndBelow
+	}
+}
+
+func ItemRequiredForQuestionDisplayPreference(item ItemDefinition, age Age, questionDisplayPreference string) bool {
+	if item.DomainCode == DomainEmotionBehavior || item.ScoreType == ScoreTypeAMS {
+		return true
+	}
+	if NormalizeQuestionDisplayPreference(questionDisplayPreference) == QuestionDisplayPreferenceAll {
+		return true
+	}
+	minMonth := item.AgeMinMonth
+	maxMonth := item.AgeMaxMonth
+	if minMonth <= 0 && maxMonth <= 0 {
+		return true
+	}
+	ageMonths := int(math.Floor(age.TotalMonths))
+	if NormalizeQuestionDisplayPreference(questionDisplayPreference) == QuestionDisplayPreferenceMatchingAge {
+		return minMonth <= ageMonths && (maxMonth <= 0 || ageMonths <= maxMonth)
+	}
+	return minMonth <= ageMonths
 }
 
 func validateItemDefinition(item ItemDefinition) error {

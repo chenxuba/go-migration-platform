@@ -616,6 +616,7 @@ class AutismDevDraftInput {
     this.assessmentDate = '',
     this.scopeMode = '',
     this.scopeDomainCodes = const <String>[],
+    this.questionDisplayPreference = '',
     required this.itemScores,
     required this.itemRemarks,
   });
@@ -684,6 +685,7 @@ class AutismDevDraftInput {
       scopeMode: '${json['scopeMode'] ?? json['assessmentScopeMode'] ?? ''}',
       scopeDomainCodes: _stringListFrom(
           json['scopeDomainCodes'] ?? json['selectedDomainCodes']),
+      questionDisplayPreference: '${json['questionDisplayPreference'] ?? ''}',
       itemScores: itemScores,
       itemRemarks: itemRemarks,
     );
@@ -698,6 +700,7 @@ class AutismDevDraftInput {
     assessmentDate: '',
     scopeMode: '',
     scopeDomainCodes: <String>[],
+    questionDisplayPreference: '',
     itemScores: <int, String>{},
     itemRemarks: <int, String>{},
   );
@@ -710,6 +713,7 @@ class AutismDevDraftInput {
   final String assessmentDate;
   final String scopeMode;
   final List<String> scopeDomainCodes;
+  final String questionDisplayPreference;
   final Map<int, String> itemScores;
   final Map<int, String> itemRemarks;
 }
@@ -722,6 +726,7 @@ class AutismDevDraftProgress {
     required this.completionPercent,
     required this.complete,
     required this.canScore,
+    required this.questionDisplayPreference,
     required this.missingItemNos,
   });
 
@@ -733,6 +738,7 @@ class AutismDevDraftProgress {
       completionPercent: _doubleFrom(json['completionPercent']),
       complete: json['complete'] == true,
       canScore: json['canScore'] == true,
+      questionDisplayPreference: '${json['questionDisplayPreference'] ?? ''}',
       missingItemNos: _rawListFrom(json['missingItemNos'])
           .map(_intFrom)
           .where((int itemNo) => itemNo > 0)
@@ -747,6 +753,7 @@ class AutismDevDraftProgress {
     completionPercent: 0,
     complete: false,
     canScore: false,
+    questionDisplayPreference: '',
     missingItemNos: <int>[],
   );
 
@@ -756,6 +763,7 @@ class AutismDevDraftProgress {
   final double completionPercent;
   final bool complete;
   final bool canScore;
+  final String questionDisplayPreference;
   final List<int> missingItemNos;
 }
 

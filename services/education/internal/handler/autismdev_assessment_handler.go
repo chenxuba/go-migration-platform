@@ -15,10 +15,11 @@ import (
 )
 
 type autismDevScoreRequest struct {
-	BirthDate      string                      `json:"birthDate"`
-	AssessmentDate string                      `json:"assessmentDate"`
-	ItemScores     map[int]string              `json:"itemScores,omitempty"`
-	ItemScoreList  []autismDevItemScoreRequest `json:"itemScoreList,omitempty"`
+	BirthDate                 string                      `json:"birthDate"`
+	AssessmentDate            string                      `json:"assessmentDate"`
+	QuestionDisplayPreference string                      `json:"questionDisplayPreference,omitempty"`
+	ItemScores                map[int]string              `json:"itemScores,omitempty"`
+	ItemScoreList             []autismDevItemScoreRequest `json:"itemScoreList,omitempty"`
 }
 
 type autismDevItemScoreRequest struct {
@@ -33,33 +34,35 @@ type autismDevItemRemarkRequest struct {
 }
 
 type autismDevAssessmentDraftSaveRequest struct {
-	ID               int64                        `json:"id,omitempty"`
-	StudentID        int64                        `json:"studentId,omitempty"`
-	StudentName      string                       `json:"studentName,omitempty"`
-	ExaminerName     string                       `json:"examinerName,omitempty"`
-	Remark           string                       `json:"remark,omitempty"`
-	BirthDate        string                       `json:"birthDate,omitempty"`
-	AssessmentDate   string                       `json:"assessmentDate,omitempty"`
-	ScopeMode        string                       `json:"scopeMode,omitempty"`
-	ScopeDomainCodes []string                     `json:"scopeDomainCodes,omitempty"`
-	ItemScores       map[int]string               `json:"itemScores,omitempty"`
-	ItemScoreList    []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-	ItemRemarks      map[int]string               `json:"itemRemarks,omitempty"`
-	ItemRemarkList   []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+	ID                        int64                        `json:"id,omitempty"`
+	StudentID                 int64                        `json:"studentId,omitempty"`
+	StudentName               string                       `json:"studentName,omitempty"`
+	ExaminerName              string                       `json:"examinerName,omitempty"`
+	Remark                    string                       `json:"remark,omitempty"`
+	BirthDate                 string                       `json:"birthDate,omitempty"`
+	AssessmentDate            string                       `json:"assessmentDate,omitempty"`
+	ScopeMode                 string                       `json:"scopeMode,omitempty"`
+	ScopeDomainCodes          []string                     `json:"scopeDomainCodes,omitempty"`
+	QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
+	ItemScores                map[int]string               `json:"itemScores,omitempty"`
+	ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks               map[int]string               `json:"itemRemarks,omitempty"`
+	ItemRemarkList            []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type autismDevAssessmentRecordCreateRequest struct {
-	ID             int64                        `json:"id,omitempty"`
-	StudentID      int64                        `json:"studentId,omitempty"`
-	StudentName    string                       `json:"studentName,omitempty"`
-	ExaminerName   string                       `json:"examinerName,omitempty"`
-	Remark         string                       `json:"remark,omitempty"`
-	BirthDate      string                       `json:"birthDate"`
-	AssessmentDate string                       `json:"assessmentDate"`
-	ItemScores     map[int]string               `json:"itemScores,omitempty"`
-	ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-	ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
-	ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+	ID                        int64                        `json:"id,omitempty"`
+	StudentID                 int64                        `json:"studentId,omitempty"`
+	StudentName               string                       `json:"studentName,omitempty"`
+	ExaminerName              string                       `json:"examinerName,omitempty"`
+	Remark                    string                       `json:"remark,omitempty"`
+	BirthDate                 string                       `json:"birthDate"`
+	AssessmentDate            string                       `json:"assessmentDate"`
+	QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
+	ItemScores                map[int]string               `json:"itemScores,omitempty"`
+	ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks               map[int]string               `json:"itemRemarks,omitempty"`
+	ItemRemarkList            []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type autismDevAssessmentRecordConfigUpdateRequest struct {
@@ -536,9 +539,10 @@ func (req autismDevScoreRequest) toAssessmentInput() (autismdevscore.AssessmentI
 		return autismdevscore.AssessmentInput{}, fmt.Errorf("itemScores or itemScoreList is required")
 	}
 	return autismdevscore.AssessmentInput{
-		BirthDate:      birthDate,
-		AssessmentDate: assessmentDate,
-		ItemScores:     itemScores,
+		BirthDate:                 birthDate,
+		AssessmentDate:            assessmentDate,
+		QuestionDisplayPreference: req.QuestionDisplayPreference,
+		ItemScores:                itemScores,
 	}, nil
 }
 
@@ -557,15 +561,16 @@ func (req autismDevAssessmentDraftSaveRequest) toDraftSaveInput() (service.Autis
 	}
 	itemRemarks := normalizeAutismDevItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
 	return service.AutismDevAssessmentDraftSaveInput{
-		ID:             req.ID,
-		StudentID:      req.StudentID,
-		StudentName:    strings.TrimSpace(req.StudentName),
-		ExaminerName:   strings.TrimSpace(req.ExaminerName),
-		Remark:         strings.TrimSpace(req.Remark),
-		BirthDate:      birthDate,
-		AssessmentDate: assessmentDate,
-		ItemScores:     itemScores,
-		InputSnapshot:  req.normalizedSnapshot(itemScores, itemRemarks),
+		ID:                        req.ID,
+		StudentID:                 req.StudentID,
+		StudentName:               strings.TrimSpace(req.StudentName),
+		ExaminerName:              strings.TrimSpace(req.ExaminerName),
+		Remark:                    strings.TrimSpace(req.Remark),
+		BirthDate:                 birthDate,
+		AssessmentDate:            assessmentDate,
+		QuestionDisplayPreference: req.QuestionDisplayPreference,
+		ItemScores:                itemScores,
+		InputSnapshot:             req.normalizedSnapshot(itemScores, itemRemarks),
 	}, nil
 }
 
@@ -588,10 +593,11 @@ func (req autismDevAssessmentRecordCreateRequest) toRecordSaveInput() (service.A
 
 func (req autismDevAssessmentRecordCreateRequest) toScoreRequest() autismDevScoreRequest {
 	return autismDevScoreRequest{
-		BirthDate:      req.BirthDate,
-		AssessmentDate: req.AssessmentDate,
-		ItemScores:     req.ItemScores,
-		ItemScoreList:  req.ItemScoreList,
+		BirthDate:                 req.BirthDate,
+		AssessmentDate:            req.AssessmentDate,
+		QuestionDisplayPreference: req.QuestionDisplayPreference,
+		ItemScores:                req.ItemScores,
+		ItemScoreList:             req.ItemScoreList,
 	}
 }
 
@@ -599,33 +605,35 @@ func (req autismDevAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map
 	normalizedScoreList := autismDevItemScoreListFromMap(itemScores, itemRemarks)
 	normalizedRemarkList := autismDevItemRemarkListFromMap(itemRemarks)
 	return struct {
-		ID               int64                        `json:"id,omitempty"`
-		StudentID        int64                        `json:"studentId,omitempty"`
-		StudentName      string                       `json:"studentName,omitempty"`
-		ExaminerName     string                       `json:"examinerName,omitempty"`
-		Remark           string                       `json:"remark,omitempty"`
-		BirthDate        string                       `json:"birthDate,omitempty"`
-		AssessmentDate   string                       `json:"assessmentDate,omitempty"`
-		ScopeMode        string                       `json:"scopeMode,omitempty"`
-		ScopeDomainCodes []string                     `json:"scopeDomainCodes,omitempty"`
-		ItemScores       map[int]string               `json:"itemScores,omitempty"`
-		ItemScoreList    []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-		ItemRemarks      map[int]string               `json:"itemRemarks,omitempty"`
-		ItemRemarkList   []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+		ID                        int64                        `json:"id,omitempty"`
+		StudentID                 int64                        `json:"studentId,omitempty"`
+		StudentName               string                       `json:"studentName,omitempty"`
+		ExaminerName              string                       `json:"examinerName,omitempty"`
+		Remark                    string                       `json:"remark,omitempty"`
+		BirthDate                 string                       `json:"birthDate,omitempty"`
+		AssessmentDate            string                       `json:"assessmentDate,omitempty"`
+		ScopeMode                 string                       `json:"scopeMode,omitempty"`
+		ScopeDomainCodes          []string                     `json:"scopeDomainCodes,omitempty"`
+		QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
+		ItemScores                map[int]string               `json:"itemScores,omitempty"`
+		ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks               map[int]string               `json:"itemRemarks,omitempty"`
+		ItemRemarkList            []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
-		ID:               req.ID,
-		StudentID:        req.StudentID,
-		StudentName:      strings.TrimSpace(req.StudentName),
-		ExaminerName:     strings.TrimSpace(req.ExaminerName),
-		Remark:           strings.TrimSpace(req.Remark),
-		BirthDate:        strings.TrimSpace(req.BirthDate),
-		AssessmentDate:   strings.TrimSpace(req.AssessmentDate),
-		ScopeMode:        strings.TrimSpace(req.ScopeMode),
-		ScopeDomainCodes: normalizedAutismDevScopeDomainCodes(req.ScopeDomainCodes),
-		ItemScores:       itemScores,
-		ItemScoreList:    normalizedScoreList,
-		ItemRemarks:      itemRemarks,
-		ItemRemarkList:   normalizedRemarkList,
+		ID:                        req.ID,
+		StudentID:                 req.StudentID,
+		StudentName:               strings.TrimSpace(req.StudentName),
+		ExaminerName:              strings.TrimSpace(req.ExaminerName),
+		Remark:                    strings.TrimSpace(req.Remark),
+		BirthDate:                 strings.TrimSpace(req.BirthDate),
+		AssessmentDate:            strings.TrimSpace(req.AssessmentDate),
+		ScopeMode:                 strings.TrimSpace(req.ScopeMode),
+		ScopeDomainCodes:          normalizedAutismDevScopeDomainCodes(req.ScopeDomainCodes),
+		QuestionDisplayPreference: autismdevscore.NormalizeQuestionDisplayPreference(req.QuestionDisplayPreference),
+		ItemScores:                itemScores,
+		ItemScoreList:             normalizedScoreList,
+		ItemRemarks:               itemRemarks,
+		ItemRemarkList:            normalizedRemarkList,
 	}
 }
 
@@ -633,29 +641,31 @@ func (req autismDevAssessmentRecordCreateRequest) normalizedSnapshot(itemScores 
 	normalizedScoreList := autismDevItemScoreListFromMap(itemScores, itemRemarks)
 	normalizedRemarkList := autismDevItemRemarkListFromMap(itemRemarks)
 	return struct {
-		ID             int64                        `json:"id,omitempty"`
-		StudentID      int64                        `json:"studentId,omitempty"`
-		StudentName    string                       `json:"studentName,omitempty"`
-		ExaminerName   string                       `json:"examinerName,omitempty"`
-		Remark         string                       `json:"remark,omitempty"`
-		BirthDate      string                       `json:"birthDate"`
-		AssessmentDate string                       `json:"assessmentDate"`
-		ItemScores     map[int]string               `json:"itemScores,omitempty"`
-		ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-		ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
-		ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+		ID                        int64                        `json:"id,omitempty"`
+		StudentID                 int64                        `json:"studentId,omitempty"`
+		StudentName               string                       `json:"studentName,omitempty"`
+		ExaminerName              string                       `json:"examinerName,omitempty"`
+		Remark                    string                       `json:"remark,omitempty"`
+		BirthDate                 string                       `json:"birthDate"`
+		AssessmentDate            string                       `json:"assessmentDate"`
+		QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
+		ItemScores                map[int]string               `json:"itemScores,omitempty"`
+		ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks               map[int]string               `json:"itemRemarks,omitempty"`
+		ItemRemarkList            []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
-		ID:             req.ID,
-		StudentID:      req.StudentID,
-		StudentName:    strings.TrimSpace(req.StudentName),
-		ExaminerName:   strings.TrimSpace(req.ExaminerName),
-		Remark:         strings.TrimSpace(req.Remark),
-		BirthDate:      strings.TrimSpace(req.BirthDate),
-		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
-		ItemScores:     itemScores,
-		ItemScoreList:  normalizedScoreList,
-		ItemRemarks:    itemRemarks,
-		ItemRemarkList: normalizedRemarkList,
+		ID:                        req.ID,
+		StudentID:                 req.StudentID,
+		StudentName:               strings.TrimSpace(req.StudentName),
+		ExaminerName:              strings.TrimSpace(req.ExaminerName),
+		Remark:                    strings.TrimSpace(req.Remark),
+		BirthDate:                 strings.TrimSpace(req.BirthDate),
+		AssessmentDate:            strings.TrimSpace(req.AssessmentDate),
+		QuestionDisplayPreference: autismdevscore.NormalizeQuestionDisplayPreference(req.QuestionDisplayPreference),
+		ItemScores:                itemScores,
+		ItemScoreList:             normalizedScoreList,
+		ItemRemarks:               itemRemarks,
+		ItemRemarkList:            normalizedRemarkList,
 	}
 }
 

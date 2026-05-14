@@ -56,6 +56,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
   Future<AutismDevDraftDetail?>? _saveDraftFuture;
+  Future<void>? _currentItemSaveFuture;
 
   AutismDevTemplateSummary _template = AutismDevTemplateSummary.empty;
   AssessmentDraftSummary? _detectedDraft;
