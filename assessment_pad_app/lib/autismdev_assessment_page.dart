@@ -42,6 +42,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       PadMessageOverlayController();
 
   AutismDevTemplateSummary _template = AutismDevTemplateSummary.empty;
+  AssessmentDraftSummary? _detectedDraft;
+  Future<AutismDevDraftDetail>? _detectedDraftDetailRequest;
   String _token = '';
   String _studentName = '';
   String _studentAge = '';
@@ -53,6 +55,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   int _selectedItemNo = 0;
   int _studentId = 0;
   int _draftId = 0;
+  int _detectedDraftDetailDraftId = 0;
+  bool _draftDialogShown = false;
   bool _loading = true;
   bool _saving = false;
   bool _submitting = false;
@@ -88,6 +92,10 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     setState(() {
       _loading = true;
       _errorMessage = '';
+      _detectedDraft = null;
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      _draftDialogShown = false;
     });
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
@@ -118,13 +126,8 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
             await widget.client.fetchDraftDetail(token, _draftId);
         _applyDraftDetail(detail);
       } else {
-        final AssessmentDraftSummary? latestDraft =
-            await _findLatestDraft(token);
-        if (latestDraft != null) {
-          final AutismDevDraftDetail detail =
-              await widget.client.fetchDraftDetail(token, latestDraft.id);
-          _applyDraftDetail(detail);
-        }
+        _detectedDraft = await _findLatestDraft(token);
+        _prefetchDetectedDraftDetail(token, _detectedDraft);
       }
       _selectedRangeFilter = '';
       _ensureSelectedDisplayItem();
@@ -134,6 +137,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         _autoSaveText = _draftId > 0 ? '已载入草稿' : '已准备';
       });
       _prefetchSelectedItem();
+      _showDetectedDraftDialogIfNeeded();
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
         return;
@@ -167,6 +171,144 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       return null;
     }
     return page.items.first;
+  }
+
+  void _prefetchDetectedDraftDetail(
+    String token,
+    AssessmentDraftSummary? draft,
+  ) {
+    if (draft == null || draft.id <= 0) {
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      return;
+    }
+    if (_detectedDraftDetailDraftId == draft.id &&
+        _detectedDraftDetailRequest != null) {
+      return;
+    }
+    final Future<AutismDevDraftDetail> request =
+        widget.client.fetchDraftDetail(token, draft.id);
+    _detectedDraftDetailDraftId = draft.id;
+    _detectedDraftDetailRequest = request;
+    unawaited(
+      request.then<void>(
+        (AutismDevDraftDetail _) {},
+        onError: (Object _, StackTrace __) {},
+      ),
+    );
+  }
+
+  Future<AutismDevDraftDetail> _resolveDetectedDraftDetail(
+    AssessmentDraftSummary draft,
+  ) async {
+    final Future<AutismDevDraftDetail>? prefetched =
+        _detectedDraftDetailRequest;
+    if (_detectedDraftDetailDraftId == draft.id && prefetched != null) {
+      try {
+        return await prefetched;
+      } on Object {
+        // Retry below if the prefetch failed.
+      }
+    }
+    return widget.client.fetchDraftDetail(_token, draft.id);
+  }
+
+  void _showDetectedDraftDialogIfNeeded() {
+    final AssessmentDraftSummary? draft = _detectedDraft;
+    if (!mounted || _draftDialogShown || draft == null || draft.id <= 0) {
+      return;
+    }
+    _draftDialogShown = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(.32),
+        builder: (BuildContext dialogContext) {
+          return PopScope(
+            canPop: false,
+            child: PadDialogViewport(
+              child: _AutismDevDraftResumeDialog(
+                draft: draft,
+                total: _fullTotalCount,
+                onRestart: _restartWithoutDetectedDraft,
+                onContinue: () => _continueDetectedDraft(draft),
+              ),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  Future<void> _restartWithoutDetectedDraft() async {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      _detectedDraft = null;
+      _detectedDraftDetailDraftId = 0;
+      _detectedDraftDetailRequest = null;
+      _draftId = 0;
+      _itemScores.clear();
+      _itemRemarks.clear();
+      _selectedRangeFilter = '';
+      _assessmentDate = _dateOnlyText(widget.args.assessmentDate).isNotEmpty
+          ? _dateOnlyText(widget.args.assessmentDate)
+          : _todayIsoDate();
+      _examinerName = widget.args.examinerName.trim().isNotEmpty
+          ? widget.args.examinerName
+          : _examinerName;
+      _selectedDomainCode = _displayDomainGroups.isNotEmpty
+          ? _displayDomainGroups.first.domainCode
+          : '';
+      _selectedItemNo = _firstItemNoInDomain(_selectedDomainCode);
+      _autoSaveText = '已开始新的测评';
+    });
+    _syncRemarkController();
+    _prefetchSelectedItem();
+    final AutismDevDraftDetail? detail = await _saveDraft(silent: true);
+    if (!mounted) {
+      return;
+    }
+    if (detail == null) {
+      _showMessage('新测评草稿创建失败，请手动保存草稿');
+      return;
+    }
+    setState(() => _autoSaveText = '新草稿已创建');
+  }
+
+  Future<bool> _continueDetectedDraft(AssessmentDraftSummary draft) async {
+    if (draft.id <= 0 || _token.trim().isEmpty) {
+      return false;
+    }
+    try {
+      final AutismDevDraftDetail detail =
+          await _resolveDetectedDraftDetail(draft);
+      if (!mounted) {
+        return false;
+      }
+      setState(() {
+        _applyDraftDetail(detail);
+        _detectedDraft = null;
+        _detectedDraftDetailDraftId = 0;
+        _detectedDraftDetailRequest = null;
+        _selectedRangeFilter = '';
+        _ensureSelectedDisplayItem();
+        _autoSaveText = '已恢复最新草稿';
+      });
+      _syncRemarkController();
+      _prefetchSelectedItem();
+      return true;
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('恢复草稿失败：$error');
+      }
+      return false;
+    }
   }
 
   void _applyDraftDetail(AutismDevDraftDetail detail) {
@@ -459,13 +601,13 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     }
   }
 
-  Future<void> _saveDraft() async {
+  Future<AutismDevDraftDetail?> _saveDraft({bool silent = false}) async {
     if (_saving) {
-      return;
+      return null;
     }
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再保存');
-      return;
+      return null;
     }
     _syncCurrentRemarkToState();
     setState(() {
@@ -476,7 +618,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
       final AutismDevDraftDetail detail =
           await widget.client.saveDraft(_token, _draftPayload());
       if (!mounted) {
-        return;
+        return detail;
       }
       setState(() {
         _draftId = detail.id;
@@ -490,25 +632,30 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
         _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
       _syncRemarkController();
-      _showMessage('草稿已保存', tone: PadMessageTone.success);
+      if (!silent) {
+        _showMessage('草稿已保存', tone: PadMessageTone.success);
+      }
+      return detail;
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
-        return;
+        return null;
       }
       setState(() {
         _saving = false;
         _autoSaveText = '保存失败';
       });
       _showMessage(error.message);
+      return null;
     } on Object catch (error) {
       if (!mounted) {
-        return;
+        return null;
       }
       setState(() {
         _saving = false;
         _autoSaveText = '保存失败';
       });
       _showMessage('保存失败：$error');
+      return null;
     }
   }
 
@@ -2729,6 +2876,327 @@ BoxDecoration _autismDevDetailCardDecoration() {
   );
 }
 
+class _AutismDevDraftResumeDialog extends StatefulWidget {
+  const _AutismDevDraftResumeDialog({
+    required this.draft,
+    required this.total,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final AssessmentDraftSummary draft;
+  final int total;
+  final Future<void> Function() onRestart;
+  final Future<bool> Function() onContinue;
+
+  @override
+  State<_AutismDevDraftResumeDialog> createState() =>
+      _AutismDevDraftResumeDialogState();
+}
+
+class _AutismDevDraftResumeDialogState
+    extends State<_AutismDevDraftResumeDialog> {
+  bool _continuing = false;
+
+  void _handleRestart() {
+    if (_continuing) {
+      return;
+    }
+    Navigator.of(context).pop();
+    unawaited(widget.onRestart());
+  }
+
+  Future<void> _handleContinue() async {
+    if (_continuing) {
+      return;
+    }
+    setState(() => _continuing = true);
+    final bool restored = await widget.onContinue();
+    if (!mounted) {
+      return;
+    }
+    if (restored) {
+      Navigator.of(context).pop();
+      return;
+    }
+    setState(() => _continuing = false);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int answered = widget.draft.answeredItemCount;
+    final int total = math.max(widget.total, answered);
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 520,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: _autismDevShadow(
+            color: const Color(0x33000000),
+            blur: 30,
+            offset: const Offset(0, 18),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            const Padding(
+              padding: EdgeInsets.fromLTRB(20, 20, 20, 20),
+              child: Text(
+                '发现未完成草稿',
+                style: TextStyle(
+                  color: _AutismDevColors.ink,
+                  fontSize: 19,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            const Divider(height: 1, color: _AutismDevColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 30, 30, 30),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Text(
+                    '当前儿童存在一份未提交的孤独症儿童发展评估表草稿。',
+                    style: TextStyle(
+                      color: _AutismDevColors.ink,
+                      fontSize: 15,
+                      height: 1.2,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBF7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _AutismDevColors.line),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _AutismDevDraftResumeMeta(
+                          label: '已完成',
+                          value: '$answered / $total 题',
+                        ),
+                        const SizedBox(height: 13),
+                        _AutismDevDraftResumeMeta(
+                          label: '更新时间',
+                          value: _formatAutismDevDateTime(
+                            widget.draft.updatedTime,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _AutismDevColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+              child: _AutismDevDraftResumeActionArea(
+                continuing: _continuing,
+                onRestart: _handleRestart,
+                onContinue: _handleContinue,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDraftResumeActionArea extends StatelessWidget {
+  const _AutismDevDraftResumeActionArea({
+    required this.continuing,
+    required this.onRestart,
+    required this.onContinue,
+  });
+
+  final bool continuing;
+  final VoidCallback onRestart;
+  final VoidCallback onContinue;
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.centerRight,
+      child: SizedBox(
+        width: 236,
+        height: 42,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 180),
+          reverseDuration: const Duration(milliseconds: 120),
+          switchInCurve: Curves.easeOutCubic,
+          switchOutCurve: Curves.easeOutCubic,
+          layoutBuilder: (
+            Widget? currentChild,
+            List<Widget> previousChildren,
+          ) {
+            return Stack(
+              alignment: Alignment.centerRight,
+              children: <Widget>[
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ],
+            );
+          },
+          transitionBuilder: (Widget child, Animation<double> animation) {
+            return FadeTransition(opacity: animation, child: child);
+          },
+          child: continuing
+              ? const _AutismDevDialogLoadingButton(
+                  key: ValueKey<String>('autismdev-draft-resume-loading'),
+                )
+              : Row(
+                  key: const ValueKey<String>('autismdev-draft-resume-actions'),
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: <Widget>[
+                    _AutismDevDialogActionButton(
+                      label: '重新测评',
+                      filled: false,
+                      onTap: onRestart,
+                    ),
+                    const SizedBox(width: 12),
+                    _AutismDevDialogActionButton(
+                      label: '继续测评',
+                      filled: true,
+                      onTap: onContinue,
+                    ),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDialogLoadingButton extends StatelessWidget {
+  const _AutismDevDialogLoadingButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 236,
+      height: 42,
+      decoration: BoxDecoration(
+        color: _AutismDevColors.orange,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _AutismDevColors.orange),
+      ),
+      child: const Center(
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            SizedBox(
+              width: 15,
+              height: 15,
+              child: CircularProgressIndicator(
+                strokeWidth: 2.2,
+                color: Colors.white,
+              ),
+            ),
+            SizedBox(width: 8),
+            Text(
+              '题目填充中，请稍后...',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDialogActionButton extends StatelessWidget {
+  const _AutismDevDialogActionButton({
+    required this.label,
+    required this.filled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          width: 112,
+          height: 42,
+          decoration: BoxDecoration(
+            color: filled ? _AutismDevColors.orange : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: filled ? _AutismDevColors.orange : _AutismDevColors.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: filled ? Colors.white : _AutismDevColors.ink,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDraftResumeMeta extends StatelessWidget {
+  const _AutismDevDraftResumeMeta({required this.label, required this.value});
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text.rich(
+      TextSpan(
+        children: <InlineSpan>[
+          TextSpan(text: '$label：'),
+          TextSpan(
+            text: value,
+            style: const TextStyle(
+              color: _AutismDevColors.ink,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+      style: const TextStyle(
+        color: _AutismDevColors.body,
+        fontSize: 14,
+        height: 1.2,
+        fontWeight: FontWeight.w800,
+      ),
+    );
+  }
+}
+
 class _QuestionPreferenceChip extends StatelessWidget {
   const _QuestionPreferenceChip({required this.onTap});
 
@@ -3267,4 +3735,24 @@ String _todayIsoDate() {
 String _formatClock(DateTime value) {
   return '${value.hour.toString().padLeft(2, '0')}:'
       '${value.minute.toString().padLeft(2, '0')}';
+}
+
+String _formatAutismDevDateTime(String value) {
+  final String text = value.trim();
+  if (text.isEmpty) {
+    return '-';
+  }
+  final DateTime? parsed = DateTime.tryParse(text);
+  if (parsed == null) {
+    if (text.length >= 16) {
+      return text.substring(0, 16).replaceFirst('T', ' ');
+    }
+    return text;
+  }
+  final DateTime local = parsed.toLocal();
+  return '${local.year.toString().padLeft(4, '0')}-'
+      '${local.month.toString().padLeft(2, '0')}-'
+      '${local.day.toString().padLeft(2, '0')} '
+      '${local.hour.toString().padLeft(2, '0')}:'
+      '${local.minute.toString().padLeft(2, '0')}';
 }
