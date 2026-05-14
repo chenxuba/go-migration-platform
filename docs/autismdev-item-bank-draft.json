@@ -464,7 +464,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "视觉 / 视觉记忆及重整",
+    "assessment_range": "视觉 / 视觉偏好",
     "materials": "测试用书（有图画的部分）或其他彩色儿童图画"
   },
   {
@@ -490,7 +490,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "视觉 / 视觉记忆及重整 / 视觉偏好",
+    "assessment_range": "视觉 / 视觉偏好",
     "materials": "万花筒观察项目"
   },
   {
@@ -516,7 +516,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 视觉记忆及重整 / 听觉反应",
+    "assessment_range": "听觉 / 听觉反应",
     "materials": "观察项目"
   },
   {
@@ -542,7 +542,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 视觉记忆及重整 / 听觉反应",
+    "assessment_range": "听觉 / 听觉反应",
     "materials": "摇铃1个"
   },
   {
@@ -568,7 +568,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 视觉记忆及重整 / 听觉反应",
+    "assessment_range": "听觉 / 听觉反应",
     "materials": "摇铃1个"
   },
   {
@@ -594,7 +594,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 视觉记忆及重整 / 听觉反应",
+    "assessment_range": "听觉 / 听觉注意",
     "materials": "观察项目"
   },
   {
@@ -620,7 +620,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 注意 / 听觉反应",
+    "assessment_range": "听觉 / 听觉注意",
     "materials": "音叉1支"
   },
   {
@@ -646,7 +646,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 注意 / 听觉反应",
+    "assessment_range": "听觉 / 听觉注意",
     "materials": "观察项目"
   },
   {
@@ -672,7 +672,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "或观察项目"
   },
   {
@@ -698,7 +698,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "响板"
   },
   {
@@ -724,7 +724,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "哨子"
   },
   {
@@ -750,14 +750,14 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "摇铃"
   },
   {
     "item_no": 30,
     "domain_item_no": 30,
-    "item_title": "分辨声音的长、短、强、弱、块、慢",
-    "test_item": "分辨声音的长、短、强、弱、块、慢",
+    "item_title": "分辨声音的长、短、强、弱、快、慢",
+    "test_item": "分辨声音的长、短、强、弱、快、慢",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -776,7 +776,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "小喇叭和小鼓各一只"
   },
   {
@@ -802,7 +802,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "门铃声、冲水声、下雨声、雷声、狗叫声、猫叫声等声音的录音带及对应声音的图片"
   },
   {
@@ -828,7 +828,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "钢琴声、鼓声等声音的录音带"
   },
   {
@@ -854,7 +854,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "听觉 / 听觉辨别",
     "materials": "摇铃、音叉和沙锤各1个或其他铃声的录音（如电话铃声，打字机声，自行车铃声，汽车喇叭声等）"
   },
   {
@@ -880,7 +880,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉反应",
     "materials": "布娃娃1个或观察项目"
   },
   {
@@ -906,7 +906,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉反应",
     "materials": "观察项目"
   },
   {
@@ -932,7 +932,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉反应",
     "materials": "小半杯水"
   },
   {
@@ -958,7 +958,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉辨别",
     "materials": "一样大小的海绵球及硬塑胶球1个，小布袋1个，以便装球"
   },
   {
@@ -984,7 +984,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉辨别",
     "materials": "布袋、小车、牙刷、玩具球各一个"
   },
   {
@@ -1010,7 +1010,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉辨别",
     "materials": "小木块和小铁块各一个"
   },
   {
@@ -1036,7 +1036,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉辨别",
     "materials": "干毛巾和湿毛巾各一条"
   },
   {
@@ -1062,7 +1062,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 听觉反应",
+    "assessment_range": "触觉 / 触觉辨别",
     "materials": "圆形的杯子、长方形的盒子、细皮筋和铅笔等各一"
   },
   {
@@ -1088,7 +1088,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 触觉记忆",
+    "assessment_range": "触觉 / 触觉记忆",
     "materials": "弹子球、乒乓球、小皮球各一只"
   },
   {
@@ -1114,7 +1114,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "听觉 / 触觉辨别 / 触觉记忆",
+    "assessment_range": "触觉 / 触觉记忆",
     "materials": "海绵块、木块、铁块等不同重量的物品各一个"
   },
   {
@@ -1140,7 +1140,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 触觉辨别 / 味觉反应",
+    "assessment_range": "味觉 / 味觉反应",
     "materials": "观察项目"
   },
   {
@@ -1166,7 +1166,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 触觉辨别 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉辨别",
     "materials": "准备酸、甜、2种味道的食物的（如：酸梅、甜饼干）"
   },
   {
@@ -1192,7 +1192,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 触觉辨别 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉辨别",
     "materials": "准备咸、苦2种不同味道的食物（如：咸饼干、黄连素药粉）"
   },
   {
@@ -1218,7 +1218,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 触觉辨别 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉辨别",
     "materials": "准备冷开水和温开水各一杯"
   },
   {
@@ -1244,7 +1244,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 触觉辨别 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉记忆",
     "materials": "准备浓糖水和淡糖水各一小杯"
   },
   {
@@ -1270,7 +1270,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 记忆 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉记忆",
     "materials": "准备香蕉、苹果和汤圆、糙米饭"
   },
   {
@@ -1296,7 +1296,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 记忆 / 味觉辨别",
+    "assessment_range": "味觉 / 味觉记忆",
     "materials": "准备鸡蛋饼或苹果烙各一份"
   },
   {
@@ -1322,7 +1322,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "味觉 / 嗅觉反应 / 味觉辨别",
+    "assessment_range": "嗅觉 / 嗅觉反应",
     "materials": "观察项目"
   },
   {
@@ -1348,7 +1348,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "嗅觉 / 辨别 / 味觉辨别",
+    "assessment_range": "嗅觉 / 嗅觉辨别",
     "materials": "准备香水和臭豆腐各一份"
   },
   {
@@ -1374,7 +1374,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "嗅觉 / 辨别 / 味觉辨别",
+    "assessment_range": "嗅觉 / 嗅觉辨别",
     "materials": "准备樟脑丸、臭豆腐、香水、香皂等等"
   },
   {
@@ -1400,7 +1400,7 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "嗅觉 / 味觉辨别",
+    "assessment_range": "嗅觉 / 嗅觉记忆",
     "materials": "准备蛋糕、巧克力各一份"
   },
   {
@@ -1426,14 +1426,14 @@
       11
     ],
     "ocr_status": "draft",
-    "assessment_range": "嗅觉 / 记忆 / 味觉辨别",
+    "assessment_range": "嗅觉 / 嗅觉记忆",
     "materials": "准备香蕉和苹果各一份"
   },
   {
     "item_no": 56,
     "domain_item_no": 1,
-    "item_title": "双手离地,转动躯干",
-    "test_item": "双手离地,转动躯干",
+    "item_title": "坐姿，双手离地，转动躯干",
+    "test_item": "坐姿，双手离地，转动躯干",
     "age_segment": "7-8月",
     "age_min_month": 7,
     "age_max_month": 8,
@@ -1452,7 +1452,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "姿势",
+    "assessment_range": "姿势 / 坐姿",
     "materials": "玩具"
   },
   {
@@ -1530,7 +1530,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "姿势 / 坐姿",
+    "assessment_range": "姿势 / 站姿",
     "materials": "秒表"
   },
   {
@@ -1582,7 +1582,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "姿势 / 单脚",
+    "assessment_range": "姿势 / 站姿",
     "materials": "秒表"
   },
   {
@@ -1608,7 +1608,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "姿势 / 站",
+    "assessment_range": "姿势 / 站姿",
     "materials": "秒表"
   },
   {
@@ -1634,7 +1634,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "姿势 / 脚尖站",
+    "assessment_range": "姿势 / 站姿",
     "materials": "秒表"
   },
   {
@@ -1660,7 +1660,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "移动 / 爬行",
+    "assessment_range": "移动 / 爬",
     "materials": "地垫"
   },
   {
@@ -1686,7 +1686,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "移动 / 爬行",
+    "assessment_range": "移动 / 爬",
     "materials": "玩具"
   },
   {
@@ -1712,14 +1712,14 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "移动 / 爬行",
+    "assessment_range": "移动 / 爬",
     "materials": ""
   },
   {
     "item_no": 67,
     "domain_item_no": 12,
-    "item_title": "坐臀部移动",
-    "test_item": "坐臀部移动",
+    "item_title": "臀部移动",
+    "test_item": "臀部移动",
     "age_segment": "9-10月",
     "age_min_month": 9,
     "age_max_month": 10,
@@ -1770,8 +1770,8 @@
   {
     "item_no": 69,
     "domain_item_no": 14,
-    "item_title": "站立坐姿站起",
-    "test_item": "站立坐姿站起",
+    "item_title": "坐姿站起",
+    "test_item": "坐姿站起",
     "age_segment": "12-24月",
     "age_min_month": 12,
     "age_max_month": 24,
@@ -1952,8 +1952,8 @@
   {
     "item_no": 76,
     "domain_item_no": 21,
-    "item_title": "行走扶一手走",
-    "test_item": "行走扶一手走",
+    "item_title": "扶一手走",
+    "test_item": "扶一手走",
     "age_segment": "12-16月",
     "age_min_month": 12,
     "age_max_month": 16,
@@ -2726,7 +2726,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 跑",
+    "assessment_range": "操作活动 / 推",
     "materials": "直径20厘米的球"
   },
   {
@@ -2804,7 +2804,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 推",
+    "assessment_range": "操作活动 / 端",
     "materials": "盛半杯水的塑料杯子"
   },
   {
@@ -3012,7 +3012,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 球拍击球",
+    "assessment_range": "操作活动 / 击",
     "materials": "球拍、吊球（高度在儿童头顶水平上）"
   },
   {
@@ -3038,7 +3038,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 球拍击球",
+    "assessment_range": "操作活动 / 击",
     "materials": "球拍、吊球（高度在儿童肩膀）"
   },
   {
@@ -3064,7 +3064,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 球拍击球",
+    "assessment_range": "操作活动 / 击",
     "materials": "球拍、海绵球"
   },
   {
@@ -3090,14 +3090,14 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 球拍击球",
+    "assessment_range": "操作活动 / 踢",
     "materials": "直径20厘米的皮球"
   },
   {
     "item_no": 120,
     "domain_item_no": 65,
-    "item_title": "球至距离1.8米远、宽70厘米的目标",
-    "test_item": "球至距离1.8米远、宽70厘米的目标",
+    "item_title": "踢球至距离1.8米远、宽70厘米的目标",
+    "test_item": "踢球至距离1.8米远、宽70厘米的目标",
     "age_segment": "36-48月",
     "age_min_month": 36,
     "age_max_month": 48,
@@ -3122,8 +3122,8 @@
   {
     "item_no": 121,
     "domain_item_no": 66,
-    "item_title": "向球,踢固定球",
-    "test_item": "向球,踢固定球",
+    "item_title": "跑向球，踢固定球",
+    "test_item": "跑向球，踢固定球",
     "age_segment": "48-60月",
     "age_min_month": 48,
     "age_max_month": 60,
@@ -3246,7 +3246,7 @@
       15
     ],
     "ocr_status": "draft",
-    "assessment_range": "操作活动 / 接",
+    "assessment_range": "操作活动 / 拍",
     "materials": "直径45厘米的大球"
   },
   {
@@ -3323,7 +3323,7 @@
       18
     ],
     "ocr_status": "draft",
-    "assessment_range": "",
+    "assessment_range": "摆弄物品",
     "materials": "小花棒或其他小棒"
   },
   {
@@ -3348,7 +3348,7 @@
       18
     ],
     "ocr_status": "draft",
-    "assessment_range": "",
+    "assessment_range": "摆弄物品",
     "materials": "积木"
   },
   {
@@ -3681,8 +3681,8 @@
   {
     "item_no": 143,
     "domain_item_no": 16,
-    "item_title": "逐⻚翻书",
-    "test_item": "逐⻚翻书",
+    "item_title": "逐页翻书",
+    "test_item": "逐页翻书",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -4979,7 +4979,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言与 / 非语言",
+    "assessment_range": "语言与沟通前能力 / 非语言沟通能力",
     "materials": ""
   },
   {
@@ -5005,7 +5005,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 沟通能力",
+    "assessment_range": "语言与沟通前能力 / 非语言沟通能力",
     "materials": ""
   },
   {
@@ -5031,7 +5031,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 沟通能力",
+    "assessment_range": "语言与沟通前能力 / 非语言沟通能力",
     "materials": ""
   },
   {
@@ -5057,7 +5057,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 沟通能力",
+    "assessment_range": "语言与沟通前能力 / 非语言沟通能力",
     "materials": ""
   },
   {
@@ -5083,7 +5083,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 沟通能力",
+    "assessment_range": "语言与沟通前能力 / 非语言沟通能力",
     "materials": ""
   },
   {
@@ -5109,7 +5109,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 分",
+    "assessment_range": "语言与沟通前能力 / 分辨声音",
     "materials": "摇铃一只"
   },
   {
@@ -5135,7 +5135,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 辨声音",
+    "assessment_range": "语言与沟通前能力 / 分辨声音",
     "materials": "摇铃一只或能够发出声音的动物玩具"
   },
   {
@@ -5161,7 +5161,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 口腔",
+    "assessment_range": "语言与沟通前能力 / 口腔器官的运动",
     "materials": "磨牙类玩具"
   },
   {
@@ -5187,14 +5187,14 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 器官的",
+    "assessment_range": "语言与沟通前能力 / 口腔器官的运动",
     "materials": "蜂蜜"
   },
   {
     "item_no": 203,
     "domain_item_no": 10,
-    "item_title": "牙⻮的运动",
-    "test_item": "牙⻮的运动",
+    "item_title": "牙齿的运动",
+    "test_item": "牙齿的运动",
     "age_segment": "6-12月",
     "age_min_month": 6,
     "age_max_month": 12,
@@ -5213,7 +5213,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "沟通前能力 / 运动",
+    "assessment_range": "语言与沟通前能力 / 口腔器官的运动",
     "materials": "磨牙类玩具"
   },
   {
@@ -5447,7 +5447,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言模仿 / 模仿叠音词",
+    "assessment_range": "语言模仿 / 模仿表示物品的词",
     "materials": "表示“猫”、“狗”、“鸭”、“鹅”的图片"
   },
   {
@@ -5525,7 +5525,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言模仿 / 模仿表示动作的",
+    "assessment_range": "语言模仿 / 模仿动词",
     "materials": "表示“跑”、“爬”“打”动作的卡片"
   },
   {
@@ -5551,7 +5551,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言模仿 / 词",
+    "assessment_range": "语言模仿 / 模仿动词",
     "materials": "图片“小猫”、“小鸡”等"
   },
   {
@@ -5577,7 +5577,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言模仿 / 模仿表示方位的词",
+    "assessment_range": "语言模仿 / 模仿方位词",
     "materials": "一个皮球，一张桌子，一个箱子"
   },
   {
@@ -5603,7 +5603,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 模仿表示方位的词",
+    "assessment_range": "语言理解 / 名称指令",
     "materials": ""
   },
   {
@@ -5629,7 +5629,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 名称",
+    "assessment_range": "语言理解 / 名称指令",
     "materials": "一瓶牛奶"
   },
   {
@@ -5655,14 +5655,14 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 指令",
+    "assessment_range": "语言理解 / 名称指令",
     "materials": ""
   },
   {
     "item_no": 221,
     "domain_item_no": 28,
-    "item_title": "身体部位",
-    "test_item": "身体部位",
+    "item_title": "指认身体部位",
+    "test_item": "指认身体部位",
     "age_segment": "9-12月",
     "age_min_month": 9,
     "age_max_month": 12,
@@ -5687,8 +5687,8 @@
   {
     "item_no": 222,
     "domain_item_no": 29,
-    "item_title": "食物",
-    "test_item": "食物",
+    "item_title": "指认食物",
+    "test_item": "指认食物",
     "age_segment": "12-18月",
     "age_min_month": 12,
     "age_max_month": 18,
@@ -5713,8 +5713,8 @@
   {
     "item_no": 223,
     "domain_item_no": 30,
-    "item_title": "家具",
-    "test_item": "家具",
+    "item_title": "指认家具",
+    "test_item": "指认家具",
     "age_segment": "18-24月",
     "age_min_month": 18,
     "age_max_month": 24,
@@ -5739,8 +5739,8 @@
   {
     "item_no": 224,
     "domain_item_no": 31,
-    "item_title": "餐具",
-    "test_item": "餐具",
+    "item_title": "指认餐具",
+    "test_item": "指认餐具",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -5765,8 +5765,8 @@
   {
     "item_no": 225,
     "domain_item_no": 32,
-    "item_title": "家庭成员",
-    "test_item": "家庭成员",
+    "item_title": "指认家庭成员",
+    "test_item": "指认家庭成员",
     "age_segment": "12-18月",
     "age_min_month": 12,
     "age_max_month": 18,
@@ -5791,8 +5791,8 @@
   {
     "item_no": 226,
     "domain_item_no": 33,
-    "item_title": "自己",
-    "test_item": "自己",
+    "item_title": "指认自己",
+    "test_item": "指认自己",
     "age_segment": "18-24月",
     "age_min_month": 18,
     "age_max_month": 24,
@@ -5817,8 +5817,8 @@
   {
     "item_no": 227,
     "domain_item_no": 34,
-    "item_title": "动物",
-    "test_item": "动物",
+    "item_title": "指认动物",
+    "test_item": "指认动物",
     "age_segment": "30-36月",
     "age_min_month": 30,
     "age_max_month": 36,
@@ -5843,8 +5843,8 @@
   {
     "item_no": 228,
     "domain_item_no": 35,
-    "item_title": "上午、下午、晚上",
-    "test_item": "上午、下午、晚上",
+    "item_title": "指认上午、下午、晚上",
+    "test_item": "指认上午、下午、晚上",
     "age_segment": "36-48月",
     "age_min_month": 36,
     "age_max_month": 48,
@@ -6045,7 +6045,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 对形容词的理",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "两只大小不同的皮球"
   },
   {
@@ -6071,7 +6071,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 解",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "两堆数量不同的糖果"
   },
   {
@@ -6097,7 +6097,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 解",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "长短不同的铅笔"
   },
   {
@@ -6123,7 +6123,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 解",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "高矮不同的木偶玩具"
   },
   {
@@ -6149,7 +6149,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 解",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "两个红色圆形的积木、一个红色三角形的积木"
   },
   {
@@ -6175,7 +6175,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言理解 / 解",
+    "assessment_range": "语言理解 / 理解形容词的含义",
     "materials": "大中小三块圆形的积木"
   },
   {
@@ -6331,7 +6331,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 表达要求及回",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": ""
   },
   {
@@ -6357,7 +6357,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "玩具汽车、皮球、木偶"
   },
   {
@@ -6383,7 +6383,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "常见的物品展示给儿童看，包括：毛巾、杯子、皮球、吃饭用的勺子"
   },
   {
@@ -6409,7 +6409,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "表示身体部位的图片，包括眼睛、嘴、鼻子、耳朵、手、脚"
   },
   {
@@ -6435,7 +6435,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "表示常见水果的图片，包括苹果、梨、桃、西瓜、香蕉"
   },
   {
@@ -6461,7 +6461,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "一张描述一个小朋友拒绝吃药的图片"
   },
   {
@@ -6487,7 +6487,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": ""
   },
   {
@@ -6513,7 +6513,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "两个颜色和质地相同但却有大小之分的玩具狗"
   },
   {
@@ -6539,7 +6539,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "两堆数量不同的糖果"
   },
   {
@@ -6565,7 +6565,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "一张图片，上面画着三个大中小的苹果"
   },
   {
@@ -6591,7 +6591,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "两支粗细、颜色相同，但是长短不同的铅笔"
   },
   {
@@ -6617,7 +6617,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "高矮不同的两个木偶"
   },
   {
@@ -6643,7 +6643,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "胖瘦不同的玩具狗"
   },
   {
@@ -6669,7 +6669,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "两支长短、颜色相同，但是粗细不同的铅笔"
   },
   {
@@ -6695,7 +6695,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 答问题",
+    "assessment_range": "语言表达 / 表达要求与回答问题",
     "materials": "两个同一类物品，如两支相同的铅笔；两个不同类的物品，如一支铅笔和一块奶糖"
   },
   {
@@ -6721,7 +6721,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 说短",
+    "assessment_range": "语言表达 / 说短语",
     "materials": "一个木偶、两只玩具狗、三块糖"
   },
   {
@@ -6747,7 +6747,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 语",
+    "assessment_range": "语言表达 / 说短语",
     "materials": "红黄绿三种颜色的气球"
   },
   {
@@ -6773,7 +6773,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 语",
+    "assessment_range": "语言表达 / 说句子",
     "materials": "图片“宝宝睡觉”"
   },
   {
@@ -6851,7 +6851,7 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 说句子",
+    "assessment_range": "语言表达 / 主动提问",
     "materials": "一盒饼干、三颗糖果、玩具车"
   },
   {
@@ -6909,8 +6909,8 @@
   {
     "item_no": 269,
     "domain_item_no": 76,
-    "item_title": "一至两个句子",
-    "test_item": "一至两个句子",
+    "item_title": "复述一至两个句子",
+    "test_item": "复述一至两个句子",
     "age_segment": "48-60月",
     "age_min_month": 48,
     "age_max_month": 60,
@@ -6929,14 +6929,14 @@
       22
     ],
     "ocr_status": "draft",
-    "assessment_range": "语言表达 / 主动提问",
+    "assessment_range": "语言表达 / 复述",
     "materials": "儿童故事：三个和尚吃水的故事"
   },
   {
     "item_no": 270,
     "domain_item_no": 77,
-    "item_title": "完整的故事",
-    "test_item": "完整的故事",
+    "item_title": "复述完整的故事",
+    "test_item": "复述完整的故事",
     "age_segment": "60-72月",
     "age_min_month": 60,
     "age_max_month": 72,
@@ -7200,7 +7200,7 @@
       "direct"
     ],
     "method": "翻开图片并指着“狗”的图片，问：“这是什么？”重复以上程序并记录下正确的反应数，当儿童连续出现5次错误时，停止测试。",
-    "pass_criteria": "P-能正确答对14片\nE-能正确答对1幅图片\nF-不能正确回答",
+    "pass_criteria": "P-能正确答对14幅图片\nE-能正确答对1幅图片\nF-不能正确回答",
     "source_pdf": "孤独症儿童发展评估量表.pdf",
     "source_pages": [
       24,
@@ -7208,7 +7208,7 @@
     ],
     "ocr_status": "draft",
     "assessment_range": "经验与表征",
-    "materials": "图片15副（可以有动物（如狗）、或常见物品）"
+    "materials": "图片15幅（可以有动物（如狗），或常见物品）"
   },
   {
     "item_no": 281,
@@ -7232,7 +7232,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征",
+    "assessment_range": "因果关系 / 简单推理",
     "materials": "软胶小玩具（会发声）一个"
   },
   {
@@ -7257,7 +7257,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 简单推理",
+    "assessment_range": "因果关系 / 简单推理",
     "materials": "可用绳子拉动的玩具小车一辆"
   },
   {
@@ -7282,7 +7282,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 简单推理",
+    "assessment_range": "因果关系 / 简单推理",
     "materials": "童喜爱的小玩具，放于一盖紧盖的透明塑料罐中"
   },
   {
@@ -7307,7 +7307,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 简单推理",
+    "assessment_range": "因果关系 / 分类",
     "materials": "帽子、衣服、鞋子、袜子、苹果、黄瓜、梨子、白菜等物品的图片"
   },
   {
@@ -7332,7 +7332,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 简单推理",
+    "assessment_range": "因果关系 / 分类",
     "materials": "4-5块动物拼图一套（牛拼图）"
   },
   {
@@ -7357,7 +7357,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 分类",
+    "assessment_range": "因果关系 / 分类",
     "materials": "3类物品图片各4张-水果类-苹果、香蕉、梨、西瓜家具类-桌、椅、床、柜交通工具类-自行车、汽车、轮船、飞机"
   },
   {
@@ -7382,7 +7382,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 配对",
+    "assessment_range": "因果关系 / 配对",
     "materials": "杯子、鞋子、袜子、匙子、铅笔、梳子等以及与实物相符合（形状、大小、颜色）的图片"
   },
   {
@@ -7407,7 +7407,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 配对",
+    "assessment_range": "因果关系 / 配对",
     "materials": "相同的塑料纽扣和金属纽扣各6个，透明的塑料容器2个"
   },
   {
@@ -7432,7 +7432,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 排序",
+    "assessment_range": "因果关系 / 排序",
     "materials": "五辆颜色不同的玩具车"
   },
   {
@@ -7457,7 +7457,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "因果关系 / 经验与表征 / 排序",
+    "assessment_range": "因果关系 / 排序",
     "materials": "长度不一、直径相同的小木棍5根"
   },
   {
@@ -7482,7 +7482,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 时间概念",
+    "assessment_range": "概念 / 时间概念",
     "materials": "无"
   },
   {
@@ -7507,7 +7507,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 时间概念",
+    "assessment_range": "概念 / 时间概念",
     "materials": "早上、晚上图片两张"
   },
   {
@@ -7532,7 +7532,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 时间概念",
+    "assessment_range": "概念 / 时间概念",
     "materials": "无"
   },
   {
@@ -7557,7 +7557,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 时间概念",
+    "assessment_range": "概念 / 时间概念",
     "materials": "玩具钟一只"
   },
   {
@@ -7582,7 +7582,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "清洁白手帕一条"
   },
   {
@@ -7607,7 +7607,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "2块约3厘米×3厘米的积木，开口塑料盒一个"
   },
   {
@@ -7632,7 +7632,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "杯子或毛巾，以及儿童喜爱的任何小物件"
   },
   {
@@ -7657,7 +7657,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "红色、直径约4厘米的球一个"
   },
   {
@@ -7682,7 +7682,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "2块约3厘米×3厘米的积木，开口塑料盒一个"
   },
   {
@@ -7707,7 +7707,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "玩具小车1辆、有椅背玩具椅一张"
   },
   {
@@ -7732,7 +7732,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "玩具苹果、玩具梨子各一"
   },
   {
@@ -7757,7 +7757,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "碗、匙羹、塑料叉各一个"
   },
   {
@@ -7782,14 +7782,14 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 空间概念",
+    "assessment_range": "概念 / 空间概念",
     "materials": "相同的小物件2件（如2辆一样的玩具汽车）"
   },
   {
     "item_no": 304,
     "domain_item_no": 32,
-    "item_title": "红、绿颜色(外形相同)",
-    "test_item": "红、绿颜色(外形相同)",
+    "item_title": "配对红、绿颜色（外形相同）",
+    "test_item": "配对红、绿颜色（外形相同）",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -7807,14 +7807,14 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 颜色概念",
+    "assessment_range": "概念 / 颜色概念",
     "materials": "红绿色积木各5块（外形、大小一致）"
   },
   {
     "item_no": 305,
     "domain_item_no": 33,
-    "item_title": "黄、蓝颜色(外形、大小不一)",
-    "test_item": "黄、蓝颜色(外形、大小不一)",
+    "item_title": "配对黄、蓝颜色（外形、大小不一）",
+    "test_item": "配对黄、蓝颜色（外形、大小不一）",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -7832,7 +7832,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 颜色概念",
+    "assessment_range": "概念 / 颜色概念",
     "materials": "黄、蓝色积木各5块（外形、大小不一致）"
   },
   {
@@ -7857,7 +7857,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 颜色概念",
+    "assessment_range": "概念 / 颜色概念",
     "materials": "红、黄、绿、蓝积木块各3块（共12块）"
   },
   {
@@ -7882,7 +7882,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 颜色概念",
+    "assessment_range": "概念 / 颜色概念",
     "materials": "5块颜色积木（红、黄、绿、蓝、白）"
   },
   {
@@ -7907,14 +7907,14 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 颜色概念",
+    "assessment_range": "概念 / 颜色概念",
     "materials": "无"
   },
   {
     "item_no": 309,
     "domain_item_no": 37,
-    "item_title": "三种基本形状",
-    "test_item": "三种基本形状",
+    "item_title": "配对三种基本形状",
+    "test_item": "配对三种基本形状",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -7932,7 +7932,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 形状概念",
+    "assessment_range": "概念 / 形状概念",
     "materials": "正方形、圆形、三角形形状板2套"
   },
   {
@@ -7957,7 +7957,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 形状概念",
+    "assessment_range": "概念 / 形状概念",
     "materials": "方形、圆形、三角形积木块各4块（共12块）"
   },
   {
@@ -7982,7 +7982,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 形状概念",
+    "assessment_range": "概念 / 形状概念",
     "materials": "形状拼板（圆形、三角形、正方形）"
   },
   {
@@ -8007,7 +8007,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 形状概念",
+    "assessment_range": "概念 / 形状概念",
     "materials": "纸、笔"
   },
   {
@@ -8032,7 +8032,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "印有大小不等的三角形、圆形和正方形的图片各2张"
   },
   {
@@ -8057,7 +8057,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "2只小碟，10块小积木"
   },
   {
@@ -8082,7 +8082,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "长短不一的圆形小棍各4根"
   },
   {
@@ -8107,7 +8107,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "外形相同、大小不同的积木两块"
   },
   {
@@ -8132,7 +8132,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "大小相同、重量不同的三块积木"
   },
   {
@@ -8157,7 +8157,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数前概念",
+    "assessment_range": "概念 / 数前概念",
     "materials": "塑料玩具苹果-一个完整的，2个一半的。"
   },
   {
@@ -8182,7 +8182,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "无"
   },
   {
@@ -8207,7 +8207,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "外形相同的积木5块"
   },
   {
@@ -8232,7 +8232,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "相同颜色的积木7块"
   },
   {
@@ -8257,7 +8257,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "无"
   },
   {
@@ -8282,7 +8282,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "相同颜色的积木8块"
   },
   {
@@ -8307,7 +8307,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "数字卡（1-10）"
   },
   {
@@ -8332,7 +8332,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "无"
   },
   {
@@ -8357,7 +8357,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "无"
   },
   {
@@ -8382,7 +8382,7 @@
       25
     ],
     "ocr_status": "draft",
-    "assessment_range": "概念形成 / 经验与表征 / 数概念",
+    "assessment_range": "概念 / 数概念",
     "materials": "无"
   },
   {
@@ -8564,14 +8564,14 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交前基本能力 / 社交中的非口语能力",
+    "assessment_range": "社交前基本能力 / 认识自己",
     "materials": "长1米、宽0.5米镜子"
   },
   {
     "item_no": 335,
     "domain_item_no": 8,
-    "item_title": "的衣服",
-    "test_item": "的衣服",
+    "item_title": "认识自己的衣服",
+    "test_item": "认识自己的衣服",
     "age_segment": "18-24月",
     "age_min_month": 18,
     "age_max_month": 24,
@@ -8590,7 +8590,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交前基本能力 / 社交中的非口语能力",
+    "assessment_range": "社交前基本能力 / 认识自己",
     "materials": ""
   },
   {
@@ -8659,7 +8659,7 @@
     "assessment_modes": [
       "direct"
     ],
-    "method": "测试员与儿童一起画画，画完后，问儿童的：“你画的好吗？”观察儿童的反应。",
+    "method": "测试员与儿童一起画画，画完后，问儿童：“你画的好吗？”观察儿童的反应。",
     "pass_criteria": "P-看着自己的画回答：“好”，但却把测试员画的画推开\nE-眼睛盯着自己的画，没有其他反应\nF-没有反应，继续画",
     "source_pdf": "孤独症儿童发展评估量表.pdf",
     "source_pages": [
@@ -8668,7 +8668,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交前基本能力 / 价自己",
+    "assessment_range": "社交前基本能力 / 评价自己",
     "materials": "铅笔、白纸"
   },
   {
@@ -8720,7 +8720,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交技巧 / 控制自己",
+    "assessment_range": "社交技巧 / 与照顾者的互动",
     "materials": ""
   },
   {
@@ -8746,7 +8746,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交技巧 / 与照顾者",
+    "assessment_range": "社交技巧 / 与照顾者的互动",
     "materials": ""
   },
   {
@@ -8772,7 +8772,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交技巧 / 的互动",
+    "assessment_range": "社交技巧 / 与照顾者的互动",
     "materials": ""
   },
   {
@@ -8798,7 +8798,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交技巧 / 的互动",
+    "assessment_range": "社交技巧 / 与照顾者的互动",
     "materials": "小食品或玩具"
   },
   {
@@ -9188,7 +9188,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交礼仪 / 自我",
+    "assessment_range": "社交礼仪 / 自我介绍",
     "materials": ""
   },
   {
@@ -9214,7 +9214,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交礼仪 / 介绍",
+    "assessment_range": "社交礼仪 / 自我介绍",
     "materials": ""
   },
   {
@@ -9448,7 +9448,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交礼仪 / 近距离的告别",
+    "assessment_range": "社交礼仪 / 电话告别",
     "materials": ""
   },
   {
@@ -9526,7 +9526,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交礼仪 / 表示",
+    "assessment_range": "社交礼仪 / 表示感谢",
     "materials": "小食品或玩具"
   },
   {
@@ -9552,7 +9552,7 @@
       29
     ],
     "ocr_status": "draft",
-    "assessment_range": "社交礼仪 / 感谢",
+    "assessment_range": "社交礼仪 / 表示感谢",
     "materials": "小食品或玩具"
   },
   {
@@ -9740,8 +9740,8 @@
   {
     "item_no": 380,
     "domain_item_no": 6,
-    "item_title": "软的固体食物",
-    "test_item": "软的固体食物",
+    "item_title": "咀嚼软的固体食物",
+    "test_item": "咀嚼软的固体食物",
     "age_segment": "16-21月",
     "age_min_month": 16,
     "age_max_month": 21,
@@ -9766,8 +9766,8 @@
   {
     "item_no": 381,
     "domain_item_no": 7,
-    "item_title": "硬的固体食物",
-    "test_item": "硬的固体食物",
+    "item_title": "咀嚼硬的固体食物",
+    "test_item": "咀嚼硬的固体食物",
     "age_segment": "16-21月",
     "age_min_month": 16,
     "age_max_month": 21,
@@ -9812,7 +9812,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "饼干（面积约4cm×4cm）"
   },
   {
@@ -9838,7 +9838,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "汤匙、饭或儿童喜爱的食物半碗、碗"
   },
   {
@@ -9864,7 +9864,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "叉子、固体食物至少4件（如香肠、菠萝或水果块）"
   },
   {
@@ -9890,7 +9890,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "一双筷子、碗（碗内有半碗饭或儿童喜爱的食物）"
   },
   {
@@ -9916,7 +9916,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "一把刀、食物，如：香蕉、香肠、条状软面包等"
   },
   {
@@ -9942,7 +9942,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "小水壶、杯子、半壶饮料"
   },
   {
@@ -9968,7 +9968,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "一双筷子、一碟食物（菜茎、肉片或日常蔬菜）"
   },
   {
@@ -9994,7 +9994,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "进食 / 取食方式",
+    "assessment_range": "进食 / 进食方式",
     "materials": "密封包装的食物3包"
   },
   {
@@ -10020,7 +10020,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 取食方式",
+    "assessment_range": "如厕 / 表示如厕需要",
     "materials": ""
   },
   {
@@ -10098,14 +10098,14 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "儿童便盆"
   },
   {
     "item_no": 394,
     "domain_item_no": 20,
-    "item_title": "前自己拉下裤子及内裤",
-    "test_item": "前自己拉下裤子及内裤",
+    "item_title": "如厕前自己拉下裤子及内裤",
+    "test_item": "如厕前自己拉下裤子及内裤",
     "age_segment": "24-30月",
     "age_min_month": 24,
     "age_max_month": 30,
@@ -10124,14 +10124,14 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "儿童日常所穿的裤子及内裤"
   },
   {
     "item_no": 395,
     "domain_item_no": 21,
-    "item_title": "后自己拉上裤子及内裤",
-    "test_item": "后自己拉上裤子及内裤",
+    "item_title": "如厕后自己拉上裤子及内裤",
+    "test_item": "如厕后自己拉上裤子及内裤",
     "age_segment": "30-36月",
     "age_min_month": 30,
     "age_max_month": 36,
@@ -10150,14 +10150,14 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "同上"
   },
   {
     "item_no": 396,
     "domain_item_no": 22,
-    "item_title": "后自己洗手",
-    "test_item": "后自己洗手",
+    "item_title": "如厕后自己洗手",
+    "test_item": "如厕后自己洗手",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -10176,7 +10176,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "厕所内设的洗手盆"
   },
   {
@@ -10202,7 +10202,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "有男女符号的厕所"
   },
   {
@@ -10228,7 +10228,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "卷装厕纸"
   },
   {
@@ -10254,7 +10254,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "如厕 / 技能",
+    "assessment_range": "如厕 / 如厕技能",
     "materials": "已折叠的厕纸"
   },
   {
@@ -10468,8 +10468,8 @@
   {
     "item_no": 408,
     "domain_item_no": 34,
-    "item_title": "穿穿鞋子",
-    "test_item": "穿穿鞋子",
+    "item_title": "穿鞋子",
+    "test_item": "穿鞋子",
     "age_segment": "36-48月",
     "age_min_month": 36,
     "age_max_month": 48,
@@ -10670,7 +10670,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "梳洗 / 穿",
+    "assessment_range": "梳洗 / 擦",
     "materials": "湿毛巾一条"
   },
   {
@@ -10696,14 +10696,14 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "梳洗 / 穿",
+    "assessment_range": "梳洗 / 擦",
     "materials": "毛巾一条"
   },
   {
     "item_no": 417,
     "domain_item_no": 43,
-    "item_title": "会擦干",
-    "test_item": "会擦干",
+    "item_title": "洗手会擦干",
+    "test_item": "洗手会擦干",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -10754,8 +10754,8 @@
   {
     "item_no": 419,
     "domain_item_no": 45,
-    "item_title": "刷用牙刷粗略的刷牙",
-    "test_item": "刷用牙刷粗略的刷牙",
+    "item_title": "用牙刷粗略地刷牙",
+    "test_item": "用牙刷粗略地刷牙",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -10774,7 +10774,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "梳洗 / 擦",
+    "assessment_range": "梳洗 / 刷",
     "materials": "牙刷一把、清水"
   },
   {
@@ -10832,8 +10832,8 @@
   {
     "item_no": 422,
     "domain_item_no": 48,
-    "item_title": "洗用肥皂洗手",
-    "test_item": "洗用肥皂洗手",
+    "item_title": "用肥皂洗手",
+    "test_item": "用肥皂洗手",
     "age_segment": "36-48月",
     "age_min_month": 36,
     "age_max_month": 48,
@@ -11008,7 +11008,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "睡眠 / 梳头发",
+    "assessment_range": "睡眠",
     "materials": ""
   },
   {
@@ -11034,7 +11034,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "睡眠 / 梳头发",
+    "assessment_range": "睡眠",
     "materials": ""
   },
   {
@@ -11060,7 +11060,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "睡眠 / 梳头发",
+    "assessment_range": "睡眠",
     "materials": ""
   },
   {
@@ -11086,7 +11086,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "睡眠 / 梳头发",
+    "assessment_range": "睡眠",
     "materials": ""
   },
   {
@@ -11112,7 +11112,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 固定位置",
+    "assessment_range": "其它日常自理能力（家居） / 物品归位",
     "materials": "约5件玩具，开放式玩具箱一个"
   },
   {
@@ -11138,7 +11138,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 固定位置",
+    "assessment_range": "其它日常自理能力（家居） / 物品归位",
     "materials": "鞋、袜各一双"
   },
   {
@@ -11164,7 +11164,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 固定位置",
+    "assessment_range": "其它日常自理能力（家居） / 物品归位",
     "materials": "毛巾、水壶等可挂在钩子上的物品3件"
   },
   {
@@ -11190,7 +11190,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 固定位置",
+    "assessment_range": "其它日常自理能力（家居） / 物品归位",
     "materials": "儿童自己的外套1件、一个衣架"
   },
   {
@@ -11216,14 +11216,14 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 固定位置",
+    "assessment_range": "其它日常自理能力（家居） / 开关",
     "materials": "向前推的门"
   },
   {
     "item_no": 437,
     "domain_item_no": 63,
-    "item_title": "电灯",
-    "test_item": "电灯",
+    "item_title": "开关电灯",
+    "test_item": "开关电灯",
     "age_segment": "24-36月",
     "age_min_month": 24,
     "age_max_month": 36,
@@ -11242,7 +11242,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 开关",
+    "assessment_range": "其它日常自理能力（家居） / 开关",
     "materials": "墙上按键式的电灯开关"
   },
   {
@@ -11268,7 +11268,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 开关",
+    "assessment_range": "其它日常自理能力（家居） / 开关",
     "materials": "扭动式门把手的门"
   },
   {
@@ -11294,7 +11294,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 收拾碗筷",
+    "assessment_range": "其它日常自理能力（家居） / 收拾餐具",
     "materials": "碗、碟、筷子"
   },
   {
@@ -11320,7 +11320,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 收拾碗筷",
+    "assessment_range": "其它日常自理能力（家居） / 收拾餐具",
     "materials": "碗、碟、筷子"
   },
   {
@@ -11346,7 +11346,7 @@
       33
     ],
     "ocr_status": "draft",
-    "assessment_range": "其它日常自理能力（家具） / 收拾碗筷",
+    "assessment_range": "其它日常自理能力（家居） / 收拾餐具",
     "materials": "塑料碗一只"
   },
   {
@@ -11421,7 +11421,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "依附情绪行为 / 情绪识别",
+    "assessment_range": "情绪理解 / 情绪识别",
     "materials": "观察项目"
   },
   {
@@ -11446,7 +11446,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "情绪 / 识别",
+    "assessment_range": "情绪理解 / 情绪识别",
     "materials": "观察项目"
   },
   {
@@ -11471,7 +11471,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "理解 / 情绪识别",
+    "assessment_range": "情绪理解 / 回应他人",
     "materials": "观察项目"
   },
   {
@@ -11496,7 +11496,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "理解 / 回应他人",
+    "assessment_range": "情绪理解 / 回应他人",
     "materials": "观察项目"
   },
   {
@@ -11621,7 +11621,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "情绪表达与调节 / 表达情绪",
+    "assessment_range": "情绪表达与调节 / 调节情绪",
     "materials": "观察项目"
   },
   {
@@ -12177,8 +12177,8 @@
   {
     "item_no": 475,
     "domain_item_no": 34,
-    "item_title": "动作及动静36",
-    "test_item": "动作及动静36",
+    "item_title": "动作及动静",
+    "test_item": "动作及动静",
     "age_segment": "",
     "age_min_month": 0,
     "age_max_month": 72,
@@ -12202,8 +12202,8 @@
   {
     "item_no": 476,
     "domain_item_no": 35,
-    "item_title": "兴趣和灵敏度",
-    "test_item": "兴趣和灵敏度",
+    "item_title": "视觉兴趣和灵敏度",
+    "test_item": "视觉兴趣和灵敏度",
     "age_segment": "",
     "age_min_month": 0,
     "age_max_month": 72,
@@ -12246,7 +12246,7 @@
       36
     ],
     "ocr_status": "draft",
-    "assessment_range": "感觉偏好 / 视觉",
+    "assessment_range": "感觉偏好 / 听觉",
     "materials": "哨子"
   },
   {
@@ -12277,8 +12277,8 @@
   {
     "item_no": 479,
     "domain_item_no": 38,
-    "item_title": "灵敏度",
-    "test_item": "灵敏度",
+    "item_title": "听觉灵敏度",
+    "test_item": "听觉灵敏度",
     "age_segment": "",
     "age_min_month": 0,
     "age_max_month": 72,
