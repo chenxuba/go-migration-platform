@@ -480,28 +480,54 @@ class _AutismDevScopeEditorPanel extends StatelessWidget {
             child: _ScopeEditNotice(),
           ),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
-              physics: const BouncingScrollPhysics(),
-              itemBuilder: (BuildContext context, int index) {
-                final AutismDevDomainGroup group = groups[index];
-                final int done = group.items
-                    .where((AutismDevItemSummary item) =>
-                        itemScores.containsKey(item.itemNo))
-                    .length;
-                final bool selected = !custom ||
-                    selectedDomainCodes.contains(group.domainCode.trim());
-                return _ScopeDomainRow(
-                  group: group,
-                  done: done,
-                  selected: selected,
-                  disabled: !custom,
-                  onTap: () => onToggleDomain(group.domainCode),
-                );
-              },
-              separatorBuilder: (BuildContext context, int index) =>
-                  const SizedBox(height: 7),
-              itemCount: groups.length,
+            child: ClipRect(
+              child: Stack(
+                children: <Widget>[
+                  ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(10, 10, 10, 42),
+                    physics: const BouncingScrollPhysics(),
+                    itemBuilder: (BuildContext context, int index) {
+                      final AutismDevDomainGroup group = groups[index];
+                      final int done = group.items
+                          .where((AutismDevItemSummary item) =>
+                              itemScores.containsKey(item.itemNo))
+                          .length;
+                      final bool selected = !custom ||
+                          selectedDomainCodes.contains(group.domainCode.trim());
+                      return _ScopeDomainRow(
+                        group: group,
+                        done: done,
+                        selected: selected,
+                        disabled: !custom,
+                        onTap: () => onToggleDomain(group.domainCode),
+                      );
+                    },
+                    separatorBuilder: (BuildContext context, int index) =>
+                        const SizedBox(height: 7),
+                    itemCount: groups.length,
+                  ),
+                  const Positioned(
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    child: IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: <Color>[
+                              Color(0x00FFFFFF),
+                              Color(0xFFFFFFFF),
+                            ],
+                          ),
+                        ),
+                        child: SizedBox(height: 46),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
           Container(

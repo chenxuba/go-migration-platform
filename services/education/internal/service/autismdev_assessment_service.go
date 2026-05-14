@@ -21,7 +21,7 @@ const (
 	autismDevItemBankFile    = "autismdev-item-bank-draft.json"
 	autismDevDomainMapFile   = "autismdev-domain-map.json"
 	autismDevMetadataFile    = "autismdev-scale-metadata.json"
-	autismDevStaticRevision  = "draft-2026-05-14"
+	autismDevStaticRevision  = "draft-2026-05-14-title-cleanup"
 	autismDevDraftDataStatus = "draft"
 )
 
