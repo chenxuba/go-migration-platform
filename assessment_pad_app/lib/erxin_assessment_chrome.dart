@@ -42,63 +42,44 @@ class _Header extends StatelessWidget {
                 onTap: onBack,
               ),
               const SizedBox(width: 10),
-              SizedBox(
-                width: compact ? 282 : 306,
-                child: FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: Alignment.centerLeft,
-                  child: const Text(
-                    '儿心量表-II 测评工作台',
-                    maxLines: 1,
-                    softWrap: false,
-                    style: TextStyle(
-                      color: _ErxinColors.ink,
-                      fontSize: 22,
-                      height: 1,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Row(
                   children: <Widget>[
-                    SizedBox(
-                      width: compact ? 104 : 118,
-                      child: _HeaderMeta(
-                        label: '儿童',
-                        value: args.studentName.trim().isEmpty
-                            ? '-'
-                            : args.studentName.trim(),
+                    const Text(
+                      '儿心量表-II 测评工作台',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: _ErxinColors.ink,
+                        fontSize: 22,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
-                    Expanded(
-                      flex: compact ? 4 : 5,
-                      child: _HeaderMeta(
-                        label: '出生日期',
-                        value: args.birthDate.trim().isEmpty
-                            ? '-'
-                            : args.birthDate.trim(),
-                      ),
+                    const SizedBox(width: 10),
+                    _HeaderMeta(
+                      label: '儿童',
+                      value: args.studentName.trim().isEmpty
+                          ? '-'
+                          : args.studentName.trim(),
                     ),
-                    Expanded(
-                      flex: compact ? 4 : 5,
-                      child: _HeaderMeta(
-                        label: '测查日期',
-                        value: args.assessmentDate.trim().isEmpty
-                            ? '-'
-                            : args.assessmentDate.trim(),
-                      ),
+                    _HeaderMeta(
+                      label: '出生日期',
+                      value: args.birthDate.trim().isEmpty
+                          ? '-'
+                          : args.birthDate.trim(),
                     ),
-                    Expanded(
-                      flex: compact ? 4 : 5,
-                      child: _HeaderMeta(
-                        label: '实足年龄',
-                        value: args.studentAge.trim().isEmpty
-                            ? '-'
-                            : args.studentAge.trim(),
-                      ),
+                    _HeaderMeta(
+                      label: '测查日期',
+                      value: args.assessmentDate.trim().isEmpty
+                          ? '-'
+                          : args.assessmentDate.trim(),
+                    ),
+                    _HeaderMeta(
+                      label: '实足年龄',
+                      value: args.studentAge.trim().isEmpty
+                          ? '-'
+                          : args.studentAge.trim(),
                     ),
                   ],
                 ),
@@ -158,27 +139,23 @@ class _HeaderMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _ErxinColors.line)),
       ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Text.rich(
-          TextSpan(
-            children: <InlineSpan>[
-              TextSpan(text: '$label：'),
-              TextSpan(
-                text: value,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          maxLines: 1,
-          softWrap: false,
-          style: const TextStyle(
-            color: _ErxinColors.body,
-            fontSize: 13,
-            height: 1,
-            fontWeight: FontWeight.w700,
-          ),
+      child: Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            TextSpan(text: '$label：'),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        softWrap: false,
+        style: const TextStyle(
+          color: _ErxinColors.body,
+          fontSize: 13,
+          height: 1,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

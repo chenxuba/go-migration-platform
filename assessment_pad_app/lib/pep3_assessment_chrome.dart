@@ -46,34 +46,25 @@ class _Pep3Header extends StatelessWidget {
               _HeaderIconButton(
                   icon: Icons.chevron_left_rounded, onTap: onBack),
               const SizedBox(width: 10),
-              SizedBox(
-                width: compact ? 206 : 250,
-                child: Text(
-                  '$title 测评工作台',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _Pep3Colors.ink,
-                    fontSize: 23,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
                 child: Row(
                   children: <Widget>[
-                    Expanded(
-                        child: _HeaderMeta(label: '儿童', value: studentName)),
-                    Expanded(child: _HeaderMeta(label: '年龄', value: age)),
-                    Expanded(
-                      flex: 2,
-                      child: _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    Text(
+                      '$title 测评工作台',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: _Pep3Colors.ink,
+                        fontSize: 23,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
                     ),
-                    Expanded(
-                      child: _HeaderMeta(label: '施测者', value: examinerName),
-                    ),
+                    const SizedBox(width: 10),
+                    _HeaderMeta(label: '儿童', value: studentName),
+                    _HeaderMeta(label: '年龄', value: age),
+                    _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    _HeaderMeta(label: '施测者', value: examinerName),
                   ],
                 ),
               ),
@@ -130,26 +121,23 @@ class _HeaderMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _Pep3Colors.line)),
       ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Text.rich(
-          TextSpan(
-            children: <InlineSpan>[
-              TextSpan(text: '$label：'),
-              TextSpan(
-                text: value,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          maxLines: 1,
-          style: const TextStyle(
-            color: _Pep3Colors.text,
-            fontSize: 13,
-            height: 1,
-            fontWeight: FontWeight.w700,
-          ),
+      child: Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            TextSpan(text: '$label：'),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        softWrap: false,
+        style: const TextStyle(
+          color: _Pep3Colors.text,
+          fontSize: 13,
+          height: 1,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );

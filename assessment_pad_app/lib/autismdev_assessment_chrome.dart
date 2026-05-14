@@ -51,32 +51,22 @@ class _AutismDevTopBar extends StatelessWidget {
               Expanded(
                 child: Row(
                   children: <Widget>[
-                    Expanded(
-                      child: Text(
-                        '$title 测评工作台',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _AutismDevColors.ink,
-                          fontSize: 23,
-                          height: 1,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    Text(
+                      '$title 测评工作台',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: _AutismDevColors.ink,
+                        fontSize: 23,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
                       ),
                     ),
                     const SizedBox(width: 10),
-                    Flexible(
-                      child: _HeaderMeta(label: '儿童', value: studentName),
-                    ),
-                    Flexible(
-                      child: _HeaderMeta(label: '年龄', value: studentAge),
-                    ),
-                    Flexible(
-                      child: _HeaderMeta(label: '测评日期', value: assessmentDate),
-                    ),
-                    Flexible(
-                      child: _HeaderMeta(label: '施测者', value: examinerName),
-                    ),
+                    _HeaderMeta(label: '儿童', value: studentName),
+                    _HeaderMeta(label: '年龄', value: studentAge),
+                    _HeaderMeta(label: '测评日期', value: assessmentDate),
+                    _HeaderMeta(label: '施测者', value: examinerName),
                   ],
                 ),
               ),
@@ -133,26 +123,23 @@ class _HeaderMeta extends StatelessWidget {
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _AutismDevColors.line)),
       ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: Text.rich(
-          TextSpan(
-            children: <InlineSpan>[
-              TextSpan(text: '$label：'),
-              TextSpan(
-                text: value,
-                style: const TextStyle(fontWeight: FontWeight.w900),
-              ),
-            ],
-          ),
-          maxLines: 1,
-          style: const TextStyle(
-            color: _AutismDevColors.body,
-            fontSize: 13,
-            height: 1,
-            fontWeight: FontWeight.w700,
-          ),
+      child: Text.rich(
+        TextSpan(
+          children: <InlineSpan>[
+            TextSpan(text: '$label：'),
+            TextSpan(
+              text: value,
+              style: const TextStyle(fontWeight: FontWeight.w900),
+            ),
+          ],
+        ),
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: _AutismDevColors.body,
+          fontSize: 13,
+          height: 1,
+          fontWeight: FontWeight.w700,
         ),
       ),
     );
