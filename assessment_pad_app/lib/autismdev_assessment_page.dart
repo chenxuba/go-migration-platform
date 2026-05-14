@@ -41,6 +41,8 @@ class AutismDevAssessmentPage extends StatefulWidget {
 
 enum _AutismDevQuestionDisplayPreference { all, matchingAge, ageAndBelow }
 
+enum _AutismDevAssessmentScopeMode { full, custom }
+
 class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   static const String _authTokenStorageKey = 'auth_token';
 
@@ -76,8 +78,14 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
   bool _saving = false;
   bool _submitting = false;
   bool _autoNext = true;
+  bool _editingScope = false;
   bool _saveDraftFutureSilent = false;
   bool _saveDraftJoinedByManual = false;
+  _AutismDevAssessmentScopeMode _scopeMode = _AutismDevAssessmentScopeMode.full;
+  final Set<String> _selectedScopeDomainCodes = <String>{};
+  final Set<String> _draftScopeDomainCodes = <String>{};
+  _AutismDevAssessmentScopeMode _draftScopeMode =
+      _AutismDevAssessmentScopeMode.full;
   _AutismDevQuestionDisplayPreference _questionDisplayPreference =
       _AutismDevQuestionDisplayPreference.ageAndBelow;
   String _errorMessage = '';

@@ -226,6 +226,13 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       _itemScores.clear();
       _itemRemarks.clear();
       _selectedRangeFilter = '';
+      _scopeMode = _AutismDevAssessmentScopeMode.full;
+      _selectedScopeDomainCodes.clear();
+      _draftScopeMode = _scopeMode;
+      _draftScopeDomainCodes
+        ..clear()
+        ..addAll(_selectedScopeDomainCodes);
+      _editingScope = false;
       _assessmentDate = _dateOnlyText(widget.args.assessmentDate).isNotEmpty
           ? _dateOnlyText(widget.args.assessmentDate)
           : _todayIsoDate();
@@ -303,6 +310,7 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     _itemRemarks
       ..clear()
       ..addAll(detail.input.itemRemarks);
+    _applyDraftScopeInput(detail.input);
     final int firstUnanswered = _firstUnansweredItemNo();
     if (firstUnanswered > 0) {
       _selectedItemNo = firstUnanswered;
@@ -328,6 +336,60 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return null;
     }
     return detail;
+  }
+
+  bool get _isCustomScope =>
+      _scopeMode == _AutismDevAssessmentScopeMode.custom &&
+      _selectedScopeDomainCodes.isNotEmpty;
+
+  String get _scopeModeName =>
+      _scopeMode == _AutismDevAssessmentScopeMode.custom ? 'custom' : 'full';
+
+  List<String> get _scopeDomainCodesForPayload {
+    if (!_isCustomScope) {
+      return <String>[];
+    }
+    return _template.domainGroups
+        .map((AutismDevDomainGroup group) => group.domainCode.trim())
+        .where((String code) => _selectedScopeDomainCodes.contains(code))
+        .toList(growable: false);
+  }
+
+  int get _scopeDomainCount => _isCustomScope
+      ? _displayDomainGroups.length
+      : _allDisplayDomainGroups.length;
+
+  String get _scopeSummaryText {
+    if (!_isCustomScope) {
+      return '全量';
+    }
+    return '自定义';
+  }
+
+  void _applyDraftScopeInput(AutismDevDraftInput input) {
+    final String mode = input.scopeMode.trim().toLowerCase();
+    final Set<String> validCodes = _template.domainGroups
+        .map((AutismDevDomainGroup group) => group.domainCode.trim())
+        .where((String code) => code.isNotEmpty)
+        .toSet();
+    final Set<String> codes = input.scopeDomainCodes
+        .map((String code) => code.trim())
+        .where((String code) => validCodes.contains(code))
+        .toSet();
+    if (mode == 'custom' && codes.isNotEmpty) {
+      _scopeMode = _AutismDevAssessmentScopeMode.custom;
+      _selectedScopeDomainCodes
+        ..clear()
+        ..addAll(codes);
+    } else {
+      _scopeMode = _AutismDevAssessmentScopeMode.full;
+      _selectedScopeDomainCodes.clear();
+    }
+    _draftScopeMode = _scopeMode;
+    _draftScopeDomainCodes
+      ..clear()
+      ..addAll(_selectedScopeDomainCodes);
+    _editingScope = false;
   }
 
   int get _fullAnsweredCount => _allItems
@@ -427,6 +489,75 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
     });
     _syncRemarkController();
     _prefetchSelectedItem();
+  }
+
+  void _beginScopeEdit() {
+    setState(() {
+      _editingScope = true;
+      _draftScopeMode = _scopeMode;
+      _draftScopeDomainCodes
+        ..clear()
+        ..addAll(_selectedScopeDomainCodes);
+    });
+  }
+
+  void _cancelScopeEdit() {
+    setState(() {
+      _editingScope = false;
+      _draftScopeMode = _scopeMode;
+      _draftScopeDomainCodes
+        ..clear()
+        ..addAll(_selectedScopeDomainCodes);
+    });
+  }
+
+  void _selectDraftScopeMode(_AutismDevAssessmentScopeMode mode) {
+    setState(() {
+      _draftScopeMode = mode;
+      if (mode == _AutismDevAssessmentScopeMode.full) {
+        _draftScopeDomainCodes.clear();
+        return;
+      }
+      if (_draftScopeDomainCodes.isEmpty && _selectedDomainCode.isNotEmpty) {
+        _draftScopeDomainCodes.add(_selectedDomainCode);
+      }
+    });
+  }
+
+  void _toggleDraftScopeDomain(String domainCode) {
+    final String code = domainCode.trim();
+    if (code.isEmpty) {
+      return;
+    }
+    setState(() {
+      _draftScopeMode = _AutismDevAssessmentScopeMode.custom;
+      if (_draftScopeDomainCodes.contains(code)) {
+        _draftScopeDomainCodes.remove(code);
+      } else {
+        _draftScopeDomainCodes.add(code);
+      }
+    });
+  }
+
+  void _applyScopeEdit() {
+    if (_draftScopeMode == _AutismDevAssessmentScopeMode.custom &&
+        _draftScopeDomainCodes.isEmpty) {
+      _showMessage('自定义范围至少选择 1 个领域');
+      return;
+    }
+    setState(() {
+      _scopeMode = _draftScopeMode;
+      _selectedScopeDomainCodes
+        ..clear()
+        ..addAll(_draftScopeDomainCodes);
+      _editingScope = false;
+      _selectedRangeFilter = '';
+      _ensureSelectedDisplayItem();
+      _autoSaveText = _isCustomScope ? '已应用自定义范围' : '已切换全量范围';
+    });
+    _syncRemarkController();
+    _prefetchSelectedItem();
+    unawaited(_saveDraft(silent: true));
   }
 
   Future<void> _openQuestionPreferenceDialog() async {
@@ -725,10 +856,18 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return;
     }
     _syncCurrentRemarkToState();
-    if (_fullTotalCount > 0 && _fullAnsweredCount < _fullTotalCount) {
+    if (_visibleTotalCount > 0 && _visibleAnsweredCount < _visibleTotalCount) {
       _showMessage(
-        '还有 ${_fullTotalCount - _fullAnsweredCount} 道题未评分，完成后再提交',
+        '本次范围还有 ${_visibleTotalCount - _visibleAnsweredCount} 道题未评分，完成后再提交',
       );
+      return;
+    }
+    if (_isCustomScope) {
+      await _saveDraft(silent: true);
+      if (!mounted) {
+        return;
+      }
+      _showMessage('自定义范围已保存为草稿；部分领域正式记录待后端支持');
       return;
     }
     setState(() => _submitting = true);
@@ -771,6 +910,8 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       'examinerName': _examinerName.trim(),
       'birthDate': _birthDate.trim(),
       'assessmentDate': _assessmentDate.trim(),
+      'scopeMode': _scopeModeName,
+      'scopeDomainCodes': _scopeDomainCodesForPayload,
       'itemScoreList': _itemScoreList(),
     };
   }
@@ -824,10 +965,21 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
         .toList();
   }
 
-  List<AutismDevDomainGroup> get _displayDomainGroups {
+  List<AutismDevDomainGroup> get _allDisplayDomainGroups {
     return _template.domainGroups
         .map(_displayGroupForPreference)
         .where((AutismDevDomainGroup group) => group.items.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  List<AutismDevDomainGroup> get _displayDomainGroups {
+    final List<AutismDevDomainGroup> groups = _allDisplayDomainGroups;
+    if (!_isCustomScope) {
+      return groups;
+    }
+    return groups
+        .where((AutismDevDomainGroup group) =>
+            _selectedScopeDomainCodes.contains(group.domainCode.trim()))
         .toList(growable: false);
   }
 
@@ -974,11 +1126,21 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
                   width: 226,
                   child: _AutismDevDomainPanel(
                     groups: _displayDomainGroups,
+                    allGroups: _allDisplayDomainGroups,
                     selectedDomainCode: _selectedDomainCode,
                     selectedRangeFilter: _selectedRangeFilter,
                     selectedItemNo: _selectedItemNo,
                     itemScores: _itemScores,
+                    editingScope: _editingScope,
+                    draftScopeMode: _draftScopeMode,
+                    draftScopeDomainCodes: _draftScopeDomainCodes,
+                    scopeSummaryText: _scopeSummaryText,
                     onSelectItem: _selectItem,
+                    onBeginScopeEdit: _beginScopeEdit,
+                    onSelectDraftScopeMode: _selectDraftScopeMode,
+                    onToggleDraftScopeDomain: _toggleDraftScopeDomain,
+                    onCancelScopeEdit: _cancelScopeEdit,
+                    onApplyScopeEdit: _applyScopeEdit,
                   ),
                 ),
                 const SizedBox(width: 10),

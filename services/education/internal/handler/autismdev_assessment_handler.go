@@ -33,17 +33,19 @@ type autismDevItemRemarkRequest struct {
 }
 
 type autismDevAssessmentDraftSaveRequest struct {
-	ID             int64                        `json:"id,omitempty"`
-	StudentID      int64                        `json:"studentId,omitempty"`
-	StudentName    string                       `json:"studentName,omitempty"`
-	ExaminerName   string                       `json:"examinerName,omitempty"`
-	Remark         string                       `json:"remark,omitempty"`
-	BirthDate      string                       `json:"birthDate,omitempty"`
-	AssessmentDate string                       `json:"assessmentDate,omitempty"`
-	ItemScores     map[int]string               `json:"itemScores,omitempty"`
-	ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-	ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
-	ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+	ID               int64                        `json:"id,omitempty"`
+	StudentID        int64                        `json:"studentId,omitempty"`
+	StudentName      string                       `json:"studentName,omitempty"`
+	ExaminerName     string                       `json:"examinerName,omitempty"`
+	Remark           string                       `json:"remark,omitempty"`
+	BirthDate        string                       `json:"birthDate,omitempty"`
+	AssessmentDate   string                       `json:"assessmentDate,omitempty"`
+	ScopeMode        string                       `json:"scopeMode,omitempty"`
+	ScopeDomainCodes []string                     `json:"scopeDomainCodes,omitempty"`
+	ItemScores       map[int]string               `json:"itemScores,omitempty"`
+	ItemScoreList    []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks      map[int]string               `json:"itemRemarks,omitempty"`
+	ItemRemarkList   []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type autismDevAssessmentRecordCreateRequest struct {
@@ -597,29 +599,33 @@ func (req autismDevAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map
 	normalizedScoreList := autismDevItemScoreListFromMap(itemScores, itemRemarks)
 	normalizedRemarkList := autismDevItemRemarkListFromMap(itemRemarks)
 	return struct {
-		ID             int64                        `json:"id,omitempty"`
-		StudentID      int64                        `json:"studentId,omitempty"`
-		StudentName    string                       `json:"studentName,omitempty"`
-		ExaminerName   string                       `json:"examinerName,omitempty"`
-		Remark         string                       `json:"remark,omitempty"`
-		BirthDate      string                       `json:"birthDate,omitempty"`
-		AssessmentDate string                       `json:"assessmentDate,omitempty"`
-		ItemScores     map[int]string               `json:"itemScores,omitempty"`
-		ItemScoreList  []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
-		ItemRemarks    map[int]string               `json:"itemRemarks,omitempty"`
-		ItemRemarkList []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
+		ID               int64                        `json:"id,omitempty"`
+		StudentID        int64                        `json:"studentId,omitempty"`
+		StudentName      string                       `json:"studentName,omitempty"`
+		ExaminerName     string                       `json:"examinerName,omitempty"`
+		Remark           string                       `json:"remark,omitempty"`
+		BirthDate        string                       `json:"birthDate,omitempty"`
+		AssessmentDate   string                       `json:"assessmentDate,omitempty"`
+		ScopeMode        string                       `json:"scopeMode,omitempty"`
+		ScopeDomainCodes []string                     `json:"scopeDomainCodes,omitempty"`
+		ItemScores       map[int]string               `json:"itemScores,omitempty"`
+		ItemScoreList    []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks      map[int]string               `json:"itemRemarks,omitempty"`
+		ItemRemarkList   []autismDevItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
-		ID:             req.ID,
-		StudentID:      req.StudentID,
-		StudentName:    strings.TrimSpace(req.StudentName),
-		ExaminerName:   strings.TrimSpace(req.ExaminerName),
-		Remark:         strings.TrimSpace(req.Remark),
-		BirthDate:      strings.TrimSpace(req.BirthDate),
-		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
-		ItemScores:     itemScores,
-		ItemScoreList:  normalizedScoreList,
-		ItemRemarks:    itemRemarks,
-		ItemRemarkList: normalizedRemarkList,
+		ID:               req.ID,
+		StudentID:        req.StudentID,
+		StudentName:      strings.TrimSpace(req.StudentName),
+		ExaminerName:     strings.TrimSpace(req.ExaminerName),
+		Remark:           strings.TrimSpace(req.Remark),
+		BirthDate:        strings.TrimSpace(req.BirthDate),
+		AssessmentDate:   strings.TrimSpace(req.AssessmentDate),
+		ScopeMode:        strings.TrimSpace(req.ScopeMode),
+		ScopeDomainCodes: normalizedAutismDevScopeDomainCodes(req.ScopeDomainCodes),
+		ItemScores:       itemScores,
+		ItemScoreList:    normalizedScoreList,
+		ItemRemarks:      itemRemarks,
+		ItemRemarkList:   normalizedRemarkList,
 	}
 }
 
@@ -701,6 +707,26 @@ func normalizeAutismDevItemRemarks(itemRemarks map[int]string, itemRemarkList []
 			continue
 		}
 		out[item.ItemNo] = remark
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func normalizedAutismDevScopeDomainCodes(domainCodes []string) []string {
+	if len(domainCodes) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool, len(domainCodes))
+	out := make([]string, 0, len(domainCodes))
+	for _, raw := range domainCodes {
+		code := strings.TrimSpace(raw)
+		if code == "" || seen[code] {
+			continue
+		}
+		seen[code] = true
+		out = append(out, code)
 	}
 	if len(out) == 0 {
 		return nil

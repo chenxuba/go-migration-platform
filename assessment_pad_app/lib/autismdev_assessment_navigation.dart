@@ -3,19 +3,39 @@ part of 'autismdev_assessment_page.dart';
 class _AutismDevDomainPanel extends StatefulWidget {
   const _AutismDevDomainPanel({
     required this.groups,
+    required this.allGroups,
     required this.selectedDomainCode,
     required this.selectedRangeFilter,
     required this.selectedItemNo,
     required this.itemScores,
+    required this.editingScope,
+    required this.draftScopeMode,
+    required this.draftScopeDomainCodes,
+    required this.scopeSummaryText,
     required this.onSelectItem,
+    required this.onBeginScopeEdit,
+    required this.onSelectDraftScopeMode,
+    required this.onToggleDraftScopeDomain,
+    required this.onCancelScopeEdit,
+    required this.onApplyScopeEdit,
   });
 
   final List<AutismDevDomainGroup> groups;
+  final List<AutismDevDomainGroup> allGroups;
   final String selectedDomainCode;
   final String selectedRangeFilter;
   final int selectedItemNo;
   final Map<int, String> itemScores;
+  final bool editingScope;
+  final _AutismDevAssessmentScopeMode draftScopeMode;
+  final Set<String> draftScopeDomainCodes;
+  final String scopeSummaryText;
   final ValueChanged<AutismDevItemSummary> onSelectItem;
+  final VoidCallback onBeginScopeEdit;
+  final ValueChanged<_AutismDevAssessmentScopeMode> onSelectDraftScopeMode;
+  final ValueChanged<String> onToggleDraftScopeDomain;
+  final VoidCallback onCancelScopeEdit;
+  final VoidCallback onApplyScopeEdit;
 
   @override
   State<_AutismDevDomainPanel> createState() => _AutismDevDomainPanelState();
@@ -178,13 +198,27 @@ class _AutismDevDomainPanelState extends State<_AutismDevDomainPanel> {
 
   @override
   Widget build(BuildContext context) {
+    if (widget.editingScope) {
+      return _AutismDevScopeEditorPanel(
+        groups: widget.allGroups,
+        itemScores: widget.itemScores,
+        scopeMode: widget.draftScopeMode,
+        selectedDomainCodes: widget.draftScopeDomainCodes,
+        onSelectMode: widget.onSelectDraftScopeMode,
+        onToggleDomain: widget.onToggleDraftScopeDomain,
+        onCancel: widget.onCancelScopeEdit,
+        onApply: widget.onApplyScopeEdit,
+      );
+    }
     return Container(
       decoration: _panelDecoration(),
       child: Column(
         children: <Widget>[
           _AutismDevSidebarHeader(
             canCollapse: _expandedDomainCode.isNotEmpty,
+            scopeSummaryText: widget.scopeSummaryText,
             onCollapseAll: _collapseAllDomains,
+            onEditScope: widget.onBeginScopeEdit,
           ),
           Expanded(
             child: SingleChildScrollView(
@@ -349,6 +383,421 @@ class _AutismDevDomainTile extends StatelessWidget {
               ),
           ],
         ],
+      ),
+    );
+  }
+}
+
+class _AutismDevScopeEditorPanel extends StatelessWidget {
+  const _AutismDevScopeEditorPanel({
+    required this.groups,
+    required this.itemScores,
+    required this.scopeMode,
+    required this.selectedDomainCodes,
+    required this.onSelectMode,
+    required this.onToggleDomain,
+    required this.onCancel,
+    required this.onApply,
+  });
+
+  final List<AutismDevDomainGroup> groups;
+  final Map<int, String> itemScores;
+  final _AutismDevAssessmentScopeMode scopeMode;
+  final Set<String> selectedDomainCodes;
+  final ValueChanged<_AutismDevAssessmentScopeMode> onSelectMode;
+  final ValueChanged<String> onToggleDomain;
+  final VoidCallback onCancel;
+  final VoidCallback onApply;
+
+  int get _selectedDomainCount =>
+      scopeMode == _AutismDevAssessmentScopeMode.full
+          ? groups.length
+          : selectedDomainCodes.length;
+
+  int get _selectedItemCount {
+    if (scopeMode == _AutismDevAssessmentScopeMode.full) {
+      return groups.fold<int>(
+        0,
+        (int total, AutismDevDomainGroup group) => total + group.itemCount,
+      );
+    }
+    return groups
+        .where((AutismDevDomainGroup group) =>
+            selectedDomainCodes.contains(group.domainCode.trim()))
+        .fold<int>(
+          0,
+          (int total, AutismDevDomainGroup group) => total + group.itemCount,
+        );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool custom = scopeMode == _AutismDevAssessmentScopeMode.custom;
+    final bool canApply = !custom || selectedDomainCodes.isNotEmpty;
+    return Container(
+      decoration: _panelDecoration(),
+      child: Column(
+        children: <Widget>[
+          Container(
+            height: 48,
+            padding: const EdgeInsets.symmetric(horizontal: 14),
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: _AutismDevColors.lineSoft),
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                const Text(
+                  '测评范围',
+                  style: TextStyle(
+                    color: _AutismDevColors.ink,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '$_selectedDomainCount领域 · $_selectedItemCount题',
+                  style: const TextStyle(
+                    color: _AutismDevColors.orangeDeep,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: _ScopeModeSegmented(
+              mode: scopeMode,
+              onSelect: onSelectMode,
+            ),
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(12, 10, 12, 0),
+            child: _ScopeEditNotice(),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.fromLTRB(10, 10, 10, 8),
+              physics: const BouncingScrollPhysics(),
+              itemBuilder: (BuildContext context, int index) {
+                final AutismDevDomainGroup group = groups[index];
+                final int done = group.items
+                    .where((AutismDevItemSummary item) =>
+                        itemScores.containsKey(item.itemNo))
+                    .length;
+                final bool selected = !custom ||
+                    selectedDomainCodes.contains(group.domainCode.trim());
+                return _ScopeDomainRow(
+                  group: group,
+                  done: done,
+                  selected: selected,
+                  disabled: !custom,
+                  onTap: () => onToggleDomain(group.domainCode),
+                );
+              },
+              separatorBuilder: (BuildContext context, int index) =>
+                  const SizedBox(height: 7),
+              itemCount: groups.length,
+            ),
+          ),
+          Container(
+            height: 58,
+            padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+            decoration: const BoxDecoration(
+              border: Border(top: BorderSide(color: _AutismDevColors.lineSoft)),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: _ScopeActionButton(
+                    label: '取消',
+                    filled: false,
+                    enabled: true,
+                    onTap: onCancel,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _ScopeActionButton(
+                    label: '应用范围',
+                    filled: true,
+                    enabled: canApply,
+                    onTap: onApply,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeModeSegmented extends StatelessWidget {
+  const _ScopeModeSegmented({required this.mode, required this.onSelect});
+
+  final _AutismDevAssessmentScopeMode mode;
+  final ValueChanged<_AutismDevAssessmentScopeMode> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 40,
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8F1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _AutismDevColors.line),
+      ),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: _ScopeModeButton(
+              label: '全量',
+              active: mode == _AutismDevAssessmentScopeMode.full,
+              onTap: () => onSelect(_AutismDevAssessmentScopeMode.full),
+            ),
+          ),
+          const SizedBox(width: 4),
+          Expanded(
+            child: _ScopeModeButton(
+              label: '自定义',
+              active: mode == _AutismDevAssessmentScopeMode.custom,
+              onTap: () => onSelect(_AutismDevAssessmentScopeMode.custom),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ScopeModeButton extends StatelessWidget {
+  const _ScopeModeButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: active ? _AutismDevColors.orange : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: active ? Colors.white : _AutismDevColors.body,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScopeEditNotice extends StatelessWidget {
+  const _ScopeEditNotice();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF8E9),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFF0D6B0)),
+      ),
+      child: const Text(
+        '自定义可只选 1 个领域。应用后工作台、缺题和进度只按所选领域计算。',
+        style: TextStyle(
+          color: Color(0xFF8D642B),
+          fontSize: 12,
+          height: 1.35,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _ScopeDomainRow extends StatelessWidget {
+  const _ScopeDomainRow({
+    required this.group,
+    required this.done,
+    required this.selected,
+    required this.disabled,
+    required this.onTap,
+  });
+
+  final AutismDevDomainGroup group;
+  final int done;
+  final bool selected;
+  final bool disabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: disabled ? .72 : 1,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: disabled ? null : onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Ink(
+            padding: const EdgeInsets.fromLTRB(8, 9, 8, 9),
+            decoration: BoxDecoration(
+              color: selected ? const Color(0xFFFFF6EF) : Colors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected
+                    ? const Color(0xFFFFC8AD)
+                    : _AutismDevColors.lineSoft,
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: BoxDecoration(
+                    color: selected ? _AutismDevColors.orange : Colors.white,
+                    borderRadius: BorderRadius.circular(7),
+                    border: Border.all(
+                      color: selected
+                          ? _AutismDevColors.orange
+                          : const Color(0xFFD9C7BB),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: selected
+                      ? const Icon(
+                          Icons.check_rounded,
+                          size: 16,
+                          color: Colors.white,
+                        )
+                      : null,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      Text(
+                        group.domainName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _AutismDevColors.ink,
+                          fontSize: 13,
+                          height: 1.1,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        '草稿进度 $done/${group.itemCount}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _AutismDevColors.muted,
+                          fontSize: 11,
+                          height: 1,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Text(
+                  '${group.itemCount}题',
+                  style: const TextStyle(
+                    color: _AutismDevColors.orangeDeep,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ScopeActionButton extends StatelessWidget {
+  const _ScopeActionButton({
+    required this.label,
+    required this.filled,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool filled;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color textColor = enabled
+        ? filled
+            ? Colors.white
+            : _AutismDevColors.ink
+        : _AutismDevColors.muted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: filled
+                ? enabled
+                    ? _AutismDevColors.orange
+                    : _AutismDevColors.lineSoft
+                : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: filled && enabled
+                  ? _AutismDevColors.orange
+                  : _AutismDevColors.line,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: textColor,
+                fontSize: 14,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -579,17 +1028,21 @@ class _AutismDevRangeOption {
 class _AutismDevSidebarHeader extends StatelessWidget {
   const _AutismDevSidebarHeader({
     required this.canCollapse,
+    required this.scopeSummaryText,
     required this.onCollapseAll,
+    required this.onEditScope,
   });
 
   final bool canCollapse;
+  final String scopeSummaryText;
   final VoidCallback onCollapseAll;
+  final VoidCallback onEditScope;
 
   @override
   Widget build(BuildContext context) {
     return Container(
       height: 48,
-      padding: const EdgeInsets.symmetric(horizontal: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: const BoxDecoration(
         border: Border(bottom: BorderSide(color: _AutismDevColors.lineSoft)),
       ),
@@ -604,6 +1057,49 @@ class _AutismDevSidebarHeader extends StatelessWidget {
             ),
           ),
           const Spacer(),
+          Text(
+            scopeSummaryText,
+            maxLines: 1,
+            style: const TextStyle(
+              color: _AutismDevColors.muted,
+              fontSize: 11,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Tooltip(
+            message: '测评范围',
+            child: Material(
+              color: Colors.transparent,
+              child: InkWell(
+                onTap: onEditScope,
+                borderRadius: BorderRadius.circular(8),
+                child: Ink(
+                  height: 28,
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF2EA),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: _AutismDevColors.orange),
+                  ),
+                  child: const Center(
+                    child: Text(
+                      '范围',
+                      maxLines: 1,
+                      style: TextStyle(
+                        color: _AutismDevColors.orangeDeep,
+                        fontSize: 12,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
           Tooltip(
             message: '全部收起',
             child: Material(

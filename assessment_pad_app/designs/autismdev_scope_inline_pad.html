@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>自闭症发展评估 - 左侧原位范围编辑</title>
+  <style>
+    * { box-sizing: border-box; }
+    :root {
+      --page:#fff7ee; --surface:#fffdf9; --soft:#fffaf4; --ink:#3f2b22;
+      --body:#6f5b50; --muted:#a7958b; --line:#ead7c9; --line-soft:#f4e8df;
+      --orange:#e96f43; --orange-deep:#c95d37; --green:#6f9f70;
+      --blue:#3f82d2; --amber:#d99427; --rose:#d96a7f;
+      --shadow:0 12px 24px rgba(194,107,62,.08);
+    }
+    html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--page);color:var(--ink);font-family:"PingFang SC","Microsoft YaHei","Heiti SC",Arial,sans-serif}
+    .canvas{width:1366px;height:768px;background:var(--page);overflow:hidden}
+    .topbar{height:58px;padding:0 18px;display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:0 0 12px 12px;background:rgba(255,253,249,.96);box-shadow:0 12px 22px rgba(176,95,50,.08)}
+    .back{width:46px;height:46px;border:1px solid var(--line);border-radius:14px;background:#fff;color:var(--body);display:flex;align-items:center;justify-content:center;font-size:34px;line-height:1;font-weight:600}
+    h1{margin:0 10px 0 0;color:var(--ink);font-size:23px;line-height:1;font-weight:900;white-space:nowrap}
+    .meta{display:flex;align-items:center;color:var(--body);font-size:13px;line-height:1;font-weight:700;white-space:nowrap}
+    .meta span{padding:0 10px;border-left:1px solid var(--line)} .meta strong{font-weight:900}
+    .top-actions{margin-left:auto;display:flex;align-items:center;gap:9px}
+    .button{height:36px;padding:0 13px;border-radius:10px;display:flex;align-items:center;gap:7px;font-size:14px;line-height:1;font-weight:900;white-space:nowrap}
+    .button.ghost{border:1px solid var(--orange);background:#fff;color:var(--orange-deep)} .button.primary{border:1px solid var(--orange);background:var(--orange);color:#fff;box-shadow:0 8px 14px rgba(233,111,67,.18)}
+    .workbench{height:650px;padding:10px 10px 0;display:grid;grid-template-columns:270px 1fr 238px;gap:10px}
+    .panel{min-height:0;border:1px solid var(--line);border-radius:8px;background:rgba(255,253,249,.94);box-shadow:var(--shadow);overflow:hidden}
+    .left{display:flex;flex-direction:column}
+    .side-head{height:48px;padding:0 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line-soft)}
+    .side-title{color:var(--ink);font-size:16px;font-weight:900}.side-count{margin-left:auto;color:var(--orange-deep);font-size:13px;font-weight:900}
+    .mode-strip{margin:10px 12px 0;padding:4px;border:1px solid var(--line);border-radius:10px;background:#fff8f1;display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px}
+    .mode{height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--body);font-size:12px;font-weight:900}.mode.active{background:var(--orange);color:#fff;box-shadow:0 6px 12px rgba(233,111,67,.18)}
+    .inline-note{margin:10px 12px 0;padding:9px 10px;border:1px solid #f0d6b0;border-radius:8px;background:#fff8e9;color:#8d642b;font-size:12px;line-height:17px;font-weight:800}
+    .domain-list{padding:10px 10px 8px;display:flex;flex-direction:column;gap:7px;min-height:0;flex:1;overflow:hidden}
+    .scope-row{min-height:58px;padding:9px 8px;border:1px solid var(--line-soft);border-radius:8px;background:#fff;display:grid;grid-template-columns:24px 1fr auto;gap:8px;align-items:center}
+    .scope-row.selected{border-color:#ffc8ad;background:#fff6ef}.scope-row.current{box-shadow:inset 4px 0 0 var(--orange)}
+    .check{width:22px;height:22px;border-radius:7px;border:1.5px solid #d9c7bb;background:#fff;color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900}.selected .check{border-color:var(--orange);background:var(--orange)}
+    .scope-name{color:var(--ink);font-size:14px;line-height:18px;font-weight:900}.scope-sub{margin-top:4px;color:var(--muted);font-size:12px;line-height:1;font-weight:800}.scope-count{color:var(--orange-deep);font-size:13px;font-weight:900;white-space:nowrap}
+    .left-actions{height:58px;padding:9px 10px;border-top:1px solid var(--line-soft);display:flex;gap:8px}.left-btn{flex:1;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:14px;font-weight:900}.left-btn.cancel{border:1px solid var(--line);background:#fff;color:var(--ink)}.left-btn.apply{border:1px solid var(--orange);background:var(--orange);color:#fff}
+    .workspace{padding:18px 16px 14px;display:flex;flex-direction:column;gap:16px}
+    .question-head{display:flex;align-items:center;gap:12px}.question-title{color:var(--ink);font-size:26px;line-height:1;font-weight:900}
+    .scope-pill{height:34px;padding:0 12px;border:1px solid #ffc8ad;border-radius:10px;background:#fff2ea;color:var(--orange-deep);display:flex;align-items:center;font-size:13px;font-weight:900;white-space:nowrap}
+    .pref{margin-left:auto;height:34px;padding:0 12px;border:1px solid #ffc8ad;border-radius:10px;background:#fff2ea;color:var(--orange-deep);display:flex;align-items:center;font-size:13px;font-weight:900}
+    .info-grid{display:grid;grid-template-columns:1fr 224px;gap:12px}.info-card{min-height:82px;border:1px solid var(--line);border-radius:8px;background:#fff;padding:14px 16px}.info-label{margin-bottom:10px;color:var(--ink);font-size:14px;line-height:1;font-weight:900}.info-text{color:var(--body);font-size:17px;line-height:24px;font-weight:800}
+    .score-title{margin-top:auto;color:var(--ink);font-size:15px;font-weight:900}.score-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.score{height:78px;padding:12px;border:1px solid var(--line);border-radius:10px;background:#fff;display:flex;align-items:center;gap:12px}.score-letter{width:36px;height:36px;border-radius:50%;background:#eef6ed;color:var(--green);display:flex;align-items:center;justify-content:center;font-size:21px;font-weight:900}.score:nth-child(2) .score-letter{background:#fff1e8;color:var(--orange)}.score:nth-child(3) .score-letter{background:#fff0f2;color:var(--rose)}.score:nth-child(4) .score-letter{background:#f1eee9;color:#8d786b}.score strong{display:block;color:var(--ink);font-size:16px;line-height:20px;font-weight:900}.score span{display:block;margin-top:3px;color:var(--muted);font-size:12px;line-height:16px;font-weight:700}
+    .rail{padding:16px 14px;display:flex;flex-direction:column;gap:14px}.rail-title{color:var(--ink);font-size:16px;font-weight:900}.ring{width:100px;height:100px;margin:2px auto 6px;border-radius:50%;border:12px solid #efe2d8;border-top-color:var(--orange);display:flex;align-items:center;justify-content:center;color:var(--ink);font-size:24px;font-weight:900}.rail-stat{display:flex;align-items:center;justify-content:space-between;color:var(--body);font-size:13px;font-weight:900}.rail-stat strong{color:var(--orange-deep);font-size:18px}.range-list{display:flex;flex-direction:column;gap:8px}.range-item{min-height:38px;padding:0 10px;border:1px solid var(--line-soft);border-radius:8px;background:#fff;display:flex;align-items:center;gap:8px;color:var(--body);font-size:13px;font-weight:900}.range-item.active{border-color:var(--orange);background:var(--orange);color:#fff}.remark{margin-top:auto}.remark-title{color:var(--ink);font-size:16px;font-weight:900;margin-bottom:10px}.remark-box{height:66px;border:1px solid var(--line);border-radius:8px;background:var(--soft);padding:11px 12px;color:var(--muted);font-size:12px;font-weight:700}
+    .footer{height:60px;padding:0 20px;border:1px solid var(--line);border-radius:12px 12px 0 0;background:rgba(255,253,249,.96);display:flex;align-items:center;gap:16px}.nav{height:40px;min-width:138px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--body);display:flex;align-items:center;justify-content:center;font-size:15px;font-weight:900}.nav.primary{background:var(--orange);border-color:var(--orange);color:#fff;box-shadow:0 8px 14px rgba(233,111,67,.18)}.counter{flex:1;text-align:center;color:var(--ink);font-size:28px;font-weight:900}.counter span{color:var(--body);font-size:18px}
+  </style>
+</head>
+<body>
+  <main class="canvas">
+    <header class="topbar">
+      <div class="back">‹</div>
+      <h1>孤独症儿童发展评估表 测评工作台</h1>
+      <div class="meta"><span>儿童：<strong>陈旭</strong></span><span>年龄：<strong>4岁3天</strong></span><span>测评日期：<strong>2026-05-14</strong></span><span>施测者：<strong>-</strong></span></div>
+      <div class="top-actions"><div class="button ghost">保存草稿</div><div class="button primary">提交记录</div></div>
+    </header>
+    <section class="workbench">
+      <aside class="panel left">
+        <div class="side-head"><div class="side-title">测评范围</div><div class="side-count">4领域 · 156题</div></div>
+        <div class="mode-strip"><div class="mode">全量</div><div class="mode">单领域</div><div class="mode active">自定义</div></div>
+        <div class="inline-note">正在编辑本次范围。应用后左侧恢复为领域任务导航，进度和缺题只按所选领域计算。</div>
+        <div class="domain-list">
+          <div class="scope-row selected current"><div class="check">✓</div><div><div class="scope-name">感知觉</div><div class="scope-sub">草稿进度 11/51</div></div><div class="scope-count">51题</div></div>
+          <div class="scope-row selected"><div class="check">✓</div><div><div class="scope-name">粗大动作</div><div class="scope-sub">草稿进度 0/38</div></div><div class="scope-count">38题</div></div>
+          <div class="scope-row"><div class="check"></div><div><div class="scope-name">精细动作</div><div class="scope-sub">未纳入本次范围</div></div><div class="scope-count">42题</div></div>
+          <div class="scope-row selected"><div class="check">✓</div><div><div class="scope-name">语言与沟通</div><div class="scope-sub">草稿进度 11/36</div></div><div class="scope-count">36题</div></div>
+          <div class="scope-row"><div class="check"></div><div><div class="scope-name">认知</div><div class="scope-sub">未纳入本次范围</div></div><div class="scope-count">61题</div></div>
+          <div class="scope-row selected"><div class="check">✓</div><div><div class="scope-name">社会交往</div><div class="scope-sub">草稿进度 0/31</div></div><div class="scope-count">31题</div></div>
+          <div class="scope-row"><div class="check"></div><div><div class="scope-name">生活自理</div><div class="scope-sub">未纳入本次范围</div></div><div class="scope-count">47题</div></div>
+        </div>
+        <div class="left-actions"><div class="left-btn cancel">取消</div><div class="left-btn apply">应用范围</div></div>
+      </aside>
+      <section class="panel workspace">
+        <div class="question-head"><div class="question-title">第 1 项　注视光线刺激</div><div class="scope-pill">测评范围：自定义 4 个领域</div><div class="pref">题目偏好配置</div></div>
+        <div class="info-grid"><div class="info-card"><div class="info-label">评估范围</div><div class="info-text">视觉 / 视觉注视</div></div><div class="info-card"><div class="info-label">参考年龄</div><div class="info-text">0-6月</div></div></div>
+        <div class="info-card"><div class="info-label">评估材料</div><div class="info-text">光线可调节的小手电筒或发光玩具。</div></div>
+        <div class="info-card"><div class="info-label">评估方法</div><div class="info-text">在距离儿童眼睛约 30 厘米的位置呈现光源，观察儿童是否主动注视并能持续追随。</div></div>
+        <div class="info-card"><div class="info-label">评分标准</div><div class="info-text">P - 注视球 3 秒或以上；E - 注视但持续不足；F - 没有注视反应。</div></div>
+        <div class="score-title">评分</div>
+        <div class="score-grid"><div class="score"><div class="score-letter">P</div><div><strong>通过</strong><span>通过，记1分</span></div></div><div class="score"><div class="score-letter">E</div><div><strong>中间反应</strong><span>不计分，可作为训练目标</span></div></div><div class="score"><div class="score-letter">F</div><div><strong>不通过</strong><span>不通过，记0分</span></div></div><div class="score"><div class="score-letter">X</div><div><strong>不适用</strong><span>不适用，不计分</span></div></div></div>
+      </section>
+      <aside class="panel rail">
+        <div class="rail-title">当前进度</div><div class="ring">14%</div><div class="rail-stat"><span>已完成</span><strong>22 / 156 项</strong></div><div class="rail-stat"><span>缺题</span><strong>134 项</strong></div>
+        <div class="range-list"><div class="range-item active">全部 22/156</div><div class="range-item">感知觉 11/51</div><div class="range-item">粗大动作 0/38</div><div class="range-item">语言与沟通 11/36</div><div class="range-item">社会交往 0/31</div></div>
+        <div class="remark"><div class="remark-title">备注</div><div class="remark-box">请输入备注</div></div>
+      </aside>
+    </section>
+    <footer class="footer"><div class="nav">‹ 上一题</div><div class="counter">1 <span>/ 156</span></div><div class="nav primary">下一题 ›</div><div class="nav">跳到缺题</div><div style="color:var(--body);font-size:14px;font-weight:900">自动下一题</div></footer>
+  </main>
+</body>
+</html>

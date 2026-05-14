@@ -614,6 +614,8 @@ class AutismDevDraftInput {
     this.remark = '',
     this.birthDate = '',
     this.assessmentDate = '',
+    this.scopeMode = '',
+    this.scopeDomainCodes = const <String>[],
     required this.itemScores,
     required this.itemRemarks,
   });
@@ -679,6 +681,9 @@ class AutismDevDraftInput {
       remark: '${json['remark'] ?? ''}',
       birthDate: _dateOnlyFrom(json['birthDate']),
       assessmentDate: _dateOnlyFrom(json['assessmentDate']),
+      scopeMode: '${json['scopeMode'] ?? json['assessmentScopeMode'] ?? ''}',
+      scopeDomainCodes: _stringListFrom(
+          json['scopeDomainCodes'] ?? json['selectedDomainCodes']),
       itemScores: itemScores,
       itemRemarks: itemRemarks,
     );
@@ -691,6 +696,8 @@ class AutismDevDraftInput {
     remark: '',
     birthDate: '',
     assessmentDate: '',
+    scopeMode: '',
+    scopeDomainCodes: <String>[],
     itemScores: <int, String>{},
     itemRemarks: <int, String>{},
   );
@@ -701,6 +708,8 @@ class AutismDevDraftInput {
   final String remark;
   final String birthDate;
   final String assessmentDate;
+  final String scopeMode;
+  final List<String> scopeDomainCodes;
   final Map<int, String> itemScores;
   final Map<int, String> itemRemarks;
 }
