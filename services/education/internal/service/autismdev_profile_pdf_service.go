@@ -2,6 +2,7 @@ package service
 
 import (
 	"bytes"
+	"context"
 	"embed"
 	"encoding/json"
 	"errors"
@@ -60,7 +61,14 @@ func (svc *Service) GenerateAutismDevProfilePDF(userID, recordID int64, profile 
 	if err != nil {
 		return "", nil, err
 	}
-	content, err := buildAutismDevProfilePDF(detail, kind)
+	institutionName := ""
+	if svc.repo != nil {
+		institutionName, err = svc.repo.GetInstitutionName(context.Background(), detail.InstID)
+		if err != nil {
+			return "", nil, err
+		}
+	}
+	content, err := buildAutismDevProfilePDF(detail, kind, institutionName)
 	if err != nil {
 		return "", nil, err
 	}
@@ -84,7 +92,7 @@ func normalizeAutismDevProfilePDFKind(profile string) (autismDevProfilePDFKind, 
 	}
 }
 
-func buildAutismDevProfilePDF(record model.AssessmentRecordDetailVO, kind autismDevProfilePDFKind) ([]byte, error) {
+func buildAutismDevProfilePDF(record model.AssessmentRecordDetailVO, kind autismDevProfilePDFKind, institutionName string) ([]byte, error) {
 	fontBytes, err := loadPEP3PDFFontBytes()
 	if err != nil {
 		return nil, err
@@ -99,6 +107,9 @@ func buildAutismDevProfilePDF(record model.AssessmentRecordDetailVO, kind autism
 		return nil, fmt.Errorf("load AutismDev PDF font: %w", err)
 	}
 	if err := drawAutismDevProfileTemplate(&pdf, kind); err != nil {
+		return nil, err
+	}
+	if err := drawAutismDevProfileInstitutionName(&pdf, institutionName); err != nil {
 		return nil, err
 	}
 	switch kind {
@@ -133,6 +144,25 @@ func drawAutismDevProfileTemplate(pdf *gopdf.GoPdf, kind autismDevProfilePDFKind
 		return fmt.Errorf("draw AutismDev profile template %s: %w", path, err)
 	}
 	return nil
+}
+
+func drawAutismDevProfileInstitutionName(pdf *gopdf.GoPdf, institutionName string) error {
+	institutionName = strings.TrimSpace(institutionName)
+	if institutionName == "" {
+		return nil
+	}
+	if err := pdf.SetFont(autismDevProfilePDFFontFamily, "", 10); err != nil {
+		return err
+	}
+	pdf.SetTextColor(0, 0, 0)
+	width := 430 * autismDevProfilePDFPageWidth / autismDevProfileSourceWidth
+	position := autismDevPDFPoint(882, 1978)
+	pdf.SetXY(position.X, position.Y)
+	return pdf.CellWithOption(
+		&gopdf.Rect{W: width, H: 16},
+		"机构："+institutionName,
+		gopdf.CellOption{Align: gopdf.Right | gopdf.Middle},
+	)
 }
 
 func drawAutismDevDevelopmentProfilePDF(pdf *gopdf.GoPdf, record model.AssessmentRecordDetailVO) error {
