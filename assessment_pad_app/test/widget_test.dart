@@ -7953,6 +7953,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
         remark: '',
         allowMissingItems: true,
         itemScores: <int, int>{1: 0},
+        itemScoreLabels: <int, String>{1: '0'},
         itemRecordValues: <int, Map<String, dynamic>>{},
       ),
     );
@@ -7984,6 +7985,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
         remark: '',
         allowMissingItems: true,
         itemScores: const <int, int>{1: 0},
+        itemScoreLabels: const <int, String>{1: '0'},
         itemRecordValues: const <int, Map<String, dynamic>>{},
       ),
     );
@@ -8070,6 +8072,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
         remark: '',
         allowMissingItems: true,
         itemScores: <int, int>{},
+        itemScoreLabels: <int, String>{},
         itemRecordValues: <int, Map<String, dynamic>>{},
       ),
     );

@@ -21,6 +21,37 @@ func TestWeChatOfficialVerifySignature(t *testing.T) {
 	}
 }
 
+func TestWeChatOfficialAccessTokenInvalidIPUsesActionableMessage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasPrefix(r.URL.Path, "/cgi-bin/token"):
+			_, _ = w.Write([]byte(`{"errcode":40164,"errmsg":"invalid ip 1.80.219.108 ipv6 ::ffff:1.80.219.108, not in whitelist rid: test-rid"}`))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client := newWeChatOfficialClient(WeChatOfficialConfig{
+		AppID:  "appid",
+		Secret: "secret",
+		Token:  "token",
+	})
+	client.apiBaseURL = server.URL
+	client.httpClient = server.Client()
+
+	_, err := client.getAccessToken(context.Background())
+	if err == nil {
+		t.Fatalf("expected invalid IP error")
+	}
+	message := err.Error()
+	for _, want := range []string{"公众号 access_token 获取失败", "1.80.219.108", "IP 白名单", "原始错误：40164"} {
+		if !strings.Contains(message, want) {
+			t.Fatalf("expected error to contain %q, got %q", want, message)
+		}
+	}
+}
+
 func TestWeChatOfficialSubscribeQRCodeSendsMiniProgramCard(t *testing.T) {
 	var customSendCount int
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

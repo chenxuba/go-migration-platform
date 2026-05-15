@@ -427,6 +427,11 @@ class _AssessmentReportListScreenState
   }
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
+    final SharedPreferences prefs = await SharedPreferences.getInstance();
+    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    if (!mounted) {
+      return;
+    }
     if (_isAutismDevRecord(record)) {
       showDialog<void>(
         context: context,
@@ -434,15 +439,14 @@ class _AssessmentReportListScreenState
         barrierColor: Colors.black.withOpacity(.28),
         builder: (BuildContext dialogContext) {
           return PadDialogViewport(
-            child: _AutismDevReportPreviewDialog(record: record),
+            child: _AutismDevReportPreviewDialog(
+              record: record,
+              token: token,
+              client: widget.autismDevRecordClient,
+            ),
           );
         },
       );
-      return;
-    }
-    final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String token = prefs.getString(_authTokenStorageKey) ?? '';
-    if (!mounted) {
       return;
     }
     showDialog<void>(

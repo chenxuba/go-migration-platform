@@ -453,7 +453,7 @@ func (client *weChatOfficialClient) getAccessToken(ctx context.Context) (string,
 		return "", err
 	}
 	if payload.ErrCode != 0 {
-		return "", fmt.Errorf("get access token failed: %d %s", payload.ErrCode, payload.ErrMsg)
+		return "", formatWeChatAccessTokenError("公众号", payload.ErrCode, payload.ErrMsg)
 	}
 	if strings.TrimSpace(payload.AccessToken) == "" {
 		return "", errors.New("get access token failed: empty token")
@@ -473,6 +473,39 @@ func (client *weChatOfficialClient) invalidateAccessToken() {
 
 	client.accessToken = ""
 	client.accessTokenExp = time.Time{}
+}
+
+func formatWeChatAccessTokenError(appType string, errCode int, errMsg string) error {
+	appType = strings.TrimSpace(appType)
+	if appType == "" {
+		appType = "微信"
+	}
+	errMsg = strings.TrimSpace(errMsg)
+	if errCode == 40164 {
+		if ip := extractWeChatInvalidIP(errMsg); ip != "" {
+			return fmt.Errorf("%s access_token 获取失败：当前服务器出口 IP %s 未加入微信后台 IP 白名单，请在微信公众平台后台配置后重试（原始错误：%d %s）", appType, ip, errCode, errMsg)
+		}
+		return fmt.Errorf("%s access_token 获取失败：当前服务器出口 IP 未加入微信后台 IP 白名单，请在微信公众平台后台配置后重试（原始错误：%d %s）", appType, errCode, errMsg)
+	}
+	return fmt.Errorf("get access token failed: %d %s", errCode, errMsg)
+}
+
+func extractWeChatInvalidIP(errMsg string) string {
+	const marker = "invalid ip "
+	lowerMsg := strings.ToLower(errMsg)
+	index := strings.Index(lowerMsg, marker)
+	if index < 0 {
+		return ""
+	}
+	rest := strings.TrimSpace(errMsg[index+len(marker):])
+	if rest == "" {
+		return ""
+	}
+	fields := strings.Fields(rest)
+	if len(fields) == 0 {
+		return ""
+	}
+	return strings.Trim(fields[0], ",;")
 }
 
 func (client *weChatOfficialClient) getUserInfo(ctx context.Context, openID string) (weChatOfficialUserInfoResponse, error) {

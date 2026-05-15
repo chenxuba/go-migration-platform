@@ -516,13 +516,19 @@ class Pep3DraftInput {
     required this.remark,
     required this.allowMissingItems,
     required this.itemScores,
+    required this.itemScoreLabels,
     required this.itemRecordValues,
   });
 
   factory Pep3DraftInput.fromJson(Map<String, dynamic> json) {
     final Map<int, int> itemScores = <int, int>{};
+    final Map<int, String> itemScoreLabels = <int, String>{};
     _mapFrom(json['itemScores']).forEach((String key, dynamic value) {
       final int itemNo = int.tryParse(key) ?? 0;
+      final String scoreLabel = '${value ?? ''}'.trim().toUpperCase();
+      if (itemNo > 0 && scoreLabel.isNotEmpty) {
+        itemScoreLabels[itemNo] = scoreLabel;
+      }
       final int score = _intFrom(value);
       if (itemNo > 0 && _isValidScore(score)) {
         itemScores[itemNo] = score;
@@ -530,6 +536,10 @@ class Pep3DraftInput {
     });
     for (final Map<String, dynamic> item in _listFrom(json['itemScoreList'])) {
       final int itemNo = _intFrom(item['itemNo']);
+      final String scoreLabel = '${item['score'] ?? ''}'.trim().toUpperCase();
+      if (itemNo > 0 && scoreLabel.isNotEmpty) {
+        itemScoreLabels[itemNo] = scoreLabel;
+      }
       final int score = _intFrom(item['score']);
       if (itemNo > 0 && _isValidScore(score)) {
         itemScores[itemNo] = score;
@@ -563,6 +573,7 @@ class Pep3DraftInput {
       remark: '${json['remark'] ?? ''}',
       allowMissingItems: json['allowMissingItems'] != false,
       itemScores: itemScores,
+      itemScoreLabels: itemScoreLabels,
       itemRecordValues: recordValues,
     );
   }
@@ -576,6 +587,7 @@ class Pep3DraftInput {
     remark: '',
     allowMissingItems: true,
     itemScores: <int, int>{},
+    itemScoreLabels: <int, String>{},
     itemRecordValues: <int, Map<String, dynamic>>{},
   );
 
@@ -587,6 +599,7 @@ class Pep3DraftInput {
   final String remark;
   final bool allowMissingItems;
   final Map<int, int> itemScores;
+  final Map<int, String> itemScoreLabels;
   final Map<int, Map<String, dynamic>> itemRecordValues;
 }
 

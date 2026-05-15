@@ -143,7 +143,7 @@ func (client *weChatMiniProgramClient) getAccessToken(ctx context.Context) (stri
 		return "", err
 	}
 	if payload.ErrCode != 0 {
-		return "", fmt.Errorf("get mini program access token failed: %d %s", payload.ErrCode, payload.ErrMsg)
+		return "", formatWeChatAccessTokenError("小程序", payload.ErrCode, payload.ErrMsg)
 	}
 	if strings.TrimSpace(payload.AccessToken) == "" {
 		return "", errors.New("get mini program access token failed: empty token")
