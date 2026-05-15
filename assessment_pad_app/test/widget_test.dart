@@ -327,6 +327,63 @@ void main() {
     expect(erxinClient.generateInterpretationCalls, 2);
   });
 
+  testWidgets('autismdev report list opens static report preview',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: _FakePep3AssessmentClient(),
+              erxinRecordClient: _FakePep3AssessmentClient(),
+              autismDevRecordClient: _FakePep3AssessmentClient(
+                hasPreviousRecord: true,
+                previousRecord: const Pep3RecordSummary(
+                  id: 31,
+                  studentId: 41,
+                  studentName: '林一',
+                  assessmentCode: 'AUTISMDEV',
+                  assessmentName: '孤独症儿童发展评估表',
+                  birthDate: '2021-02-01',
+                  assessmentDate: '2026-05-11',
+                  examinerName: '陈老师',
+                  updatedTime: '2026-05-11T10:00:00',
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('林一'), findsOneWidget);
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('孤独症儿童发展评估报告'), findsWidgets);
+    expect(find.text('报告总览'), findsOneWidget);
+    expect(find.text('发展能力'), findsOneWidget);
+    expect(find.text('情绪行为'), findsOneWidget);
+    expect(find.text('结果摘要'), findsOneWidget);
+  });
+
   testWidgets('home header fallback does not show a fake institution',
       (WidgetTester tester) async {
     final HomeSummary summary = HomeSummary.fallback();

@@ -20,6 +20,8 @@ import 'pep3_assessment_client.dart';
 import 'route_bootstrap.dart';
 import 'timetable_client.dart';
 
+part 'autismdev_report_preview.dart';
+
 class AssessmentReportListScreen extends StatefulWidget {
   const AssessmentReportListScreen({
     required this.onBack,
@@ -426,7 +428,16 @@ class _AssessmentReportListScreenState
 
   Future<void> _openReportViewer(Pep3RecordSummary record) async {
     if (_isAutismDevRecord(record)) {
-      _showMessage('孤独症儿童发展评估表报告预览待接入');
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(.28),
+        builder: (BuildContext dialogContext) {
+          return PadDialogViewport(
+            child: _AutismDevReportPreviewDialog(record: record),
+          );
+        },
+      );
       return;
     }
     final SharedPreferences prefs = await SharedPreferences.getInstance();
