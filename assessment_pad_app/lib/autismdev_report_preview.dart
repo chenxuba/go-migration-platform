@@ -1113,6 +1113,7 @@ class _AutismDevDevelopmentProfilePainter extends CustomPainter {
     987,
   ];
   static const double _developmentTotalX = 1094;
+  static const double _developmentTotalPointX = 1090.5;
   static const double _pScoreY = 1650;
   static const double _eScoreY = 1739;
 
@@ -1128,6 +1129,11 @@ class _AutismDevDevelopmentProfilePainter extends CustomPainter {
             _developmentScore(_profileDomains[index]).p,
           ),
         ),
+      _point(
+        size,
+        _developmentTotalPointX,
+        _scoreYFor('发展分数', _developmentTotalP),
+      ),
     ];
     final List<Offset> targetPoints = <Offset>[
       for (int index = 0; index < _profileDomains.length; index++)
@@ -1204,18 +1210,19 @@ class _AutismDevDevelopmentProfilePainter extends CustomPainter {
         '${score.e}',
       );
     }
-    final int developmentTotal = _autismDevDevelopmentScores.fold<int>(
-      0,
-      (int total, _AutismDevDevelopmentScore item) => total + item.p,
-    );
     _drawScoreText(
       canvas,
       size,
       _developmentTotalX,
       _pScoreY,
-      '$developmentTotal',
+      '$_developmentTotalP',
     );
   }
+
+  static int get _developmentTotalP => _autismDevDevelopmentScores.fold<int>(
+        0,
+        (int total, _AutismDevDevelopmentScore item) => total + item.p,
+      );
 
   static void _drawScoreText(
     Canvas canvas,
@@ -1435,6 +1442,48 @@ const Map<String, List<_AutismDevProfileScalePoint>> _profileScalePoints =
     _AutismDevProfileScalePoint(2, 1495),
     _AutismDevProfileScalePoint(1, 1512),
     _AutismDevProfileScalePoint(0, 1545),
+  ],
+  '发展分数': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(441, 532),
+    _AutismDevProfileScalePoint(421, 562),
+    _AutismDevProfileScalePoint(416, 592),
+    _AutismDevProfileScalePoint(405, 760),
+    _AutismDevProfileScalePoint(330, 790),
+    _AutismDevProfileScalePoint(329, 820),
+    _AutismDevProfileScalePoint(328, 862),
+    _AutismDevProfileScalePoint(323, 910),
+    _AutismDevProfileScalePoint(312, 940),
+    _AutismDevProfileScalePoint(267, 956),
+    _AutismDevProfileScalePoint(253, 970),
+    _AutismDevProfileScalePoint(249, 1000),
+    _AutismDevProfileScalePoint(248, 1030),
+    _AutismDevProfileScalePoint(244, 1062),
+    _AutismDevProfileScalePoint(243, 1092),
+    _AutismDevProfileScalePoint(234, 1125),
+    _AutismDevProfileScalePoint(192, 1138),
+    _AutismDevProfileScalePoint(167, 1168),
+    _AutismDevProfileScalePoint(163, 1182),
+    _AutismDevProfileScalePoint(160, 1210),
+    _AutismDevProfileScalePoint(157, 1226),
+    _AutismDevProfileScalePoint(152, 1240),
+    _AutismDevProfileScalePoint(149, 1270),
+    _AutismDevProfileScalePoint(123, 1318),
+    _AutismDevProfileScalePoint(93, 1355),
+    _AutismDevProfileScalePoint(89, 1372),
+    _AutismDevProfileScalePoint(79, 1388),
+    _AutismDevProfileScalePoint(75, 1398),
+    _AutismDevProfileScalePoint(73, 1418),
+    _AutismDevProfileScalePoint(68, 1432),
+    _AutismDevProfileScalePoint(58, 1446),
+    _AutismDevProfileScalePoint(51, 1462),
+    _AutismDevProfileScalePoint(28, 1480),
+    _AutismDevProfileScalePoint(27, 1492),
+    _AutismDevProfileScalePoint(26, 1500),
+    _AutismDevProfileScalePoint(16, 1520),
+    _AutismDevProfileScalePoint(9, 1534),
+    _AutismDevProfileScalePoint(2, 1548),
+    _AutismDevProfileScalePoint(1, 1560),
+    _AutismDevProfileScalePoint(0, 1572),
   ],
 };
 
