@@ -1,6 +1,30 @@
 part of 'assessment_report_list_page.dart';
 
-enum _AutismDevReportTab { overview, development, behavior, analysis }
+enum _AutismDevReportTab {
+  assessmentInfo,
+  resultAnalysis,
+  strengthWeakness,
+  training,
+  iepPlan,
+  developmentProfile,
+  behaviorProfile,
+}
+
+const List<_AutismDevReportTabSpec> _autismDevReportTabs =
+    <_AutismDevReportTabSpec>[
+  _AutismDevReportTabSpec('评估情况', _AutismDevReportTab.assessmentInfo),
+  _AutismDevReportTabSpec('评估结果分析', _AutismDevReportTab.resultAnalysis),
+  _AutismDevReportTabSpec('优劣势分析', _AutismDevReportTab.strengthWeakness),
+  _AutismDevReportTabSpec('训练情况', _AutismDevReportTab.training),
+  _AutismDevReportTabSpec('IEP训练计划', _AutismDevReportTab.iepPlan),
+  _AutismDevReportTabSpec('发展情况剖面图', _AutismDevReportTab.developmentProfile),
+  _AutismDevReportTabSpec('情绪行为表现图', _AutismDevReportTab.behaviorProfile),
+];
+
+const String _autismDevDevelopmentProfileAsset =
+    'assets/reports/autismdev_development_profile.png';
+const String _autismDevBehaviorProfileAsset =
+    'assets/reports/autismdev_behavior_profile.png';
 
 class _AutismDevReportPreviewDialog extends StatefulWidget {
   const _AutismDevReportPreviewDialog({required this.record});
@@ -14,7 +38,7 @@ class _AutismDevReportPreviewDialog extends StatefulWidget {
 
 class _AutismDevReportPreviewDialogState
     extends State<_AutismDevReportPreviewDialog> {
-  _AutismDevReportTab _activeTab = _AutismDevReportTab.overview;
+  _AutismDevReportTab _activeTab = _AutismDevReportTab.assessmentInfo;
 
   @override
   Widget build(BuildContext context) {
@@ -115,45 +139,9 @@ class _AutismDevReportPreviewDialogState
   }
 
   Widget _buildTabBar() {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      child: Row(
-        children: <Widget>[
-          _AutismDevReportTabChip(
-            label: '报告总览',
-            tab: _AutismDevReportTab.overview,
-            activeTab: _activeTab,
-            onSelected: _selectTab,
-          ),
-          const SizedBox(width: 8),
-          _AutismDevReportTabChip(
-            label: '发展能力',
-            tab: _AutismDevReportTab.development,
-            activeTab: _activeTab,
-            onSelected: _selectTab,
-          ),
-          const SizedBox(width: 8),
-          _AutismDevReportTabChip(
-            label: '情绪行为',
-            tab: _AutismDevReportTab.behavior,
-            activeTab: _activeTab,
-            onSelected: _selectTab,
-          ),
-          const SizedBox(width: 8),
-          _AutismDevReportTabChip(
-            label: '结果分析',
-            tab: _AutismDevReportTab.analysis,
-            activeTab: _activeTab,
-            onSelected: _selectTab,
-          ),
-          const Spacer(),
-        ],
-      ),
+    return _AutismDevReportTabBar(
+      activeTab: _activeTab,
+      onSelected: _selectTab,
     );
   }
 
@@ -204,43 +192,77 @@ class _AutismDevReportPreviewDialogState
   }
 
   Widget _buildReportPage() {
+    final bool showHeader =
+        _activeTab != _AutismDevReportTab.developmentProfile &&
+            _activeTab != _AutismDevReportTab.behaviorProfile;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        _AutismDevReportPageHeader(record: widget.record),
-        const SizedBox(height: 18),
-        if (_activeTab == _AutismDevReportTab.overview)
-          const _AutismDevOverviewSection()
-        else if (_activeTab == _AutismDevReportTab.development)
-          const _AutismDevDevelopmentSection()
-        else if (_activeTab == _AutismDevReportTab.behavior)
-          const _AutismDevBehaviorSection()
-        else
-          const _AutismDevAnalysisSection(),
+        if (showHeader) ...<Widget>[
+          _AutismDevReportPageHeader(record: widget.record),
+          const SizedBox(height: 18),
+        ],
+        _buildActiveSection(),
       ],
     );
   }
+
+  Widget _buildActiveSection() {
+    switch (_activeTab) {
+      case _AutismDevReportTab.assessmentInfo:
+        return const _AutismDevOverviewSection();
+      case _AutismDevReportTab.resultAnalysis:
+        return const _AutismDevAnalysisSection();
+      case _AutismDevReportTab.strengthWeakness:
+        return const _AutismDevStrengthWeaknessSection();
+      case _AutismDevReportTab.training:
+        return const _AutismDevTrainingSection();
+      case _AutismDevReportTab.iepPlan:
+        return const _AutismDevIepPlanSection();
+      case _AutismDevReportTab.developmentProfile:
+        return const _AutismDevDevelopmentProfileSection();
+      case _AutismDevReportTab.behaviorProfile:
+        return const _AutismDevBehaviorProfileSection();
+    }
+  }
 }
 
-class _AutismDevReportTabChip extends StatelessWidget {
-  const _AutismDevReportTabChip({
-    required this.label,
-    required this.tab,
+class _AutismDevReportTabBar extends StatelessWidget {
+  const _AutismDevReportTabBar({
     required this.activeTab,
     required this.onSelected,
   });
 
-  final String label;
-  final _AutismDevReportTab tab;
   final _AutismDevReportTab activeTab;
   final ValueChanged<_AutismDevReportTab> onSelected;
 
   @override
   Widget build(BuildContext context) {
-    return _ErxinReportTabChip(
-      label: label,
-      active: activeTab == tab,
-      onTap: () => onSelected(tab),
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            for (int index = 0; index < _autismDevReportTabs.length; index++)
+              Padding(
+                padding: EdgeInsets.only(
+                  right: index == _autismDevReportTabs.length - 1 ? 0 : 8,
+                ),
+                child: _ErxinReportTabChip(
+                  label: _autismDevReportTabs[index].label,
+                  active: activeTab == _autismDevReportTabs[index].tab,
+                  onTap: () => onSelected(_autismDevReportTabs[index].tab),
+                ),
+              ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -408,6 +430,87 @@ class _AutismDevBehaviorSection extends StatelessWidget {
         SizedBox(height: 10),
         _AutismDevBehaviorScoreTable(),
       ],
+    );
+  }
+}
+
+class _AutismDevStrengthWeaknessSection extends StatelessWidget {
+  const _AutismDevStrengthWeaknessSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _AutismDevSectionTitle(
+          title: '优劣势分析',
+          subtitle: '按发展领域整理优势能力和当前支持重点。',
+        ),
+        SizedBox(height: 10),
+        _AutismDevStrengthWeaknessTable(),
+      ],
+    );
+  }
+}
+
+class _AutismDevTrainingSection extends StatelessWidget {
+  const _AutismDevTrainingSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _AutismDevSectionTitle(
+          title: '训练情况',
+          subtitle: '根据评估结果中的中间反应项整理训练目标候选。',
+        ),
+        SizedBox(height: 10),
+        _AutismDevTrainingTargetTable(),
+      ],
+    );
+  }
+}
+
+class _AutismDevIepPlanSection extends StatelessWidget {
+  const _AutismDevIepPlanSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _AutismDevSectionTitle(
+          title: 'IEP训练计划',
+          subtitle: '围绕优先领域拆分阶段目标和训练内容。',
+        ),
+        SizedBox(height: 10),
+        _AutismDevIepPlanTable(),
+      ],
+    );
+  }
+}
+
+class _AutismDevDevelopmentProfileSection extends StatelessWidget {
+  const _AutismDevDevelopmentProfileSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _AutismDevReportFigure(
+      assetPath: _autismDevDevelopmentProfileAsset,
+      overlayPainter: _AutismDevDevelopmentProfilePainter(),
+    );
+  }
+}
+
+class _AutismDevBehaviorProfileSection extends StatelessWidget {
+  const _AutismDevBehaviorProfileSection();
+
+  @override
+  Widget build(BuildContext context) {
+    return const _AutismDevReportFigure(
+      assetPath: _autismDevBehaviorProfileAsset,
+      overlayPainter: _AutismDevBehaviorProfilePainter(),
     );
   }
 }
@@ -831,6 +934,89 @@ class _AutismDevBehaviorScoreTable extends StatelessWidget {
   }
 }
 
+class _AutismDevStrengthWeaknessTable extends StatelessWidget {
+  const _AutismDevStrengthWeaknessTable();
+
+  @override
+  Widget build(BuildContext context) {
+    return _AutismDevTableFrame(
+      child: Table(
+        columnWidths: const <int, TableColumnWidth>{
+          0: FlexColumnWidth(1.05),
+          1: FlexColumnWidth(3.6),
+        },
+        border: TableBorder.all(color: _ReportTheme.lineSoft),
+        children: <TableRow>[
+          _autismDevTableHeaderRow(<String>['领域', '优劣势分析'], tall: true),
+          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
+            TableRow(
+              children: <Widget>[
+                _autismDevTableCell(item.domain, emph: true, minHeight: 66),
+                _autismDevTableCell(item.strength, minHeight: 66),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevTrainingTargetTable extends StatelessWidget {
+  const _AutismDevTrainingTargetTable();
+
+  @override
+  Widget build(BuildContext context) {
+    return _AutismDevTableFrame(
+      child: Table(
+        columnWidths: const <int, TableColumnWidth>{
+          0: FlexColumnWidth(1.05),
+          1: FlexColumnWidth(3.6),
+        },
+        border: TableBorder.all(color: _ReportTheme.lineSoft),
+        children: <TableRow>[
+          _autismDevTableHeaderRow(<String>['领域', '训练目标'], tall: true),
+          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
+            TableRow(
+              children: <Widget>[
+                _autismDevTableCell(item.domain, emph: true, minHeight: 66),
+                _autismDevTableCell(item.target, minHeight: 66),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevIepPlanTable extends StatelessWidget {
+  const _AutismDevIepPlanTable();
+
+  @override
+  Widget build(BuildContext context) {
+    return _AutismDevTableFrame(
+      child: Table(
+        columnWidths: const <int, TableColumnWidth>{
+          0: FlexColumnWidth(1.05),
+          1: FlexColumnWidth(2),
+          2: FlexColumnWidth(2),
+        },
+        border: TableBorder.all(color: _ReportTheme.lineSoft),
+        children: <TableRow>[
+          _autismDevTableHeaderRow(<String>['领域', '阶段目标', '训练内容'], tall: true),
+          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
+            TableRow(
+              children: <Widget>[
+                _autismDevTableCell(item.domain, emph: true, minHeight: 74),
+                _autismDevTableCell(item.target, minHeight: 74),
+                _autismDevTableCell(item.status, minHeight: 74),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AutismDevAnalysisTable extends StatelessWidget {
   const _AutismDevAnalysisTable();
 
@@ -862,6 +1048,474 @@ class _AutismDevAnalysisTable extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _AutismDevReportFigure extends StatelessWidget {
+  const _AutismDevReportFigure({
+    required this.assetPath,
+    required this.overlayPainter,
+  });
+
+  final String assetPath;
+  final CustomPainter overlayPainter;
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: ConstrainedBox(
+        constraints: const BoxConstraints(maxWidth: 820),
+        child: AspectRatio(
+          aspectRatio: 1488 / 2103,
+          child: Stack(
+            fit: StackFit.expand,
+            children: <Widget>[
+              Image.asset(assetPath, fit: BoxFit.contain),
+              CustomPaint(painter: overlayPainter),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDevelopmentProfilePainter extends CustomPainter {
+  const _AutismDevDevelopmentProfilePainter();
+
+  static const double _figureWidth = 1488;
+  static const double _figureHeight = 2103;
+  static const List<String> _profileDomains = <String>[
+    '感知觉',
+    '粗大动作',
+    '精细动作',
+    '语言与沟通',
+    '认知',
+    '社会交往',
+    '生活自理',
+  ];
+  static const List<double> _profileColumnXs = <double>[
+    380,
+    478.5,
+    581.5,
+    681,
+    780.5,
+    883.5,
+    990.5,
+  ];
+  static const List<double> _profilePointXs = <double>[
+    376.5,
+    478.5,
+    578,
+    677.5,
+    777,
+    883.5,
+    987,
+  ];
+  static const double _developmentTotalX = 1094;
+  static const double _pScoreY = 1650;
+  static const double _eScoreY = 1739;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final List<Offset> abilityPoints = <Offset>[
+      for (int index = 0; index < _profileDomains.length; index++)
+        _point(
+          size,
+          _profilePointXs[index],
+          _scoreYFor(
+            _profileDomains[index],
+            _developmentScore(_profileDomains[index]).p,
+          ),
+        ),
+    ];
+    final List<Offset> targetPoints = <Offset>[
+      for (int index = 0; index < _profileDomains.length; index++)
+        _point(
+          size,
+          _profilePointXs[index],
+          _scoreYFor(
+            _profileDomains[index],
+            _developmentScore(_profileDomains[index]).p +
+                _developmentScore(_profileDomains[index]).e,
+          ),
+        ),
+    ];
+    if (abilityPoints.isEmpty || targetPoints.isEmpty) {
+      return;
+    }
+    final double strokeWidth = size.width / 360;
+    final Paint abilityLinePaint = Paint()
+      ..color = _ReportTheme.blue.withOpacity(.86)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Paint targetLinePaint = Paint()
+      ..color = _ReportTheme.orangeDeep.withOpacity(.84)
+      ..strokeWidth = strokeWidth
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Paint haloPaint = Paint()
+      ..color = Colors.white.withOpacity(.92)
+      ..style = PaintingStyle.fill;
+    final Paint abilityDotPaint = Paint()
+      ..color = _ReportTheme.blue
+      ..style = PaintingStyle.fill;
+    final Paint targetDotPaint = Paint()
+      ..color = _ReportTheme.orangeDeep
+      ..style = PaintingStyle.fill;
+    _drawDashedPath(canvas, _pathFor(targetPoints), targetLinePaint);
+    canvas.drawPath(_pathFor(abilityPoints), abilityLinePaint);
+    for (final Offset point in targetPoints) {
+      canvas.drawCircle(point, strokeWidth * 2.6, haloPaint);
+      canvas.drawCircle(point, strokeWidth * 1.55, targetDotPaint);
+    }
+    for (final Offset point in abilityPoints) {
+      canvas.drawCircle(point, strokeWidth * 2.6, haloPaint);
+      canvas.drawCircle(point, strokeWidth * 1.65, abilityDotPaint);
+    }
+    _drawScoreBoxes(canvas, size);
+  }
+
+  static _AutismDevDevelopmentScore _developmentScore(String label) {
+    return _autismDevDevelopmentScores.firstWhere(
+      (_AutismDevDevelopmentScore item) => item.label == label,
+    );
+  }
+
+  static void _drawScoreBoxes(Canvas canvas, Size size) {
+    for (int index = 0; index < _profileDomains.length; index++) {
+      final _AutismDevDevelopmentScore score =
+          _developmentScore(_profileDomains[index]);
+      _drawScoreText(
+        canvas,
+        size,
+        _profileColumnXs[index],
+        _pScoreY,
+        '${score.p}',
+      );
+      _drawScoreText(
+        canvas,
+        size,
+        _profileColumnXs[index],
+        _eScoreY,
+        '${score.e}',
+      );
+    }
+    final int developmentTotal = _autismDevDevelopmentScores.fold<int>(
+      0,
+      (int total, _AutismDevDevelopmentScore item) => total + item.p,
+    );
+    _drawScoreText(
+      canvas,
+      size,
+      _developmentTotalX,
+      _pScoreY,
+      '$developmentTotal',
+    );
+  }
+
+  static void _drawScoreText(
+    Canvas canvas,
+    Size size,
+    double sourceX,
+    double sourceY,
+    String value,
+  ) {
+    final double scale = size.width / _figureWidth;
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: value,
+        style: TextStyle(
+          color: _ReportTheme.ink,
+          fontSize: 28 * scale,
+          height: 1,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+    final Offset center = _point(size, sourceX, sourceY);
+    painter.paint(
+      canvas,
+      Offset(center.dx - painter.width / 2, center.dy - painter.height / 2),
+    );
+  }
+
+  static double _scoreYFor(String domain, int score) {
+    final List<_AutismDevProfileScalePoint> points =
+        _profileScalePoints[domain] ?? const <_AutismDevProfileScalePoint>[];
+    if (points.isEmpty) {
+      return 1589;
+    }
+    final double value = score.toDouble();
+    if (value >= points.first.score) {
+      return points.first.y;
+    }
+    for (int index = 0; index < points.length - 1; index++) {
+      final _AutismDevProfileScalePoint upper = points[index];
+      final _AutismDevProfileScalePoint lower = points[index + 1];
+      if (value <= upper.score && value >= lower.score) {
+        final double span = upper.score - lower.score;
+        if (span <= 0) {
+          return upper.y;
+        }
+        final double progress = (upper.score - value) / span;
+        return upper.y + (lower.y - upper.y) * progress;
+      }
+    }
+    return points.last.y;
+  }
+
+  static Offset _point(Size size, double x, double y) {
+    return Offset(
+      x / _figureWidth * size.width,
+      y / _figureHeight * size.height,
+    );
+  }
+
+  static Path _pathFor(List<Offset> points) {
+    final Path path = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final Offset point in points.skip(1)) {
+      path.lineTo(point.dx, point.dy);
+    }
+    return path;
+  }
+
+  static void _drawDashedPath(Canvas canvas, Path path, Paint paint) {
+    for (final metric in path.computeMetrics()) {
+      double distance = 0;
+      while (distance < metric.length) {
+        final double next =
+            math.min(distance + paint.strokeWidth * 4, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance += paint.strokeWidth * 6.4;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(
+      covariant _AutismDevDevelopmentProfilePainter oldDelegate) {
+    return false;
+  }
+}
+
+class _AutismDevProfileScalePoint {
+  const _AutismDevProfileScalePoint(this.score, this.y);
+
+  final double score;
+  final double y;
+}
+
+const Map<String, List<_AutismDevProfileScalePoint>> _profileScalePoints =
+    <String, List<_AutismDevProfileScalePoint>>{
+  '感知觉': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(55, 586),
+    _AutismDevProfileScalePoint(52, 760),
+    _AutismDevProfileScalePoint(47, 862),
+    _AutismDevProfileScalePoint(44, 940),
+    _AutismDevProfileScalePoint(40, 1026),
+    _AutismDevProfileScalePoint(37, 1093),
+    _AutismDevProfileScalePoint(36, 1120),
+    _AutismDevProfileScalePoint(29, 1210),
+    _AutismDevProfileScalePoint(27, 1262),
+    _AutismDevProfileScalePoint(21, 1344),
+    _AutismDevProfileScalePoint(19, 1404),
+    _AutismDevProfileScalePoint(16, 1430),
+    _AutismDevProfileScalePoint(10, 1511),
+    _AutismDevProfileScalePoint(5, 1524),
+    _AutismDevProfileScalePoint(2, 1539),
+    _AutismDevProfileScalePoint(1, 1554),
+    _AutismDevProfileScalePoint(0, 1568),
+  ],
+  '粗大动作': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(72, 529),
+    _AutismDevProfileScalePoint(65, 727),
+    _AutismDevProfileScalePoint(64, 760),
+    _AutismDevProfileScalePoint(47, 862),
+    _AutismDevProfileScalePoint(46, 938),
+    _AutismDevProfileScalePoint(35, 1004),
+    _AutismDevProfileScalePoint(34, 1117),
+    _AutismDevProfileScalePoint(24, 1164),
+    _AutismDevProfileScalePoint(22, 1238),
+    _AutismDevProfileScalePoint(21, 1270),
+    _AutismDevProfileScalePoint(19, 1313),
+    _AutismDevProfileScalePoint(7, 1376),
+    _AutismDevProfileScalePoint(6, 1418),
+    _AutismDevProfileScalePoint(5, 1451),
+    _AutismDevProfileScalePoint(1, 1482),
+    _AutismDevProfileScalePoint(0, 1496),
+  ],
+  '精细动作': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(66, 529),
+    _AutismDevProfileScalePoint(63, 740),
+    _AutismDevProfileScalePoint(62, 755),
+    _AutismDevProfileScalePoint(51, 787),
+    _AutismDevProfileScalePoint(50, 817),
+    _AutismDevProfileScalePoint(49, 865),
+    _AutismDevProfileScalePoint(48, 910),
+    _AutismDevProfileScalePoint(47, 938),
+    _AutismDevProfileScalePoint(39, 965),
+    _AutismDevProfileScalePoint(35, 1027),
+    _AutismDevProfileScalePoint(34, 1055),
+    _AutismDevProfileScalePoint(33, 1130),
+    _AutismDevProfileScalePoint(24, 1178),
+    _AutismDevProfileScalePoint(23, 1211),
+    _AutismDevProfileScalePoint(22, 1240),
+    _AutismDevProfileScalePoint(21, 1262),
+    _AutismDevProfileScalePoint(20, 1280),
+    _AutismDevProfileScalePoint(11, 1375),
+    _AutismDevProfileScalePoint(9, 1419),
+    _AutismDevProfileScalePoint(4, 1435),
+    _AutismDevProfileScalePoint(3, 1470),
+    _AutismDevProfileScalePoint(2, 1500),
+    _AutismDevProfileScalePoint(1, 1530),
+    _AutismDevProfileScalePoint(0, 1542),
+  ],
+  '语言与沟通': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(79, 562),
+    _AutismDevProfileScalePoint(76, 760),
+    _AutismDevProfileScalePoint(67, 955),
+    _AutismDevProfileScalePoint(53, 1090),
+    _AutismDevProfileScalePoint(52, 1135),
+    _AutismDevProfileScalePoint(36, 1268),
+    _AutismDevProfileScalePoint(27, 1360),
+    _AutismDevProfileScalePoint(21, 1415),
+    _AutismDevProfileScalePoint(18, 1480),
+    _AutismDevProfileScalePoint(8, 1492),
+    _AutismDevProfileScalePoint(2, 1512),
+    _AutismDevProfileScalePoint(1, 1530),
+    _AutismDevProfileScalePoint(0, 1544),
+  ],
+  '认知': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(55, 530),
+    _AutismDevProfileScalePoint(50, 586),
+    _AutismDevProfileScalePoint(42, 758),
+    _AutismDevProfileScalePoint(30, 940),
+    _AutismDevProfileScalePoint(20, 1118),
+    _AutismDevProfileScalePoint(10, 1270),
+    _AutismDevProfileScalePoint(9, 1315),
+    _AutismDevProfileScalePoint(5, 1362),
+    _AutismDevProfileScalePoint(4, 1388),
+    _AutismDevProfileScalePoint(2, 1426),
+    _AutismDevProfileScalePoint(1, 1455),
+    _AutismDevProfileScalePoint(0, 1498),
+  ],
+  '社会交往': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(47, 558),
+    _AutismDevProfileScalePoint(45, 758),
+    _AutismDevProfileScalePoint(40, 910),
+    _AutismDevProfileScalePoint(30, 1090),
+    _AutismDevProfileScalePoint(24, 1225),
+    _AutismDevProfileScalePoint(19, 1265),
+    _AutismDevProfileScalePoint(15, 1315),
+    _AutismDevProfileScalePoint(14, 1355),
+    _AutismDevProfileScalePoint(11, 1450),
+    _AutismDevProfileScalePoint(4, 1498),
+    _AutismDevProfileScalePoint(1, 1530),
+    _AutismDevProfileScalePoint(0, 1546),
+  ],
+  '生活自理': <_AutismDevProfileScalePoint>[
+    _AutismDevProfileScalePoint(67, 530),
+    _AutismDevProfileScalePoint(62, 758),
+    _AutismDevProfileScalePoint(46, 940),
+    _AutismDevProfileScalePoint(34, 1090),
+    _AutismDevProfileScalePoint(33, 1120),
+    _AutismDevProfileScalePoint(18, 1178),
+    _AutismDevProfileScalePoint(15, 1265),
+    _AutismDevProfileScalePoint(12, 1315),
+    _AutismDevProfileScalePoint(8, 1350),
+    _AutismDevProfileScalePoint(6, 1380),
+    _AutismDevProfileScalePoint(5, 1408),
+    _AutismDevProfileScalePoint(3, 1450),
+    _AutismDevProfileScalePoint(2, 1495),
+    _AutismDevProfileScalePoint(1, 1512),
+    _AutismDevProfileScalePoint(0, 1545),
+  ],
+};
+
+class _AutismDevBehaviorProfilePainter extends CustomPainter {
+  const _AutismDevBehaviorProfilePainter();
+
+  static const double _figureWidth = 1488;
+  static const double _figureHeight = 2103;
+  static const Offset _sourceCenter = Offset(737, 939);
+  static const double _innerRadius = 240;
+  static const double _outerRadius = 456;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final Offset center = _point(size, _sourceCenter.dx, _sourceCenter.dy);
+    final double radiusScale = size.width / _figureWidth;
+    final List<Offset> points = <Offset>[];
+    for (int index = 0; index < _autismDevBehaviorScores.length; index++) {
+      final _AutismDevBehaviorScore score = _autismDevBehaviorScores[index];
+      final double severity =
+          score.total <= 0 ? 0 : (score.m + score.s * 2) / (score.total * 2);
+      final double radius =
+          (_innerRadius + (_outerRadius - _innerRadius) * severity) *
+              radiusScale;
+      final double angle =
+          -math.pi / 2 + math.pi * 2 * index / _autismDevBehaviorScores.length;
+      points.add(
+        Offset(
+          center.dx + math.cos(angle) * radius,
+          center.dy + math.sin(angle) * radius,
+        ),
+      );
+    }
+    if (points.isEmpty) {
+      return;
+    }
+    final Path polygon = Path()..moveTo(points.first.dx, points.first.dy);
+    for (final Offset point in points.skip(1)) {
+      polygon.lineTo(point.dx, point.dy);
+    }
+    polygon.close();
+
+    final Paint fillPaint = Paint()
+      ..color = _ReportTheme.orange.withOpacity(.18)
+      ..style = PaintingStyle.fill;
+    final Paint strokePaint = Paint()
+      ..color = _ReportTheme.orangeDeep.withOpacity(.88)
+      ..strokeWidth = size.width / 380
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Paint spokePaint = Paint()
+      ..color = _ReportTheme.orange.withOpacity(.32)
+      ..strokeWidth = size.width / 620
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round;
+    final Paint dotPaint = Paint()
+      ..color = _ReportTheme.orangeDeep
+      ..style = PaintingStyle.fill;
+
+    canvas.drawPath(polygon, fillPaint);
+    for (final Offset point in points) {
+      canvas.drawLine(center, point, spokePaint);
+    }
+    canvas.drawPath(polygon, strokePaint);
+    for (final Offset point in points) {
+      canvas.drawCircle(point, size.width / 180, dotPaint);
+    }
+    canvas.drawCircle(center, size.width / 220, dotPaint);
+  }
+
+  static Offset _point(Size size, double x, double y) {
+    return Offset(
+      x / _figureWidth * size.width,
+      y / _figureHeight * size.height,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _AutismDevBehaviorProfilePainter oldDelegate) {
+    return false;
   }
 }
 
@@ -1204,6 +1858,13 @@ class _AutismDevInfoItem {
 
   final String label;
   final String value;
+}
+
+class _AutismDevReportTabSpec {
+  const _AutismDevReportTabSpec(this.label, this.tab);
+
+  final String label;
+  final _AutismDevReportTab tab;
 }
 
 class _AutismDevSummaryItem {
