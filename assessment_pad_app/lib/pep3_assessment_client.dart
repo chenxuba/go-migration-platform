@@ -79,6 +79,10 @@ const String defaultPep3RecordReportInterpretationAiStreamPath =
   defaultValue:
       '/api/v1/assessments/pep3/records/report/interpretation/ai/stream',
 );
+const String defaultAutismDevRecordProfilePdfPath = String.fromEnvironment(
+  'AUTISMDEV_RECORD_PROFILE_PDF_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/profile/pdf',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -883,6 +887,12 @@ abstract interface class Pep3AssessmentClient {
     int id,
   );
 
+  Future<Uint8List> downloadAutismDevRecordProfilePdf(
+    String token,
+    int id, {
+    required String profile,
+  });
+
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -924,6 +934,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
         defaultPep3RecordReportInterpretationAiPath,
     this.recordReportInterpretationAiStreamPath =
         defaultPep3RecordReportInterpretationAiStreamPath,
+    this.autismDevRecordProfilePdfPath = defaultAutismDevRecordProfilePdfPath,
   });
 
   final String educationBaseUrl;
@@ -944,6 +955,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String recordReportInterpretationPath;
   final String recordReportInterpretationAiPath;
   final String recordReportInterpretationAiStreamPath;
+  final String autismDevRecordProfilePdfPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1249,6 +1261,47 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
       throw Pep3ApiException(
         _messageFromPayload(await _decodeResponse(response.body)) ??
             '报告解读PDF加载失败',
+      );
+    }
+    return _normalizeReportPdfBytes(response.bodyBytes);
+  }
+
+  @override
+  Future<Uint8List> downloadAutismDevRecordProfilePdf(
+    String token,
+    int id, {
+    required String profile,
+  }) async {
+    final String normalizedProfile =
+        profile.trim().isEmpty ? 'development' : profile.trim().toLowerCase();
+    final Uri uri = _uri(autismDevRecordProfilePdfPath).replace(
+      queryParameters: <String, String>{
+        'id': '$id',
+        'profile': normalizedProfile,
+      },
+    );
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: _headers(token)).timeout(
+            const Duration(seconds: 20),
+          );
+    } on TimeoutException {
+      throw const Pep3ApiException('孤独症发展图PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接孤独症发展图PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '孤独症发展图PDF加载失败',
       );
     }
     return _normalizeReportPdfBytes(response.bodyBytes);

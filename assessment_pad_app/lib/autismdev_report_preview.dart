@@ -45,8 +45,11 @@ class _AutismDevReportPreviewDialogState
     extends State<_AutismDevReportPreviewDialog> {
   _AutismDevReportTab _activeTab = _AutismDevReportTab.assessmentInfo;
   late Pep3RecordSummary _displayRecord;
-  Map<int, String> _itemScoreLabels = const <int, String>{};
   final GlobalKey _printContentKey = GlobalKey();
+  final Map<_AutismDevReportTab, Future<Uint8List>> _profilePdfFutures =
+      <_AutismDevReportTab, Future<Uint8List>>{};
+  final Map<_AutismDevReportTab, Uint8List> _profilePdfBytes =
+      <_AutismDevReportTab, Uint8List>{};
   bool _printing = false;
 
   @override
@@ -71,7 +74,6 @@ class _AutismDevReportPreviewDialogState
       }
       setState(() {
         _displayRecord = detail;
-        _itemScoreLabels = detail.input.itemScoreLabels;
       });
     } catch (_) {
       // The preview still has static report sections; keep them visible if
@@ -246,6 +248,18 @@ class _AutismDevReportPreviewDialogState
       _printing = true;
     });
     try {
+      if (_isBackendProfileTab(_activeTab)) {
+        final Uint8List bytes = await _loadProfilePdf(_activeTab);
+        if (bytes.isEmpty) {
+          throw StateError('暂无可打印内容');
+        }
+        await Printing.layoutPdf(
+          name:
+              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
+          onLayout: (_) async => bytes,
+        );
+        return;
+      }
       final Uint8List imageBytes = await _capturePrintContent();
       final pw.Document document = pw.Document();
       final pw.MemoryImage image = pw.MemoryImage(imageBytes);
@@ -327,12 +341,114 @@ class _AutismDevReportPreviewDialogState
       case _AutismDevReportTab.iepPlan:
         return const _AutismDevIepPlanSection();
       case _AutismDevReportTab.developmentProfile:
-        return const _AutismDevDevelopmentProfileSection();
+        return _AutismDevProfilePdfSection(
+          record: _displayRecord,
+          tab: _AutismDevReportTab.developmentProfile,
+          future: _profilePdfFuture(_AutismDevReportTab.developmentProfile),
+          onRetry: () =>
+              _retryProfilePdf(_AutismDevReportTab.developmentProfile),
+        );
       case _AutismDevReportTab.behaviorProfile:
-        return _AutismDevBehaviorProfileSection(
-          itemScoreLabels: _itemScoreLabels,
+        return _AutismDevProfilePdfSection(
+          record: _displayRecord,
+          tab: _AutismDevReportTab.behaviorProfile,
+          future: _profilePdfFuture(_AutismDevReportTab.behaviorProfile),
+          onRetry: () => _retryProfilePdf(_AutismDevReportTab.behaviorProfile),
         );
     }
+  }
+
+  Future<Uint8List> _profilePdfFuture(_AutismDevReportTab tab) {
+    if (!_isBackendProfileTab(tab)) {
+      return Future<Uint8List>.value(Uint8List(0));
+    }
+    return _profilePdfFutures.putIfAbsent(tab, () => _loadProfilePdf(tab));
+  }
+
+  Future<Uint8List> _loadProfilePdf(_AutismDevReportTab tab) async {
+    final Uint8List? cached = _profilePdfBytes[tab];
+    if (cached != null) {
+      return cached;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      throw StateError('缺少报告加载参数');
+    }
+    final Uint8List bytes =
+        await widget.client.downloadAutismDevRecordProfilePdf(
+      token,
+      widget.record.id,
+      profile: _profilePdfCode(tab),
+    );
+    if (mounted) {
+      _profilePdfBytes[tab] = bytes;
+    }
+    return bytes;
+  }
+
+  void _retryProfilePdf(_AutismDevReportTab tab) {
+    setState(() {
+      _profilePdfBytes.remove(tab);
+      _profilePdfFutures.remove(tab);
+    });
+  }
+
+  static bool _isBackendProfileTab(_AutismDevReportTab tab) {
+    return tab == _AutismDevReportTab.developmentProfile ||
+        tab == _AutismDevReportTab.behaviorProfile;
+  }
+
+  static String _profilePdfCode(_AutismDevReportTab tab) {
+    return tab == _AutismDevReportTab.behaviorProfile
+        ? 'behavior'
+        : 'development';
+  }
+}
+
+class _AutismDevProfilePdfSection extends StatelessWidget {
+  const _AutismDevProfilePdfSection({
+    required this.record,
+    required this.tab,
+    required this.future,
+    required this.onRetry,
+  });
+
+  final Pep3RecordSummary record;
+  final _AutismDevReportTab tab;
+  final Future<Uint8List> future;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 512,
+      child: FutureBuilder<Uint8List>(
+        future: future,
+        builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const _ReportPreviewLoadingState(message: '图表加载中...');
+          }
+          if (snapshot.hasError) {
+            return _ReportPreviewErrorState(
+              message: '图表加载失败：${snapshot.error}',
+              onRetry: onRetry,
+            );
+          }
+          final Uint8List? bytes = snapshot.data;
+          if (bytes == null || bytes.isEmpty) {
+            return const _ReportPreviewEmptyState(message: '暂无图表内容');
+          }
+          return _LazyReportPdfPreview(
+            key: ValueKey<String>(
+              'autismdev-profile-${record.id}-${record.updatedTime}-${tab.name}-${bytes.length}',
+            ),
+            bytes: bytes,
+            pageCount: 1,
+            maxPageWidth: 820,
+          );
+        },
+      ),
+    );
   }
 }
 
@@ -568,6 +684,7 @@ class _AutismDevIepPlanSection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _AutismDevDevelopmentProfileSection extends StatelessWidget {
   const _AutismDevDevelopmentProfileSection();
 
@@ -580,6 +697,7 @@ class _AutismDevDevelopmentProfileSection extends StatelessWidget {
   }
 }
 
+// ignore: unused_element
 class _AutismDevBehaviorProfileSection extends StatelessWidget {
   const _AutismDevBehaviorProfileSection({required this.itemScoreLabels});
 
