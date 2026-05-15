@@ -16,7 +16,6 @@ const List<_AutismDevReportTabSpec> _autismDevReportTabs =
   _AutismDevReportTabSpec('评估结果分析', _AutismDevReportTab.resultAnalysis),
   _AutismDevReportTabSpec('优劣势分析', _AutismDevReportTab.strengthWeakness),
   _AutismDevReportTabSpec('训练情况', _AutismDevReportTab.training),
-  _AutismDevReportTabSpec('IEP训练计划', _AutismDevReportTab.iepPlan),
   _AutismDevReportTabSpec('发展情况剖面图', _AutismDevReportTab.developmentProfile),
   _AutismDevReportTabSpec('情绪行为表现图', _AutismDevReportTab.behaviorProfile),
 ];
@@ -47,6 +46,8 @@ class _AutismDevReportPreviewDialogState
   _AutismDevReportTab _activeTab = _AutismDevReportTab.assessmentInfo;
   late Pep3RecordSummary _displayRecord;
   Map<int, String> _itemScoreLabels = const <int, String>{};
+  final GlobalKey _printContentKey = GlobalKey();
+  bool _printing = false;
 
   @override
   void initState() {
@@ -180,6 +181,11 @@ class _AutismDevReportPreviewDialogState
     return _AutismDevReportTabBar(
       activeTab: _activeTab,
       onSelected: _selectTab,
+      trailing: _ToolbarButton(
+        label: _printing ? '打印中' : '打印',
+        icon: Icons.print_rounded,
+        onTap: _printing ? null : () => unawaited(_printCurrentTab()),
+      ),
     );
   }
 
@@ -203,30 +209,93 @@ class _AutismDevReportPreviewDialogState
       child: SingleChildScrollView(
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
         child: Center(
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 880),
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: _ReportTheme.lineSoft),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: Color(0x0F000000),
-                    blurRadius: 16,
-                    offset: Offset(0, 8),
-                  ),
-                ],
-              ),
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-                child: _buildReportPage(),
+          child: RepaintBoundary(
+            key: _printContentKey,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 880),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x0F000000),
+                      blurRadius: 16,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                  child: _buildReportPage(),
+                ),
               ),
             ),
           ),
         ),
       ),
     );
+  }
+
+  Future<void> _printCurrentTab() async {
+    if (_printing) {
+      return;
+    }
+    setState(() {
+      _printing = true;
+    });
+    try {
+      final Uint8List imageBytes = await _capturePrintContent();
+      final pw.Document document = pw.Document();
+      final pw.MemoryImage image = pw.MemoryImage(imageBytes);
+      document.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(24),
+          build: (pw.Context context) {
+            return pw.Center(
+              child: pw.Image(image, fit: pw.BoxFit.contain),
+            );
+          },
+        ),
+      );
+      await Printing.layoutPdf(
+        name:
+            '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
+        onLayout: (_) async => document.save(),
+      );
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('打印失败：$error')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _printing = false;
+        });
+      }
+    }
+  }
+
+  Future<Uint8List> _capturePrintContent() async {
+    await WidgetsBinding.instance.endOfFrame;
+    final BuildContext? boundaryContext = _printContentKey.currentContext;
+    final RenderRepaintBoundary? boundary =
+        boundaryContext?.findRenderObject() as RenderRepaintBoundary?;
+    if (boundary == null) {
+      throw StateError('暂无可打印内容');
+    }
+    final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
+    final ByteData? byteData =
+        await image.toByteData(format: ui.ImageByteFormat.png);
+    image.dispose();
+    if (byteData == null) {
+      throw StateError('打印内容生成失败');
+    }
+    return byteData.buffer.asUint8List();
   }
 
   Widget _buildReportPage() {
@@ -271,10 +340,12 @@ class _AutismDevReportTabBar extends StatelessWidget {
   const _AutismDevReportTabBar({
     required this.activeTab,
     required this.onSelected,
+    required this.trailing,
   });
 
   final _AutismDevReportTab activeTab;
   final ValueChanged<_AutismDevReportTab> onSelected;
+  final Widget trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -285,23 +356,41 @@ class _AutismDevReportTabBar extends StatelessWidget {
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: _ReportTheme.lineSoft),
       ),
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: Row(
-          children: <Widget>[
-            for (int index = 0; index < _autismDevReportTabs.length; index++)
-              Padding(
-                padding: EdgeInsets.only(
-                  right: index == _autismDevReportTabs.length - 1 ? 0 : 8,
-                ),
-                child: _ErxinReportTabChip(
-                  label: _autismDevReportTabs[index].label,
-                  active: activeTab == _autismDevReportTabs[index].tab,
-                  onTap: () => onSelected(_autismDevReportTabs[index].tab),
-                ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: <Widget>[
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: <Widget>[
+                  for (int index = 0;
+                      index < _autismDevReportTabs.length;
+                      index++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                        right: index == _autismDevReportTabs.length - 1 ? 0 : 8,
+                      ),
+                      child: _ErxinReportTabChip(
+                        label: _autismDevReportTabs[index].label,
+                        active: activeTab == _autismDevReportTabs[index].tab,
+                        onTap: () =>
+                            onSelected(_autismDevReportTabs[index].tab),
+                      ),
+                    ),
+                ],
               ),
-          ],
-        ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Container(
+            width: 1,
+            height: 28,
+            color: _ReportTheme.lineSoft,
+          ),
+          const SizedBox(width: 12),
+          trailing,
+        ],
       ),
     );
   }
@@ -1607,18 +1696,43 @@ class _AutismDevBehaviorProfilePainter extends CustomPainter {
       ..addPath(outerPath, Offset.zero)
       ..addPath(centerCutoutPath, Offset.zero);
 
+    final double strokeWidth = size.width / 420;
+    final double dotRadius = size.width / 300;
+    final Color profileColor = _ReportTheme.rose;
     final Paint fillPaint = Paint()
-      ..color = const Color(0xFFFF0000).withOpacity(.82)
+      ..color = profileColor.withOpacity(.22)
       ..style = PaintingStyle.fill;
     final Paint strokePaint = Paint()
-      ..color = const Color(0xFFFF0000).withOpacity(.75)
-      ..strokeWidth = size.width / 520
+      ..color = profileColor.withOpacity(.9)
+      ..strokeWidth = strokeWidth
       ..style = PaintingStyle.stroke
       ..strokeCap = StrokeCap.round
       ..strokeJoin = StrokeJoin.round;
+    final Paint innerStrokePaint = Paint()
+      ..color = profileColor.withOpacity(.34)
+      ..strokeWidth = strokeWidth * .6
+      ..style = PaintingStyle.stroke
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round;
+    final Paint dotHaloPaint = Paint()
+      ..color = Colors.white.withOpacity(.94)
+      ..style = PaintingStyle.fill;
+    final Paint dotPaint = Paint()
+      ..color = profileColor
+      ..style = PaintingStyle.fill;
+    final Paint dotRingPaint = Paint()
+      ..color = profileColor.withOpacity(.82)
+      ..strokeWidth = strokeWidth * .72
+      ..style = PaintingStyle.stroke;
 
     canvas.drawPath(sunPath, fillPaint);
+    canvas.drawPath(centerCutoutPath, innerStrokePaint);
     canvas.drawPath(outerPath, strokePaint);
+    for (final Offset point in points) {
+      canvas.drawCircle(point, dotRadius * 1.65, dotHaloPaint);
+      canvas.drawCircle(point, dotRadius, dotPaint);
+      canvas.drawCircle(point, dotRadius * 1.65, dotRingPaint);
+    }
   }
 
   static Offset _point(Size size, double x, double y) {
