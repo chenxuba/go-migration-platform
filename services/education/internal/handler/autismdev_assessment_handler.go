@@ -59,6 +59,8 @@ type autismDevAssessmentRecordCreateRequest struct {
 	Remark                    string                       `json:"remark,omitempty"`
 	BirthDate                 string                       `json:"birthDate"`
 	AssessmentDate            string                       `json:"assessmentDate"`
+	ScopeMode                 string                       `json:"scopeMode,omitempty"`
+	ScopeDomainCodes          []string                     `json:"scopeDomainCodes,omitempty"`
 	QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
 	ItemScores                map[int]string               `json:"itemScores,omitempty"`
 	ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
@@ -676,6 +678,8 @@ func (req autismDevAssessmentRecordCreateRequest) normalizedSnapshot(itemScores 
 		Remark                    string                       `json:"remark,omitempty"`
 		BirthDate                 string                       `json:"birthDate"`
 		AssessmentDate            string                       `json:"assessmentDate"`
+		ScopeMode                 string                       `json:"scopeMode,omitempty"`
+		ScopeDomainCodes          []string                     `json:"scopeDomainCodes,omitempty"`
 		QuestionDisplayPreference string                       `json:"questionDisplayPreference,omitempty"`
 		ItemScores                map[int]string               `json:"itemScores,omitempty"`
 		ItemScoreList             []autismDevItemScoreRequest  `json:"itemScoreList,omitempty"`
@@ -689,6 +693,8 @@ func (req autismDevAssessmentRecordCreateRequest) normalizedSnapshot(itemScores 
 		Remark:                    strings.TrimSpace(req.Remark),
 		BirthDate:                 strings.TrimSpace(req.BirthDate),
 		AssessmentDate:            strings.TrimSpace(req.AssessmentDate),
+		ScopeMode:                 strings.TrimSpace(req.ScopeMode),
+		ScopeDomainCodes:          normalizedAutismDevScopeDomainCodes(req.ScopeDomainCodes),
 		QuestionDisplayPreference: autismdevscore.NormalizeQuestionDisplayPreference(req.QuestionDisplayPreference),
 		ItemScores:                itemScores,
 		ItemScoreList:             normalizedScoreList,

@@ -1,10 +1,12 @@
 package service
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"go-migration-platform/pkg/autismdevscore"
+	"go-migration-platform/services/education/internal/model"
 )
 
 func TestBuildAutismDevAssessmentFormTemplateSummary(t *testing.T) {
@@ -105,5 +107,90 @@ func TestBuildAutismDevAssessmentDraftProgressUsesQuestionDisplayPreference(t *t
 	}
 	if progress.ItemCount != len(requiredItemNos) || progress.AnsweredItemCount != len(requiredItemNos) || progress.MissingItemCount != 0 {
 		t.Fatalf("unexpected progress counts: item=%d answered=%d missing=%d required=%d", progress.ItemCount, progress.AnsweredItemCount, progress.MissingItemCount, len(requiredItemNos))
+	}
+}
+
+func TestAutismDevTrainingCurrentRecordDomainsUsesCurrentScopeOrScores(t *testing.T) {
+	data, err := loadAutismDevStaticData()
+	if err != nil {
+		t.Fatalf("loadAutismDevStaticData returned error: %v", err)
+	}
+
+	scopedInput, _ := json.Marshal(map[string]any{
+		"scopeMode":        "custom",
+		"scopeDomainCodes": []string{autismdevscore.DomainLanguageComm, autismdevscore.DomainDailyLiving},
+		"itemScoreList": []map[string]any{
+			{"itemNo": 1, "score": autismdevscore.ScoreP},
+		},
+	})
+	scopedDomains := autismDevTrainingCurrentRecordDomains(model.AssessmentRecordDetailVO{
+		InputJSON: scopedInput,
+	}, data)
+	if len(scopedDomains) != 2 ||
+		scopedDomains[0] != autismdevscore.DomainLanguageComm ||
+		scopedDomains[1] != autismdevscore.DomainDailyLiving {
+		t.Fatalf("expected scoped domains only, got %#v", scopedDomains)
+	}
+
+	scoreOnlyInput, _ := json.Marshal(map[string]any{
+		"itemScoreList": []map[string]any{
+			{"itemNo": 1, "score": autismdevscore.ScoreP},
+			{"itemNo": 442, "score": autismdevscore.ScoreM},
+		},
+	})
+	scoreDomains := autismDevTrainingCurrentRecordDomains(model.AssessmentRecordDetailVO{
+		InputJSON: scoreOnlyInput,
+	}, data)
+	if len(scoreDomains) != 2 ||
+		scoreDomains[0] != autismdevscore.DomainSensory ||
+		scoreDomains[1] != autismdevscore.DomainEmotionBehavior {
+		t.Fatalf("expected domains inferred from scored items, got %#v", scoreDomains)
+	}
+}
+
+func TestAutismDevTrainingEffectForScores(t *testing.T) {
+	tests := []struct {
+		name      string
+		scoreType string
+		before    string
+		after     string
+		want      string
+	}{
+		{name: "PEF E to P significant", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreE, after: autismdevscore.ScoreP, want: "significant"},
+		{name: "PEF F to P significant", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreP, want: "significant"},
+		{name: "PEF F to E effective", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreE, want: "effective"},
+		{name: "AMS S to A significant", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreS, after: autismdevscore.ScoreA, want: "significant"},
+		{name: "AMS M to A significant", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreM, after: autismdevscore.ScoreA, want: "significant"},
+		{name: "AMS S to M effective", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreS, after: autismdevscore.ScoreM, want: "effective"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := autismDevTrainingEffectForScores(tt.scoreType, tt.before, tt.after)
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAutismDevTrainingEffectTemplateLayouts(t *testing.T) {
+	for _, page := range autismDevTrainingEffectTemplatePages() {
+		layout, err := autismDevTrainingEffectTemplateLayoutForPage(page)
+		if err != nil {
+			t.Fatalf("layout page %d returned error: %v", page.PageNo, err)
+		}
+		if len(layout.ColumnXs) != 11 {
+			t.Fatalf("page %d expected 11 table columns, got %d", page.PageNo, len(layout.ColumnXs))
+		}
+		itemCount := page.LastItemNo - page.FirstItemNo + 1
+		if len(layout.RowBounds) != itemCount+1 {
+			t.Fatalf("page %d expected %d row bounds, got %d", page.PageNo, itemCount+1, len(layout.RowBounds))
+		}
+		for index := 1; index < len(layout.RowBounds); index++ {
+			gap := layout.RowBounds[index] - layout.RowBounds[index-1]
+			if gap < 20 || gap > 125 {
+				t.Fatalf("page %d row bound %d has suspicious gap %.1f", page.PageNo, index, gap)
+			}
+		}
 	}
 }

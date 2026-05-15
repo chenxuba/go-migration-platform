@@ -5,7 +5,6 @@ enum _AutismDevReportTab {
   resultAnalysis,
   strengthWeakness,
   training,
-  iepPlan,
   developmentProfile,
   behaviorProfile,
 }
@@ -15,7 +14,7 @@ const List<_AutismDevReportTabSpec> _autismDevReportTabs =
   _AutismDevReportTabSpec('评估情况', _AutismDevReportTab.assessmentInfo),
   _AutismDevReportTabSpec('评估结果分析', _AutismDevReportTab.resultAnalysis),
   _AutismDevReportTabSpec('优劣势分析', _AutismDevReportTab.strengthWeakness),
-  _AutismDevReportTabSpec('训练情况', _AutismDevReportTab.training),
+  _AutismDevReportTabSpec('训练效果', _AutismDevReportTab.training),
   _AutismDevReportTabSpec('发展情况剖面图', _AutismDevReportTab.developmentProfile),
   _AutismDevReportTabSpec('情绪行为表现图', _AutismDevReportTab.behaviorProfile),
 ];
@@ -314,8 +313,7 @@ class _AutismDevReportPreviewDialogState
 
   Widget _buildReportPage() {
     final bool showHeader =
-        _activeTab != _AutismDevReportTab.developmentProfile &&
-            _activeTab != _AutismDevReportTab.behaviorProfile;
+        !_AutismDevReportPreviewDialogState._isBackendProfileTab(_activeTab);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
@@ -337,9 +335,12 @@ class _AutismDevReportPreviewDialogState
       case _AutismDevReportTab.strengthWeakness:
         return const _AutismDevStrengthWeaknessSection();
       case _AutismDevReportTab.training:
-        return const _AutismDevTrainingSection();
-      case _AutismDevReportTab.iepPlan:
-        return const _AutismDevIepPlanSection();
+        return _AutismDevProfilePdfSection(
+          record: _displayRecord,
+          tab: _AutismDevReportTab.training,
+          future: _profilePdfFuture(_AutismDevReportTab.training),
+          onRetry: () => _retryProfilePdf(_AutismDevReportTab.training),
+        );
       case _AutismDevReportTab.developmentProfile:
         return _AutismDevProfilePdfSection(
           record: _displayRecord,
@@ -394,14 +395,17 @@ class _AutismDevReportPreviewDialogState
   }
 
   static bool _isBackendProfileTab(_AutismDevReportTab tab) {
-    return tab == _AutismDevReportTab.developmentProfile ||
+    return tab == _AutismDevReportTab.training ||
+        tab == _AutismDevReportTab.developmentProfile ||
         tab == _AutismDevReportTab.behaviorProfile;
   }
 
   static String _profilePdfCode(_AutismDevReportTab tab) {
-    return tab == _AutismDevReportTab.behaviorProfile
-        ? 'behavior'
-        : 'development';
+    return switch (tab) {
+      _AutismDevReportTab.behaviorProfile => 'behavior',
+      _AutismDevReportTab.training => 'training',
+      _ => 'development',
+    };
   }
 }
 
@@ -426,30 +430,40 @@ class _AutismDevProfilePdfSection extends StatelessWidget {
         future: future,
         builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
           if (snapshot.connectionState != ConnectionState.done) {
-            return const _ReportPreviewLoadingState(message: '图表加载中...');
+            return const _ReportPreviewLoadingState(message: 'PDF加载中...');
           }
           if (snapshot.hasError) {
             return _ReportPreviewErrorState(
-              message: '图表加载失败：${snapshot.error}',
+              message: 'PDF加载失败：${snapshot.error}',
               onRetry: onRetry,
             );
           }
           final Uint8List? bytes = snapshot.data;
           if (bytes == null || bytes.isEmpty) {
-            return const _ReportPreviewEmptyState(message: '暂无图表内容');
+            return const _ReportPreviewEmptyState(message: '暂无PDF内容');
           }
           return _LazyReportPdfPreview(
             key: ValueKey<String>(
               'autismdev-profile-${record.id}-${record.updatedTime}-${tab.name}-${bytes.length}',
             ),
             bytes: bytes,
-            pageCount: 1,
+            pageCount: _autismDevPdfPageCount(bytes),
             maxPageWidth: 820,
           );
         },
       ),
     );
   }
+}
+
+int _autismDevPdfPageCount(Uint8List bytes) {
+  if (bytes.isEmpty) {
+    return 1;
+  }
+  final String source = latin1.decode(bytes, allowInvalid: true);
+  final RegExp pageObjectPattern = RegExp(r'/Type\s*/Page\b');
+  final int count = pageObjectPattern.allMatches(source).length;
+  return math.max(1, count);
 }
 
 class _AutismDevReportTabBar extends StatelessWidget {
@@ -641,44 +655,6 @@ class _AutismDevStrengthWeaknessSection extends StatelessWidget {
         ),
         SizedBox(height: 10),
         _AutismDevStrengthWeaknessTable(),
-      ],
-    );
-  }
-}
-
-class _AutismDevTrainingSection extends StatelessWidget {
-  const _AutismDevTrainingSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _AutismDevSectionTitle(
-          title: '训练情况',
-          subtitle: '根据评估结果中的中间反应项整理训练目标候选。',
-        ),
-        SizedBox(height: 10),
-        _AutismDevTrainingTargetTable(),
-      ],
-    );
-  }
-}
-
-class _AutismDevIepPlanSection extends StatelessWidget {
-  const _AutismDevIepPlanSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _AutismDevSectionTitle(
-          title: 'IEP训练计划',
-          subtitle: '围绕优先领域拆分阶段目标和训练内容。',
-        ),
-        SizedBox(height: 10),
-        _AutismDevIepPlanTable(),
       ],
     );
   }
@@ -1081,62 +1057,6 @@ class _AutismDevStrengthWeaknessTable extends StatelessWidget {
               children: <Widget>[
                 _autismDevTableCell(item.domain, emph: true, minHeight: 66),
                 _autismDevTableCell(item.strength, minHeight: 66),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutismDevTrainingTargetTable extends StatelessWidget {
-  const _AutismDevTrainingTargetTable();
-
-  @override
-  Widget build(BuildContext context) {
-    return _AutismDevTableFrame(
-      child: Table(
-        columnWidths: const <int, TableColumnWidth>{
-          0: FlexColumnWidth(1.05),
-          1: FlexColumnWidth(3.6),
-        },
-        border: TableBorder.all(color: _ReportTheme.lineSoft),
-        children: <TableRow>[
-          _autismDevTableHeaderRow(<String>['领域', '训练目标'], tall: true),
-          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
-            TableRow(
-              children: <Widget>[
-                _autismDevTableCell(item.domain, emph: true, minHeight: 66),
-                _autismDevTableCell(item.target, minHeight: 66),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutismDevIepPlanTable extends StatelessWidget {
-  const _AutismDevIepPlanTable();
-
-  @override
-  Widget build(BuildContext context) {
-    return _AutismDevTableFrame(
-      child: Table(
-        columnWidths: const <int, TableColumnWidth>{
-          0: FlexColumnWidth(1.05),
-          1: FlexColumnWidth(2),
-          2: FlexColumnWidth(2),
-        },
-        border: TableBorder.all(color: _ReportTheme.lineSoft),
-        children: <TableRow>[
-          _autismDevTableHeaderRow(<String>['领域', '阶段目标', '训练内容'], tall: true),
-          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
-            TableRow(
-              children: <Widget>[
-                _autismDevTableCell(item.domain, emph: true, minHeight: 74),
-                _autismDevTableCell(item.target, minHeight: 74),
-                _autismDevTableCell(item.status, minHeight: 74),
               ],
             ),
         ],

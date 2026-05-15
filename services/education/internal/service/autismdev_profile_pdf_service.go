@@ -33,6 +33,7 @@ type autismDevProfilePDFKind string
 const (
 	autismDevDevelopmentProfilePDF autismDevProfilePDFKind = "development"
 	autismDevBehaviorProfilePDF    autismDevProfilePDFKind = "behavior"
+	autismDevTrainingEffectPDF     autismDevProfilePDFKind = "training"
 )
 
 type autismDevProfilePoint struct {
@@ -68,6 +69,32 @@ func (svc *Service) GenerateAutismDevProfilePDF(userID, recordID int64, profile 
 			return "", nil, err
 		}
 	}
+	if kind == autismDevTrainingEffectPDF {
+		records := []model.AssessmentRecordDetailVO{detail}
+		if svc.repo != nil {
+			history, err := svc.repo.ListAssessmentRecordsForStudentScale(
+				context.Background(),
+				detail.InstID,
+				detail.StudentID,
+				detail.AssessmentCode,
+				detail.ID,
+				3,
+			)
+			if err != nil {
+				return "", nil, err
+			}
+			if len(history) > 0 {
+				records = history
+			}
+		}
+		content, err := buildAutismDevTrainingEffectPDF(detail, records, institutionName)
+		if err != nil {
+			return "", nil, err
+		}
+		name := nonEmptyString(detail.StudentName, "未命名儿童")
+		filename := sanitizeTemplateFileName(fmt.Sprintf("%s-孤独症儿童训练效果评估表-%s.pdf", name, time.Now().Format("20060102150405")))
+		return filename, content, nil
+	}
 	content, err := buildAutismDevProfilePDF(detail, kind, institutionName)
 	if err != nil {
 		return "", nil, err
@@ -87,6 +114,8 @@ func normalizeAutismDevProfilePDFKind(profile string) (autismDevProfilePDFKind, 
 		return autismDevDevelopmentProfilePDF, nil
 	case "behavior", "behavior_profile", "emotion_behavior":
 		return autismDevBehaviorProfilePDF, nil
+	case "training", "training_effect", "training_effects":
+		return autismDevTrainingEffectPDF, nil
 	default:
 		return "", fmt.Errorf("unsupported AutismDev profile %q", profile)
 	}

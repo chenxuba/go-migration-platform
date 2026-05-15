@@ -1286,9 +1286,9 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
             const Duration(seconds: 20),
           );
     } on TimeoutException {
-      throw const Pep3ApiException('孤独症发展图PDF响应超时，请检查网络');
+      throw const Pep3ApiException('孤独症报告PDF响应超时，请检查网络');
     } on Object catch (error) {
-      throw Pep3ApiException('无法连接孤独症发展图PDF接口：$error');
+      throw Pep3ApiException('无法连接孤独症报告PDF接口：$error');
     }
 
     if (response.statusCode == 401 || response.statusCode == 403) {
@@ -1301,7 +1301,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw Pep3ApiException(
         _messageFromPayload(await _decodeResponse(response.body)) ??
-            '孤独症发展图PDF加载失败',
+            '孤独症报告PDF加载失败',
       );
     }
     return _normalizeReportPdfBytes(response.bodyBytes);
