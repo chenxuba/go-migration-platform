@@ -396,6 +396,18 @@ class _AutismDevReportPreviewDialogState
       _printing = true;
     });
     try {
+      if (_activeTab == _AutismDevReportTab.assessmentInfo) {
+        final Uint8List bytes = await _loadAssessmentInfoPrintPdf();
+        if (bytes.isEmpty) {
+          throw StateError('暂无可打印内容');
+        }
+        await Printing.layoutPdf(
+          name:
+              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
+          onLayout: (_) async => bytes,
+        );
+        return;
+      }
       if (_activeTab == _AutismDevReportTab.resultAnalysis) {
         final Uint8List bytes = await _loadResultAnalysisPrintPdf();
         if (bytes.isEmpty) {
@@ -452,6 +464,17 @@ class _AutismDevReportPreviewDialogState
         });
       }
     }
+  }
+
+  Future<Uint8List> _loadAssessmentInfoPrintPdf() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      throw StateError('缺少报告打印参数');
+    }
+    return widget.client.downloadAutismDevAssessmentInfoPdf(
+      token,
+      widget.record.id,
+    );
   }
 
   Future<Uint8List> _loadResultAnalysisPrintPdf() async {

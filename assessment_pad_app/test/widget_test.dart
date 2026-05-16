@@ -8027,6 +8027,14 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Uint8List> downloadAutismDevAssessmentInfoPdf(
+    String token,
+    int id,
+  ) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
   Future<AutismDevResultAnalysis> fetchAutismDevResultAnalysis(
     String token,
     int id,
