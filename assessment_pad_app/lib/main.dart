@@ -23,6 +23,8 @@ import 'pep3_assessment_page.dart';
 import 'pad_responsive.dart';
 import 'route_bootstrap.dart';
 import 'smart_timetable_page.dart';
+import 'student_archive_page.dart';
+import 'supervision_workbench_page.dart';
 import 'timetable_client.dart';
 import 'training_center_page.dart';
 
@@ -115,12 +117,34 @@ class AssessmentPadApp extends StatelessWidget {
           settings: settings,
           builder: (_) => SmartTimetablePage(timetableClient: timetableClient),
         );
+      case '/student-archive':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: StudentArchivePage(
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
       case '/training-center':
         return MaterialPageRoute<void>(
           settings: settings,
           builder: (BuildContext context) => Scaffold(
             body: PadViewport(
               child: TrainingCenterPage(
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/supervision-workbench':
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            body: PadViewport(
+              child: SupervisionWorkbenchPage(
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -2724,9 +2748,13 @@ class _HomeScreenState extends State<HomeScreen> {
                 spacing: metrics.shortcutSpacing,
                 onTimetableTap: () =>
                     Navigator.of(context).pushNamed('/smart-timetable'),
+                onStudentArchiveTap: () =>
+                    Navigator.of(context).pushNamed('/student-archive'),
                 onReportTap: () =>
                     Navigator.of(context).pushNamed('/assessment-reports'),
                 onIepTap: () => Navigator.of(context).pushNamed('/iep-center'),
+                onSupervisionTap: () =>
+                    Navigator.of(context).pushNamed('/supervision-workbench'),
                 onTrainingTap: () =>
                     Navigator.of(context).pushNamed('/training-center'),
               ),
@@ -4195,8 +4223,10 @@ class FeatureShortcutRow extends StatelessWidget {
     this.cardWidth = 187,
     this.spacing = 14,
     this.onTimetableTap,
+    this.onStudentArchiveTap,
     this.onReportTap,
     this.onIepTap,
+    this.onSupervisionTap,
     this.onTrainingTap,
     super.key,
   });
@@ -4204,8 +4234,10 @@ class FeatureShortcutRow extends StatelessWidget {
   final double cardWidth;
   final double spacing;
   final VoidCallback? onTimetableTap;
+  final VoidCallback? onStudentArchiveTap;
   final VoidCallback? onReportTap;
   final VoidCallback? onIepTap;
+  final VoidCallback? onSupervisionTap;
   final VoidCallback? onTrainingTap;
 
   @override
@@ -4220,6 +4252,7 @@ class FeatureShortcutRow extends StatelessWidget {
           iconColor: const Color(0xFF74AA79),
           bg: const Color(0xFFEFF7EC),
           width: cardWidth,
+          onTap: onStudentArchiveTap,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
@@ -4245,13 +4278,14 @@ class FeatureShortcutRow extends StatelessWidget {
         ),
         SizedBox(width: spacing),
         ShortcutCard(
-          title: '督导管理',
+          title: '督导工作台',
           desc1: '专业督导',
           desc2: '闭环跟进',
           icon: Icons.supervisor_account_rounded,
           iconColor: const Color(0xFF8C6DD8),
           bg: const Color(0xFFF1EDFF),
           width: cardWidth,
+          onTap: onSupervisionTap,
         ),
         SizedBox(width: spacing),
         ShortcutCard(
