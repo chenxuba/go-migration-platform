@@ -3510,6 +3510,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   bool _interpretationFetched = false;
   bool _showInterpretation = false;
   bool _printing = false;
+  String _printLoadingText = '';
   String _errorMessage = '';
   String _interpretationErrorMessage = '';
   String _interpretationProgressMessage = '准备生成报告解读...';
@@ -3884,6 +3885,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     final _ReportModuleOption option = _activeOption;
     setState(() {
       _printing = true;
+      _printLoadingText = '正在生成打印文件...';
       _errorMessage = '';
     });
     try {
@@ -3898,9 +3900,21 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         });
         return;
       }
+      if (mounted) {
+        setState(() {
+          _printLoadingText = '正在打开打印预览...';
+        });
+      }
+      bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _pep3PrintFileName(_displayRecord, option.label),
-        onLayout: (_) async => bytes,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes;
+        },
       );
     } on Pep3ApiException catch (error) {
       if (!mounted || _activeOption.value != option.value) {
@@ -3917,11 +3931,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         _errorMessage = '评估报告打印失败：$error';
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _printing = false;
-        });
-      }
+      _finishPrintLoading();
     }
   }
 
@@ -3955,6 +3965,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     }
     setState(() {
       _printing = true;
+      _printLoadingText = '正在生成打印文件...';
       _interpretationErrorMessage = '';
     });
     try {
@@ -3963,9 +3974,21 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         widget.token.trim(),
         widget.record.id,
       );
+      if (mounted) {
+        setState(() {
+          _printLoadingText = '正在打开打印预览...';
+        });
+      }
+      bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _pep3PrintFileName(_displayRecord, '报告解读'),
-        onLayout: (_) async => bytes,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes;
+        },
       );
     } on Pep3ApiException catch (error) {
       if (!mounted) {
@@ -3982,12 +4005,18 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         _interpretationErrorMessage = '报告解读打印失败：$error';
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _printing = false;
-        });
-      }
+      _finishPrintLoading();
     }
+  }
+
+  void _finishPrintLoading() {
+    if (!mounted || !_printing) {
+      return;
+    }
+    setState(() {
+      _printing = false;
+      _printLoadingText = '';
+    });
   }
 
   Future<void> _handleInterpretationGenerateTap() async {
@@ -4026,41 +4055,53 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: 980,
-            height: 654,
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _ReportTheme.line),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 34,
-                  offset: Offset(0, 18),
+      child: Stack(
+        children: <Widget>[
+          Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 980,
+                height: 654,
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _ReportTheme.line),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 34,
+                      offset: Offset(0, 18),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildHeader(context),
-                const SizedBox(height: 14),
-                _buildTabBar(),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _showInterpretation
-                      ? _buildInterpretationContent()
-                      : _buildContent(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildHeader(context),
+                    const SizedBox(height: 14),
+                    _buildTabBar(),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: _showInterpretation
+                          ? _buildInterpretationContent()
+                          : _buildContent(),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_printing)
+            Positioned.fill(
+              child: _ReportPrintLoadingOverlay(
+                message: _printLoadingText.trim().isEmpty
+                    ? '正在准备打印...'
+                    : _printLoadingText,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -4314,6 +4355,68 @@ class _ReportPdfPageSnapshot {
   }
 }
 
+class _ReportPrintLoadingOverlay extends StatelessWidget {
+  const _ReportPrintLoadingOverlay({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return AbsorbPointer(
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.black.withOpacity(.18),
+        ),
+        child: Center(
+          child: Container(
+            width: 260,
+            padding: const EdgeInsets.fromLTRB(22, 20, 22, 20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(color: _ReportTheme.lineSoft),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x22000000),
+                  blurRadius: 26,
+                  offset: Offset(0, 14),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(
+                  width: 24,
+                  height: 24,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 3,
+                    color: _ReportTheme.orange,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Flexible(
+                  child: Text(
+                    message,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      color: _ReportTheme.ink,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
+                      height: 1.25,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _ErxinReportPreviewDialog extends StatefulWidget {
   const _ErxinReportPreviewDialog({
     required this.record,
@@ -4341,6 +4444,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   bool _interpretationFetched = false;
   bool _showInterpretation = false;
   bool _printing = false;
+  String _printLoadingText = '';
   String _errorMessage = '';
   String _interpretationErrorMessage = '';
   String _interpretationProgressMessage = '准备生成报告解读...';
@@ -4663,29 +4767,40 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
   }
 
   Future<void> _printResultRecord() async {
-    Uint8List? bytes = _pdfBytes;
-    if (bytes == null || bytes.isEmpty) {
-      await _loadPdf();
-      bytes = _pdfBytes;
-    }
-    if (!mounted) {
-      return;
-    }
-    if (bytes == null || bytes.isEmpty) {
-      setState(() {
-        _errorMessage = '暂无可打印的评估结果记录';
-      });
-      return;
-    }
     setState(() {
       _printing = true;
+      _printLoadingText = '正在生成打印文件...';
       _errorMessage = '';
     });
+    Uint8List? bytes = _pdfBytes;
     try {
+      if (bytes == null || bytes.isEmpty) {
+        await _loadPdf();
+        bytes = _pdfBytes;
+      }
+      if (!mounted) {
+        return;
+      }
+      if (bytes == null || bytes.isEmpty) {
+        setState(() {
+          _errorMessage = '暂无可打印的评估结果记录';
+        });
+        return;
+      }
+      setState(() {
+        _printLoadingText = '正在打开打印预览...';
+      });
       final Pep3RecordSummary record = _displayRecord ?? widget.record;
+      bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _erxinPrintFileName(record, '评估结果记录'),
-        onLayout: (_) async => bytes!,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes!;
+        },
       );
     } on Object catch (error) {
       if (!mounted) {
@@ -4695,11 +4810,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         _errorMessage = '评估结果记录打印失败：$error';
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _printing = false;
-        });
-      }
+      _finishPrintLoading();
     }
   }
 
@@ -4722,6 +4833,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     }
     setState(() {
       _printing = true;
+      _printLoadingText = '正在生成打印文件...';
       _interpretationErrorMessage = '';
     });
     try {
@@ -4731,9 +4843,21 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         widget.record.id,
       );
       final Pep3RecordSummary record = _displayRecord ?? widget.record;
+      if (mounted) {
+        setState(() {
+          _printLoadingText = '正在打开打印预览...';
+        });
+      }
+      bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _erxinPrintFileName(record, '报告解读'),
-        onLayout: (_) async => bytes,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes;
+        },
       );
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
@@ -4750,12 +4874,18 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         _interpretationErrorMessage = '报告解读打印失败：$error';
       });
     } finally {
-      if (mounted) {
-        setState(() {
-          _printing = false;
-        });
-      }
+      _finishPrintLoading();
     }
+  }
+
+  void _finishPrintLoading() {
+    if (!mounted || !_printing) {
+      return;
+    }
+    setState(() {
+      _printing = false;
+      _printLoadingText = '';
+    });
   }
 
   Future<void> _handleInterpretationGenerateTap() async {
@@ -4795,41 +4925,53 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     final Pep3RecordSummary record = _displayRecord ?? widget.record;
     return PopScope(
       canPop: false,
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: 980,
-            height: 654,
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _ReportTheme.line),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 34,
-                  offset: Offset(0, 18),
+      child: Stack(
+        children: <Widget>[
+          Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 980,
+                height: 654,
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _ReportTheme.line),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 34,
+                      offset: Offset(0, 18),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildHeader(context, record),
-                const SizedBox(height: 14),
-                _buildTabBar(),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _showInterpretation
-                      ? _buildInterpretationContent()
-                      : _buildContent(record),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildHeader(context, record),
+                    const SizedBox(height: 14),
+                    _buildTabBar(),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: _showInterpretation
+                          ? _buildInterpretationContent()
+                          : _buildContent(record),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_printing)
+            Positioned.fill(
+              child: _ReportPrintLoadingOverlay(
+                message: _printLoadingText.trim().isEmpty
+                    ? '正在准备打印...'
+                    : _printLoadingText,
+              ),
+            ),
+        ],
       ),
     );
   }

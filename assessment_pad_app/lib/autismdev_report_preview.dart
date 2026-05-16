@@ -47,6 +47,7 @@ class _AutismDevReportPreviewDialogState
   final Map<_AutismDevReportTab, Uint8List> _profilePdfBytes =
       <_AutismDevReportTab, Uint8List>{};
   bool _printing = false;
+  String _printLoadingText = '';
   AutismDevResultAnalysis _resultAnalysis = _emptyAutismDevResultAnalysis();
   bool _resultAnalysisGenerating = false;
   String _resultAnalysisGenerationStatus = '';
@@ -119,37 +120,49 @@ class _AutismDevReportPreviewDialogState
   Widget build(BuildContext context) {
     return PopScope(
       canPop: false,
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: 980,
-            height: 654,
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _ReportTheme.line),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 34,
-                  offset: Offset(0, 18),
+      child: Stack(
+        children: <Widget>[
+          Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 980,
+                height: 654,
+                padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _ReportTheme.line),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 34,
+                      offset: Offset(0, 18),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildHeader(context),
-                const SizedBox(height: 14),
-                _buildTabBar(),
-                const SizedBox(height: 12),
-                Expanded(child: _buildContent()),
-              ],
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildHeader(context),
+                    const SizedBox(height: 14),
+                    _buildTabBar(),
+                    const SizedBox(height: 12),
+                    Expanded(child: _buildContent()),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          if (_printing)
+            Positioned.fill(
+              child: _ReportPrintLoadingOverlay(
+                message: _printLoadingText.trim().isEmpty
+                    ? '正在准备打印...'
+                    : _printLoadingText,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -397,15 +410,28 @@ class _AutismDevReportPreviewDialogState
     }
     setState(() {
       _printing = true;
+      _printLoadingText = '正在生成打印文件...';
     });
     try {
       final Uint8List bytes = await _buildSelectedPrintPdf(selectedTabs);
       if (bytes.isEmpty) {
         throw StateError('暂无可打印内容');
       }
+      if (mounted) {
+        setState(() {
+          _printLoadingText = '正在打开打印预览...';
+        });
+      }
+      bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _printFileNameForTabs(selectedTabs),
-        onLayout: (_) async => bytes,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes;
+        },
       );
     } catch (error) {
       if (mounted) {
@@ -414,12 +440,18 @@ class _AutismDevReportPreviewDialogState
         );
       }
     } finally {
-      if (mounted) {
-        setState(() {
-          _printing = false;
-        });
-      }
+      _finishPrintLoading();
     }
+  }
+
+  void _finishPrintLoading() {
+    if (!mounted || !_printing) {
+      return;
+    }
+    setState(() {
+      _printing = false;
+      _printLoadingText = '';
+    });
   }
 
   Future<List<_AutismDevReportTab>?> _showPrintSelectionDialog() {
