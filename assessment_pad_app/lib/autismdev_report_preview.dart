@@ -42,7 +42,6 @@ class _AutismDevReportPreviewDialogState
     extends State<_AutismDevReportPreviewDialog> {
   _AutismDevReportTab _activeTab = _AutismDevReportTab.assessmentInfo;
   late Pep3RecordSummary _displayRecord;
-  final GlobalKey _printContentKey = GlobalKey();
   final Map<_AutismDevReportTab, Future<Uint8List>> _profilePdfFutures =
       <_AutismDevReportTab, Future<Uint8List>>{};
   final Map<_AutismDevReportTab, Uint8List> _profilePdfBytes =
@@ -360,7 +359,6 @@ class _AutismDevReportPreviewDialogState
         padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
         child: Center(
           child: RepaintBoundary(
-            key: _printContentKey,
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 880),
               child: DecoratedBox(
@@ -392,64 +390,22 @@ class _AutismDevReportPreviewDialogState
     if (_printing) {
       return;
     }
+    final List<_AutismDevReportTab>? selectedTabs =
+        await _showPrintSelectionDialog();
+    if (selectedTabs == null || selectedTabs.isEmpty || !mounted) {
+      return;
+    }
     setState(() {
       _printing = true;
     });
     try {
-      if (_activeTab == _AutismDevReportTab.assessmentInfo) {
-        final Uint8List bytes = await _loadAssessmentInfoPrintPdf();
-        if (bytes.isEmpty) {
-          throw StateError('暂无可打印内容');
-        }
-        await Printing.layoutPdf(
-          name:
-              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
-          onLayout: (_) async => bytes,
-        );
-        return;
+      final Uint8List bytes = await _buildSelectedPrintPdf(selectedTabs);
+      if (bytes.isEmpty) {
+        throw StateError('暂无可打印内容');
       }
-      if (_activeTab == _AutismDevReportTab.resultAnalysis) {
-        final Uint8List bytes = await _loadResultAnalysisPrintPdf();
-        if (bytes.isEmpty) {
-          throw StateError('暂无可打印内容');
-        }
-        await Printing.layoutPdf(
-          name:
-              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
-          onLayout: (_) async => bytes,
-        );
-        return;
-      }
-      if (_isBackendProfileTab(_activeTab)) {
-        final Uint8List bytes = await _loadProfilePdf(_activeTab);
-        if (bytes.isEmpty) {
-          throw StateError('暂无可打印内容');
-        }
-        await Printing.layoutPdf(
-          name:
-              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
-          onLayout: (_) async => bytes,
-        );
-        return;
-      }
-      final Uint8List imageBytes = await _capturePrintContent();
-      final pw.Document document = pw.Document();
-      final pw.MemoryImage image = pw.MemoryImage(imageBytes);
-      document.addPage(
-        pw.Page(
-          pageFormat: PdfPageFormat.a4,
-          margin: const pw.EdgeInsets.all(24),
-          build: (pw.Context context) {
-            return pw.Center(
-              child: pw.Image(image, fit: pw.BoxFit.contain),
-            );
-          },
-        ),
-      );
       await Printing.layoutPdf(
-        name:
-            '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
-        onLayout: (_) async => document.save(),
+        name: _printFileNameForTabs(selectedTabs),
+        onLayout: (_) async => bytes,
       );
     } catch (error) {
       if (mounted) {
@@ -464,6 +420,129 @@ class _AutismDevReportPreviewDialogState
         });
       }
     }
+  }
+
+  Future<List<_AutismDevReportTab>?> _showPrintSelectionDialog() {
+    final Set<_AutismDevReportTab> enabledTabs = _enabledPrintTabs().toSet();
+    final Set<_AutismDevReportTab> initialSelection = <_AutismDevReportTab>{};
+    if (enabledTabs.contains(_activeTab)) {
+      initialSelection.add(_activeTab);
+    } else if (enabledTabs.isNotEmpty) {
+      initialSelection.add(enabledTabs.first);
+    }
+    return showDialog<List<_AutismDevReportTab>>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _AutismDevPrintSelectionDialog(
+            options: _autismDevReportTabs,
+            enabledTabs: enabledTabs,
+            initialSelection: initialSelection,
+            statusLabels: _printSelectionStatusLabels(),
+          ),
+        );
+      },
+    );
+  }
+
+  List<_AutismDevReportTab> _enabledPrintTabs() {
+    return <_AutismDevReportTab>[
+      for (final _AutismDevReportTabSpec spec in _autismDevReportTabs)
+        if (_canPrintTab(spec.tab)) spec.tab,
+    ];
+  }
+
+  bool _canPrintTab(_AutismDevReportTab tab) {
+    if (tab == _AutismDevReportTab.resultAnalysis) {
+      return !_resultAnalysisGenerating && !_resultAnalysis.isEmpty;
+    }
+    return true;
+  }
+
+  Map<_AutismDevReportTab, String> _printSelectionStatusLabels() {
+    if (_resultAnalysisGenerating) {
+      return const <_AutismDevReportTab, String>{
+        _AutismDevReportTab.resultAnalysis: '生成中',
+      };
+    }
+    if (_resultAnalysis.isEmpty) {
+      return const <_AutismDevReportTab, String>{
+        _AutismDevReportTab.resultAnalysis: '未生成',
+      };
+    }
+    return const <_AutismDevReportTab, String>{};
+  }
+
+  Future<Uint8List> _buildSelectedPrintPdf(
+    List<_AutismDevReportTab> tabs,
+  ) async {
+    final List<Uint8List> pdfs = <Uint8List>[];
+    for (final _AutismDevReportTab tab in tabs) {
+      final Uint8List bytes = await _loadPrintPdfForTab(tab);
+      if (bytes.isEmpty) {
+        throw StateError('${_labelForPrintTab(tab)}暂无可打印内容');
+      }
+      pdfs.add(bytes);
+    }
+    if (pdfs.isEmpty) {
+      return Uint8List(0);
+    }
+    if (pdfs.length == 1) {
+      return pdfs.first;
+    }
+    return _combinePrintPdfs(pdfs);
+  }
+
+  Future<Uint8List> _loadPrintPdfForTab(_AutismDevReportTab tab) {
+    switch (tab) {
+      case _AutismDevReportTab.assessmentInfo:
+        return _loadAssessmentInfoPrintPdf();
+      case _AutismDevReportTab.resultAnalysis:
+        return _loadResultAnalysisPrintPdf();
+      case _AutismDevReportTab.training:
+      case _AutismDevReportTab.developmentProfile:
+      case _AutismDevReportTab.behaviorProfile:
+        return _loadProfilePdf(tab);
+    }
+  }
+
+  Future<Uint8List> _combinePrintPdfs(List<Uint8List> pdfs) async {
+    final pw.Document document = pw.Document();
+    const double dpi = 180;
+    for (final Uint8List bytes in pdfs) {
+      await for (final PdfRaster page in Printing.raster(bytes, dpi: dpi)) {
+        final Uint8List pngBytes = await page.toPng();
+        final double pageWidth = page.width * PdfPageFormat.inch / dpi;
+        final double pageHeight = page.height * PdfPageFormat.inch / dpi;
+        final pw.MemoryImage image = pw.MemoryImage(pngBytes);
+        document.addPage(
+          pw.Page(
+            pageFormat: PdfPageFormat(pageWidth, pageHeight),
+            margin: pw.EdgeInsets.zero,
+            build: (pw.Context context) {
+              return pw.SizedBox.expand(
+                child: pw.Image(image, fit: pw.BoxFit.contain),
+              );
+            },
+          ),
+        );
+      }
+    }
+    return document.save();
+  }
+
+  String _printFileNameForTabs(List<_AutismDevReportTab> tabs) {
+    if (tabs.length == 1) {
+      return '孤独症儿童发展评估报告-${_labelForPrintTab(tabs.first)}.pdf';
+    }
+    return '孤独症儿童发展评估报告-所选内容.pdf';
+  }
+
+  String _labelForPrintTab(_AutismDevReportTab tab) {
+    return _autismDevReportTabs
+        .firstWhere((_AutismDevReportTabSpec spec) => spec.tab == tab)
+        .label;
   }
 
   Future<Uint8List> _loadAssessmentInfoPrintPdf() async {
@@ -493,24 +572,6 @@ class _AutismDevReportPreviewDialogState
       widget.record.id,
       _resultAnalysis,
     );
-  }
-
-  Future<Uint8List> _capturePrintContent() async {
-    await WidgetsBinding.instance.endOfFrame;
-    final BuildContext? boundaryContext = _printContentKey.currentContext;
-    final RenderRepaintBoundary? boundary =
-        boundaryContext?.findRenderObject() as RenderRepaintBoundary?;
-    if (boundary == null) {
-      throw StateError('暂无可打印内容');
-    }
-    final ui.Image image = await boundary.toImage(pixelRatio: 2.5);
-    final ByteData? byteData =
-        await image.toByteData(format: ui.ImageByteFormat.png);
-    image.dispose();
-    if (byteData == null) {
-      throw StateError('打印内容生成失败');
-    }
-    return byteData.buffer.asUint8List();
   }
 
   Widget _buildReportPage() {
@@ -800,6 +861,290 @@ class _AutismDevReportTabBar extends StatelessWidget {
           const SizedBox(width: 12),
           trailing,
         ],
+      ),
+    );
+  }
+}
+
+class _AutismDevPrintSelectionDialog extends StatefulWidget {
+  const _AutismDevPrintSelectionDialog({
+    required this.options,
+    required this.enabledTabs,
+    required this.initialSelection,
+    required this.statusLabels,
+  });
+
+  final List<_AutismDevReportTabSpec> options;
+  final Set<_AutismDevReportTab> enabledTabs;
+  final Set<_AutismDevReportTab> initialSelection;
+  final Map<_AutismDevReportTab, String> statusLabels;
+
+  @override
+  State<_AutismDevPrintSelectionDialog> createState() =>
+      _AutismDevPrintSelectionDialogState();
+}
+
+class _AutismDevPrintSelectionDialogState
+    extends State<_AutismDevPrintSelectionDialog> {
+  late final Set<_AutismDevReportTab> _selected =
+      Set<_AutismDevReportTab>.from(widget.initialSelection);
+
+  List<_AutismDevReportTab> get _orderedSelection {
+    return <_AutismDevReportTab>[
+      for (final _AutismDevReportTabSpec spec in widget.options)
+        if (_selected.contains(spec.tab)) spec.tab,
+    ];
+  }
+
+  bool get _allEnabledSelected {
+    if (widget.enabledTabs.isEmpty) {
+      return false;
+    }
+    return widget.enabledTabs.every(_selected.contains);
+  }
+
+  void _toggle(_AutismDevReportTab tab, bool selected) {
+    if (!widget.enabledTabs.contains(tab)) {
+      return;
+    }
+    setState(() {
+      if (selected) {
+        _selected.add(tab);
+      } else {
+        _selected.remove(tab);
+      }
+    });
+  }
+
+  void _toggleAll() {
+    setState(() {
+      if (_allEnabledSelected) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(widget.enabledTabs);
+      }
+    });
+  }
+
+  void _submit() {
+    final List<_AutismDevReportTab> selected = _orderedSelection;
+    if (selected.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '选择打印内容',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                _AutismDevPrintTextAction(
+                  label: _allEnabledSelected ? '清空' : '全选',
+                  onTap: _toggleAll,
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: Column(
+                children: <Widget>[
+                  for (int index = 0; index < widget.options.length; index++)
+                    _AutismDevPrintOptionRow(
+                      spec: widget.options[index],
+                      selected: _selected.contains(widget.options[index].tab),
+                      enabled: widget.enabledTabs
+                          .contains(widget.options[index].tab),
+                      statusLabel:
+                          widget.statusLabels[widget.options[index].tab] ?? '',
+                      bottom: index != widget.options.length - 1,
+                      onChanged: (bool selected) =>
+                          _toggle(widget.options[index].tab, selected),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                Opacity(
+                  opacity: _selected.isEmpty ? .45 : 1,
+                  child: _AutismDevDialogAction(
+                    label: '打印',
+                    filled: true,
+                    icon: Icons.print_rounded,
+                    onTap: _submit,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevPrintOptionRow extends StatelessWidget {
+  const _AutismDevPrintOptionRow({
+    required this.spec,
+    required this.selected,
+    required this.enabled,
+    required this.statusLabel,
+    required this.bottom,
+    required this.onChanged,
+  });
+
+  final _AutismDevReportTabSpec spec;
+  final bool selected;
+  final bool enabled;
+  final String statusLabel;
+  final bool bottom;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? () => onChanged(!selected) : null,
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.only(left: 8, right: 14),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: bottom
+                ? const BorderSide(color: _ReportTheme.lineSoft)
+                : BorderSide.none,
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            Checkbox(
+              value: selected,
+              activeColor: _ReportTheme.orange,
+              onChanged:
+                  enabled ? (bool? value) => onChanged(value ?? false) : null,
+            ),
+            Expanded(
+              child: Text(
+                spec.label,
+                style: TextStyle(
+                  color: enabled ? Colors.black : _ReportTheme.muted,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (statusLabel.trim().isNotEmpty)
+              Container(
+                height: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3EA),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                ),
+                child: Text(
+                  statusLabel.trim(),
+                  style: const TextStyle(
+                    color: _ReportTheme.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevPrintTextAction extends StatelessWidget {
+  const _AutismDevPrintTextAction({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: _ReportTheme.lineSoft),
+          ),
+          child: Text(
+            label,
+            style: const TextStyle(
+              color: Colors.black,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ),
       ),
     );
   }

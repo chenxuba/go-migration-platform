@@ -388,6 +388,15 @@ void main() {
     expect(find.text('发展情况剖面图'), findsOneWidget);
     expect(find.text('情绪行为表现图'), findsOneWidget);
     expect(autismDevClient.fetchAutismDevResultAnalysisCalls, 1);
+
+    await tester.tap(find.text('打印'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('选择打印内容'), findsOneWidget);
+    expect(find.text('全选'), findsOneWidget);
+    expect(find.text('未生成'), findsOneWidget);
+    expect(find.byType(Checkbox), findsNWidgets(5));
   });
 
   testWidgets('home header fallback does not show a fake institution',
