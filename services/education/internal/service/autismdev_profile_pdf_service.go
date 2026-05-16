@@ -122,38 +122,52 @@ func normalizeAutismDevProfilePDFKind(profile string) (autismDevProfilePDFKind, 
 }
 
 func buildAutismDevProfilePDF(record model.AssessmentRecordDetailVO, kind autismDevProfilePDFKind, institutionName string) ([]byte, error) {
-	fontBytes, err := loadPEP3PDFFontBytes()
-	if err != nil {
-		return nil, err
-	}
 	var pdf gopdf.GoPdf
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
 		PageSize: gopdf.Rect{W: autismDevProfilePDFPageWidth, H: autismDevProfilePDFPageHeight},
 	})
-	pdf.AddPage()
+	if err := addAutismDevProfilePDFFont(&pdf); err != nil {
+		return nil, err
+	}
+	if err := drawAutismDevProfilePDFPage(&pdf, record, kind, institutionName); err != nil {
+		return nil, err
+	}
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func addAutismDevProfilePDFFont(pdf *gopdf.GoPdf) error {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return err
+	}
 	if err := pdf.AddTTFFontByReader(autismDevProfilePDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
-		return nil, fmt.Errorf("load AutismDev PDF font: %w", err)
+		return fmt.Errorf("load AutismDev PDF font: %w", err)
 	}
-	if err := drawAutismDevProfileTemplate(&pdf, kind); err != nil {
-		return nil, err
+	return nil
+}
+
+func drawAutismDevProfilePDFPage(pdf *gopdf.GoPdf, record model.AssessmentRecordDetailVO, kind autismDevProfilePDFKind, institutionName string) error {
+	pdf.AddPage()
+	if err := drawAutismDevProfileTemplate(pdf, kind); err != nil {
+		return err
 	}
-	if err := drawAutismDevProfileInstitutionName(&pdf, institutionName); err != nil {
-		return nil, err
+	if err := drawAutismDevProfileInstitutionName(pdf, institutionName); err != nil {
+		return err
 	}
 	switch kind {
 	case autismDevDevelopmentProfilePDF:
-		if err := drawAutismDevDevelopmentProfilePDF(&pdf, record); err != nil {
-			return nil, err
+		if err := drawAutismDevDevelopmentProfilePDF(pdf, record); err != nil {
+			return err
 		}
 	case autismDevBehaviorProfilePDF:
-		if err := drawAutismDevBehaviorProfilePDF(&pdf, record); err != nil {
-			return nil, err
+		if err := drawAutismDevBehaviorProfilePDF(pdf, record); err != nil {
+			return err
 		}
 	default:
-		return nil, errors.New("unsupported AutismDev profile PDF kind")
+		return errors.New("unsupported AutismDev profile PDF kind")
 	}
-	return pdf.GetBytesPdfReturnErr()
+	return nil
 }
 
 func drawAutismDevProfileTemplate(pdf *gopdf.GoPdf, kind autismDevProfilePDFKind) error {

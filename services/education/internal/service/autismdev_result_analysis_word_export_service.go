@@ -22,20 +22,9 @@ type autismDevResultAnalysisWordExport struct {
 }
 
 func (svc *Service) ExportAutismDevResultAnalysisWord(userID int64, recordID int64, analysis *model.AutismDevResultAnalysisVO) (string, string, []byte, error) {
-	record, normalized, err := svc.autismDevResultAnalysisForExport(userID, recordID, analysis)
+	export, err := svc.autismDevResultAnalysisWordExport(userID, recordID, analysis)
 	if err != nil {
 		return "", "", nil, err
-	}
-	export := autismDevResultAnalysisWordExport{
-		Title:          firstNonEmptyExportValue(strings.TrimSpace(normalized.Title), "孤独症儿童评估结果分析表"),
-		StudentName:    strings.TrimSpace(record.StudentName),
-		Gender:         strings.TrimSpace(record.StudentGender),
-		BirthDate:      formatIEPPlanDate(record.BirthDate),
-		Age:            formatIEPPlanAge(record.AgeYears, record.AgeMonths, record.AgeDays),
-		AssessmentDate: formatIEPPlanDate(record.AssessmentDate),
-		ExaminerName:   strings.TrimSpace(record.ExaminerName),
-		AssessmentName: firstNonEmptyExportValue(strings.TrimSpace(record.AssessmentName), "孤独症儿童发展评估表"),
-		Rows:           normalized.Rows,
 	}
 	content, err := buildAutismDevResultAnalysisWordDocx(export)
 	if err != nil {
@@ -51,6 +40,24 @@ func (svc *Service) ExportAutismDevResultAnalysisPDF(userID int64, recordID int6
 		return "", "", nil, err
 	}
 	return exportIEPPDFByDOCX(fileName, content)
+}
+
+func (svc *Service) autismDevResultAnalysisWordExport(userID int64, recordID int64, analysis *model.AutismDevResultAnalysisVO) (autismDevResultAnalysisWordExport, error) {
+	record, normalized, err := svc.autismDevResultAnalysisForExport(userID, recordID, analysis)
+	if err != nil {
+		return autismDevResultAnalysisWordExport{}, err
+	}
+	return autismDevResultAnalysisWordExport{
+		Title:          firstNonEmptyExportValue(strings.TrimSpace(normalized.Title), "孤独症儿童评估结果分析表"),
+		StudentName:    strings.TrimSpace(record.StudentName),
+		Gender:         strings.TrimSpace(record.StudentGender),
+		BirthDate:      formatIEPPlanDate(record.BirthDate),
+		Age:            formatIEPPlanAge(record.AgeYears, record.AgeMonths, record.AgeDays),
+		AssessmentDate: formatIEPPlanDate(record.AssessmentDate),
+		ExaminerName:   strings.TrimSpace(record.ExaminerName),
+		AssessmentName: firstNonEmptyExportValue(strings.TrimSpace(record.AssessmentName), "孤独症儿童发展评估表"),
+		Rows:           normalized.Rows,
+	}, nil
 }
 
 func (svc *Service) autismDevResultAnalysisForExport(userID int64, recordID int64, analysis *model.AutismDevResultAnalysisVO) (model.AssessmentRecordDetailVO, model.AutismDevResultAnalysisVO, error) {

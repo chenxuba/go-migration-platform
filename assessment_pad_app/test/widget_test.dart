@@ -8073,6 +8073,16 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Uint8List> downloadAutismDevSelectedReportPdf(
+    String token,
+    int id, {
+    required List<String> sections,
+    AutismDevResultAnalysis? analysis,
+  }) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(String token, int id) async* {
     const AutismDevResultAnalysis analysis = AutismDevResultAnalysis(

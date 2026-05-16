@@ -1,7 +1,6 @@
 package service
 
 import (
-	"bytes"
 	"embed"
 	"encoding/json"
 	"fmt"
@@ -72,42 +71,44 @@ var (
 )
 
 func buildAutismDevTrainingEffectPDF(current model.AssessmentRecordDetailVO, records []model.AssessmentRecordDetailVO, institutionName string) ([]byte, error) {
-	_ = institutionName
-
-	data, err := loadAutismDevStaticData()
-	if err != nil {
-		return nil, err
-	}
-	fontBytes, err := loadPEP3PDFFontBytes()
-	if err != nil {
-		return nil, err
-	}
-
-	orderedDomains := autismDevTrainingCurrentRecordDomains(current, data)
-	if len(orderedDomains) == 0 {
-		return nil, fmt.Errorf("当前记录没有可生成训练效果表的测评领域")
-	}
-
-	trainingRecords, err := autismDevTrainingEffectRecords(records, current)
-	if err != nil {
-		return nil, err
-	}
-	rowsByDomain := autismDevTrainingEffectRowsByDomain(data.items, orderedDomains, trainingRecords)
-	if len(rowsByDomain) == 0 {
-		return nil, fmt.Errorf("当前记录没有可生成训练效果表的测评领域")
-	}
-
 	var pdf gopdf.GoPdf
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
 		PageSize: gopdf.Rect{W: autismDevProfilePDFPageWidth, H: autismDevProfilePDFPageHeight},
 	})
-	if err := pdf.AddTTFFontByReader(autismDevProfilePDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
-		return nil, fmt.Errorf("load AutismDev training PDF font: %w", err)
+	if err := addAutismDevProfilePDFFont(&pdf); err != nil {
+		return nil, err
+	}
+	if err := drawAutismDevTrainingEffectPDFPages(&pdf, current, records, institutionName); err != nil {
+		return nil, err
+	}
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func drawAutismDevTrainingEffectPDFPages(pdf *gopdf.GoPdf, current model.AssessmentRecordDetailVO, records []model.AssessmentRecordDetailVO, institutionName string) error {
+	_ = institutionName
+
+	data, err := loadAutismDevStaticData()
+	if err != nil {
+		return err
+	}
+
+	orderedDomains := autismDevTrainingCurrentRecordDomains(current, data)
+	if len(orderedDomains) == 0 {
+		return fmt.Errorf("当前记录没有可生成训练效果表的测评领域")
+	}
+
+	trainingRecords, err := autismDevTrainingEffectRecords(records, current)
+	if err != nil {
+		return err
+	}
+	rowsByDomain := autismDevTrainingEffectRowsByDomain(data.items, orderedDomains, trainingRecords)
+	if len(rowsByDomain) == 0 {
+		return fmt.Errorf("当前记录没有可生成训练效果表的测评领域")
 	}
 
 	renderer := autismDevTrainingEffectPDFRenderer{
-		pdf: &pdf,
+		pdf: pdf,
 	}
 	for _, domainCode := range orderedDomains {
 		rows := rowsByDomain[domainCode]
@@ -115,10 +116,10 @@ func buildAutismDevTrainingEffectPDF(current model.AssessmentRecordDetailVO, rec
 			continue
 		}
 		if err := renderer.drawDomain(domainCode, autismDevTrainingDomainName(domainCode, data), rows); err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return pdf.GetBytesPdfReturnErr()
+	return nil
 }
 
 type autismDevTrainingEffectPDFRenderer struct {

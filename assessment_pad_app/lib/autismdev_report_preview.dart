@@ -477,59 +477,18 @@ class _AutismDevReportPreviewDialogState
   Future<Uint8List> _buildSelectedPrintPdf(
     List<_AutismDevReportTab> tabs,
   ) async {
-    final List<Uint8List> pdfs = <Uint8List>[];
-    for (final _AutismDevReportTab tab in tabs) {
-      final Uint8List bytes = await _loadPrintPdfForTab(tab);
-      if (bytes.isEmpty) {
-        throw StateError('${_labelForPrintTab(tab)}暂无可打印内容');
-      }
-      pdfs.add(bytes);
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      throw StateError('缺少报告打印参数');
     }
-    if (pdfs.isEmpty) {
-      return Uint8List(0);
-    }
-    if (pdfs.length == 1) {
-      return pdfs.first;
-    }
-    return _combinePrintPdfs(pdfs);
-  }
-
-  Future<Uint8List> _loadPrintPdfForTab(_AutismDevReportTab tab) {
-    switch (tab) {
-      case _AutismDevReportTab.assessmentInfo:
-        return _loadAssessmentInfoPrintPdf();
-      case _AutismDevReportTab.resultAnalysis:
-        return _loadResultAnalysisPrintPdf();
-      case _AutismDevReportTab.training:
-      case _AutismDevReportTab.developmentProfile:
-      case _AutismDevReportTab.behaviorProfile:
-        return _loadProfilePdf(tab);
-    }
-  }
-
-  Future<Uint8List> _combinePrintPdfs(List<Uint8List> pdfs) async {
-    final pw.Document document = pw.Document();
-    const double dpi = 180;
-    for (final Uint8List bytes in pdfs) {
-      await for (final PdfRaster page in Printing.raster(bytes, dpi: dpi)) {
-        final Uint8List pngBytes = await page.toPng();
-        final double pageWidth = page.width * PdfPageFormat.inch / dpi;
-        final double pageHeight = page.height * PdfPageFormat.inch / dpi;
-        final pw.MemoryImage image = pw.MemoryImage(pngBytes);
-        document.addPage(
-          pw.Page(
-            pageFormat: PdfPageFormat(pageWidth, pageHeight),
-            margin: pw.EdgeInsets.zero,
-            build: (pw.Context context) {
-              return pw.SizedBox.expand(
-                child: pw.Image(image, fit: pw.BoxFit.contain),
-              );
-            },
-          ),
-        );
-      }
-    }
-    return document.save();
+    return widget.client.downloadAutismDevSelectedReportPdf(
+      token,
+      widget.record.id,
+      sections: tabs.map(_sectionCodeForPrintTab).toList(),
+      analysis: tabs.contains(_AutismDevReportTab.resultAnalysis)
+          ? _resultAnalysis
+          : null,
+    );
   }
 
   String _printFileNameForTabs(List<_AutismDevReportTab> tabs) {
@@ -545,33 +504,14 @@ class _AutismDevReportPreviewDialogState
         .label;
   }
 
-  Future<Uint8List> _loadAssessmentInfoPrintPdf() async {
-    final String token = widget.token.trim();
-    if (token.isEmpty || widget.record.id <= 0) {
-      throw StateError('缺少报告打印参数');
-    }
-    return widget.client.downloadAutismDevAssessmentInfoPdf(
-      token,
-      widget.record.id,
-    );
-  }
-
-  Future<Uint8List> _loadResultAnalysisPrintPdf() async {
-    final String token = widget.token.trim();
-    if (token.isEmpty || widget.record.id <= 0) {
-      throw StateError('缺少报告打印参数');
-    }
-    if (_resultAnalysisGenerating) {
-      throw StateError('评估结果分析正在生成，请稍后打印');
-    }
-    if (_resultAnalysis.isEmpty) {
-      throw StateError('请先生成评估结果分析');
-    }
-    return widget.client.downloadAutismDevResultAnalysisPdf(
-      token,
-      widget.record.id,
-      _resultAnalysis,
-    );
+  String _sectionCodeForPrintTab(_AutismDevReportTab tab) {
+    return switch (tab) {
+      _AutismDevReportTab.assessmentInfo => 'assessmentInfo',
+      _AutismDevReportTab.resultAnalysis => 'resultAnalysis',
+      _AutismDevReportTab.training => 'training',
+      _AutismDevReportTab.developmentProfile => 'developmentProfile',
+      _AutismDevReportTab.behaviorProfile => 'behaviorProfile',
+    };
   }
 
   Widget _buildReportPage() {

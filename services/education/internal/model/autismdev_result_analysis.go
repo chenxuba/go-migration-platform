@@ -14,6 +14,12 @@ type AutismDevResultAnalysisExportRequest struct {
 	Analysis *AutismDevResultAnalysisVO `json:"analysis,omitempty"`
 }
 
+type AutismDevSelectedReportExportRequest struct {
+	ID       int64                      `json:"id"`
+	Sections []string                   `json:"sections"`
+	Analysis *AutismDevResultAnalysisVO `json:"analysis,omitempty"`
+}
+
 type AutismDevResultAnalysisVO struct {
 	Title       string                       `json:"title"`
 	Model       string                       `json:"model,omitempty"`

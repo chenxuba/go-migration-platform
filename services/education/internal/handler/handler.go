@@ -91,6 +91,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis/pdf", handler.autismDevAssessmentRecordResultAnalysisPDF)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis/ai/stream", handler.autismDevAssessmentRecordResultAnalysisAIStream)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/profile/pdf", handler.autismDevAssessmentRecordProfilePDF)
+	mux.HandleFunc("/api/v1/assessments/autismdev/records/selected-report/pdf", handler.autismDevAssessmentRecordSelectedReportPDF)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/category-stats", handler.autismDevAssessmentRecordCategoryStats)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/page", handler.autismDevAssessmentRecordsPage)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/delete", handler.deleteAutismDevAssessmentRecord)

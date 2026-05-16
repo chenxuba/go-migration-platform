@@ -12,6 +12,7 @@ func TestPreviewDOCXToPDFExports(t *testing.T) {
 	if os.Getenv("RUN_DOCX_PDF_PREVIEW") != "1" {
 		t.Skip("set RUN_DOCX_PDF_PREVIEW=1 to generate local preview PDFs")
 	}
+	defer stopDefaultSofficeDaemonForTest(t)
 
 	outputDir := filepath.Join(os.TempDir(), "iep-pdf-preview")
 	if err := os.MkdirAll(outputDir, 0o755); err != nil {
@@ -165,18 +166,18 @@ func previewWeeklyPlanResult() model.PEP3WeeklyPlanAIResult {
 				Content: "通过问候、视觉日程和坐姿调整完成上课准备；回顾上节课完成情况，建立进入课堂的稳定状态。",
 			},
 			{
-				Project: "训练项目",
-				Content: "按大小、颜色、形状三维度分类物品。先进行单一维度配对，再过渡到双维度选择，最后在教师语言提示下完成三维度分类。",
+				Project:    "训练项目",
+				Content:    "按大小、颜色、形状三维度分类物品。先进行单一维度配对，再过渡到双维度选择，最后在教师语言提示下完成三维度分类。",
 				Completion: []string{"", "", "", "", "", ""},
 			},
 			{
-				Project: "训练内容",
-				Content: "1. 颜色分类：红黄蓝三色积木按篮筐投放。\n2. 大小配对：根据示例将大圆片、小圆片分别放入对应区域。\n3. 形状辨识：在圆形、三角形、正方形中完成命名与配对。\n4. 综合练习：听口令完成“把大的红色圆形放到这里”。",
+				Project:    "训练内容",
+				Content:    "1. 颜色分类：红黄蓝三色积木按篮筐投放。\n2. 大小配对：根据示例将大圆片、小圆片分别放入对应区域。\n3. 形状辨识：在圆形、三角形、正方形中完成命名与配对。\n4. 综合练习：听口令完成“把大的红色圆形放到这里”。",
 				Completion: []string{"√", "S", "G", "", "", ""},
 			},
 			{
-				Project: "当天训练情况记录",
-				Content: "观察是否能保持注意、是否主动表达需要，以及在视觉提示撤除后是否仍能完成分类任务。",
+				Project:    "当天训练情况记录",
+				Content:    "观察是否能保持注意、是否主动表达需要，以及在视觉提示撤除后是否仍能完成分类任务。",
 				Completion: []string{"√", "G", "M", "", "", ""},
 			},
 		},
