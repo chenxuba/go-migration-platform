@@ -89,17 +89,13 @@ func (svc *Service) GetAutismDevResultAnalysis(userID, recordID int64) (model.Au
 	if err != nil {
 		return model.AutismDevResultAnalysisVO{}, err
 	}
-	sourceHash := autismDevResultAnalysisSourceHash(record)
 	var cached model.AutismDevResultAnalysisVO
-	entity, err := svc.repo.GetAssessmentReportInterpretationJSON(context.Background(), instID, recordID, autismDevScaleCode, &cached)
+	_, err = svc.repo.GetAssessmentReportInterpretationJSON(context.Background(), instID, recordID, autismDevScaleCode, &cached)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.AutismDevResultAnalysisVO{}, nil
 		}
 		return model.AutismDevResultAnalysisVO{}, err
-	}
-	if strings.TrimSpace(entity.SourceHash) != sourceHash {
-		return model.AutismDevResultAnalysisVO{}, nil
 	}
 	normalized := normalizeAutismDevResultAnalysis(cached, record, score, data, itemScores, cached.GeneratedBy)
 	if strings.TrimSpace(cached.GeneratedAt) != "" {
@@ -190,21 +186,15 @@ func (svc *Service) saveAutismDevResultAnalysis(ctx context.Context, instID, use
 
 func autismDevResultAnalysisSourceHash(record model.AssessmentRecordDetailVO) string {
 	raw, err := json.Marshal(struct {
-		RecordUpdatedTime *time.Time      `json:"recordUpdatedTime,omitempty"`
-		Input             json.RawMessage `json:"input,omitempty"`
-		Result            json.RawMessage `json:"result,omitempty"`
-		DataStatus        string          `json:"dataStatus,omitempty"`
-		Remark            string          `json:"remark,omitempty"`
-		AssessmentDate    string          `json:"assessmentDate,omitempty"`
-		ExaminerName      string          `json:"examinerName,omitempty"`
+		Input      json.RawMessage `json:"input,omitempty"`
+		Result     json.RawMessage `json:"result,omitempty"`
+		DataStatus string          `json:"dataStatus,omitempty"`
+		Remark     string          `json:"remark,omitempty"`
 	}{
-		RecordUpdatedTime: record.UpdatedTime,
-		Input:             record.InputJSON,
-		Result:            record.ResultJSON,
-		DataStatus:        strings.TrimSpace(record.DataStatus),
-		Remark:            strings.TrimSpace(record.Remark),
-		AssessmentDate:    formatIEPPlanDate(record.AssessmentDate),
-		ExaminerName:      strings.TrimSpace(record.ExaminerName),
+		Input:      record.InputJSON,
+		Result:     record.ResultJSON,
+		DataStatus: strings.TrimSpace(record.DataStatus),
+		Remark:     strings.TrimSpace(record.Remark),
 	})
 	if err != nil {
 		raw = []byte(fmt.Sprintf("%+v", record.ResultJSON))

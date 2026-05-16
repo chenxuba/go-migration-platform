@@ -64,6 +64,7 @@ type iepPlanWordCellOptions struct {
 	SpacingBefore    int
 	SpacingAfter     int
 	LineSpacing      int
+	FontSize         int
 	CompactParagraph bool
 }
 
@@ -470,11 +471,15 @@ func buildIEPCell(lines []string, width int, options iepPlanWordCellOptions) str
 		builder.WriteString(`</w:tcMar>`)
 	}
 	builder.WriteString(`</w:tcPr>`)
+	fontSize := options.FontSize
+	if fontSize <= 0 {
+		fontSize = 21
+	}
 	if len(lines) == 0 {
-		builder.WriteString(buildIEPParagraph("", options.Align, options.Bold, 21, options))
+		builder.WriteString(buildIEPParagraph("", options.Align, options.Bold, fontSize, options))
 	}
 	for _, line := range lines {
-		builder.WriteString(buildIEPParagraph(line, options.Align, options.Bold, 21, options))
+		builder.WriteString(buildIEPParagraph(line, options.Align, options.Bold, fontSize, options))
 	}
 	builder.WriteString(`</w:tc>`)
 	return builder.String()

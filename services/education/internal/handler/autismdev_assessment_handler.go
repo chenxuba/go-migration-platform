@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/url"
@@ -430,6 +431,78 @@ func (handler *Handler) autismDevAssessmentRecordResultAnalysis(w http.ResponseW
 		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 	default:
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
+}
+
+func (handler *Handler) autismDevAssessmentRecordResultAnalysisWord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	recordID, analysis, err := decodeAutismDevResultAnalysisExportRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	fileName, contentType, content, err := handler.service.ExportAutismDevResultAnalysisWord(claims.UserID, recordID, analysis)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "attachment; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func (handler *Handler) autismDevAssessmentRecordResultAnalysisPDF(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	recordID, analysis, err := decodeAutismDevResultAnalysisExportRequest(r)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	fileName, contentType, content, err := handler.service.ExportAutismDevResultAnalysisPDF(claims.UserID, recordID, analysis)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
+func decodeAutismDevResultAnalysisExportRequest(r *http.Request) (int64, *model.AutismDevResultAnalysisVO, error) {
+	switch r.Method {
+	case http.MethodGet:
+		id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+		if err != nil || id <= 0 {
+			return 0, nil, errors.New("invalid id")
+		}
+		return id, nil, nil
+	case http.MethodPost:
+		var req model.AutismDevResultAnalysisExportRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			return 0, nil, errors.New("invalid request body")
+		}
+		if req.ID <= 0 {
+			return 0, nil, errors.New("invalid id")
+		}
+		return req.ID, req.Analysis, nil
+	default:
+		return 0, nil, errors.New("method not allowed")
 	}
 }
 

@@ -3,7 +3,6 @@ part of 'assessment_report_list_page.dart';
 enum _AutismDevReportTab {
   assessmentInfo,
   resultAnalysis,
-  strengthWeakness,
   training,
   developmentProfile,
   behaviorProfile,
@@ -13,7 +12,6 @@ const List<_AutismDevReportTabSpec> _autismDevReportTabs =
     <_AutismDevReportTabSpec>[
   _AutismDevReportTabSpec('评估情况', _AutismDevReportTab.assessmentInfo),
   _AutismDevReportTabSpec('评估结果分析', _AutismDevReportTab.resultAnalysis),
-  _AutismDevReportTabSpec('优劣势分析', _AutismDevReportTab.strengthWeakness),
   _AutismDevReportTabSpec('训练效果', _AutismDevReportTab.training),
   _AutismDevReportTabSpec('发展情况剖面图', _AutismDevReportTab.developmentProfile),
   _AutismDevReportTabSpec('情绪行为表现图', _AutismDevReportTab.behaviorProfile),
@@ -398,6 +396,18 @@ class _AutismDevReportPreviewDialogState
       _printing = true;
     });
     try {
+      if (_activeTab == _AutismDevReportTab.resultAnalysis) {
+        final Uint8List bytes = await _loadResultAnalysisPrintPdf();
+        if (bytes.isEmpty) {
+          throw StateError('暂无可打印内容');
+        }
+        await Printing.layoutPdf(
+          name:
+              '孤独症儿童发展评估报告-${_autismDevReportTabs.firstWhere((e) => e.tab == _activeTab).label}.pdf',
+          onLayout: (_) async => bytes,
+        );
+        return;
+      }
       if (_isBackendProfileTab(_activeTab)) {
         final Uint8List bytes = await _loadProfilePdf(_activeTab);
         if (bytes.isEmpty) {
@@ -442,6 +452,24 @@ class _AutismDevReportPreviewDialogState
         });
       }
     }
+  }
+
+  Future<Uint8List> _loadResultAnalysisPrintPdf() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      throw StateError('缺少报告打印参数');
+    }
+    if (_resultAnalysisGenerating) {
+      throw StateError('评估结果分析正在生成，请稍后打印');
+    }
+    if (_resultAnalysis.isEmpty) {
+      throw StateError('请先生成评估结果分析');
+    }
+    return widget.client.downloadAutismDevResultAnalysisPdf(
+      token,
+      widget.record.id,
+      _resultAnalysis,
+    );
   }
 
   Future<Uint8List> _capturePrintContent() async {
@@ -493,8 +521,6 @@ class _AutismDevReportPreviewDialogState
           selectedCell: _selectedAnalysisCell,
           onCellTap: _handleResultAnalysisCellTap,
         );
-      case _AutismDevReportTab.strengthWeakness:
-        return const _AutismDevStrengthWeaknessSection();
       case _AutismDevReportTab.training:
         return _AutismDevProfilePdfSection(
           record: _displayRecord,
@@ -873,25 +899,6 @@ class _AutismDevOverviewSection extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const _AutismDevReportSummaryGrid(),
-      ],
-    );
-  }
-}
-
-class _AutismDevStrengthWeaknessSection extends StatelessWidget {
-  const _AutismDevStrengthWeaknessSection();
-
-  @override
-  Widget build(BuildContext context) {
-    return const Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _AutismDevSectionTitle(
-          title: '优劣势分析',
-          subtitle: '按发展领域整理优势能力和当前支持重点。',
-        ),
-        SizedBox(height: 10),
-        _AutismDevStrengthWeaknessTable(),
       ],
     );
   }
@@ -2140,33 +2147,6 @@ class _AutismDevDevelopmentScoreTable extends StatelessWidget {
   }
 }
 
-class _AutismDevStrengthWeaknessTable extends StatelessWidget {
-  const _AutismDevStrengthWeaknessTable();
-
-  @override
-  Widget build(BuildContext context) {
-    return _AutismDevTableFrame(
-      child: Table(
-        columnWidths: const <int, TableColumnWidth>{
-          0: FlexColumnWidth(1.05),
-          1: FlexColumnWidth(3.6),
-        },
-        border: TableBorder.all(color: _ReportTheme.lineSoft),
-        children: <TableRow>[
-          _autismDevTableHeaderRow(<String>['领域', '优劣势分析'], tall: true),
-          for (final _AutismDevAnalysisItem item in _autismDevAnalysisItems)
-            TableRow(
-              children: <Widget>[
-                _autismDevTableCell(item.domain, emph: true, minHeight: 66),
-                _autismDevTableCell(item.strength, minHeight: 66),
-              ],
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class _AutismDevResultAnalysisTable extends StatelessWidget {
   const _AutismDevResultAnalysisTable({
     required this.rows,
@@ -2265,7 +2245,7 @@ Widget _autismDevAnalysisHeaderCell(String text) {
       textAlign: TextAlign.center,
       style: const TextStyle(
         color: Colors.black,
-        fontSize: 18,
+        fontSize: 16,
         height: 1.15,
       ),
     ),
@@ -2283,7 +2263,7 @@ Widget _autismDevAnalysisDomainCell(String domain) {
       textAlign: TextAlign.center,
       style: const TextStyle(
         color: Colors.black,
-        fontSize: 19,
+        fontSize: 16,
         height: 1.2,
       ),
     ),
@@ -3256,20 +3236,6 @@ class _AutismDevBehaviorScore {
   final int s;
 }
 
-class _AutismDevAnalysisItem {
-  const _AutismDevAnalysisItem({
-    required this.domain,
-    required this.status,
-    required this.strength,
-    required this.target,
-  });
-
-  final String domain;
-  final String status;
-  final String strength;
-  final String target;
-}
-
 const List<_AutismDevDevelopmentScore> _autismDevDevelopmentScores =
     <_AutismDevDevelopmentScore>[
   _AutismDevDevelopmentScore(
@@ -3702,56 +3668,4 @@ const List<String> _autismDevResultAnalysisDomains = <String>[
   '认知',
   '社会交往',
   '生活自理',
-];
-
-const List<_AutismDevAnalysisItem> _autismDevAnalysisItems =
-    <_AutismDevAnalysisItem>[
-  _AutismDevAnalysisItem(
-    domain: '感知觉',
-    status: '视觉、听觉反应较稳定，触觉与味觉辨别任务仍需持续观察。',
-    strength: '优势：熟悉刺激反应明确。劣势：复杂辨别与记忆任务稳定性不足。',
-    target: '优先安排触觉辨别、味觉辨别与多感官配对训练。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '粗大动作',
-    status: '基本姿势与移动能力较好，球类操作与平衡动作存在波动。',
-    strength: '优势：移动类项目完成度较高。劣势：抛接、踢、拍等协调动作较弱。',
-    target: '设置抛接球、平衡木行走与双手协调游戏目标。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '精细动作',
-    status: '基础抓握和摆弄物品较稳定，握笔写画及工具使用需加强。',
-    strength: '优势：基本操作可配合。劣势：双手配合和精细控制持续时间短。',
-    target: '围绕穿珠、剪纸、仿画和工具使用建立分步训练。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '语言与沟通',
-    status: '理解简单名称和动作指令较好，主动表达和复述能力不足。',
-    strength: '优势：名称指认有基础。劣势：短语、句子和主动提问较少。',
-    target: '以表达要求、回答问题、短语扩展和主动提问作为核心目标。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '认知',
-    status: '配对、分类和部分颜色概念可完成，数量及关系概念仍需支持。',
-    strength: '优势：具体物品配对较好。劣势：抽象概念和数概念掌握不稳定。',
-    target: '训练大小、多少、长短、颜色分类和1-5数量操作。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '社会交往',
-    status: '熟悉情境中可回应互动，陌生情境与社交礼仪需提示。',
-    strength: '优势：近距离互动可建立。劣势：主动打招呼、告别与感谢不足。',
-    target: '设计打招呼、告别、请求帮助和表示感谢的情境练习。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '生活自理',
-    status: '进食和部分家居自理较稳定，穿衣梳洗流程仍需辅助。',
-    strength: '优势：日常熟悉流程接受度较好。劣势：多步骤任务独立性不足。',
-    target: '拆分穿衣、梳洗、物品归位和收拾餐具等连续任务。',
-  ),
-  _AutismDevAnalysisItem(
-    domain: '情绪与行为',
-    status: '轻度异常项目集中在情绪调节、感觉偏好和特殊行为。',
-    strength: '优势：多数项目无重度异常。劣势：转变适应与感官偏好需关注。',
-    target: '建立等待、转换活动、情绪表达和感官调节策略。',
-  ),
 ];

@@ -85,6 +85,8 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/config/update", handler.updateAutismDevAssessmentRecordConfig)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/detail", handler.autismDevAssessmentRecordDetail)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis", handler.autismDevAssessmentRecordResultAnalysis)
+	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis/word", handler.autismDevAssessmentRecordResultAnalysisWord)
+	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis/pdf", handler.autismDevAssessmentRecordResultAnalysisPDF)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/result-analysis/ai/stream", handler.autismDevAssessmentRecordResultAnalysisAIStream)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/profile/pdf", handler.autismDevAssessmentRecordProfilePDF)
 	mux.HandleFunc("/api/v1/assessments/autismdev/records/category-stats", handler.autismDevAssessmentRecordCategoryStats)

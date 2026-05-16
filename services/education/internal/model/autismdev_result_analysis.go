@@ -9,6 +9,11 @@ type AutismDevResultAnalysisSaveRequest struct {
 	Analysis AutismDevResultAnalysisVO `json:"analysis"`
 }
 
+type AutismDevResultAnalysisExportRequest struct {
+	ID       int64                      `json:"id"`
+	Analysis *AutismDevResultAnalysisVO `json:"analysis,omitempty"`
+}
+
 type AutismDevResultAnalysisVO struct {
 	Title       string                       `json:"title"`
 	Model       string                       `json:"model,omitempty"`
