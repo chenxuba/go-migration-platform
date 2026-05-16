@@ -2,3 +2,5 @@
 .tmpdecode/
 .deploy/
 scripts/provision-prod.env
+training-games/node_modules/
+training-games/dist/
