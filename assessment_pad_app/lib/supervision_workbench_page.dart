@@ -277,29 +277,14 @@ class _TopBar extends StatelessWidget {
       children: <Widget>[
         _BackButton(onTap: onBack),
         const SizedBox(width: 14),
-        const Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            Text(
-              '督导工作台',
-              style: TextStyle(
-                color: Color(0xFF3F2B22),
-                fontSize: 25,
-                fontWeight: FontWeight.w900,
-                height: 1,
-              ),
-            ),
-            SizedBox(height: 6),
-            Text(
-              'IEP 制定、审核、记录复核、计划调整',
-              style: TextStyle(
-                color: Color(0xFF6F5B50),
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                height: 1,
-              ),
-            ),
-          ],
+        const Text(
+          '督导工作台',
+          style: TextStyle(
+            color: Color(0xFF3F2B22),
+            fontSize: 25,
+            fontWeight: FontWeight.w900,
+            height: 1,
+          ),
         ),
         const Spacer(),
         SizedBox(
