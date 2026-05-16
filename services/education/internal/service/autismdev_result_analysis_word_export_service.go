@@ -161,7 +161,7 @@ func buildAutismDevResultAnalysisTable(rows []model.AutismDevResultAnalysisRow) 
 	widths := []int{1050, 2500, 3450, 3080}
 	var builder strings.Builder
 	builder.WriteString(buildIEPTableStart(widths))
-	builder.WriteString(buildIEPTableRowStart(560))
+	builder.WriteString(buildIEPTableRowStart(520))
 	builder.WriteString(buildIEPCell([]string{"领   域"}, widths[0], autismDevAnalysisHeaderCellOptions()))
 	builder.WriteString(buildIEPCell([]string{"能力现状描述"}, widths[1], autismDevAnalysisHeaderCellOptions()))
 	builder.WriteString(buildIEPCell([]string{"优劣分析"}, widths[2], autismDevAnalysisHeaderCellOptions()))
@@ -169,7 +169,7 @@ func buildAutismDevResultAnalysisTable(rows []model.AutismDevResultAnalysisRow) 
 	builder.WriteString(`</w:tr>`)
 	for _, row := range rows {
 		row = trimAutismDevResultAnalysisRow(row)
-		builder.WriteString(buildIEPTableRowStart(1680))
+		builder.WriteString(buildIEPTableRowStart(1560))
 		builder.WriteString(buildIEPCell(domainTextLines(row.Domain), widths[0], iepPlanWordCellOptions{Align: "center", VAlign: "center", CompactParagraph: true, LineSpacing: 220, FontSize: 20}))
 		builder.WriteString(buildIEPCell(splitWordLines(row.Status), widths[1], autismDevAnalysisBodyCellOptions()))
 		builder.WriteString(buildIEPCell(autismDevStrengthWeaknessLines(row), widths[2], autismDevAnalysisBodyCellOptions()))
@@ -198,7 +198,7 @@ func autismDevAnalysisBodyCellOptions() iepPlanWordCellOptions {
 		PaddingRight:  60,
 		SpacingBefore: 0,
 		SpacingAfter:  0,
-		LineSpacing:   230,
+		LineSpacing:   220,
 	}
 }
 
@@ -206,9 +206,6 @@ func autismDevStrengthWeaknessLines(row model.AutismDevResultAnalysisRow) []stri
 	lines := make([]string, 0, 4)
 	if text := strings.TrimSpace(row.Strengths); text != "" {
 		lines = append(lines, "优势："+text)
-	}
-	if strings.TrimSpace(row.Strengths) != "" && strings.TrimSpace(row.Weaknesses) != "" {
-		lines = append(lines, "")
 	}
 	if text := strings.TrimSpace(row.Weaknesses); text != "" {
 		lines = append(lines, "劣势："+text)

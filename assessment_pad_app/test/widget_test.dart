@@ -380,6 +380,9 @@ void main() {
 
     expect(find.text('孤独症儿童发展评估报告'), findsWidgets);
     expect(find.text('评估情况'), findsOneWidget);
+    expect(find.text('3.1 发展能力计分汇总表'), findsOneWidget);
+    expect(find.text('测评次数'), findsOneWidget);
+    expect(find.text('量表版本'), findsNothing);
     expect(find.text('评估结果分析'), findsOneWidget);
     expect(find.text('训练效果'), findsOneWidget);
     expect(find.text('发展情况剖面图'), findsOneWidget);

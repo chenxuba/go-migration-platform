@@ -491,16 +491,9 @@ class _AutismDevReportPreviewDialogState
   }
 
   Widget _buildReportPage() {
-    final bool showHeader =
-        !_AutismDevReportPreviewDialogState._isBackendProfileTab(_activeTab) &&
-            _activeTab != _AutismDevReportTab.resultAnalysis;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        if (showHeader) ...<Widget>[
-          _AutismDevReportPageHeader(record: _displayRecord),
-          const SizedBox(height: 18),
-        ],
         _buildActiveSection(),
       ],
     );
@@ -509,7 +502,7 @@ class _AutismDevReportPreviewDialogState
   Widget _buildActiveSection() {
     switch (_activeTab) {
       case _AutismDevReportTab.assessmentInfo:
-        return const _AutismDevOverviewSection();
+        return _AutismDevOverviewSection(record: _displayRecord);
       case _AutismDevReportTab.resultAnalysis:
         return _AutismDevAnalysisSection(
           record: _displayRecord,
@@ -789,8 +782,8 @@ class _AutismDevReportTabBar extends StatelessWidget {
   }
 }
 
-class _AutismDevReportPageHeader extends StatelessWidget {
-  const _AutismDevReportPageHeader({required this.record});
+class _AutismDevOverviewSection extends StatelessWidget {
+  const _AutismDevOverviewSection({required this.record});
 
   final Pep3RecordSummary record;
 
@@ -799,106 +792,22 @@ class _AutismDevReportPageHeader extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        const Center(
-          child: Text(
-            '孤独症儿童发展评估报告',
-            style: TextStyle(
-              color: _ReportTheme.ink,
-              fontSize: 24,
-              height: 1.2,
-              fontWeight: FontWeight.w900,
-            ),
+        const Text(
+          '3.1 发展能力计分汇总表',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 22,
+            height: 1.2,
+            fontWeight: FontWeight.w700,
           ),
         ),
         const SizedBox(height: 16),
-        _AutismDevInfoGrid(
-          items: <_AutismDevInfoItem>[
-            _AutismDevInfoItem('儿童姓名', _studentName(record)),
-            _AutismDevInfoItem('测评年龄', _ageText(record)),
-            _AutismDevInfoItem('测评日期', _dateOnlyText(record.assessmentDate)),
-            _AutismDevInfoItem(
-              '评估者',
-              record.examinerName.trim().isEmpty
-                  ? '-'
-                  : record.examinerName.trim(),
-            ),
-            _AutismDevInfoItem(
-                '量表版本',
-                record.scaleVersion.trim().isEmpty
-                    ? '2010修订训练师版'
-                    : record.scaleVersion.trim()),
-            _AutismDevInfoItem(
-                '测评次数', _sequenceText(record.assessmentSequence)),
-          ],
+        _AutismDevAssessmentSituationTable(
+          record: record,
+          developmentScores: _autismDevDevelopmentScoresForRecord(record),
+          behaviorScores: _autismDevBehaviorScoresForRecord(record),
         ),
-      ],
-    );
-  }
-}
-
-class _AutismDevOverviewSection extends StatelessWidget {
-  const _AutismDevOverviewSection();
-
-  @override
-  Widget build(BuildContext context) {
-    final int developmentP = _autismDevDevelopmentScores.fold<int>(
-      0,
-      (int total, _AutismDevDevelopmentScore item) => total + item.p,
-    );
-    final int developmentTotal = _autismDevDevelopmentScores.fold<int>(
-      0,
-      (int total, _AutismDevDevelopmentScore item) => total + item.total,
-    );
-    final int trainingTargets = _autismDevDevelopmentScores.fold<int>(
-      0,
-      (int total, _AutismDevDevelopmentScore item) => total + item.e,
-    );
-    final int behaviorAttention = _autismDevBehaviorScores.fold<int>(
-      0,
-      (int total, _AutismDevBehaviorScore item) => total + item.m + item.s,
-    );
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: <Widget>[
-            _AutismDevOverviewMetric(
-              label: '发展领域通过项',
-              value: '$developmentP',
-              suffix: '/ $developmentTotal',
-              color: _ReportTheme.blue,
-            ),
-            _AutismDevOverviewMetric(
-              label: '训练目标候选项',
-              value: '$trainingTargets',
-              suffix: '个E项',
-              color: _ReportTheme.orangeDeep,
-            ),
-            _AutismDevOverviewMetric(
-              label: '情绪行为需关注',
-              value: '$behaviorAttention',
-              suffix: '项',
-              color: _ReportTheme.rose,
-            ),
-          ],
-        ),
-        const SizedBox(height: 18),
-        const _AutismDevSectionTitle(
-          title: '发展能力计分汇总表',
-          subtitle: '七个发展领域按 P / E+F(X) 汇总；情绪与行为按 A / M / S 汇总。',
-        ),
-        const SizedBox(height: 10),
-        const _AutismDevDevelopmentScoreTable(),
-        const SizedBox(height: 18),
-        const _AutismDevSectionTitle(
-          title: '结果摘要',
-          subtitle: '根据各领域通过项、中间反应项和情绪行为分布整理。',
-        ),
-        const SizedBox(height: 10),
-        const _AutismDevReportSummaryGrid(),
       ],
     );
   }
@@ -1818,330 +1727,247 @@ class _AutismDevDialogAction extends StatelessWidget {
   }
 }
 
-class _AutismDevSectionTitle extends StatelessWidget {
-  const _AutismDevSectionTitle({
-    required this.title,
-    required this.subtitle,
+class _AutismDevAssessmentSituationTable extends StatelessWidget {
+  const _AutismDevAssessmentSituationTable({
+    required this.record,
+    required this.developmentScores,
+    required this.behaviorScores,
   });
 
-  final String title;
-  final String subtitle;
+  final Pep3RecordSummary record;
+  final List<_AutismDevDevelopmentScore> developmentScores;
+  final List<_AutismDevBehaviorScore> behaviorScores;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border.all(color: Colors.black, width: 1),
+      ),
+      child: Column(
+        children: <Widget>[
+          _buildInfoRows(),
+          _buildHeader(),
+          for (final _AutismDevDevelopmentScore item in developmentScores)
+            _buildDevelopmentRow(item),
+          _buildBehaviorHeaderRow(),
+          for (int index = 0; index < behaviorScores.length; index += 1)
+            _buildBehaviorRow(
+              behaviorScores[index],
+              index: index,
+              bottom: index != behaviorScores.length - 1,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildInfoRows() {
+    return Column(
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            _infoLabelCell('儿童姓名'),
+            _infoValueCell(_studentName(record)),
+            _infoLabelCell('测评年龄'),
+            _infoValueCell(_ageText(record)),
+            _infoLabelCell('测评日期'),
+            _infoValueCell(_dateOnlyText(record.assessmentDate), right: false),
+          ],
+        ),
+        Row(
+          children: <Widget>[
+            _infoLabelCell('评估者'),
+            _infoValueCell(record.examinerName.trim()),
+            _infoLabelCell('出生日期'),
+            _infoValueCell(_dateOnlyText(record.birthDate)),
+            _infoLabelCell('测评次数'),
+            _infoValueCell(
+              _sequenceText(record.assessmentSequence),
+              right: false,
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildHeader() {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Container(
-          width: 4,
-          height: 32,
-          margin: const EdgeInsets.only(top: 2),
-          decoration: BoxDecoration(
-            color: _ReportTheme.orange,
-            borderRadius: BorderRadius.circular(999),
-          ),
-        ),
-        const SizedBox(width: 10),
+        _cell('领   域', flex: 18, height: 78, header: true),
         Expanded(
+          flex: 39,
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              Text(
-                title,
-                style: const TextStyle(
-                  color: _ReportTheme.ink,
-                  fontSize: 18,
-                  height: 1.2,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                subtitle,
-                style: const TextStyle(
-                  color: _ReportTheme.muted,
-                  fontSize: 12,
-                  height: 1.35,
-                  fontWeight: FontWeight.w800,
-                ),
+              _box('评估结果', height: 39, right: true, bottom: true, header: true),
+              Row(
+                children: <Widget>[
+                  _cell('P', flex: 13, height: 39, header: true),
+                  _cell('E+F(X)', flex: 13, height: 39, header: true),
+                  _cell('总分', flex: 13, height: 39, right: true, header: true),
+                ],
               ),
             ],
           ),
         ),
+        _cell('备注', flex: 13, height: 78, right: false, header: true),
       ],
     );
   }
-}
 
-class _AutismDevInfoGrid extends StatelessWidget {
-  const _AutismDevInfoGrid({required this.items});
-
-  final List<_AutismDevInfoItem> items;
-
-  @override
-  Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
+  Widget _buildDevelopmentRow(_AutismDevDevelopmentScore item) {
+    return Row(
       children: <Widget>[
-        for (final _AutismDevInfoItem item in items)
-          SizedBox(
-            width: 264,
-            child: _AutismDevInfoCell(item: item),
-          ),
+        _cell(
+          _autismDevDevelopmentReportLabel(item.label),
+          flex: 18,
+          height: 44,
+          emph: true,
+        ),
+        _cell(_scoreText(item.measured, item.p), flex: 13, height: 44),
+        _cell(
+          _scoreText(item.measured, item.supportCount),
+          flex: 13,
+          height: 44,
+        ),
+        _cell(_scoreText(item.measured, item.p), flex: 13, height: 44),
+        _cell('', flex: 13, height: 44, right: false),
       ],
     );
   }
-}
 
-class _AutismDevInfoCell extends StatelessWidget {
-  const _AutismDevInfoCell({required this.item});
-
-  final _AutismDevInfoItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      child: Row(
-        children: <Widget>[
-          Text(
-            item.label,
-            style: const TextStyle(
-              color: _ReportTheme.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Text(
-              item.value.trim().isEmpty ? '-' : item.value.trim(),
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.right,
-              style: const TextStyle(
-                color: _ReportTheme.ink,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutismDevOverviewMetric extends StatelessWidget {
-  const _AutismDevOverviewMetric({
-    required this.label,
-    required this.value,
-    required this.suffix,
-    required this.color,
-  });
-
-  final String label;
-  final String value;
-  final String suffix;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: 264,
-      height: 82,
-      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            label,
-            style: const TextStyle(
-              color: _ReportTheme.muted,
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const Spacer(),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: <Widget>[
-              Text(
-                value,
-                style: TextStyle(
-                  color: color,
-                  fontSize: 30,
-                  height: .9,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              const SizedBox(width: 7),
-              Padding(
-                padding: const EdgeInsets.only(bottom: 2),
-                child: Text(
-                  suffix,
-                  style: const TextStyle(
-                    color: _ReportTheme.text,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _AutismDevReportSummaryGrid extends StatelessWidget {
-  const _AutismDevReportSummaryGrid();
-
-  @override
-  Widget build(BuildContext context) {
-    const List<_AutismDevSummaryItem> items = <_AutismDevSummaryItem>[
-      _AutismDevSummaryItem(
-        '能力现状',
-        '认知、生活自理和感知觉通过项占比较高。',
-        Icons.trending_up_rounded,
-      ),
-      _AutismDevSummaryItem(
-        '目标候选',
-        '语言表达、精细动作和社会交往E项较集中。',
-        Icons.flag_rounded,
-      ),
-      _AutismDevSummaryItem(
-        '行为关注',
-        '感觉偏好、情绪调节和特殊行为需要持续观察。',
-        Icons.visibility_rounded,
-      ),
-      _AutismDevSummaryItem(
-        '训练建议',
-        '优先从E项转化短期目标，再补充F项前置能力。',
-        Icons.assignment_turned_in_rounded,
-      ),
-    ];
-    return Wrap(
-      spacing: 10,
-      runSpacing: 10,
+  Widget _buildBehaviorHeaderRow() {
+    return Row(
       children: <Widget>[
-        for (final _AutismDevSummaryItem item in items)
-          SizedBox(
-            width: 198,
-            child: _AutismDevSummaryTile(item: item),
-          ),
+        _cell('情绪与行为能力', flex: 18, height: 34, emph: true),
+        _cell('A', flex: 13, height: 34, emph: true),
+        _cell('M', flex: 13, height: 34, emph: true),
+        _cell('S', flex: 13, height: 34, emph: true),
+        _cell('', flex: 13, height: 34, right: false),
       ],
     );
   }
-}
 
-class _AutismDevSummaryTile extends StatelessWidget {
-  const _AutismDevSummaryTile({required this.item});
+  Widget _buildBehaviorRow(
+    _AutismDevBehaviorScore item, {
+    required int index,
+    required bool bottom,
+  }) {
+    return Row(
+      children: <Widget>[
+        _cell(
+          '${index + 1}、${item.label}',
+          flex: 18,
+          height: 42,
+          bottom: bottom,
+          emph: true,
+        ),
+        _cell(
+          _scoreText(item.measured, item.a),
+          flex: 13,
+          height: 42,
+          bottom: bottom,
+        ),
+        _cell(
+          _scoreText(item.measured, item.m),
+          flex: 13,
+          height: 42,
+          bottom: bottom,
+        ),
+        _cell(
+          _scoreText(item.measured, item.s),
+          flex: 13,
+          height: 42,
+          bottom: bottom,
+        ),
+        _cell('', flex: 13, height: 42, right: false, bottom: bottom),
+      ],
+    );
+  }
 
-  final _AutismDevSummaryItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      height: 84,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      child: Row(
-        children: <Widget>[
-          Container(
-            width: 34,
-            height: 34,
-            alignment: Alignment.center,
-            decoration: BoxDecoration(
-              color: const Color(0xFFFFF1E8),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(
-              item.icon,
-              color: _ReportTheme.orangeDeep,
-              size: 18,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                Text(
-                  item.title,
-                  style: const TextStyle(
-                    color: _ReportTheme.ink,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  item.description,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _ReportTheme.muted,
-                    fontSize: 11,
-                    height: 1.25,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+  static Widget _cell(
+    String text, {
+    required int flex,
+    required double height,
+    bool right = true,
+    bool bottom = true,
+    bool header = false,
+    bool emph = false,
+  }) {
+    return Expanded(
+      flex: flex,
+      child: _box(
+        text,
+        height: height,
+        right: right,
+        bottom: bottom,
+        header: header,
+        emph: emph,
       ),
     );
   }
-}
 
-class _AutismDevDevelopmentScoreTable extends StatelessWidget {
-  const _AutismDevDevelopmentScoreTable();
+  static Widget _infoLabelCell(String text) {
+    return Expanded(
+      flex: 10,
+      child: _box(
+        text,
+        height: 34,
+        right: true,
+        bottom: true,
+        emph: true,
+      ),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
-    return _AutismDevTableFrame(
-      child: Table(
-        columnWidths: const <int, TableColumnWidth>{
-          0: FlexColumnWidth(1.7),
-          1: FlexColumnWidth(1),
-          2: FlexColumnWidth(1),
-          3: FlexColumnWidth(1),
-        },
-        border: TableBorder.all(color: _ReportTheme.lineSoft),
-        children: <TableRow>[
-          _autismDevTableHeaderRow(<String>['领域', 'P', 'E+F(X)', '总分']),
-          for (final _AutismDevDevelopmentScore item
-              in _autismDevDevelopmentScores)
-            _autismDevTableRow(
-              <String>[
-                item.label,
-                '${item.p}',
-                '${item.supportCount}',
-                '${item.p}',
-              ],
-              emphFirst: true,
-            ),
-        ],
+  static Widget _infoValueCell(String text, {bool right = true}) {
+    return Expanded(
+      flex: 23,
+      child: _box(
+        text.trim().isEmpty ? '-' : text.trim(),
+        height: 34,
+        right: right,
+        bottom: true,
+      ),
+    );
+  }
+
+  static Widget _box(
+    String text, {
+    required double height,
+    bool right = true,
+    bool bottom = true,
+    bool header = false,
+    bool emph = false,
+  }) {
+    return Container(
+      height: height,
+      alignment: Alignment.center,
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(
+          right: right
+              ? const BorderSide(color: Colors.black, width: 1)
+              : BorderSide.none,
+          bottom: bottom
+              ? const BorderSide(color: Colors.black, width: 1)
+              : BorderSide.none,
+        ),
+      ),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: Colors.black,
+          fontSize: header ? 15 : 13.5,
+          height: 1.18,
+          fontWeight: header || emph ? FontWeight.w700 : FontWeight.w500,
+        ),
       ),
     );
   }
@@ -2236,7 +2062,7 @@ class _AutismDevResultAnalysisTable extends StatelessWidget {
 
 Widget _autismDevAnalysisHeaderCell(String text) {
   return Container(
-    height: 38,
+    height: 36,
     alignment: Alignment.center,
     padding: const EdgeInsets.symmetric(horizontal: 8),
     color: Colors.white,
@@ -2246,7 +2072,7 @@ Widget _autismDevAnalysisHeaderCell(String text) {
       style: const TextStyle(
         color: Colors.black,
         fontSize: 16,
-        height: 1.15,
+        height: 1.12,
       ),
     ),
   );
@@ -2254,7 +2080,7 @@ Widget _autismDevAnalysisHeaderCell(String text) {
 
 Widget _autismDevAnalysisDomainCell(String domain) {
   return Container(
-    constraints: const BoxConstraints(minHeight: 246),
+    constraints: const BoxConstraints(minHeight: 232),
     alignment: Alignment.center,
     padding: const EdgeInsets.symmetric(horizontal: 8),
     color: Colors.white,
@@ -2284,7 +2110,7 @@ Widget _autismDevAnalysisTextCell(
       style: const TextStyle(
         color: Colors.black,
         fontSize: 15.5,
-        height: 1.36,
+        height: 1.32,
       ),
     ),
   );
@@ -2322,7 +2148,7 @@ Widget _autismDevAnalysisLabeledText({
   const TextStyle style = TextStyle(
     color: Colors.black,
     fontSize: 15.5,
-    height: 1.36,
+    height: 1.32,
   );
   return Text.rich(
     TextSpan(
@@ -2342,9 +2168,9 @@ Widget _autismDevAnalysisEditableFrame({
   required VoidCallback onTap,
 }) {
   final Widget content = Container(
-    constraints: const BoxConstraints(minHeight: 246),
+    constraints: const BoxConstraints(minHeight: 232),
     alignment: Alignment.topLeft,
-    padding: EdgeInsets.fromLTRB(10, 9, editable ? 20 : 10, 9),
+    padding: EdgeInsets.fromLTRB(10, 8, editable ? 20 : 10, 8),
     decoration: BoxDecoration(
       color: Colors.white,
       boxShadow: editable
@@ -3115,91 +2941,11 @@ class _AutismDevBehaviorProfilePainter extends CustomPainter {
   }
 }
 
-class _AutismDevTableFrame extends StatelessWidget {
-  const _AutismDevTableFrame({required this.child});
-
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: child,
-    );
-  }
-}
-
-TableRow _autismDevTableHeaderRow(List<String> values, {bool tall = false}) {
-  return TableRow(
-    decoration: const BoxDecoration(color: Color(0xFFFFF8F2)),
-    children: <Widget>[
-      for (final String value in values)
-        _autismDevTableCell(
-          value,
-          emph: true,
-          header: true,
-          minHeight: tall ? 44 : 38,
-        ),
-    ],
-  );
-}
-
-TableRow _autismDevTableRow(List<String> values, {bool emphFirst = false}) {
-  return TableRow(
-    children: <Widget>[
-      for (int index = 0; index < values.length; index++)
-        _autismDevTableCell(
-          values[index],
-          emph: emphFirst && index == 0,
-        ),
-    ],
-  );
-}
-
-Widget _autismDevTableCell(
-  String value, {
-  bool emph = false,
-  bool header = false,
-  double minHeight = 36,
-}) {
-  return Container(
-    constraints: BoxConstraints(minHeight: minHeight),
-    alignment: Alignment.center,
-    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
-    color: header ? const Color(0xFFFFF8F2) : Colors.white,
-    child: Text(
-      value,
-      textAlign: TextAlign.center,
-      style: TextStyle(
-        color: emph ? _ReportTheme.ink : _ReportTheme.text,
-        fontSize: header ? 13 : 12,
-        height: 1.35,
-        fontWeight: emph ? FontWeight.w900 : FontWeight.w800,
-      ),
-    ),
-  );
-}
-
-class _AutismDevInfoItem {
-  const _AutismDevInfoItem(this.label, this.value);
-
-  final String label;
-  final String value;
-}
-
 class _AutismDevReportTabSpec {
   const _AutismDevReportTabSpec(this.label, this.tab);
 
   final String label;
   final _AutismDevReportTab tab;
-}
-
-class _AutismDevSummaryItem {
-  const _AutismDevSummaryItem(this.title, this.description, this.icon);
-
-  final String title;
-  final String description;
-  final IconData icon;
 }
 
 class _AutismDevDevelopmentScore {
@@ -3210,6 +2956,7 @@ class _AutismDevDevelopmentScore {
     required this.f,
     required this.x,
     required this.total,
+    this.measured = true,
   });
 
   final String label;
@@ -3218,6 +2965,7 @@ class _AutismDevDevelopmentScore {
   final int f;
   final int x;
   final int total;
+  final bool measured;
 
   int get supportCount => e + f + x;
 }
@@ -3228,13 +2976,87 @@ class _AutismDevBehaviorScore {
     required this.a,
     required this.m,
     required this.s,
+    this.measured = true,
   });
 
   final String label;
   final int a;
   final int m;
   final int s;
+  final bool measured;
 }
+
+class _AutismDevDevelopmentScoreSpec {
+  const _AutismDevDevelopmentScoreSpec({
+    required this.label,
+    required this.startItemNo,
+    required this.endItemNo,
+    required this.total,
+  });
+
+  final String label;
+  final int startItemNo;
+  final int endItemNo;
+  final int total;
+}
+
+class _AutismDevBehaviorScoreSpec {
+  const _AutismDevBehaviorScoreSpec({
+    required this.label,
+    required this.startItemNo,
+    required this.endItemNo,
+  });
+
+  final String label;
+  final int startItemNo;
+  final int endItemNo;
+}
+
+const List<_AutismDevDevelopmentScoreSpec> _autismDevDevelopmentScoreSpecs =
+    <_AutismDevDevelopmentScoreSpec>[
+  _AutismDevDevelopmentScoreSpec(
+    label: '语言与沟通',
+    startItemNo: 194,
+    endItemNo: 272,
+    total: 79,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '认知',
+    startItemNo: 273,
+    endItemNo: 327,
+    total: 55,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '生活自理',
+    startItemNo: 375,
+    endItemNo: 441,
+    total: 67,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '感知觉',
+    startItemNo: 1,
+    endItemNo: 55,
+    total: 55,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '粗大动作',
+    startItemNo: 56,
+    endItemNo: 127,
+    total: 72,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '精细动作',
+    startItemNo: 128,
+    endItemNo: 193,
+    total: 66,
+  ),
+  _AutismDevDevelopmentScoreSpec(
+    label: '社会交往',
+    startItemNo: 328,
+    endItemNo: 374,
+    total: 47,
+  ),
+];
 
 const List<_AutismDevDevelopmentScore> _autismDevDevelopmentScores =
     <_AutismDevDevelopmentScore>[
@@ -3298,6 +3120,45 @@ const List<_AutismDevDevelopmentScore> _autismDevDevelopmentScores =
 
 const int _autismDevBehaviorFirstItemNo = 442;
 const int _autismDevBehaviorItemCount = 52;
+
+const List<_AutismDevBehaviorScoreSpec> _autismDevBehaviorScoreSpecs =
+    <_AutismDevBehaviorScoreSpec>[
+  _AutismDevBehaviorScoreSpec(
+    label: '依附情绪行为',
+    startItemNo: 442,
+    endItemNo: 443,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '情绪理解',
+    startItemNo: 444,
+    endItemNo: 447,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '情绪表达与调节',
+    startItemNo: 448,
+    endItemNo: 455,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '关系与情感',
+    startItemNo: 456,
+    endItemNo: 466,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '对物品的兴趣',
+    startItemNo: 467,
+    endItemNo: 475,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '感觉偏好',
+    startItemNo: 476,
+    endItemNo: 485,
+  ),
+  _AutismDevBehaviorScoreSpec(
+    label: '特殊行为',
+    startItemNo: 486,
+    endItemNo: 493,
+  ),
+];
 
 const List<String> _autismDevBehaviorFallbackItemLevels = <String>[
   'A',
@@ -3386,14 +3247,152 @@ String? _autismDevBehaviorLevel(String? raw) {
 
 const List<_AutismDevBehaviorScore> _autismDevBehaviorScores =
     <_AutismDevBehaviorScore>[
-  _AutismDevBehaviorScore(label: '依附情绪行为', a: 4, m: 2, s: 1),
-  _AutismDevBehaviorScore(label: '情绪理解', a: 3, m: 2, s: 0),
-  _AutismDevBehaviorScore(label: '情绪表达与调节', a: 3, m: 3, s: 1),
-  _AutismDevBehaviorScore(label: '关系与情感', a: 4, m: 2, s: 1),
+  _AutismDevBehaviorScore(label: '依附情绪行为', a: 1, m: 1, s: 0),
+  _AutismDevBehaviorScore(label: '情绪理解', a: 3, m: 1, s: 0),
+  _AutismDevBehaviorScore(label: '情绪表达与调节', a: 4, m: 3, s: 1),
+  _AutismDevBehaviorScore(label: '关系与情感', a: 6, m: 4, s: 1),
   _AutismDevBehaviorScore(label: '对物品的兴趣', a: 5, m: 3, s: 1),
   _AutismDevBehaviorScore(label: '感觉偏好', a: 5, m: 4, s: 1),
-  _AutismDevBehaviorScore(label: '特殊行为', a: 4, m: 3, s: 0),
+  _AutismDevBehaviorScore(label: '特殊行为', a: 4, m: 3, s: 1),
 ];
+
+List<_AutismDevDevelopmentScore> _autismDevDevelopmentScoresForRecord(
+  Pep3RecordSummary record,
+) {
+  final Map<int, String> scores = _autismDevRecordScoreLabels(record);
+  if (scores.isEmpty) {
+    return _autismDevDevelopmentScores;
+  }
+  return <_AutismDevDevelopmentScore>[
+    for (final _AutismDevDevelopmentScoreSpec spec
+        in _autismDevDevelopmentScoreSpecs)
+      _autismDevDevelopmentScoreFromLabels(spec, scores),
+  ];
+}
+
+List<_AutismDevBehaviorScore> _autismDevBehaviorScoresForRecord(
+  Pep3RecordSummary record,
+) {
+  final Map<int, String> scores = _autismDevRecordScoreLabels(record);
+  if (scores.isEmpty) {
+    return _autismDevBehaviorScores;
+  }
+  return <_AutismDevBehaviorScore>[
+    for (final _AutismDevBehaviorScoreSpec spec in _autismDevBehaviorScoreSpecs)
+      _autismDevBehaviorScoreFromLabels(spec, scores),
+  ];
+}
+
+Map<int, String> _autismDevRecordScoreLabels(Pep3RecordSummary record) {
+  if (record is Pep3RecordDetail) {
+    return record.input.itemScoreLabels;
+  }
+  return const <int, String>{};
+}
+
+_AutismDevDevelopmentScore _autismDevDevelopmentScoreFromLabels(
+  _AutismDevDevelopmentScoreSpec spec,
+  Map<int, String> scores,
+) {
+  int p = 0;
+  int e = 0;
+  int f = 0;
+  int x = 0;
+  int answered = 0;
+  for (int itemNo = spec.startItemNo; itemNo <= spec.endItemNo; itemNo += 1) {
+    final String? score = _autismDevPEFScore(scores[itemNo]);
+    if (score == null) {
+      continue;
+    }
+    answered += 1;
+    switch (score) {
+      case 'P':
+        p += 1;
+        break;
+      case 'E':
+        e += 1;
+        break;
+      case 'F':
+        f += 1;
+        break;
+      case 'X':
+        x += 1;
+        break;
+    }
+  }
+  return _AutismDevDevelopmentScore(
+    label: spec.label,
+    p: p,
+    e: e,
+    f: f,
+    x: x,
+    total: spec.total,
+    measured: answered > 0,
+  );
+}
+
+_AutismDevBehaviorScore _autismDevBehaviorScoreFromLabels(
+  _AutismDevBehaviorScoreSpec spec,
+  Map<int, String> scores,
+) {
+  int a = 0;
+  int m = 0;
+  int s = 0;
+  int answered = 0;
+  for (int itemNo = spec.startItemNo; itemNo <= spec.endItemNo; itemNo += 1) {
+    final String? score = _autismDevBehaviorLevel(scores[itemNo]);
+    if (score == null) {
+      continue;
+    }
+    answered += 1;
+    switch (score) {
+      case 'A':
+        a += 1;
+        break;
+      case 'M':
+        m += 1;
+        break;
+      case 'S':
+        s += 1;
+        break;
+    }
+  }
+  return _AutismDevBehaviorScore(
+    label: spec.label,
+    a: a,
+    m: m,
+    s: s,
+    measured: answered > 0,
+  );
+}
+
+String? _autismDevPEFScore(String? raw) {
+  final String score = (raw ?? '').trim().toUpperCase();
+  if (score == 'P' || score.contains('通过')) {
+    return 'P';
+  }
+  if (score == 'E' || score.contains('中间') || score.contains('示范')) {
+    return 'E';
+  }
+  if (score == 'F' || score.contains('失败') || score.contains('无法')) {
+    return 'F';
+  }
+  if (score == 'X' || score.contains('不适用')) {
+    return 'X';
+  }
+  return null;
+}
+
+String _autismDevDevelopmentReportLabel(String label) {
+  if (label == '生活自理') {
+    return '自理能力';
+  }
+  return '$label能力';
+}
+
+String _scoreText(bool measured, int value) {
+  return measured ? '$value' : '';
+}
 
 AutismDevResultAnalysis _emptyAutismDevResultAnalysis() {
   return AutismDevResultAnalysis(

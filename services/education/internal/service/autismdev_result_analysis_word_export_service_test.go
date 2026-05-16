@@ -67,6 +67,17 @@ func TestBuildAutismDevResultAnalysisWordDocx(t *testing.T) {
 	}
 }
 
+func TestAutismDevStrengthWeaknessLinesAvoidBlankSpacer(t *testing.T) {
+	lines := autismDevStrengthWeaknessLines(model.AutismDevResultAnalysisRow{
+		Strengths:  "可配合熟悉刺激。",
+		Weaknesses: "复杂辨别稳定性不足。",
+	})
+	expected := []string{"优势：可配合熟悉刺激。", "劣势：复杂辨别稳定性不足。"}
+	if strings.Join(lines, "\n") != strings.Join(expected, "\n") {
+		t.Fatalf("unexpected strength weakness lines: %#v", lines)
+	}
+}
+
 func TestAutismDevResultAnalysisSourceHashIgnoresHeaderOnlyChanges(t *testing.T) {
 	assessmentDate := time.Date(2026, 5, 10, 0, 0, 0, 0, time.Local)
 	updatedTime := time.Date(2026, 5, 10, 9, 30, 0, 0, time.Local)

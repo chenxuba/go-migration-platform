@@ -316,6 +316,19 @@ func (repo *Repository) GetAssessmentRecord(ctx context.Context, instID, recordI
 		       END,
 		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
 		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
+		       (
+		         SELECT COUNT(1)
+		         FROM assessment_record ar_seq
+		         WHERE ar_seq.inst_id = ar.inst_id
+		           AND ar_seq.student_id = ar.student_id
+		           AND CONVERT(ar_seq.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci = CONVERT(ar.assessment_code USING utf8mb4) COLLATE utf8mb4_unicode_ci
+		           AND ar_seq.del_flag = 0
+		           AND (
+		             ar_seq.assessment_date < ar.assessment_date
+		             OR (ar_seq.assessment_date = ar.assessment_date AND ar_seq.id <= ar.id)
+		             OR (ar_seq.assessment_date IS NULL AND ar.assessment_date IS NULL AND ar_seq.id <= ar.id)
+		           )
+		       ) AS assessment_sequence,
 		       ar.examiner_id, ar.examiner_name, ar.input_json, ar.result_json, ar.data_status, ar.remark, ar.create_time, ar.update_time
 		FROM assessment_record ar
 		LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
@@ -363,6 +376,7 @@ func scanAssessmentRecordDetailRows(row assessmentRecordDetailScanner) (model.As
 		&item.AgeMonths,
 		&item.AgeDays,
 		&item.NormAgeMonths,
+		&item.AssessmentSequence,
 		&item.ExaminerID,
 		&item.ExaminerName,
 		&inputRaw,
@@ -400,6 +414,7 @@ func (repo *Repository) ListAssessmentRecordsForStudentScale(ctx context.Context
 		       END,
 		       ar.assessment_code, ar.assessment_name, IFNULL(sc.category, ''), ar.scale_version,
 		       ar.birth_date, ar.assessment_date, ar.age_years, ar.age_months, ar.age_days, ar.norm_age_months,
+		       0 AS assessment_sequence,
 		       ar.examiner_id, ar.examiner_name, ar.input_json, ar.result_json, ar.data_status, ar.remark, ar.create_time, ar.update_time
 		FROM assessment_record ar
 		LEFT JOIN inst_student s ON s.id = ar.student_id AND s.inst_id = ar.inst_id AND s.del_flag = 0
