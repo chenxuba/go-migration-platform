@@ -2,6 +2,13 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'training_game_webview_page.dart';
+
+const String _trainingGameBaseUrl = String.fromEnvironment(
+  'TRAINING_GAME_BASE_URL',
+  defaultValue: 'http://192.168.1.203:6777',
+);
+
 class TrainingCenterPage extends StatelessWidget {
   const TrainingCenterPage({required this.onBack, super.key});
 
@@ -783,6 +790,8 @@ class _RecommendedGameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final bool playable = game.title == '颜色配对乐园';
+
     return Container(
       width: width,
       height: 190,
@@ -846,7 +855,12 @@ class _RecommendedGameCard extends StatelessWidget {
               children: <Widget>[
                 _RatingStars(score: game.rating, size: width < 210 ? 14 : 17),
                 const Spacer(),
-                _StartButton(compact: width < 210),
+                _StartButton(
+                  compact: width < 210,
+                  onTap: playable
+                      ? () => _openColorMatchGame(context)
+                      : () => _showGamePendingMessage(context),
+                ),
               ],
             ),
           ),
@@ -857,36 +871,79 @@ class _RecommendedGameCard extends StatelessWidget {
 }
 
 class _StartButton extends StatelessWidget {
-  const _StartButton({this.compact = false});
+  const _StartButton({required this.onTap, this.compact = false});
 
   final bool compact;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: compact ? 72 : 80,
-      height: 28,
-      decoration: BoxDecoration(
-        color: _TrainingColors.orange,
+    return Material(
+      color: _TrainingColors.orange,
+      borderRadius: BorderRadius.circular(8),
+      child: InkWell(
         borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: const <Widget>[
-          Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
-          SizedBox(width: 2),
-          Text(
-            '开始游戏',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
+        onTap: onTap,
+        child: SizedBox(
+          width: compact ? 72 : 80,
+          height: 28,
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: const <Widget>[
+              Icon(Icons.play_arrow_rounded, color: Colors.white, size: 18),
+              SizedBox(width: 2),
+              Text(
+                '开始游戏',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
+}
+
+void _openColorMatchGame(BuildContext context) {
+  final Uri baseUri = Uri.parse(_trainingGameBaseUrl);
+  final Uri gameUri = baseUri.replace(
+    queryParameters: <String, String>{
+      ...baseUri.queryParameters,
+      'host': 'flutter',
+      'gameId': 'color-shape-match',
+      'taskId': 'pad-color-match-demo',
+      'studentId': 'chen-xiaoyu',
+      'difficulty': 'normal',
+    },
+  );
+
+  Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => TrainingGameWebViewPage(
+        title: '颜色配对乐园',
+        url: gameUri,
+      ),
+    ),
+  );
+}
+
+void _showGamePendingMessage(BuildContext context) {
+  ScaffoldMessenger.of(context).showSnackBar(
+    SnackBar(
+      content: const Text(
+        '这个游戏还未接入，先体验颜色配对乐园。',
+        style: TextStyle(fontWeight: FontWeight.w800),
+      ),
+      behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 2),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+    ),
+  );
 }
 
 class _RatingStars extends StatelessWidget {

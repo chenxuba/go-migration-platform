@@ -91,6 +91,10 @@ export function requestClose(result?: GameResult): void {
   }
 }
 
+export function notifyGameReady(): void {
+  postHostMessage('training-game-ready', null);
+}
+
 function postHostMessage(type: string, payload: unknown): void {
   const message = { type, payload };
 

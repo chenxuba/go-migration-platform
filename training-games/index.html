@@ -7,7 +7,41 @@
     <title>颜色配对乐园</title>
   </head>
   <body>
-    <div id="game-root"></div>
+    <div id="game-root">
+      <div id="game-loading" class="game-loading" aria-label="游戏加载中">
+        <div class="loading-cloud loading-cloud-a"></div>
+        <div class="loading-cloud loading-cloud-b"></div>
+        <div class="loading-card">
+          <div class="loading-bubbles">
+            <span style="--bubble-color: #ff5a65"></span>
+            <span style="--bubble-color: #ffd447"></span>
+            <span style="--bubble-color: #4e9cff"></span>
+            <span style="--bubble-color: #54ce73"></span>
+          </div>
+          <div class="loading-title">颜色配对乐园</div>
+          <div class="loading-bar">
+            <div class="loading-bar-fill"></div>
+          </div>
+          <div class="loading-text">游戏加载中...</div>
+        </div>
+      </div>
+    </div>
+    <script>
+      window.setTimeout(function () {
+        if (window.__COLOR_MATCH_READY__) {
+          return;
+        }
+        var root = document.getElementById('game-root');
+        if (!root || root.querySelector('.boot-error')) {
+          return;
+        }
+        root.innerHTML =
+          '<div class="boot-error"><div class="boot-error-card">' +
+          '<div class="boot-error-title">游戏脚本未启动</div>' +
+          '<div class="boot-error-message">页面已打开，但游戏脚本没有运行。请使用打包后的 preview 服务，或检查 WebView 是否拦截了模块脚本。</div>' +
+          '</div></div>';
+      }, 3000);
+    </script>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

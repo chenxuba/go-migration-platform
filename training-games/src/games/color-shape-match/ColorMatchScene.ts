@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import {
   GameLaunchParams,
   GameResult,
+  notifyGameReady,
   requestClose,
   submitGameResult,
 } from '../../platform/hostBridge';
@@ -60,6 +61,9 @@ export class ColorMatchScene extends Phaser.Scene {
   private musicGain?: GainNode;
   private musicTimer?: number;
   private musicEnabled = true;
+  private activeVoice?: HTMLAudioElement;
+  private voiceClips = new Map<string, HTMLAudioElement>();
+  private readonly stopAudioHandler = (): void => this.stopAllAudio();
 
   private hud!: Phaser.GameObjects.Container;
   private playLayer!: Phaser.GameObjects.Container;
@@ -85,12 +89,25 @@ export class ColorMatchScene extends Phaser.Scene {
   }
 
   create(): void {
+    window.__COLOR_MATCH_STOP_AUDIO__ = this.stopAudioHandler;
+    window.addEventListener('pagehide', this.stopAudioHandler);
+    window.addEventListener('beforeunload', this.stopAudioHandler);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        this.stopAllAudio();
+      }
+    });
     this.musicEnabled = window.localStorage.getItem('colorMatchMusic') !== 'off';
     this.createGeneratedTextures();
     this.createWorld();
     this.createHud();
     this.createPlayLayer();
     this.createStartOverlay();
+    this.time.delayedCall(80, () => {
+      window.__COLOR_MATCH_READY__ = true;
+      window.dispatchEvent(new Event('color-match-ready'));
+      notifyGameReady();
+    });
   }
 
   update(_time: number, delta: number): void {
@@ -265,6 +282,7 @@ export class ColorMatchScene extends Phaser.Scene {
 
     const startButton = this.createButton(640, 466, 286, 76, '开始游戏', 0xff6b8a, 0xd93f67, () => {
       this.ensureAudio();
+      this.unlockVoiceAudio();
       if (this.musicEnabled) {
         this.startBackgroundMusic();
       }
@@ -298,7 +316,7 @@ export class ColorMatchScene extends Phaser.Scene {
     this.locked = false;
     this.feedbackText.setText('');
     this.currentTarget = Phaser.Utils.Array.GetRandom(COLORS);
-    this.currentPrompt = `请找到${this.currentTarget.name}气球`;
+    this.currentPrompt = `prompt-${this.currentTarget.key}`;
     this.taskText.setText(`找 ${this.currentTarget.name}`);
     this.roundStartedAt = performance.now();
     this.updateTargetBubble();
@@ -401,7 +419,7 @@ export class ColorMatchScene extends Phaser.Scene {
       this.combo += 1;
       this.bestCombo = Math.max(this.bestCombo, this.combo);
       this.feedbackText.setText('');
-      this.speak(this.combo >= 3 ? `太棒啦，${this.combo}连击` : '找对啦');
+      this.playVoiceClip(this.combo >= 3 ? 'combo' : 'correct');
       this.playTone(784, 0.08, 'sine');
       this.playTone(1046, 0.12, 'triangle', 0.08);
       this.burstStars(bubble.x, bubble.y);
@@ -413,27 +431,88 @@ export class ColorMatchScene extends Phaser.Scene {
         ease: 'Back.Out',
       });
       this.mascotCelebrate();
-    } else {
-      this.wrong += 1;
-      this.combo = 0;
-      this.feedbackText.setText('');
-      this.speak(`再看看，请找${this.currentTarget.name}气球`);
-      this.playTone(220, 0.11, 'sawtooth');
-      this.cameras.main.shake(120, 0.004);
-      this.tweens.add({
-        targets: bubble,
-        x: bubble.x + 16,
-        duration: 55,
-        yoyo: true,
-        repeat: 3,
+      this.updateHud();
+      this.time.delayedCall(780, () => {
+        this.roundIndex += 1;
+        this.nextRound();
       });
+      return;
     }
 
+    this.wrong += 1;
+    this.combo = 0;
+    this.feedbackText.setText('');
+    const wrongClip = this.playVoiceClip('wrong');
+    this.playTone(220, 0.11, 'sawtooth');
+    this.cameras.main.shake(120, 0.004);
+    this.tweens.add({
+      targets: bubble,
+      x: bubble.x + 16,
+      duration: 55,
+      yoyo: true,
+      repeat: 3,
+    });
     this.updateHud();
-    this.time.delayedCall(isCorrect ? 780 : 980, () => {
+    this.advanceRoundAfterAudio(wrongClip, 1700, 320);
+  }
+
+  private advanceRoundAfterAudio(
+    clip: HTMLAudioElement | undefined,
+    fallbackMs: number,
+    tailTrimMs = 0,
+  ): void {
+    let advanced = false;
+    let cleanup = (): void => {};
+
+    const advance = (): void => {
+      if (advanced) {
+        return;
+      }
+      advanced = true;
+      cleanup();
       this.roundIndex += 1;
       this.nextRound();
+    };
+
+    this.time.delayedCall(fallbackMs, () => {
+      advance();
     });
+
+    if (!clip) {
+      return;
+    }
+
+    const scheduleByDuration = (): void => {
+      if (!Number.isFinite(clip.duration) || clip.duration <= 0) {
+        return;
+      }
+      const advanceMs = Math.max(240, clip.duration * 1000 - tailTrimMs);
+      this.time.delayedCall(advanceMs, advance);
+    };
+
+    const advanceWhenTailStarts = (): void => {
+      if (!Number.isFinite(clip.duration) || clip.duration <= 0) {
+        return;
+      }
+      if (clip.currentTime * 1000 >= clip.duration * 1000 - tailTrimMs) {
+        advance();
+      }
+    };
+
+    cleanup = (): void => {
+      clip.removeEventListener('timeupdate', advanceWhenTailStarts);
+      clip.removeEventListener('loadedmetadata', scheduleByDuration);
+    };
+    scheduleByDuration();
+    clip.addEventListener('loadedmetadata', scheduleByDuration, { once: true });
+    clip.addEventListener('timeupdate', advanceWhenTailStarts);
+    clip.addEventListener(
+      'ended',
+      () => {
+        advance();
+      },
+      { once: true },
+    );
   }
 
   private finishGame(): void {
@@ -984,6 +1063,15 @@ export class ColorMatchScene extends Phaser.Scene {
     }
   }
 
+  private stopAllAudio(): void {
+    this.stopBackgroundMusic();
+    this.stopVoiceClip();
+
+    if (this.audioContext?.state === 'running') {
+      void this.audioContext.suspend();
+    }
+  }
+
   private scheduleMusicLoop(): void {
     if (!this.audioContext || !this.musicGain || !this.musicEnabled) {
       this.musicTimer = undefined;
@@ -1031,32 +1119,62 @@ export class ColorMatchScene extends Phaser.Scene {
 
   private speakCurrentPrompt(): void {
     this.animateVoiceButton();
-    this.speak(this.currentPrompt);
+    this.playVoiceClip(this.currentPrompt);
   }
 
-  private speak(text: string): void {
-    const synthesis = window.speechSynthesis;
-    if (!synthesis || !text) {
+  private playVoiceClip(key: string): HTMLAudioElement | undefined {
+    const clip = this.getVoiceClip(key);
+    if (!clip) {
+      return undefined;
+    }
+
+    this.stopVoiceClip();
+    clip.currentTime = 0;
+    clip.volume = 1;
+    this.activeVoice = clip;
+    void clip.play().catch(() => {
+      this.activeVoice = undefined;
+    });
+    return clip;
+  }
+
+  private stopVoiceClip(): void {
+    if (!this.activeVoice) {
       return;
     }
 
-    synthesis.cancel();
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.lang = 'zh-CN';
-    utterance.rate = 0.9;
-    utterance.pitch = 1.18;
-    utterance.volume = 1;
+    this.activeVoice.pause();
+    this.activeVoice.currentTime = 0;
+    this.activeVoice = undefined;
+  }
 
-    const voices = synthesis.getVoices();
-    const zhVoice = voices.find((voice) => voice.lang.toLowerCase().startsWith('zh'));
-    if (zhVoice) {
-      utterance.voice = zhVoice;
+  private getVoiceClip(key: string): HTMLAudioElement | undefined {
+    if (this.voiceClips.has(key)) {
+      return this.voiceClips.get(key);
     }
 
-    try {
-      synthesis.speak(utterance);
-    } catch {
-      // Some WebView containers block speech synthesis; sound effects still run.
+    const clip = new Audio(`/audio/color-match/${key}.mp3`);
+    clip.preload = 'auto';
+    this.voiceClips.set(key, clip);
+    return clip;
+  }
+
+  private unlockVoiceAudio(): void {
+    const clip = this.getVoiceClip('correct');
+    if (!clip) {
+      return;
     }
+
+    clip.muted = true;
+    void clip
+      .play()
+      .then(() => {
+        clip.pause();
+        clip.currentTime = 0;
+        clip.muted = false;
+      })
+      .catch(() => {
+        clip.muted = false;
+      });
   }
 }

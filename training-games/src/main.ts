@@ -3,23 +3,89 @@ import './style.css';
 import { ColorMatchScene } from './games/color-shape-match/ColorMatchScene';
 import { readLaunchParams } from './platform/hostBridge';
 
+declare global {
+  interface Window {
+    __COLOR_MATCH_READY__?: boolean;
+    __COLOR_MATCH_STOP_AUDIO__?: () => void;
+  }
+}
+
+window.addEventListener('error', (event) => {
+  showBootError(event.message || '游戏脚本运行失败');
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  showBootError(String(event.reason || '游戏脚本运行失败'));
+});
+
+window.addEventListener('color-match-ready', hideLoading);
+
 const launchParams = readLaunchParams();
 
-new Phaser.Game({
-  type: Phaser.AUTO,
-  parent: 'game-root',
-  backgroundColor: '#7bdff2',
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-    width: 1280,
-    height: 720,
-  },
-  dom: {
-    createContainer: false,
-  },
-  input: {
-    activePointers: 3,
-  },
-  scene: [new ColorMatchScene(launchParams)],
-});
+try {
+  new Phaser.Game({
+    type: Phaser.CANVAS,
+    parent: 'game-root',
+    backgroundColor: '#7bdff2',
+    scale: {
+      mode: Phaser.Scale.FIT,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
+      width: 1280,
+      height: 720,
+    },
+    dom: {
+      createContainer: false,
+    },
+    input: {
+      activePointers: 3,
+    },
+    scene: [new ColorMatchScene(launchParams)],
+  });
+} catch (error) {
+  showBootError(error instanceof Error ? error.message : String(error));
+}
+
+function hideLoading(): void {
+  const loading = document.querySelector('#game-loading');
+  if (!loading) {
+    return;
+  }
+
+  loading.classList.add('is-hidden');
+  window.setTimeout(() => loading.remove(), 220);
+}
+
+function showBootError(message: string): void {
+  const root = document.querySelector('#game-root');
+  if (!root || root.querySelector('.boot-error')) {
+    return;
+  }
+
+  document.querySelector('#game-loading')?.remove();
+
+  const errorBox = document.createElement('div');
+  errorBox.className = 'boot-error';
+  errorBox.innerHTML = `
+    <div class="boot-error-card">
+      <div class="boot-error-title">游戏启动失败</div>
+      <div class="boot-error-message">${escapeHtml(message)}</div>
+    </div>
+  `;
+  root.appendChild(errorBox);
+
+  window.FlutterTrainingGame?.postMessage(
+    JSON.stringify({
+      type: 'training-game-error',
+      payload: { message },
+    }),
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
