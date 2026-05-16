@@ -339,6 +339,20 @@ void main() {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'auth_token': 'mock-token',
     });
+    final _FakePep3AssessmentClient autismDevClient = _FakePep3AssessmentClient(
+      hasPreviousRecord: true,
+      previousRecord: const Pep3RecordSummary(
+        id: 31,
+        studentId: 41,
+        studentName: '林一',
+        assessmentCode: 'AUTISMDEV',
+        assessmentName: '孤独症儿童发展评估表',
+        birthDate: '2021-02-01',
+        assessmentDate: '2026-05-11',
+        examinerName: '陈老师',
+        updatedTime: '2026-05-11T10:00:00',
+      ),
+    );
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
@@ -348,20 +362,7 @@ void main() {
               scaleClient: _FakeAssessmentScaleClient(),
               recordClient: _FakePep3AssessmentClient(),
               erxinRecordClient: _FakePep3AssessmentClient(),
-              autismDevRecordClient: _FakePep3AssessmentClient(
-                hasPreviousRecord: true,
-                previousRecord: const Pep3RecordSummary(
-                  id: 31,
-                  studentId: 41,
-                  studentName: '林一',
-                  assessmentCode: 'AUTISMDEV',
-                  assessmentName: '孤独症儿童发展评估表',
-                  birthDate: '2021-02-01',
-                  assessmentDate: '2026-05-11',
-                  examinerName: '陈老师',
-                  updatedTime: '2026-05-11T10:00:00',
-                ),
-              ),
+              autismDevRecordClient: autismDevClient,
             ),
           ),
         ),
@@ -378,10 +379,12 @@ void main() {
     await tester.pump();
 
     expect(find.text('孤独症儿童发展评估报告'), findsWidgets);
-    expect(find.text('报告总览'), findsOneWidget);
-    expect(find.text('发展能力'), findsOneWidget);
-    expect(find.text('情绪行为'), findsOneWidget);
-    expect(find.text('结果摘要'), findsOneWidget);
+    expect(find.text('评估情况'), findsOneWidget);
+    expect(find.text('评估结果分析'), findsOneWidget);
+    expect(find.text('训练效果'), findsOneWidget);
+    expect(find.text('发展情况剖面图'), findsOneWidget);
+    expect(find.text('情绪行为表现图'), findsOneWidget);
+    expect(autismDevClient.fetchAutismDevResultAnalysisCalls, 1);
   });
 
   testWidgets('home header fallback does not show a fake institution',
@@ -7670,6 +7673,9 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   int saveDraftItemCalls = 0;
   int inviteCalls = 0;
   int inviteCompletedCalls = 0;
+  int fetchAutismDevResultAnalysisCalls = 0;
+  int saveAutismDevResultAnalysisCalls = 0;
+  AutismDevResultAnalysis? savedAutismDevResultAnalysis;
 
   static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
     Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
@@ -8015,6 +8021,53 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     required String profile,
   }) async {
     return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<AutismDevResultAnalysis> fetchAutismDevResultAnalysis(
+    String token,
+    int id,
+  ) async {
+    fetchAutismDevResultAnalysisCalls += 1;
+    return savedAutismDevResultAnalysis ?? AutismDevResultAnalysis.empty;
+  }
+
+  @override
+  Future<AutismDevResultAnalysis> saveAutismDevResultAnalysis(
+    String token,
+    int id,
+    AutismDevResultAnalysis analysis,
+  ) async {
+    saveAutismDevResultAnalysisCalls += 1;
+    savedAutismDevResultAnalysis = analysis;
+    return analysis;
+  }
+
+  @override
+  Stream<AutismDevResultAnalysisStreamEvent>
+      generateAutismDevResultAnalysisStream(String token, int id) async* {
+    const AutismDevResultAnalysis analysis = AutismDevResultAnalysis(
+      title: '孤独症儿童评估结果分析表',
+      generatedBy: 'ai',
+      rows: <AutismDevResultAnalysisRow>[
+        AutismDevResultAnalysisRow(
+          domain: '感知觉',
+          status: '感知觉现状描述。',
+          strengths: '可配合熟悉刺激。',
+          weaknesses: '复杂辨别稳定性不足。',
+          targets: '1 能追视移动物体。',
+        ),
+      ],
+    );
+    savedAutismDevResultAnalysis = analysis;
+    yield const AutismDevResultAnalysisStreamEvent(
+      type: 'status',
+      message: '正在读取孤独症儿童发展评估结果',
+    );
+    yield const AutismDevResultAnalysisStreamEvent(
+      type: 'done',
+      data: analysis,
+    );
   }
 
   @override

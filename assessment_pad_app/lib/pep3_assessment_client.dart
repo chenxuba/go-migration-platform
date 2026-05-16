@@ -83,6 +83,16 @@ const String defaultAutismDevRecordProfilePdfPath = String.fromEnvironment(
   'AUTISMDEV_RECORD_PROFILE_PDF_PATH',
   defaultValue: '/api/v1/assessments/autismdev/records/profile/pdf',
 );
+const String defaultAutismDevRecordResultAnalysisPath = String.fromEnvironment(
+  'AUTISMDEV_RECORD_RESULT_ANALYSIS_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/result-analysis',
+);
+const String defaultAutismDevRecordResultAnalysisAiStreamPath =
+    String.fromEnvironment(
+  'AUTISMDEV_RECORD_RESULT_ANALYSIS_AI_STREAM_PATH',
+  defaultValue:
+      '/api/v1/assessments/autismdev/records/result-analysis/ai/stream',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -817,6 +827,122 @@ class Pep3RecordDetail extends Pep3RecordSummary {
   final Pep3DraftInput input;
 }
 
+class AutismDevResultAnalysis {
+  const AutismDevResultAnalysis({
+    required this.title,
+    required this.rows,
+    this.model = '',
+    this.generatedBy = '',
+    this.generatedAt = '',
+  });
+
+  factory AutismDevResultAnalysis.fromJson(Map<String, dynamic> json) {
+    return AutismDevResultAnalysis(
+      title: '${json['title'] ?? ''}',
+      model: '${json['model'] ?? ''}',
+      generatedBy: '${json['generatedBy'] ?? ''}',
+      generatedAt: '${json['generatedAt'] ?? ''}',
+      rows: _listFrom(json['rows'])
+          .map(AutismDevResultAnalysisRow.fromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'title': title,
+      if (model.trim().isNotEmpty) 'model': model,
+      if (generatedBy.trim().isNotEmpty) 'generatedBy': generatedBy,
+      if (generatedAt.trim().isNotEmpty) 'generatedAt': generatedAt,
+      'rows':
+          rows.map((AutismDevResultAnalysisRow row) => row.toJson()).toList(),
+    };
+  }
+
+  static const AutismDevResultAnalysis empty = AutismDevResultAnalysis(
+    title: '',
+    rows: <AutismDevResultAnalysisRow>[],
+  );
+
+  final String title;
+  final String model;
+  final String generatedBy;
+  final String generatedAt;
+  final List<AutismDevResultAnalysisRow> rows;
+
+  bool get isEmpty => rows.every((AutismDevResultAnalysisRow row) =>
+      row.status.trim().isEmpty &&
+      row.strengths.trim().isEmpty &&
+      row.weaknesses.trim().isEmpty &&
+      row.targets.trim().isEmpty);
+}
+
+class AutismDevResultAnalysisRow {
+  const AutismDevResultAnalysisRow({
+    required this.domain,
+    this.status = '',
+    this.strengths = '',
+    this.weaknesses = '',
+    this.targets = '',
+  });
+
+  factory AutismDevResultAnalysisRow.fromJson(Map<String, dynamic> json) {
+    return AutismDevResultAnalysisRow(
+      domain: '${json['domain'] ?? ''}',
+      status: '${json['status'] ?? ''}',
+      strengths: '${json['strengths'] ?? ''}',
+      weaknesses: '${json['weaknesses'] ?? ''}',
+      targets: '${json['targets'] ?? ''}',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'domain': domain,
+      'status': status,
+      'strengths': strengths,
+      'weaknesses': weaknesses,
+      'targets': targets,
+    };
+  }
+
+  final String domain;
+  final String status;
+  final String strengths;
+  final String weaknesses;
+  final String targets;
+
+  AutismDevResultAnalysisRow copyWith({
+    String? domain,
+    String? status,
+    String? strengths,
+    String? weaknesses,
+    String? targets,
+  }) {
+    return AutismDevResultAnalysisRow(
+      domain: domain ?? this.domain,
+      status: status ?? this.status,
+      strengths: strengths ?? this.strengths,
+      weaknesses: weaknesses ?? this.weaknesses,
+      targets: targets ?? this.targets,
+    );
+  }
+}
+
+class AutismDevResultAnalysisStreamEvent {
+  const AutismDevResultAnalysisStreamEvent({
+    required this.type,
+    this.message = '',
+    this.text = '',
+    this.data,
+  });
+
+  final String type;
+  final String message;
+  final String text;
+  final AutismDevResultAnalysis? data;
+}
+
 abstract interface class Pep3AssessmentClient {
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token);
 
@@ -893,6 +1019,23 @@ abstract interface class Pep3AssessmentClient {
     required String profile,
   });
 
+  Future<AutismDevResultAnalysis> fetchAutismDevResultAnalysis(
+    String token,
+    int id,
+  );
+
+  Future<AutismDevResultAnalysis> saveAutismDevResultAnalysis(
+    String token,
+    int id,
+    AutismDevResultAnalysis analysis,
+  );
+
+  Stream<AutismDevResultAnalysisStreamEvent>
+      generateAutismDevResultAnalysisStream(
+    String token,
+    int id,
+  );
+
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -935,6 +1078,10 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
     this.recordReportInterpretationAiStreamPath =
         defaultPep3RecordReportInterpretationAiStreamPath,
     this.autismDevRecordProfilePdfPath = defaultAutismDevRecordProfilePdfPath,
+    this.autismDevRecordResultAnalysisPath =
+        defaultAutismDevRecordResultAnalysisPath,
+    this.autismDevRecordResultAnalysisAiStreamPath =
+        defaultAutismDevRecordResultAnalysisAiStreamPath,
   });
 
   final String educationBaseUrl;
@@ -956,6 +1103,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String recordReportInterpretationAiPath;
   final String recordReportInterpretationAiStreamPath;
   final String autismDevRecordProfilePdfPath;
+  final String autismDevRecordResultAnalysisPath;
+  final String autismDevRecordResultAnalysisAiStreamPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1308,6 +1457,81 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<AutismDevResultAnalysis> fetchAutismDevResultAnalysis(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(autismDevRecordResultAnalysisPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final Object? data = await _getJson(uri, token);
+    if (data is! Map) {
+      return AutismDevResultAnalysis.empty;
+    }
+    return AutismDevResultAnalysis.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<AutismDevResultAnalysis> saveAutismDevResultAnalysis(
+    String token,
+    int id,
+    AutismDevResultAnalysis analysis,
+  ) async {
+    final Object? data = await _postJson(
+      _uri(autismDevRecordResultAnalysisPath),
+      token,
+      <String, dynamic>{
+        'id': id,
+        'analysis': analysis.toJson(),
+      },
+    );
+    if (data is! Map) {
+      throw const Pep3ApiException('评估结果分析保存返回格式不正确');
+    }
+    return AutismDevResultAnalysis.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Stream<AutismDevResultAnalysisStreamEvent>
+      generateAutismDevResultAnalysisStream(String token, int id) async* {
+    final http.Request request = http.Request(
+      'POST',
+      _uri(autismDevRecordResultAnalysisAiStreamPath),
+    )
+      ..headers.addAll(<String, String>{
+        ..._headers(token),
+        'Accept': 'text/event-stream',
+      })
+      ..body = jsonEncode(<String, int>{'id': id});
+    final http.StreamedResponse response;
+    try {
+      response = await request.send().timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const Pep3ApiException('评估结果分析生成连接超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接评估结果分析流式接口：$error');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '评估结果分析生成失败',
+      );
+    }
+
+    await for (final AutismDevResultAnalysisStreamEvent event
+        in _decodeAutismDevResultAnalysisSse(response.stream)) {
+      yield event;
+    }
+  }
+
+  @override
   Future<ErxinReportInterpretation> fetchRecordReportInterpretation(
     String token,
     int id,
@@ -1550,6 +1774,93 @@ Stream<ErxinReportInterpretationStreamEvent> _decodePep3ReportInterpretationSse(
     }
   }
   final ErxinReportInterpretationStreamEvent? event =
+      parseEvent(eventName, dataBuffer.toString());
+  if (event != null) {
+    yield event;
+  }
+}
+
+Stream<AutismDevResultAnalysisStreamEvent> _decodeAutismDevResultAnalysisSse(
+  Stream<List<int>> byteStream,
+) async* {
+  final Stream<String> lines =
+      byteStream.transform(utf8.decoder).transform(const LineSplitter());
+  String eventName = 'message';
+  final StringBuffer dataBuffer = StringBuffer();
+
+  AutismDevResultAnalysisStreamEvent? parseEvent(String event, String data) {
+    final String trimmed = data.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final Object? decoded = jsonDecode(trimmed);
+    if (decoded is! Map) {
+      return null;
+    }
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+    final String type = '${payload['type'] ?? event}'.trim();
+    switch (type) {
+      case 'status':
+        return AutismDevResultAnalysisStreamEvent(
+          type: 'status',
+          message: '${payload['message'] ?? ''}',
+        );
+      case 'delta':
+        return AutismDevResultAnalysisStreamEvent(
+          type: 'delta',
+          text: '${payload['text'] ?? ''}',
+        );
+      case 'done':
+        final Object? data = payload['data'];
+        return AutismDevResultAnalysisStreamEvent(
+          type: 'done',
+          data: data is Map
+              ? AutismDevResultAnalysis.fromJson(
+                  Map<String, dynamic>.from(data),
+                )
+              : AutismDevResultAnalysis.empty,
+        );
+      case 'error':
+        return AutismDevResultAnalysisStreamEvent(
+          type: 'error',
+          message: '${payload['message'] ?? '评估结果分析生成失败'}',
+        );
+      default:
+        return AutismDevResultAnalysisStreamEvent(
+          type: type.isEmpty ? event : type,
+          message: '${payload['message'] ?? ''}',
+          text: '${payload['text'] ?? ''}',
+        );
+    }
+  }
+
+  await for (final String rawLine in lines) {
+    final String line = rawLine.trimRight();
+    if (line.isEmpty) {
+      final AutismDevResultAnalysisStreamEvent? event =
+          parseEvent(eventName, dataBuffer.toString());
+      if (event != null) {
+        yield event;
+      }
+      eventName = 'message';
+      dataBuffer.clear();
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      eventName = line.substring(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      if (dataBuffer.isNotEmpty) {
+        dataBuffer.write('\n');
+      }
+      dataBuffer.write(line.substring(5).trimLeft());
+    }
+  }
+  final AutismDevResultAnalysisStreamEvent? event =
       parseEvent(eventName, dataBuffer.toString());
   if (event != null) {
     yield event;

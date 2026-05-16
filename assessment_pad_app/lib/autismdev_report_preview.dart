@@ -50,12 +50,21 @@ class _AutismDevReportPreviewDialogState
   final Map<_AutismDevReportTab, Uint8List> _profilePdfBytes =
       <_AutismDevReportTab, Uint8List>{};
   bool _printing = false;
+  AutismDevResultAnalysis _resultAnalysis = _emptyAutismDevResultAnalysis();
+  bool _resultAnalysisGenerating = false;
+  String _resultAnalysisGenerationStatus = '';
+  String _resultAnalysisGenerationError = '';
+  String _resultAnalysisStreamText = '';
+  int _resultAnalysisGenerateSerial = 0;
+  int _resultAnalysisLoadSerial = 0;
+  _AutismDevAnalysisEditRequest? _selectedAnalysisCell;
 
   @override
   void initState() {
     super.initState();
     _displayRecord = widget.record;
     unawaited(_loadRecordDetail());
+    unawaited(_loadSavedResultAnalysis());
   }
 
   Future<void> _loadRecordDetail() async {
@@ -77,6 +86,35 @@ class _AutismDevReportPreviewDialogState
     } catch (_) {
       // The preview still has static report sections; keep them visible if
       // the detail endpoint is temporarily unavailable.
+    }
+  }
+
+  Future<void> _loadSavedResultAnalysis() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      return;
+    }
+    final int serial = ++_resultAnalysisLoadSerial;
+    try {
+      final AutismDevResultAnalysis saved =
+          await widget.client.fetchAutismDevResultAnalysis(
+        token,
+        widget.record.id,
+      );
+      if (!mounted || serial != _resultAnalysisLoadSerial) {
+        return;
+      }
+      if (saved.isEmpty ||
+          _resultAnalysisGenerating ||
+          !_resultAnalysis.isEmpty) {
+        return;
+      }
+      setState(() {
+        _resultAnalysis = _mergeAutismDevResultAnalysis(saved);
+        _resultAnalysisGenerationError = '';
+      });
+    } catch (_) {
+      // Keep the page usable even if the cache lookup fails.
     }
   }
 
@@ -182,10 +220,26 @@ class _AutismDevReportPreviewDialogState
     return _AutismDevReportTabBar(
       activeTab: _activeTab,
       onSelected: _selectTab,
-      trailing: _ToolbarButton(
-        label: _printing ? '打印中' : '打印',
-        icon: Icons.print_rounded,
-        onTap: _printing ? null : () => unawaited(_printCurrentTab()),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (_activeTab == _AutismDevReportTab.resultAnalysis) ...<Widget>[
+            _ToolbarButton(
+              label: _resultAnalysisGenerating ? '生成中' : 'AI生成',
+              icon: Icons.auto_awesome_rounded,
+              filled: true,
+              onTap: _resultAnalysisGenerating
+                  ? null
+                  : () => unawaited(_generateResultAnalysis()),
+            ),
+            const SizedBox(width: 8),
+          ],
+          _ToolbarButton(
+            label: _printing ? '打印中' : '打印',
+            icon: Icons.print_rounded,
+            onTap: _printing ? null : () => unawaited(_printCurrentTab()),
+          ),
+        ],
       ),
     );
   }
@@ -196,7 +250,104 @@ class _AutismDevReportPreviewDialogState
     }
     setState(() {
       _activeTab = tab;
+      if (tab != _AutismDevReportTab.resultAnalysis) {
+        _selectedAnalysisCell = null;
+      }
     });
+  }
+
+  Future<void> _generateResultAnalysis() async {
+    if (_resultAnalysisGenerating) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('缺少AI生成参数')),
+      );
+      return;
+    }
+    final int serial = ++_resultAnalysisGenerateSerial;
+    setState(() {
+      _resultAnalysisGenerating = true;
+      _resultAnalysisGenerationStatus = '正在生成评估结果分析';
+      _resultAnalysisGenerationError = '';
+      _resultAnalysisStreamText = '';
+      _selectedAnalysisCell = null;
+      _resultAnalysis = _emptyAutismDevResultAnalysis();
+    });
+    try {
+      await for (final AutismDevResultAnalysisStreamEvent event in widget.client
+          .generateAutismDevResultAnalysisStream(token, widget.record.id)) {
+        if (!mounted || serial != _resultAnalysisGenerateSerial) {
+          return;
+        }
+        switch (event.type) {
+          case 'status':
+            setState(() {
+              _resultAnalysisGenerationStatus =
+                  event.message.trim().isEmpty ? '正在生成评估结果分析' : event.message;
+            });
+          case 'delta':
+            await _appendResultAnalysisDeltaWithTypewriter(event.text, serial);
+            if (!mounted || serial != _resultAnalysisGenerateSerial) {
+              return;
+            }
+            setState(() {
+              _resultAnalysisGenerationStatus = 'AI正在生成评估结果分析';
+            });
+          case 'done':
+            setState(() {
+              _resultAnalysis = _mergeAutismDevResultAnalysis(event.data);
+              _resultAnalysisGenerating = false;
+              _resultAnalysisGenerationStatus = '';
+              _resultAnalysisGenerationError = '';
+            });
+          case 'error':
+            throw Pep3ApiException(
+              event.message.trim().isEmpty ? '评估结果分析生成失败' : event.message,
+            );
+          default:
+            break;
+        }
+      }
+      if (mounted && serial == _resultAnalysisGenerateSerial) {
+        setState(() {
+          _resultAnalysisGenerating = false;
+          _resultAnalysisGenerationStatus = '';
+        });
+      }
+    } catch (error) {
+      if (!mounted || serial != _resultAnalysisGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _resultAnalysisGenerating = false;
+        _resultAnalysisGenerationStatus = '';
+        _resultAnalysisGenerationError = '$error';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI生成失败：$error')),
+      );
+    }
+  }
+
+  Future<void> _appendResultAnalysisDeltaWithTypewriter(
+    String delta,
+    int serial,
+  ) async {
+    if (delta.isEmpty) {
+      return;
+    }
+    for (final int codePoint in delta.runes) {
+      if (!mounted || serial != _resultAnalysisGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _resultAnalysisStreamText += String.fromCharCode(codePoint);
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 4));
+    }
   }
 
   Widget _buildContent() {
@@ -332,7 +483,16 @@ class _AutismDevReportPreviewDialogState
       case _AutismDevReportTab.assessmentInfo:
         return const _AutismDevOverviewSection();
       case _AutismDevReportTab.resultAnalysis:
-        return _AutismDevAnalysisSection(record: _displayRecord);
+        return _AutismDevAnalysisSection(
+          record: _displayRecord,
+          analysis: _resultAnalysis,
+          generating: _resultAnalysisGenerating,
+          generationStatus: _resultAnalysisGenerationStatus,
+          generationError: _resultAnalysisGenerationError,
+          streamText: _resultAnalysisStreamText,
+          selectedCell: _selectedAnalysisCell,
+          onCellTap: _handleResultAnalysisCellTap,
+        );
       case _AutismDevReportTab.strengthWeakness:
         return const _AutismDevStrengthWeaknessSection();
       case _AutismDevReportTab.training:
@@ -393,6 +553,82 @@ class _AutismDevReportPreviewDialogState
       _profilePdfBytes.remove(tab);
       _profilePdfFutures.remove(tab);
     });
+  }
+
+  void _handleResultAnalysisCellTap(_AutismDevAnalysisEditRequest request) {
+    if (_selectedAnalysisCell == request) {
+      unawaited(_showResultAnalysisEditDialog(request));
+      return;
+    }
+    setState(() {
+      _selectedAnalysisCell = request;
+    });
+  }
+
+  Future<void> _showResultAnalysisEditDialog(
+    _AutismDevAnalysisEditRequest request,
+  ) async {
+    final List<AutismDevResultAnalysisRow> rows = _resultAnalysis.rows;
+    if (request.rowIndex < 0 || request.rowIndex >= rows.length) {
+      return;
+    }
+    final AutismDevResultAnalysisRow row = rows[request.rowIndex];
+    final _AutismDevAnalysisEditResult? result =
+        await showDialog<_AutismDevAnalysisEditResult>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _AutismDevAnalysisEditDialog(
+            domain: row.domain,
+            request: request,
+            row: row,
+          ),
+        );
+      },
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    final List<AutismDevResultAnalysisRow> nextRows =
+        List<AutismDevResultAnalysisRow>.from(_resultAnalysis.rows);
+    nextRows[request.rowIndex] = row.copyWith(
+      status: result.status,
+      strengths: result.strengths,
+      weaknesses: result.weaknesses,
+      targets: result.targets,
+    );
+    final AutismDevResultAnalysis nextAnalysis = AutismDevResultAnalysis(
+      title: _resultAnalysis.title,
+      model: _resultAnalysis.model,
+      generatedBy: _resultAnalysis.generatedBy,
+      generatedAt: _resultAnalysis.generatedAt,
+      rows: nextRows,
+    );
+    setState(() {
+      _resultAnalysis = nextAnalysis;
+      _selectedAnalysisCell = null;
+    });
+    try {
+      final AutismDevResultAnalysis saved =
+          await widget.client.saveAutismDevResultAnalysis(
+        widget.token.trim(),
+        widget.record.id,
+        nextAnalysis,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resultAnalysis = _mergeAutismDevResultAnalysis(saved);
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存修改失败：$error')),
+        );
+      }
+    }
   }
 
   static bool _isBackendProfileTab(_AutismDevReportTab tab) {
@@ -692,25 +928,66 @@ class _AutismDevBehaviorProfileSection extends StatelessWidget {
 }
 
 class _AutismDevAnalysisSection extends StatelessWidget {
-  const _AutismDevAnalysisSection({required this.record});
+  const _AutismDevAnalysisSection({
+    required this.record,
+    required this.analysis,
+    required this.generating,
+    required this.generationStatus,
+    required this.generationError,
+    required this.streamText,
+    required this.selectedCell,
+    required this.onCellTap,
+  });
 
   final Pep3RecordSummary record;
+  final AutismDevResultAnalysis analysis;
+  final bool generating;
+  final String generationStatus;
+  final String generationError;
+  final String streamText;
+  final _AutismDevAnalysisEditRequest? selectedCell;
+  final ValueChanged<_AutismDevAnalysisEditRequest> onCellTap;
 
   @override
   Widget build(BuildContext context) {
     return Center(
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 790),
-        child: _AutismDevResultAnalysisSheet(record: record),
+        child: _AutismDevResultAnalysisSheet(
+          record: record,
+          analysis: analysis,
+          generating: generating,
+          generationStatus: generationStatus,
+          generationError: generationError,
+          streamText: streamText,
+          selectedCell: selectedCell,
+          onCellTap: onCellTap,
+        ),
       ),
     );
   }
 }
 
 class _AutismDevResultAnalysisSheet extends StatelessWidget {
-  const _AutismDevResultAnalysisSheet({required this.record});
+  const _AutismDevResultAnalysisSheet({
+    required this.record,
+    required this.analysis,
+    required this.generating,
+    required this.generationStatus,
+    required this.generationError,
+    required this.streamText,
+    required this.selectedCell,
+    required this.onCellTap,
+  });
 
   final Pep3RecordSummary record;
+  final AutismDevResultAnalysis analysis;
+  final bool generating;
+  final String generationStatus;
+  final String generationError;
+  final String streamText;
+  final _AutismDevAnalysisEditRequest? selectedCell;
+  final ValueChanged<_AutismDevAnalysisEditRequest> onCellTap;
 
   @override
   Widget build(BuildContext context) {
@@ -730,8 +1007,300 @@ class _AutismDevResultAnalysisSheet extends StatelessWidget {
         const SizedBox(height: 16),
         _AutismDevResultAnalysisMeta(record: record),
         const SizedBox(height: 2),
-        const _AutismDevResultAnalysisTable(),
+        if (generating) ...<Widget>[
+          const SizedBox(height: 8),
+          _AutismDevAnalysisStreamPanel(
+            studentName: _studentName(record),
+            status: generationStatus,
+            streamText: streamText,
+          ),
+        ] else ...<Widget>[
+          if (generationError.trim().isNotEmpty) ...<Widget>[
+            _AutismDevAnalysisGenerationBanner(
+              message: generationError.trim(),
+              isError: true,
+            ),
+            const SizedBox(height: 8),
+          ],
+          _AutismDevResultAnalysisTable(
+            rows: analysis.rows,
+            selectedCell: selectedCell,
+            onCellTap: onCellTap,
+          ),
+        ],
       ],
+    );
+  }
+}
+
+class _AutismDevAnalysisStreamPanel extends StatefulWidget {
+  const _AutismDevAnalysisStreamPanel({
+    required this.studentName,
+    required this.status,
+    required this.streamText,
+  });
+
+  final String studentName;
+  final String status;
+  final String streamText;
+
+  @override
+  State<_AutismDevAnalysisStreamPanel> createState() =>
+      _AutismDevAnalysisStreamPanelState();
+}
+
+class _AutismDevAnalysisStreamPanelState
+    extends State<_AutismDevAnalysisStreamPanel> {
+  late final ScrollController _scrollController;
+  bool _stickToBottom = true;
+  bool _scrollSyncScheduled = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController = ScrollController();
+    _scrollController.addListener(_handleScroll);
+  }
+
+  @override
+  void didUpdateWidget(covariant _AutismDevAnalysisStreamPanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.streamText != oldWidget.streamText) {
+      _scheduleStickToBottom();
+    }
+  }
+
+  @override
+  void dispose() {
+    _scrollController.removeListener(_handleScroll);
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _handleScroll() {
+    if (!_scrollController.hasClients) {
+      return;
+    }
+    final ScrollPosition position = _scrollController.position;
+    _stickToBottom = position.maxScrollExtent - position.pixels <= 48;
+  }
+
+  void _scheduleStickToBottom() {
+    if (_scrollSyncScheduled) {
+      return;
+    }
+    _scrollSyncScheduled = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _scrollSyncScheduled = false;
+      if (!mounted || !_scrollController.hasClients || !_stickToBottom) {
+        return;
+      }
+      _jumpToBottom();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients || !_stickToBottom) {
+          return;
+        }
+        _jumpToBottom();
+      });
+    });
+  }
+
+  void _jumpToBottom() {
+    final ScrollPosition position = _scrollController.position;
+    final double target = position.maxScrollExtent
+        .clamp(position.minScrollExtent, double.infinity);
+    if ((position.pixels - target).abs() <= .5) {
+      return;
+    }
+    _scrollController.jumpTo(target);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String status =
+        widget.status.trim().isEmpty ? 'AI正在生成评估结果分析' : widget.status.trim();
+    final double progress =
+        _autismDevResultAnalysisStreamProgress(widget.streamText);
+    final String progressText = '${(progress * 100).round()}%';
+    final _AutismDevAnalysisReadableStream readable =
+        _AutismDevAnalysisReadableStream.fromRaw(widget.streamText);
+
+    return SizedBox(
+      height: 560,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(10),
+          border: Border.all(color: const Color(0xFFFFD8C3)),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x12B05F32),
+              blurRadius: 14,
+              offset: Offset(0, 6),
+            ),
+          ],
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 16, 18, 12),
+              child: Row(
+                children: <Widget>[
+                  SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2.4,
+                      color: _ReportTheme.orangeDeep,
+                      backgroundColor: const Color(0xFFFFEEE4),
+                      value: progress >= .98 ? progress : null,
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        Text(
+                          '正在生成 ${widget.studentName} 的评估结果分析',
+                          style: const TextStyle(
+                            color: _ReportTheme.ink,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w800,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Row(
+                          children: <Widget>[
+                            Text(
+                              status,
+                              style: const TextStyle(
+                                color: _ReportTheme.text,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                height: 1.1,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(99),
+                                child: LinearProgressIndicator(
+                                  minHeight: 8,
+                                  value: progress,
+                                  backgroundColor: const Color(0xFFFFEEE4),
+                                  color: _ReportTheme.orange,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 8),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 8,
+                                vertical: 4,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF3EA),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                              child: Text(
+                                progressText,
+                                style: const TextStyle(
+                                  color: _ReportTheme.orangeDeep,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w800,
+                                  height: 1,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.fromLTRB(18, 0, 18, 14),
+                padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFFCF8),
+                  borderRadius: BorderRadius.circular(9),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    Row(
+                      children: const <Widget>[
+                        Icon(
+                          Icons.auto_awesome_rounded,
+                          size: 16,
+                          color: _ReportTheme.orangeDeep,
+                        ),
+                        SizedBox(width: 6),
+                        Text(
+                          'AI正在整理可预览内容',
+                          style: TextStyle(
+                            color: _ReportTheme.ink,
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Expanded(
+                      child: SingleChildScrollView(
+                        controller: _scrollController,
+                        physics: const ClampingScrollPhysics(),
+                        child: Padding(
+                          padding: const EdgeInsets.only(bottom: 26),
+                          child: Text(
+                            readable.content,
+                            style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 12.8,
+                              height: 1.48,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 16),
+              child: Row(
+                children: const <Widget>[
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    color: _ReportTheme.orangeDeep,
+                    size: 16,
+                  ),
+                  SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      '生成完成后将自动切换为正式分析表，可继续手动修改',
+                      style: TextStyle(
+                        color: _ReportTheme.muted,
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
@@ -815,6 +1384,429 @@ class _AutismDevAnalysisMetaLine extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+enum _AutismDevAnalysisEditField {
+  status,
+  strengthWeakness,
+  targets,
+}
+
+class _AutismDevAnalysisEditRequest {
+  const _AutismDevAnalysisEditRequest({
+    required this.rowIndex,
+    required this.field,
+  });
+
+  final int rowIndex;
+  final _AutismDevAnalysisEditField field;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _AutismDevAnalysisEditRequest &&
+            other.rowIndex == rowIndex &&
+            other.field == field;
+  }
+
+  @override
+  int get hashCode => Object.hash(rowIndex, field);
+}
+
+class _AutismDevAnalysisEditResult {
+  const _AutismDevAnalysisEditResult({
+    this.status = '',
+    this.strengths = '',
+    this.weaknesses = '',
+    this.targets = '',
+  });
+
+  final String status;
+  final String strengths;
+  final String weaknesses;
+  final String targets;
+}
+
+class _AutismDevAnalysisGenerationBanner extends StatelessWidget {
+  const _AutismDevAnalysisGenerationBanner({
+    required this.message,
+    required this.isError,
+  });
+
+  final String message;
+  final bool isError;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: isError ? const Color(0xFFFFF0EE) : const Color(0xFFFFF7EC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: isError ? const Color(0xFFE05D4F) : _ReportTheme.lineSoft,
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(
+            isError ? Icons.error_outline_rounded : Icons.auto_awesome_rounded,
+            size: 16,
+            color: isError ? const Color(0xFFE05D4F) : _ReportTheme.orangeDeep,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              message,
+              style: TextStyle(
+                color: isError ? const Color(0xFFB64437) : Colors.black,
+                fontSize: 12.5,
+                height: 1.35,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutismDevAnalysisEditDialog extends StatefulWidget {
+  const _AutismDevAnalysisEditDialog({
+    required this.domain,
+    required this.request,
+    required this.row,
+  });
+
+  final String domain;
+  final _AutismDevAnalysisEditRequest request;
+  final AutismDevResultAnalysisRow row;
+
+  @override
+  State<_AutismDevAnalysisEditDialog> createState() =>
+      _AutismDevAnalysisEditDialogState();
+}
+
+class _AutismDevAnalysisEditDialogState
+    extends State<_AutismDevAnalysisEditDialog> {
+  late final TextEditingController _statusController;
+  late final TextEditingController _strengthsController;
+  late final TextEditingController _weaknessesController;
+  late final TextEditingController _targetsController;
+
+  bool get _editingStrengthWeakness =>
+      widget.request.field == _AutismDevAnalysisEditField.strengthWeakness;
+
+  @override
+  void initState() {
+    super.initState();
+    _statusController = TextEditingController(text: widget.row.status);
+    _strengthsController = TextEditingController(text: widget.row.strengths);
+    _weaknessesController = TextEditingController(text: widget.row.weaknesses);
+    _targetsController = TextEditingController(text: widget.row.targets);
+  }
+
+  @override
+  void dispose() {
+    _statusController.dispose();
+    _strengthsController.dispose();
+    _weaknessesController.dispose();
+    _targetsController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(
+      _AutismDevAnalysisEditResult(
+        status: _statusController.text.trim(),
+        strengths: _strengthsController.text.trim(),
+        weaknesses: _weaknessesController.text.trim(),
+        targets: _targetsController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String title = switch (widget.request.field) {
+      _AutismDevAnalysisEditField.status => '编辑能力现状描述',
+      _AutismDevAnalysisEditField.strengthWeakness => '编辑优劣分析',
+      _AutismDevAnalysisEditField.targets => '编辑训练目标',
+    };
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: _editingStrengthWeakness ? 720 : 620,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _AutismDevEditPill(text: widget.domain),
+                const Spacer(),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            if (widget.request.field == _AutismDevAnalysisEditField.status)
+              _AutismDevAnalysisDialogField(
+                label: '能力现状描述',
+                controller: _statusController,
+                minLines: 4,
+                maxLines: 8,
+              )
+            else if (widget.request.field ==
+                _AutismDevAnalysisEditField.strengthWeakness) ...<Widget>[
+              _AutismDevAnalysisDialogField(
+                label: '优势',
+                controller: _strengthsController,
+                minLines: 3,
+                maxLines: 6,
+              ),
+              const SizedBox(height: 12),
+              _AutismDevAnalysisDialogField(
+                label: '劣势',
+                controller: _weaknessesController,
+                minLines: 3,
+                maxLines: 6,
+              ),
+            ] else
+              _AutismDevAnalysisDialogField(
+                label: '训练目标',
+                controller: _targetsController,
+                minLines: 4,
+                maxLines: 8,
+              ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogAction(
+                  label: '保存',
+                  filled: true,
+                  icon: Icons.save_outlined,
+                  onTap: _submit,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevAnalysisDialogField extends StatelessWidget {
+  const _AutismDevAnalysisDialogField({
+    required this.label,
+    required this.controller,
+    required this.minLines,
+    required this.maxLines,
+  });
+
+  final String label;
+  final TextEditingController controller;
+  final int minLines;
+  final int maxLines;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 7),
+        TextField(
+          controller: controller,
+          minLines: minLines,
+          maxLines: maxLines,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 14.5,
+            height: 1.35,
+          ),
+          decoration: InputDecoration(
+            isDense: true,
+            filled: true,
+            fillColor: Colors.white,
+            contentPadding:
+                const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide: const BorderSide(color: _ReportTheme.lineSoft),
+            ),
+            focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(12),
+              borderSide:
+                  const BorderSide(color: _ReportTheme.orange, width: 1.2),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AutismDevEditPill extends StatelessWidget {
+  const _AutismDevEditPill({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF3EA),
+        borderRadius: BorderRadius.circular(99),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Text(
+        text,
+        style: const TextStyle(
+          color: Colors.black,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDialogIconButton extends StatelessWidget {
+  const _AutismDevDialogIconButton({
+    required this.icon,
+    required this.onTap,
+  });
+
+  final IconData icon;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      shape: const CircleBorder(),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 34,
+          height: 34,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: const Color(0xFFFFF6F0),
+            shape: BoxShape.circle,
+            border: Border.all(color: _ReportTheme.lineSoft),
+          ),
+          child: Icon(
+            icon,
+            size: 20,
+            color: _ReportTheme.muted,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AutismDevDialogAction extends StatelessWidget {
+  const _AutismDevDialogAction({
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+    this.icon,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+  final bool filled;
+  final IconData? icon;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          height: 38,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: filled ? _ReportTheme.orange : Colors.white,
+            borderRadius: BorderRadius.circular(13),
+            border: filled ? null : Border.all(color: _ReportTheme.lineSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              if (icon != null) ...<Widget>[
+                Icon(
+                  icon,
+                  size: 17,
+                  color: filled ? Colors.white : Colors.black,
+                ),
+                const SizedBox(width: 6),
+              ],
+              Text(
+                label,
+                style: TextStyle(
+                  color: filled ? Colors.white : Colors.black,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -1176,10 +2168,20 @@ class _AutismDevStrengthWeaknessTable extends StatelessWidget {
 }
 
 class _AutismDevResultAnalysisTable extends StatelessWidget {
-  const _AutismDevResultAnalysisTable();
+  const _AutismDevResultAnalysisTable({
+    required this.rows,
+    required this.selectedCell,
+    required this.onCellTap,
+  });
+
+  final List<AutismDevResultAnalysisRow> rows;
+  final _AutismDevAnalysisEditRequest? selectedCell;
+  final ValueChanged<_AutismDevAnalysisEditRequest> onCellTap;
 
   @override
   Widget build(BuildContext context) {
+    final List<AutismDevResultAnalysisRow> displayRows =
+        _normalizeAutismDevResultAnalysisRows(rows);
     return ClipRect(
       child: Table(
         columnWidths: const <int, TableColumnWidth>{
@@ -1198,13 +2200,52 @@ class _AutismDevResultAnalysisTable extends StatelessWidget {
               _autismDevAnalysisHeaderCell('训练目标'),
             ],
           ),
-          for (final String domain in _autismDevResultAnalysisDomains)
+          for (int index = 0; index < displayRows.length; index += 1)
             TableRow(
               children: <Widget>[
-                _autismDevAnalysisDomainCell(domain),
-                _autismDevAnalysisBlankCell(),
-                _autismDevAnalysisStrengthCell(),
-                _autismDevAnalysisBlankCell(),
+                _autismDevAnalysisDomainCell(displayRows[index].domain),
+                _autismDevAnalysisTextCell(
+                  displayRows[index].status,
+                  editable: selectedCell ==
+                      _AutismDevAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _AutismDevAnalysisEditField.status,
+                      ),
+                  onTap: () => onCellTap(
+                    _AutismDevAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _AutismDevAnalysisEditField.status,
+                    ),
+                  ),
+                ),
+                _autismDevAnalysisStrengthCell(
+                  displayRows[index],
+                  editable: selectedCell ==
+                      _AutismDevAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _AutismDevAnalysisEditField.strengthWeakness,
+                      ),
+                  onTap: () => onCellTap(
+                    _AutismDevAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _AutismDevAnalysisEditField.strengthWeakness,
+                    ),
+                  ),
+                ),
+                _autismDevAnalysisTextCell(
+                  displayRows[index].targets,
+                  editable: selectedCell ==
+                      _AutismDevAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _AutismDevAnalysisEditField.targets,
+                      ),
+                  onTap: () => onCellTap(
+                    _AutismDevAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _AutismDevAnalysisEditField.targets,
+                    ),
+                  ),
+                ),
               ],
             ),
         ],
@@ -1233,7 +2274,7 @@ Widget _autismDevAnalysisHeaderCell(String text) {
 
 Widget _autismDevAnalysisDomainCell(String domain) {
   return Container(
-    height: 246,
+    constraints: const BoxConstraints(minHeight: 246),
     alignment: Alignment.center,
     padding: const EdgeInsets.symmetric(horizontal: 8),
     color: Colors.white,
@@ -1249,40 +2290,115 @@ Widget _autismDevAnalysisDomainCell(String domain) {
   );
 }
 
-Widget _autismDevAnalysisBlankCell() {
-  return Container(
-    height: 246,
-    color: Colors.white,
+Widget _autismDevAnalysisTextCell(
+  String text, {
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  return _autismDevAnalysisEditableFrame(
+    editable: editable,
+    onTap: onTap,
+    child: Text(
+      text.trim(),
+      textAlign: TextAlign.left,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 15.5,
+        height: 1.36,
+      ),
+    ),
   );
 }
 
-Widget _autismDevAnalysisStrengthCell() {
-  return Container(
-    height: 246,
-    alignment: Alignment.topLeft,
-    padding: const EdgeInsets.fromLTRB(10, 9, 10, 9),
-    color: Colors.white,
-    child: const Column(
+Widget _autismDevAnalysisStrengthCell(
+  AutismDevResultAnalysisRow row, {
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  return _autismDevAnalysisEditableFrame(
+    editable: editable,
+    onTap: onTap,
+    child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: <Widget>[
-        Text(
-          '优势：',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 17,
-            height: 1.2,
-          ),
+        _autismDevAnalysisLabeledText(
+          label: '优势：',
+          text: row.strengths,
         ),
-        SizedBox(height: 54),
-        Text(
-          '劣势：',
-          style: TextStyle(
-            color: Colors.black,
-            fontSize: 17,
-            height: 1.2,
-          ),
+        const SizedBox(height: 24),
+        _autismDevAnalysisLabeledText(
+          label: '劣势：',
+          text: row.weaknesses,
         ),
       ],
+    ),
+  );
+}
+
+Widget _autismDevAnalysisLabeledText({
+  required String label,
+  required String text,
+}) {
+  const TextStyle style = TextStyle(
+    color: Colors.black,
+    fontSize: 15.5,
+    height: 1.36,
+  );
+  return Text.rich(
+    TextSpan(
+      style: style,
+      children: <InlineSpan>[
+        TextSpan(text: label),
+        TextSpan(text: text.trim()),
+      ],
+    ),
+    textAlign: TextAlign.left,
+  );
+}
+
+Widget _autismDevAnalysisEditableFrame({
+  required Widget child,
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  final Widget content = Container(
+    constraints: const BoxConstraints(minHeight: 246),
+    alignment: Alignment.topLeft,
+    padding: EdgeInsets.fromLTRB(10, 9, editable ? 20 : 10, 9),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      boxShadow: editable
+          ? const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x22E96F43),
+                blurRadius: 0,
+                spreadRadius: 1.4,
+              ),
+            ]
+          : null,
+    ),
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        SizedBox(width: double.infinity, child: child),
+        if (editable)
+          const Positioned(
+            right: -10,
+            top: -2,
+            child: Icon(
+              Icons.edit_rounded,
+              size: 12,
+              color: _ReportTheme.orangeDeep,
+            ),
+          ),
+      ],
+    ),
+  );
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      child: content,
     ),
   );
 }
@@ -2313,11 +3429,279 @@ const List<_AutismDevBehaviorScore> _autismDevBehaviorScores =
   _AutismDevBehaviorScore(label: '特殊行为', a: 4, m: 3, s: 0),
 ];
 
+AutismDevResultAnalysis _emptyAutismDevResultAnalysis() {
+  return AutismDevResultAnalysis(
+    title: '孤独症儿童评估结果分析表',
+    rows: _autismDevResultAnalysisDomains
+        .map(
+          (String domain) => AutismDevResultAnalysisRow(domain: domain),
+        )
+        .toList(),
+  );
+}
+
+AutismDevResultAnalysis _mergeAutismDevResultAnalysis(
+  AutismDevResultAnalysis? source,
+) {
+  final AutismDevResultAnalysis fallback = _emptyAutismDevResultAnalysis();
+  if (source == null || source.rows.isEmpty) {
+    return fallback;
+  }
+  final List<AutismDevResultAnalysisRow> nextRows =
+      <AutismDevResultAnalysisRow>[];
+  final Set<String> seenDomains = <String>{};
+  for (final AutismDevResultAnalysisRow row in source.rows) {
+    final String canonical =
+        _canonicalAutismDevResultAnalysisDomain(row.domain);
+    if (canonical.isEmpty) {
+      continue;
+    }
+    if (seenDomains.add(canonical)) {
+      nextRows.add(row.copyWith(domain: canonical));
+    }
+  }
+  if (nextRows.isEmpty) {
+    return fallback;
+  }
+  return AutismDevResultAnalysis(
+    title: source.title.trim().isEmpty ? fallback.title : source.title.trim(),
+    model: source.model,
+    generatedBy: source.generatedBy,
+    generatedAt: source.generatedAt,
+    rows: nextRows,
+  );
+}
+
+List<AutismDevResultAnalysisRow> _normalizeAutismDevResultAnalysisRows(
+  List<AutismDevResultAnalysisRow> rows,
+) {
+  return _mergeAutismDevResultAnalysis(
+    AutismDevResultAnalysis(title: '', rows: rows),
+  ).rows;
+}
+
+String _canonicalAutismDevResultAnalysisDomain(String value) {
+  final String normalized =
+      value.replaceAll(RegExp(r'\s+'), '').replaceAll('和', '与').trim();
+  for (final String domain in _autismDevResultAnalysisDomains) {
+    final String candidate =
+        domain.replaceAll(RegExp(r'\s+'), '').replaceAll('和', '与').trim();
+    if (normalized == candidate) {
+      return domain;
+    }
+  }
+  return '';
+}
+
+class _AutismDevAnalysisReadableStream {
+  const _AutismDevAnalysisReadableStream({required this.content});
+
+  factory _AutismDevAnalysisReadableStream.fromRaw(String raw) {
+    final String content =
+        _formatAutismDevAnalysisStreamTextIncrementally(raw).trimRight();
+    return _AutismDevAnalysisReadableStream(
+      content: content.isEmpty ? '正在连接AI生成服务，准备读取评估记录...' : content,
+    );
+  }
+
+  final String content;
+}
+
+String _formatAutismDevAnalysisStreamTextIncrementally(String raw) {
+  final String text = raw.trim();
+  if (text.isEmpty) {
+    return '';
+  }
+  final StringBuffer output = StringBuffer();
+  final StringBuffer token = StringBuffer();
+  _AutismDevReadableJsonMode mode = _AutismDevReadableJsonMode.outside;
+  String currentKey = '';
+  String visibleKey = '';
+  bool expectingValue = false;
+  bool escaping = false;
+  bool lastWasNewline = true;
+
+  void writeText(String value) {
+    if (value.isEmpty) {
+      return;
+    }
+    output.write(value);
+    lastWasNewline = value.endsWith('\n');
+  }
+
+  void startVisibleField(String key) {
+    if (output.isNotEmpty && !lastWasNewline) {
+      writeText('\n');
+    }
+    if (key == 'domain') {
+      if (output.isNotEmpty) {
+        writeText('\n');
+      }
+      writeText('【');
+      return;
+    }
+    writeText('${_autismDevAnalysisStreamLabel(key)}：');
+  }
+
+  void endVisibleField(String key) {
+    if (key == 'domain') {
+      writeText('】\n');
+      return;
+    }
+    if (output.isNotEmpty && !lastWasNewline) {
+      writeText('\n');
+    }
+  }
+
+  void writeEscaped(String char) {
+    switch (char) {
+      case 'n':
+      case 'r':
+      case 't':
+        writeText(' ');
+      case '"':
+        writeText('"');
+      case '/':
+        writeText('/');
+      case r'\':
+        writeText(r'\');
+      default:
+        writeText(char);
+    }
+  }
+
+  for (final int rune in text.runes) {
+    final String char = String.fromCharCode(rune);
+    if (escaping) {
+      if (mode == _AutismDevReadableJsonMode.visibleValue) {
+        writeEscaped(char);
+      } else if (mode == _AutismDevReadableJsonMode.key) {
+        token.write(char);
+      }
+      escaping = false;
+      continue;
+    }
+    if (char == r'\') {
+      escaping = true;
+      continue;
+    }
+    switch (mode) {
+      case _AutismDevReadableJsonMode.outside:
+        if (char == '"') {
+          token.clear();
+          if (expectingValue) {
+            if (_isAutismDevAnalysisReadableField(currentKey)) {
+              visibleKey = currentKey;
+              startVisibleField(visibleKey);
+              mode = _AutismDevReadableJsonMode.visibleValue;
+            } else {
+              mode = _AutismDevReadableJsonMode.hiddenValue;
+            }
+          } else {
+            mode = _AutismDevReadableJsonMode.key;
+          }
+        } else if (char == ':') {
+          expectingValue = currentKey.isNotEmpty;
+        } else if (char == ',' || char == '}' || char == ']') {
+          if (expectingValue) {
+            expectingValue = false;
+            currentKey = '';
+          }
+        }
+      case _AutismDevReadableJsonMode.key:
+        if (char == '"') {
+          currentKey = token.toString();
+          token.clear();
+          mode = _AutismDevReadableJsonMode.outside;
+        } else {
+          token.write(char);
+        }
+      case _AutismDevReadableJsonMode.visibleValue:
+        if (char == '"') {
+          endVisibleField(visibleKey);
+          mode = _AutismDevReadableJsonMode.outside;
+          expectingValue = false;
+          currentKey = '';
+          visibleKey = '';
+        } else {
+          writeText(char);
+        }
+      case _AutismDevReadableJsonMode.hiddenValue:
+        if (char == '"') {
+          mode = _AutismDevReadableJsonMode.outside;
+          expectingValue = false;
+          currentKey = '';
+        }
+    }
+  }
+
+  final String normalized = output.toString().trimRight();
+  if (normalized.isNotEmpty) {
+    return normalized;
+  }
+  return text
+      .replaceAll('{', '')
+      .replaceAll('}', '')
+      .replaceAll('[', '')
+      .replaceAll(']', '')
+      .replaceAll('"', '')
+      .replaceAll(',', '')
+      .trim();
+}
+
+enum _AutismDevReadableJsonMode { outside, key, visibleValue, hiddenValue }
+
+bool _isAutismDevAnalysisReadableField(String key) {
+  return const <String>{
+    'domain',
+    'status',
+    'strengths',
+    'weaknesses',
+    'targets',
+  }.contains(key);
+}
+
+String _autismDevAnalysisStreamLabel(String key) {
+  return switch (key) {
+    'status' => '能力现状描述',
+    'strengths' => '优势',
+    'weaknesses' => '劣势',
+    'targets' => '训练目标',
+    _ => key,
+  };
+}
+
+double _autismDevResultAnalysisStreamProgress(String text) {
+  final String trimmed = text.trim();
+  if (trimmed.isEmpty) {
+    return .12;
+  }
+  final double length = trimmed.runes.length.toDouble();
+  const double floor = .12;
+  const double ceiling = .975;
+  if (length <= 360) {
+    return _autismDevLerpProgress(floor, .32, length / 360);
+  }
+  if (length <= 1600) {
+    return _autismDevLerpProgress(.32, .88, (length - 360) / 1240);
+  }
+  final double tail = 1 - math.exp(-(length - 1600) / 720);
+  return _autismDevLerpProgress(.88, ceiling, tail.clamp(0, 1));
+}
+
+double _autismDevLerpProgress(double start, double end, double t) {
+  final double normalized = t.clamp(0, 1).toDouble();
+  return start + (end - start) * normalized;
+}
+
 const List<String> _autismDevResultAnalysisDomains = <String>[
   '感知觉',
   '粗大动作',
   '精细动作',
   '语言与沟通',
+  '认知',
+  '社会交往',
+  '生活自理',
 ];
 
 const List<_AutismDevAnalysisItem> _autismDevAnalysisItems =

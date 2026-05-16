@@ -83,6 +83,18 @@ type AssessmentReportInterpretationEntity struct {
 	UpdatedTime    *time.Time
 }
 
+type AssessmentReportInterpretationJSONEntity struct {
+	ID             int64
+	InstID         int64
+	RecordID       int64
+	AssessmentCode string
+	SourceHash     string
+	Model          string
+	GeneratedBy    string
+	CreatedTime    *time.Time
+	UpdatedTime    *time.Time
+}
+
 func ensureAssessmentTables(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, `
 		CREATE TABLE IF NOT EXISTS assessment_record (
@@ -981,6 +993,81 @@ func (repo *Repository) UpsertAssessmentReportInterpretation(ctx context.Context
 		string(raw),
 		strings.TrimSpace(entity.Interpretation.Model),
 		strings.TrimSpace(entity.Interpretation.GeneratedBy),
+		operatorID,
+		operatorID,
+	)
+	return err
+}
+
+func (repo *Repository) GetAssessmentReportInterpretationJSON(ctx context.Context, instID, recordID int64, assessmentCode string, dest any) (AssessmentReportInterpretationJSONEntity, error) {
+	var (
+		entity    AssessmentReportInterpretationJSONEntity
+		raw       string
+		createdAt sql.NullTime
+		updatedAt sql.NullTime
+	)
+	err := repo.db.QueryRowContext(ctx, `
+		SELECT id, inst_id, record_id, assessment_code, source_hash, content_json, model, generated_by, create_time, update_time
+		FROM assessment_report_interpretation
+		WHERE inst_id = ? AND record_id = ? AND assessment_code = ? AND del_flag = 0
+		LIMIT 1
+	`, instID, recordID, strings.TrimSpace(assessmentCode)).Scan(
+		&entity.ID,
+		&entity.InstID,
+		&entity.RecordID,
+		&entity.AssessmentCode,
+		&entity.SourceHash,
+		&raw,
+		&entity.Model,
+		&entity.GeneratedBy,
+		&createdAt,
+		&updatedAt,
+	)
+	if err != nil {
+		return AssessmentReportInterpretationJSONEntity{}, err
+	}
+	if dest != nil {
+		if err := json.Unmarshal([]byte(raw), dest); err != nil {
+			return AssessmentReportInterpretationJSONEntity{}, fmt.Errorf("decode assessment report interpretation: %w", err)
+		}
+	}
+	if createdAt.Valid {
+		t := createdAt.Time
+		entity.CreatedTime = &t
+	}
+	if updatedAt.Valid {
+		t := updatedAt.Time
+		entity.UpdatedTime = &t
+	}
+	return entity, nil
+}
+
+func (repo *Repository) UpsertAssessmentReportInterpretationJSON(ctx context.Context, entity AssessmentReportInterpretationJSONEntity, content any, operatorID int64) error {
+	raw, err := json.Marshal(content)
+	if err != nil {
+		return fmt.Errorf("marshal assessment report interpretation: %w", err)
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		INSERT INTO assessment_report_interpretation (
+			inst_id, record_id, assessment_code, source_hash, content_json, model, generated_by,
+			create_id, update_id, create_time, update_time, del_flag
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW(), 0)
+		ON DUPLICATE KEY UPDATE
+			source_hash = VALUES(source_hash),
+			content_json = VALUES(content_json),
+			model = VALUES(model),
+			generated_by = VALUES(generated_by),
+			update_id = VALUES(update_id),
+			update_time = NOW(),
+			del_flag = 0
+	`,
+		entity.InstID,
+		entity.RecordID,
+		strings.TrimSpace(entity.AssessmentCode),
+		strings.TrimSpace(entity.SourceHash),
+		string(raw),
+		strings.TrimSpace(entity.Model),
+		strings.TrimSpace(entity.GeneratedBy),
 		operatorID,
 		operatorID,
 	)
