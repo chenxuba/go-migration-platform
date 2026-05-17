@@ -725,7 +725,7 @@ class _RecommendedPanel extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final double gap = constraints.maxWidth >= 900 ? 16 : 12;
-          const int columns = 4;
+          final int columns = math.min(_recommendedGames.length, 4);
           final double cardWidth =
               (constraints.maxWidth - gap * (columns - 1)) / columns;
 
@@ -790,8 +790,6 @@ class _RecommendedGameCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool playable = game.title == '颜色配对乐园';
-
     return Container(
       width: width,
       height: 190,
@@ -857,9 +855,7 @@ class _RecommendedGameCard extends StatelessWidget {
                 const Spacer(),
                 _StartButton(
                   compact: width < 210,
-                  onTap: playable
-                      ? () => _openColorMatchGame(context)
-                      : () => _showGamePendingMessage(context),
+                  onTap: () => _openTrainingGame(context, game),
                 ),
               ],
             ),
@@ -908,40 +904,25 @@ class _StartButton extends StatelessWidget {
   }
 }
 
-void _openColorMatchGame(BuildContext context) {
+void _openTrainingGame(BuildContext context, _RecommendedGame game) {
   final Uri baseUri = Uri.parse(_trainingGameBaseUrl);
   final Uri gameUri = baseUri.replace(
     queryParameters: <String, String>{
       ...baseUri.queryParameters,
       'host': 'flutter',
-      'gameId': 'color-shape-match',
-      'taskId': 'pad-color-match-demo',
+      'gameId': game.gameId,
+      'taskId': game.taskId,
       'studentId': 'chen-xiaoyu',
-      'difficulty': 'normal',
+      'difficulty': game.difficulty,
     },
   );
 
   Navigator.of(context).push(
     MaterialPageRoute<void>(
       builder: (_) => TrainingGameWebViewPage(
-        title: '颜色配对乐园',
+        title: game.title,
         url: gameUri,
       ),
-    ),
-  );
-}
-
-void _showGamePendingMessage(BuildContext context) {
-  ScaffoldMessenger.of(context).showSnackBar(
-    SnackBar(
-      content: const Text(
-        '这个游戏还未接入，先体验颜色配对乐园。',
-        style: TextStyle(fontWeight: FontWeight.w800),
-      ),
-      behavior: SnackBarBehavior.floating,
-      duration: const Duration(seconds: 2),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      margin: const EdgeInsets.fromLTRB(24, 0, 24, 24),
     ),
   );
 }
@@ -1595,12 +1576,18 @@ class _Panel extends StatelessWidget {
 class _RecommendedGame {
   const _RecommendedGame({
     required this.title,
+    required this.gameId,
+    required this.taskId,
+    required this.difficulty,
     required this.rating,
     required this.tags,
     required this.illustration,
   });
 
   final String title;
+  final String gameId;
+  final String taskId;
+  final String difficulty;
   final int rating;
   final List<_Tag> tags;
   final _HeroIllustration illustration;
@@ -1635,7 +1622,7 @@ class _Tag {
   final Color color;
 }
 
-enum _HeroIllustration { rainbow, train, maze, rhythm }
+enum _HeroIllustration { rainbow, firefly, shadow, train, maze, rhythm }
 
 enum _MiniIllustration {
   animals,
@@ -1659,6 +1646,9 @@ const _Tag _emotionTag = _Tag(label: '情绪管理', color: _TrainingColors.red)
 const List<_RecommendedGame> _recommendedGames = <_RecommendedGame>[
   _RecommendedGame(
     title: '颜色配对乐园',
+    gameId: 'color-shape-match',
+    taskId: 'pad-color-match-demo',
+    difficulty: 'normal',
     rating: 4,
     tags: <_Tag>[
       _cognitionTag,
@@ -1667,28 +1657,28 @@ const List<_RecommendedGame> _recommendedGames = <_RecommendedGame>[
     illustration: _HeroIllustration.rainbow,
   ),
   _RecommendedGame(
-    title: '词语小火车',
-    rating: 4,
-    tags: <_Tag>[
-      _languageTag,
-      _Tag(label: '词汇理解', color: _TrainingColors.green)
-    ],
-    illustration: _HeroIllustration.train,
-  ),
-  _RecommendedGame(
-    title: '手指迷宫',
+    title: '萤火小路',
+    gameId: 'firefly-path-trace',
+    taskId: 'pad-firefly-path-trace-demo',
+    difficulty: 'normal',
     rating: 4,
     tags: <_Tag>[
       _fineMotorTag,
       _Tag(label: '手眼协调', color: _TrainingColors.orange)
     ],
-    illustration: _HeroIllustration.maze,
+    illustration: _HeroIllustration.firefly,
   ),
   _RecommendedGame(
-    title: '节奏敲击',
+    title: '影子剧场',
+    gameId: 'shadow-theater',
+    taskId: 'pad-shadow-theater-demo',
+    difficulty: 'normal',
     rating: 4,
-    tags: <_Tag>[_sensoryTag, _Tag(label: '听觉节奏', color: _TrainingColors.teal)],
-    illustration: _HeroIllustration.rhythm,
+    tags: <_Tag>[
+      _cognitionTag,
+      _Tag(label: '视觉空间', color: _TrainingColors.blue)
+    ],
+    illustration: _HeroIllustration.shadow,
   ),
 ];
 
@@ -1946,6 +1936,10 @@ class _HeroIllustrationPainter extends CustomPainter {
     switch (kind) {
       case _HeroIllustration.rainbow:
         _drawRainbow(canvas, size);
+      case _HeroIllustration.firefly:
+        _drawFirefly(canvas, size);
+      case _HeroIllustration.shadow:
+        _drawShadow(canvas, size);
       case _HeroIllustration.train:
         _drawTrain(canvas, size);
       case _HeroIllustration.maze:
@@ -1959,6 +1953,10 @@ class _HeroIllustrationPainter extends CustomPainter {
     switch (kind) {
       case _HeroIllustration.rainbow:
         return const <Color>[Color(0xFFC6E9FF), Color(0xFFEDF7C7)];
+      case _HeroIllustration.firefly:
+        return const <Color>[Color(0xFF183B58), Color(0xFFB7F0C7)];
+      case _HeroIllustration.shadow:
+        return const <Color>[Color(0xFF2B2349), Color(0xFFFFE5A8)];
       case _HeroIllustration.train:
         return const <Color>[Color(0xFFE9D9FF), Color(0xFFFFF4DF)];
       case _HeroIllustration.maze:
@@ -2027,6 +2025,124 @@ class _HeroIllustrationPainter extends CustomPainter {
       9,
       Paint()..color = const Color(0xFFFFC468),
     );
+  }
+
+  void _drawFirefly(Canvas canvas, Size size) {
+    final Paint hill = Paint()..color = const Color(0xFF77C894);
+    final Path ground = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(0, size.height * .82)
+      ..quadraticBezierTo(
+          size.width * .42, size.height * .66, size.width, size.height * .78)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(ground, hill);
+
+    final Paint pathPaint = Paint()
+      ..color = const Color(0xFFFFF2AE).withOpacity(.78)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+    final Path trace = Path()
+      ..moveTo(size.width * .18, size.height * .7)
+      ..cubicTo(size.width * .3, size.height * .36, size.width * .45,
+          size.height * .74, size.width * .58, size.height * .43)
+      ..cubicTo(size.width * .72, size.height * .1, size.width * .77,
+          size.height * .66, size.width * .9, size.height * .34);
+    canvas.drawPath(trace, pathPaint);
+
+    for (final Offset point in <Offset>[
+      Offset(size.width * .2, size.height * .68),
+      Offset(size.width * .38, size.height * .47),
+      Offset(size.width * .58, size.height * .43),
+      Offset(size.width * .76, size.height * .52),
+      Offset(size.width * .9, size.height * .34),
+    ]) {
+      canvas.drawCircle(
+        point,
+        13,
+        Paint()..color = const Color(0xFFFFF2AE).withOpacity(.35),
+      );
+      canvas.drawCircle(point, 5, Paint()..color = const Color(0xFFFFF27A));
+    }
+
+    final Offset guide = Offset(size.width * .22, size.height * .32);
+    canvas.drawCircle(
+        guide, 22, Paint()..color = const Color(0xFFFFF27A).withOpacity(.34));
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: guide + const Offset(-9, -2), width: 20, height: 32),
+      Paint()..color = Colors.white.withOpacity(.55),
+    );
+    canvas.drawOval(
+      Rect.fromCenter(
+          center: guide + const Offset(9, -2), width: 20, height: 32),
+      Paint()..color = Colors.white.withOpacity(.55),
+    );
+    canvas.drawCircle(guide, 10, Paint()..color = const Color(0xFFFFD447));
+    canvas.drawCircle(guide + const Offset(-4, -3), 2,
+        Paint()..color = const Color(0xFF24546B));
+    canvas.drawCircle(guide + const Offset(4, -3), 2,
+        Paint()..color = const Color(0xFF24546B));
+    _drawStar(canvas, Offset(size.width * .72, size.height * .18), 9,
+        const Color(0xFFFFF27A));
+    _drawStar(canvas, Offset(size.width * .84, size.height * .2), 6,
+        const Color(0xFFFFF27A));
+  }
+
+  void _drawShadow(Canvas canvas, Size size) {
+    final Paint stage = Paint()..color = const Color(0xFFFFD78D);
+    final Path stagePath = Path()
+      ..moveTo(0, size.height)
+      ..lineTo(0, size.height * .82)
+      ..quadraticBezierTo(
+          size.width * .5, size.height * .68, size.width, size.height * .83)
+      ..lineTo(size.width, size.height)
+      ..close();
+    canvas.drawPath(stagePath, stage);
+
+    final Rect screen = Rect.fromLTWH(
+      size.width * .19,
+      size.height * .18,
+      size.width * .54,
+      size.height * .5,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(screen, const Radius.circular(14)),
+      Paint()..color = const Color(0xFFFFF5CE),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(screen, const Radius.circular(14)),
+      Paint()
+        ..color = const Color(0xFFF5C66B)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5,
+    );
+
+    final Path puppet = Path()
+      ..moveTo(screen.center.dx, screen.top + 18)
+      ..quadraticBezierTo(screen.left + 28, screen.center.dy,
+          screen.center.dx - 22, screen.bottom - 18)
+      ..quadraticBezierTo(screen.center.dx + 22, screen.bottom - 18,
+          screen.right - 28, screen.center.dy)
+      ..close();
+    canvas.drawPath(puppet, Paint()..color = const Color(0xFF51456F));
+    canvas.drawCircle(Offset(screen.center.dx, screen.center.dy - 4), 11,
+        Paint()..color = const Color(0xFF2B2349));
+
+    final Paint stick = Paint()
+      ..color = const Color(0xFF8C5A27)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    canvas.drawLine(Offset(screen.right + 20, screen.bottom + 12),
+        Offset(screen.center.dx + 14, screen.center.dy + 6), stick);
+    canvas.drawCircle(Offset(screen.right + 30, screen.bottom + 15), 8,
+        Paint()..color = const Color(0xFFFFB65C));
+
+    canvas.drawCircle(Offset(size.width * .82, size.height * .34), 18,
+        Paint()..color = const Color(0xFFFFF2AE).withOpacity(.35));
+    _drawStar(canvas, Offset(size.width * .83, size.height * .34), 10,
+        const Color(0xFFFFF2AE));
   }
 
   void _drawTrain(Canvas canvas, Size size) {

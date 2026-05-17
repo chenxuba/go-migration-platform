@@ -6,7 +6,7 @@ body,
   min-height: 100vh;
   margin: 0;
   overflow: hidden;
-  background: #7bdff2;
+  background-color: #7bdff2;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
@@ -25,6 +25,10 @@ body {
 #game-root {
   position: fixed;
   inset: 0;
+  background-image: var(--training-game-backdrop, none);
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 canvas {

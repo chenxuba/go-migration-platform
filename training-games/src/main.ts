@@ -4,6 +4,7 @@ import { ColorMatchScene } from './games/color-shape-match/ColorMatchScene';
 import { FireflyTraceScene } from './games/firefly-path-trace/FireflyTraceScene';
 import { ShadowTheaterScene } from './games/shadow-theater/ShadowTheaterScene';
 import { readLaunchParams } from './platform/hostBridge';
+import { publicAssetPath } from './platform/publicPath';
 
 declare global {
   interface Window {
@@ -26,6 +27,7 @@ window.addEventListener('unhandledrejection', (event) => {
 window.addEventListener('color-match-ready', hideLoading);
 
 const launchParams = readLaunchParams();
+applyBackdropForGame(launchParams.gameId);
 applyGameBootCopy(launchParams.gameId);
 const scene =
   launchParams.gameId === 'shadow-theater'
@@ -107,6 +109,17 @@ function applyGameBootCopy(gameId: string): void {
   if (loadingText) {
     loadingText.textContent = '游戏加载中...';
   }
+}
+
+function applyBackdropForGame(gameId: string): void {
+  const backdropPath =
+    gameId === 'shadow-theater'
+      ? publicAssetPath('assets/shadow-theater/background/shadow-stage.png')
+      : gameId === 'firefly-path-trace'
+        ? publicAssetPath('assets/firefly-trace/background/quiet-glow-garden.png')
+        : publicAssetPath('assets/color-match/background/color-playroom.png');
+
+  document.documentElement.style.setProperty('--training-game-backdrop', `url("${backdropPath}")`);
 }
 
 function escapeHtml(value: string): string {
