@@ -39,6 +39,16 @@ const COLORS: ColorOption[] = [
 
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
+const ASSET_BASE = '/assets/color-match';
+const BACKGROUND_TEXTURE = 'color-match-background';
+const MASCOT_TEXTURE = 'color-match-mascot';
+const TOKEN_TEXTURE_PREFIX = 'color-match-token';
+const CHOICE_CUSHION_TEXTURE = 'color-match-choice-cushion';
+const HUD_BAR_TEXTURE = 'color-match-ui-hud-bar';
+const TASK_CARD_TEXTURE = 'color-match-ui-task-card';
+const LISTEN_BUTTON_TEXTURE = 'color-match-ui-listen-button';
+const MUSIC_TOGGLE_ON_TEXTURE = 'color-match-ui-music-toggle-on';
+const MUSIC_TOGGLE_OFF_TEXTURE = 'color-match-ui-music-toggle-off';
 
 export class ColorMatchScene extends Phaser.Scene {
   private readonly launchParams: GameLaunchParams;
@@ -72,7 +82,6 @@ export class ColorMatchScene extends Phaser.Scene {
   private scoreText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private musicButton!: Phaser.GameObjects.Container;
-  private musicButtonText!: Phaser.GameObjects.Text;
   private feedbackText!: Phaser.GameObjects.Text;
   private mascot!: Phaser.GameObjects.Container;
   private targetBubble!: Phaser.GameObjects.Container;
@@ -86,6 +95,20 @@ export class ColorMatchScene extends Phaser.Scene {
     this.launchParams = launchParams;
     this.roundTotal = launchParams.difficulty === 'easy' ? 8 : launchParams.difficulty === 'hard' ? 12 : 10;
     this.choiceTotal = launchParams.difficulty === 'easy' ? 4 : launchParams.difficulty === 'hard' ? 6 : 5;
+  }
+
+  preload(): void {
+    this.load.image(BACKGROUND_TEXTURE, `${ASSET_BASE}/background/color-playroom.png`);
+    this.load.image(MASCOT_TEXTURE, `${ASSET_BASE}/characters/paint-star-guide.png`);
+    this.load.image(CHOICE_CUSHION_TEXTURE, `${ASSET_BASE}/props/choice-cushion.png`);
+    this.load.image(HUD_BAR_TEXTURE, `${ASSET_BASE}/ui/hud-bar.png`);
+    this.load.image(TASK_CARD_TEXTURE, `${ASSET_BASE}/ui/task-card.png`);
+    this.load.image(LISTEN_BUTTON_TEXTURE, `${ASSET_BASE}/ui/listen-button.png`);
+    this.load.image(MUSIC_TOGGLE_ON_TEXTURE, `${ASSET_BASE}/ui/music-toggle-on.png`);
+    this.load.image(MUSIC_TOGGLE_OFF_TEXTURE, `${ASSET_BASE}/ui/music-toggle-off.png`);
+    for (const color of COLORS) {
+      this.load.image(this.getTokenTextureKey(color), `${ASSET_BASE}/tokens/${color.key}.png`);
+    }
   }
 
   create(): void {
@@ -127,6 +150,17 @@ export class ColorMatchScene extends Phaser.Scene {
   }
 
   private createWorld(): void {
+    if (this.textures.exists(BACKGROUND_TEXTURE)) {
+      const background = this.add.image(GAME_WIDTH / 2, GAME_HEIGHT / 2, BACKGROUND_TEXTURE);
+      const scale = Math.max(GAME_WIDTH / background.width, GAME_HEIGHT / background.height);
+      background.setScale(scale);
+
+      const softFocus = this.add.graphics();
+      softFocus.fillGradientStyle(0xffffff, 0xffffff, 0xffffff, 0xffffff, 0.18, 0.12, 0.2, 0.2);
+      softFocus.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
+      return;
+    }
+
     this.add.rectangle(GAME_WIDTH / 2, GAME_HEIGHT / 2, GAME_WIDTH, GAME_HEIGHT, 0x7bdff2);
 
     const sky = this.add.graphics();
@@ -155,55 +189,61 @@ export class ColorMatchScene extends Phaser.Scene {
   private createHud(): void {
     this.hud = this.add.container(0, 0);
 
-    const bar = this.add.graphics();
-    bar.fillStyle(0xffffff, 0.88);
-    bar.fillRoundedRect(36, 24, 1208, 86, 28);
-    bar.lineStyle(4, 0x4fc3dc, 0.35);
-    bar.strokeRoundedRect(36, 24, 1208, 86, 28);
-    this.hud.add(bar);
+    if (this.textures.exists(HUD_BAR_TEXTURE)) {
+      const bar = this.add.image(640, 60, HUD_BAR_TEXTURE);
+      this.hud.add(bar);
+    } else {
+      const shadow = this.add.graphics();
+      shadow.fillStyle(0x2f7f8a, 0.1);
+      shadow.fillRoundedRect(72, 34, 1136, 68, 22);
+      const bar = this.add.graphics();
+      bar.fillStyle(0xf9fdfc, 0.97);
+      bar.fillRoundedRect(70, 24, 1140, 68, 22);
+      bar.lineStyle(2, 0xc7e8ea, 0.92);
+      bar.strokeRoundedRect(70, 24, 1140, 68, 22);
+      this.hud.add([shadow, bar]);
+    }
 
-    const hudCenterY = 67;
+    const hudCenterY = 58;
 
-    const progressBadge = this.add.graphics();
-    progressBadge.fillStyle(0xffffff, 0.82);
-    progressBadge.fillRoundedRect(70, 40, 104, 54, 18);
-    progressBadge.lineStyle(3, 0xb8dff1, 0.64);
-    progressBadge.strokeRoundedRect(70, 40, 104, 54, 18);
-    this.hud.add(progressBadge);
-
-    this.roundText = this.add.text(122, hudCenterY, `1/${this.roundTotal}`, {
+    this.roundText = this.add.text(164, hudCenterY, `1/${this.roundTotal}`, {
       color: '#24546b',
       fontSize: '24px',
-      fontStyle: '800',
+      fontStyle: '900',
     });
     this.roundText.setOrigin(0.5);
     this.hud.add(this.roundText);
 
-    const scoreIcon = this.add.image(920, hudCenterY, 'star');
-    scoreIcon.setScale(0.62);
+    const scoreIcon = this.add.image(762, hudCenterY + 2, 'star');
+    scoreIcon.setScale(0.42);
     this.hud.add(scoreIcon);
-    this.scoreText = this.add.text(954, hudCenterY, '0', {
+    this.scoreText = this.add.text(790, hudCenterY + 2, '得分 0', {
       color: '#7c4b00',
-      fontSize: '24px',
-      fontStyle: '800',
+      fontSize: '19px',
+      fontStyle: '900',
     });
     this.scoreText.setOrigin(0, 0.5);
     this.hud.add(this.scoreText);
 
-    const comboIcon = this.add.image(1066, hudCenterY, 'bolt-icon');
-    comboIcon.setScale(0.72);
+    const comboIcon = this.add.image(892, hudCenterY + 2, 'bolt-icon');
+    comboIcon.setScale(0.46);
     this.hud.add(comboIcon);
-    this.comboText = this.add.text(1102, hudCenterY, '0', {
+    this.comboText = this.add.text(920, hudCenterY + 2, '连击 0', {
       color: '#a33e62',
-      fontSize: '24px',
-      fontStyle: '800',
+      fontSize: '19px',
+      fontStyle: '900',
     });
     this.comboText.setOrigin(0, 0.5);
     this.hud.add(this.comboText);
 
+    this.musicButton = this.createMusicButton(1099, hudCenterY);
+    this.hud.add(this.musicButton);
+    this.updateMusicButton();
+
     this.progressDots = [];
     for (let i = 0; i < this.roundTotal; i += 1) {
-      const dot = this.add.circle(278 + i * 32, hudCenterY, 8, 0xb8dff1, 1);
+      const spacing = this.roundTotal > 10 ? 30 : 36;
+      const dot = this.add.circle(294 + i * spacing, hudCenterY + 1, 7.2, 0xcfe8ee, 1);
       dot.setName(`progress-${i}`);
       this.progressDots.push(dot);
       this.hud.add(dot);
@@ -214,28 +254,26 @@ export class ColorMatchScene extends Phaser.Scene {
     this.playLayer = this.add.container(0, 0);
     this.overlayLayer = this.add.container(0, 0);
 
-    this.musicButton = this.createMusicButton(1150, 144);
-    this.playLayer.add(this.musicButton);
-    this.updateMusicButton();
+    this.playLayer.add(this.createTaskPanel(650, 220));
 
     this.mascot = this.createMascot(166, 506);
     this.playLayer.add(this.mascot);
 
-    this.targetBubble = this.createTargetBubble(430, 218, COLORS[0]);
+    this.targetBubble = this.createTargetBubble(380, 220, COLORS[0]);
     this.playLayer.add(this.targetBubble);
 
-    this.taskText = this.add.text(548, 218, '找 红色', {
-      color: '#2f4265',
-      fontSize: '38px',
+    this.taskText = this.add.text(520, 220, '找一找 红色', {
+      color: '#243f54',
+      fontSize: '32px',
       fontStyle: '900',
-      stroke: '#ffffff',
-      strokeThickness: 8,
+      stroke: '#f8fffd',
+      strokeThickness: 3,
       padding: { top: 12, bottom: 8, left: 8, right: 8 },
     });
     this.taskText.setOrigin(0, 0.5);
     this.playLayer.add(this.taskText);
 
-    this.voiceButton = this.createVoiceButton(820, 218);
+    this.voiceButton = this.createVoiceButton(874, 226);
     this.playLayer.add(this.voiceButton);
 
     this.feedbackText = this.add.text(640, 610, '', {
@@ -275,9 +313,16 @@ export class ColorMatchScene extends Phaser.Scene {
     const friends = this.add.container(640, 334);
     for (let i = 0; i < 5; i += 1) {
       const color = COLORS[i];
-      const bubble = this.add.circle((i - 2) * 86, 0, 32, color.value, 1);
-      const shine = this.add.circle((i - 2) * 86 - 10, -12, 9, 0xffffff, 0.72);
-      friends.add([bubble, shine]);
+      const tokenKey = this.getTokenTextureKey(color);
+      if (this.textures.exists(tokenKey)) {
+        const token = this.add.image((i - 2) * 86, 0, tokenKey);
+        token.setDisplaySize(74, 74);
+        friends.add(token);
+      } else {
+        const bubble = this.add.circle((i - 2) * 86, 0, 32, color.value, 1);
+        const shine = this.add.circle((i - 2) * 86 - 10, -12, 9, 0xffffff, 0.72);
+        friends.add([bubble, shine]);
+      }
     }
 
     const startButton = this.createButton(640, 466, 286, 76, '开始游戏', 0xff6b8a, 0xd93f67, () => {
@@ -317,7 +362,7 @@ export class ColorMatchScene extends Phaser.Scene {
     this.feedbackText.setText('');
     this.currentTarget = Phaser.Utils.Array.GetRandom(COLORS);
     this.currentPrompt = `prompt-${this.currentTarget.key}`;
-    this.taskText.setText(`找 ${this.currentTarget.name}`);
+    this.taskText.setText(`找一找 ${this.currentTarget.name}`);
     this.roundStartedAt = performance.now();
     this.updateTargetBubble();
     this.updateHud();
@@ -340,7 +385,7 @@ export class ColorMatchScene extends Phaser.Scene {
     ]);
 
     const choiceSpacing = 164;
-    const startX = 640 - ((colors.length - 1) * choiceSpacing) / 2;
+    const startX = 692 - ((colors.length - 1) * choiceSpacing) / 2;
     colors.forEach((color, index) => {
       const x = startX + index * choiceSpacing;
       const y = 430 + (index % 2) * 38;
@@ -354,25 +399,41 @@ export class ColorMatchScene extends Phaser.Scene {
     const container = this.add.container(x, y);
     container.setSize(142, 156);
 
-    const shadow = this.add.ellipse(6, 68, 104, 24, 0x24546b, 0.18);
-    const rope = this.add.graphics();
-    rope.lineStyle(4, 0xffffff, 0.72);
-    rope.beginPath();
-    rope.moveTo(0, 56);
-    rope.lineTo(-8, 84);
-    rope.lineTo(10, 102);
-    rope.strokePath();
+    const shadow = this.textures.exists(CHOICE_CUSHION_TEXTURE)
+      ? this.add.image(0, 66, CHOICE_CUSHION_TEXTURE)
+      : this.add.ellipse(6, 68, 104, 24, 0x24546b, 0.18);
+    if (shadow instanceof Phaser.GameObjects.Image) {
+      shadow.setDisplaySize(134, 58);
+      shadow.setAlpha(0.88);
+    }
+    const tokenKey = this.getTokenTextureKey(color);
+    const tokenObjects: Phaser.GameObjects.GameObject[] = [];
+    if (this.textures.exists(tokenKey)) {
+      const aura = this.add.circle(0, 0, 67, color.value, 0.08);
+      const image = this.add.image(0, -4, tokenKey);
+      image.setDisplaySize(124, 124);
+      tokenObjects.push(aura, image);
+    } else {
+      const rope = this.add.graphics();
+      rope.lineStyle(4, 0xffffff, 0.72);
+      rope.beginPath();
+      rope.moveTo(0, 56);
+      rope.lineTo(-8, 84);
+      rope.lineTo(10, 102);
+      rope.strokePath();
 
-    const body = this.add.circle(0, 0, 56, color.value, 1);
-    body.setStrokeStyle(5, color.shadow, 0.58);
-    const shine = this.add.circle(-18, -22, 14, 0xffffff, 0.78);
-    const eyeLeft = this.add.circle(-16, 4, 5, 0x2f4265, 1);
-    const eyeRight = this.add.circle(18, 4, 5, 0x2f4265, 1);
-    const smile = this.add.graphics();
-    smile.lineStyle(4, 0x2f4265, 1);
-    smile.beginPath();
-    smile.arc(0, 12, 20, Phaser.Math.DegToRad(20), Phaser.Math.DegToRad(160), false);
-    smile.strokePath();
+      const body = this.add.circle(0, 0, 56, color.value, 1);
+      body.setStrokeStyle(5, color.shadow, 0.58);
+      const shine = this.add.circle(-18, -22, 14, 0xffffff, 0.78);
+      const eyeLeft = this.add.circle(-16, 4, 5, 0x2f4265, 1);
+      const eyeRight = this.add.circle(18, 4, 5, 0x2f4265, 1);
+      const smile = this.add.graphics();
+      smile.lineStyle(4, 0x2f4265, 1);
+      smile.beginPath();
+      smile.arc(0, 12, 20, Phaser.Math.DegToRad(20), Phaser.Math.DegToRad(160), false);
+      smile.strokePath();
+      tokenObjects.push(rope, body, shine, eyeLeft, eyeRight, smile);
+    }
 
     const hitZone = this.add.zone(0, 16, 142, 156);
     hitZone.setOrigin(0.5);
@@ -384,7 +445,7 @@ export class ColorMatchScene extends Phaser.Scene {
     hitZone.on('pointerout', () => {
       this.tweens.add({ targets: container, scale: 1, duration: 120, ease: 'Sine.Out' });
     });
-    container.add([shadow, rope, body, shine, eyeLeft, eyeRight, smile, hitZone]);
+    container.add([shadow, ...tokenObjects, hitZone]);
 
     this.tweens.add({
       targets: container,
@@ -615,52 +676,32 @@ export class ColorMatchScene extends Phaser.Scene {
 
   private updateHud(): void {
     this.roundText.setText(`${Math.min(this.roundIndex + 1, this.roundTotal)}/${this.roundTotal}`);
-    this.scoreText.setText(`${this.correct}`);
-    this.comboText.setText(`${this.combo}`);
+    this.scoreText.setText(`得分 ${this.correct}`);
+    this.comboText.setText(`连击 ${this.combo}`);
 
     this.progressDots.forEach((dot, index) => {
-      dot.setFillStyle(index < this.roundIndex ? 0x54ce73 : index === this.roundIndex ? 0xffd447 : 0xb8dff1);
-      dot.setScale(index === this.roundIndex ? 1.3 : 1);
+      dot.setFillStyle(index < this.roundIndex ? 0x55c98f : index === this.roundIndex ? 0xffcf5a : 0xcfe8ee);
+      dot.setScale(index === this.roundIndex ? 1.24 : 1);
     });
   }
 
   private updateTargetBubble(): void {
     this.targetBubble.destroy();
-    this.targetBubble = this.createTargetBubble(430, 218, this.currentTarget);
-    this.playLayer.addAt(this.targetBubble, 1);
+    this.targetBubble = this.createTargetBubble(380, 220, this.currentTarget);
+    this.playLayer.add(this.targetBubble);
   }
 
   private createVoiceButton(x: number, y: number): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
-    const width = 200;
-    const height = 64;
-    const shadow = this.add.graphics();
-    shadow.fillStyle(0x49a9c5, 0.92);
-    shadow.fillRoundedRect(-width / 2, -height / 2 + 7, width, height, 24);
-    const body = this.add.graphics();
-    body.fillStyle(0xffffff, 0.96);
-    body.fillRoundedRect(-width / 2, -height / 2, width, height, 24);
-    body.lineStyle(4, 0x4fc3dc, 0.82);
-    body.strokeRoundedRect(-width / 2, -height / 2, width, height, 24);
+    const width = 150;
+    const height = 50;
+    const button = this.textures.exists(LISTEN_BUTTON_TEXTURE)
+      ? this.add.image(0, 0, LISTEN_BUTTON_TEXTURE)
+      : undefined;
 
-    const iconBg = this.add.circle(-48, -1, 22, 0x4e9cff, 1);
-    iconBg.setStrokeStyle(3, 0xffffff, 0.76);
-
-    const speaker = this.add.graphics();
-    speaker.fillStyle(0xffffff, 1);
-    speaker.fillRoundedRect(-58, -11, 9, 20, 3);
-    speaker.fillTriangle(-49, -15, -49, 13, -33, -1);
-    speaker.lineStyle(4, 0xffffff, 1);
-    speaker.beginPath();
-    speaker.arc(-29, -1, 9, Phaser.Math.DegToRad(-38), Phaser.Math.DegToRad(38), false);
-    speaker.strokePath();
-    speaker.beginPath();
-    speaker.arc(-25, -1, 16, Phaser.Math.DegToRad(-34), Phaser.Math.DegToRad(34), false);
-    speaker.strokePath();
-
-    const label = this.add.text(-22, 1, '再听一次', {
+    const label = this.add.text(-10, 1, '再听', {
       color: '#24546b',
-      fontSize: '25px',
+      fontSize: '22px',
       fontStyle: '900',
       padding: { top: 8, bottom: 6, left: 4, right: 4 },
     });
@@ -676,55 +717,76 @@ export class ColorMatchScene extends Phaser.Scene {
     hitZone.on('pointerover', () => this.tweens.add({ targets: container, scale: 1.06, duration: 120 }));
     hitZone.on('pointerout', () => this.tweens.add({ targets: container, scale: 1, duration: 120 }));
 
-    container.add([shadow, body, iconBg, speaker, label, hitZone]);
+    if (button) {
+      container.add([button, label, hitZone]);
+    } else {
+      const body = this.add.graphics();
+      body.fillStyle(0xf9fdfc, 0.98);
+      body.fillRoundedRect(-width / 2, -height / 2, width, height, 16);
+      body.lineStyle(2, 0xc7e8ea, 1);
+      body.strokeRoundedRect(-width / 2, -height / 2, width, height, 16);
+      container.add([body, label, hitZone]);
+    }
 
     return container;
   }
 
-  private createMusicButton(x: number, y: number): Phaser.GameObjects.Container {
-    const width = 106;
-    const height = 52;
+  private createTaskPanel(x: number, y: number): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
+
+    if (this.textures.exists(TASK_CARD_TEXTURE)) {
+      const card = this.add.image(0, 0, TASK_CARD_TEXTURE);
+      container.add(card);
+      return container;
+    }
+
     const shadow = this.add.graphics();
-    shadow.fillStyle(0x49a9c5, 0.65);
-    shadow.fillRoundedRect(-width / 2, -height / 2 + 5, width, height, 18);
-    const body = this.add.graphics();
-    body.fillStyle(0xffffff, 0.92);
-    body.fillRoundedRect(-width / 2, -height / 2, width, height, 18);
-    body.lineStyle(3, 0xb8dff1, 0.88);
-    body.strokeRoundedRect(-width / 2, -height / 2, width, height, 18);
+    shadow.fillStyle(0x2f7f8a, 0.1);
+    shadow.fillRoundedRect(-326, -50, 652, 104, 30);
+    const panel = this.add.graphics();
+    panel.fillStyle(0xf9fdfc, 0.96);
+    panel.fillRoundedRect(-330, -56, 660, 104, 30);
+    panel.lineStyle(2, 0xc7e8ea, 1);
+    panel.strokeRoundedRect(-330, -56, 660, 104, 30);
 
-    const icon = this.add.image(-24, 0, 'music-icon');
-    icon.setName('music-icon');
-    icon.setScale(0.56);
-    this.musicButtonText = this.add.text(4, 1, '开', {
-      color: '#24546b',
-      fontSize: '22px',
-      fontStyle: '900',
-      padding: { top: 6, bottom: 4, left: 2, right: 2 },
-    });
-    this.musicButtonText.setOrigin(0, 0.5);
+    const leftWell = this.add.circle(-212, -4, 56, 0xffffff, 0.76);
+    leftWell.setStrokeStyle(2, 0xd5ecee, 1);
+    const textDivider = this.add.rectangle(-98, -4, 2, 56, 0xdceff0, 1);
+    const buttonWell = this.add.graphics();
+    buttonWell.fillStyle(0xedf7f7, 0.82);
+    buttonWell.fillRoundedRect(110, -31, 176, 62, 18);
+    buttonWell.lineStyle(2, 0xd7eef0, 0.86);
+    buttonWell.strokeRoundedRect(110, -31, 176, 62, 18);
 
-    const hitZone = this.add.zone(0, 2, width, height + 10);
+    container.add([shadow, panel, leftWell, textDivider, buttonWell]);
+    return container;
+  }
+
+  private createMusicButton(x: number, y: number): Phaser.GameObjects.Container {
+    const width = 138;
+    const height = 54;
+    const container = this.add.container(x, y);
+    const body = this.add.image(0, 0, this.musicEnabled ? MUSIC_TOGGLE_ON_TEXTURE : MUSIC_TOGGLE_OFF_TEXTURE);
+    body.setName('music-toggle-image');
+
+    const hitZone = this.add.zone(0, 2, width, height + 8);
     hitZone.setOrigin(0.5);
     hitZone.setInteractive({ useHandCursor: true });
     hitZone.on('pointerdown', () => this.toggleBackgroundMusic());
     hitZone.on('pointerover', () => this.tweens.add({ targets: container, scale: 1.05, duration: 120 }));
     hitZone.on('pointerout', () => this.tweens.add({ targets: container, scale: 1, duration: 120 }));
 
-    container.add([shadow, body, icon, this.musicButtonText, hitZone]);
+    container.add([body, hitZone]);
     return container;
   }
 
   private updateMusicButton(): void {
-    if (!this.musicButton || !this.musicButtonText) {
+    if (!this.musicButton) {
       return;
     }
 
-    const icon = this.musicButton.getByName('music-icon') as Phaser.GameObjects.Image | null;
-    icon?.setTexture(this.musicEnabled ? 'music-icon' : 'music-muted-icon');
-    this.musicButtonText.setText(this.musicEnabled ? '开' : '关');
-    this.musicButtonText.setColor(this.musicEnabled ? '#24546b' : '#7c8b96');
+    const body = this.musicButton.getByName('music-toggle-image') as Phaser.GameObjects.Image | null;
+    body?.setTexture(this.musicEnabled ? MUSIC_TOGGLE_ON_TEXTURE : MUSIC_TOGGLE_OFF_TEXTURE);
   }
 
   private animateVoiceButton(): void {
@@ -740,10 +802,19 @@ export class ColorMatchScene extends Phaser.Scene {
   private createTargetBubble(x: number, y: number, color: ColorOption): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const glow = this.add.circle(0, 0, 76, color.value, 0.22);
-    const body = this.add.circle(0, 0, 52, color.value, 1);
-    body.setStrokeStyle(5, color.shadow, 0.68);
-    const shine = this.add.circle(-18, -20, 13, 0xffffff, 0.75);
-    container.add([glow, body, shine]);
+    const tokenKey = this.getTokenTextureKey(color);
+    if (this.textures.exists(tokenKey)) {
+      const ring = this.add.circle(0, 0, 61, 0xffffff, 0.9);
+      ring.setStrokeStyle(5, color.shadow, 0.5);
+      const image = this.add.image(0, -2, tokenKey);
+      image.setDisplaySize(108, 108);
+      container.add([glow, ring, image]);
+    } else {
+      const body = this.add.circle(0, 0, 52, color.value, 1);
+      body.setStrokeStyle(5, color.shadow, 0.68);
+      const shine = this.add.circle(-18, -20, 13, 0xffffff, 0.75);
+      container.add([glow, body, shine]);
+    }
     this.tweens.add({ targets: container, scale: 1.08, duration: 620, yoyo: true, repeat: -1 });
     return container;
   }
@@ -751,6 +822,15 @@ export class ColorMatchScene extends Phaser.Scene {
   private createMascot(x: number, y: number): Phaser.GameObjects.Container {
     const container = this.add.container(x, y);
     const shadow = this.add.ellipse(4, 82, 116, 26, 0x24546b, 0.15);
+    if (this.textures.exists(MASCOT_TEXTURE)) {
+      const glow = this.add.circle(0, -8, 88, 0xffffff, 0.28);
+      const mascot = this.add.image(0, -8, MASCOT_TEXTURE);
+      mascot.setDisplaySize(178, 178);
+      container.add([shadow, glow, mascot]);
+      this.tweens.add({ targets: container, y: y - 10, duration: 880, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
+      return container;
+    }
+
     const glow = this.add.image(0, 0, 'star-white');
     glow.setScale(2.65);
     glow.setAlpha(0.34);
@@ -777,6 +857,10 @@ export class ColorMatchScene extends Phaser.Scene {
     ]);
     this.tweens.add({ targets: container, y: y - 10, duration: 880, yoyo: true, repeat: -1, ease: 'Sine.InOut' });
     return container;
+  }
+
+  private getTokenTextureKey(color: ColorOption): string {
+    return `${TOKEN_TEXTURE_PREFIX}-${color.key}`;
   }
 
   private mascotCelebrate(): void {
