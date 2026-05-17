@@ -79,6 +79,7 @@ const draftItemSaveStatus = ref<Record<number, DraftItemSaveStatus>>({})
 const draftItemSaveErrors = ref<Record<number, string>>({})
 const itemListRef = ref<HTMLElement | null>(null)
 let draftCreationPromise: Promise<AutismDevDraftDetail | undefined> | undefined
+let draftSavePromise: Promise<AutismDevDraftDetail | undefined> | undefined
 let itemSaveChain: Promise<void> = Promise.resolve()
 
 const editor = reactive({
@@ -216,6 +217,10 @@ function unwrap<T>(res: any): T {
 
 function getErrorMessage(error: any, fallback: string) {
   return error?.response?.data?.message || error?.message || fallback
+}
+
+function isDraftNotFoundError(error: any) {
+  return getErrorMessage(error, '').toLowerCase().includes('assessment draft not found')
 }
 
 function textFromQuery(key: string) {
@@ -621,22 +626,45 @@ function buildPayload(): AutismDevDraftSaveRequest {
 async function saveDraft(silent = false) {
   if (!validateDraftHeader(silent))
     return undefined
+  if (draftSavePromise)
+    return await draftSavePromise
   saving.value = true
+  draftSavePromise = persistDraftWithRecovery().finally(() => {
+    draftSavePromise = undefined
+    saving.value = false
+  })
+  const detail = await draftSavePromise
+  if (!silent && detail)
+    messageService.success('孤独症儿童发展评估草稿已保存')
+  return detail
+}
+
+async function persistDraftWithRecovery() {
   try {
-    const res = await saveAutismDevAssessmentDraftApi(buildPayload())
-    const detail = unwrap<AutismDevDraftDetail>(res)
-    applyDraftDetail(detail)
-    if (!silent)
-      messageService.success('孤独症儿童发展评估草稿已保存')
-    return detail
+    return await persistDraftPayload(buildPayload())
   }
   catch (error: any) {
+    if (editor.id && isDraftNotFoundError(error)) {
+      editor.id = undefined
+      draftCreationPromise = undefined
+      try {
+        return await persistDraftPayload({ ...buildPayload(), id: undefined })
+      }
+      catch (retryError: any) {
+        messageService.error(getErrorMessage(retryError, '保存孤独症儿童发展评估草稿失败'))
+        return undefined
+      }
+    }
     messageService.error(getErrorMessage(error, '保存孤独症儿童发展评估草稿失败'))
     return undefined
   }
-  finally {
-    saving.value = false
-  }
+}
+
+async function persistDraftPayload(payload: AutismDevDraftSaveRequest) {
+  const res = await saveAutismDevAssessmentDraftApi(payload)
+  const detail = unwrap<AutismDevDraftDetail>(res)
+  applyDraftDetail(detail)
+  return detail
 }
 
 async function ensureDraftForItemSave() {
@@ -665,13 +693,10 @@ async function persistItem(itemNo: number, moveNext = false) {
     const canSave = await ensureDraftForItemSave()
     if (!canSave || !editor.id)
       throw new Error('草稿创建失败')
-    const res = await saveAutismDevAssessmentDraftItemApi({
-      draftId: editor.id,
-      itemNo,
-      score: itemScores[itemNo],
-      remark: itemRemarks[itemNo]?.trim() || '',
-    })
-    mergeDraftDetailInput(unwrap<AutismDevDraftDetail>(res))
+    const detail = await persistDraftItemWithRecovery(itemNo)
+    if (!detail)
+      throw new Error('草稿保存失败')
+    mergeDraftDetailInput(detail)
     autoSaveLastSavedAt.value = dayjs().format('MM-DD HH:mm')
     draftItemSaveStatus.value = { ...draftItemSaveStatus.value, [itemNo]: 'saved' }
     if (moveNext && selectedItemNo.value === itemNo)
@@ -683,6 +708,35 @@ async function persistItem(itemNo: number, moveNext = false) {
     draftItemSaveErrors.value = { ...draftItemSaveErrors.value, [itemNo]: message }
     messageService.error(message)
   }
+}
+
+async function persistDraftItemWithRecovery(itemNo: number) {
+  try {
+    return await persistDraftItem(itemNo, editor.id)
+  }
+  catch (error: any) {
+    if (!isDraftNotFoundError(error))
+      throw error
+    editor.id = undefined
+    draftCreationPromise = undefined
+    const detail = await saveDraft(true)
+    const draftId = detail?.id || editor.id
+    if (!draftId)
+      throw error
+    return await persistDraftItem(itemNo, draftId)
+  }
+}
+
+async function persistDraftItem(itemNo: number, draftId?: number) {
+  if (!draftId)
+    throw new Error('草稿创建失败')
+  const res = await saveAutismDevAssessmentDraftItemApi({
+    draftId,
+    itemNo,
+    score: itemScores[itemNo],
+    remark: itemRemarks[itemNo]?.trim() || '',
+  })
+  return unwrap<AutismDevDraftDetail>(res)
 }
 
 async function submitDraft() {
@@ -1093,7 +1147,7 @@ function goBack() {
       <span class="header-meta">施测者：<b>{{ examinerName }}</b></span>
       <div class="header-actions">
         <span class="auto-save-status" :class="{ 'is-saving': autoSaveState === 'saving', 'is-saved': autoSaveState === 'saved' }">{{ autoSaveText }}</span>
-        <a-button size="large" class="outline-action" :loading="saving" @click="saveDraft(false)">
+        <a-button size="large" class="outline-action" :loading="saving" :disabled="saving" @click="saveDraft(false)">
           <template #icon><SaveOutlined /></template>
           保存草稿
         </a-button>
