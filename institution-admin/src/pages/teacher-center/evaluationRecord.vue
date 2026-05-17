@@ -24,6 +24,7 @@ import {
 } from '@/api/edu-center/erxin-assessment'
 import {
   deleteAutismDevAssessmentRecordApi,
+  downloadAutismDevResultAnalysisWordApi,
   downloadAutismDevSelectedReportPdfApi,
   generateAutismDevResultAnalysisStreamApi,
   getAutismDevResultAnalysisApi,
@@ -70,6 +71,7 @@ const autismDevAnalysisError = ref('')
 const autismDevAnalysisProgress = ref('')
 const autismDevAnalysisStreamText = ref('')
 const autismDevAnalysisRecordKey = ref('')
+const autismDevAnalysisWordExporting = ref(false)
 const autismDevExportSections = ref([])
 const autismDevExportAnalysisLoading = ref(false)
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
@@ -79,6 +81,9 @@ let interpretationAbortController = null
 let autismDevAnalysisAbortController = null
 let interpretationScrollFrame = 0
 let interpretationProgressAnchored = false
+const autismDevAnalysisStreamReadableText = computed(() => autismDevAnalysisReadableStreamText(autismDevAnalysisStreamText.value))
+const autismDevAnalysisStreamRows = computed(() => autismDevAnalysisPreviewRows(autismDevAnalysisStreamReadableText.value))
+const autismDevAnalysisStreamProgressPercent = computed(() => Math.round(autismDevResultAnalysisStreamProgress(autismDevAnalysisStreamText.value) * 100))
 
 const exportDimensionOptions = [
   {
@@ -464,6 +469,240 @@ function emptyAutismDevAnalysis() {
     rows: ['感知觉', '粗大动作', '精细动作', '语言与沟通', '认知', '社会交往', '生活自理', '情绪与行为']
       .map(domain => ({ domain })),
   })
+}
+
+function canonicalAutismDevAnalysisDomain(value) {
+  const normalized = String(value || '').replace(/\s+/g, '').replaceAll('和', '与').trim()
+  return emptyAutismDevAnalysis().rows.find((row) => {
+    const candidate = String(row.domain || '').replace(/\s+/g, '').replaceAll('和', '与').trim()
+    return normalized === candidate
+  })?.domain || ''
+}
+
+function autismDevStrengthWeaknessText(row) {
+  const strengths = String(row?.strengths || '').trim()
+  const weaknesses = String(row?.weaknesses || '').trim()
+  const lines = []
+  if (strengths)
+    lines.push(`优势：${strengths}`)
+  if (weaknesses)
+    lines.push(`劣势：${weaknesses}`)
+  return lines.join('\n')
+}
+
+function autismDevAnalysisPreviewRows(readableText) {
+  const rows = emptyAutismDevAnalysis().rows.map(row => ({ ...row }))
+  const byDomain = new Map(rows.map(row => [row.domain, row]))
+  const text = String(readableText || '').trim()
+  if (!text || text.startsWith('正在连接AI生成服务'))
+    return rows
+
+  let activeRow = null
+  let activeField = ''
+  const appendField = (value) => {
+    if (!activeRow || !activeField)
+      return
+    const text = String(value || '').trim()
+    if (!text)
+      return
+    activeRow[activeField] = [activeRow[activeField], text].filter(Boolean).join(activeRow[activeField] ? '\n' : '')
+  }
+
+  for (const rawLine of text.split(/\n+/)) {
+    const line = rawLine.trim()
+    if (!line)
+      continue
+    const domainMatch = line.match(/^【(.+?)】?$/)
+    if (domainMatch) {
+      const domain = canonicalAutismDevAnalysisDomain(domainMatch[1])
+      activeRow = domain ? byDomain.get(domain) : null
+      activeField = ''
+      continue
+    }
+    const fieldMatch = line.match(/^(能力现状描述|优势|劣势|训练目标)：(.*)$/)
+    if (fieldMatch) {
+      const [, label, value] = fieldMatch
+      activeField = {
+        能力现状描述: 'status',
+        优势: 'strengths',
+        劣势: 'weaknesses',
+        训练目标: 'targets',
+      }[label] || ''
+      appendField(value)
+      continue
+    }
+    appendField(line)
+  }
+  return rows
+}
+
+function isAutismDevAnalysisReadableField(key) {
+  return ['domain', 'status', 'strengths', 'weaknesses', 'targets'].includes(key)
+}
+
+function autismDevAnalysisStreamLabel(key) {
+  return {
+    status: '能力现状描述',
+    strengths: '优势',
+    weaknesses: '劣势',
+    targets: '训练目标',
+  }[key] || key
+}
+
+function autismDevAnalysisReadableStreamText(raw) {
+  const text = String(raw || '').trim()
+  if (!text)
+    return '正在连接AI生成服务，准备读取评估记录...'
+
+  let output = ''
+  let token = ''
+  let mode = 'outside'
+  let currentKey = ''
+  let visibleKey = ''
+  let expectingValue = false
+  let escaping = false
+  let lastWasNewline = true
+
+  const writeText = (value) => {
+    if (!value)
+      return
+    output += value
+    lastWasNewline = value.endsWith('\n')
+  }
+
+  const startVisibleField = (key) => {
+    if (output && !lastWasNewline)
+      writeText('\n')
+    if (key === 'domain') {
+      if (output)
+        writeText('\n')
+      writeText('【')
+      return
+    }
+    writeText(`${autismDevAnalysisStreamLabel(key)}：`)
+  }
+
+  const endVisibleField = (key) => {
+    if (key === 'domain') {
+      writeText('】\n')
+      return
+    }
+    if (output && !lastWasNewline)
+      writeText('\n')
+  }
+
+  const writeEscaped = (char) => {
+    if (['n', 'r', 't'].includes(char)) {
+      writeText(' ')
+      return
+    }
+    if (char === '"')
+      writeText('"')
+    else if (char === '/')
+      writeText('/')
+    else if (char === '\\')
+      writeText('\\')
+    else
+      writeText(char)
+  }
+
+  for (const char of text) {
+    if (escaping) {
+      if (mode === 'visibleValue')
+        writeEscaped(char)
+      else if (mode === 'key')
+        token += char
+      escaping = false
+      continue
+    }
+    if (char === '\\') {
+      escaping = true
+      continue
+    }
+    if (mode === 'outside') {
+      if (char === '"') {
+        token = ''
+        if (expectingValue) {
+          if (isAutismDevAnalysisReadableField(currentKey)) {
+            visibleKey = currentKey
+            startVisibleField(visibleKey)
+            mode = 'visibleValue'
+          }
+          else {
+            mode = 'hiddenValue'
+          }
+        }
+        else {
+          mode = 'key'
+        }
+      }
+      else if (char === ':') {
+        expectingValue = !!currentKey
+      }
+      else if (char === ',' || char === '}' || char === ']') {
+        if (expectingValue) {
+          expectingValue = false
+          currentKey = ''
+        }
+      }
+    }
+    else if (mode === 'key') {
+      if (char === '"') {
+        currentKey = token
+        token = ''
+        mode = 'outside'
+      }
+      else {
+        token += char
+      }
+    }
+    else if (mode === 'visibleValue') {
+      if (char === '"') {
+        endVisibleField(visibleKey)
+        mode = 'outside'
+        expectingValue = false
+        currentKey = ''
+        visibleKey = ''
+      }
+      else {
+        writeText(char)
+      }
+    }
+    else if (mode === 'hiddenValue') {
+      if (char === '"') {
+        mode = 'outside'
+        expectingValue = false
+        currentKey = ''
+      }
+    }
+  }
+
+  const normalized = output.trimEnd()
+  if (normalized)
+    return normalized
+  const fallback = text
+    .replaceAll('{', '')
+    .replaceAll('}', '')
+    .replaceAll('[', '')
+    .replaceAll(']', '')
+    .replaceAll('"', '')
+    .replaceAll(',', '')
+    .trim()
+  return fallback || '正在连接AI生成服务，准备读取评估记录...'
+}
+
+function autismDevResultAnalysisStreamProgress(raw) {
+  const length = String(raw || '').trim().length
+  const floor = 0.12
+  const ceiling = 0.975
+  if (length <= 0)
+    return floor
+  if (length <= 360)
+    return floor + (0.32 - floor) * (length / 360)
+  if (length <= 1600)
+    return 0.32 + (0.88 - 0.32) * ((length - 360) / 1240)
+  const tail = 1 - Math.exp(-(length - 1600) / 720)
+  return 0.88 + (ceiling - 0.88) * Math.min(Math.max(tail, 0), 1)
 }
 
 function autismDevAnalysisIsEmpty(value = autismDevAnalysis.value) {
@@ -932,6 +1171,19 @@ function getDownloadFilename(response, fallback) {
   }
 }
 
+function triggerBlobDownload(response, fallbackName, defaultContentType = 'application/octet-stream') {
+  const contentType = String(response?.headers?.['content-type'] || response?.headers?.['Content-Type'] || defaultContentType)
+  const blob = response?.data instanceof Blob ? response.data : new Blob([response?.data], { type: contentType })
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = getDownloadFilename(response, fallbackName)
+  document.body.appendChild(link)
+  link.click()
+  document.body.removeChild(link)
+  window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
 function reload() {
   pagination.current = 1
   fetchRecords()
@@ -1317,6 +1569,43 @@ async function generateAutismDevResultAnalysis() {
   }
 }
 
+async function exportAutismDevResultAnalysisWord() {
+  const row = currentReport.value?.record
+  if (!row?.id || !isAutismDevRecord(row) || autismDevAnalysisWordExporting.value)
+    return
+  if (autismDevAnalysisGenerating.value) {
+    messageService.warning('评估结果分析生成中，请稍后导出')
+    return
+  }
+  if (autismDevAnalysisLoading.value) {
+    messageService.warning('评估结果分析读取中，请稍后')
+    return
+  }
+  autismDevAnalysisWordExporting.value = true
+  try {
+    const targetKey = recordActionKey(row)
+    if (!autismDevAnalysisFetched.value || autismDevAnalysisRecordKey.value !== targetKey)
+      await loadAutismDevResultAnalysis(row, { silent: true })
+    if (autismDevAnalysisIsEmpty()) {
+      messageService.warning('请先生成评估结果分析后再导出')
+      return
+    }
+    const response = await downloadAutismDevResultAnalysisWordApi(row.id, autismDevAnalysisForExport())
+    triggerBlobDownload(
+      response,
+      `${row.studentName || '学员'}-孤独症儿童评估结果分析-${formatDate(row.assessmentDate)}.docx`,
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    )
+    messageService.success('导出成功')
+  }
+  catch (error) {
+    messageService.error(await getDownloadErrorMessage(error, '导出Word失败'))
+  }
+  finally {
+    autismDevAnalysisWordExporting.value = false
+  }
+}
+
 function selectAutismDevReportSection(section) {
   if (!currentReportIsAutismDev())
     return
@@ -1691,19 +1980,30 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__text">{{ option.title }}</span>
             </button>
           </div>
-          <div class="report-module-summary erxin-report-tabs__summary">
-            <strong>{{ autismDevReportSectionTitle() }}</strong>
-            <span>{{ autismDevReportSectionDesc() }}</span>
-            <a-button
-              v-if="activeAutismDevReportSection === 'resultAnalysis'"
-              type="primary"
-              size="small"
-              :loading="autismDevAnalysisGenerating"
-              :disabled="autismDevAnalysisLoading"
-              @click="generateAutismDevResultAnalysis"
-            >
-              {{ autismDevAnalysisGenerating ? '生成中' : (autismDevAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
-            </a-button>
+          <div
+            v-if="activeAutismDevReportSection === 'resultAnalysis'"
+            class="report-module-summary report-module-summary--actions-only erxin-report-tabs__summary"
+          >
+            <div class="report-module-summary__actions">
+              <a-button
+                v-if="!autismDevAnalysisIsEmpty()"
+                size="small"
+                :loading="autismDevAnalysisWordExporting"
+                :disabled="autismDevAnalysisLoading || autismDevAnalysisGenerating"
+                @click="exportAutismDevResultAnalysisWord"
+              >
+                导出Word
+              </a-button>
+              <a-button
+                type="primary"
+                size="small"
+                :loading="autismDevAnalysisGenerating"
+                :disabled="autismDevAnalysisLoading || autismDevAnalysisWordExporting"
+                @click="generateAutismDevResultAnalysis"
+              >
+                {{ autismDevAnalysisGenerating ? '生成中' : (autismDevAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
+              </a-button>
+            </div>
           </div>
         </div>
         <div v-else class="report-module-area erxin-report-tabs">
@@ -1753,12 +2053,65 @@ onBeforeUnmount(() => {
             <div v-else-if="autismDevAnalysisGenerating" class="autismdev-analysis-stream">
               <div class="autismdev-analysis-stream__head">
                 <span>AI</span>
-                <div>
-                  <strong>AI正在生成评估结果分析</strong>
-                  <small>{{ autismDevAnalysisProgress || '正在生成评估结果分析...' }}</small>
+                <div class="autismdev-analysis-stream__title">
+                  <strong>正在生成 {{ currentReport?.record?.studentName || '学员' }} 的评估结果分析</strong>
+                  <div class="autismdev-analysis-stream__progress-line">
+                    <small>{{ autismDevAnalysisProgress || 'AI正在生成评估结果分析...' }}</small>
+                    <div class="autismdev-analysis-progress">
+                      <i :style="{ width: `${autismDevAnalysisStreamProgressPercent}%` }" />
+                    </div>
+                    <em>{{ autismDevAnalysisStreamProgressPercent }}%</em>
+                  </div>
                 </div>
               </div>
-              <pre>{{ autismDevAnalysisStreamText || '正在建立分析结构，稍后开始输出内容...' }}</pre>
+              <div class="autismdev-analysis-content autismdev-analysis-content--streaming">
+                <div class="autismdev-analysis-doc-title">
+                  孤独症儿童评估结果分析表
+                </div>
+                <div class="autismdev-analysis-meta">
+                  <div>
+                    <span>儿童姓名：</span>
+                    <em>{{ currentReport?.record?.studentName || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>评估者：</span>
+                    <em>{{ currentReport?.record?.examinerName || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>评估时间：</span>
+                    <em>{{ formatDate(currentReport?.record?.assessmentDate) }}</em>
+                  </div>
+                </div>
+                <div class="autismdev-analysis-table-wrap">
+                  <table class="autismdev-analysis-table autismdev-analysis-table--streaming">
+                    <colgroup>
+                      <col class="autismdev-analysis-table__col-domain">
+                      <col class="autismdev-analysis-table__col-status">
+                      <col class="autismdev-analysis-table__col-strength">
+                      <col class="autismdev-analysis-table__col-target">
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>领&nbsp;&nbsp;&nbsp;域</th>
+                        <th>能力现状描述</th>
+                        <th>优劣分析</th>
+                        <th>训练目标</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, index) in autismDevAnalysisStreamRows"
+                        :key="`stream-${row.domain}-${index}`"
+                      >
+                        <td>{{ row.domain || '' }}</td>
+                        <td>{{ row.status || '' }}</td>
+                        <td>{{ autismDevStrengthWeaknessText(row) || '' }}</td>
+                        <td>{{ row.targets || '' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </div>
             <div v-else-if="autismDevAnalysisError" class="autismdev-analysis-state">
               <a-empty
@@ -1783,31 +2136,51 @@ onBeforeUnmount(() => {
               </a-button>
             </div>
             <div v-else class="autismdev-analysis-content">
-              <div class="autismdev-analysis-title">
-                <strong>{{ autismDevAnalysis?.title || '孤独症儿童评估结果分析表' }}</strong>
-                <span v-if="autismDevAnalysis?.generatedAt || autismDevAnalysis?.generatedBy">
-                  {{ autismDevAnalysis?.generatedBy || 'AI' }} {{ autismDevAnalysis?.generatedAt ? `· ${formatDateTime(autismDevAnalysis.generatedAt)}` : '' }}
-                </span>
+              <div class="autismdev-analysis-doc-title">
+                {{ autismDevAnalysis?.title || '孤独症儿童评估结果分析表' }}
               </div>
-              <div class="autismdev-analysis-table">
-                <div class="autismdev-analysis-table__head">
-                  <span>能区</span>
-                  <span>现状</span>
-                  <span>优势</span>
-                  <span>弱势</span>
-                  <span>训练目标</span>
+              <div class="autismdev-analysis-meta">
+                <div>
+                  <span>儿童姓名：</span>
+                  <em>{{ currentReport?.record?.studentName || '-' }}</em>
                 </div>
-                <div
-                  v-for="(row, index) in autismDevAnalysis.rows"
-                  :key="`${row.domain}-${index}`"
-                  class="autismdev-analysis-table__row"
-                >
-                  <strong>{{ row.domain || '-' }}</strong>
-                  <span>{{ row.status || '-' }}</span>
-                  <span>{{ row.strengths || '-' }}</span>
-                  <span>{{ row.weaknesses || '-' }}</span>
-                  <span>{{ row.targets || '-' }}</span>
+                <div>
+                  <span>评估者：</span>
+                  <em>{{ currentReport?.record?.examinerName || '-' }}</em>
                 </div>
+                <div>
+                  <span>评估时间：</span>
+                  <em>{{ formatDate(currentReport?.record?.assessmentDate) }}</em>
+                </div>
+              </div>
+              <div class="autismdev-analysis-table-wrap">
+                <table class="autismdev-analysis-table">
+                  <colgroup>
+                    <col class="autismdev-analysis-table__col-domain">
+                    <col class="autismdev-analysis-table__col-status">
+                    <col class="autismdev-analysis-table__col-strength">
+                    <col class="autismdev-analysis-table__col-target">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>领&nbsp;&nbsp;&nbsp;域</th>
+                      <th>能力现状描述</th>
+                      <th>优劣分析</th>
+                      <th>训练目标</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, index) in autismDevAnalysis.rows"
+                      :key="`${row.domain}-${index}`"
+                    >
+                      <td>{{ row.domain || '' }}</td>
+                      <td>{{ row.status || '' }}</td>
+                      <td>{{ autismDevStrengthWeaknessText(row) || '' }}</td>
+                      <td>{{ row.targets || '' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -2384,6 +2757,21 @@ onBeforeUnmount(() => {
   }
 }
 
+.report-module-summary__actions {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.report-module-summary--actions-only {
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  padding-left: 0;
+  margin-left: auto;
+  border-left: 0;
+}
+
 .pep3-report-tabs {
   align-items: center;
 }
@@ -2823,8 +3211,9 @@ onBeforeUnmount(() => {
 }
 
 .autismdev-report-tabs {
-  flex: 0 1 auto;
-  max-width: 520px;
+  flex: 1 1 auto;
+  max-width: none;
+  min-width: 0;
 }
 
 .autismdev-analysis-shell {
@@ -2878,6 +3267,9 @@ onBeforeUnmount(() => {
 }
 
 .autismdev-analysis-stream {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   min-height: 540px;
   padding: 16px 18px;
   background: #fff;
@@ -2888,10 +3280,9 @@ onBeforeUnmount(() => {
 
 .autismdev-analysis-stream__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   padding-bottom: 12px;
-  margin-bottom: 12px;
   border-bottom: 1px solid #edf1f6;
 
   > span {
@@ -2907,13 +3298,14 @@ onBeforeUnmount(() => {
     border: 1px solid #d8eaff;
     border-radius: 10px;
   }
+}
 
-  div {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    min-width: 0;
-  }
+.autismdev-analysis-stream__title {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 7px;
+  min-width: 0;
 
   strong {
     color: #1f2937;
@@ -2929,20 +3321,91 @@ onBeforeUnmount(() => {
   }
 }
 
-.autismdev-analysis-stream pre {
-  min-height: 440px;
-  max-height: 520px;
+.autismdev-analysis-stream__progress-line {
+  display: grid;
+  align-items: center;
+  grid-template-columns: minmax(120px, auto) minmax(120px, 1fr) auto;
+  gap: 10px;
+
+  em {
+    color: var(--pro-ant-color-primary);
+    font-size: 12px;
+    font-style: normal;
+    font-weight: 700;
+    line-height: 18px;
+  }
+}
+
+.autismdev-analysis-progress {
+  height: 8px;
+  overflow: hidden;
+  background: #eef4fb;
+  border-radius: 999px;
+
+  i {
+    display: block;
+    height: 100%;
+    background: var(--pro-ant-color-primary);
+    border-radius: inherit;
+    transition: width 0.18s ease;
+  }
+}
+
+.autismdev-analysis-stream__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  min-height: 410px;
   padding: 14px;
-  margin: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+}
+
+.autismdev-analysis-stream__body-title {
+  flex: 0 0 auto;
+  padding-bottom: 8px;
+  margin-bottom: 10px;
+  border-bottom: 1px solid #e6edf6;
+
+  span {
+    color: #1f2937;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 18px;
+  }
+}
+
+.autismdev-analysis-stream__text {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   color: #334155;
-  font-family: inherit;
   font-size: 13px;
   line-height: 24px;
   white-space: pre-wrap;
-  background: #f8fafc;
-  border: 1px dashed #dbe7f5;
-  border-radius: 8px;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    border-radius: 999px;
+  }
+}
+
+.autismdev-analysis-stream__foot {
+  color: #7a8494;
+  font-size: 12px;
+  line-height: 18px;
 }
 
 .autismdev-analysis-content {
@@ -2951,86 +3414,151 @@ onBeforeUnmount(() => {
   gap: 12px;
 }
 
-.autismdev-analysis-title {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px 14px;
-  background: #f8fafc;
-  border: 1px solid #edf1f6;
-  border-radius: 8px;
+.autismdev-analysis-content--streaming {
+  min-height: 0;
+}
 
-  strong {
+.autismdev-analysis-doc-title {
+  margin: 2px 0 12px;
+  color: #000;
+  font-size: 18px;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.autismdev-analysis-meta {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-width: 0;
+  margin-bottom: 8px;
+
+  div {
+    display: flex;
+    align-items: center;
     min-width: 0;
-    overflow: hidden;
-    color: #1f2937;
-    font-size: 15px;
-    font-weight: 600;
-    line-height: 22px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+
+    &:nth-child(1) {
+      flex: 31 1 0;
+    }
+
+    &:nth-child(2) {
+      flex: 25 1 0;
+    }
+
+    &:nth-child(3) {
+      flex: 32 1 0;
+    }
   }
 
   span {
     flex: 0 0 auto;
-    color: #8a94a6;
-    font-size: 12px;
-    line-height: 18px;
+    color: #000;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  em {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 20px;
+    overflow: hidden;
+    color: #000;
+    font-size: 13px;
+    font-style: normal;
+    line-height: 20px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-bottom: 1px solid #000;
+  }
+}
+
+.autismdev-analysis-table-wrap {
+  overflow-x: auto;
+  background: #fff;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    height: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    border-radius: 999px;
   }
 }
 
 .autismdev-analysis-table {
-  overflow-x: auto;
+  width: 100%;
+  min-width: 720px;
+  color: #000;
+  table-layout: fixed;
   background: #fff;
-  border: 1px solid #e6edf6;
-  border-radius: 8px;
+  border: 1px solid #000;
+  border-collapse: collapse;
 }
 
-.autismdev-analysis-table__head,
-.autismdev-analysis-table__row {
-  display: grid;
-  grid-template-columns: 92px repeat(4, minmax(128px, 1fr));
-  min-width: 760px;
+.autismdev-analysis-table__col-domain {
+  width: 12%;
 }
 
-.autismdev-analysis-table__head {
-  background: #f8fafc;
-
-  span {
-    padding: 10px 12px;
-    color: #475569;
-    font-size: 12px;
-    font-weight: 700;
-    line-height: 18px;
-    border-right: 1px solid #e6edf6;
-  }
+.autismdev-analysis-table__col-status {
+  width: 25%;
 }
 
-.autismdev-analysis-table__row {
-  border-top: 1px solid #e6edf6;
-
-  strong,
-  span {
-    min-height: 68px;
-    padding: 10px 12px;
-    color: #334155;
-    font-size: 12px;
-    line-height: 20px;
-    white-space: pre-line;
-    border-right: 1px solid #edf1f6;
-  }
-
-  strong {
-    color: var(--pro-ant-color-primary);
-    font-weight: 700;
-    background: #fbfdff;
-  }
+.autismdev-analysis-table__col-strength {
+  width: 34%;
 }
 
-.autismdev-analysis-table__head span:last-child,
-.autismdev-analysis-table__row span:last-child {
-  border-right: 0;
+.autismdev-analysis-table__col-target {
+  width: 29%;
+}
+
+.autismdev-analysis-table th {
+  height: 32px;
+  padding: 0 6px;
+  color: #000;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.12;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+  border: 1px solid #000;
+}
+
+.autismdev-analysis-table td {
+  height: 118px;
+  padding: 8px 10px;
+  color: #000;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
+  vertical-align: top;
+  background: #fff;
+  border: 1px solid #000;
+}
+
+.autismdev-analysis-table td:first-child {
+  padding: 0 6px;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.autismdev-analysis-table--streaming {
+  box-shadow: none;
 }
 
 .export-modal-title {
@@ -3683,10 +4211,16 @@ onBeforeUnmount(() => {
   }
 
   .report-module-summary {
+    flex-wrap: wrap;
     padding-top: 8px;
     padding-left: 0;
     border-top: 1px solid #e6edf6;
     border-left: 0;
+  }
+
+  .report-module-summary__actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .export-dimension__current {

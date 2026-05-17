@@ -31,8 +31,8 @@ type autismDevTrainingEffectRecord struct {
 
 type autismDevTrainingEffectRow struct {
 	Item              autismdevscore.ItemDefinition
-	FirstTraining     bool
-	SecondTraining    bool
+	FirstScore        string
+	SecondScore       string
 	FirstEffect       string
 	SecondEffect      string
 	SecondEffectReady bool
@@ -182,18 +182,39 @@ func (r *autismDevTrainingEffectPDFRenderer) drawTemplateBackground(pageNo int) 
 }
 
 func (r *autismDevTrainingEffectPDFRenderer) drawRowChecks(layout autismDevTrainingEffectTemplateLayout, centerY float64, row autismDevTrainingEffectRow) {
-	r.drawCheckAt(autismDevTrainingEffectColumnCenter(layout, 2), centerY, row.FirstTraining)
-	r.drawCheckAt(autismDevTrainingEffectColumnCenter(layout, 3), centerY, row.SecondTraining)
+	r.drawScoreAt(autismDevTrainingEffectColumnCenter(layout, 2), centerY, row.FirstScore)
+	r.drawScoreAt(autismDevTrainingEffectColumnCenter(layout, 3), centerY, row.SecondScore)
 	for index, effect := range []string{"significant", "effective", "none"} {
-		r.drawCheckAt(autismDevTrainingEffectColumnCenter(layout, 4+index), centerY, row.FirstEffect == effect)
+		if row.FirstEffect == effect {
+			r.drawEffectAt(autismDevTrainingEffectColumnCenter(layout, 4+index), centerY)
+		}
 	}
 	for index, effect := range []string{"significant", "effective", "none"} {
-		r.drawCheckAt(autismDevTrainingEffectColumnCenter(layout, 7+index), centerY, row.SecondEffectReady && row.SecondEffect == effect)
+		if row.SecondEffectReady && row.SecondEffect == effect {
+			r.drawEffectAt(autismDevTrainingEffectColumnCenter(layout, 7+index), centerY)
+		}
 	}
 }
 
-func (r *autismDevTrainingEffectPDFRenderer) drawCheckAt(centerX, centerY float64, checked bool) {
-	if !checked || centerX <= 0 || centerY <= 0 {
+func (r *autismDevTrainingEffectPDFRenderer) drawScoreAt(centerX, centerY float64, score string) {
+	if strings.TrimSpace(score) == "" || centerX <= 0 || centerY <= 0 {
+		return
+	}
+	r.cellText(
+		centerX-autismDevTrainingEffectCheckCellWidth/2,
+		centerY-autismDevTrainingEffectCheckCellHeight/2-1,
+		autismDevTrainingEffectCheckCellWidth,
+		autismDevTrainingEffectCheckFontSize,
+		score,
+		gopdf.Center|gopdf.Middle,
+		0,
+		0,
+		0,
+	)
+}
+
+func (r *autismDevTrainingEffectPDFRenderer) drawEffectAt(centerX, centerY float64) {
+	if centerX <= 0 || centerY <= 0 {
 		return
 	}
 	r.cellText(
@@ -486,19 +507,17 @@ func autismDevTrainingEffectRowsByDomain(items []autismdevscore.ItemDefinition, 
 			row := autismDevTrainingEffectRow{Item: item}
 			if len(records) >= 1 {
 				score := records[0].Scores[item.ItemNo]
-				row.FirstTraining = autismDevTrainingProjectChecked(item.ScoreType, score)
+				row.FirstScore = autismDevTrainingScoreText(score)
 			}
 			if len(records) >= 2 {
 				score := records[1].Scores[item.ItemNo]
-				row.SecondTraining = autismDevTrainingProjectChecked(item.ScoreType, score)
-				if row.FirstTraining {
-					row.FirstEffect = autismDevTrainingEffectForScores(item.ScoreType, records[0].Scores[item.ItemNo], score)
-				}
+				row.SecondScore = autismDevTrainingScoreText(score)
+				row.FirstEffect = autismDevTrainingEffectForScores(item.ScoreType, records[0].Scores[item.ItemNo], score)
 			}
 			if len(records) >= 3 {
-				if row.SecondTraining {
+				if effect := autismDevTrainingEffectForScores(item.ScoreType, records[1].Scores[item.ItemNo], records[2].Scores[item.ItemNo]); effect != "" {
 					row.SecondEffectReady = true
-					row.SecondEffect = autismDevTrainingEffectForScores(item.ScoreType, records[1].Scores[item.ItemNo], records[2].Scores[item.ItemNo])
+					row.SecondEffect = effect
 				}
 			}
 			out[domainCode] = append(out[domainCode], row)
@@ -507,48 +526,63 @@ func autismDevTrainingEffectRowsByDomain(items []autismdevscore.ItemDefinition, 
 	return out
 }
 
+func autismDevTrainingScoreText(score string) string {
+	return normalizeAutismDevScore(score)
+}
+
 func autismDevTrainingProjectChecked(scoreType, score string) bool {
-	switch strings.ToUpper(strings.TrimSpace(scoreType)) {
-	case autismdevscore.ScoreTypeAMS:
-		switch normalizeAutismDevScore(score) {
-		case autismdevscore.ScoreM, autismdevscore.ScoreS:
-			return true
-		default:
-			return false
-		}
-	default:
-		switch normalizeAutismDevScore(score) {
-		case autismdevscore.ScoreE, autismdevscore.ScoreF:
-			return true
-		default:
-			return false
-		}
-	}
+	normalized := normalizeAutismDevScore(score)
+	return normalized != "" && normalized != autismdevscore.ScoreX
 }
 
 func autismDevTrainingEffectForScores(scoreType, before, after string) string {
 	before = normalizeAutismDevScore(before)
 	after = normalizeAutismDevScore(after)
-	if before == "" || after == "" {
+	if before == "" || after == "" || before == autismdevscore.ScoreX {
 		return ""
 	}
+	beforeRank, okBefore := autismDevTrainingScoreRank(scoreType, before)
+	afterRank, okAfter := autismDevTrainingScoreRank(scoreType, after)
+	if !okBefore || !okAfter {
+		return ""
+	}
+	if afterRank <= beforeRank {
+		return "none"
+	}
+	if afterRank-beforeRank >= 2 {
+		return "significant"
+	}
+	return "effective"
+}
+
+func autismDevTrainingScoreRank(scoreType, score string) (int, bool) {
 	switch strings.ToUpper(strings.TrimSpace(scoreType)) {
 	case autismdevscore.ScoreTypeAMS:
-		if (before == autismdevscore.ScoreM || before == autismdevscore.ScoreS) && after == autismdevscore.ScoreA {
-			return "significant"
+		switch normalizeAutismDevScore(score) {
+		case autismdevscore.ScoreX:
+			return 0, true
+		case autismdevscore.ScoreS:
+			return 1, true
+		case autismdevscore.ScoreM:
+			return 2, true
+		case autismdevscore.ScoreA:
+			return 3, true
+		default:
+			return 0, false
 		}
-		if before == autismdevscore.ScoreS && after == autismdevscore.ScoreM {
-			return "effective"
-		}
-		return "none"
 	default:
-		if (before == autismdevscore.ScoreE || before == autismdevscore.ScoreF) && after == autismdevscore.ScoreP {
-			return "significant"
+		switch normalizeAutismDevScore(score) {
+		case autismdevscore.ScoreX:
+			return 0, true
+		case autismdevscore.ScoreF:
+			return 1, true
+		case autismdevscore.ScoreE:
+			return 2, true
+		case autismdevscore.ScoreP:
+			return 3, true
+		default:
+			return 0, false
 		}
-		if before == autismdevscore.ScoreF && after == autismdevscore.ScoreE {
-			return "effective"
-		}
-		return "none"
 	}
 }
 

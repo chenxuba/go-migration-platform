@@ -156,18 +156,69 @@ func TestAutismDevTrainingEffectForScores(t *testing.T) {
 		after     string
 		want      string
 	}{
-		{name: "PEF E to P significant", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreE, after: autismdevscore.ScoreP, want: "significant"},
+		{name: "PEF E to P effective", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreE, after: autismdevscore.ScoreP, want: "effective"},
 		{name: "PEF F to P significant", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreP, want: "significant"},
 		{name: "PEF F to E effective", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreE, want: "effective"},
+		{name: "PEF F to F none", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreF, want: "none"},
+		{name: "PEF F to X none", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreF, after: autismdevscore.ScoreX, want: "none"},
+		{name: "PEF P to E none", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreP, after: autismdevscore.ScoreE, want: "none"},
 		{name: "AMS S to A significant", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreS, after: autismdevscore.ScoreA, want: "significant"},
-		{name: "AMS M to A significant", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreM, after: autismdevscore.ScoreA, want: "significant"},
+		{name: "AMS M to A effective", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreM, after: autismdevscore.ScoreA, want: "effective"},
 		{name: "AMS S to M effective", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreS, after: autismdevscore.ScoreM, want: "effective"},
+		{name: "PEF X before has no effect", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreX, after: autismdevscore.ScoreP, want: ""},
+		{name: "PEF X after none", scoreType: autismdevscore.ScoreTypePEF, before: autismdevscore.ScoreE, after: autismdevscore.ScoreX, want: "none"},
+		{name: "AMS X after none", scoreType: autismdevscore.ScoreTypeAMS, before: autismdevscore.ScoreS, after: autismdevscore.ScoreX, want: "none"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := autismDevTrainingEffectForScores(tt.scoreType, tt.before, tt.after)
 			if got != tt.want {
 				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAutismDevTrainingScoreText(t *testing.T) {
+	tests := []struct {
+		name  string
+		score string
+		want  string
+	}{
+		{name: "lowercase score normalized", score: " e ", want: autismdevscore.ScoreE},
+		{name: "X is displayed as option", score: autismdevscore.ScoreX, want: autismdevscore.ScoreX},
+		{name: "empty remains blank", score: "", want: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := autismDevTrainingScoreText(tt.score)
+			if got != tt.want {
+				t.Fatalf("expected %q, got %q", tt.want, got)
+			}
+		})
+	}
+}
+
+func TestAutismDevTrainingProjectChecked(t *testing.T) {
+	tests := []struct {
+		name  string
+		score string
+		want  bool
+	}{
+		{name: "PEF P measured", score: autismdevscore.ScoreP, want: true},
+		{name: "PEF E measured", score: autismdevscore.ScoreE, want: true},
+		{name: "PEF F measured", score: autismdevscore.ScoreF, want: true},
+		{name: "PEF X unmeasured", score: autismdevscore.ScoreX, want: false},
+		{name: "AMS A measured", score: autismdevscore.ScoreA, want: true},
+		{name: "AMS M measured", score: autismdevscore.ScoreM, want: true},
+		{name: "AMS S measured", score: autismdevscore.ScoreS, want: true},
+		{name: "empty unmeasured", score: "", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := autismDevTrainingProjectChecked("", tt.score)
+			if got != tt.want {
+				t.Fatalf("expected %v, got %v", tt.want, got)
 			}
 		})
 	}

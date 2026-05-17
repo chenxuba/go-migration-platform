@@ -472,6 +472,28 @@ export function downloadAutismDevSelectedReportPdfApi(
   })
 }
 
+export function downloadAutismDevResultAnalysisWordApi(
+  id: number | string,
+  analysis?: AutismDevResultAnalysis | null,
+) {
+  if (analysis != null) {
+    return axios.post('/api/v1/assessments/autismdev/records/result-analysis/word', {
+      id: Number(id || 0),
+      analysis,
+    }, {
+      responseType: 'blob',
+      headers: autismDevAuthHeaders({
+        'Content-Type': 'application/json',
+      }),
+    })
+  }
+  return axios.get('/api/v1/assessments/autismdev/records/result-analysis/word', {
+    params: { id },
+    responseType: 'blob',
+    headers: autismDevAuthHeaders(),
+  })
+}
+
 export function downloadAutismDevIEPPlanWordApi(params: { id?: number | string, duration?: number | string, plan?: PEP3IEPPlanAIResult } = {}) {
   const headers = autismDevAuthHeaders()
   if (params.plan) {
