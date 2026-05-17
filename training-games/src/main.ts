@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import './style.css';
 import { ColorMatchScene } from './games/color-shape-match/ColorMatchScene';
+import { FireflyTraceScene } from './games/firefly-path-trace/FireflyTraceScene';
 import { readLaunchParams } from './platform/hostBridge';
 
 declare global {
@@ -21,6 +22,11 @@ window.addEventListener('unhandledrejection', (event) => {
 window.addEventListener('color-match-ready', hideLoading);
 
 const launchParams = readLaunchParams();
+applyGameBootCopy(launchParams.gameId);
+const scene =
+  launchParams.gameId === 'firefly-path-trace'
+    ? new FireflyTraceScene(launchParams)
+    : new ColorMatchScene(launchParams);
 
 try {
   new Phaser.Game({
@@ -39,7 +45,7 @@ try {
     input: {
       activePointers: 3,
     },
-    scene: [new ColorMatchScene(launchParams)],
+    scene: [scene],
   });
 } catch (error) {
   showBootError(error instanceof Error ? error.message : String(error));
@@ -79,6 +85,22 @@ function showBootError(message: string): void {
       payload: { message },
     }),
   );
+}
+
+function applyGameBootCopy(gameId: string): void {
+  if (gameId !== 'firefly-path-trace') {
+    return;
+  }
+
+  document.title = '萤火小路';
+  const loadingTitle = document.querySelector('.loading-title');
+  if (loadingTitle) {
+    loadingTitle.textContent = '萤火小路';
+  }
+  const loadingText = document.querySelector('.loading-text');
+  if (loadingText) {
+    loadingText.textContent = '游戏加载中...';
+  }
 }
 
 function escapeHtml(value: string): string {

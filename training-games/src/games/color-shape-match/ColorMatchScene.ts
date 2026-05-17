@@ -217,10 +217,11 @@ export class ColorMatchScene extends Phaser.Scene {
     const scoreIcon = this.add.image(762, hudCenterY + 2, 'star');
     scoreIcon.setScale(0.42);
     this.hud.add(scoreIcon);
-    this.scoreText = this.add.text(790, hudCenterY + 2, '得分 0', {
+    this.scoreText = this.add.text(776, hudCenterY + 3, '得分 0', {
       color: '#7c4b00',
       fontSize: '19px',
       fontStyle: '900',
+      padding: { top: 8, bottom: 6, left: 2, right: 2 },
     });
     this.scoreText.setOrigin(0, 0.5);
     this.hud.add(this.scoreText);
@@ -228,10 +229,11 @@ export class ColorMatchScene extends Phaser.Scene {
     const comboIcon = this.add.image(892, hudCenterY + 2, 'bolt-icon');
     comboIcon.setScale(0.46);
     this.hud.add(comboIcon);
-    this.comboText = this.add.text(920, hudCenterY + 2, '连击 0', {
+    this.comboText = this.add.text(906, hudCenterY + 3, '连击 0', {
       color: '#a33e62',
       fontSize: '19px',
       fontStyle: '900',
+      padding: { top: 8, bottom: 6, left: 2, right: 2 },
     });
     this.comboText.setOrigin(0, 0.5);
     this.hud.add(this.comboText);
@@ -273,7 +275,7 @@ export class ColorMatchScene extends Phaser.Scene {
     this.taskText.setOrigin(0, 0.5);
     this.playLayer.add(this.taskText);
 
-    this.voiceButton = this.createVoiceButton(874, 226);
+    this.voiceButton = this.createVoiceButton(874, 222);
     this.playLayer.add(this.voiceButton);
 
     this.feedbackText = this.add.text(640, 610, '', {
@@ -505,16 +507,50 @@ export class ColorMatchScene extends Phaser.Scene {
     this.feedbackText.setText('');
     const wrongClip = this.playVoiceClip('wrong');
     this.playTone(220, 0.11, 'sawtooth');
-    this.cameras.main.shake(120, 0.004);
     this.tweens.add({
       targets: bubble,
       x: bubble.x + 16,
-      duration: 55,
+      scale: 0.94,
+      angle: 4,
+      duration: 70,
       yoyo: true,
       repeat: 3,
+      ease: 'Sine.InOut',
+      onComplete: () => {
+        bubble.setAngle(0);
+        bubble.setScale(1);
+      },
     });
+    this.showWrongFeedback();
     this.updateHud();
     this.advanceRoundAfterAudio(wrongClip, 1700, 320);
+  }
+
+  private showWrongFeedback(): void {
+    this.tweens.add({
+      targets: [this.targetBubble, this.taskText],
+      y: '-=6',
+      duration: 90,
+      yoyo: true,
+      repeat: 1,
+      ease: 'Sine.InOut',
+    });
+    this.tweens.add({
+      targets: this.voiceButton,
+      scale: 1.06,
+      duration: 110,
+      yoyo: true,
+      ease: 'Back.Out',
+    });
+    this.tweens.add({
+      targets: this.mascot,
+      angle: { from: -5, to: 5 },
+      duration: 110,
+      yoyo: true,
+      repeat: 2,
+      ease: 'Sine.InOut',
+      onComplete: () => this.mascot.setAngle(0),
+    });
   }
 
   private advanceRoundAfterAudio(
