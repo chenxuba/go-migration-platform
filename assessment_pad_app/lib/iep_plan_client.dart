@@ -569,7 +569,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required int durationMonths,
   }) async {
     final Object? data = await _getJson(
-      _uri(_isErxinRecord(record) ? erxinPlanDetailPath : pep3PlanDetailPath, {
+      _uri(_pathForRecord(record, pep3PlanDetailPath, erxinPlanDetailPath), {
         'id': '${record.id}',
         'durationMonths': '${_normalizeDuration(durationMonths)}',
       }),
@@ -589,9 +589,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinExecutionDetailPath
-            : pep3ExecutionDetailPath,
+        _pathForRecord(
+          record,
+          pep3ExecutionDetailPath,
+          erxinExecutionDetailPath,
+        ),
         {
           'id': '${record.id}',
           'durationMonths': '${_normalizeDuration(durationMonths)}',
@@ -615,7 +617,7 @@ class ApiIepPlanClient implements IepPlanClient {
     String syncMode = 'dates_only',
   }) async {
     final Object? data = await _postJson(
-      _uri(_isErxinRecord(record) ? erxinPeriodSyncPath : pep3PeriodSyncPath),
+      _uri(_pathForRecord(record, pep3PeriodSyncPath, erxinPeriodSyncPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -656,7 +658,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required int durationMonths,
   }) async {
     final Object? data = await _postJson(
-      _uri(_isErxinRecord(record) ? erxinPlanAiTaskPath : pep3PlanAiTaskPath),
+      _uri(_pathForRecord(record, pep3PlanAiTaskPath, erxinPlanAiTaskPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -677,9 +679,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinPlanAiTaskDetailPath
-            : pep3PlanAiTaskDetailPath,
+        _pathForRecord(
+          record,
+          pep3PlanAiTaskDetailPath,
+          erxinPlanAiTaskDetailPath,
+        ),
         <String, String>{'taskId': taskId},
       ),
       token,
@@ -697,9 +701,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinPlanAiTaskActivePath
-            : pep3PlanAiTaskActivePath,
+        _pathForRecord(
+          record,
+          pep3PlanAiTaskActivePath,
+          erxinPlanAiTaskActivePath,
+        ),
         <String, String>{'id': '${record.id}'},
       ),
       token,
@@ -727,9 +733,11 @@ class ApiIepPlanClient implements IepPlanClient {
       final http.Request request = http.Request(
         'GET',
         _uri(
-            _isErxinRecord(record)
-                ? erxinPlanAiTaskStreamPath
-                : pep3PlanAiTaskStreamPath,
+            _pathForRecord(
+              record,
+              pep3PlanAiTaskStreamPath,
+              erxinPlanAiTaskStreamPath,
+            ),
             <String, String>{
               'taskId': taskId,
             }),
@@ -834,7 +842,7 @@ class ApiIepPlanClient implements IepPlanClient {
     bool resetExecutionPlans = false,
   }) async {
     final Object? data = await _postJson(
-      _uri(_isErxinRecord(record) ? erxinPlanSavePath : pep3PlanSavePath),
+      _uri(_pathForRecord(record, pep3PlanSavePath, erxinPlanSavePath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -934,9 +942,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _postJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinExecutionAiTaskPath
-            : pep3ExecutionAiTaskPath,
+        _pathForRecord(
+          record,
+          pep3ExecutionAiTaskPath,
+          erxinExecutionAiTaskPath,
+        ),
       ),
       token,
       <String, dynamic>{
@@ -966,9 +976,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinExecutionAiTaskDetailPath
-            : pep3ExecutionAiTaskDetailPath,
+        _pathForRecord(
+          record,
+          pep3ExecutionAiTaskDetailPath,
+          erxinExecutionAiTaskDetailPath,
+        ),
         <String, String>{'taskId': taskId},
       ),
       token,
@@ -993,9 +1005,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinExecutionAiTaskActivePath
-            : pep3ExecutionAiTaskActivePath,
+        _pathForRecord(
+          record,
+          pep3ExecutionAiTaskActivePath,
+          erxinExecutionAiTaskActivePath,
+        ),
         <String, String>{
           'id': '${record.id}',
           'durationMonths': '${_normalizeDuration(durationMonths)}',
@@ -1031,9 +1045,11 @@ class ApiIepPlanClient implements IepPlanClient {
       final http.Request request = http.Request(
         'GET',
         _uri(
-          _isErxinRecord(record)
-              ? erxinExecutionAiTaskStreamPath
-              : pep3ExecutionAiTaskStreamPath,
+          _pathForRecord(
+            record,
+            pep3ExecutionAiTaskStreamPath,
+            erxinExecutionAiTaskStreamPath,
+          ),
           <String, String>{'taskId': taskId},
         ),
       )..headers.addAll(_headers(token, accept: 'text/event-stream'));
@@ -1140,7 +1156,7 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _postJson(
       _uri(
-        _isErxinRecord(record) ? erxinExecutionSavePath : pep3ExecutionSavePath,
+        _pathForRecord(record, pep3ExecutionSavePath, erxinExecutionSavePath),
       ),
       token,
       <String, dynamic>{
@@ -1169,7 +1185,7 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _postJson(
       _uri(
-        _isErxinRecord(record) ? erxinExecutionSavePath : pep3ExecutionSavePath,
+        _pathForRecord(record, pep3ExecutionSavePath, erxinExecutionSavePath),
       ),
       token,
       <String, dynamic>{
@@ -1197,9 +1213,11 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     final Object? data = await _getJson(
       _uri(
-        _isErxinRecord(record)
-            ? erxinLessonSessionWeekStatePath
-            : pep3LessonSessionWeekStatePath,
+        _pathForRecord(
+          record,
+          pep3LessonSessionWeekStatePath,
+          erxinLessonSessionWeekStatePath,
+        ),
         <String, String>{
           'id': '${record.id}',
           'durationMonths': '${_normalizeDuration(durationMonths)}',
@@ -1227,9 +1245,11 @@ class ApiIepPlanClient implements IepPlanClient {
     return _operateLessonSession(
       token,
       record: record,
-      path: _isErxinRecord(record)
-          ? erxinLessonSessionStartPath
-          : pep3LessonSessionStartPath,
+      path: _pathForRecord(
+        record,
+        pep3LessonSessionStartPath,
+        erxinLessonSessionStartPath,
+      ),
       durationMonths: durationMonths,
       targetMonthIndex: targetMonthIndex,
       targetWeekIndex: targetWeekIndex,
@@ -1249,9 +1269,11 @@ class ApiIepPlanClient implements IepPlanClient {
     return _operateLessonSession(
       token,
       record: record,
-      path: _isErxinRecord(record)
-          ? erxinLessonSessionPausePath
-          : pep3LessonSessionPausePath,
+      path: _pathForRecord(
+        record,
+        pep3LessonSessionPausePath,
+        erxinLessonSessionPausePath,
+      ),
       durationMonths: durationMonths,
       targetMonthIndex: targetMonthIndex,
       targetWeekIndex: targetWeekIndex,
@@ -1271,9 +1293,11 @@ class ApiIepPlanClient implements IepPlanClient {
     return _operateLessonSession(
       token,
       record: record,
-      path: _isErxinRecord(record)
-          ? erxinLessonSessionCompletePath
-          : pep3LessonSessionCompletePath,
+      path: _pathForRecord(
+        record,
+        pep3LessonSessionCompletePath,
+        erxinLessonSessionCompletePath,
+      ),
       durationMonths: durationMonths,
       targetMonthIndex: targetMonthIndex,
       targetWeekIndex: targetWeekIndex,
@@ -1293,9 +1317,11 @@ class ApiIepPlanClient implements IepPlanClient {
     return _operateLessonSession(
       token,
       record: record,
-      path: _isErxinRecord(record)
-          ? erxinLessonSessionHeartbeatPath
-          : pep3LessonSessionHeartbeatPath,
+      path: _pathForRecord(
+        record,
+        pep3LessonSessionHeartbeatPath,
+        erxinLessonSessionHeartbeatPath,
+      ),
       durationMonths: durationMonths,
       targetMonthIndex: targetMonthIndex,
       targetWeekIndex: targetWeekIndex,
@@ -1311,7 +1337,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepPlan plan,
   }) async {
     return _downloadWordByPost(
-      _uri(_isErxinRecord(record) ? erxinPlanWordPath : pep3PlanWordPath),
+      _uri(_pathForRecord(record, pep3PlanWordPath, erxinPlanWordPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -1331,7 +1357,7 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     return _downloadWordByPost(
       _uri(
-        _isErxinRecord(record) ? erxinExecutionWordPath : pep3ExecutionWordPath,
+        _pathForRecord(record, pep3ExecutionWordPath, erxinExecutionWordPath),
       ),
       token,
       <String, dynamic>{
@@ -1353,7 +1379,7 @@ class ApiIepPlanClient implements IepPlanClient {
   }) async {
     return _downloadWordByPost(
       _uri(
-        _isErxinRecord(record) ? erxinExecutionWordPath : pep3ExecutionWordPath,
+        _pathForRecord(record, pep3ExecutionWordPath, erxinExecutionWordPath),
       ),
       token,
       <String, dynamic>{
@@ -1375,7 +1401,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepPlan plan,
   }) async {
     return _downloadPdfByPost(
-      _uri(_isErxinRecord(record) ? erxinPlanPdfPath : pep3PlanPdfPath),
+      _uri(_pathForRecord(record, pep3PlanPdfPath, erxinPlanPdfPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -1392,9 +1418,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepMonthlyPlan plan,
   }) async {
     return _downloadPdfByPost(
-      _uri(_isErxinRecord(record)
-          ? erxinExecutionPdfPath
-          : pep3ExecutionPdfPath),
+      _uri(_pathForRecord(record, pep3ExecutionPdfPath, erxinExecutionPdfPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -1412,9 +1436,7 @@ class ApiIepPlanClient implements IepPlanClient {
     required IepWeeklyPlan plan,
   }) async {
     return _downloadPdfByPost(
-      _uri(_isErxinRecord(record)
-          ? erxinExecutionPdfPath
-          : pep3ExecutionPdfPath),
+      _uri(_pathForRecord(record, pep3ExecutionPdfPath, erxinExecutionPdfPath)),
       token,
       <String, dynamic>{
         'id': record.id,
@@ -2557,6 +2579,33 @@ bool _isErxinRecord(IepAssessmentRecordSummary record) {
   final String source = record.source.trim().toUpperCase();
   final String code = record.assessmentCode.trim().toUpperCase();
   return source == 'ERXIN' || code.startsWith('ERXIN');
+}
+
+bool _isAutismDevRecord(IepAssessmentRecordSummary record) {
+  final String source = record.source.trim().toUpperCase();
+  final String code = record.assessmentCode.trim().toUpperCase();
+  return source == 'AUTISMDEV' || code == 'AUTISMDEV';
+}
+
+String _pathForRecord(
+  IepAssessmentRecordSummary record,
+  String pep3Path,
+  String erxinPath,
+) {
+  if (_isAutismDevRecord(record)) {
+    return _autismDevPathFrom(pep3Path);
+  }
+  return _isErxinRecord(record) ? erxinPath : pep3Path;
+}
+
+String _autismDevPathFrom(String path) {
+  if (path.contains('/pep3/')) {
+    return path.replaceFirst('/pep3/', '/autismdev/');
+  }
+  if (path.contains('/erxin/')) {
+    return path.replaceFirst('/erxin/', '/autismdev/');
+  }
+  return path;
 }
 
 int _normalizeDuration(int durationMonths) => durationMonths == 6 ? 6 : 3;

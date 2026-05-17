@@ -101,6 +101,34 @@ func TestParseDeepSeekIEPPlanAIResultChoosesBalancedObject(t *testing.T) {
 	}
 }
 
+func TestDeepSeekIEPPlanMaxTokensUsesHigherDefaultAndEnv(t *testing.T) {
+	t.Setenv("DEEPSEEK_IEP_PLAN_MAX_TOKENS", "")
+	if got := deepSeekIEPPlanMaxTokens(); got != deepSeekIEPPlanDefaultMaxTokens {
+		t.Fatalf("expected default max tokens %d, got %d", deepSeekIEPPlanDefaultMaxTokens, got)
+	}
+
+	t.Setenv("DEEPSEEK_IEP_PLAN_MAX_TOKENS", "12000")
+	if got := deepSeekIEPPlanMaxTokens(); got != 12000 {
+		t.Fatalf("expected env max tokens 12000, got %d", got)
+	}
+
+	t.Setenv("DEEPSEEK_IEP_PLAN_MAX_TOKENS", "bad")
+	if got := deepSeekIEPPlanMaxTokens(); got != deepSeekIEPPlanDefaultMaxTokens {
+		t.Fatalf("expected bad env to fall back to %d, got %d", deepSeekIEPPlanDefaultMaxTokens, got)
+	}
+}
+
+func TestIsDeepSeekLengthFinishReason(t *testing.T) {
+	for _, value := range []string{"length", " max_tokens ", "MAX_TOKEN", "token_limit"} {
+		if !isDeepSeekLengthFinishReason(value) {
+			t.Fatalf("expected %q to be treated as length finish reason", value)
+		}
+	}
+	if isDeepSeekLengthFinishReason("stop") {
+		t.Fatal("did not expect stop to be treated as length finish reason")
+	}
+}
+
 func mustParseIEPPlanDateForTest(value string) time.Time {
 	parsed, err := time.ParseInLocation("2006-01-02", value, time.Local)
 	if err != nil {

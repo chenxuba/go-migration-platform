@@ -6,7 +6,7 @@ import 'package:assessment_pad_app/iep_plan_client.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('fetchRecordsPage merges pep3 and erxin records by assessment date',
+  test('fetchRecordsPage merges pep3, erxin, and autismdev records by date',
       () async {
     final HttpServer server =
         await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -35,39 +35,57 @@ void main() {
       expect(query['assessmentDateBegin'], '2026-05-01');
       expect(query['assessmentDateEnd'], '2026-05-31');
 
-      final List<Map<String, dynamic>> items =
-          request.uri.path.contains('/erxin/')
-              ? <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'id': 91,
-                    'studentId': 18,
-                    'studentName': '陈旭',
-                    'assessmentCode': 'ERXIN2',
-                    'assessmentName': '儿心量表-II',
-                    'birthDate': '2022-05-11T00:00:00Z',
-                    'assessmentDate': '2026-05-07T00:00:00Z',
-                    'ageYears': 4,
-                    'ageMonths': 0,
-                    'examinerName': '陈瑞',
-                    'iepPlanStatus': 'confirmed',
-                    'updatedTime': '2026-05-07T10:30:00Z',
-                  },
-                ]
-              : <Map<String, dynamic>>[
-                  <String, dynamic>{
-                    'id': 88,
-                    'studentId': 19,
-                    'studentName': '林一诺',
-                    'assessmentCode': 'PEP3',
-                    'assessmentName': 'PEP-3',
-                    'birthDate': '2021-08-12',
-                    'assessmentDate': '2026-04-29',
-                    'ageYears': 4,
-                    'ageMonths': 8,
-                    'examinerName': '陈瑞',
-                    'updatedTime': '2026-04-29T11:30:00Z',
-                  },
-                ];
+      final List<Map<String, dynamic>> items;
+      if (request.uri.path.contains('/erxin/')) {
+        items = <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 91,
+            'studentId': 18,
+            'studentName': '陈旭',
+            'assessmentCode': 'ERXIN2',
+            'assessmentName': '儿心量表-II',
+            'birthDate': '2022-05-11T00:00:00Z',
+            'assessmentDate': '2026-05-07T00:00:00Z',
+            'ageYears': 4,
+            'ageMonths': 0,
+            'examinerName': '陈瑞',
+            'iepPlanStatus': 'confirmed',
+            'updatedTime': '2026-05-07T10:30:00Z',
+          },
+        ];
+      } else if (request.uri.path.contains('/autismdev/')) {
+        items = <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 95,
+            'studentId': 18,
+            'studentName': '陈旭',
+            'assessmentCode': 'AUTISMDEV',
+            'assessmentName': '孤独症儿童发展评估表',
+            'birthDate': '2022-05-11T00:00:00Z',
+            'assessmentDate': '2026-05-09T00:00:00Z',
+            'ageYears': 4,
+            'ageMonths': 0,
+            'examinerName': '陈瑞',
+            'updatedTime': '2026-05-09T10:30:00Z',
+          },
+        ];
+      } else {
+        items = <Map<String, dynamic>>[
+          <String, dynamic>{
+            'id': 88,
+            'studentId': 19,
+            'studentName': '林一诺',
+            'assessmentCode': 'PEP3',
+            'assessmentName': 'PEP-3',
+            'birthDate': '2021-08-12',
+            'assessmentDate': '2026-04-29',
+            'ageYears': 4,
+            'ageMonths': 8,
+            'examinerName': '陈瑞',
+            'updatedTime': '2026-04-29T11:30:00Z',
+          },
+        ];
+      }
 
       request.response
         ..statusCode = HttpStatus.ok
@@ -102,11 +120,14 @@ void main() {
 
     expect(requestedPaths, contains('/api/v1/assessments/pep3/records/page'));
     expect(requestedPaths, contains('/api/v1/assessments/erxin/records/page'));
-    expect(page.total, 2);
-    expect(page.items, hasLength(2));
-    expect(page.items.first.source, 'ERXIN');
+    expect(
+        requestedPaths, contains('/api/v1/assessments/autismdev/records/page'));
+    expect(page.total, 3);
+    expect(page.items, hasLength(3));
+    expect(page.items.first.source, 'AUTISMDEV');
     expect(page.items.first.studentName, '陈旭');
-    expect(page.items.first.assessmentDate, '2026-05-07');
+    expect(page.items.first.assessmentDate, '2026-05-09');
+    expect(page.items[1].source, 'ERXIN');
     expect(page.items.last.source, 'PEP3');
   });
 
@@ -252,6 +273,63 @@ void main() {
     expect(execution.monthPlan(1)?.rows.first.trainingItems.first.content,
         '平衡木行走训练');
     expect(execution.weekPlan(1, 1)?.rows.first.project, '平衡木行走');
+  });
+
+  test('plan client routes autismdev records to autismdev iep endpoints',
+      () async {
+    final HttpServer server =
+        await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    final List<String> requestedPaths = <String>[];
+    addTearDown(() async {
+      await server.close(force: true);
+    });
+
+    server.listen((HttpRequest request) async {
+      requestedPaths.add(request.uri.path);
+      expect(request.method, 'GET');
+      expect(request.uri.queryParameters['id'], '95');
+      expect(request.uri.queryParameters['durationMonths'], '3');
+      request.response
+        ..statusCode = HttpStatus.ok
+        ..headers.contentType = ContentType.json
+        ..write(jsonEncode(<String, dynamic>{
+          'success': true,
+          'data': <String, dynamic>{
+            'exists': false,
+            'durationMonths': 3,
+          },
+        }));
+      await request.response.close();
+    });
+
+    final ApiIepPlanClient client = ApiIepPlanClient(
+      educationBaseUrl: 'http://127.0.0.1:${server.port}',
+    );
+    const IepAssessmentRecordSummary record = IepAssessmentRecordSummary(
+      id: 95,
+      source: 'AUTISMDEV',
+      studentId: 18,
+      studentName: '陈旭',
+      assessmentCode: 'AUTISMDEV',
+      assessmentName: '孤独症儿童发展评估表',
+      birthDate: '2022-05-11',
+      assessmentDate: '2026-05-09',
+      examinerName: '陈瑞',
+      updatedTime: '',
+    );
+
+    final IepPlanSaved saved = await client.fetchIepPlan(
+      'token-1',
+      record: record,
+      durationMonths: 3,
+    );
+
+    expect(requestedPaths,
+        contains('/api/v1/assessments/autismdev/records/iep-plan/detail'));
+    expect(requestedPaths,
+        isNot(contains('/api/v1/assessments/pep3/records/iep-plan/detail')));
+    expect(saved.exists, isFalse);
+    expect(saved.durationMonths, 3);
   });
 
   test('plan client syncs erxin period with backend batch API', () async {

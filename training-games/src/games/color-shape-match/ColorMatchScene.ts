@@ -6,6 +6,7 @@ import {
   requestClose,
   submitGameResult,
 } from '../../platform/hostBridge';
+import { publicAssetPath } from '../../platform/publicPath';
 
 interface ColorOption {
   key: string;
@@ -39,7 +40,7 @@ const COLORS: ColorOption[] = [
 
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
-const ASSET_BASE = '/assets/color-match';
+const ASSET_BASE = publicAssetPath('assets/color-match');
 const BACKGROUND_TEXTURE = 'color-match-background';
 const MASCOT_TEXTURE = 'color-match-mascot';
 const TOKEN_TEXTURE_PREFIX = 'color-match-token';
@@ -1273,7 +1274,7 @@ export class ColorMatchScene extends Phaser.Scene {
       return this.voiceClips.get(key);
     }
 
-    const clip = new Audio(`/audio/color-match/${key}.mp3`);
+    const clip = new Audio(publicAssetPath(`audio/color-match/${key}.mp3`));
     clip.preload = 'auto';
     this.voiceClips.set(key, clip);
     return clip;

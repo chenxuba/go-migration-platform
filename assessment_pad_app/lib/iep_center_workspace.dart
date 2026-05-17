@@ -104,6 +104,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   double _generationProgress = 0;
   double _generationCostAmountCny = 0;
   String _planError = '';
+  bool _planErrorFromGeneration = false;
   String _activeGenerationTaskId = '';
   String _activeGenerationRecordKey = '';
   int _activeGenerationDurationMonths = 6;
@@ -169,6 +170,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _executionPlans = null;
       _lessonSessionState = null;
       _planError = '';
+      _planErrorFromGeneration = false;
       _generationStatus = '';
       _aiStreamText = '';
       _generationProgress = 0;
@@ -199,6 +201,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       setState(() {
         _loadingPlan = false;
         _planError = '';
+        _planErrorFromGeneration = false;
         _savedPlan = null;
         _executionPlans = null;
         _lessonSessionState = null;
@@ -222,6 +225,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     setState(() {
       _loadingPlan = true;
       _planError = '';
+      _planErrorFromGeneration = false;
     });
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -341,6 +345,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _loadingPlan = false;
         _hasCompletedInitialPlanLoad = true;
         _planError = error.message;
+        _planErrorFromGeneration = false;
       });
       widget.onConfirmAvailabilityChanged(false);
     } on Object catch (error) {
@@ -351,6 +356,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         _loadingPlan = false;
         _hasCompletedInitialPlanLoad = true;
         _planError = 'IEP计划加载失败：$error';
+        _planErrorFromGeneration = false;
       });
       widget.onConfirmAvailabilityChanged(false);
     }
@@ -486,6 +492,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     setState(() {
       _confirmingPlan = true;
       _planError = '';
+      _planErrorFromGeneration = false;
     });
     widget.onConfirmAvailabilityChanged(false);
     try {
@@ -521,6 +528,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       setState(() {
         _confirmingPlan = false;
         _planError = error.message;
+        _planErrorFromGeneration = false;
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -533,6 +541,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       setState(() {
         _confirmingPlan = false;
         _planError = message;
+        _planErrorFromGeneration = false;
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -633,6 +642,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationCostAmountCny = session.costAmountCny;
       _generatingPlan = true;
       _planError = '';
+      _planErrorFromGeneration = false;
       _hasCompletedInitialPlanLoad = true;
       _loadingPlan = false;
     });
@@ -710,6 +720,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
   }
 
   Future<void> _handleRetryRequest() async {
+    if (_planErrorFromGeneration && _planError.trim().isNotEmpty) {
+      await _handleGeneratePlanRequest();
+      return;
+    }
     if (_hasResumableGenerationTask ||
         _generationSessionFor(widget.record) != null) {
       await _resumeOrRestoreGenerationTask(showMessage: true);
@@ -881,6 +895,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = .08;
       _generationCostAmountCny = 0;
       _planError = '';
+      _planErrorFromGeneration = false;
       _executionPlans = IepExecutionPlansSaved.empty(_periodMonthCount);
       _monthlyRestWeekdayOverrides.clear();
       _activeGenerationTaskId = '';
@@ -952,11 +967,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : error.message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -966,11 +984,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = 'AI生成失败：$error';
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1033,6 +1054,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = .08;
       _generationCostAmountCny = 0;
       _planError = '';
+      _planErrorFromGeneration = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = _recordGenerationKey(record);
       _activeGenerationDurationMonths = _periodMonthCount;
@@ -1120,11 +1142,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : error.message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1134,11 +1159,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = '月计划生成失败：$error';
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1192,6 +1220,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _generationProgress = .08;
       _generationCostAmountCny = 0;
       _planError = '';
+      _planErrorFromGeneration = false;
       _activeGenerationTaskId = '';
       _activeGenerationRecordKey = _recordGenerationKey(record);
       _activeGenerationDurationMonths = _periodMonthCount;
@@ -1249,16 +1278,15 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (finalPlan == null) {
         throw const IepPlanApiException('AI生成未返回计划数据');
       }
-      final IepExecutionPlansSaved saved =
-          savedPlansFromTask ??
-              await widget.planClient.saveWeeklyPlan(
-                token,
-                record: record,
-                durationMonths: _periodMonthCount,
-                targetMonthIndex: monthIndex,
-                targetWeekIndex: _previewWeek,
-                plan: finalPlan,
-              );
+      final IepExecutionPlansSaved saved = savedPlansFromTask ??
+          await widget.planClient.saveWeeklyPlan(
+            token,
+            record: record,
+            durationMonths: _periodMonthCount,
+            targetMonthIndex: monthIndex,
+            targetWeekIndex: _previewWeek,
+            plan: finalPlan,
+          );
       if (!mounted || ticket != _generationTicket) {
         return;
       }
@@ -1283,11 +1311,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : error.message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1297,11 +1328,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = '周计划生成失败：$error';
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成失败';
         _planError = _savedPlan?.hasContent == true ? '' : message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1329,6 +1363,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _loadingPlan = false;
       _generatingPlan = true;
       _planError = '';
+      _planErrorFromGeneration = false;
       _generationStatus = '正在重新连接AI生成任务';
       if (_generationProgress < .12) {
         _generationProgress = .12;
@@ -1398,11 +1433,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
         _planError = _savedPlan?.hasContent == true ? '' : error.message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1412,11 +1450,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = 'AI生成重连失败：$error';
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
         _planError = _savedPlan?.hasContent == true ? '' : message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1488,7 +1529,8 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (task.isFailed) {
       throw IepPlanApiException(task.error.isEmpty ? 'AI生成失败' : task.error);
     }
-    final String statusLabel = task.planType == 'weekly' ? 'AI正在生成周计划' : 'AI正在生成月计划';
+    final String statusLabel =
+        task.planType == 'weekly' ? 'AI正在生成周计划' : 'AI正在生成月计划';
     if (task.isDone) {
       final dynamic plan = task.savedPlan ?? task.plan;
       if (plan == null) {
@@ -1541,6 +1583,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _loadingPlan = false;
       _generatingPlan = true;
       _planError = '';
+      _planErrorFromGeneration = false;
       _generationStatus = '正在重新连接AI生成任务';
       if (_generationProgress < .12) {
         _generationProgress = .12;
@@ -1602,18 +1645,22 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       _applyGeneratedExecutionPlans(record: record, saved: savedPlans);
       await _showGenerationCostDialog(
         planLabel: isWeekly ? '周计划' : '月计划',
-        costAmountCny:
-            actualCostAmountCny > 0 ? actualCostAmountCny : _generationCostAmountCny,
+        costAmountCny: actualCostAmountCny > 0
+            ? actualCostAmountCny
+            : _generationCostAmountCny,
       );
     } on IepPlanApiException catch (error) {
       if (!mounted || ticket != _generationTicket) {
         return;
       }
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
         _planError = _savedPlan?.hasContent == true ? '' : error.message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -1623,11 +1670,14 @@ class _IepWorkspaceState extends State<_IepWorkspace>
         return;
       }
       final String message = 'AI生成重连失败：$error';
-      _storeCurrentGenerationSession(record);
+      _generationSessionsByRecord.remove(_recordGenerationKey(record));
       setState(() {
         _generatingPlan = false;
         _generationStatus = '生成连接已断开';
         _planError = _savedPlan?.hasContent == true ? '' : message;
+        _planErrorFromGeneration = _planError.trim().isNotEmpty;
+        _activeGenerationTaskId = '';
+        _activeGenerationRecordKey = '';
       });
       _notifyRecordStatus(record, _savedPlan?.status);
       _syncConfirmAvailability(_savedPlan);
@@ -2019,6 +2069,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     setState(() {
       _syncingPeriod = true;
       _planError = '';
+      _planErrorFromGeneration = false;
     });
     try {
       final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -2043,6 +2094,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       setState(() {
         _syncingPeriod = false;
         _planError = error.message;
+        _planErrorFromGeneration = false;
       });
       _showMessage(error.message);
     } on Object catch (error) {
@@ -2053,6 +2105,7 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       setState(() {
         _syncingPeriod = false;
         _planError = message;
+        _planErrorFromGeneration = false;
       });
       _showMessage(message);
     }

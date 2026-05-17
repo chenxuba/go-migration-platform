@@ -338,6 +338,9 @@ func callDeepSeekExecutionPlanStream(ctx context.Context, systemPrompt string, p
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if isDeepSeekDeadlineExceeded(err, requestCtx) {
+			return usage, deepSeekTimeoutError()
+		}
 		return usage, err
 	}
 	text := strings.TrimSpace(content.String())

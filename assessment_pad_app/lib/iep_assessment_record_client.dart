@@ -13,6 +13,10 @@ const String defaultIepErxinRecordsPagePath = String.fromEnvironment(
   'IEP_ERXIN_RECORDS_PAGE_PATH',
   defaultValue: '/api/v1/assessments/erxin/records/page',
 );
+const String defaultIepAutismDevRecordsPagePath = String.fromEnvironment(
+  'IEP_AUTISMDEV_RECORDS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/page',
+);
 
 class IepAssessmentRecordApiException implements Exception {
   const IepAssessmentRecordApiException(
@@ -126,12 +130,14 @@ class ApiIepAssessmentRecordClient implements IepAssessmentRecordClient {
     this.educationBaseUrl = defaultAssessmentEducationApiBaseUrl,
     this.pep3RecordsPagePath = defaultIepPep3RecordsPagePath,
     this.erxinRecordsPagePath = defaultIepErxinRecordsPagePath,
+    this.autismDevRecordsPagePath = defaultIepAutismDevRecordsPagePath,
     this.httpClient,
   });
 
   final String educationBaseUrl;
   final String pep3RecordsPagePath;
   final String erxinRecordsPagePath;
+  final String autismDevRecordsPagePath;
   final http.Client? httpClient;
 
   @override
@@ -172,6 +178,12 @@ class ApiIepAssessmentRecordClient implements IepAssessmentRecordClient {
         token,
         path: erxinRecordsPagePath,
         source: 'ERXIN',
+        payload: payload,
+      ),
+      _fetchSourcePage(
+        token,
+        path: autismDevRecordsPagePath,
+        source: 'AUTISMDEV',
         payload: payload,
       ),
     ]);

@@ -51,6 +51,11 @@ type autismDevResultAnalysisPromptDomain struct {
 	RawScore          int                                 `json:"rawScore,omitempty"`
 	ScorableItemCount int                                 `json:"scorableItemCount,omitempty"`
 	ScoreRate         float64                             `json:"scoreRate,omitempty"`
+	ACount            int                                 `json:"aCount,omitempty"`
+	MCount            int                                 `json:"mCount,omitempty"`
+	SCount            int                                 `json:"sCount,omitempty"`
+	AdaptiveCount     int                                 `json:"adaptiveCount,omitempty"`
+	AbnormalCount     int                                 `json:"abnormalCount,omitempty"`
 	DevelopmentLevel  string                              `json:"developmentLevel,omitempty"`
 	PassedItems       []autismDevResultAnalysisPromptItem `json:"passedItems,omitempty"`
 	EmergingItems     []autismDevResultAnalysisPromptItem `json:"emergingItems,omitempty"`
@@ -532,6 +537,9 @@ func callDeepSeekAutismDevResultAnalysisStream(ctx context.Context, payload auti
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if isDeepSeekDeadlineExceeded(err, requestCtx) {
+			return model.AutismDevResultAnalysisVO{}, deepSeekTimeoutError()
+		}
 		return model.AutismDevResultAnalysisVO{}, err
 	}
 	text := strings.TrimSpace(content.String())

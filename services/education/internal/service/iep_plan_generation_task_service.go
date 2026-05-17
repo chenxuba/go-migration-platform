@@ -23,8 +23,9 @@ const (
 type iepPlanGenerationTaskKind string
 
 const (
-	iepPlanGenerationTaskKindPEP3  iepPlanGenerationTaskKind = "pep3"
-	iepPlanGenerationTaskKindERXin iepPlanGenerationTaskKind = "erxin"
+	iepPlanGenerationTaskKindPEP3      iepPlanGenerationTaskKind = "pep3"
+	iepPlanGenerationTaskKindERXin     iepPlanGenerationTaskKind = "erxin"
+	iepPlanGenerationTaskKindAutismDev iepPlanGenerationTaskKind = "autismdev"
 )
 
 type iepPlanGenerationTask struct {
@@ -152,12 +153,20 @@ func (svc *Service) CreateERXinIEPPlanGenerationTask(userID int64, req model.PEP
 	return svc.createIEPPlanGenerationTask(iepPlanGenerationTaskKindERXin, userID, req)
 }
 
+func (svc *Service) CreateAutismDevIEPPlanGenerationTask(userID int64, req model.PEP3IEPPlanGenerateRequest) (model.PEP3IEPPlanGenerationTaskVO, error) {
+	return svc.createIEPPlanGenerationTask(iepPlanGenerationTaskKindAutismDev, userID, req)
+}
+
 func (svc *Service) GetPEP3ActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
 	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindPEP3, userID, recordID)
 }
 
 func (svc *Service) GetERXinActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
 	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindERXin, userID, recordID)
+}
+
+func (svc *Service) GetAutismDevActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
+	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindAutismDev, userID, recordID)
 }
 
 func (svc *Service) createIEPPlanGenerationTask(kind iepPlanGenerationTaskKind, userID int64, req model.PEP3IEPPlanGenerateRequest) (model.PEP3IEPPlanGenerationTaskVO, error) {
@@ -283,7 +292,7 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	entity.Error = ""
 	svc.persistAndPublishTask(entity)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), deepSeekIEPGenerationTaskTimeout)
 	defer cancel()
 
 	onDelta := func(text string) error {
@@ -301,6 +310,8 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	var plan model.PEP3IEPPlanAIResult
 	var usage *model.DeepSeekUsageVO
 	switch iepPlanGenerationTaskKind(entity.AssessmentType) {
+	case iepPlanGenerationTaskKindAutismDev:
+		plan, usage, err = svc.GenerateAutismDevIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	case iepPlanGenerationTaskKindERXin:
 		plan, usage, err = svc.GenerateERXinIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	default:
@@ -330,9 +341,12 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 		Plan:                plan,
 	}
 	var saved model.PEP3IEPPlanSavedVO
-	if iepPlanGenerationTaskKind(entity.AssessmentType) == iepPlanGenerationTaskKindERXin {
+	switch iepPlanGenerationTaskKind(entity.AssessmentType) {
+	case iepPlanGenerationTaskKindAutismDev:
+		saved, err = svc.SaveAutismDevIEPPlan(entity.UserID, saveReq)
+	case iepPlanGenerationTaskKindERXin:
 		saved, err = svc.SaveERXinIEPPlan(entity.UserID, saveReq)
-	} else {
+	default:
 		saved, err = svc.SavePEP3IEPPlan(entity.UserID, saveReq)
 	}
 	if err != nil {

@@ -347,6 +347,9 @@ func callDeepSeekERXinReportInterpretationStream(ctx context.Context, payload er
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if isDeepSeekDeadlineExceeded(err, requestCtx) {
+			return model.ERXinReportInterpretationVO{}, deepSeekTimeoutError()
+		}
 		return model.ERXinReportInterpretationVO{}, err
 	}
 

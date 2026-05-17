@@ -11,8 +11,8 @@ Options:
   --user <user>          SSH user, default: root
   --port <port>          SSH port, default: 22
   --app-root <path>      Remote app root, default: /opt/go-migration-platform
-  --frontends <list>     Frontends to build and deploy, default: platform,institution,government,screen
-                         Allowed names: platform,institution,government,screen
+  --frontends <list>     Frontends to build and deploy, default: platform,institution,government,screen,training-games
+                         Allowed names: platform,institution,government,screen,training-games
   --skip-frontend-build  Reuse existing local dist directories
   --tests                Run go test ./... before building
   --build-only           Build and package locally, do not upload or deploy
@@ -40,7 +40,7 @@ DEPLOY_HOST="${DEPLOY_HOST:-43.240.15.181}"
 DEPLOY_USER="${DEPLOY_USER:-root}"
 DEPLOY_PORT="${DEPLOY_PORT:-22}"
 DEPLOY_APP_ROOT="${DEPLOY_APP_ROOT:-/opt/go-migration-platform}"
-DEPLOY_FRONTENDS="${DEPLOY_FRONTENDS:-platform,institution,government,screen}"
+DEPLOY_FRONTENDS="${DEPLOY_FRONTENDS:-platform,institution,government,screen,training-games}"
 DEPLOY_BUILD_FRONTEND="${DEPLOY_BUILD_FRONTEND:-1}"
 DEPLOY_BUILD_ONLY="${DEPLOY_BUILD_ONLY:-0}"
 DEPLOY_RUN_TESTS="${DEPLOY_RUN_TESTS:-0}"
@@ -126,7 +126,7 @@ validate_frontends() {
     list="${list#*,}"
     [[ -z "$name" ]] && continue
     case "$name" in
-      platform|institution|government|screen) ;;
+      platform|institution|government|screen|training-games) ;;
       *) die "invalid frontend name: $name" ;;
     esac
   done
@@ -296,7 +296,7 @@ if [[ ! -f "$release_dir/configs/tenants.json" ]]; then
   fi
 fi
 
-for name in platform institution government screen; do
+for name in platform institution government screen training-games; do
   if [[ ! -d "$release_dir/web/$name" && -d "$current_dir/web/$name" ]]; then
     log "reuse existing web/$name"
     mkdir -p "$release_dir/web"
@@ -455,7 +455,7 @@ validate_frontends
 if should_include_frontend platform || should_include_frontend institution || should_include_frontend government; then
   require_cmd pnpm
 fi
-if should_include_frontend screen; then
+if should_include_frontend screen || should_include_frontend training-games; then
   require_cmd npm
 fi
 
@@ -499,6 +499,9 @@ if should_include_frontend government; then
 fi
 if should_include_frontend screen; then
   run_npm_frontend government-screen screen
+fi
+if should_include_frontend training-games; then
+  run_npm_frontend training-games training-games
 fi
 
 write_remote_script

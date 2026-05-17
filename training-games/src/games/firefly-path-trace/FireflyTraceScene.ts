@@ -6,6 +6,7 @@ import {
   requestClose,
   submitGameResult,
 } from '../../platform/hostBridge';
+import { publicAssetPath } from '../../platform/publicPath';
 
 interface TraceEvent {
   round: number;
@@ -22,7 +23,7 @@ interface LevelPath {
 
 const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
-const ASSET_BASE = '/assets/firefly-trace';
+const ASSET_BASE = publicAssetPath('assets/firefly-trace');
 const BACKGROUND_TEXTURE = 'firefly-trace-background';
 const GUIDE_TEXTURE = 'firefly-trace-guide';
 const ORB_TEXTURE = 'firefly-trace-orb';

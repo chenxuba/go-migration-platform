@@ -530,47 +530,53 @@ class _PlanStateView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: SizedBox(
-        width: 340,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Icon(icon, size: 34, color: _IepColors.orangeDeep),
-            const SizedBox(height: 10),
-            Text(
-              title,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _IepColors.ink,
-                fontSize: 15,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-            if (message.trim().isNotEmpty) ...<Widget>[
-              const SizedBox(height: 7),
+      child: SingleChildScrollView(
+        physics: const ClampingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(vertical: 18),
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 380),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: 34, color: _IepColors.orangeDeep),
+              const SizedBox(height: 10),
               Text(
-                message,
+                title,
                 textAlign: TextAlign.center,
                 style: const TextStyle(
-                  color: _IepColors.text,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  height: 1.35,
+                  color: _IepColors.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
                 ),
               ),
+              if (message.trim().isNotEmpty) ...<Widget>[
+                const SizedBox(height: 7),
+                Text(
+                  message,
+                  textAlign: TextAlign.center,
+                  softWrap: true,
+                  style: const TextStyle(
+                    color: _IepColors.text,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    height: 1.35,
+                  ),
+                ),
+              ],
+              if (actionLabel.trim().isNotEmpty &&
+                  onAction != null) ...<Widget>[
+                const SizedBox(height: 12),
+                if (actionLabel.trim() == 'AI生成')
+                  _AiGenerateButton(
+                    generating: false,
+                    enabled: actionEnabled,
+                    onTap: onAction!,
+                  )
+                else
+                  _MiniQueueAction(label: actionLabel, onTap: onAction!),
+              ],
             ],
-            if (actionLabel.trim().isNotEmpty && onAction != null) ...<Widget>[
-              const SizedBox(height: 12),
-              if (actionLabel.trim() == 'AI生成')
-                _AiGenerateButton(
-                  generating: false,
-                  enabled: actionEnabled,
-                  onTap: onAction!,
-                )
-              else
-                _MiniQueueAction(label: actionLabel, onTap: onAction!),
-            ],
-          ],
+          ),
         ),
       ),
     );

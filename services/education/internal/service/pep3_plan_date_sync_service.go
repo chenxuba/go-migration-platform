@@ -25,6 +25,10 @@ func (svc *Service) SyncERXinIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPe
 	return svc.syncIEPPlanPeriod(userID, req, erxinScaleCode)
 }
 
+func (svc *Service) SyncAutismDevIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodSyncRequest) (model.PEP3IEPPlanPeriodSyncVO, error) {
+	return svc.syncIEPPlanPeriod(userID, req, autismDevScaleCode)
+}
+
 func (svc *Service) syncIEPPlanPeriod(userID int64, req model.PEP3IEPPlanPeriodSyncRequest, expectedScaleCode string) (model.PEP3IEPPlanPeriodSyncVO, error) {
 	if svc.repo == nil {
 		return model.PEP3IEPPlanPeriodSyncVO{}, errors.New("assessment repository is not configured")

@@ -6,6 +6,7 @@ import {
   requestClose,
   submitGameResult,
 } from '../../platform/hostBridge';
+import { publicAssetPath } from '../../platform/publicPath';
 
 interface PuppetOption {
   key: string;
@@ -31,7 +32,7 @@ const GAME_WIDTH = 1280;
 const GAME_HEIGHT = 720;
 const SHADOW_CENTER_X = 640;
 const SHADOW_CENTER_Y = 338;
-const ASSET_BASE = '/assets/shadow-theater';
+const ASSET_BASE = publicAssetPath('assets/shadow-theater');
 const BACKGROUND_TEXTURE = 'shadow-theater-background';
 const PUPPET_PREFIX = 'shadow-theater-puppet';
 

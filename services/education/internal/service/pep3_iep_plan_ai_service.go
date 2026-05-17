@@ -21,10 +21,12 @@ import (
 )
 
 const (
-	deepSeekIEPPlanModel          = "deepseek-v4-pro"
-	deepSeekIEPPlanDefaultURL     = "https://api.deepseek.com/chat/completions"
-	deepSeekIEPPlanFallbackAPIKey = "sk-3153518fffd24b1588d7b914c388320d"
-	deepSeekIEPPlanTimeout        = 180 * time.Second
+	deepSeekIEPPlanModel             = "deepseek-v4-pro"
+	deepSeekIEPPlanDefaultURL        = "https://api.deepseek.com/chat/completions"
+	deepSeekIEPPlanFallbackAPIKey    = "sk-3153518fffd24b1588d7b914c388320d"
+	deepSeekIEPPlanTimeout           = 360 * time.Second
+	deepSeekIEPGenerationTaskTimeout = deepSeekIEPPlanTimeout + 30*time.Second
+	deepSeekIEPPlanDefaultMaxTokens  = 8192
 )
 
 var iepGoalNumberPrefixPattern = regexp.MustCompile(`(^|\s)(?:\d+[.、．]|[一二三四五六七八九十]+[、.．])\s*`)
@@ -496,8 +498,12 @@ func callDeepSeekIEPPlanWithPrompt(ctx context.Context, payload any, systemPromp
 		return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API returned empty content")
 	}
 
+	finishReason := strings.TrimSpace(chatResponse.Choices[0].FinishReason)
 	result, err := parseDeepSeekIEPPlanAIResult(content)
 	if err != nil {
+		if isDeepSeekLengthFinishReason(finishReason) {
+			return model.PEP3IEPPlanAIResult{}, errors.New("DeepSeek API 输出被长度限制截断，未返回完整IEP JSON，请重试")
+		}
 		return model.PEP3IEPPlanAIResult{}, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
 	}
 	result.Model = deepSeekIEPPlanModel
@@ -530,7 +536,7 @@ func buildDeepSeekIEPPlanRequestBodyWithPrompt(payload any, systemPrompt string,
 			},
 		},
 		Temperature: 0.25,
-		MaxTokens:   4096,
+		MaxTokens:   deepSeekIEPPlanMaxTokens(),
 		ResponseFormat: map[string]string{
 			"type": "json_object",
 		},
@@ -604,6 +610,7 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 
 	var content strings.Builder
 	var reasoning strings.Builder
+	finishReason := ""
 	var usage *model.DeepSeekUsageVO
 	scanner := bufio.NewScanner(resp.Body)
 	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
@@ -630,6 +637,9 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 			usage = toDeepSeekUsageVO(chunk.Usage)
 		}
 		for _, choice := range chunk.Choices {
+			if reason := strings.TrimSpace(choice.FinishReason); reason != "" {
+				finishReason = reason
+			}
 			if text := choice.Delta.Content; text != "" {
 				content.WriteString(text)
 				if onDelta != nil {
@@ -644,6 +654,9 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 		}
 	}
 	if err := scanner.Err(); err != nil {
+		if isDeepSeekDeadlineExceeded(err, requestCtx) {
+			return model.PEP3IEPPlanAIResult{}, usage, deepSeekTimeoutError()
+		}
 		return model.PEP3IEPPlanAIResult{}, usage, err
 	}
 
@@ -656,10 +669,43 @@ func callDeepSeekIEPPlanStreamWithPrompt(ctx context.Context, payload any, syste
 	}
 	result, err := parseDeepSeekIEPPlanAIResult(text)
 	if err != nil {
+		if isDeepSeekLengthFinishReason(finishReason) {
+			return model.PEP3IEPPlanAIResult{}, usage, errors.New("DeepSeek API 输出被长度限制截断，未返回完整IEP JSON，请重试")
+		}
 		return model.PEP3IEPPlanAIResult{}, usage, fmt.Errorf("parse DeepSeek IEP JSON: %w", err)
 	}
 	result.Model = deepSeekIEPPlanModel
 	return result, usage, nil
+}
+
+func deepSeekIEPPlanMaxTokens() int {
+	raw := strings.TrimSpace(os.Getenv("DEEPSEEK_IEP_PLAN_MAX_TOKENS"))
+	if raw == "" {
+		return deepSeekIEPPlanDefaultMaxTokens
+	}
+	value, err := strconv.Atoi(raw)
+	if err != nil || value <= 0 {
+		return deepSeekIEPPlanDefaultMaxTokens
+	}
+	return value
+}
+
+func isDeepSeekLengthFinishReason(reason string) bool {
+	switch strings.ToLower(strings.TrimSpace(reason)) {
+	case "length", "max_tokens", "max_token", "token_limit":
+		return true
+	default:
+		return false
+	}
+}
+
+func isDeepSeekDeadlineExceeded(err error, ctx context.Context) bool {
+	return errors.Is(err, context.DeadlineExceeded) ||
+		errors.Is(ctx.Err(), context.DeadlineExceeded)
+}
+
+func deepSeekTimeoutError() error {
+	return fmt.Errorf("DeepSeek API 生成超时（%d秒），请稍后重试", int(deepSeekIEPPlanTimeout.Seconds()))
 }
 
 func parseDeepSeekIEPPlanAIResult(content string) (model.PEP3IEPPlanAIResult, error) {

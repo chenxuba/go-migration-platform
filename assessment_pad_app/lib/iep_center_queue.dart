@@ -755,13 +755,18 @@ String _recordAgeText(IepAssessmentRecordSummary record) {
 }
 
 String _recordAssessmentName(IepAssessmentRecordSummary record) {
-  if (record.source == 'ERXIN') {
+  final String source = record.source.trim().toUpperCase();
+  final String code = record.assessmentCode.trim().toUpperCase();
+  if (source == 'ERXIN') {
     return '儿心量表';
+  }
+  if (source == 'AUTISMDEV' || code == 'AUTISMDEV') {
+    return '孤独症儿童发展评估表';
   }
   if (record.assessmentName.trim().isNotEmpty) {
     return record.assessmentName.trim();
   }
-  return record.assessmentCode == 'PEP3' ? 'PEP-3' : '评估记录';
+  return code == 'PEP3' ? 'PEP-3' : '评估记录';
 }
 
 String _recordDateText(String value) {

@@ -420,8 +420,9 @@ EOF
     location = /institution { return 301 /institution/; }
     location = /government { return 301 /government/; }
     location = /screen { return 301 /screen/; }
+    location = /training-games { return 301 /training-games/; }
 
-    location ~* ^/(platform|institution|government|screen)/assets/ {
+    location ~* ^/(platform|institution|government|screen|training-games)/assets/ {
         root $DEPLOY_APP_ROOT/current/web;
         expires 30d;
         add_header Cache-Control "public, max-age=2592000, immutable" always;
@@ -459,6 +460,12 @@ EOF
         alias $DEPLOY_APP_ROOT/current/web/screen/;
         add_header Cache-Control "no-cache" always;
         try_files \$uri \$uri/ /screen/index.html;
+    }
+
+    location /training-games/ {
+        alias $DEPLOY_APP_ROOT/current/web/training-games/;
+        add_header Cache-Control "no-cache" always;
+        try_files \$uri \$uri/ /training-games/index.html;
     }
 
     location ^~ /platform-api/ {

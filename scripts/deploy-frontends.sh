@@ -12,7 +12,7 @@ Options:
   --port <port>          SSH port, default: 22
   --app-root <path>      Remote app root, default: /opt/go-migration-platform
   --frontends <list>     Skip prompts and deploy selected frontends.
-                         Allowed names: platform,institution,government,screen
+                         Allowed names: platform,institution,government,screen,training-games
   --skip-build           Reuse existing local dist directories
   --build-only           Build and package locally, do not upload or deploy
   -h, --help             Show this help
@@ -144,6 +144,7 @@ choose_frontends() {
   ask_frontend institution '机构端' institution-admin institution
   ask_frontend government '监管端' government-admin government
   ask_frontend screen '数据大屏' government-screen screen
+  ask_frontend training-games '训练小游戏' training-games training-games
 }
 
 validate_frontends() {
@@ -157,7 +158,7 @@ validate_frontends() {
     name="${name//[[:space:]]/}"
     [[ -z "$name" ]] && continue
     case "$name" in
-      platform|institution|government|screen)
+      platform|institution|government|screen|training-games)
         case ",$normalized," in
           *",$name,"*) continue ;;
         esac
@@ -275,7 +276,7 @@ while [[ -n "$list" ]]; do
   [[ -z "$name" ]] && continue
 
   case "$name" in
-    platform|institution|government|screen) ;;
+    platform|institution|government|screen|training-games) ;;
     *) echo "invalid frontend name: $name" >&2; exit 1 ;;
   esac
 
@@ -425,7 +426,7 @@ if should_include_frontend platform || should_include_frontend institution || sh
     require_cmd pnpm
   fi
 fi
-if should_include_frontend screen; then
+if should_include_frontend screen || should_include_frontend training-games; then
   if [[ "$DEPLOY_BUILD_FRONTEND" == "1" ]]; then
     require_cmd npm
   fi
@@ -474,6 +475,9 @@ if should_include_frontend government; then
 fi
 if should_include_frontend screen; then
   run_npm_frontend government-screen screen
+fi
+if should_include_frontend training-games; then
+  run_npm_frontend training-games training-games
 fi
 
 write_remote_script
