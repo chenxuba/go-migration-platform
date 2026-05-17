@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import './style.css';
 import { ColorMatchScene } from './games/color-shape-match/ColorMatchScene';
 import { FireflyTraceScene } from './games/firefly-path-trace/FireflyTraceScene';
+import { ShadowTheaterScene } from './games/shadow-theater/ShadowTheaterScene';
 import { readLaunchParams } from './platform/hostBridge';
 
 declare global {
@@ -24,7 +25,9 @@ window.addEventListener('color-match-ready', hideLoading);
 const launchParams = readLaunchParams();
 applyGameBootCopy(launchParams.gameId);
 const scene =
-  launchParams.gameId === 'firefly-path-trace'
+  launchParams.gameId === 'shadow-theater'
+    ? new ShadowTheaterScene(launchParams)
+    : launchParams.gameId === 'firefly-path-trace'
     ? new FireflyTraceScene(launchParams)
     : new ColorMatchScene(launchParams);
 
@@ -88,14 +91,14 @@ function showBootError(message: string): void {
 }
 
 function applyGameBootCopy(gameId: string): void {
-  if (gameId !== 'firefly-path-trace') {
+  if (gameId !== 'firefly-path-trace' && gameId !== 'shadow-theater') {
     return;
   }
 
-  document.title = '萤火小路';
+  document.title = gameId === 'shadow-theater' ? '影子剧场' : '萤火小路';
   const loadingTitle = document.querySelector('.loading-title');
   if (loadingTitle) {
-    loadingTitle.textContent = '萤火小路';
+    loadingTitle.textContent = document.title;
   }
   const loadingText = document.querySelector('.loading-text');
   if (loadingText) {
