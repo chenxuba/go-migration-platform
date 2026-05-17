@@ -281,6 +281,18 @@ export default [
         },
       },
       {
+        path: '/teacherCenter/autismdev-assessment-workbench',
+        name: 'AutismDevAssessmentWorkbench',
+        component: () => import('~/pages/teacher-center/autismdev-assessment-workbench.vue'),
+        meta: {
+          title: '孤独症儿童发展评估工作台',
+          access: [AccessEnum.teacher_scale],
+          hideInMenu: true,
+          purePage: true,
+          parentKeys: ['/teacherCenter/scale-library'],
+        },
+      },
+      {
         path: '/teacherCenter/evaluationRecord',
         name: 'EvaluationRecord',
         component: () => import('~/pages/teacher-center/evaluationRecord.vue'),

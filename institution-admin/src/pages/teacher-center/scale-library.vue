@@ -257,11 +257,8 @@ function confirmStartAssessment() {
   if (!activeScale.value || !selectedChild.value)
     return
   startModalOpen.value = false
-  const targetPath = isERXinScale(activeScale.value)
-    ? '/teacherCenter/erxin-assessment-workbench'
-    : '/teacherCenter/scale-assessment-workbench'
   void router.push({
-    path: targetPath,
+    path: assessmentWorkbenchPath(activeScale.value),
     query: {
       scaleName: activeScale.value.name,
       scaleCode: activeScale.value.code,
@@ -273,9 +270,23 @@ function confirmStartAssessment() {
   })
 }
 
+function assessmentWorkbenchPath(scale: ScaleLibraryItem) {
+  if (isAutismDevScale(scale))
+    return '/teacherCenter/autismdev-assessment-workbench'
+  if (isERXinScale(scale))
+    return '/teacherCenter/erxin-assessment-workbench'
+  return '/teacherCenter/scale-assessment-workbench'
+}
+
 function isERXinScale(scale: ScaleLibraryItem) {
   const code = String(scale.code || '').trim().toUpperCase()
   return code === 'ERXIN2' || code === 'ERXIN'
+}
+
+function isAutismDevScale(scale: ScaleLibraryItem) {
+  const code = String(scale.code || '').trim().toUpperCase()
+  const name = String(scale.name || '').trim()
+  return code === 'AUTISMDEV' || name.includes('孤独症儿童发展') || name.includes('孤独症发展评估')
 }
 
 onMounted(() => {
