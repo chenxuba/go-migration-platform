@@ -8,9 +8,12 @@ import { readLaunchParams } from './platform/hostBridge';
 declare global {
   interface Window {
     __COLOR_MATCH_READY__?: boolean;
+    __COLOR_MATCH_SCRIPT_LOADED__?: boolean;
     __COLOR_MATCH_STOP_AUDIO__?: () => void;
   }
 }
+
+window.__COLOR_MATCH_SCRIPT_LOADED__ = true;
 
 window.addEventListener('error', (event) => {
   showBootError(event.message || '游戏脚本运行失败');

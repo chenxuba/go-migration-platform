@@ -28,7 +28,7 @@
     </div>
     <script>
       window.setTimeout(function () {
-        if (window.__COLOR_MATCH_READY__) {
+        if (window.__COLOR_MATCH_READY__ || window.__COLOR_MATCH_SCRIPT_LOADED__) {
           return;
         }
         var root = document.getElementById('game-root');

@@ -221,35 +221,39 @@ class _TrainingGameWebViewPageState extends State<TrainingGameWebViewPage> {
   }
 
   Future<void> _checkGameReady() async {
-    await Future<void>.delayed(const Duration(seconds: 2));
-    if (!mounted || _hasError) {
-      return;
-    }
-
-    try {
-      final Object ready = await _controller.runJavaScriptReturningResult(
-        'Boolean(window.__COLOR_MATCH_READY__)',
-      );
-      final bool isReady = ready == true || ready.toString() == 'true';
-      if (isReady && mounted) {
-        _markGameReady();
+    for (int attempt = 0; attempt < 15; attempt += 1) {
+      await Future<void>.delayed(const Duration(seconds: 1));
+      if (!mounted || _hasError || _gameReady) {
         return;
       }
-      if (!isReady && mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage =
-              '页面已加载，但游戏场景没有启动。请检查 H5 控制台或确认当前 WebView 支持 Canvas/JavaScript。';
-        });
-      }
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _hasError = true;
-          _errorMessage = '无法检测游戏启动状态：$error';
-        });
+
+      try {
+        final Object ready = await _controller.runJavaScriptReturningResult(
+          'Boolean(window.__COLOR_MATCH_READY__)',
+        );
+        final bool isReady = ready == true || ready.toString() == 'true';
+        if (isReady && mounted) {
+          _markGameReady();
+          return;
+        }
+      } catch (error) {
+        if (mounted && attempt == 14) {
+          setState(() {
+            _hasError = true;
+            _errorMessage = '无法检测游戏启动状态：$error';
+          });
+        }
       }
     }
+
+    if (!mounted || _hasError || _gameReady) {
+      return;
+    }
+    setState(() {
+      _hasError = true;
+      _errorMessage =
+          '页面已加载，但游戏场景没有启动。请检查 H5 控制台或确认当前 WebView 支持 Canvas/JavaScript。';
+    });
   }
 }
 
