@@ -22,6 +22,13 @@ import {
   getERXinAssessmentRecordReportInterpretationApi,
   pageERXinAssessmentRecordsApi,
 } from '@/api/edu-center/erxin-assessment'
+import {
+  deleteAutismDevAssessmentRecordApi,
+  downloadAutismDevSelectedReportPdfApi,
+  generateAutismDevResultAnalysisStreamApi,
+  getAutismDevResultAnalysisApi,
+  pageAutismDevAssessmentRecordsApi,
+} from '@/api/edu-center/autismdev-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
 
 const displayArray = ref(['scaleCategory', 'createTime'])
@@ -54,10 +61,22 @@ const interpretationStreamRef = ref(null)
 const interpretationShellRef = ref(null)
 const interpretationProgressRef = ref(null)
 const streamingInterpretationPreview = computed(() => interpretationPreviewFromText(interpretationStreamingText.value))
+const activeAutismDevReportSection = ref('assessmentInfo')
+const autismDevAnalysis = ref(null)
+const autismDevAnalysisLoading = ref(false)
+const autismDevAnalysisGenerating = ref(false)
+const autismDevAnalysisFetched = ref(false)
+const autismDevAnalysisError = ref('')
+const autismDevAnalysisProgress = ref('')
+const autismDevAnalysisStreamText = ref('')
+const autismDevAnalysisRecordKey = ref('')
+const autismDevExportSections = ref([])
+const autismDevExportAnalysisLoading = ref(false)
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const router = useRouter()
 let reportPdfReadyTimer = 0
 let interpretationAbortController = null
+let autismDevAnalysisAbortController = null
 let interpretationScrollFrame = 0
 let interpretationProgressAnchored = false
 
@@ -130,14 +149,65 @@ const erxinExportDimensionOptions = [
     pages: '记录+报告',
   },
 ]
+const autismDevExportDimensionOptions = [
+  {
+    value: 'assessmentInfo',
+    title: '评估情况',
+    badge: '01',
+    desc: '查看发展能力计分汇总与评估基本情况。',
+    pages: '评估情况',
+    recommended: true,
+  },
+  {
+    value: 'resultAnalysis',
+    title: '评估结果分析',
+    badge: '02',
+    desc: 'AI生成八大领域的现况、优势、弱项与训练目标。',
+    pages: '结果分析',
+  },
+  {
+    value: 'training',
+    title: '训练效果',
+    badge: '03',
+    desc: '查看与导出阶段训练效果分析。',
+    pages: '训练效果',
+  },
+  {
+    value: 'developmentProfile',
+    title: '发展情况剖面图',
+    badge: '04',
+    desc: '查看发展能力剖面图。',
+    pages: '发展剖面',
+  },
+  {
+    value: 'behaviorProfile',
+    title: '情绪行为表现图',
+    badge: '05',
+    desc: '查看情绪行为表现图。',
+    pages: '情绪行为',
+  },
+]
 const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
 const selectedExportDimension = ref(defaultExportDimension)
 const reportModuleValues = ['test_score', 'development_profile', 'score_and_profile', 'scoring_tables']
 const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleValues.includes(item.value))
 const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
 const activeReportModule = ref(defaultReportModule)
-const activeExportDimensionOptions = computed(() => isERXinRecord(exportTargetRecord.value) ? erxinExportDimensionOptions : exportDimensionOptions)
-const exportModalWidth = computed(() => isERXinRecord(exportTargetRecord.value) ? 760 : 700)
+const activeExportDimensionOptions = computed(() => {
+  if (isERXinRecord(exportTargetRecord.value))
+    return erxinExportDimensionOptions
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return autismDevExportDimensionOptions
+  return exportDimensionOptions
+})
+const autismDevEnabledExportSections = computed(() => autismDevExportDimensionOptions
+  .filter(option => isAutismDevExportSectionEnabled(option.value))
+  .map(option => option.value))
+const autismDevExportAllSelected = computed(() => {
+  const enabled = autismDevEnabledExportSections.value
+  return !!enabled.length && enabled.every(section => autismDevExportSections.value.includes(section))
+})
+const exportModalWidth = computed(() => (isERXinRecord(exportTargetRecord.value) || isAutismDevRecord(exportTargetRecord.value)) ? 760 : 700)
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -303,10 +373,23 @@ function isERXinRecord(record) {
   return source === 'ERXIN' || source.startsWith('ERXIN')
 }
 
+function isAutismDevRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'AUTISMDEV'
+}
+
+function recordSourceType(record) {
+  if (isAutismDevRecord(record))
+    return 'AUTISMDEV'
+  if (isERXinRecord(record))
+    return 'ERXIN'
+  return 'PEP3'
+}
+
 function recordActionKey(record) {
   if (!record?.id)
     return ''
-  return `${isERXinRecord(record) ? 'ERXIN' : 'PEP3'}-${record.id}`
+  return `${recordSourceType(record)}-${record.id}`
 }
 
 function markRecordSource(record, source) {
@@ -337,17 +420,128 @@ function currentReportIsERXin() {
   return isERXinRecord(currentReport.value?.record)
 }
 
+function currentReportIsAutismDev() {
+  return isAutismDevRecord(currentReport.value?.record)
+}
+
+function autismDevReportSectionOption(value) {
+  return autismDevExportDimensionOptions.find(item => item.value === value) || autismDevExportDimensionOptions[0]
+}
+
+function autismDevReportSectionTitle(value = activeAutismDevReportSection.value) {
+  return autismDevReportSectionOption(value)?.title || '评估情况'
+}
+
+function autismDevReportSectionDesc(value = activeAutismDevReportSection.value) {
+  return autismDevReportSectionOption(value)?.desc || '查看孤独症儿童发展评估报告。'
+}
+
+function defaultAutismDevReportSection() {
+  return autismDevExportDimensionOptions.find(item => item.recommended)?.value || 'assessmentInfo'
+}
+
+function normalizeAutismDevAnalysis(value) {
+  const data = value || {}
+  const rows = Array.isArray(data.rows) ? data.rows : []
+  return {
+    title: String(data.title || ''),
+    model: String(data.model || ''),
+    generatedBy: String(data.generatedBy || ''),
+    generatedAt: String(data.generatedAt || ''),
+    rows: rows.map(row => ({
+      domain: String(row?.domain || ''),
+      status: String(row?.status || ''),
+      strengths: String(row?.strengths || ''),
+      weaknesses: String(row?.weaknesses || ''),
+      targets: String(row?.targets || ''),
+    })),
+  }
+}
+
+function emptyAutismDevAnalysis() {
+  return normalizeAutismDevAnalysis({
+    title: '孤独症儿童评估结果分析表',
+    rows: ['感知觉', '粗大动作', '精细动作', '语言与沟通', '认知', '社会交往', '生活自理', '情绪与行为']
+      .map(domain => ({ domain })),
+  })
+}
+
+function autismDevAnalysisIsEmpty(value = autismDevAnalysis.value) {
+  const rows = Array.isArray(value?.rows) ? value.rows : []
+  return !rows.some(row => String(row?.status || row?.strengths || row?.weaknesses || row?.targets || '').trim())
+}
+
+function autismDevAnalysisForExport() {
+  return autismDevAnalysisIsEmpty() ? null : autismDevAnalysis.value
+}
+
+function isAutismDevExportSectionEnabled(section) {
+  if (section !== 'resultAnalysis')
+    return true
+  return !autismDevAnalysisGenerating.value && !autismDevAnalysisLoading.value && !autismDevAnalysisIsEmpty()
+}
+
+function autismDevExportSectionStatus(section) {
+  if (section !== 'resultAnalysis')
+    return ''
+  if (autismDevAnalysisGenerating.value)
+    return '生成中'
+  if (autismDevAnalysisLoading.value || autismDevExportAnalysisLoading.value)
+    return '读取中'
+  if (autismDevAnalysisIsEmpty())
+    return '未生成'
+  return ''
+}
+
+function normalizeAutismDevExportSections(sections = []) {
+  const allowed = autismDevExportDimensionOptions.map(item => item.value)
+  const enabled = autismDevEnabledExportSections.value
+  return sections
+    .filter(section => allowed.includes(section) && enabled.includes(section))
+    .filter((section, index, array) => array.indexOf(section) === index)
+}
+
+function setAutismDevExportSections(sections = []) {
+  const normalized = normalizeAutismDevExportSections(sections)
+  autismDevExportSections.value = normalized.length ? normalized : normalizeAutismDevExportSections([defaultAutismDevReportSection()])
+}
+
+function toggleAutismDevExportSection(section) {
+  if (!isAutismDevExportSectionEnabled(section))
+    return
+  const next = new Set(autismDevExportSections.value)
+  if (next.has(section))
+    next.delete(section)
+  else
+    next.add(section)
+  setAutismDevExportSections(Array.from(next))
+}
+
+function toggleAllAutismDevExportSections() {
+  if (autismDevExportAllSelected.value) {
+    autismDevExportSections.value = []
+    return
+  }
+  setAutismDevExportSections(autismDevEnabledExportSections.value)
+}
+
 function reportTitleForRecord(record) {
+  if (isAutismDevRecord(record))
+    return record?.assessmentName || '孤独症儿童发展评估报告'
   return isERXinRecord(record)
     ? (record?.assessmentName || '儿心量表-II发育行为评估报告')
     : 'PEP-3测试员记录册'
 }
 
 function reportModalHint() {
+  if (currentReportIsAutismDev())
+    return '按评估情况、结果分析、训练效果和剖面图查看报告'
   return currentReportIsERXin() ? '查看儿心量表评估报告内容' : '按记录册导出维度查看报告内容'
 }
 
 function reportFrameTitle() {
+  if (currentReportIsAutismDev())
+    return `孤独症儿童发展评估报告-${autismDevReportSectionTitle()}PDF预览`
   return currentReportIsERXin() ? '儿心量表评估报告PDF预览' : 'PEP-3记录册PDF预览'
 }
 
@@ -507,6 +701,24 @@ function resetInterpretationState() {
   interpretationStreamingText.value = ''
 }
 
+function resetAutismDevReportState() {
+  if (autismDevAnalysisAbortController) {
+    autismDevAnalysisAbortController.abort()
+    autismDevAnalysisAbortController = null
+  }
+  activeAutismDevReportSection.value = defaultAutismDevReportSection()
+  autismDevAnalysis.value = emptyAutismDevAnalysis()
+  autismDevAnalysisLoading.value = false
+  autismDevAnalysisGenerating.value = false
+  autismDevAnalysisFetched.value = false
+  autismDevAnalysisError.value = ''
+  autismDevAnalysisProgress.value = ''
+  autismDevAnalysisStreamText.value = ''
+  autismDevAnalysisRecordKey.value = ''
+  autismDevExportSections.value = []
+  autismDevExportAnalysisLoading.value = false
+}
+
 function interpretationSectionItems(value, key) {
   return stringList(value?.[key])
 }
@@ -550,32 +762,44 @@ function scrollInterpretationProgressIntoView() {
 function exportDimensionTitle(value) {
   if (value === 'pep3_interpretation')
     return '报告解读'
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return autismDevExportDimensionOptions.find(item => item.value === value)?.title || '评估报告'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.title || '全维度导出'
 }
 
 function exportDimensionPages(value) {
   if (value === 'pep3_interpretation')
     return '报告'
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return autismDevExportDimensionOptions.find(item => item.value === value)?.pages || '报告'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.pages || '第 1-26 页'
 }
 
 function exportDimensionDesc(value) {
   if (value === 'pep3_interpretation')
     return '导出已生成的PEP-3报告解读内容。'
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return autismDevExportDimensionOptions.find(item => item.value === value)?.desc || '导出孤独症儿童发展评估报告。'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
 }
 
 function exportModalTitle() {
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return '导出孤独症评估报告'
   return isERXinRecord(exportTargetRecord.value) ? '导出儿心报告' : '导出记录册'
 }
 
 function exportModalHint() {
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return '按评估情况、结果分析、训练效果和剖面图选择导出内容'
   return isERXinRecord(exportTargetRecord.value) ? '选择本次导出的报告内容' : '选择本次导出的内容范围'
 }
 
 function defaultExportDimensionForRecord(record) {
   if (isERXinRecord(record))
     return erxinExportDimensionOptions.find(item => item.recommended)?.value || erxinExportDimensionOptions[0]?.value || 'erxin_result'
+  if (isAutismDevRecord(record))
+    return defaultAutismDevReportSection()
   return defaultExportDimension
 }
 
@@ -607,12 +831,16 @@ function reportModulePages(value) {
 }
 
 function reportExportDimension(row, dimension = activeReportModule.value) {
+  if (isAutismDevRecord(row))
+    return activeAutismDevReportSection.value || defaultAutismDevReportSection()
   if (!isERXinRecord(row) && reportTab.value === 'interpretation')
     return 'pep3_interpretation'
   return dimension
 }
 
 function reportExportTitle(row, dimension) {
+  if (isAutismDevRecord(row))
+    return exportDimensionTitle(dimension)
   if (!isERXinRecord(row) && dimension === 'pep3_interpretation')
     return '报告解读'
   if (!isERXinRecord(row))
@@ -647,6 +875,11 @@ function assessmentRecordConfirmTitle(record) {
 function assessmentRecordConfirmContent(record) {
   if (isERXinRecord(record))
     return '修改并重新提交后会覆盖当前儿心评估记录和报告数据，请确认后继续。'
+  if (isAutismDevRecord(record)) {
+    if (hasIepPlan(record))
+      return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
+    return '修改并重新提交后会覆盖当前孤独症儿童发展评估记录和报告数据，请确认后继续。'
+  }
   if (hasIepPlan(record))
     return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
   return '修改并重新提交后会覆盖当前评估记录和报告数据，请确认后继续。'
@@ -670,6 +903,10 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
   const exportDimension = reportExportDimension(row, dimension)
   if (isERXinRecord(row)) {
     openExportModal(row, reportTab.value === 'interpretation' ? 'erxin_interpretation' : 'erxin_result')
+    return
+  }
+  if (isAutismDevRecord(row)) {
+    openExportModal(row, activeAutismDevReportSection.value || defaultAutismDevReportSection())
     return
   }
   const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
@@ -727,19 +964,22 @@ async function fetchRecords() {
         assessmentDateEnd: queryModel.assessmentDateEnd,
       },
     }
-    const [pep3Res, erxinRes] = await Promise.all([
+    const [pep3Res, erxinRes, autismDevRes] = await Promise.all([
       pagePEP3AssessmentRecordsApi(request),
       pageERXinAssessmentRecordsApi(request),
+      pageAutismDevAssessmentRecordsApi(request),
     ])
     const pep3Data = unwrap(pep3Res)
     const erxinData = unwrap(erxinRes)
+    const autismDevData = unwrap(autismDevRes)
     const merged = [
       ...(pep3Data?.items || []).map(item => markRecordSource(item, 'PEP3')),
       ...(erxinData?.items || []).map(item => markRecordSource(item, 'ERXIN')),
+      ...(autismDevData?.items || []).map(item => markRecordSource(item, 'AUTISMDEV')),
     ].sort(compareRecordDesc)
     const start = (pagination.current - 1) * pagination.pageSize
     dataSource.value = merged.slice(start, start + pagination.pageSize)
-    pagination.total = Number(pep3Data?.total || 0) + Number(erxinData?.total || 0)
+    pagination.total = Number(pep3Data?.total || 0) + Number(erxinData?.total || 0) + Number(autismDevData?.total || 0)
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '获取评估记录失败'))
@@ -759,13 +999,26 @@ async function viewReport(row) {
   if (!row)
     return
   resetInterpretationState()
+  resetAutismDevReportState()
   activeReportModule.value = defaultReportModule
   currentReport.value = {
     title: reportTitleForRecord(row),
     record: row,
   }
   reportModalOpen.value = true
-  loadReportPdfPreview(row, defaultReportModule)
+  if (isAutismDevRecord(row)) {
+    activeAutismDevReportSection.value = defaultAutismDevReportSection()
+    void loadAutismDevResultAnalysis(row, { silent: true })
+  }
+  loadReportPdfPreview(row, defaultReportPreviewDimension(row))
+}
+
+function defaultReportPreviewDimension(row) {
+  if (isAutismDevRecord(row))
+    return defaultAutismDevReportSection()
+  if (isERXinRecord(row))
+    return 'erxin_result'
+  return defaultReportModule
 }
 
 function resetReportPdfReady() {
@@ -787,12 +1040,20 @@ function revokeReportPreviewUrl() {
 async function loadReportPdfPreview(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id)
     return
+  if (isAutismDevRecord(row) && dimension === 'resultAnalysis') {
+    revokeReportPreviewUrl()
+    void loadAutismDevResultAnalysis(row)
+    return
+  }
   const requestKey = reportPreviewRequestKey.value + 1
   reportPreviewRequestKey.value = requestKey
   resetReportPdfReady()
   previewLoading.value = true
   try {
-    const response = isERXinRecord(row)
+    const autismDevSections = isAutismDevRecord(row) ? autismDevReportSectionsForDimension(dimension) : []
+    const response = isAutismDevRecord(row)
+      ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
+      : isERXinRecord(row)
       ? (dimension === 'erxin_interpretation'
           ? await downloadERXinAssessmentRecordReportInterpretationPdfApi(row.id)
           : await downloadERXinAssessmentRecordReportPdfApi(row.id))
@@ -816,7 +1077,7 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
 }
 
 function selectReportModule(value) {
-  if (currentReportIsERXin())
+  if (currentReportIsERXin() || currentReportIsAutismDev())
     return
   reportTab.value = 'result'
   if (activeReportModule.value === value)
@@ -839,6 +1100,7 @@ function closeReportModal() {
   previewLoading.value = false
   revokeReportPreviewUrl()
   resetInterpretationState()
+  resetAutismDevReportState()
 }
 
 function selectReportTab(tab) {
@@ -947,10 +1209,140 @@ async function generateInterpretation(regenerate = false) {
   }
 }
 
+async function loadAutismDevResultAnalysis(row = currentReport.value?.record, options = {}) {
+  if (!row?.id || !isAutismDevRecord(row))
+    return null
+  const targetKey = recordActionKey(row)
+  if (autismDevAnalysisFetched.value && autismDevAnalysisRecordKey.value === targetKey && !options.force)
+    return autismDevAnalysis.value
+  autismDevAnalysisRecordKey.value = targetKey
+  autismDevAnalysisLoading.value = !options.silent
+  autismDevAnalysisError.value = ''
+  if (!options.keepProgress)
+    autismDevAnalysisProgress.value = '正在读取评估结果分析...'
+  try {
+    const response = await getAutismDevResultAnalysisApi(row.id)
+    if (autismDevAnalysisRecordKey.value !== targetKey)
+      return null
+    const data = normalizeAutismDevAnalysis(unwrap(response))
+    autismDevAnalysis.value = data.rows.length ? data : emptyAutismDevAnalysis()
+    autismDevAnalysisFetched.value = true
+    autismDevAnalysisProgress.value = autismDevAnalysisIsEmpty(autismDevAnalysis.value) ? '评估结果分析尚未生成' : '已读取评估结果分析'
+    return autismDevAnalysis.value
+  }
+  catch (error) {
+    if (autismDevAnalysisRecordKey.value === targetKey) {
+      autismDevAnalysisError.value = getErrorMessage(error, '评估结果分析读取失败')
+      autismDevAnalysis.value = emptyAutismDevAnalysis()
+      autismDevAnalysisFetched.value = true
+    }
+    return null
+  }
+  finally {
+    if (autismDevAnalysisRecordKey.value === targetKey)
+      autismDevAnalysisLoading.value = false
+  }
+}
+
+async function loadAutismDevAnalysisForExport(row = exportTargetRecord.value) {
+  if (!row?.id || !isAutismDevRecord(row))
+    return
+  autismDevExportAnalysisLoading.value = true
+  try {
+    await loadAutismDevResultAnalysis(row, { silent: true })
+    setAutismDevExportSections(autismDevExportSections.value)
+  }
+  finally {
+    autismDevExportAnalysisLoading.value = false
+  }
+}
+
+async function generateAutismDevResultAnalysis() {
+  const row = currentReport.value?.record
+  if (!row?.id || !isAutismDevRecord(row) || autismDevAnalysisGenerating.value)
+    return
+  if (autismDevAnalysisAbortController)
+    autismDevAnalysisAbortController.abort()
+  const targetKey = recordActionKey(row)
+  const controller = new AbortController()
+  autismDevAnalysisAbortController = controller
+  autismDevAnalysisRecordKey.value = targetKey
+  autismDevAnalysisLoading.value = false
+  autismDevAnalysisGenerating.value = true
+  autismDevAnalysisFetched.value = true
+  autismDevAnalysisError.value = ''
+  autismDevAnalysisProgress.value = '正在生成评估结果分析...'
+  autismDevAnalysisStreamText.value = ''
+  autismDevAnalysis.value = emptyAutismDevAnalysis()
+  try {
+    const data = await generateAutismDevResultAnalysisStreamApi(
+      row.id,
+      {
+        onStatus(message) {
+          if (autismDevAnalysisRecordKey.value !== targetKey)
+            return
+          autismDevAnalysisProgress.value = message || '正在生成评估结果分析...'
+        },
+        onDelta(text) {
+          if (autismDevAnalysisRecordKey.value !== targetKey)
+            return
+          if (text)
+            autismDevAnalysisStreamText.value += text
+          autismDevAnalysisProgress.value = 'AI正在生成评估结果分析...'
+        },
+        onDone(data) {
+          if (autismDevAnalysisRecordKey.value !== targetKey)
+            return
+          autismDevAnalysis.value = normalizeAutismDevAnalysis(data)
+        },
+      },
+      { signal: controller.signal },
+    )
+    if (autismDevAnalysisRecordKey.value !== targetKey)
+      return
+    autismDevAnalysis.value = normalizeAutismDevAnalysis(data)
+    autismDevAnalysisProgress.value = '评估结果分析已生成'
+    autismDevAnalysisStreamText.value = ''
+    setAutismDevExportSections(autismDevExportSections.value)
+  }
+  catch (error) {
+    if (error?.name !== 'AbortError' && autismDevAnalysisRecordKey.value === targetKey)
+      autismDevAnalysisError.value = getErrorMessage(error, '评估结果分析生成失败')
+  }
+  finally {
+    if (autismDevAnalysisAbortController === controller) {
+      autismDevAnalysisGenerating.value = false
+      autismDevAnalysisAbortController = null
+    }
+  }
+}
+
+function selectAutismDevReportSection(section) {
+  if (!currentReportIsAutismDev())
+    return
+  if (activeAutismDevReportSection.value === section)
+    return
+  activeAutismDevReportSection.value = section
+  reportTab.value = 'result'
+  if (section === 'resultAnalysis') {
+    revokeReportPreviewUrl()
+    void loadAutismDevResultAnalysis()
+    return
+  }
+  loadReportPdfPreview(currentReport.value?.record, section)
+}
+
 function openExportModal(row, dimension) {
   if (!row || exportingId.value)
     return
   exportTargetRecord.value = row
+  if (isAutismDevRecord(row)) {
+    setAutismDevExportSections(autismDevReportSectionsForDimension(dimension))
+    selectedExportDimension.value = autismDevExportSections.value[0] || defaultAutismDevReportSection()
+    exportModalOpen.value = true
+    void loadAutismDevAnalysisForExport(row)
+    return
+  }
   selectedExportDimension.value = dimension || defaultExportDimensionForRecord(row)
   normalizeSelectedExportDimension()
   exportModalOpen.value = true
@@ -974,17 +1366,19 @@ function editAssessmentRecord(row = currentReport.value?.record) {
   if (!row?.id)
     return
   const recordMode = hasIepPlan(row) ? 'reuse' : 'edit'
-  const path = isERXinRecord(row)
-    ? '/teacherCenter/erxin-assessment-workbench'
-    : '/teacherCenter/scale-assessment-workbench'
+  const path = isAutismDevRecord(row)
+    ? '/teacherCenter/autismdev-assessment-workbench'
+    : isERXinRecord(row)
+      ? '/teacherCenter/erxin-assessment-workbench'
+      : '/teacherCenter/scale-assessment-workbench'
   closeReportModal()
   void router.push({
     path,
     query: {
       recordId: row.id,
       recordMode,
-      scaleName: row.assessmentName || (isERXinRecord(row) ? '儿心量表-II' : 'PEP-3'),
-      scaleCode: row.assessmentCode || (isERXinRecord(row) ? 'ERXIN2' : 'PEP3'),
+      scaleName: row.assessmentName || (isAutismDevRecord(row) ? '孤独症儿童发展评估表' : isERXinRecord(row) ? '儿心量表-II' : 'PEP-3'),
+      scaleCode: row.assessmentCode || (isAutismDevRecord(row) ? 'AUTISMDEV' : isERXinRecord(row) ? 'ERXIN2' : 'PEP3'),
       childId: row.studentId,
       childName: row.studentName,
       childAge: formatAge(row),
@@ -1015,18 +1409,49 @@ async function downloadPEP3ExportPdf(recordId, dimension) {
   return downloadPEP3AssessmentBookletPdfApi(recordId, dimension)
 }
 
+function autismDevReportSectionsForDimension(dimension) {
+  if (Array.isArray(dimension))
+    return normalizeAutismDevExportSections(dimension)
+  if (autismDevExportDimensionOptions.some(item => item.value === dimension))
+    return [dimension]
+  if (dimension === 'all' || dimension === 'autismdev_report')
+    return normalizeAutismDevExportSections(autismDevExportDimensionOptions.map(item => item.value))
+  return [defaultAutismDevReportSection()]
+}
+
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
+  const autismDevSections = isAutismDevRecord(row)
+    ? normalizeAutismDevExportSections(autismDevExportSections.value.length ? autismDevExportSections.value : autismDevReportSectionsForDimension(dimension))
+    : []
+  if (isAutismDevRecord(row)) {
+    if (!autismDevSections.length) {
+      messageService.warning('请选择导出内容')
+      return
+    }
+    if (autismDevSections.includes('resultAnalysis') && (autismDevExportAnalysisLoading.value || autismDevAnalysisLoading.value)) {
+      messageService.warning('评估结果分析读取中，请稍后')
+      return
+    }
+    if (autismDevSections.includes('resultAnalysis') && autismDevAnalysisIsEmpty()) {
+      messageService.warning('请先生成评估结果分析后再导出')
+      return
+    }
+  }
   exportingId.value = recordActionKey(row)
   try {
-    const response = isERXinRecord(row)
+    const response = isAutismDevRecord(row)
+      ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
+      : isERXinRecord(row)
       ? await downloadERXinExportPdf(row.id, dimension)
       : await downloadPEP3ExportPdf(row.id, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    const fallbackName = isERXinRecord(row)
+    const fallbackName = isAutismDevRecord(row)
+      ? `${row.studentName || '学员'}-孤独症儿童发展评估报告-${autismDevSections.map(autismDevReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
+      : isERXinRecord(row)
       ? `${row.studentName || '学员'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
       : `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
@@ -1046,7 +1471,9 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
 async function deleteRecord(row) {
   deletingId.value = recordActionKey(row)
   try {
-    if (isERXinRecord(row))
+    if (isAutismDevRecord(row))
+      await deleteAutismDevAssessmentRecordApi(row.id)
+    else if (isERXinRecord(row))
       await deleteERXinAssessmentRecordApi(row.id)
     else
       await deletePEP3AssessmentRecordApi(row.id)
@@ -1072,6 +1499,7 @@ onBeforeUnmount(() => {
   revokeReportPreviewUrl()
   resetReportPdfReady()
   resetInterpretationState()
+  resetAutismDevReportState()
 })
 </script>
 
@@ -1185,7 +1613,7 @@ onBeforeUnmount(() => {
             <div class="report-subtitle">
               {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
             </div>
-            <div v-if="!isERXinRecord(currentReport.record)" class="report-inline-summary">
+            <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record)" class="report-inline-summary">
               <strong>{{ reportTab === 'interpretation' ? '报告解读' : reportModulePages(activeReportModule) }}</strong>
               <span>{{ reportTab === 'interpretation' ? '查看或生成PEP-3报告解读。' : reportModuleDesc(activeReportModule) }}</span>
               <a-button
@@ -1222,7 +1650,7 @@ onBeforeUnmount(() => {
             </a-tooltip>
           </div>
         </div>
-        <div v-if="!isERXinRecord(currentReport.record)" class="report-module-area pep3-report-tabs">
+        <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record)" class="report-module-area pep3-report-tabs">
           <div class="report-module-grid">
             <button
               v-for="option in reportModuleOptions"
@@ -1246,6 +1674,36 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__dot" />
               <span class="report-module-chip__text">报告解读</span>
             </button>
+          </div>
+        </div>
+        <div v-else-if="isAutismDevRecord(currentReport.record)" class="report-module-area erxin-report-tabs">
+          <div class="report-module-grid autismdev-report-tabs">
+            <button
+              v-for="option in autismDevExportDimensionOptions"
+              :key="option.value"
+              type="button"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': activeAutismDevReportSection === option.value }"
+              :title="option.title"
+              @click="selectAutismDevReportSection(option.value)"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">{{ option.title }}</span>
+            </button>
+          </div>
+          <div class="report-module-summary erxin-report-tabs__summary">
+            <strong>{{ autismDevReportSectionTitle() }}</strong>
+            <span>{{ autismDevReportSectionDesc() }}</span>
+            <a-button
+              v-if="activeAutismDevReportSection === 'resultAnalysis'"
+              type="primary"
+              size="small"
+              :loading="autismDevAnalysisGenerating"
+              :disabled="autismDevAnalysisLoading"
+              @click="generateAutismDevResultAnalysis"
+            >
+              {{ autismDevAnalysisGenerating ? '生成中' : (autismDevAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
+            </a-button>
           </div>
         </div>
         <div v-else class="report-module-area erxin-report-tabs">
@@ -1286,7 +1744,74 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="report-module-content">
-          <div v-if="reportTab === 'result'" class="report-pdf-shell">
+          <div v-if="currentReportIsAutismDev() && activeAutismDevReportSection === 'resultAnalysis'" class="autismdev-analysis-shell">
+            <div v-if="autismDevAnalysisLoading" class="autismdev-analysis-state">
+              <a-spin size="small" />
+              <strong>评估结果分析读取中</strong>
+              <span>{{ autismDevAnalysisProgress || '正在读取已保存的评估结果分析...' }}</span>
+            </div>
+            <div v-else-if="autismDevAnalysisGenerating" class="autismdev-analysis-stream">
+              <div class="autismdev-analysis-stream__head">
+                <span>AI</span>
+                <div>
+                  <strong>AI正在生成评估结果分析</strong>
+                  <small>{{ autismDevAnalysisProgress || '正在生成评估结果分析...' }}</small>
+                </div>
+              </div>
+              <pre>{{ autismDevAnalysisStreamText || '正在建立分析结构，稍后开始输出内容...' }}</pre>
+            </div>
+            <div v-else-if="autismDevAnalysisError" class="autismdev-analysis-state">
+              <a-empty
+                description="评估结果分析加载失败"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <p>{{ autismDevAnalysisError }}</p>
+              <a-button size="small" type="primary" @click="generateAutismDevResultAnalysis">
+                重新生成
+              </a-button>
+            </div>
+            <div v-else-if="autismDevAnalysisIsEmpty()" class="autismdev-analysis-state">
+              <a-empty
+                description="评估结果分析尚未生成"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <p>点击“AI生成”后，系统会基于当前评估结果生成并保存分析表。</p>
+              <a-button size="small" type="primary" @click="generateAutismDevResultAnalysis">
+                AI生成
+              </a-button>
+            </div>
+            <div v-else class="autismdev-analysis-content">
+              <div class="autismdev-analysis-title">
+                <strong>{{ autismDevAnalysis?.title || '孤独症儿童评估结果分析表' }}</strong>
+                <span v-if="autismDevAnalysis?.generatedAt || autismDevAnalysis?.generatedBy">
+                  {{ autismDevAnalysis?.generatedBy || 'AI' }} {{ autismDevAnalysis?.generatedAt ? `· ${formatDateTime(autismDevAnalysis.generatedAt)}` : '' }}
+                </span>
+              </div>
+              <div class="autismdev-analysis-table">
+                <div class="autismdev-analysis-table__head">
+                  <span>能区</span>
+                  <span>现状</span>
+                  <span>优势</span>
+                  <span>弱势</span>
+                  <span>训练目标</span>
+                </div>
+                <div
+                  v-for="(row, index) in autismDevAnalysis.rows"
+                  :key="`${row.domain}-${index}`"
+                  class="autismdev-analysis-table__row"
+                >
+                  <strong>{{ row.domain || '-' }}</strong>
+                  <span>{{ row.status || '-' }}</span>
+                  <span>{{ row.strengths || '-' }}</span>
+                  <span>{{ row.weaknesses || '-' }}</span>
+                  <span>{{ row.targets || '-' }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="reportTab === 'result'" class="report-pdf-shell">
             <iframe
               v-if="reportPreviewUrl"
               :key="reportPreviewUrl"
@@ -1437,7 +1962,13 @@ onBeforeUnmount(() => {
           <small>{{ exportModalHint() }}</small>
         </div>
       </template>
-      <div class="export-dimension" :class="{ 'export-dimension--erxin': isERXinRecord(exportTargetRecord) }">
+      <div
+        class="export-dimension"
+        :class="{
+          'export-dimension--erxin': isERXinRecord(exportTargetRecord),
+          'export-dimension--autismdev': isAutismDevRecord(exportTargetRecord),
+        }"
+      >
         <div class="export-dimension__summary">
           <div class="export-dimension__file">
             PDF
@@ -1455,7 +1986,37 @@ onBeforeUnmount(() => {
             <strong>{{ activeExportDimensionOptions.length }} 项</strong>
           </div>
         </div>
-        <div v-if="isERXinRecord(exportTargetRecord)" class="erxin-export-card-list">
+        <div v-if="isAutismDevRecord(exportTargetRecord)" class="autismdev-export-card-list">
+          <div class="autismdev-export-toolbar">
+            <span>按 pad 端报告分段选择导出内容</span>
+            <button type="button" :disabled="!!exportingId" @click="toggleAllAutismDevExportSections">
+              {{ autismDevExportAllSelected ? '清空' : '全选' }}
+            </button>
+          </div>
+          <button
+            v-for="option in autismDevExportDimensionOptions"
+            :key="option.value"
+            type="button"
+            class="autismdev-export-row"
+            :class="{
+              'autismdev-export-row--active': autismDevExportSections.includes(option.value),
+              'autismdev-export-row--disabled': !isAutismDevExportSectionEnabled(option.value),
+            }"
+            :disabled="!!exportingId || !isAutismDevExportSectionEnabled(option.value)"
+            @click="toggleAutismDevExportSection(option.value)"
+          >
+            <span class="autismdev-export-row__check" />
+            <span class="autismdev-export-row__body">
+              <span class="autismdev-export-row__head">
+                <strong>{{ option.title }}</strong>
+                <em v-if="option.recommended">默认</em>
+                <em v-if="autismDevExportSectionStatus(option.value)" class="is-muted">{{ autismDevExportSectionStatus(option.value) }}</em>
+              </span>
+              <span class="autismdev-export-row__desc">{{ option.desc }}</span>
+            </span>
+          </button>
+        </div>
+        <div v-else-if="isERXinRecord(exportTargetRecord)" class="erxin-export-card-list">
           <button
             v-for="option in activeExportDimensionOptions"
             :key="option.value"
@@ -1506,7 +2067,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="export-dimension__footer">
-          <div class="export-dimension__selection">
+          <div v-if="isAutismDevRecord(exportTargetRecord)" class="export-dimension__selection">
+            <span>将导出</span>
+            <strong>{{ autismDevExportSections.length }} 项内容</strong>
+            <em>{{ autismDevExportSections.map(autismDevReportSectionTitle).join('、') || '未选择' }}</em>
+          </div>
+          <div v-else class="export-dimension__selection">
             <span>将导出</span>
             <strong>{{ exportDimensionTitle(selectedExportDimension) }}</strong>
             <em>{{ exportDimensionPages(selectedExportDimension) }}</em>
@@ -2256,6 +2822,217 @@ onBeforeUnmount(() => {
   }
 }
 
+.autismdev-report-tabs {
+  flex: 0 1 auto;
+  max-width: 520px;
+}
+
+.autismdev-analysis-shell {
+  min-height: 620px;
+  padding: 18px;
+  overflow-y: auto;
+  background: #fbfdff;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+  scrollbar-color: #c6d1df transparent;
+  scrollbar-width: thin;
+
+  &::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background: #c6d1df;
+    border-radius: 999px;
+  }
+}
+
+.autismdev-analysis-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 430px;
+  color: #7a8494;
+  font-size: 13px;
+
+  strong {
+    color: #1f2937;
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 22px;
+  }
+
+  span,
+  p {
+    margin: 0;
+    color: #7a8494;
+    font-size: 13px;
+    line-height: 20px;
+  }
+}
+
+.autismdev-analysis-stream {
+  min-height: 540px;
+  padding: 16px 18px;
+  background: #fff;
+  border: 1px solid #e6edf6;
+  border-radius: 10px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.04);
+}
+
+.autismdev-analysis-stream__head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 12px;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #edf1f6;
+
+  > span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    color: var(--pro-ant-color-primary);
+    font-size: 12px;
+    font-weight: 700;
+    background: #eef6ff;
+    border: 1px solid #d8eaff;
+    border-radius: 10px;
+  }
+
+  div {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+
+  strong {
+    color: #1f2937;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+  }
+
+  small {
+    color: #7a8494;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.autismdev-analysis-stream pre {
+  min-height: 440px;
+  max-height: 520px;
+  padding: 14px;
+  margin: 0;
+  overflow: auto;
+  color: #334155;
+  font-family: inherit;
+  font-size: 13px;
+  line-height: 24px;
+  white-space: pre-wrap;
+  background: #f8fafc;
+  border: 1px dashed #dbe7f5;
+  border-radius: 8px;
+}
+
+.autismdev-analysis-content {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.autismdev-analysis-title {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #edf1f6;
+  border-radius: 8px;
+
+  strong {
+    min-width: 0;
+    overflow: hidden;
+    color: #1f2937;
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 22px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: #8a94a6;
+    font-size: 12px;
+    line-height: 18px;
+  }
+}
+
+.autismdev-analysis-table {
+  overflow-x: auto;
+  background: #fff;
+  border: 1px solid #e6edf6;
+  border-radius: 8px;
+}
+
+.autismdev-analysis-table__head,
+.autismdev-analysis-table__row {
+  display: grid;
+  grid-template-columns: 92px repeat(4, minmax(128px, 1fr));
+  min-width: 760px;
+}
+
+.autismdev-analysis-table__head {
+  background: #f8fafc;
+
+  span {
+    padding: 10px 12px;
+    color: #475569;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 18px;
+    border-right: 1px solid #e6edf6;
+  }
+}
+
+.autismdev-analysis-table__row {
+  border-top: 1px solid #e6edf6;
+
+  strong,
+  span {
+    min-height: 68px;
+    padding: 10px 12px;
+    color: #334155;
+    font-size: 12px;
+    line-height: 20px;
+    white-space: pre-line;
+    border-right: 1px solid #edf1f6;
+  }
+
+  strong {
+    color: var(--pro-ant-color-primary);
+    font-weight: 700;
+    background: #fbfdff;
+  }
+}
+
+.autismdev-analysis-table__head span:last-child,
+.autismdev-analysis-table__row span:last-child {
+  border-right: 0;
+}
+
 .export-modal-title {
   display: flex;
   flex-direction: column;
@@ -2599,6 +3376,169 @@ onBeforeUnmount(() => {
   }
 }
 
+.export-dimension--autismdev {
+  padding-top: 14px;
+
+  .export-dimension__current {
+    min-width: 82px;
+  }
+}
+
+.autismdev-export-card-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.autismdev-export-toolbar {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  background: #f8fafc;
+  border: 1px solid #e8edf4;
+  border-radius: 8px;
+
+  span {
+    color: #64748b;
+    font-size: 12px;
+    line-height: 18px;
+  }
+
+  button {
+    height: 26px;
+    padding: 0 10px;
+    color: var(--pro-ant-color-primary);
+    font: inherit;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    background: #eef6ff;
+    border: 1px solid #d8eaff;
+    border-radius: 6px;
+
+    &:disabled {
+      cursor: not-allowed;
+      opacity: 0.7;
+    }
+  }
+}
+
+.autismdev-export-row {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 7px;
+  width: 100%;
+  min-height: 92px;
+  padding: 10px 12px;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  background: #fff;
+  border: 1px solid #e8edf4;
+  border-radius: 10px;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
+
+  &:hover {
+    background: #fbfdff;
+    border-color: #c9ddf7;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+  }
+}
+
+.autismdev-export-row--active {
+  background: #f7fbff;
+  border-color: #8dc6ff;
+  box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+}
+
+.autismdev-export-row--disabled {
+  opacity: 0.66;
+}
+
+.autismdev-export-row__check {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-top: 0;
+  background: #cbd5e1;
+  border: 3px solid #f1f5f9;
+  border-radius: 50%;
+}
+
+.autismdev-export-row--active .autismdev-export-row__check {
+  background: var(--pro-ant-color-primary);
+  border-color: #dcecff;
+}
+
+.autismdev-export-row__body {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  width: 100%;
+}
+
+.autismdev-export-row__head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+
+  strong {
+    min-width: 0;
+    color: #1f2937;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 20px;
+    white-space: normal;
+  }
+
+  em {
+    flex: 0 0 auto;
+    padding: 0 6px;
+    color: var(--pro-ant-color-primary);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+    line-height: 18px;
+    background: #eef6ff;
+    border-radius: 999px;
+  }
+
+  .is-muted {
+    color: #94a3b8;
+    background: #f1f5f9;
+  }
+}
+
+.autismdev-export-row__desc {
+  display: -webkit-box;
+  overflow: hidden;
+  color: #687386;
+  font-size: 12px;
+  line-height: 18px;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.autismdev-export-row:last-child {
+  grid-column: 1 / -1;
+  min-height: 72px;
+
+  .autismdev-export-row__desc {
+    -webkit-line-clamp: 2;
+  }
+}
+
 .erxin-export-card-list {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2759,6 +3699,10 @@ onBeforeUnmount(() => {
 
   .export-dimension__matrix {
     max-height: 55vh;
+  }
+
+  .autismdev-export-card-list {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .export-dimension__footer {

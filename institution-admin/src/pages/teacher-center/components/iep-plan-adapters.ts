@@ -22,6 +22,17 @@ import {
   saveERXinIEPPlanApi,
   syncERXinIEPPlanPeriodApi,
 } from '@/api/edu-center/erxin-assessment'
+import {
+  downloadAutismDevExecutionPlanWordApi,
+  downloadAutismDevIEPPlanWordApi,
+  generateAutismDevExecutionPlanAIStreamApi,
+  generateAutismDevIEPPlanAIStreamApi,
+  getAutismDevExecutionPlansApi,
+  getAutismDevIEPPlanApi,
+  saveAutismDevExecutionPlanApi,
+  saveAutismDevIEPPlanApi,
+  syncAutismDevIEPPlanPeriodApi,
+} from '@/api/edu-center/autismdev-assessment'
 
 const pep3MissingInterpretationConfirm = {
   title: '报告解读未生成',
@@ -93,7 +104,37 @@ const erxinAdapter = {
   downloadExecutionPlanWord: downloadERXinExecutionPlanWordApi,
 }
 
-const adapters = [pep3Adapter, erxinAdapter]
+const autismDevAdapter = {
+  key: 'AUTISMDEV',
+  code: 'AUTISMDEV',
+  aiLibraryLabel: 'IEP教研库v3.0',
+  generationBasisText: '孤独症儿童发展评估结果、评估结果分析和儿童训练记录',
+  generationSourceText: 'IEP教研库v3.0、孤独症儿童发展评估结果、评估结果分析和儿童训练记录',
+  generationFallbackBasisText: '孤独症儿童发展评估结果和儿童训练记录',
+  generationFallbackSourceText: 'IEP教研库v3.0、孤独症儿童发展评估结果和儿童训练记录',
+  generationDescription: '正在读取孤独症儿童发展评估结果、评估结果分析和儿童训练记录，并生成可编辑的IEP表格。',
+  emptyDescription: '点击“AI智能生成”后，系统会根据孤独症儿童发展评估结果、评估结果分析和近期训练记录实时生成表格。',
+  missingInterpretationConfirm: {
+    title: '评估结果分析未生成',
+    content: '系统将基于孤独症儿童发展评估结果和近期训练记录生成IEP。',
+    okText: '确定',
+    cancelText: '取消',
+  },
+  async shouldConfirmBeforeGenerate() {
+    return null
+  },
+  getIepPlan: getAutismDevIEPPlanApi,
+  saveIepPlan: saveAutismDevIEPPlanApi,
+  syncIepPlanPeriod: syncAutismDevIEPPlanPeriodApi,
+  generateIepPlanStream: generateAutismDevIEPPlanAIStreamApi,
+  downloadIepPlanWord: downloadAutismDevIEPPlanWordApi,
+  getExecutionPlans: getAutismDevExecutionPlansApi,
+  saveExecutionPlan: saveAutismDevExecutionPlanApi,
+  generateExecutionPlanStream: generateAutismDevExecutionPlanAIStreamApi,
+  downloadExecutionPlanWord: downloadAutismDevExecutionPlanWordApi,
+}
+
+const adapters = [pep3Adapter, erxinAdapter, autismDevAdapter]
 
 export type IEPPlanAssessmentAdapter = typeof pep3Adapter
 

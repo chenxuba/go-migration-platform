@@ -9,6 +9,10 @@ import {
   getERXinAssessmentRecordDetailApi,
   updateERXinAssessmentRecordConfigApi,
 } from '@/api/edu-center/erxin-assessment'
+import {
+  getAutismDevAssessmentRecordDetailApi,
+  updateAutismDevAssessmentRecordConfigApi,
+} from '@/api/edu-center/autismdev-assessment'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 
 const props = defineProps({
@@ -63,6 +67,19 @@ function normalizeDateValue(value) {
 function isERXinRecord(record) {
   const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
   return source === 'ERXIN' || source.startsWith('ERXIN')
+}
+
+function isAutismDevRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'AUTISMDEV'
+}
+
+function recordSourceType(record) {
+  if (isAutismDevRecord(record))
+    return 'AUTISMDEV'
+  if (isERXinRecord(record))
+    return 'ERXIN'
+  return 'PEP3'
 }
 
 function splitExaminerNames(value) {
@@ -183,13 +200,15 @@ async function initializeConfig() {
   fetchTeacherOptions()
 
   const recordId = row.id
-  const recordSource = isERXinRecord(row) ? 'ERXIN' : 'PEP3'
+  const recordSource = recordSourceType(row)
   detailLoading.value = true
   try {
-    const detail = unwrap(await (recordSource === 'ERXIN'
-      ? getERXinAssessmentRecordDetailApi(recordId)
-      : getPEP3AssessmentRecordDetailApi(recordId)))
-    if (props.record?.id !== recordId || !props.open || (isERXinRecord(props.record) ? 'ERXIN' : 'PEP3') !== recordSource)
+    const detail = unwrap(await (recordSource === 'AUTISMDEV'
+      ? getAutismDevAssessmentRecordDetailApi(recordId)
+      : recordSource === 'ERXIN'
+        ? getERXinAssessmentRecordDetailApi(recordId)
+        : getPEP3AssessmentRecordDetailApi(recordId)))
+    if (props.record?.id !== recordId || !props.open || recordSourceType(props.record) !== recordSource)
       return
     const originalExaminerName = getInputField(detail?.input, 'examinerName') || row.examinerName || ''
     const originalAssessmentDate = normalizeDateValue(getInputField(detail?.input, 'assessmentDate')) || normalizeDateValue(row.assessmentDate)
@@ -256,7 +275,9 @@ async function saveConfig() {
       examinerName,
       assessmentDate: dayjs(form.assessmentDate).format('YYYY-MM-DD'),
     }
-    if (isERXinRecord(row))
+    if (isAutismDevRecord(row))
+      await updateAutismDevAssessmentRecordConfigApi(payload)
+    else if (isERXinRecord(row))
       await updateERXinAssessmentRecordConfigApi(payload)
     else
       await updatePEP3AssessmentRecordConfigApi(payload)
