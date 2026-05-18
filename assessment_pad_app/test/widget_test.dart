@@ -2348,14 +2348,30 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('category-skeleton-0')),
         findsOneWidget);
-    expect(find.byKey(const ValueKey<String>('scale-card-skeleton-0')),
-        findsOneWidget);
+    final Finder firstScaleSkeleton =
+        find.byKey(const ValueKey<String>('scale-card-skeleton-0'));
+    expect(firstScaleSkeleton, findsOneWidget);
+    expect(find.text('正在加载量表'), findsOneWidget);
+    expect(find.text('可用'), findsOneWidget);
+    expect(find.text('全部'), findsOneWidget);
+    final Size skeletonCardSize = tester.getSize(firstScaleSkeleton);
 
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 320));
     await tester.pumpAndSettle();
 
     expect(find.text('PEP-3语言理解评核量表'), findsOneWidget);
+    final Finder loadedScaleCard = find.ancestor(
+      of: find.text('PEP-3语言理解评核量表'),
+      matching: find.byWidgetPredicate(
+        (Widget widget) => widget.runtimeType.toString() == '_ScaleCard',
+      ),
+    );
+    expect(loadedScaleCard, findsOneWidget);
+    expect(
+      tester.getSize(loadedScaleCard).height,
+      closeTo(skeletonCardSize.height, .1),
+    );
   });
 
   testWidgets('disabled scale start button opens student selector',
@@ -2387,6 +2403,56 @@ void main() {
 
     expect(find.text('开始测评前，请先选择本次测评对象。'), findsOneWidget);
     expect(find.text('确认选择并进入测评'), findsOneWidget);
+  });
+
+  testWidgets('student selector opens immediately before candidates finish',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              studentCandidatesDelay: const Duration(milliseconds: 500),
+            ),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pump(const Duration(milliseconds: 50));
+
+    expect(find.text('选择学员'), findsOneWidget);
+    expect(find.text('开始测评前，请先选择本次测评对象。'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('student-selector-skeleton')),
+      findsOneWidget,
+    );
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(find.text('儿童姓名'), findsOneWidget);
+    expect(find.text('最近测评'), findsOneWidget);
+    expect(find.text('张一鸣'), findsNothing);
+
+    await tester.pump(const Duration(milliseconds: 520));
+    await tester.pumpAndSettle();
+
+    expect(
+      find.byKey(const ValueKey<String>('student-selector-skeleton')),
+      findsNothing,
+    );
+    expect(find.text('张一鸣'), findsOneWidget);
   });
 
   testWidgets('student selector jumps by alphabet index',
@@ -7063,6 +7129,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
   _FakeAssessmentScaleClient({
     this.categoriesDelay = Duration.zero,
     this.libraryDelay = Duration.zero,
+    this.studentCandidatesDelay = Duration.zero,
     AssessmentDraftPage? draftPage,
     List<AssessmentStudentCandidate>? studentCandidates,
     Map<int, List<AssessmentStudentCandidate>>? studentCandidatesByStatus,
@@ -7078,6 +7145,7 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
 
   final Duration categoriesDelay;
   final Duration libraryDelay;
+  final Duration studentCandidatesDelay;
   final AssessmentDraftPage draftPage;
   final List<AssessmentScaleItem> scaleItems;
   final List<AssessmentStudentCandidate> studentCandidates;
@@ -7249,6 +7317,9 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
     int pageIndex = 1,
     int pageSize = 20,
   }) async {
+    if (studentCandidatesDelay > Duration.zero) {
+      await Future<void>.delayed(studentCandidatesDelay);
+    }
     requestedStudentStatuses.add(studentStatus);
     final List<AssessmentStudentCandidate> items =
         studentCandidatesByStatus[studentStatus] ??

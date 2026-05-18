@@ -68,7 +68,6 @@ class _AssessmentScaleCategoryScreenState
   bool _scalesInitialized = false;
   bool _bootstrapLoading = true;
   bool _draftsLoading = true;
-  bool _studentsLoading = false;
   int _draftCount = 0;
   int _scaleLoadSerial = 0;
   int _studentCandidateStatus = AssessmentStudentStatuses.enrolled;
@@ -419,10 +418,18 @@ class _AssessmentScaleCategoryScreenState
   ]) async {
     final int initialStatus =
         _studentStatusForTab(_selectedStudent?.studentStatus);
-    _studentCandidateStatus = initialStatus;
-    if (!_studentCandidatesByStatus.containsKey(initialStatus) &&
-        !_studentsLoading) {
-      await _loadStudentCandidates(initialStatus);
+    final List<AssessmentStudentCandidate>? cached =
+        _studentCandidatesByStatus[initialStatus];
+    if (mounted) {
+      setState(() {
+        _studentCandidateStatus = initialStatus;
+        _studentErrorMessage = null;
+        if (cached != null) {
+          _studentCandidates = cached;
+        } else {
+          _studentCandidates = <AssessmentStudentCandidate>[];
+        }
+      });
     }
     if (!mounted) {
       return;
@@ -447,48 +454,6 @@ class _AssessmentScaleCategoryScreenState
     return page.items;
   }
 
-  Future<void> _loadStudentCandidates([
-    int status = AssessmentStudentStatuses.enrolled,
-  ]) async {
-    final int normalizedStatus = _studentStatusForTab(status);
-    if (mounted) {
-      setState(() {
-        _studentCandidateStatus = normalizedStatus;
-        _studentsLoading = true;
-        _studentErrorMessage = null;
-      });
-    }
-    try {
-      final AssessmentStudentCandidatePage page =
-          await _fetchStudentCandidates(normalizedStatus);
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _studentCandidatesByStatus[normalizedStatus] = page.items;
-        _studentCandidates = page.items;
-        _studentsLoading = false;
-        _studentErrorMessage = null;
-      });
-    } on AssessmentScaleApiException catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _studentsLoading = false;
-        _studentErrorMessage = error.message;
-      });
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _studentsLoading = false;
-        _studentErrorMessage = '学员加载失败：$error';
-      });
-    }
-  }
-
   Future<AssessmentStudentCandidatePage> _fetchStudentCandidates(
     int status,
   ) async {
@@ -510,13 +475,16 @@ class _AssessmentScaleCategoryScreenState
       context: context,
       barrierColor: Colors.black.withOpacity(.18),
       builder: (BuildContext dialogContext) {
+        final List<AssessmentStudentCandidate>? cached =
+            _studentCandidatesByStatus[_studentCandidateStatus];
+        final bool hasCached = cached != null;
         return PadDialogViewport(
           child: _StudentDialog(
-            students: _studentCandidates,
+            students: cached ?? _studentCandidates,
             selectedStudent: _selectedStudent,
             initialStatus: _studentCandidateStatus,
-            loading: _studentsLoading,
-            errorMessage: _studentErrorMessage,
+            loading: !hasCached,
+            errorMessage: hasCached ? null : _studentErrorMessage,
             confirmLabel:
                 scaleToOpenAfterConfirm == null ? '确认选择' : '确认选择并进入测评',
             onLoadStudents: _loadStudentCandidatesForDialog,
@@ -1136,73 +1104,28 @@ class _ScaleBootstrapContent extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
-        const SizedBox(
-          height: 44,
-          child: Row(
-            children: <Widget>[
-              Text(
-                '全部量表',
-                style: TextStyle(
-                  color: _ScaleColors.ink,
-                  fontSize: 26,
-                  fontWeight: FontWeight.w900,
-                ),
-              ),
-              Spacer(),
-              _ScaleSkeletonBlock(width: 96, height: 26, radius: 10),
-            ],
-          ),
-        ),
-        const SizedBox(height: 10),
-        Expanded(
-          child: GridView.builder(
-            padding: EdgeInsets.zero,
-            physics: const NeverScrollableScrollPhysics(),
-            itemCount: 5,
-            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: 3,
-              crossAxisSpacing: 14,
-              mainAxisSpacing: 14,
-              mainAxisExtent: 224,
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            const _ScaleToolbar(
+              title: '全部量表',
+              searchQuery: '',
+              visibleCount: 0,
+              summary: AssessmentScaleLibrarySummary(),
+              loading: true,
             ),
-            itemBuilder: (BuildContext context, int index) {
-              return Container(
-                key: index == 0
-                    ? const ValueKey<String>('scale-card-skeleton-0')
-                    : null,
-                decoration: BoxDecoration(
-                  color: _ScaleColors.card.withOpacity(.9),
-                  borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: _ScaleColors.line),
-                  boxShadow: _scaleShadow(
-                    color: const Color(0x0EB05F32),
-                    blur: 16,
-                    offset: const Offset(0, 8),
-                  ),
-                ),
-                padding: const EdgeInsets.all(12),
-                child: const Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    _ScaleSkeletonBlock(height: 98, radius: 16),
-                    SizedBox(height: 10),
-                    _ScaleSkeletonBlock(
-                      widthFactor: .62,
-                      height: 16,
-                      radius: 8,
-                    ),
-                    SizedBox(height: 8),
-                    _ScaleSkeletonBlock(height: 28, radius: 12),
-                  ],
-                ),
-              );
-            },
-          ),
-        ),
-      ],
+            const SizedBox(height: _scaleToolbarGap),
+            Expanded(
+              child: _ScaleGridSkeleton(
+                columns: _scaleGridColumnCount(constraints.maxWidth),
+                cardHeight: _scaleGridCardHeight(constraints),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }
@@ -2826,6 +2749,13 @@ class _StudentDialogState extends State<_StudentDialog> {
       _pendingByStatus[_studentStatusForTab(selected.studentStatus)] = selected;
     }
     _pendingStudent = _pendingByStatus[_activeStatus];
+    if (_loading && _students.isEmpty && _errorMessage == null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          unawaited(_loadStatus(_activeStatus));
+        }
+      });
+    }
   }
 
   @override
@@ -2924,15 +2854,7 @@ class _StudentDialogState extends State<_StudentDialog> {
 
   Widget _buildContent() {
     if (_loading) {
-      return const SizedBox(
-        height: _StudentDialogMetrics.contentHeight,
-        child: Center(
-          child: CircularProgressIndicator(
-            strokeWidth: 3,
-            color: _ScaleColors.orange,
-          ),
-        ),
-      );
+      return const _StudentDialogSkeletonContent();
     }
     if (_errorMessage != null) {
       return SizedBox(
@@ -3209,6 +3131,147 @@ class _StudentDialogHeaderText extends StatelessWidget {
         fontSize: 13,
         height: 1,
         fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _StudentDialogSkeletonContent extends StatelessWidget {
+  const _StudentDialogSkeletonContent();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      key: const ValueKey<String>('student-selector-skeleton'),
+      height: _StudentDialogMetrics.contentHeight,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Expanded(
+            child: Column(
+              children: <Widget>[
+                _StudentDialogHeaderRow(),
+                Expanded(child: _StudentDialogSkeletonList()),
+              ],
+            ),
+          ),
+          _StudentAlphabetIndex(
+            activeLetters: const <String>{},
+            onLetterTap: (_) {},
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentDialogSkeletonList extends StatelessWidget {
+  const _StudentDialogSkeletonList();
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(12, 0, 8, 12),
+      physics: const NeverScrollableScrollPhysics(),
+      children: const <Widget>[
+        _StudentDialogSkeletonGroup(),
+        _StudentDialogSkeletonGroup(),
+      ],
+    );
+  }
+}
+
+class _StudentDialogSkeletonGroup extends StatelessWidget {
+  const _StudentDialogSkeletonGroup();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _StudentLetterSkeletonHeader(),
+        _StudentDialogSkeletonItem(),
+        SizedBox(height: 8),
+        _StudentDialogSkeletonItem(),
+        SizedBox(height: 8),
+      ],
+    );
+  }
+}
+
+class _StudentLetterSkeletonHeader extends StatelessWidget {
+  const _StudentLetterSkeletonHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: _StudentDialogGroup.headerHeight,
+      alignment: Alignment.centerLeft,
+      padding: const EdgeInsets.symmetric(horizontal: 4),
+      child: const Row(
+        children: <Widget>[
+          _ScaleSkeletonBlock(width: 10, height: 12, radius: 6),
+          SizedBox(width: 7),
+          Expanded(
+            child: Divider(
+              height: 1,
+              thickness: 1,
+              color: _ScaleColors.lineSoft,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StudentDialogSkeletonItem extends StatelessWidget {
+  const _StudentDialogSkeletonItem();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(13),
+        border: Border.all(color: _ScaleColors.lineSoft),
+      ),
+      child: const Row(
+        children: <Widget>[
+          Expanded(
+            flex: 2,
+            child: Row(
+              children: <Widget>[
+                _ScaleSkeletonBlock(width: 34, height: 34, radius: 99),
+                SizedBox(width: 10),
+                Expanded(
+                  child: _ScaleSkeletonBlock(widthFactor: .62, height: 15),
+                ),
+              ],
+            ),
+          ),
+          Expanded(child: _ScaleSkeletonBlock(widthFactor: .38, height: 14)),
+          Expanded(
+            flex: 2,
+            child: _ScaleSkeletonBlock(widthFactor: .48, height: 14),
+          ),
+          Expanded(
+            flex: 2,
+            child: _ScaleSkeletonBlock(widthFactor: .70, height: 14),
+          ),
+          Expanded(
+            flex: 2,
+            child: _ScaleSkeletonBlock(widthFactor: .56, height: 14),
+          ),
+          SizedBox(width: 12),
+          _ScaleSkeletonBlock(width: 22, height: 22, radius: 99),
+        ],
       ),
     );
   }
@@ -4522,8 +4585,8 @@ class _ScaleGridSkeleton extends StatelessWidget {
       itemCount: columns * 2,
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: columns,
-        crossAxisSpacing: 14,
-        mainAxisSpacing: 14,
+        crossAxisSpacing: _scaleGridGap,
+        mainAxisSpacing: _scaleGridGap,
         mainAxisExtent: cardHeight,
       ),
       itemBuilder: (BuildContext context, int index) {
@@ -4543,32 +4606,34 @@ class _ScaleCardSkeleton extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: _ScaleColors.card.withOpacity(.9),
+        color: _ScaleColors.card.withOpacity(.96),
         borderRadius: BorderRadius.circular(20),
         border: Border.all(color: _ScaleColors.line, width: 1.1),
-        boxShadow: _scaleShadow(
-          color: const Color(0x0DB05F32),
-          blur: 18,
-          offset: const Offset(0, 8),
-        ),
+        boxShadow: _scaleShadow(),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: const <Widget>[
           Expanded(child: _ScaleCoverSkeleton()),
           SizedBox(height: 11),
-          _ScaleSkeletonBlock(widthFactor: .78, height: 20),
-          SizedBox(height: 10),
           Row(
             children: <Widget>[
-              _ScaleSkeletonBlock(width: 54, height: 24, radius: 10),
-              SizedBox(width: 8),
-              _ScaleSkeletonBlock(width: 64, height: 24, radius: 10),
-              SizedBox(width: 8),
-              _ScaleSkeletonBlock(width: 58, height: 24, radius: 10),
+              Expanded(
+                child: _ScaleSkeletonBlock(widthFactor: .78, height: 20),
+              ),
             ],
           ),
           SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              _ScaleSkeletonBlock(width: 48, height: 30, radius: 10),
+              SizedBox(width: 6),
+              _ScaleSkeletonBlock(width: 58, height: 30, radius: 10),
+              SizedBox(width: 6),
+              _ScaleSkeletonBlock(width: 52, height: 30, radius: 10),
+            ],
+          ),
+          SizedBox(height: 10),
           _ScaleSkeletonBlock(height: 38, radius: 12),
         ],
       ),
@@ -5039,14 +5104,8 @@ class _ScaleMainContent extends StatelessWidget {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        const double gap = 14;
-        const double toolbarHeight = 44;
-        const double toolbarGap = 10;
-        final int columns = constraints.maxWidth < 760 ? 2 : 3;
-        final double cardHeight =
-            ((constraints.maxHeight - toolbarHeight - gap - toolbarGap) / 2)
-                .clamp(252.0, 292.0)
-                .toDouble();
+        final int columns = _scaleGridColumnCount(constraints.maxWidth);
+        final double cardHeight = _scaleGridCardHeight(constraints);
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -5058,7 +5117,7 @@ class _ScaleMainContent extends StatelessWidget {
               summary: summary,
               loading: loading,
             ),
-            const SizedBox(height: toolbarGap),
+            const SizedBox(height: _scaleToolbarGap),
             if (errorMessage != null)
               Expanded(
                 child: _ScaleErrorState(
@@ -5089,8 +5148,8 @@ class _ScaleMainContent extends StatelessWidget {
                       itemCount: scales.length,
                       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                         crossAxisCount: columns,
-                        crossAxisSpacing: gap,
-                        mainAxisSpacing: gap,
+                        crossAxisSpacing: _scaleGridGap,
+                        mainAxisSpacing: _scaleGridGap,
                         mainAxisExtent: cardHeight,
                       ),
                       itemBuilder: (BuildContext context, int index) {
@@ -5380,6 +5439,24 @@ class _ScaleSearchEmpty extends StatelessWidget {
       ),
     );
   }
+}
+
+const double _scaleGridGap = 14;
+const double _scaleToolbarHeight = 44;
+const double _scaleToolbarGap = 10;
+
+int _scaleGridColumnCount(double width) {
+  return width < 760 ? 2 : 3;
+}
+
+double _scaleGridCardHeight(BoxConstraints constraints) {
+  return ((constraints.maxHeight -
+              _scaleToolbarHeight -
+              _scaleGridGap -
+              _scaleToolbarGap) /
+          2)
+      .clamp(252.0, 292.0)
+      .toDouble();
 }
 
 class _ScaleCard extends StatelessWidget {
