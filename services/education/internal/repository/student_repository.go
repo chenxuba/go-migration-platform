@@ -146,6 +146,24 @@ func (repo *Repository) UpdateStudentStatus(ctx context.Context, instID int64, d
 	return err
 }
 
+func (repo *Repository) UpdateStudentGender(ctx context.Context, instID, studentID int64, sex int, operatorID int64) (bool, error) {
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_student
+		SET stu_sex = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, sex, operatorID, studentID, instID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
 func (repo *Repository) BatchAssignSalesperson(ctx context.Context, instID int64, salespersonID int64, studentIDs []int64) error {
 	if len(studentIDs) == 0 {
 		return nil

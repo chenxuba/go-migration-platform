@@ -12,6 +12,7 @@ import 'package:assessment_pad_app/iep_plan_client.dart';
 import 'package:assessment_pad_app/main.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_page.dart';
+import 'package:assessment_pad_app/shuangxi_assessment_page.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
@@ -2669,6 +2670,97 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('周小天 * 4岁3天'), findsOneWidget);
+  });
+
+  testWidgets('Shuangxi gender update syncs selected student selector cache',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    ShuangxiAssessmentLaunchArgs? openedArgs;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              scaleItems: const <AssessmentScaleItem>[_shuangxiAScaleItem],
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 41,
+                  shortName: '顾',
+                  name: '顾未知',
+                  avatarUrl: '',
+                  gender: '-',
+                  age: '7岁',
+                  birthDate: '2019-05-18',
+                  contactPhone: '妈妈 136****0041',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+        onGenerateRoute: (RouteSettings settings) {
+          if (settings.name == '/shuangxi-a-assessment') {
+            final ShuangxiAssessmentLaunchArgs args =
+                settings.arguments! as ShuangxiAssessmentLaunchArgs;
+            openedArgs = args;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (BuildContext context) => Scaffold(
+                body: Center(
+                  child: ElevatedButton(
+                    key: const ValueKey<String>(
+                      'fake-shuangxi-sync-gender',
+                    ),
+                    onPressed: () {
+                      args.onStudentGenderUpdated?.call('男');
+                      Navigator.of(context).pop();
+                    },
+                    child: const Text('同步性别并返回'),
+                  ),
+                ),
+              ),
+            );
+          }
+          return null;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('顾未知'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+
+    expect(openedArgs?.studentId, 41);
+    expect(openedArgs?.studentGender, '-');
+
+    await tester.tap(find.byKey(const ValueKey<String>(
+      'fake-shuangxi-sync-gender',
+    )));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byTooltip('点击切换学员'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('顾未知'), findsOneWidget);
+    expect(find.text('男'), findsOneWidget);
+    expect(find.text('-'), findsNothing);
   });
 
   testWidgets('ERXin scale blocks launch when student is over six years old',
@@ -7046,6 +7138,34 @@ const AssessmentScaleItem _autismDevScaleItem = AssessmentScaleItem(
   posterUrl: '',
   executionEntry: 'autismdev',
   apiPackage: 'autismdev',
+);
+
+const AssessmentScaleItem _shuangxiAScaleItem = AssessmentScaleItem(
+  id: 5,
+  name: '双溪课程评量表A',
+  code: 'SHUANGXI_A',
+  category: '标准化测评',
+  scenario: '现场测评',
+  ageRange: '0岁-18岁',
+  ageMinMonths: 0,
+  ageMaxMonths: 216,
+  duration: '40-60分钟',
+  durationMinMinutes: 40,
+  durationMaxMinutes: 60,
+  currentVersion: '2026',
+  itemCount: 209,
+  domainCount: 7,
+  monthUsage: 0,
+  usageCount: 0,
+  latestUse: '',
+  dataStatus: 'ready',
+  status: 'available',
+  statusText: '可用',
+  updatedAt: '2026-05-18 10:00:00',
+  summary: '双溪课程评量表A',
+  posterUrl: '',
+  executionEntry: 'shuangxi-a',
+  apiPackage: 'shuangxi',
 );
 
 const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(

@@ -22,6 +22,7 @@ class ShuangxiAssessmentLaunchArgs {
     this.assessmentDate = '',
     this.examinerName = '',
     this.studentGender = '',
+    this.onStudentGenderUpdated,
     this.scaleName = '双溪课程评量表A',
   });
 
@@ -33,6 +34,7 @@ class ShuangxiAssessmentLaunchArgs {
   final String assessmentDate;
   final String examinerName;
   final String studentGender;
+  final ValueChanged<String>? onStudentGenderUpdated;
   final String scaleName;
 }
 
@@ -88,6 +90,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   bool _itemLoading = false;
   bool _autoNext = true;
   bool _draftDialogShown = false;
+  bool _genderDialogShown = false;
   bool _savingDraft = false;
   bool _submitting = false;
   bool _saveDraftFutureSilent = false;
@@ -127,6 +130,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       _detectedDraftDetailDraftId = 0;
       _detectedDraftDetailRequest = null;
       _draftDialogShown = false;
+      _genderDialogShown = false;
       _draftDetectionSerial = draftDetectionSerial;
     });
     final SharedPreferences prefs = await SharedPreferences.getInstance();
@@ -193,6 +197,13 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         _loading = false;
         _autoSaveText = _draftId > 0 ? '已载入草稿' : '已准备';
       });
+      final bool genderReady = await _ensureStudentGenderSelected();
+      if (!mounted || draftDetectionSerial != _draftDetectionSerial) {
+        return;
+      }
+      if (!genderReady) {
+        return;
+      }
       if (detectedDraftRequest != null) {
         unawaited(
           _completeDetectedDraftLookup(
@@ -251,6 +262,64 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       return null;
     }
     return page.items.first;
+  }
+
+  Future<bool> _ensureStudentGenderSelected() async {
+    if (_studentId <= 0 ||
+        _normalizeShuangxiGender(_studentGender) != _ShuangxiGender.unknown) {
+      return true;
+    }
+    if (!mounted || _genderDialogShown) {
+      return false;
+    }
+    _genderDialogShown = true;
+    final String studentName =
+        _studentName.trim().isEmpty ? '当前学生' : _studentName.trim();
+    final String? selectedGender = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(.32),
+      builder: (BuildContext dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: PadDialogViewport(
+            child: _StudentGenderRequiredDialog(
+              studentName: studentName,
+              onCancel: () {
+                Navigator.of(dialogContext).pop();
+                widget.onBack();
+              },
+              onConfirm: (String gender) async {
+                final String updatedGender =
+                    await widget.client.updateStudentGender(
+                  _token,
+                  studentId: _studentId,
+                  gender: gender,
+                );
+                if (dialogContext.mounted) {
+                  Navigator.of(dialogContext).pop(updatedGender);
+                }
+              },
+            ),
+          ),
+        );
+      },
+    );
+    if (!mounted) {
+      return false;
+    }
+    if (_normalizeShuangxiGender(selectedGender ?? '') ==
+        _ShuangxiGender.unknown) {
+      return false;
+    }
+    setState(() {
+      _studentGender = selectedGender!.trim();
+      _applyGenderDefaultsToScores();
+      _autoSaveText = '已更新学生性别';
+    });
+    widget.args.onStudentGenderUpdated?.call(selectedGender!.trim());
+    _showMessage('学生性别已更新', tone: PadMessageTone.success);
+    return true;
   }
 
   void _prefetchDetectedDraftDetail(
@@ -1590,6 +1659,294 @@ class _TopActionButton extends StatelessWidget {
                 style: TextStyle(
                   color: filled ? Colors.white : _ShuangxiColors.orangeDeep,
                   fontSize: 13,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StudentGenderRequiredDialog extends StatefulWidget {
+  const _StudentGenderRequiredDialog({
+    required this.studentName,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final String studentName;
+  final VoidCallback onCancel;
+  final Future<void> Function(String gender) onConfirm;
+
+  @override
+  State<_StudentGenderRequiredDialog> createState() =>
+      _StudentGenderRequiredDialogState();
+}
+
+class _StudentGenderRequiredDialogState
+    extends State<_StudentGenderRequiredDialog> {
+  String _selectedGender = '';
+  String _error = '';
+  bool _saving = false;
+
+  Future<void> _submit() async {
+    if (_saving || _selectedGender.isEmpty) {
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = '';
+    });
+    try {
+      await widget.onConfirm(_selectedGender);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _error = '更新失败：$error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 520,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 30,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEEE3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.person_search_rounded,
+                      color: _ShuangxiColors.orange,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '请先确认学生性别',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: _ShuangxiColors.ink,
+                        fontSize: 19,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ShuangxiColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 24, 30, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    '双溪课程评量表A包含按性别计算的题目。请确认 ${widget.studentName} 的性别，系统会同步更新学生资料。',
+                    style: const TextStyle(
+                      color: _ShuangxiColors.ink,
+                      fontSize: 15,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Row(
+                    children: <Widget>[
+                      Expanded(
+                        child: _GenderSelectButton(
+                          label: '男',
+                          icon: Icons.male_rounded,
+                          active: _selectedGender == '男',
+                          enabled: !_saving,
+                          onTap: () => setState(() => _selectedGender = '男'),
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: _GenderSelectButton(
+                          label: '女',
+                          icon: Icons.female_rounded,
+                          active: _selectedGender == '女',
+                          enabled: !_saving,
+                          onTap: () => setState(() => _selectedGender = '女'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  if (_error.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      _error,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFB8422E),
+                        fontSize: 13,
+                        height: 1.25,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ShuangxiColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+              child: Row(
+                children: <Widget>[
+                  const Expanded(
+                    child: Text(
+                      '确认后会关闭弹窗并进入测评工作台',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _ShuangxiColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: _saving ? null : widget.onCancel,
+                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                    label: const Text('返回'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _ShuangxiColors.body,
+                      side: const BorderSide(color: _ShuangxiColors.line),
+                      minimumSize: const Size(98, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  ElevatedButton.icon(
+                    onPressed:
+                        _saving || _selectedGender.isEmpty ? null : _submit,
+                    icon: _saving
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.check_rounded, size: 18),
+                    label: const Text('确定'),
+                    style: ElevatedButton.styleFrom(
+                      elevation: 0,
+                      backgroundColor: _ShuangxiColors.orange,
+                      foregroundColor: Colors.white,
+                      disabledBackgroundColor: const Color(0xFFFFD8C3),
+                      disabledForegroundColor: Colors.white,
+                      minimumSize: const Size(98, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GenderSelectButton extends StatelessWidget {
+  const _GenderSelectButton({
+    required this.label,
+    required this.icon,
+    required this.active,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final IconData icon;
+  final bool active;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          height: 64,
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFFFFF7EF) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: active ? _ShuangxiColors.orange : _ShuangxiColors.line,
+              width: active ? 1.4 : 1,
+            ),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              if (active)
+                const Icon(
+                  Icons.check_circle_rounded,
+                  color: _ShuangxiColors.orange,
+                  size: 22,
+                )
+              else
+                Icon(icon, color: _ShuangxiColors.orange, size: 22),
+              const SizedBox(width: 8),
+              Text(
+                label,
+                maxLines: 1,
+                style: TextStyle(
+                  color: enabled ? _ShuangxiColors.ink : _ShuangxiColors.muted,
+                  fontSize: 17,
+                  height: 1,
                   fontWeight: FontWeight.w900,
                 ),
               ),

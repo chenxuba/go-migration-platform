@@ -216,6 +216,29 @@ func (handler *Handler) scaleAssessmentStudentCandidates(w http.ResponseWriter, 
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) updateScaleAssessmentStudentGender(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ScaleAssessmentStudentGenderUpdateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	gender, err := handler.service.UpdateScaleAssessmentStudentGender(claims.UserID, req)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, map[string]string{"gender": gender}, ctx.RequestID)
+}
+
 func (handler *Handler) pep3AssessmentFormTemplateSummary(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	if _, ok := handler.requireAuth(w, r, ctx); !ok {

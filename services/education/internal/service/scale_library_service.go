@@ -56,6 +56,57 @@ func (svc *Service) ListScaleAssessmentStudentCandidates(userID int64, query mod
 	return svc.repo.ListScaleAssessmentStudentCandidates(ctx, instID, query)
 }
 
+func (svc *Service) UpdateScaleAssessmentStudentGender(userID int64, req model.ScaleAssessmentStudentGenderUpdateRequest) (string, error) {
+	if svc.repo == nil {
+		return "", errors.New("repository is not configured")
+	}
+	if req.StudentID <= 0 {
+		return "", errors.New("studentId is required")
+	}
+	sex, gender, err := scaleAssessmentStudentGenderValue(req.Gender)
+	if err != nil {
+		return "", err
+	}
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("no institution context")
+		}
+		return "", err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("no institution user context")
+		}
+		return "", err
+	}
+	beforeGender, _ := svc.repo.GetStudentGenderText(ctx, instID, req.StudentID)
+	updated, err := svc.repo.UpdateStudentGender(ctx, instID, req.StudentID, sex, operatorID)
+	if err != nil {
+		return "", err
+	}
+	if !updated {
+		return "", errors.New("学生信息不存在")
+	}
+	if strings.TrimSpace(beforeGender) != gender {
+		_ = svc.repo.InsertStudentChangeRecord(ctx, instID, req.StudentID, operatorID, `性别从"`+displayStudentChangeValue(beforeGender)+`"修改为"`+gender+`";`)
+	}
+	return gender, nil
+}
+
+func scaleAssessmentStudentGenderValue(value string) (int, string, error) {
+	normalized := strings.ToLower(strings.TrimSpace(value))
+	if normalized == "0" || normalized == "f" || normalized == "female" || strings.Contains(normalized, "女") {
+		return 0, "女", nil
+	}
+	if normalized == "1" || normalized == "m" || normalized == "male" || strings.Contains(normalized, "男") {
+		return 1, "男", nil
+	}
+	return -1, "", errors.New("gender must be 男 or 女")
+}
+
 func (svc *Service) ListScaleCategoryOptions(userID int64) ([]string, error) {
 	if svc.repo == nil {
 		return nil, errors.New("repository is not configured")

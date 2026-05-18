@@ -45,6 +45,10 @@ const String defaultShuangxiRecordCategoryStatsPath = String.fromEnvironment(
   'SHUANGXI_RECORD_CATEGORY_STATS_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/records/category-stats',
 );
+const String defaultShuangxiStudentGenderUpdatePath = String.fromEnvironment(
+  'SHUANGXI_STUDENT_GENDER_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/scales/student-gender/update',
+);
 
 abstract class ShuangxiAssessmentClient {
   const ShuangxiAssessmentClient();
@@ -87,6 +91,12 @@ abstract class ShuangxiAssessmentClient {
   });
 
   Future<ShuangxiRecordDetail> fetchRecordDetail(String token, int id);
+
+  Future<String> updateStudentGender(
+    String token, {
+    required int studentId,
+    required String gender,
+  });
 }
 
 class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
@@ -101,6 +111,7 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     this.draftSubmitPath = defaultShuangxiDraftSubmitPath,
     this.recordsPagePath = defaultShuangxiRecordsPagePath,
     this.recordDetailPath = defaultShuangxiRecordDetailPath,
+    this.studentGenderUpdatePath = defaultShuangxiStudentGenderUpdatePath,
     this.httpClient,
   });
 
@@ -114,6 +125,7 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   final String draftSubmitPath;
   final String recordsPagePath;
   final String recordDetailPath;
+  final String studentGenderUpdatePath;
   final http.Client? httpClient;
 
   static final http.Client _sharedHttpClient = http.Client();
@@ -322,6 +334,30 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
       throw const AssessmentScaleApiException('测评记录详情返回格式不正确');
     }
     return ShuangxiRecordDetail.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<String> updateStudentGender(
+    String token, {
+    required int studentId,
+    required String gender,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, studentGenderUpdatePath),
+      token,
+      <String, dynamic>{
+        'studentId': studentId,
+        'gender': gender,
+      },
+      fallbackMessage: '学生性别更新失败',
+    );
+    if (data is Map) {
+      final String updated = '${data['gender'] ?? ''}'.trim();
+      if (updated.isNotEmpty) {
+        return updated;
+      }
+    }
+    return gender.trim();
   }
 
   Future<Object?> _getJson(

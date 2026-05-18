@@ -142,3 +142,29 @@ func TestApplyShuangxiAGenderDefaults(t *testing.T) {
 		t.Fatalf("unknown gender scores were changed: %+v", unknownScores)
 	}
 }
+
+func TestScaleAssessmentStudentGenderValue(t *testing.T) {
+	cases := []struct {
+		raw        string
+		wantSex    int
+		wantGender string
+	}{
+		{raw: "男", wantSex: 1, wantGender: "男"},
+		{raw: "male", wantSex: 1, wantGender: "男"},
+		{raw: "女", wantSex: 0, wantGender: "女"},
+		{raw: "female", wantSex: 0, wantGender: "女"},
+	}
+	for _, tc := range cases {
+		sex, gender, err := scaleAssessmentStudentGenderValue(tc.raw)
+		if err != nil {
+			t.Fatalf("scaleAssessmentStudentGenderValue(%q) returned error: %v", tc.raw, err)
+		}
+		if sex != tc.wantSex || gender != tc.wantGender {
+			t.Fatalf("scaleAssessmentStudentGenderValue(%q) = (%d, %q), want (%d, %q)", tc.raw, sex, gender, tc.wantSex, tc.wantGender)
+		}
+	}
+
+	if _, _, err := scaleAssessmentStudentGenderValue("-"); err == nil {
+		t.Fatalf("scaleAssessmentStudentGenderValue(-) expected error")
+	}
+}

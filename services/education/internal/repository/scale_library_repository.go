@@ -343,7 +343,7 @@ func (repo *Repository) ListScaleAssessmentStudentCandidates(ctx context.Context
 				s.id,
 				IFNULL(s.stu_name, ''),
 				IFNULL(s.avatar_url, ''),
-				IFNULL(s.stu_sex, 0),
+				IFNULL(s.stu_sex, -1),
 				IFNULL(s.student_status, 0),
 				IFNULL(s.mobile, ''),
 				IFNULL(s.phone_relationship, 0),

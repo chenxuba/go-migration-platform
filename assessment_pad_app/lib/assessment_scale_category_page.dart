@@ -602,6 +602,8 @@ class _AssessmentScaleCategoryScreenState
           studentId: student.id,
           studentName: student.displayName,
           studentGender: student.gender,
+          onStudentGenderUpdated: (String gender) =>
+              _syncStudentGender(student.id, gender),
           studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
@@ -703,6 +705,38 @@ class _AssessmentScaleCategoryScreenState
 
   void _openShuangxiAssessment(ShuangxiAssessmentLaunchArgs args) {
     Navigator.of(context).pushNamed('/shuangxi-a-assessment', arguments: args);
+  }
+
+  void _syncStudentGender(int studentId, String gender) {
+    final String normalized = gender.trim();
+    if (studentId <= 0 || normalized.isEmpty || !mounted) {
+      return;
+    }
+    List<AssessmentStudentCandidate> replaceInList(
+      List<AssessmentStudentCandidate> students,
+    ) {
+      return students
+          .map(
+            (AssessmentStudentCandidate student) => student.id == studentId
+                ? student.copyWith(gender: normalized)
+                : student,
+          )
+          .toList();
+    }
+
+    setState(() {
+      final AssessmentStudentCandidate? selected = _selectedStudent;
+      if (selected != null && selected.id == studentId) {
+        _selectedStudent = selected.copyWith(gender: normalized);
+      }
+      _studentCandidates = replaceInList(_studentCandidates);
+      final List<int> statuses = _studentCandidatesByStatus.keys.toList();
+      for (final int status in statuses) {
+        _studentCandidatesByStatus[status] = replaceInList(
+          _studentCandidatesByStatus[status] ?? <AssessmentStudentCandidate>[],
+        );
+      }
+    });
   }
 
   void _openSearchKeyboard() {

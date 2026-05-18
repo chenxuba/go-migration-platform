@@ -448,6 +448,24 @@ class AssessmentStudentCandidate {
   final int studentStatus;
   final String studentStatusText;
 
+  AssessmentStudentCandidate copyWith({
+    String? gender,
+  }) {
+    return AssessmentStudentCandidate(
+      id: id,
+      shortName: shortName,
+      name: name,
+      avatarUrl: avatarUrl,
+      gender: gender ?? this.gender,
+      age: age,
+      birthDate: birthDate,
+      contactPhone: contactPhone,
+      latestAssessment: latestAssessment,
+      studentStatus: studentStatus,
+      studentStatusText: studentStatusText,
+    );
+  }
+
   String get displayName => name.trim().isNotEmpty ? name.trim() : '未命名学员';
 
   String get displayShortName {

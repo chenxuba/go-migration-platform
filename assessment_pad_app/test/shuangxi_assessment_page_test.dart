@@ -107,6 +107,7 @@ void main() {
               args: const ShuangxiAssessmentLaunchArgs(
                 studentId: 1,
                 studentName: '小明',
+                studentGender: '男',
                 assessmentDate: '2026-05-18',
                 examinerName: '陈老师',
               ),
@@ -220,6 +221,66 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Shuangxi asks for gender when student gender is unknown',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient(firstItemNo: 82);
+    bool backed = false;
+    String syncedGender = '';
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              args: ShuangxiAssessmentLaunchArgs(
+                studentId: 1,
+                studentName: '小明',
+                studentGender: '-',
+                assessmentDate: '2026-05-18',
+                examinerName: '陈老师',
+                onStudentGenderUpdated: (String gender) {
+                  syncedGender = gender;
+                },
+              ),
+              onBack: () => backed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('请先确认学生性别'), findsOneWidget);
+    expect(find.text('男生不适用，按 3 分计算'), findsNothing);
+    await tester.tap(find.text('男'));
+    await tester.pumpAndSettle();
+
+    expect(client.updateStudentGenderCount, 0);
+    expect(find.text('请先确认学生性别'), findsOneWidget);
+    await tester.tap(find.text('确定'));
+    await tester.pumpAndSettle();
+
+    expect(client.updateStudentGenderCount, 1);
+    expect(client.lastUpdatedStudentId, 1);
+    expect(client.lastUpdatedGender, '男');
+    expect(syncedGender, '男');
+    expect(backed, isFalse);
+    expect(find.text('请先确认学生性别'), findsNothing);
+    expect(find.text('男生不适用，按 3 分计算'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Shuangxi submit defaults missing scores to zero',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -245,6 +306,7 @@ void main() {
               args: const ShuangxiAssessmentLaunchArgs(
                 studentId: 1,
                 studentName: '小明',
+                studentGender: '男',
                 assessmentDate: '2026-05-18',
                 examinerName: '陈老师',
               ),
@@ -320,6 +382,7 @@ void main() {
               args: const ShuangxiAssessmentLaunchArgs(
                 studentId: 1,
                 studentName: '小明',
+                studentGender: '男',
                 assessmentDate: '2026-05-18',
                 examinerName: '陈老师',
               ),
@@ -368,6 +431,9 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   Map<String, dynamic>? lastSavedDraftPayload;
   int saveDraftCount = 0;
   int submitDraftCount = 0;
+  int updateStudentGenderCount = 0;
+  int lastUpdatedStudentId = 0;
+  String lastUpdatedGender = '';
 
   void completeTemplateSummary() {
     final Completer<ShuangxiTemplateSummary>? completer =
@@ -656,6 +722,18 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   @override
   Future<void> submitDraft(String token, int draftId) async {
     submitDraftCount += 1;
+  }
+
+  @override
+  Future<String> updateStudentGender(
+    String token, {
+    required int studentId,
+    required String gender,
+  }) async {
+    updateStudentGenderCount += 1;
+    lastUpdatedStudentId = studentId;
+    lastUpdatedGender = gender;
+    return gender;
   }
 
   @override
