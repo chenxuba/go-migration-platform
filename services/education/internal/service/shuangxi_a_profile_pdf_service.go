@@ -553,7 +553,9 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 	for col, skill := range skills {
 		cellX := left + float64(col)*colW
 		r.setFont(9.8)
+		r.setTextColor(0, 0, 0)
 		for level := 3; level >= 1; level-- {
+			r.setTextColor(0, 0, 0)
 			value := int(math.Round(float64(skill.MaxRawScore) * float64(level) / 3))
 			cellY := top + float64(3-level)*rowH
 			if err := r.cell(cellX, cellY+2, colW, 12, fmt.Sprintf("%d", value), gopdf.Center|gopdf.Top); err != nil {
@@ -745,8 +747,11 @@ func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiA
 	}
 	labelWidth := math.Max(15, textWidth+4)
 	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 13, avoidRects, chartRect, 15, 5, 5)
-	_ = r.cell(labelRect.X-0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
-	_ = r.cell(labelRect.X+0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X-0.26, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X+0.26, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X, labelRect.Y-0.18, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X, labelRect.Y+0.18, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	r.setTextColor(0, 0, 0)
 }
 
