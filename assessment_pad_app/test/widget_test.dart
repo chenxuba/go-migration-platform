@@ -3758,6 +3758,7 @@ void main() {
               assessmentDate: '2026-05-08',
             ),
             client: client,
+            homeClient: _FakeHomeClient(),
             onBack: () {},
           ),
         ),
