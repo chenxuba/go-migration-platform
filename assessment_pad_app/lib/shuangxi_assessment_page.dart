@@ -2852,26 +2852,598 @@ class _LoadingState extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
-      child: SizedBox(
-        width: 240,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            CircularProgressIndicator(color: _ShuangxiColors.orange),
-            SizedBox(height: 16),
-            Text(
-              '正在加载双溪题库',
-              style: TextStyle(
+    return const Column(
+      children: <Widget>[
+        _LoadingDimensionOverview(),
+        Expanded(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(12, 8, 12, 8),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                SizedBox(width: 252, child: _LoadingSkillNavigator()),
+                SizedBox(width: 10),
+                Expanded(child: _LoadingQuestionWorkspace()),
+                SizedBox(width: 10),
+                SizedBox(width: 270, child: _LoadingRightRail()),
+              ],
+            ),
+          ),
+        ),
+        _LoadingFooterDock(),
+      ],
+    );
+  }
+}
+
+class _LoadingDimensionOverview extends StatelessWidget {
+  const _LoadingDimensionOverview();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 84,
+      margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      padding: const EdgeInsets.all(10),
+      decoration: _panelDecoration(radius: 8),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          for (int index = 0; index < 7; index++) ...<Widget>[
+            Expanded(child: _LoadingDimensionCard(active: index == 0)),
+            if (index != 6) const SizedBox(width: 8),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingDimensionCard extends StatelessWidget {
+  const _LoadingDimensionCard({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(7, 7, 7, 6),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFFFF7EF) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: active ? _ShuangxiColors.orange : _ShuangxiColors.line,
+          width: active ? 1.2 : 1,
+        ),
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              _ShuangxiSkeletonBlock(
+                width: 30,
+                height: 30,
+                radius: 15,
+                highlight: active,
+              ),
+              const SizedBox(width: 7),
+              const Expanded(
+                child: _ShuangxiSkeletonBlock(height: 12, widthFactor: .82),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          _ShuangxiSkeletonBlock(height: 4, radius: 4, highlight: active),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingSkillNavigator extends StatelessWidget {
+  const _LoadingSkillNavigator();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(10, 12, 10, 10),
+      decoration: _panelDecoration(radius: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: const <Widget>[
+              Icon(
+                Icons.account_tree_outlined,
+                color: _ShuangxiColors.orange,
+                size: 22,
+              ),
+              SizedBox(width: 7),
+              Expanded(
+                child: _ShuangxiSkeletonBlock(height: 17, widthFactor: .62),
+              ),
+            ],
+          ),
+          const SizedBox(height: 9),
+          Expanded(
+            child: SingleChildScrollView(
+              physics: const NeverScrollableScrollPhysics(),
+              child: Column(
+                children: const <Widget>[
+                  _LoadingSkillSection(expanded: true),
+                  _LoadingSkillSection(expanded: false),
+                  _LoadingSkillSection(expanded: false),
+                  _LoadingSkillSection(expanded: false),
+                  _LoadingSkillSection(expanded: false),
+                  _LoadingSkillSection(expanded: false),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingSkillSection extends StatelessWidget {
+  const _LoadingSkillSection({required this.expanded});
+
+  final bool expanded;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      decoration: BoxDecoration(
+        color: expanded ? const Color(0xFFFFF8F1) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: expanded ? const Color(0xFFFFC7A7) : _ShuangxiColors.lineSoft,
+        ),
+      ),
+      child: Column(
+        children: <Widget>[
+          SizedBox(
+            height: 36,
+            child: Row(
+              children: <Widget>[
+                const SizedBox(width: 12),
+                _ShuangxiSkeletonBlock(
+                  width: 14,
+                  height: 14,
+                  radius: 7,
+                  highlight: expanded,
+                ),
+                const SizedBox(width: 9),
+                const Expanded(
+                  child: _ShuangxiSkeletonBlock(height: 13, widthFactor: .72),
+                ),
+                const SizedBox(width: 9),
+                const _ShuangxiSkeletonBlock(width: 34, height: 12, radius: 6),
+                const SizedBox(width: 12),
+                Icon(
+                  expanded
+                      ? Icons.keyboard_arrow_up_rounded
+                      : Icons.keyboard_arrow_down_rounded,
+                  color: _ShuangxiColors.muted,
+                  size: 20,
+                ),
+                const SizedBox(width: 6),
+              ],
+            ),
+          ),
+          if (expanded)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(32, 0, 8, 8),
+              child: Column(
+                children: const <Widget>[
+                  _LoadingQuestionNavRow(active: true),
+                  _LoadingQuestionNavRow(active: false),
+                  _LoadingQuestionNavRow(active: false),
+                  _LoadingQuestionNavRow(active: false),
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingQuestionNavRow extends StatelessWidget {
+  const _LoadingQuestionNavRow({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 31,
+      child: Row(
+        children: <Widget>[
+          _ShuangxiSkeletonBlock(
+            width: 10,
+            height: 10,
+            radius: 5,
+            highlight: active,
+          ),
+          const SizedBox(width: 9),
+          const Expanded(
+            child: _ShuangxiSkeletonBlock(height: 12, widthFactor: .78),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingQuestionWorkspace extends StatelessWidget {
+  const _LoadingQuestionWorkspace();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
+      decoration: _panelDecoration(radius: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          SizedBox(
+            height: 28,
+            child: Row(
+              children: <Widget>[
+                Container(
+                  width: 4,
+                  height: 18,
+                  decoration: BoxDecoration(
+                    color: _ShuangxiColors.orange,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+                const SizedBox(width: 9),
+                const Icon(
+                  Icons.account_tree_outlined,
+                  color: _ShuangxiColors.orange,
+                  size: 18,
+                ),
+                const SizedBox(width: 7),
+                const Expanded(
+                  child: _ShuangxiSkeletonBlock(height: 13, widthFactor: .44),
+                ),
+                const SizedBox(width: 10),
+                const _ShuangxiSkeletonBlock(width: 48, height: 12, radius: 6),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          const _ShuangxiSkeletonBlock(height: 24, widthFactor: .66),
+          const SizedBox(height: 20),
+          const _LoadingScoreChoice(active: true),
+          const SizedBox(height: 12),
+          const _LoadingScoreChoice(active: false),
+          const SizedBox(height: 12),
+          const _LoadingScoreChoice(active: false),
+          const SizedBox(height: 12),
+          const _LoadingScoreChoice(active: false),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingScoreChoice extends StatelessWidget {
+  const _LoadingScoreChoice({required this.active});
+
+  final bool active;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 54,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: active ? const Color(0xFFFFF7EF) : Colors.white,
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(
+          color: active ? _ShuangxiColors.orange : _ShuangxiColors.line,
+          width: active ? 1.3 : 1,
+        ),
+      ),
+      child: Row(
+        children: <Widget>[
+          _ShuangxiSkeletonBlock(
+            width: 20,
+            height: 20,
+            radius: 10,
+            highlight: active,
+          ),
+          const SizedBox(width: 12),
+          const SizedBox(
+            width: 42,
+            child: _ShuangxiSkeletonBlock(height: 15, widthFactor: .78),
+          ),
+          const SizedBox(width: 10),
+          const Expanded(
+            child: _ShuangxiSkeletonBlock(height: 14, widthFactor: .72),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingRightRail extends StatelessWidget {
+  const _LoadingRightRail();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Column(
+      children: <Widget>[
+        _LoadingProgressPanel(),
+        SizedBox(height: 8),
+        _LoadingRemarkPanel(),
+        SizedBox(height: 8),
+        Expanded(child: _LoadingMissingPanel()),
+      ],
+    );
+  }
+}
+
+class _LoadingProgressPanel extends StatelessWidget {
+  const _LoadingProgressPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 148,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
+      decoration: _panelDecoration(radius: 8),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _PanelTitle(icon: Icons.bar_chart_rounded, title: '测评进度'),
+          SizedBox(height: 12),
+          Row(
+            children: <Widget>[
+              _ProgressRing(percent: 0),
+              SizedBox(width: 9),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _SummaryRow(label: '已完成', value: '0 / 0 题'),
+                    SizedBox(height: 9),
+                    _SummaryRow(label: '缺题', value: '0 题', danger: true),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingRemarkPanel extends StatelessWidget {
+  const _LoadingRemarkPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 142,
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+      decoration: _panelDecoration(radius: 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: const <Widget>[
+          _PanelTitle(icon: Icons.assignment_outlined, title: '观察备注'),
+          SizedBox(height: 8),
+          Expanded(child: _ShuangxiSkeletonBlock(height: 82, radius: 8)),
+          SizedBox(height: 5),
+          Align(
+            alignment: Alignment.bottomRight,
+            child: _ShuangxiSkeletonBlock(width: 42, height: 12, radius: 6),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingMissingPanel extends StatelessWidget {
+  const _LoadingMissingPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 13, 14, 10),
+      decoration: _panelDecoration(radius: 8),
+      child: const Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          _PanelTitle(icon: Icons.lightbulb_outline_rounded, title: '缺题导航'),
+          SizedBox(height: 9),
+          _LoadingMissingInfoRow(
+            icon: Icons.auto_awesome_rounded,
+            label: '自动下一题：已开启',
+          ),
+          _LoadingMissingInfoRow(
+            icon: Icons.grid_view_rounded,
+            label: '当前维度：加载中',
+          ),
+          _LoadingMissingInfoRow(
+            icon: Icons.account_tree_outlined,
+            label: '当前技能：加载中',
+          ),
+          _LoadingMissingInfoRow(
+            icon: Icons.arrow_forward_rounded,
+            label: '第一缺题：加载中',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _LoadingMissingInfoRow extends StatelessWidget {
+  const _LoadingMissingInfoRow({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 30,
+      margin: const EdgeInsets.only(bottom: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF6),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: _ShuangxiColors.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          Icon(icon, color: _ShuangxiColors.orange, size: 17),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              label,
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
                 color: _ShuangxiColors.body,
-                fontSize: 14,
+                fontSize: 12,
                 fontWeight: FontWeight.w800,
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
+  }
+}
+
+class _LoadingFooterDock extends StatelessWidget {
+  const _LoadingFooterDock();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 62,
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.97),
+        border: Border.all(color: _ShuangxiColors.line),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(8)),
+        boxShadow: _shuangxiShadow(color: const Color(0x14B05F32), blur: 16),
+      ),
+      child: Row(
+        children: <Widget>[
+          _FooterButton(
+            label: '上一题',
+            icon: Icons.chevron_left_rounded,
+            enabled: false,
+            onTap: () {},
+          ),
+          const Spacer(),
+          Text.rich(
+            const TextSpan(
+              children: <InlineSpan>[
+                TextSpan(
+                  text: '0',
+                  style: TextStyle(
+                    color: _ShuangxiColors.ink,
+                    fontSize: 26,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                TextSpan(
+                  text: ' / 0',
+                  style: TextStyle(
+                    color: _ShuangxiColors.body,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const Spacer(),
+          _FooterButton(
+            label: '下一题',
+            icon: Icons.arrow_forward_rounded,
+            enabled: false,
+            filled: true,
+            reverseIcon: true,
+            onTap: () {},
+          ),
+          const SizedBox(width: 14),
+          _FooterButton(
+            label: '跳到缺题',
+            icon: Icons.format_list_bulleted_rounded,
+            enabled: false,
+            onTap: () {},
+          ),
+          const SizedBox(width: 22),
+          const Text(
+            '自动下一题',
+            style: TextStyle(
+              color: _ShuangxiColors.body,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 8),
+          const Switch(
+            value: true,
+            activeColor: _ShuangxiColors.orange,
+            onChanged: null,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShuangxiSkeletonBlock extends StatelessWidget {
+  const _ShuangxiSkeletonBlock({
+    this.width,
+    this.widthFactor,
+    required this.height,
+    this.radius = 6,
+    this.highlight = false,
+  });
+
+  final double? width;
+  final double? widthFactor;
+  final double height;
+  final double radius;
+  final bool highlight;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget block = Container(
+      width: width,
+      height: height,
+      decoration: BoxDecoration(
+        color: highlight ? const Color(0xFFFFE2D1) : const Color(0xFFF3E3D8),
+        borderRadius: BorderRadius.circular(radius),
+      ),
+    );
+    final double? factor = widthFactor;
+    if (factor != null) {
+      return FractionallySizedBox(
+        widthFactor: factor,
+        alignment: Alignment.centerLeft,
+        child: block,
+      );
+    }
+    return block;
   }
 }
 

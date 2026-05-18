@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:assessment_pad_app/main.dart' show PadViewport;
 import 'package:assessment_pad_app/assessment_scale_client.dart';
 import 'package:assessment_pad_app/shuangxi_assessment_client.dart';
@@ -41,6 +43,43 @@ void main() {
     expect(find.textContaining('评量方式'), findsNothing);
     expect(find.text('测评进度'), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('Shuangxi assessment page shows workbench skeleton while loading',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient(holdTemplateSummary: true);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              onBack: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('测评进度'), findsOneWidget);
+    expect(find.text('观察备注'), findsOneWidget);
+    expect(find.text('自动下一题'), findsOneWidget);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    expect(tester.takeException(), isNull);
+
+    client.completeTemplateSummary();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('Shuangxi auto next waits before advancing',
@@ -217,14 +256,34 @@ void main() {
 }
 
 class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
-  _FakeShuangxiAssessmentClient();
+  _FakeShuangxiAssessmentClient({bool holdTemplateSummary = false})
+      : _templateSummaryCompleter =
+            holdTemplateSummary ? Completer<ShuangxiTemplateSummary>() : null;
 
+  final Completer<ShuangxiTemplateSummary>? _templateSummaryCompleter;
   Map<String, dynamic>? lastSavedDraftPayload;
   int saveDraftCount = 0;
   int submitDraftCount = 0;
 
+  void completeTemplateSummary() {
+    final Completer<ShuangxiTemplateSummary>? completer =
+        _templateSummaryCompleter;
+    if (completer != null && !completer.isCompleted) {
+      completer.complete(_templateSummary());
+    }
+  }
+
   @override
   Future<ShuangxiTemplateSummary> fetchTemplateSummary(String token) async {
+    final Completer<ShuangxiTemplateSummary>? completer =
+        _templateSummaryCompleter;
+    if (completer != null) {
+      return completer.future;
+    }
+    return _templateSummary();
+  }
+
+  ShuangxiTemplateSummary _templateSummary() {
     return const ShuangxiTemplateSummary(
       title: '双溪课程评量表A',
       itemCount: 209,
