@@ -247,6 +247,7 @@ class AssessmentPadApp extends StatelessWidget {
               child: AutismDevAssessmentPage(
                 args: args,
                 client: autismDevClient,
+                homeClient: homeClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -266,6 +267,7 @@ class AssessmentPadApp extends StatelessWidget {
               child: ShuangxiAssessmentPage(
                 args: args,
                 client: shuangxiClient,
+                homeClient: homeClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),

@@ -224,7 +224,7 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 		r.pdf.AddPage()
 		r.pdf.SetFillColor(255, 255, 255)
 		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
-		if err := r.drawTitle("综合发展侧面图（二）"); err != nil {
+		if err := r.drawLoweredTitle("综合发展侧面图（二）"); err != nil {
 			return err
 		}
 		if err := r.drawSkillProfile(skills, data, records); err != nil {
@@ -236,7 +236,7 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 		r.pdf.SetFillColor(255, 255, 255)
 		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
 		title := fmt.Sprintf("侧面图（三）%d.%s", page.DomainNo, page.DomainName)
-		if err := r.drawTitle(title); err != nil {
+		if err := r.drawLoweredTitle(title); err != nil {
 			return err
 		}
 		if err := r.drawItemProfile(page.Items, records); err != nil {
@@ -409,6 +409,12 @@ func (r *shuangxiAProfilePDFRenderer) drawTitle(title string) error {
 	r.setTextColor(0, 0, 0)
 	r.setFont(27)
 	return r.cell(0, 34, shuangxiAProfilePDFPageWidth, 34, title, gopdf.Center|gopdf.Middle)
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawLoweredTitle(title string) error {
+	r.setTextColor(0, 0, 0)
+	r.setFont(27)
+	return r.cell(0, 58, shuangxiAProfilePDFPageWidth, 34, title, gopdf.Center|gopdf.Middle)
 }
 
 func (r *shuangxiAProfilePDFRenderer) drawHeader(records []model.AssessmentRecordDetailVO, title string) error {
@@ -733,7 +739,7 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileItem, records []model.AssessmentRecordDetailVO) error {
 	const (
 		left      = 144.0
-		top       = 116.0
+		top       = 122.0
 		width     = 680.0
 		skillRowH = 30.0
 	)

@@ -290,6 +290,18 @@ String _dateOnlyText(String value) {
   return text;
 }
 
+String _sessionExaminerName(HomeSession session) {
+  final String nickName = session.nickName.trim();
+  if (nickName.isNotEmpty) {
+    return nickName;
+  }
+  final String username = session.username.trim();
+  if (username.isNotEmpty) {
+    return username;
+  }
+  return session.mobile.trim();
+}
+
 String _todayIsoDate() {
   final DateTime now = DateTime.now();
   return '${now.year.toString().padLeft(4, '0')}-'

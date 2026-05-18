@@ -27,6 +27,11 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       return;
     }
     try {
+      final Future<HomeSession> sessionRequest =
+          widget.homeClient.fetchCurrentSession(token).then<HomeSession>(
+                (HomeSession session) => session,
+                onError: (Object _, StackTrace __) => HomeSession.fallback,
+              );
       final Future<AssessmentDraftSummary?>? detectedDraftRequest = _draftId > 0
           ? null
           : _findLatestDraft(token).then<AssessmentDraftSummary?>(
@@ -35,15 +40,23 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
             );
       final AutismDevTemplateSummary template;
       AutismDevDraftDetail? launchDraftDetail;
+      HomeSession session = HomeSession.fallback;
       if (_draftId > 0) {
         final List<Object> result = await Future.wait<Object>(<Future<Object>>[
           widget.client.fetchTemplateSummary(token),
           widget.client.fetchDraftDetail(token, _draftId),
+          sessionRequest,
         ]);
         template = result[0] as AutismDevTemplateSummary;
         launchDraftDetail = result[1] as AutismDevDraftDetail;
+        session = result[2] as HomeSession;
       } else {
-        template = await widget.client.fetchTemplateSummary(token);
+        final List<Object> result = await Future.wait<Object>(<Future<Object>>[
+          widget.client.fetchTemplateSummary(token),
+          sessionRequest,
+        ]);
+        template = result[0] as AutismDevTemplateSummary;
+        session = result[1] as HomeSession;
       }
       if (!mounted) {
         return;
@@ -59,6 +72,9 @@ extension _AutismDevAssessmentStateActions on _AutismDevAssessmentPageState {
       _selectedItemNo = _firstItemNoInDomain(_selectedDomainCode);
       if (launchDraftDetail != null) {
         _applyDraftDetail(launchDraftDetail);
+      }
+      if (_examinerName.trim().isEmpty) {
+        _examinerName = _sessionExaminerName(session);
       }
       _selectedRangeFilter = '';
       _ensureSelectedDisplayItem();

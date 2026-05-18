@@ -83,7 +83,36 @@ class _Pep3LoadingHeader extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1120;
+          final bool compact = constraints.maxWidth < 1280;
+          final List<Widget> headerChildren = <Widget>[
+            Text(
+              '$title 测评工作台',
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: _Pep3Colors.ink,
+                fontSize: 23,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            _HeaderLoadingMeta(
+              label: '儿童',
+              value: studentName,
+              compact: compact,
+            ),
+            _HeaderLoadingMeta(label: '年龄', value: age, compact: compact),
+            _HeaderLoadingMeta(
+              label: compact ? '日期' : '测评日期',
+              value: assessmentDate,
+              compact: compact,
+            ),
+            _HeaderLoadingMeta(
+              label: '施测者',
+              value: examinerName,
+              compact: compact,
+            ),
+          ];
           return Row(
             children: <Widget>[
               _HeaderIconButton(
@@ -91,47 +120,14 @@ class _Pep3LoadingHeader extends StatelessWidget {
                 onTap: onBack,
               ),
               const SizedBox(width: 10),
-              SizedBox(
-                width: compact ? 206 : 250,
-                child: Text(
-                  '$title 测评工作台',
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(
-                    color: _Pep3Colors.ink,
-                    fontSize: 23,
-                    height: 1,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
               Expanded(
-                child: Row(
-                  children: <Widget>[
-                    Expanded(
-                      child: _HeaderLoadingMeta(
-                        label: '儿童',
-                        value: studentName,
-                      ),
-                    ),
-                    Expanded(
-                      child: _HeaderLoadingMeta(label: '年龄', value: age),
-                    ),
-                    Expanded(
-                      flex: 2,
-                      child: _HeaderLoadingMeta(
-                        label: '测评日期',
-                        value: assessmentDate,
-                      ),
-                    ),
-                    Expanded(
-                      child: _HeaderLoadingMeta(
-                        label: '施测者',
-                        value: examinerName,
-                      ),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: headerChildren,
+                  ),
                 ),
               ),
               const SizedBox(width: 12),
@@ -149,60 +145,62 @@ class _Pep3LoadingHeader extends StatelessWidget {
 }
 
 class _HeaderLoadingMeta extends StatelessWidget {
-  const _HeaderLoadingMeta({required this.label, required this.value});
+  const _HeaderLoadingMeta({
+    required this.label,
+    required this.value,
+    required this.compact,
+  });
 
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     final String resolved = value.trim();
     return Container(
-      margin: const EdgeInsets.only(left: 10),
-      padding: const EdgeInsets.only(left: 10),
+      margin: EdgeInsets.only(left: compact ? 6 : 10),
+      padding: EdgeInsets.only(left: compact ? 6 : 10),
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _Pep3Colors.line)),
       ),
-      child: FittedBox(
-        fit: BoxFit.scaleDown,
-        alignment: Alignment.centerLeft,
-        child: resolved.isEmpty
-            ? Row(
-                mainAxisSize: MainAxisSize.min,
-                children: <Widget>[
-                  Text(
-                    '$label：',
-                    maxLines: 1,
-                    style: const TextStyle(
-                      color: _Pep3Colors.text,
-                      fontSize: 13,
-                      height: 1,
-                      fontWeight: FontWeight.w700,
-                    ),
+      child: resolved.isEmpty
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  '$label：',
+                  maxLines: 1,
+                  style: const TextStyle(
+                    color: _Pep3Colors.text,
+                    fontSize: 13,
+                    height: 1,
+                    fontWeight: FontWeight.w700,
                   ),
-                  const SizedBox(width: 5),
-                  const _LoadingLine(width: 40, height: 12),
+                ),
+                const SizedBox(width: 5),
+                const _LoadingLine(width: 40, height: 12),
+              ],
+            )
+          : Text.rich(
+              TextSpan(
+                children: <InlineSpan>[
+                  TextSpan(text: '$label：'),
+                  TextSpan(
+                    text: resolved,
+                    style: const TextStyle(fontWeight: FontWeight.w900),
+                  ),
                 ],
-              )
-            : Text.rich(
-                TextSpan(
-                  children: <InlineSpan>[
-                    TextSpan(text: '$label：'),
-                    TextSpan(
-                      text: resolved,
-                      style: const TextStyle(fontWeight: FontWeight.w900),
-                    ),
-                  ],
-                ),
-                maxLines: 1,
-                style: const TextStyle(
-                  color: _Pep3Colors.text,
-                  fontSize: 13,
-                  height: 1,
-                  fontWeight: FontWeight.w700,
-                ),
               ),
-      ),
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: _Pep3Colors.text,
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
     );
   }
 }

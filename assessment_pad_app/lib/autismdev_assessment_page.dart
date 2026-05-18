@@ -8,6 +8,7 @@ import 'assessment_draft_resume_dialog.dart';
 import 'assessment_age_formatter.dart';
 import 'assessment_scale_client.dart';
 import 'autismdev_assessment_client.dart';
+import 'home_client.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 
@@ -27,12 +28,14 @@ class AutismDevAssessmentPage extends StatefulWidget {
     required this.onBack,
     this.args = const AutismDevAssessmentLaunchArgs(),
     this.client = const ApiAutismDevAssessmentClient(),
+    this.homeClient = const ApiHomeClient(),
     super.key,
   });
 
   final VoidCallback onBack;
   final AutismDevAssessmentLaunchArgs args;
   final AutismDevAssessmentClient client;
+  final HomeClient homeClient;
 
   @override
   State<AutismDevAssessmentPage> createState() =>
@@ -102,7 +105,7 @@ class _AutismDevAssessmentPageState extends State<AutismDevAssessmentPage> {
     _assessmentDate = _dateOnlyText(widget.args.assessmentDate).isNotEmpty
         ? _dateOnlyText(widget.args.assessmentDate)
         : _todayIsoDate();
-    _examinerName = widget.args.examinerName;
+    _examinerName = widget.args.examinerName.trim();
     _draftId = widget.args.draftId;
     _initialize();
   }

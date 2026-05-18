@@ -40,7 +40,40 @@ class _AutismDevTopBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1120;
+          final bool compact = constraints.maxWidth < 1280;
+          final List<Widget> headerChildren = <Widget>[
+            Text(
+              '$title 测评工作台',
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: _AutismDevColors.ink,
+                fontSize: 23,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            _HeaderMeta(
+              label: '儿童',
+              value: studentName,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '年龄',
+              value: studentAge,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: compact ? '日期' : '测评日期',
+              value: assessmentDate,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '施测者',
+              value: examinerName,
+              compact: compact,
+            ),
+          ];
           return Row(
             children: <Widget>[
               _HeaderIconButton(
@@ -49,34 +82,22 @@ class _AutismDevTopBar extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Row(
-                  children: <Widget>[
-                    Text(
-                      '$title 测评工作台',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: const TextStyle(
-                        color: _AutismDevColors.ink,
-                        fontSize: 23,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _HeaderMeta(label: '儿童', value: studentName),
-                    _HeaderMeta(label: '年龄', value: studentAge),
-                    _HeaderMeta(label: '测评日期', value: assessmentDate),
-                    _HeaderMeta(label: '施测者', value: examinerName),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: headerChildren,
+                  ),
                 ),
               ),
               if (autoSaveText.trim().isNotEmpty)
-                SizedBox(
-                  width: compact ? 82 : 112,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 116),
                   child: Text(
                     autoSaveText,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     textAlign: TextAlign.right,
                     style: const TextStyle(
                       color: _AutismDevColors.muted,
@@ -110,16 +131,21 @@ class _AutismDevTopBar extends StatelessWidget {
 }
 
 class _HeaderMeta extends StatelessWidget {
-  const _HeaderMeta({required this.label, required this.value});
+  const _HeaderMeta({
+    required this.label,
+    required this.value,
+    required this.compact,
+  });
 
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(left: 10),
-      padding: const EdgeInsets.only(left: 10),
+      margin: EdgeInsets.only(left: compact ? 6 : 10),
+      padding: EdgeInsets.only(left: compact ? 6 : 10),
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _AutismDevColors.line)),
       ),

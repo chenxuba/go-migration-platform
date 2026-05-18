@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'assessment_draft_resume_dialog.dart';
 import 'assessment_age_formatter.dart';
 import 'assessment_scale_client.dart';
+import 'home_client.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'shuangxi_assessment_client.dart';
@@ -43,12 +44,14 @@ class ShuangxiAssessmentPage extends StatefulWidget {
     required this.onBack,
     this.args = const ShuangxiAssessmentLaunchArgs(),
     this.client = const ApiShuangxiAssessmentClient(),
+    this.homeClient = const ApiHomeClient(),
     super.key,
   });
 
   final VoidCallback onBack;
   final ShuangxiAssessmentLaunchArgs args;
   final ShuangxiAssessmentClient client;
+  final HomeClient homeClient;
 
   @override
   State<ShuangxiAssessmentPage> createState() => _ShuangxiAssessmentPageState();
@@ -108,7 +111,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     _assessmentDate = _dateOnlyText(widget.args.assessmentDate).isNotEmpty
         ? _dateOnlyText(widget.args.assessmentDate)
         : _todayIsoDate();
-    _examinerName = widget.args.examinerName;
+    _examinerName = widget.args.examinerName.trim();
     _studentGender = widget.args.studentGender;
     unawaited(_initialize());
   }
@@ -147,6 +150,11 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       return;
     }
     try {
+      final Future<HomeSession> sessionRequest =
+          widget.homeClient.fetchCurrentSession(token).then<HomeSession>(
+                (HomeSession session) => session,
+                onError: (Object _, StackTrace __) => HomeSession.fallback,
+              );
       final Future<AssessmentDraftSummary?>? detectedDraftRequest =
           _draftId > 0 || _studentId <= 0
               ? null
@@ -156,17 +164,27 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
                 );
       final ShuangxiTemplateSummary template;
       ShuangxiDraftDetail? launchDraftDetail;
+      HomeSession session = HomeSession.fallback;
       if (_draftId > 0) {
         final List<Object> result = await Future.wait<Object>(
           <Future<Object>>[
             widget.client.fetchTemplateSummary(token),
             widget.client.fetchDraftDetail(token, _draftId),
+            sessionRequest,
           ],
         );
         template = result[0] as ShuangxiTemplateSummary;
         launchDraftDetail = result[1] as ShuangxiDraftDetail;
+        session = result[2] as HomeSession;
       } else {
-        template = await widget.client.fetchTemplateSummary(token);
+        final List<Object> result = await Future.wait<Object>(
+          <Future<Object>>[
+            widget.client.fetchTemplateSummary(token),
+            sessionRequest,
+          ],
+        );
+        template = result[0] as ShuangxiTemplateSummary;
+        session = result[1] as HomeSession;
       }
       if (!mounted) {
         return;
@@ -179,6 +197,9 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         _template = template;
         if (launchDraftDetail != null) {
           _applyDraftDetail(launchDraftDetail);
+        }
+        if (_examinerName.trim().isEmpty) {
+          _examinerName = _sessionExaminerName(session);
         }
         _applyGenderDefaultsToScores();
         if (_selectedItemNo <= 0) {
@@ -1436,6 +1457,8 @@ class _TopBar extends StatelessWidget {
     final String age = studentAge.trim().isEmpty ? '未知' : studentAge.trim();
     final String examiner =
         examinerName.trim().isEmpty ? '-' : examinerName.trim();
+    final String statusText =
+        autoSaveText.trim().isEmpty ? '已自动保存' : autoSaveText.trim();
 
     return Container(
       height: 58,
@@ -1448,7 +1471,7 @@ class _TopBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1120;
+          final bool compact = constraints.maxWidth < 1280;
           final List<Widget> headerChildren = <Widget>[
             Text(
               '$title 测评工作台',
@@ -1501,25 +1524,8 @@ class _TopBar extends StatelessWidget {
                       )
                     : Row(children: headerChildren),
               ),
-              if (!compact) ...<Widget>[
-                const Icon(
-                  Icons.check_circle_outline_rounded,
-                  color: _ShuangxiColors.green,
-                  size: 18,
-                ),
-                const SizedBox(width: 5),
-                Text(
-                  autoSaveText.trim().isEmpty ? '已自动保存' : autoSaveText.trim(),
-                  maxLines: 1,
-                  softWrap: false,
-                  style: const TextStyle(
-                    color: _ShuangxiColors.body,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(width: 8),
-              ],
+              _SaveStatusLabel(text: statusText, saving: saving),
+              const SizedBox(width: 8),
               _TopActionButton(
                 label: saving ? '保存中' : '保存草稿',
                 icon: Icons.save_outlined,
@@ -1536,6 +1542,58 @@ class _TopBar extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SaveStatusLabel extends StatelessWidget {
+  const _SaveStatusLabel({required this.text, required this.saving});
+
+  final String text;
+  final bool saving;
+
+  bool get _saving {
+    return saving ||
+        text.contains('保存中') ||
+        text.contains('草稿保存中') ||
+        text.contains('自动保存中');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 116),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          if (_saving)
+            const Icon(
+              Icons.sync_rounded,
+              color: _ShuangxiColors.orangeDeep,
+              size: 17,
+            )
+          else
+            const Icon(
+              Icons.check_circle_outline_rounded,
+              color: _ShuangxiColors.green,
+              size: 18,
+            ),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color:
+                  _saving ? _ShuangxiColors.orangeDeep : _ShuangxiColors.body,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -4360,6 +4418,18 @@ String _shortDateLabel(String raw) {
     return date.substring(5, 10);
   }
   return date.isEmpty ? '-' : date;
+}
+
+String _sessionExaminerName(HomeSession session) {
+  final String nickName = session.nickName.trim();
+  if (nickName.isNotEmpty) {
+    return nickName;
+  }
+  final String username = session.username.trim();
+  if (username.isNotEmpty) {
+    return username;
+  }
+  return session.mobile.trim();
 }
 
 String _todayIsoDate() {

@@ -85,12 +85,12 @@ class _Header extends StatelessWidget {
                 ),
               ),
               if (autoSaveText.trim().isNotEmpty)
-                SizedBox(
-                  width: compact ? 86 : 106,
+                ConstrainedBox(
+                  constraints: const BoxConstraints(minWidth: 116),
                   child: Text(
                     autoSaveText,
                     maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
                     textAlign: TextAlign.right,
                     style: const TextStyle(
                       color: _ErxinColors.muted,
