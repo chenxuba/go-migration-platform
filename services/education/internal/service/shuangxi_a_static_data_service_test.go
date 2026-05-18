@@ -110,3 +110,35 @@ func TestFillShuangxiAMissingItemScoresWithZeroCompletesAllItems(t *testing.T) {
 		t.Fatalf("unexpected completed progress: %+v", progress)
 	}
 }
+
+func TestApplyShuangxiAGenderDefaults(t *testing.T) {
+	maleScores := applyShuangxiAGenderDefaults(map[int]int{
+		shuangxiAUseSanitaryPadItemNo: 0,
+		shuangxiAShaveItemNo:          1,
+	}, "男")
+	if maleScores[shuangxiAUseSanitaryPadItemNo] != 3 {
+		t.Fatalf("male sanitary pad score = %d, want 3", maleScores[shuangxiAUseSanitaryPadItemNo])
+	}
+	if maleScores[shuangxiAShaveItemNo] != 1 {
+		t.Fatalf("male shave score = %d, want preserved score 1", maleScores[shuangxiAShaveItemNo])
+	}
+
+	femaleScores := applyShuangxiAGenderDefaults(map[int]int{
+		shuangxiAUseSanitaryPadItemNo: 2,
+		shuangxiAShaveItemNo:          0,
+	}, "female")
+	if femaleScores[shuangxiAUseSanitaryPadItemNo] != 2 {
+		t.Fatalf("female sanitary pad score = %d, want preserved score 2", femaleScores[shuangxiAUseSanitaryPadItemNo])
+	}
+	if femaleScores[shuangxiAShaveItemNo] != 3 {
+		t.Fatalf("female shave score = %d, want 3", femaleScores[shuangxiAShaveItemNo])
+	}
+
+	unknownScores := applyShuangxiAGenderDefaults(map[int]int{
+		shuangxiAUseSanitaryPadItemNo: 0,
+		shuangxiAShaveItemNo:          0,
+	}, "未填")
+	if unknownScores[shuangxiAUseSanitaryPadItemNo] != 0 || unknownScores[shuangxiAShaveItemNo] != 0 {
+		t.Fatalf("unknown gender scores were changed: %+v", unknownScores)
+	}
+}

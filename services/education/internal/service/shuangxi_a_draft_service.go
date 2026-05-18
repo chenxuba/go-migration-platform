@@ -19,6 +19,7 @@ type ShuangxiAAssessmentDraftSaveInput struct {
 	ID             int64
 	StudentID      int64
 	StudentName    string
+	StudentGender  string
 	ExaminerName   string
 	Remark         string
 	BirthDate      *time.Time
@@ -28,14 +29,16 @@ type ShuangxiAAssessmentDraftSaveInput struct {
 }
 
 type ShuangxiAAssessmentDraftItemSaveInput struct {
-	DraftID int64
-	ItemNo  int
-	Score   *int
+	DraftID       int64
+	ItemNo        int
+	Score         *int
+	StudentGender string
 }
 
 type ShuangxiAAssessmentRecordSaveInput struct {
 	StudentID      int64
 	StudentName    string
+	StudentGender  string
 	ExaminerName   string
 	Remark         string
 	BirthDate      time.Time
@@ -45,6 +48,7 @@ type ShuangxiAAssessmentRecordSaveInput struct {
 }
 
 type shuangxiASavedInputSnapshot struct {
+	StudentGender string                    `json:"studentGender,omitempty"`
 	ItemScores    map[int]int               `json:"itemScores,omitempty"`
 	ItemScoreList []shuangxiASavedItemScore `json:"itemScoreList,omitempty"`
 }
@@ -102,10 +106,21 @@ func (svc *Service) SaveShuangxiAAssessmentDraft(userID int64, input ShuangxiAAs
 	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	studentGender, err := svc.resolveShuangxiAStudentGender(context.Background(), instID, input.StudentID, input.StudentGender)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	input.StudentGender = studentGender
+	input.ItemScores = applyShuangxiAGenderDefaults(input.ItemScores, studentGender)
+	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, studentGender)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	progress, err := buildShuangxiAAssessmentDraftProgress(input.BirthDate, input.AssessmentDate, input.ItemScores)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	rawScores := shuangxiARawScoresByDomain(input.ItemScores)
 	draftID, err := svc.repo.SaveAssessmentDraft(context.Background(), repository.AssessmentDraftEntity{
 		ID:                input.ID,
 		InstID:            instID,
@@ -121,13 +136,13 @@ func (svc *Service) SaveShuangxiAAssessmentDraft(userID int64, input ShuangxiAAs
 		Input:             input.InputSnapshot,
 		Progress:          progress,
 		AnsweredItemCount: progress.AnsweredItemCount,
-		RawScoreCount:     len(shuangxiARawScoresByDomain(input.ItemScores)),
+		RawScoreCount:     len(rawScores),
 		Status:            shuangxiADraftStatus(progress),
 		Remark:            strings.TrimSpace(input.Remark),
 		CreatedBy:         examinerID,
 		UpdatedBy:         examinerID,
 		ReuseOpenDraft:    true,
-	}, input.ItemScores, shuangxiARawScoresByDomain(input.ItemScores), nil, examinerID)
+	}, input.ItemScores, rawScores, nil, examinerID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.AssessmentDraftDetailVO{}, errors.New("assessment draft not found")
@@ -168,17 +183,29 @@ func (svc *Service) SaveShuangxiAAssessmentDraftItem(userID int64, input Shuangx
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	studentGender, err := svc.resolveShuangxiAStudentGender(
+		context.Background(),
+		instID,
+		draft.StudentID,
+		input.StudentGender,
+		shuangxiAStudentGenderFromInputSnapshot(draft.InputJSON),
+	)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	itemScores[input.ItemNo] = *input.Score
+	itemScores = applyShuangxiAGenderDefaults(itemScores, studentGender)
 	progress, err := buildShuangxiAAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores)
+	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, studentGender)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	score := *input.Score
-	if err := svc.repo.UpdateAssessmentDraftInputProgressAndItemDetails(context.Background(), instID, input.DraftID, inputSnapshot, progress, progress.AnsweredItemCount, len(shuangxiARawScoresByDomain(itemScores)), shuangxiADraftStatus(progress), input.ItemNo, &score, nil, false, examinerID); err != nil {
+	score := itemScores[input.ItemNo]
+	rawScores := shuangxiARawScoresByDomain(itemScores)
+	if err := svc.repo.UpdateAssessmentDraftInputProgressAndItemDetails(context.Background(), instID, input.DraftID, inputSnapshot, progress, progress.AnsweredItemCount, len(rawScores), shuangxiADraftStatus(progress), input.ItemNo, &score, nil, false, examinerID); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return model.AssessmentDraftDetailVO{}, errors.New("assessment draft not found")
 		}
@@ -288,11 +315,21 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
+	studentGender, err := svc.resolveShuangxiAStudentGender(
+		context.Background(),
+		instID,
+		draft.StudentID,
+		shuangxiAStudentGenderFromInputSnapshot(draft.InputJSON),
+	)
+	if err != nil {
+		return model.PEP3AssessmentDraftSubmitVO{}, err
+	}
 	data, err := svc.loadShuangxiAStaticData(context.Background())
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
 	itemScores = fillShuangxiAMissingItemScoresWithZero(data, itemScores)
+	itemScores = applyShuangxiAGenderDefaults(itemScores, studentGender)
 	if len(itemScores) == 0 {
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("draft item scores are required before submit")
 	}
@@ -306,13 +343,14 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 		}
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("草稿尚未完成，请补充评估项目后再提交")
 	}
-	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores)
+	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, studentGender)
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
 	record, err := svc.CreateShuangxiAAssessmentRecord(userID, ShuangxiAAssessmentRecordSaveInput{
 		StudentID:      draft.StudentID,
 		StudentName:    draft.StudentName,
+		StudentGender:  studentGender,
 		ExaminerName:   draft.ExaminerName,
 		Remark:         draft.Remark,
 		BirthDate:      *draft.BirthDate,
@@ -347,6 +385,16 @@ func (svc *Service) CreateShuangxiAAssessmentRecord(userID int64, input Shuangxi
 		return model.AssessmentRecordDetailVO{}, err
 	}
 	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	studentGender, err := svc.resolveShuangxiAStudentGender(context.Background(), instID, input.StudentID, input.StudentGender)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	input.StudentGender = studentGender
+	input.ItemScores = applyShuangxiAGenderDefaults(input.ItemScores, studentGender)
+	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, studentGender)
+	if err != nil {
 		return model.AssessmentRecordDetailVO{}, err
 	}
 	result, progress, err := buildShuangxiAAssessmentScoreResponse(input.BirthDate, input.AssessmentDate, input.ItemScores)
@@ -611,7 +659,104 @@ func fillShuangxiAMissingItemScoresWithZero(data shuangxiAStaticData, itemScores
 	return out
 }
 
-func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]int) (any, error) {
+const (
+	shuangxiAUseSanitaryPadItemNo = 82
+	shuangxiAShaveItemNo          = 83
+)
+
+func normalizeShuangxiAGender(value string) string {
+	raw := strings.ToLower(strings.TrimSpace(value))
+	if raw == "" || raw == "-" {
+		return ""
+	}
+	if strings.Contains(raw, "女") || raw == "female" || raw == "f" {
+		return "female"
+	}
+	if strings.Contains(raw, "男") || raw == "male" || raw == "m" {
+		return "male"
+	}
+	return ""
+}
+
+func applyShuangxiAGenderDefaults(itemScores map[int]int, gender string) map[int]int {
+	out := make(map[int]int, len(itemScores)+2)
+	for itemNo, score := range itemScores {
+		if itemNo > 0 {
+			out[itemNo] = score
+		}
+	}
+	switch normalizeShuangxiAGender(gender) {
+	case "male":
+		out[shuangxiAUseSanitaryPadItemNo] = 3
+	case "female":
+		out[shuangxiAShaveItemNo] = 3
+	}
+	return out
+}
+
+func (svc *Service) resolveShuangxiAStudentGender(ctx context.Context, instID, studentID int64, candidates ...string) (string, error) {
+	for _, candidate := range candidates {
+		trimmed := strings.TrimSpace(candidate)
+		if normalizeShuangxiAGender(trimmed) != "" {
+			return trimmed, nil
+		}
+	}
+	if svc.repo == nil || instID <= 0 || studentID <= 0 {
+		return "", nil
+	}
+	gender, err := svc.repo.GetStudentGenderText(ctx, instID, studentID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+		return "", err
+	}
+	gender = strings.TrimSpace(gender)
+	if normalizeShuangxiAGender(gender) == "" {
+		return "", nil
+	}
+	return gender, nil
+}
+
+func shuangxiAStudentGenderFromInputSnapshot(raw json.RawMessage) string {
+	if len(raw) == 0 {
+		return ""
+	}
+	var snapshot shuangxiASavedInputSnapshot
+	if err := json.Unmarshal(raw, &snapshot); err != nil {
+		return ""
+	}
+	return strings.TrimSpace(snapshot.StudentGender)
+}
+
+func withShuangxiAInputScoresSnapshot(snapshot any, itemScores map[int]int, studentGender string) (any, error) {
+	out := make(map[string]any)
+	switch typed := snapshot.(type) {
+	case nil:
+	case map[string]any:
+		for key, value := range typed {
+			out[key] = value
+		}
+	default:
+		raw, err := json.Marshal(typed)
+		if err != nil {
+			return nil, err
+		}
+		if len(raw) > 0 && string(raw) != "null" {
+			if err := json.Unmarshal(raw, &out); err != nil {
+				return nil, err
+			}
+		}
+	}
+	out["itemScores"] = itemScores
+	out["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores)
+	if strings.TrimSpace(studentGender) != "" {
+		out["studentGender"] = strings.TrimSpace(studentGender)
+	}
+	return out, nil
+}
+
+func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]int, studentGender string) (any, error) {
 	var snapshot map[string]any
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &snapshot)
@@ -621,6 +766,9 @@ func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]in
 	}
 	snapshot["itemScores"] = itemScores
 	snapshot["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores)
+	if strings.TrimSpace(studentGender) != "" {
+		snapshot["studentGender"] = strings.TrimSpace(studentGender)
+	}
 	return snapshot, nil
 }
 

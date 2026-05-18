@@ -697,6 +697,7 @@ class ShuangxiDraftInput {
   const ShuangxiDraftInput({
     this.studentId = 0,
     this.studentName = '',
+    this.studentGender = '',
     this.examinerName = '',
     this.remark = '',
     this.birthDate = '',
@@ -728,6 +729,7 @@ class ShuangxiDraftInput {
     return ShuangxiDraftInput(
       studentId: _intFrom(json['studentId']),
       studentName: '${json['studentName'] ?? ''}',
+      studentGender: '${json['studentGender'] ?? ''}',
       examinerName: '${json['examinerName'] ?? ''}',
       remark: '${json['remark'] ?? ''}',
       birthDate: _dateOnlyFrom(json['birthDate']),
@@ -742,6 +744,7 @@ class ShuangxiDraftInput {
 
   final int studentId;
   final String studentName;
+  final String studentGender;
   final String examinerName;
   final String remark;
   final String birthDate;

@@ -21,6 +21,7 @@ class ShuangxiAssessmentLaunchArgs {
     this.birthDate = '',
     this.assessmentDate = '',
     this.examinerName = '',
+    this.studentGender = '',
     this.scaleName = '双溪课程评量表A',
   });
 
@@ -31,6 +32,7 @@ class ShuangxiAssessmentLaunchArgs {
   final String birthDate;
   final String assessmentDate;
   final String examinerName;
+  final String studentGender;
   final String scaleName;
 }
 
@@ -70,6 +72,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   String _birthDate = '';
   String _assessmentDate = '';
   String _examinerName = '';
+  String _studentGender = '';
   String _errorMessage = '';
   String _autoSaveText = '等待作答';
   String _previousAssessmentDate = '';
@@ -102,6 +105,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         ? _dateOnlyText(widget.args.assessmentDate)
         : _todayIsoDate();
     _examinerName = widget.args.examinerName;
+    _studentGender = widget.args.studentGender;
     unawaited(_initialize());
   }
 
@@ -171,6 +175,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         if (launchDraftDetail != null) {
           _applyDraftDetail(launchDraftDetail);
         }
+        _applyGenderDefaultsToScores();
         if (_selectedItemNo <= 0) {
           _selectedItemNo = _firstMissingItemNo() > 0
               ? _firstMissingItemNo()
@@ -409,10 +414,14 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (detail.examinerName.trim().isNotEmpty) {
       _examinerName = detail.examinerName.trim();
     }
+    if (detail.input.studentGender.trim().isNotEmpty) {
+      _studentGender = detail.input.studentGender.trim();
+    }
     _setRemarkText(detail.input.remark);
     _itemScores
       ..clear()
       ..addAll(detail.input.itemScores);
+    _applyGenderDefaultsToScores();
     if (_selectedItemNo <= 0) {
       _selectedItemNo = _firstMissingItemNo() > 0
           ? _firstMissingItemNo()
@@ -561,6 +570,14 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (_selectedItemNo <= 0 || _submitting) {
       return;
     }
+    final int? genderDefaultScore = _genderDefaultScoreForItem(_selectedItemNo);
+    if (genderDefaultScore != null) {
+      setState(() {
+        _itemScores[_selectedItemNo] = genderDefaultScore;
+      });
+      _showMessage(_genderDefaultReasonForItem(_selectedItemNo));
+      return;
+    }
     final int currentItemNo = _selectedItemNo;
     _cancelPendingAutoAdvance();
     setState(() {
@@ -626,6 +643,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
             'draftId': _draftId,
             'itemNo': itemNo,
             'score': score,
+            'studentGender': _studentGender.trim(),
           },
         );
       }
@@ -745,10 +763,14 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
 
   void _mergeDraftDetailInput(ShuangxiDraftDetail detail) {
     final Map<int, int> localScores = Map<int, int>.from(_itemScores);
+    if (detail.input.studentGender.trim().isNotEmpty) {
+      _studentGender = detail.input.studentGender.trim();
+    }
     _itemScores
       ..clear()
       ..addAll(detail.input.itemScores)
       ..addAll(localScores);
+    _applyGenderDefaultsToScores();
   }
 
   void _setRemarkText(String remark) {
@@ -891,6 +913,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     for (final int itemNo in itemNos) {
       _itemScores.putIfAbsent(itemNo, () => 0);
     }
+    _applyGenderDefaultsToScores();
   }
 
   Map<String, dynamic> _buildDraftPayload() {
@@ -898,6 +921,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       if (_draftId > 0) 'id': _draftId,
       'studentId': _studentId,
       'studentName': _studentName.trim(),
+      'studentGender': _studentGender.trim(),
       'examinerName': _examinerName.trim(),
       'remark': _remarkController.text.trim(),
       'birthDate': _dateOnlyText(_birthDate),
@@ -907,12 +931,13 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   }
 
   List<Map<String, dynamic>> _itemScoreList() {
-    final List<int> itemNos = _itemScores.keys.toList()..sort();
+    final Map<int, int> scores = _effectiveItemScores();
+    final List<int> itemNos = scores.keys.toList()..sort();
     return <Map<String, dynamic>>[
       for (final int itemNo in itemNos)
         <String, dynamic>{
           'itemNo': itemNo,
-          'score': _itemScores[itemNo],
+          'score': scores[itemNo],
         },
     ];
   }
@@ -989,8 +1014,9 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   }
 
   int _firstMissingItemNo() {
+    final Map<int, int> effectiveScores = _effectiveItemScores();
     for (final ShuangxiItemSummary item in _template.allItems) {
-      if (!_itemScores.containsKey(item.itemNo)) {
+      if (!effectiveScores.containsKey(item.itemNo)) {
         return item.itemNo;
       }
     }
@@ -1033,7 +1059,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     return itemSkill;
   }
 
-  int get _answeredCount => _itemScores.length;
+  int get _answeredCount => _effectiveItemScores().length;
 
   int get _totalCount {
     if (_template.itemCount > 0) {
@@ -1062,6 +1088,10 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
 
   @override
   Widget build(BuildContext context) {
+    final Map<int, int> effectiveScores = _effectiveItemScores();
+    final int? genderDefaultScore = _genderDefaultScoreForItem(_selectedItemNo);
+    final String genderDefaultReason =
+        _genderDefaultReasonForItem(_selectedItemNo);
     return ColoredBox(
       color: _ShuangxiColors.page,
       child: Column(
@@ -1088,7 +1118,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
           else ...<Widget>[
             _DimensionOverview(
               template: _template,
-              itemScores: _itemScores,
+              itemScores: effectiveScores,
               selectedDomainCode: _selectedDomainCode,
               onSelectDomain: _selectDomain,
             ),
@@ -1105,7 +1135,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
                         selectedDomainCode: _selectedDomainCode,
                         selectedSkillCode: _selectedSkillCode,
                         selectedItemNo: _selectedItemNo,
-                        itemScores: _itemScores,
+                        itemScores: effectiveScores,
                         onSelectItem: (int itemNo) =>
                             unawaited(_selectItem(itemNo)),
                       ),
@@ -1117,7 +1147,9 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
                         summary: _currentItemSummary,
                         fallbackScoreOptions: _template.scoreOptions,
                         itemLoading: _itemLoading,
-                        selectedScore: _itemScores[_selectedItemNo] ?? -1,
+                        selectedScore: effectiveScores[_selectedItemNo] ?? -1,
+                        genderDefaultScore: genderDefaultScore,
+                        genderDefaultReason: genderDefaultReason,
                         previousScore: _previousItemScores[_selectedItemNo],
                         previousAssessmentDate: _previousAssessmentDate,
                         onSelectScore: _selectScore,
@@ -1196,6 +1228,75 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     }
     return '第 $next 题';
   }
+
+  void _applyGenderDefaultsToScores() {
+    final int? sanitaryPadScore =
+        _genderDefaultScoreForItem(_shuangxiSanitaryPadItemNo);
+    if (sanitaryPadScore != null) {
+      _itemScores[_shuangxiSanitaryPadItemNo] = sanitaryPadScore;
+    }
+    final int? shaveScore = _genderDefaultScoreForItem(_shuangxiShaveItemNo);
+    if (shaveScore != null) {
+      _itemScores[_shuangxiShaveItemNo] = shaveScore;
+    }
+  }
+
+  Map<int, int> _effectiveItemScores() {
+    final Map<int, int> scores = Map<int, int>.from(_itemScores);
+    final int? sanitaryPadScore =
+        _genderDefaultScoreForItem(_shuangxiSanitaryPadItemNo);
+    if (sanitaryPadScore != null) {
+      scores[_shuangxiSanitaryPadItemNo] = sanitaryPadScore;
+    }
+    final int? shaveScore = _genderDefaultScoreForItem(_shuangxiShaveItemNo);
+    if (shaveScore != null) {
+      scores[_shuangxiShaveItemNo] = shaveScore;
+    }
+    return scores;
+  }
+
+  int? _genderDefaultScoreForItem(int itemNo) {
+    final _ShuangxiGender gender = _normalizeShuangxiGender(_studentGender);
+    if (gender == _ShuangxiGender.male &&
+        itemNo == _shuangxiSanitaryPadItemNo) {
+      return 3;
+    }
+    if (gender == _ShuangxiGender.female && itemNo == _shuangxiShaveItemNo) {
+      return 3;
+    }
+    return null;
+  }
+
+  String _genderDefaultReasonForItem(int itemNo) {
+    final _ShuangxiGender gender = _normalizeShuangxiGender(_studentGender);
+    if (gender == _ShuangxiGender.male &&
+        itemNo == _shuangxiSanitaryPadItemNo) {
+      return '男生不适用，按 3 分计算';
+    }
+    if (gender == _ShuangxiGender.female && itemNo == _shuangxiShaveItemNo) {
+      return '女生不适用，按 3 分计算';
+    }
+    return '';
+  }
+}
+
+const int _shuangxiSanitaryPadItemNo = 82;
+const int _shuangxiShaveItemNo = 83;
+
+enum _ShuangxiGender { unknown, male, female }
+
+_ShuangxiGender _normalizeShuangxiGender(String value) {
+  final String raw = value.trim().toLowerCase();
+  if (raw.isEmpty || raw == '-') {
+    return _ShuangxiGender.unknown;
+  }
+  if (raw.contains('女') || raw == 'female' || raw == 'f') {
+    return _ShuangxiGender.female;
+  }
+  if (raw.contains('男') || raw == 'male' || raw == 'm') {
+    return _ShuangxiGender.male;
+  }
+  return _ShuangxiGender.unknown;
 }
 
 class _ShuangxiColors {
@@ -2158,6 +2259,8 @@ class _QuestionWorkspace extends StatelessWidget {
     required this.fallbackScoreOptions,
     required this.itemLoading,
     required this.selectedScore,
+    required this.genderDefaultScore,
+    required this.genderDefaultReason,
     required this.previousScore,
     required this.previousAssessmentDate,
     required this.onSelectScore,
@@ -2168,6 +2271,8 @@ class _QuestionWorkspace extends StatelessWidget {
   final List<ShuangxiScoreOption> fallbackScoreOptions;
   final bool itemLoading;
   final int selectedScore;
+  final int? genderDefaultScore;
+  final String genderDefaultReason;
   final int? previousScore;
   final String previousAssessmentDate;
   final ValueChanged<int> onSelectScore;
@@ -2202,6 +2307,8 @@ class _QuestionWorkspace extends StatelessWidget {
               ];
     final bool hasPrevious =
         previousScore != null && previousAssessmentDate.trim().isNotEmpty;
+    final bool hasGenderDefault =
+        genderDefaultScore != null && genderDefaultReason.trim().isNotEmpty;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       decoration: _panelDecoration(radius: 8),
@@ -2277,6 +2384,13 @@ class _QuestionWorkspace extends StatelessWidget {
             const SizedBox(height: 14),
           ] else
             const SizedBox(height: 6),
+          if (hasGenderDefault) ...<Widget>[
+            _GenderDefaultNotice(
+              reason: genderDefaultReason,
+              score: genderDefaultScore!,
+            ),
+            const SizedBox(height: 12),
+          ],
           if (itemLoading)
             const LinearProgressIndicator(
               minHeight: 2,
@@ -2290,6 +2404,9 @@ class _QuestionWorkspace extends StatelessWidget {
               _ScoreChoice(
                 option: scoreOptions[index],
                 selected: selectedScore == scoreOptions[index].value,
+                enabled: !hasGenderDefault,
+                autoApplied: hasGenderDefault &&
+                    genderDefaultScore == scoreOptions[index].value,
                 previous:
                     hasPrevious && previousScore == scoreOptions[index].value,
                 previousDate: previousAssessmentDate,
@@ -2307,6 +2424,8 @@ class _ScoreChoice extends StatelessWidget {
   const _ScoreChoice({
     required this.option,
     required this.selected,
+    required this.enabled,
+    required this.autoApplied,
     required this.previous,
     required this.previousDate,
     required this.onTap,
@@ -2314,6 +2433,8 @@ class _ScoreChoice extends StatelessWidget {
 
   final ShuangxiScoreOption option;
   final bool selected;
+  final bool enabled;
+  final bool autoApplied;
   final bool previous;
   final String previousDate;
   final VoidCallback onTap;
@@ -2323,7 +2444,7 @@ class _ScoreChoice extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: enabled ? onTap : null,
         borderRadius: BorderRadius.circular(8),
         child: Ink(
           height: 54,
@@ -2381,6 +2502,7 @@ class _ScoreChoice extends StatelessWidget {
                 child: Text(
                   option.description,
                   maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     color: _ShuangxiColors.ink,
                     fontSize: 15,
@@ -2388,12 +2510,101 @@ class _ScoreChoice extends StatelessWidget {
                   ),
                 ),
               ),
+              if (autoApplied) ...<Widget>[
+                const SizedBox(width: 8),
+                const _AutoAppliedScoreBadge(),
+              ],
               if (previous) ...<Widget>[
                 const SizedBox(width: 8),
                 _PreviousScoreBadge(date: previousDate),
               ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _GenderDefaultNotice extends StatelessWidget {
+  const _GenderDefaultNotice({
+    required this.reason,
+    required this.score,
+  });
+
+  final String reason;
+  final int score;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF7EF),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFFFC7A8)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.rule_rounded,
+            color: _ShuangxiColors.orange,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              reason,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ShuangxiColors.body,
+                fontSize: 13,
+                height: 1,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '$score分',
+            maxLines: 1,
+            style: const TextStyle(
+              color: _ShuangxiColors.orangeDeep,
+              fontSize: 14,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _AutoAppliedScoreBadge extends StatelessWidget {
+  const _AutoAppliedScoreBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 22,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFE9DD),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: const Color(0xFFFFC7A8)),
+      ),
+      child: const Text(
+        '已按规则',
+        maxLines: 1,
+        style: TextStyle(
+          color: _ShuangxiColors.orangeDeep,
+          fontSize: 11,
+          height: 1,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );

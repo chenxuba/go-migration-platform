@@ -16,6 +16,7 @@ type shuangxiAssessmentDraftSaveRequest struct {
 	ID             int64                      `json:"id,omitempty"`
 	StudentID      int64                      `json:"studentId,omitempty"`
 	StudentName    string                     `json:"studentName,omitempty"`
+	StudentGender  string                     `json:"studentGender,omitempty"`
 	ExaminerName   string                     `json:"examinerName,omitempty"`
 	Remark         string                     `json:"remark,omitempty"`
 	BirthDate      string                     `json:"birthDate,omitempty"`
@@ -30,9 +31,10 @@ type shuangxiItemScoreRequest struct {
 }
 
 type shuangxiAssessmentDraftItemSaveRequest struct {
-	DraftID int64 `json:"draftId"`
-	ItemNo  int   `json:"itemNo"`
-	Score   *int  `json:"score"`
+	DraftID       int64  `json:"draftId"`
+	ItemNo        int    `json:"itemNo"`
+	Score         *int   `json:"score"`
+	StudentGender string `json:"studentGender,omitempty"`
 }
 
 type shuangxiAssessmentDraftDeleteRequest struct {
@@ -112,9 +114,10 @@ func (handler *Handler) saveShuangxiAAssessmentDraftItem(w http.ResponseWriter, 
 		return
 	}
 	result, err := handler.service.SaveShuangxiAAssessmentDraftItem(claims.UserID, service.ShuangxiAAssessmentDraftItemSaveInput{
-		DraftID: req.DraftID,
-		ItemNo:  req.ItemNo,
-		Score:   req.Score,
+		DraftID:       req.DraftID,
+		ItemNo:        req.ItemNo,
+		Score:         req.Score,
+		StudentGender: strings.TrimSpace(req.StudentGender),
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
@@ -282,6 +285,7 @@ func (req shuangxiAssessmentDraftSaveRequest) toDraftSaveInput() (service.Shuang
 		ID:             req.ID,
 		StudentID:      req.StudentID,
 		StudentName:    strings.TrimSpace(req.StudentName),
+		StudentGender:  strings.TrimSpace(req.StudentGender),
 		ExaminerName:   strings.TrimSpace(req.ExaminerName),
 		Remark:         strings.TrimSpace(req.Remark),
 		BirthDate:      birthDate,
@@ -313,6 +317,7 @@ func (req shuangxiAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[
 		ID             int64                      `json:"id,omitempty"`
 		StudentID      int64                      `json:"studentId,omitempty"`
 		StudentName    string                     `json:"studentName,omitempty"`
+		StudentGender  string                     `json:"studentGender,omitempty"`
 		ExaminerName   string                     `json:"examinerName,omitempty"`
 		Remark         string                     `json:"remark,omitempty"`
 		BirthDate      string                     `json:"birthDate,omitempty"`
@@ -323,6 +328,7 @@ func (req shuangxiAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[
 		ID:             req.ID,
 		StudentID:      req.StudentID,
 		StudentName:    strings.TrimSpace(req.StudentName),
+		StudentGender:  strings.TrimSpace(req.StudentGender),
 		ExaminerName:   strings.TrimSpace(req.ExaminerName),
 		Remark:         strings.TrimSpace(req.Remark),
 		BirthDate:      strings.TrimSpace(req.BirthDate),

@@ -81,6 +81,26 @@ func (repo *Repository) GetStudentSnapshot(ctx context.Context, instID, studentI
 	return item, err
 }
 
+func (repo *Repository) GetStudentGenderText(ctx context.Context, instID, studentID int64) (string, error) {
+	if instID <= 0 || studentID <= 0 {
+		return "", sql.ErrNoRows
+	}
+	var sex int
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT IFNULL(stu_sex, -1)
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, studentID, instID).Scan(&sex); err != nil {
+		return "", err
+	}
+	gender := scaleLibraryStudentGenderText(sex)
+	if gender == "-" {
+		return "", nil
+	}
+	return gender, nil
+}
+
 func (repo *Repository) GetStudentStatusSnapshot(ctx context.Context, instID, studentID int64) (StudentStatusSnapshot, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT follow_up_status, intent_level

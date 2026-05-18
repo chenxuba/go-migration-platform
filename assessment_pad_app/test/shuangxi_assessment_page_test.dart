@@ -165,6 +165,61 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('Shuangxi sex-specific item auto applies three points',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient(firstItemNo: 82);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              args: const ShuangxiAssessmentLaunchArgs(
+                studentId: 1,
+                studentName: '小明',
+                studentGender: '男',
+                assessmentDate: '2026-05-18',
+                examinerName: '陈老师',
+              ),
+              onBack: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('男生不适用，按 3 分计算'), findsOneWidget);
+    expect(find.text('已按规则'), findsOneWidget);
+
+    await tester.tap(find.text('保存草稿'));
+    await tester.pumpAndSettle();
+
+    final Map<String, dynamic>? payload = client.lastSavedDraftPayload;
+    expect(payload, isNotNull);
+    expect(payload!['studentGender'], '男');
+    final List<dynamic> itemScoreList =
+        payload['itemScoreList'] as List<dynamic>? ?? <dynamic>[];
+    final Map<String, dynamic> item82 = Map<String, dynamic>.from(
+      itemScoreList.firstWhere(
+        (dynamic raw) => (raw as Map)['itemNo'] == 82,
+      ) as Map,
+    );
+    expect(item82['score'], 3);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Shuangxi submit defaults missing scores to zero',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -302,12 +357,14 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     bool holdTemplateSummary = false,
     this.previousAssessmentDate = '',
     this.previousItemScores = const <int, int>{},
+    this.firstItemNo = 1,
   }) : _templateSummaryCompleter =
             holdTemplateSummary ? Completer<ShuangxiTemplateSummary>() : null;
 
   final Completer<ShuangxiTemplateSummary>? _templateSummaryCompleter;
   final String previousAssessmentDate;
   final Map<int, int> previousItemScores;
+  final int firstItemNo;
   Map<String, dynamic>? lastSavedDraftPayload;
   int saveDraftCount = 0;
   int submitDraftCount = 0;
@@ -331,6 +388,53 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   }
 
   ShuangxiTemplateSummary _templateSummary() {
+    if (firstItemNo == 82) {
+      return const ShuangxiTemplateSummary(
+        title: '双溪课程评量表A',
+        itemCount: 209,
+        domainCount: 7,
+        skillCount: 34,
+        scoreMin: 0,
+        scoreMax: 3,
+        scoreOptions: <ShuangxiScoreOption>[
+          ShuangxiScoreOption(value: 0, label: '0分', description: '尚未出现'),
+          ShuangxiScoreOption(value: 1, label: '1分', description: '大量协助'),
+          ShuangxiScoreOption(value: 2, label: '2分', description: '少量协助'),
+          ShuangxiScoreOption(value: 3, label: '3分', description: '独立完成'),
+        ],
+        domains: <ShuangxiDomainSummary>[
+          ShuangxiDomainSummary(
+            domainCode: 'SELF_CARE',
+            domainName: '生活自理',
+            sortNo: 4,
+            itemCount: 24,
+            maxRawScore: 72,
+            skills: <ShuangxiSkillSummary>[
+              ShuangxiSkillSummary(
+                skillCode: '4.4',
+                skillName: '身体之清洁',
+                domainCode: 'SELF_CARE',
+                domainName: '生活自理',
+                sortNo: 4,
+                itemCount: 1,
+                items: <ShuangxiItemSummary>[
+                  ShuangxiItemSummary(
+                    itemNo: 82,
+                    itemCode: '4.4.8',
+                    itemTitle: '4.4.8 使用卫生棉',
+                    testItem: '使用卫生棉',
+                    domainCode: 'SELF_CARE',
+                    domainName: '生活自理',
+                    skillCode: '4.4',
+                    skillName: '身体之清洁',
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ],
+      );
+    }
     return const ShuangxiTemplateSummary(
       title: '双溪课程评量表A',
       itemCount: 209,
@@ -441,6 +545,24 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     String token, {
     required int itemNo,
   }) async {
+    if (itemNo == 82) {
+      return const ShuangxiAssessmentItem(
+        itemNo: 82,
+        itemCode: '4.4.8',
+        itemTitle: '4.4.8 使用卫生棉',
+        testItem: '使用卫生棉',
+        domainCode: 'SELF_CARE',
+        domainName: '生活自理',
+        skillCode: '4.4',
+        skillName: '身体之清洁',
+        scoreOptions: <ShuangxiScoreOption>[
+          ShuangxiScoreOption(value: 0, label: '0分', description: '尚未出现'),
+          ShuangxiScoreOption(value: 1, label: '1分', description: '大量协助'),
+          ShuangxiScoreOption(value: 2, label: '2分', description: '少量协助'),
+          ShuangxiScoreOption(value: 3, label: '3分', description: '独立完成'),
+        ],
+      );
+    }
     if (itemNo == 2) {
       return const ShuangxiAssessmentItem(
         itemNo: 2,
@@ -641,6 +763,7 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
       input: ShuangxiDraftInput(
         studentId: _intFrom(payload['studentId']),
         studentName: '${payload['studentName'] ?? ''}',
+        studentGender: '${payload['studentGender'] ?? ''}',
         examinerName: '${payload['examinerName'] ?? ''}',
         remark: '${payload['remark'] ?? ''}',
         birthDate: '${payload['birthDate'] ?? ''}',

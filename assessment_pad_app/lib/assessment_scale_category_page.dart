@@ -601,6 +601,7 @@ class _AssessmentScaleCategoryScreenState
         ShuangxiAssessmentLaunchArgs(
           studentId: student.id,
           studentName: student.displayName,
+          studentGender: student.gender,
           studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
