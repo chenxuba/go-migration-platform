@@ -21,11 +21,23 @@ extension _ErxinAssessmentBootstrap on _ErxinAssessmentPageState {
       return;
     }
     try {
-      final ErxinTemplateSummary template =
-          await widget.client.fetchTemplateSummary(token);
+      final Future<HomeSession> sessionRequest = widget.homeClient == null
+          ? Future<HomeSession>.value(HomeSession.fallback)
+          : widget.homeClient!.fetchCurrentSession(token).then<HomeSession>(
+                (HomeSession session) => session,
+                onError: (Object _, StackTrace __) => HomeSession.fallback,
+              );
+      final List<Object> bootstrapResult =
+          await Future.wait<Object>(<Future<Object>>[
+        widget.client.fetchTemplateSummary(token),
+        sessionRequest,
+      ]);
       if (!mounted) {
         return;
       }
+      final ErxinTemplateSummary template =
+          bootstrapResult[0] as ErxinTemplateSummary;
+      final HomeSession session = bootstrapResult[1] as HomeSession;
       final String firstDomain = template.domains.isNotEmpty
           ? template.domains.first.domainCode
           : 'GM';
@@ -41,6 +53,9 @@ extension _ErxinAssessmentBootstrap on _ErxinAssessmentPageState {
       } else {
         _detectedDraft = await _findLatestDraft(token);
         _prefetchDetectedDraftDetail(token, _detectedDraft);
+      }
+      if (_examinerName.trim().isEmpty) {
+        _examinerName = _sessionExaminerName(session);
       }
       _selectedItemNo = _firstCurrentItemNo(_selectedDomainCode);
       if (_selectedItemNo <= 0) {

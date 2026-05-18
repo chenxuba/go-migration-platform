@@ -116,7 +116,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         studentName: _studentName,
         age: _studentAgeText,
         assessmentDate: _assessmentDate,
-        examinerName: _examinerName,
+        examinerName: _examinerName.trim().isEmpty ? '-' : _examinerName,
         autoSaveText: _autoSaveText,
         onBack: widget.onBack,
       );

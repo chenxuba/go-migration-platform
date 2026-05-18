@@ -3425,6 +3425,7 @@ void main() {
               assessmentDate: '2026-05-08',
             ),
             client: client,
+            homeClient: _FakeHomeClient(),
             onBack: () {},
           ),
         ),
@@ -3768,6 +3769,14 @@ void main() {
     expect(client.fetchDraftDetailCalls, 1);
     expect(find.text('发现未完成草稿'), findsOneWidget);
     expect(find.text('继续测评'), findsOneWidget);
+    expect(
+      find.textContaining(
+        '施测者：陈老师',
+        findRichText: true,
+        skipOffstage: false,
+      ),
+      findsOneWidget,
+    );
 
     await tester.tap(find.text('继续测评'));
     await tester.pumpAndSettle();
@@ -3775,12 +3784,20 @@ void main() {
     expect(find.text('发现未完成草稿'), findsNothing);
     expect(find.textContaining('当前题目说明：136 36月题'), findsOneWidget);
     expect(
+      find.textContaining('施测者：陈老师', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
       find.textContaining('出生日期：2022-05-11', findRichText: true),
       findsOneWidget,
     );
     expect(
-      find.textContaining('测查日期：2026-05-08', findRichText: true),
-      findsOneWidget,
+      find.textContaining('测查日期', findRichText: true),
+      findsNothing,
+    );
+    expect(
+      find.textContaining('日期：2026-05-08', findRichText: true),
+      findsNothing,
     );
     expect(find.textContaining('T00:00:00', findRichText: true), findsNothing);
     expect(find.text('往前42月龄'), findsOneWidget);

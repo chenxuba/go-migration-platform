@@ -8,6 +8,7 @@ import 'assessment_draft_resume_dialog.dart';
 import 'assessment_age_formatter.dart';
 import 'assessment_scale_client.dart';
 import 'erxin_assessment_client.dart';
+import 'home_client.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 
@@ -47,12 +48,14 @@ class ErxinAssessmentPage extends StatefulWidget {
     required this.onBack,
     this.args = const ErxinAssessmentLaunchArgs(),
     this.client = const ApiErxinAssessmentClient(),
+    this.homeClient,
     super.key,
   });
 
   final VoidCallback onBack;
   final ErxinAssessmentLaunchArgs args;
   final ErxinAssessmentClient client;
+  final HomeClient? homeClient;
 
   @override
   State<ErxinAssessmentPage> createState() => _ErxinAssessmentPageState();

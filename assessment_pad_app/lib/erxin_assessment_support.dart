@@ -115,3 +115,15 @@ String _formatClock(DateTime value) {
   return '${value.hour.toString().padLeft(2, '0')}:'
       '${value.minute.toString().padLeft(2, '0')}';
 }
+
+String _sessionExaminerName(HomeSession session) {
+  final String nickName = session.nickName.trim();
+  if (nickName.isNotEmpty) {
+    return nickName;
+  }
+  final String username = session.username.trim();
+  if (username.isNotEmpty) {
+    return username;
+  }
+  return session.mobile.trim();
+}

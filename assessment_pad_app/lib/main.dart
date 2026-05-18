@@ -228,6 +228,7 @@ class AssessmentPadApp extends StatelessWidget {
               child: ErxinAssessmentPage(
                 args: args,
                 client: erxinClient,
+                homeClient: homeClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
