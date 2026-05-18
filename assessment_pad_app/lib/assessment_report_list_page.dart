@@ -457,7 +457,16 @@ class _AssessmentReportListScreenState
       return;
     }
     if (_isShuangxiRecord(record)) {
-      _showMessage('双溪课程评量表A评估报告待接入');
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        barrierColor: Colors.black.withOpacity(.28),
+        builder: (BuildContext dialogContext) {
+          return PadDialogViewport(
+            child: _ShuangxiReportPreviewDialog(record: record),
+          );
+        },
+      );
       return;
     }
     if (_isAutismDevRecord(record)) {
@@ -5231,6 +5240,208 @@ class _ErxinReportTabChip extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShuangxiReportPreviewDialog extends StatefulWidget {
+  const _ShuangxiReportPreviewDialog({required this.record});
+
+  final Pep3RecordSummary record;
+
+  @override
+  State<_ShuangxiReportPreviewDialog> createState() =>
+      _ShuangxiReportPreviewDialogState();
+}
+
+class _ShuangxiReportPreviewDialogState
+    extends State<_ShuangxiReportPreviewDialog> {
+  bool _showAnalysis = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final Pep3RecordSummary record = widget.record;
+    return PopScope(
+      canPop: false,
+      child: Center(
+        child: Material(
+          color: Colors.transparent,
+          child: Container(
+            width: 980,
+            height: 654,
+            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: _ReportTheme.line),
+              boxShadow: const <BoxShadow>[
+                BoxShadow(
+                  color: Color(0x24000000),
+                  blurRadius: 34,
+                  offset: Offset(0, 18),
+                ),
+              ],
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                _buildHeader(context, record),
+                const SizedBox(height: 14),
+                _buildTabBar(),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: _ShuangxiPendingReportPanel(
+                    title: _showAnalysis ? '评量结果分析' : '发展侧面图',
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, Pep3RecordSummary record) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              const Text(
+                '双溪评估报告',
+                style: TextStyle(
+                  color: _ReportTheme.ink,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                '${record.assessmentName.trim().isEmpty ? '双溪课程评量表A' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _ReportTheme.muted,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          child: InkWell(
+            onTap: () => Navigator.of(context).pop(),
+            customBorder: const CircleBorder(),
+            child: Container(
+              width: 38,
+              height: 38,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFF8F2),
+                shape: BoxShape.circle,
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: const Icon(
+                Icons.close_rounded,
+                size: 22,
+                color: _ReportTheme.muted,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTabBar() {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Row(
+        children: <Widget>[
+          _ErxinReportTabChip(
+            label: '发展侧面图',
+            active: !_showAnalysis,
+            onTap: () => setState(() => _showAnalysis = false),
+          ),
+          const SizedBox(width: 8),
+          _ErxinReportTabChip(
+            label: '评量结果分析',
+            active: _showAnalysis,
+            onTap: () => setState(() => _showAnalysis = true),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ShuangxiPendingReportPanel extends StatelessWidget {
+  const _ShuangxiPendingReportPanel({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF8F3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 54,
+              height: 54,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFE8DA),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.insights_rounded,
+                color: _ReportTheme.orange,
+                size: 27,
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              '$title待开发',
+              style: const TextStyle(
+                color: _ReportTheme.ink,
+                fontSize: 18,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '后续接入双溪评估报告数据后展示。',
+              style: TextStyle(
+                color: _ReportTheme.muted,
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
         ),
       ),
     );

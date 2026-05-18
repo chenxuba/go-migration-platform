@@ -404,7 +404,7 @@ void main() {
     expect(find.byType(Checkbox), findsNWidgets(6));
   });
 
-  testWidgets('assessment report list shows Shuangxi records as pending viewer',
+  testWidgets('assessment report list opens Shuangxi pending report tabs',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
     tester.view.devicePixelRatio = 1;
@@ -456,7 +456,15 @@ void main() {
     await tester.tap(find.text('查看'));
     await tester.pump();
 
-    expect(find.text('双溪课程评量表A评估报告待接入'), findsOneWidget);
+    expect(find.text('双溪评估报告'), findsOneWidget);
+    expect(find.text('发展侧面图'), findsOneWidget);
+    expect(find.text('评量结果分析'), findsOneWidget);
+    expect(find.text('发展侧面图待开发'), findsOneWidget);
+
+    await tester.tap(find.text('评量结果分析'));
+    await tester.pump();
+
+    expect(find.text('评量结果分析待开发'), findsOneWidget);
   });
 
   testWidgets('home header fallback does not show a fake institution',
