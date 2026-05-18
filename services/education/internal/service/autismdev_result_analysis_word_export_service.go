@@ -35,11 +35,16 @@ func (svc *Service) ExportAutismDevResultAnalysisWord(userID int64, recordID int
 }
 
 func (svc *Service) ExportAutismDevResultAnalysisPDF(userID int64, recordID int64, analysis *model.AutismDevResultAnalysisVO) (string, string, []byte, error) {
-	fileName, _, content, err := svc.ExportAutismDevResultAnalysisWord(userID, recordID, analysis)
+	export, err := svc.autismDevResultAnalysisWordExport(userID, recordID, analysis)
 	if err != nil {
 		return "", "", nil, err
 	}
-	return exportIEPPDFByDOCX(fileName, content)
+	content, err := buildAutismDevResultAnalysisPDF(export)
+	if err != nil {
+		return "", "", nil, err
+	}
+	fileName := fmt.Sprintf("%s-孤独症儿童评估结果分析-%s.pdf", sanitizeExportFileName(export.StudentName), time.Now().Format("20060102150405"))
+	return fileName, iepPlanPDFContentType, content, nil
 }
 
 func (svc *Service) autismDevResultAnalysisWordExport(userID int64, recordID int64, analysis *model.AutismDevResultAnalysisVO) (autismDevResultAnalysisWordExport, error) {

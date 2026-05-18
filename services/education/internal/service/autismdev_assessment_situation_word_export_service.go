@@ -91,11 +91,11 @@ func (svc *Service) ExportAutismDevAssessmentSituationWord(userID int64, recordI
 }
 
 func (svc *Service) ExportAutismDevAssessmentSituationPDF(userID int64, recordID int64) (string, string, []byte, error) {
-	fileName, _, content, err := svc.ExportAutismDevAssessmentSituationWord(userID, recordID)
+	fileName, content, err := svc.buildAutismDevAssessmentSituationPDF(userID, recordID)
 	if err != nil {
 		return "", "", nil, err
 	}
-	return exportIEPPDFByDOCX(fileName, content)
+	return fileName, iepPlanPDFContentType, content, nil
 }
 
 func buildAutismDevAssessmentSituationWordExport(record model.AssessmentRecordDetailVO, score autismdevscore.AssessmentResult, data autismDevStaticData, itemScores map[int]string) autismDevAssessmentSituationWordExport {

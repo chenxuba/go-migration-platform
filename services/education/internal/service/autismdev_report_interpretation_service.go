@@ -129,7 +129,7 @@ func buildAutismDevReportInterpretationPromptPayload(record model.AssessmentReco
 	payload := buildAutismDevResultAnalysisPromptPayload(record, result, data, itemScores)
 	payload.Domains = autismDevIEPPlanPromptDomains(result, data, itemScores)
 	payload.OutputRequest = erxinReportInterpretationOutputRequest{
-		RequiredSchema: "只输出JSON：title, summary, domainAnalysis[], suggestions[], notes[]。domainAnalysis必须是字符串数组，不允许对象数组；每条格式为“领域名：一句话”，最多60个中文字符，只写1个主要表现和1个关注点。summary最多80个中文字符；suggestions为3-4条，每条最多45个中文字符；notes为1-2条。禁止把domain、analysis、name、content等字段名写进数组内容。",
+		RequiredSchema: "只输出JSON：title, summary, domainAnalysis[], suggestions[], notes[]。domainAnalysis必须是字符串数组，不允许对象数组；每条格式为“领域名：一句话”，最多60个中文字符，只写1个已会项目和1个下一步关注点，尽量具体到题目或行为。summary最多80个中文字符；suggestions为3-4条，每条最多45个中文字符；notes为1-2条。禁止把domain、analysis、name、content等字段名写进数组内容。",
 		SafetyRules:    "必须基于孤独症儿童发展评估表的结构化题目得分生成；不得更改P、E、F、X、A、M、S计数、年龄段、日期等事实；不得做医学诊断；不得使用确诊、治疗方案等表述；不要写复杂长段落；如有X项、缺测或数据复核提示，必须在notes中说明结果需结合临床观察和日常表现综合判断。",
 	}
 	return payload
@@ -397,7 +397,7 @@ func buildDeepSeekAutismDevReportInterpretationRequestBody(payload autismDevResu
 	return buildDeepSeekIEPPlanRequestBodyWithPrompt(payload, strings.Join([]string{
 		"你是儿童康复机构的评估报告解读助手。",
 		"任务是把孤独症儿童发展评估表8大项结构化评分结果转换为专业、克制、适合家长和老师阅读的报告解读。",
-		"写法要短，避免复杂长段落；基于各领域P/E/F/X或A/M/S计数和1个具体表现即可。",
+		"写法要短，避免复杂长段落；每个领域尽量写成“已会什么 + 还要练什么 + 下一步怎么练”，并尽量点到1个具体题目或行为。",
 		"domainAnalysis必须按输入domains顺序写成字符串数组，覆盖已测领域；不要输出对象数组，不要输出domain、analysis等字段名。",
 		"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
 		"不得修改输入中的分数、计数、年龄段、日期等事实。",
@@ -418,16 +418,7 @@ func buildRuleBasedAutismDevReportInterpretation(record model.AssessmentRecordDe
 	if len(weakDomains) > 0 && strings.TrimSpace(weakDomains[0].DomainName) != "" {
 		primaryConcern = strings.TrimSpace(weakDomains[0].DomainName)
 	}
-	answeredCount := 0
-	for _, domain := range domains {
-		answeredCount += domain.AnsweredItemCount
-	}
-	summary := fmt.Sprintf(
-		"本次共%d个已测领域、%d个已作答项目。近期可优先关注%s，并结合课堂和家庭观察理解结果。",
-		len(domains),
-		answeredCount,
-		primaryConcern,
-	)
+	summary := fmt.Sprintf("本次结果显示，%s仍是当前重点，近期建议围绕少提示、稳定完成和场景泛化把目标拆小。", primaryConcern)
 	domainAnalysis := make([]string, 0, len(domains))
 	for _, domain := range domains {
 		domainAnalysis = append(domainAnalysis, autismDevReportInterpretationDomainBrief(domain))
@@ -436,10 +427,10 @@ func buildRuleBasedAutismDevReportInterpretation(record model.AssessmentRecordDe
 		domainAnalysis = []string{"当前记录已保存孤独症儿童发展评估结构化结果，建议结合各领域题目得分、课堂观察和家庭反馈进行综合理解。"}
 	}
 	suggestions := []string{
-		fmt.Sprintf("优先围绕%s的E项、M项或低龄段F项设置小目标。", primaryConcern),
-		"保留已稳定通过项目，用熟悉活动带动沟通和配合。",
-		"把目标拆成短步骤，记录提示量、完成率和泛化情况。",
-		"结合训练记录和复评调整目标，单次评估不等同诊断。",
+		fmt.Sprintf("优先围绕%s挑1-2个可观察的小目标。", primaryConcern),
+		"先用已通过项目做活动入口，再逐步减少提示。",
+		"每次只看完成情况、提示量和是否能在不同场景里做出来。",
+		"如有X项或缺测，先补观察再做阶段调整。",
 	}
 	notes := []string{"本解读仅用于评估沟通和训练计划参考。"}
 	if autismDevReportInterpretationHasMissing(domains) {
@@ -466,6 +457,9 @@ func normalizeAutismDevReportInterpretation(result model.ERXinReportInterpretati
 	if strings.TrimSpace(result.GeneratedBy) == "" {
 		result.GeneratedBy = "ai"
 	}
+	if isLegacyAutismDevReportInterpretation(result) {
+		return buildRuleBasedAutismDevReportInterpretation(record, score, data, itemScores)
+	}
 	result.GeneratedAt = time.Now().Format(time.RFC3339)
 	result.Summary = cleanAutismDevReportInterpretationText(result.Summary, 100)
 	fallback := buildRuleBasedAutismDevReportInterpretation(record, score, data, itemScores)
@@ -485,6 +479,27 @@ func normalizeAutismDevReportInterpretation(result model.ERXinReportInterpretati
 		result.Notes = []string{"报告解读由孤独症儿童发展评估结构化结果生成，不替代医学诊断。"}
 	}
 	return result
+}
+
+func isLegacyAutismDevReportInterpretation(value model.ERXinReportInterpretationVO) bool {
+	if strings.TrimSpace(value.GeneratedBy) != "rule" {
+		return false
+	}
+	summary := strings.TrimSpace(value.Summary)
+	if strings.Contains(summary, "本次共") && strings.Contains(summary, "已作答项目") {
+		return true
+	}
+	for _, line := range value.DomainAnalysis {
+		text := strings.TrimSpace(line)
+		if text == "" {
+			continue
+		}
+		if (strings.Contains(text, "P ") && strings.Contains(text, "E ") && strings.Contains(text, "F ")) ||
+			(strings.Contains(text, "A ") && strings.Contains(text, "M ") && strings.Contains(text, "S ")) {
+			return true
+		}
+	}
+	return false
 }
 
 func compactAutismDevReportInterpretationItems(values []string, maxItems, maxRunes int) []string {
@@ -568,43 +583,71 @@ func autismDevReportInterpretationConcernScore(domain autismDevResultAnalysisPro
 func autismDevReportInterpretationDomainBrief(domain autismDevResultAnalysisPromptDomain) string {
 	name := nonEmptyString(domain.DomainName, domain.DomainCode)
 	if strings.EqualFold(strings.TrimSpace(domain.ScoreType), autismdevscore.ScoreTypePEF) {
-		parts := []string{
-			fmt.Sprintf("P %d项", domain.PCount),
-			fmt.Sprintf("E %d项", domain.ECount),
-			fmt.Sprintf("F %d项", domain.FCount),
-		}
-		if domain.XCount > 0 {
-			parts = append(parts, fmt.Sprintf("X %d项", domain.XCount))
-		}
-		strong := autismDevReportInterpretationItemPhrase(domain.PassedItems, "已通过", 1)
+		passedTitle := autismDevReportInterpretationFirstItemTitle(domain.PassedItems, 1)
 		weakItems := append([]autismDevResultAnalysisPromptItem(nil), domain.EmergingItems...)
 		weakItems = append(weakItems, domain.FailedItems...)
-		weak := autismDevReportInterpretationItemPhrase(weakItems, "关注", 1)
-		return cleanAutismDevReportInterpretationText(fmt.Sprintf("%s：%s。%s%s", name, strings.Join(parts, "、"), strong, weak), 80)
+		weakTitle := autismDevReportInterpretationFirstItemTitle(weakItems, 1)
+		strength := "基础反应已出现，但稳定性还不够。"
+		if passedTitle != "" {
+			strength = fmt.Sprintf("已能完成“%s”等基础项目。", passedTitle)
+		}
+		weakness := autismDevReportInterpretationDomainNextStep(name, weakTitle)
+		return cleanAutismDevReportInterpretationText(fmt.Sprintf("%s：%s%s", name, strength, weakness), 80)
 	}
 	parts := []string{
-		fmt.Sprintf("A %d项", domain.ACount),
-		fmt.Sprintf("M %d项", domain.MCount),
-		fmt.Sprintf("S %d项", domain.SCount),
+		fmt.Sprintf("适应性%d项", domain.ACount),
+		fmt.Sprintf("中等%d项", domain.MCount),
+		fmt.Sprintf("严重%d项", domain.SCount),
 	}
 	if domain.XCount > 0 {
-		parts = append(parts, fmt.Sprintf("X %d项", domain.XCount))
+		parts = append(parts, fmt.Sprintf("X%d项", domain.XCount))
 	}
-	status := "适应性表现与异常表现需结合日常观察继续追踪。"
+	status := "近期重点是等待、规则配合和替代表达。"
 	if domain.SCount > 0 || domain.AbnormalCount > 0 {
-		status = "存在需要重点观察和训练替代行为的表现。"
+		status = "当前先聚焦情绪稳定、替代表达和减少冲动行为。"
 	} else if domain.MCount > 0 {
 		status = "部分行为表现需要在结构化场景中持续引导。"
 	}
-	return cleanAutismDevReportInterpretationText(fmt.Sprintf("%s：%s。%s", name, strings.Join(parts, "、"), status), 80)
+	return cleanAutismDevReportInterpretationText(fmt.Sprintf("%s：%s，%s", name, strings.Join(parts, "、"), status), 80)
 }
 
-func autismDevReportInterpretationItemPhrase(items []autismDevResultAnalysisPromptItem, prefix string, limit int) string {
+func autismDevReportInterpretationFirstItemTitle(items []autismDevResultAnalysisPromptItem, limit int) string {
 	titles := autismDevResultAnalysisItemTitles(items, limit)
 	if len(titles) == 0 {
 		return ""
 	}
-	return prefix + autismDevResultAnalysisQuotedList(titles) + "等项目。"
+	return stripAutismDevParenthetical(strings.TrimSpace(titles[0]))
+}
+
+func autismDevReportInterpretationDomainNextStep(domainName, weakTitle string) string {
+	focus := autismDevReportInterpretationFocusPhrase(domainName)
+	if weakTitle != "" {
+		return fmt.Sprintf("“%s”仍需继续练习，近期先练%s", weakTitle, focus)
+	}
+	return "近期先练" + focus
+}
+
+func autismDevReportInterpretationFocusPhrase(domainName string) string {
+	switch strings.TrimSpace(domainName) {
+	case "感知觉":
+		return "视觉追踪和稳定注意。"
+	case "粗大动作":
+		return "平衡、协调和动作模仿。"
+	case "精细动作":
+		return "抓握、配对和手眼协调。"
+	case "语言与沟通":
+		return "主动回应、表达需求和简单对话。"
+	case "认知":
+		return "配对、分类、理解和记忆。"
+	case "社会交往":
+		return "目光接触、轮流和同伴回应。"
+	case "生活自理":
+		return "穿脱、进食和如厕等独立步骤。"
+	case "情绪与行为":
+		return "等待、情绪表达和替代行为。"
+	default:
+		return "稳定完成和少提示配合。"
+	}
 }
 
 func autismDevReportInterpretationHasMissing(domains []autismDevResultAnalysisPromptDomain) bool {

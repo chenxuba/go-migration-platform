@@ -222,7 +222,13 @@ const autismDevExportAllSelected = computed(() => {
   const enabled = autismDevEnabledExportSections.value.filter(section => section !== 'interpretation')
   return !!enabled.length && enabled.every(section => autismDevExportSections.value.includes(section))
 })
-const exportModalWidth = computed(() => (isERXinRecord(exportTargetRecord.value) || isAutismDevRecord(exportTargetRecord.value)) ? 760 : 700)
+const exportModalWidth = computed(() => {
+  if (isAutismDevRecord(exportTargetRecord.value))
+    return 700
+  if (isERXinRecord(exportTargetRecord.value))
+    return 760
+  return 700
+})
 
 const queryModel = reactive({
   scaleCategory: undefined,
@@ -2193,19 +2199,19 @@ onBeforeUnmount(() => {
           </div>
           <div
             v-else-if="activeAutismDevReportSection === 'interpretation'"
-            class="report-module-summary erxin-report-tabs__summary"
+            class="report-module-summary report-module-summary--actions-only erxin-report-tabs__summary"
           >
-            <strong>报告解读</strong>
-            <span>查看或生成孤独症儿童发展评估报告解读。</span>
-            <a-button
-              type="primary"
-              size="small"
-              :loading="interpretationGenerating"
-              :disabled="interpretationLoading && !interpretationGenerating"
-              @click="handleGenerateInterpretation"
-            >
-              {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
-            </a-button>
+            <div class="report-module-summary__actions">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="interpretationGenerating"
+                :disabled="interpretationLoading && !interpretationGenerating"
+                @click="handleGenerateInterpretation"
+              >
+                {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+              </a-button>
+            </div>
           </div>
         </div>
         <div v-else class="report-module-area erxin-report-tabs">
@@ -4068,11 +4074,15 @@ onBeforeUnmount(() => {
   }
 
   em {
-    flex: 0 0 auto;
+    flex: 1 1 auto;
+    min-width: 0;
     margin-left: 10px;
     padding-left: 10px;
+    overflow: hidden;
     color: #9aa4b2;
     font-style: normal;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     border-left: 1px solid #e2e8f0;
   }
 }
@@ -4107,17 +4117,44 @@ onBeforeUnmount(() => {
 }
 
 .export-dimension--autismdev {
-  padding-top: 14px;
+  padding-top: 12px;
+
+  .export-dimension__summary {
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .export-dimension__file {
+    width: 34px;
+    height: 34px;
+    font-size: 11px;
+    border-radius: 7px;
+  }
+
+  .export-dimension__name {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .export-dimension__meta {
+    margin-top: 1px;
+  }
 
   .export-dimension__current {
-    min-width: 82px;
+    min-width: 76px;
+    padding-left: 12px;
+  }
+
+  .export-dimension__footer {
+    margin-top: 12px;
   }
 }
 
 .autismdev-export-card-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  gap: 8px;
 }
 
 .autismdev-export-toolbar {
@@ -4126,7 +4163,8 @@ onBeforeUnmount(() => {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 10px 12px;
+  min-height: 34px;
+  padding: 6px 10px;
   background: #f8fafc;
   border: 1px solid #e8edf4;
   border-radius: 8px;
@@ -4138,7 +4176,7 @@ onBeforeUnmount(() => {
   }
 
   button {
-    height: 26px;
+    height: 24px;
     padding: 0 10px;
     color: var(--pro-ant-color-primary);
     font: inherit;
@@ -4158,19 +4196,18 @@ onBeforeUnmount(() => {
 
 .autismdev-export-row {
   display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 7px;
+  align-items: center;
+  gap: 9px;
   width: 100%;
-  min-height: 92px;
-  padding: 10px 12px;
+  min-height: 62px;
+  padding: 8px 10px;
   color: inherit;
   font: inherit;
   text-align: left;
   cursor: pointer;
   background: #fff;
   border: 1px solid #e8edf4;
-  border-radius: 10px;
+  border-radius: 8px;
   transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
 
   &:hover {
@@ -4186,7 +4223,7 @@ onBeforeUnmount(() => {
 .autismdev-export-row--active {
   background: #f7fbff;
   border-color: #8dc6ff;
-  box-shadow: 0 6px 18px rgba(24, 144, 255, 0.08);
+  box-shadow: 0 3px 10px rgba(24, 144, 255, 0.08);
 }
 
 .autismdev-export-row--disabled {
@@ -4195,17 +4232,30 @@ onBeforeUnmount(() => {
 
 .autismdev-export-row__check {
   flex: 0 0 auto;
-  width: 14px;
-  height: 14px;
+  position: relative;
+  width: 15px;
+  height: 15px;
   margin-top: 0;
-  background: #cbd5e1;
-  border: 3px solid #f1f5f9;
-  border-radius: 50%;
+  background: #fff;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
 }
 
 .autismdev-export-row--active .autismdev-export-row__check {
   background: var(--pro-ant-color-primary);
-  border-color: #dcecff;
+  border-color: var(--pro-ant-color-primary);
+}
+
+.autismdev-export-row--active .autismdev-export-row__check::after {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  width: 4px;
+  height: 8px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  content: "";
+  transform: rotate(45deg);
 }
 
 .autismdev-export-row__body {
@@ -4221,7 +4271,7 @@ onBeforeUnmount(() => {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: 6px;
 
   strong {
     min-width: 0;
@@ -4251,22 +4301,13 @@ onBeforeUnmount(() => {
 }
 
 .autismdev-export-row__desc {
-  display: -webkit-box;
+  display: block;
   overflow: hidden;
   color: #687386;
   font-size: 12px;
   line-height: 18px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.autismdev-export-row:last-child {
-  grid-column: 1 / -1;
-  min-height: 72px;
-
-  .autismdev-export-row__desc {
-    -webkit-line-clamp: 2;
-  }
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .erxin-export-card-list {

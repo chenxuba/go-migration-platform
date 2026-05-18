@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -36,7 +35,7 @@ func (svc *Service) ExportAutismDevSelectedReportPDF(userID int64, recordID int6
 
 	if len(normalizedSections) == 1 {
 		sectionStartedAt := time.Now()
-		content, err := svc.autismDevSelectedReportSectionOrWordPDF(userID, recordID, normalizedSections[0], analysis)
+		content, err := svc.autismDevSelectedReportSectionPDF(userID, recordID, normalizedSections[0], analysis)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -68,38 +67,10 @@ func (svc *Service) ExportAutismDevSelectedReportPDF(userID int64, recordID int6
 	}
 
 	builder := newAutismDevSelectedReportPDFBuilder()
-	for index := 0; index < len(normalizedSections); {
-		section := normalizedSections[index]
-		if isAutismDevSelectedReportWordSection(section) {
-			end := index + 1
-			for end < len(normalizedSections) && isAutismDevSelectedReportWordSection(normalizedSections[end]) {
-				end++
-			}
-			sectionStartedAt := time.Now()
-			content, err := svc.autismDevSelectedReportWordSectionsPDF(userID, recordID, normalizedSections[index:end], analysis)
-			if err != nil {
-				return "", "", nil, err
-			}
-			if len(content) == 0 {
-				return "", "", nil, errors.New("Word报告内容暂无可打印内容")
-			}
-			logx.Info("autismdev selected report word sections pdf finished", logx.Entry{
-				"record_id":    recordID,
-				"sections":     strings.Join(normalizedSections[index:end], ","),
-				"pdf_bytes":    len(content),
-				"duration_ms":  time.Since(sectionStartedAt).Milliseconds(),
-				"section_from": index,
-				"section_to":   end,
-			})
-			if err := builder.appendPDFBytes(content); err != nil {
-				return "", "", nil, err
-			}
-			index = end
-			continue
-		}
+	for index, section := range normalizedSections {
 		sectionStartedAt := time.Now()
 		if isAutismDevSelectedReportDirectDrawSection(section) {
-			if err := svc.appendAutismDevSelectedReportDirectSectionPDF(builder, record, section, institutionName); err != nil {
+			if err := svc.appendAutismDevSelectedReportDirectSectionPDF(builder, userID, recordID, record, section, institutionName, analysis); err != nil {
 				return "", "", nil, err
 			}
 			logx.Info("autismdev selected report direct section pdf finished", logx.Entry{
@@ -108,26 +79,9 @@ func (svc *Service) ExportAutismDevSelectedReportPDF(userID int64, recordID int6
 				"duration_ms":  time.Since(sectionStartedAt).Milliseconds(),
 				"section_from": index,
 			})
-		} else {
-			content, err := svc.autismDevSelectedReportSectionPDF(userID, recordID, section, analysis)
-			if err != nil {
-				return "", "", nil, err
-			}
-			if len(content) == 0 {
-				return "", "", nil, fmt.Errorf("%s暂无可打印内容", autismDevSelectedReportSectionLabel(section))
-			}
-			logx.Info("autismdev selected report section pdf finished", logx.Entry{
-				"record_id":    recordID,
-				"section":      section,
-				"pdf_bytes":    len(content),
-				"duration_ms":  time.Since(sectionStartedAt).Milliseconds(),
-				"section_from": index,
-			})
-			if err := builder.appendPDFBytes(content); err != nil {
-				return "", "", nil, err
-			}
+			continue
 		}
-		index++
+		return "", "", nil, fmt.Errorf("不支持的打印内容：%s", section)
 	}
 	if builder.partCount == 0 {
 		return "", "", nil, errors.New("暂无可打印内容")
@@ -154,60 +108,17 @@ func (svc *Service) ExportAutismDevSelectedReportPDF(userID int64, recordID int6
 	return fileName, iepPlanPDFContentType, content, nil
 }
 
-func (svc *Service) autismDevSelectedReportSectionOrWordPDF(userID int64, recordID int64, section string, analysis *model.AutismDevResultAnalysisVO) ([]byte, error) {
-	if isAutismDevSelectedReportWordSection(section) {
-		return svc.autismDevSelectedReportWordSectionsPDF(userID, recordID, []string{section}, analysis)
-	}
-	return svc.autismDevSelectedReportSectionPDF(userID, recordID, section, analysis)
-}
-
-func (svc *Service) autismDevSelectedReportWordSectionsPDF(userID int64, recordID int64, sections []string, analysis *model.AutismDevResultAnalysisVO) ([]byte, error) {
-	if len(sections) == 0 {
-		return nil, nil
-	}
-	_, record, score, data, itemScores, err := svc.autismDevResultAnalysisContext(userID, recordID)
-	if err != nil {
-		return nil, err
-	}
-	exports := make([]autismDevSelectedReportWordSectionExport, 0, len(sections))
-	for _, section := range sections {
-		switch section {
-		case AutismDevReportSectionAssessmentInfo:
-			export := buildAutismDevAssessmentSituationWordExport(record, score, data, itemScores)
-			if len(export.DevelopmentRows) == 0 && len(export.BehaviorRows) == 0 {
-				return nil, errors.New("评估情况暂无可打印内容")
-			}
-			exports = append(exports, autismDevSelectedReportWordSectionExport{
-				Section:             section,
-				AssessmentSituation: export,
-			})
-		case AutismDevReportSectionResultAnalysis:
-			export, err := svc.autismDevResultAnalysisWordExport(userID, recordID, analysis)
-			if err != nil {
-				return nil, err
-			}
-			exports = append(exports, autismDevSelectedReportWordSectionExport{
-				Section:        section,
-				ResultAnalysis: export,
-			})
-		}
-	}
-	docx, err := buildAutismDevSelectedReportWordDocx(exports)
-	if err != nil {
-		return nil, err
-	}
-	fileName := fmt.Sprintf("%s-孤独症儿童发展评估报告-%s.docx", sanitizeExportFileName(record.StudentName), time.Now().Format("20060102150405"))
-	_, _, pdf, err := exportIEPPDFByDOCX(fileName, docx)
-	return pdf, err
-}
-
 func (svc *Service) autismDevSelectedReportSectionPDF(userID int64, recordID int64, section string, analysis *model.AutismDevResultAnalysisVO) ([]byte, error) {
 	switch section {
 	case AutismDevReportSectionAssessmentInfo:
-		_, _, content, err := svc.ExportAutismDevAssessmentSituationPDF(userID, recordID)
+		_, content, err := svc.buildAutismDevAssessmentSituationPDF(userID, recordID)
 		return content, err
 	case AutismDevReportSectionResultAnalysis:
-		_, _, content, err := svc.ExportAutismDevResultAnalysisPDF(userID, recordID, analysis)
+		export, err := svc.autismDevResultAnalysisWordExport(userID, recordID, analysis)
+		if err != nil {
+			return nil, err
+		}
+		content, err := buildAutismDevResultAnalysisPDF(export)
 		return content, err
 	case AutismDevReportSectionTraining:
 		_, content, err := svc.GenerateAutismDevProfilePDF(userID, recordID, "training")
@@ -223,8 +134,25 @@ func (svc *Service) autismDevSelectedReportSectionPDF(userID int64, recordID int
 	}
 }
 
-func (svc *Service) appendAutismDevSelectedReportDirectSectionPDF(builder *autismDevSelectedReportPDFBuilder, record model.AssessmentRecordDetailVO, section string, institutionName string) error {
+func (svc *Service) appendAutismDevSelectedReportDirectSectionPDF(builder *autismDevSelectedReportPDFBuilder, userID int64, recordID int64, record model.AssessmentRecordDetailVO, section string, institutionName string, analysis *model.AutismDevResultAnalysisVO) error {
 	switch section {
+	case AutismDevReportSectionAssessmentInfo:
+		_, record, score, data, itemScores, err := svc.autismDevResultAnalysisContext(userID, recordID)
+		if err != nil {
+			return err
+		}
+		export := buildAutismDevAssessmentSituationWordExport(record, score, data, itemScores)
+		return builder.appendDirectDraw(func(pdf *gopdf.GoPdf) error {
+			return drawAutismDevAssessmentSituationPDFPages(pdf, export)
+		})
+	case AutismDevReportSectionResultAnalysis:
+		export, err := svc.autismDevResultAnalysisWordExport(userID, recordID, analysis)
+		if err != nil {
+			return err
+		}
+		return builder.appendDirectDraw(func(pdf *gopdf.GoPdf) error {
+			return drawAutismDevResultAnalysisPDFPages(pdf, export)
+		})
 	case AutismDevReportSectionTraining:
 		records := []model.AssessmentRecordDetailVO{record}
 		if svc.repo != nil {
@@ -259,13 +187,10 @@ func (svc *Service) appendAutismDevSelectedReportDirectSectionPDF(builder *autis
 	}
 }
 
-func isAutismDevSelectedReportWordSection(section string) bool {
-	return section == AutismDevReportSectionAssessmentInfo ||
-		section == AutismDevReportSectionResultAnalysis
-}
-
 func isAutismDevSelectedReportDirectDrawSection(section string) bool {
-	return section == AutismDevReportSectionTraining ||
+	return section == AutismDevReportSectionAssessmentInfo ||
+		section == AutismDevReportSectionResultAnalysis ||
+		section == AutismDevReportSectionTraining ||
 		section == AutismDevReportSectionDevelopmentProfile ||
 		section == AutismDevReportSectionBehaviorProfile
 }
@@ -308,98 +233,6 @@ func autismDevSelectedReportSectionLabel(section string) string {
 	}
 }
 
-type autismDevSelectedReportWordSectionExport struct {
-	Section             string
-	AssessmentSituation autismDevAssessmentSituationWordExport
-	ResultAnalysis      autismDevResultAnalysisWordExport
-}
-
-func buildAutismDevSelectedReportWordDocx(exports []autismDevSelectedReportWordSectionExport) ([]byte, error) {
-	if len(exports) == 0 {
-		return nil, errors.New("暂无可导出的报告内容")
-	}
-	entries := map[string][]byte{
-		"[Content_Types].xml":          []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`),
-		"_rels/.rels":                  []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`),
-		"word/_rels/document.xml.rels": []byte(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"></Relationships>`),
-		"word/document.xml":            []byte(buildAutismDevSelectedReportWordDocumentXML(exports)),
-	}
-	return writeDocxZipEntries(entries)
-}
-
-func buildAutismDevSelectedReportWordDocumentXML(exports []autismDevSelectedReportWordSectionExport) string {
-	var builder strings.Builder
-	builder.WriteString(`<?xml version="1.0" encoding="UTF-8" standalone="yes"?>`)
-	builder.WriteString(`<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">`)
-	builder.WriteString(`<w:body>`)
-	for index, export := range exports {
-		if index > 0 {
-			builder.WriteString(buildIEPPageBreakParagraph())
-		}
-		switch export.Section {
-		case AutismDevReportSectionAssessmentInfo:
-			builder.WriteString(buildAutismDevAssessmentSituationTitleParagraph(firstNonEmptyExportValue(export.AssessmentSituation.Title, autismDevAssessmentSituationTitle)))
-			builder.WriteString(buildAutismDevAssessmentSituationTable(export.AssessmentSituation))
-		case AutismDevReportSectionResultAnalysis:
-			builder.WriteString(buildAutismDevResultAnalysisTitleParagraph(firstNonEmptyExportValue(export.ResultAnalysis.Title, "孤独症儿童评估结果分析表")))
-			builder.WriteString(buildAutismDevResultAnalysisMetaParagraph(export.ResultAnalysis))
-			builder.WriteString(buildAutismDevResultAnalysisTable(export.ResultAnalysis.Rows))
-		}
-	}
-	builder.WriteString(`<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="720" w:right="720" w:bottom="720" w:left="720" w:header="851" w:footer="720" w:gutter="0"/></w:sectPr>`)
-	builder.WriteString(`</w:body></w:document>`)
-	return builder.String()
-}
-
-func mergeAutismDevReportPDFBytes(pdfs [][]byte) ([]byte, error) {
-	var pdf gopdf.GoPdf
-	pdf.Start(gopdf.Config{
-		Unit:     gopdf.UnitPT,
-		PageSize: *gopdf.PageSizeA4,
-	})
-	for _, content := range pdfs {
-		if err := importAutismDevReportPDFPages(&pdf, content); err != nil {
-			return nil, err
-		}
-	}
-	var output bytes.Buffer
-	if err := pdf.Write(&output); err != nil {
-		return nil, fmt.Errorf("合并PDF失败：%w", err)
-	}
-	return output.Bytes(), nil
-}
-
-func importAutismDevReportPDFPages(pdf *gopdf.GoPdf, content []byte) error {
-	if len(content) == 0 {
-		return nil
-	}
-	sizeReader := io.ReadSeeker(bytes.NewReader(content))
-	pageSizes := pdf.GetStreamPageSizes(&sizeReader)
-	if len(pageSizes) == 0 {
-		return errors.New("合并PDF失败：无法读取页面尺寸")
-	}
-	for pageNo := 1; pageNo <= len(pageSizes); pageNo++ {
-		box := pageSizes[pageNo]["/MediaBox"]
-		if box == nil {
-			box = pageSizes[pageNo]["/CropBox"]
-		}
-		if box == nil {
-			return errors.New("合并PDF失败：无法读取页面边界")
-		}
-		width := box["w"]
-		height := box["h"]
-		if width <= 0 || height <= 0 {
-			return errors.New("合并PDF失败：页面尺寸无效")
-		}
-		pageSize := &gopdf.Rect{W: width, H: height}
-		pdf.AddPageWithOption(gopdf.PageOption{PageSize: pageSize})
-		pageReader := io.ReadSeeker(bytes.NewReader(content))
-		templateID := pdf.ImportPageStream(&pageReader, pageNo, "/MediaBox")
-		pdf.UseImportedTemplate(templateID, 0, 0, width, height)
-	}
-	return nil
-}
-
 type autismDevSelectedReportPDFBuilder struct {
 	pdf        gopdf.GoPdf
 	fontReady  bool
@@ -414,17 +247,6 @@ func newAutismDevSelectedReportPDFBuilder() *autismDevSelectedReportPDFBuilder {
 		PageSize: gopdf.Rect{W: autismDevProfilePDFPageWidth, H: autismDevProfilePDFPageHeight},
 	})
 	return builder
-}
-
-func (b *autismDevSelectedReportPDFBuilder) appendPDFBytes(content []byte) error {
-	if len(content) == 0 {
-		return nil
-	}
-	if err := importAutismDevReportPDFPages(&b.pdf, content); err != nil {
-		return err
-	}
-	b.partCount++
-	return nil
 }
 
 func (b *autismDevSelectedReportPDFBuilder) appendDirectDraw(draw func(*gopdf.GoPdf) error) error {
