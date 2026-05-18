@@ -47,6 +47,35 @@ func TestBuildShuangxiADevelopmentProfilePDFLandscape(t *testing.T) {
 	}
 }
 
+func TestShuangxiAProfileScoreYUsesThreeIntervalAxis(t *testing.T) {
+	const (
+		top  = 170.0
+		rowH = 112.0
+		max  = 168
+	)
+	cases := []struct {
+		name string
+		raw  int
+		want float64
+	}{
+		{name: "max at level three", raw: 168, want: top},
+		{name: "two thirds at level two", raw: 112, want: top + rowH},
+		{name: "one third at level one", raw: 56, want: top + rowH*2},
+		{name: "zero at level zero", raw: 0, want: top + rowH*3},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shuangxiAProfileScoreY(tc.raw, max, top, rowH)
+			if got != tc.want {
+				t.Fatalf("score y = %v, want %v", got, tc.want)
+			}
+		})
+	}
+	if got := shuangxiAProfileScoreY(76, max, top, rowH); !(got > top+rowH && got < top+rowH*2) {
+		t.Fatalf("score 76 should sit between 112 and 56 lines, got y=%v", got)
+	}
+}
+
 func shuangxiAProfileTestResultJSON(t *testing.T, data shuangxiAStaticData) []byte {
 	t.Helper()
 	rows := make([]shuangxiADomainScoreResult, 0, len(data.domains))

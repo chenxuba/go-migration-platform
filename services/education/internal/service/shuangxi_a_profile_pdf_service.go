@@ -33,6 +33,13 @@ type shuangxiAProfilePoint struct {
 	Score int
 }
 
+type shuangxiAProfileRect struct {
+	X float64
+	Y float64
+	W float64
+	H float64
+}
+
 type shuangxiAProfileDomain struct {
 	Code        string
 	Name        string
@@ -324,9 +331,10 @@ func (r *shuangxiAProfilePDFRenderer) drawScaleLabels() error {
 	const (
 		leftX  = 34.0
 		scoreX = 138.0
-		top    = 172.0
-		rowH   = 84.0
+		top    = 170.0
+		height = 336.0
 	)
+	rowH := height / 3
 	labels := [][]string{
 		{"已发展出适应环", "境需要之能力"},
 		{"已发展较多能力，", "只需重点协助，", "便能适应环境之", "需要"},
@@ -334,7 +342,8 @@ func (r *shuangxiAProfilePDFRenderer) drawScaleLabels() error {
 		{"尚未开始发展，", "无法适应环境之", "需要"},
 	}
 	for index, lines := range labels {
-		y := top + float64(index)*rowH + 12
+		lineY := top + float64(index)*rowH
+		y := lineY + 10
 		r.setTextColor(0, 0, 0)
 		r.setFont(15)
 		for lineIndex, line := range lines {
@@ -343,7 +352,7 @@ func (r *shuangxiAProfilePDFRenderer) drawScaleLabels() error {
 			}
 		}
 		r.setFont(15)
-		if err := r.cell(scoreX, y-14, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
+		if err := r.cell(scoreX, lineY-2, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
 			return err
 		}
 	}
@@ -358,11 +367,11 @@ func (r *shuangxiAProfilePDFRenderer) drawGrid(domains []shuangxiAProfileDomain)
 		height = 336.0
 	)
 	colW := width / float64(len(domains))
-	rowH := height / 4
+	rowH := height / 3
 	r.pdf.SetStrokeColor(0, 0, 0)
 	r.pdf.SetLineWidth(0.95)
 	r.pdf.RectFromUpperLeft(left, top, width, height)
-	for row := 1; row < 4; row++ {
+	for row := 1; row < 3; row++ {
 		y := top + float64(row)*rowH
 		r.pdf.Line(left, y, left+width, y)
 	}
@@ -399,6 +408,9 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 		height = 336.0
 	)
 	colW := width / float64(len(domains))
+	rowH := height / 3
+	baseScoreRects := shuangxiAProfileBaseScoreRects(domains, left, top, width, height)
+	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: height}
 	for recordIndex, record := range records {
 		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
 		scoreByDomain := shuangxiAProfileDomainScoreMap(data, record)
@@ -408,10 +420,9 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 			if !ok || domain.MaxRawScore <= 0 {
 				continue
 			}
-			ratio := math.Max(0, math.Min(1, float64(raw)/float64(domain.MaxRawScore)))
 			points = append(points, shuangxiAProfilePoint{
 				X:     left + float64(col)*colW + colW/2,
-				Y:     top + height - ratio*height,
+				Y:     shuangxiAProfileScoreY(raw, domain.MaxRawScore, top, rowH),
 				Score: raw,
 			})
 		}
@@ -426,7 +437,7 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 		}
 		for _, point := range points {
 			shuangxiAProfileDrawDot(r.pdf, point, 3.3, color)
-			r.drawProfilePointScore(point, color)
+			r.drawProfilePointScore(point, color, baseScoreRects, chartRect)
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -434,21 +445,102 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 	r.pdf.SetLineType("solid")
 }
 
-func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfilePoint, color shuangxiAProfileColor) {
-	r.setFont(11.2)
+func shuangxiAProfileScoreY(rawScore, maxRawScore int, top, rowH float64) float64 {
+	if maxRawScore <= 0 {
+		return top + rowH*3
+	}
+	ratio := math.Max(0, math.Min(1, float64(rawScore)/float64(maxRawScore)))
+	return top + rowH*3 - ratio*rowH*3
+}
+
+func shuangxiAProfileBaseScoreRects(domains []shuangxiAProfileDomain, left, top, width, height float64) []shuangxiAProfileRect {
+	if len(domains) == 0 {
+		return nil
+	}
+	colW := width / float64(len(domains))
+	rowH := height / 3
+	rects := make([]shuangxiAProfileRect, 0, len(domains)*3)
+	for col := range domains {
+		centerX := left + float64(col)*colW + colW/2
+		for level := 3; level >= 1; level-- {
+			cellY := top + float64(3-level)*rowH
+			rects = append(rects, shuangxiAProfileRect{
+				X: centerX - 28,
+				Y: cellY,
+				W: 56,
+				H: 22,
+			})
+		}
+	}
+	return rects
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfilePoint, color shuangxiAProfileColor, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) {
+	r.setFont(13)
 	r.setTextColor(color.R, color.G, color.B)
 	value := fmt.Sprintf("%d", point.Score)
 	textWidth, err := r.pdf.MeasureTextWidth(value)
 	if err != nil {
-		textWidth = 16
+		textWidth = 20
 	}
-	labelWidth := math.Max(16, textWidth+4)
-	labelX := point.X - labelWidth/2
-	labelY := point.Y - 20
-	_ = r.cell(labelX-0.25, labelY, labelWidth, 14, value, gopdf.Center|gopdf.Middle)
-	_ = r.cell(labelX+0.25, labelY, labelWidth, 14, value, gopdf.Center|gopdf.Middle)
-	_ = r.cell(labelX, labelY-0.15, labelWidth, 14, value, gopdf.Center|gopdf.Middle)
+	labelWidth := math.Max(20, textWidth+6)
+	labelRect := shuangxiAProfilePointScoreRect(point, labelWidth, 16, avoidRects, chartRect)
+	_ = r.cell(labelRect.X-0.25, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X+0.25, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X, labelRect.Y-0.15, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	r.setTextColor(0, 0, 0)
+}
+
+func shuangxiAProfilePointScoreRect(point shuangxiAProfilePoint, width, height float64, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
+	candidates := []shuangxiAProfileRect{
+		{X: point.X - width/2, Y: point.Y - 23, W: width, H: height},
+		{X: point.X - width/2, Y: point.Y + 7, W: width, H: height},
+		{X: point.X + 7, Y: point.Y - 20, W: width, H: height},
+		{X: point.X - width - 7, Y: point.Y - 20, W: width, H: height},
+		{X: point.X + 7, Y: point.Y - 8, W: width, H: height},
+		{X: point.X - width - 7, Y: point.Y - 8, W: width, H: height},
+	}
+	for _, candidate := range candidates {
+		candidate = shuangxiAProfileClampRectToChart(candidate, chartRect)
+		if !shuangxiAProfileRectOverlapsAny(candidate, avoidRects) {
+			return candidate
+		}
+	}
+	return shuangxiAProfileClampRectToChart(candidates[0], chartRect)
+}
+
+func shuangxiAProfileClampRectToChart(rect shuangxiAProfileRect, chart shuangxiAProfileRect) shuangxiAProfileRect {
+	if chart.W <= 0 || chart.H <= 0 {
+		return rect
+	}
+	minX := chart.X + 2
+	maxX := chart.X + chart.W - rect.W - 2
+	if maxX >= minX {
+		rect.X = math.Max(minX, math.Min(maxX, rect.X))
+	}
+	minY := chart.Y - 28
+	maxY := chart.Y + chart.H - rect.H + 4
+	if maxY >= minY {
+		rect.Y = math.Max(minY, math.Min(maxY, rect.Y))
+	}
+	return rect
+}
+
+func shuangxiAProfileRectOverlapsAny(rect shuangxiAProfileRect, others []shuangxiAProfileRect) bool {
+	for _, other := range others {
+		if shuangxiAProfileRectsOverlap(rect, other) {
+			return true
+		}
+	}
+	return false
+}
+
+func shuangxiAProfileRectsOverlap(a, b shuangxiAProfileRect) bool {
+	const pad = 1.5
+	return a.X < b.X+b.W+pad &&
+		a.X+a.W+pad > b.X &&
+		a.Y < b.Y+b.H+pad &&
+		a.Y+a.H+pad > b.Y
 }
 
 func shuangxiAProfileDomainScoreMap(data shuangxiAStaticData, record model.AssessmentRecordDetailVO) map[string]int {
