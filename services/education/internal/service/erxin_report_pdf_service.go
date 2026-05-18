@@ -74,6 +74,27 @@ func (svc *Service) GeneratePEP3ReportInterpretationPDF(userID, recordID int64) 
 	return filename, content, nil
 }
 
+func (svc *Service) GenerateAutismDevReportInterpretationPDF(userID, recordID int64) (string, []byte, error) {
+	record, err := svc.GetAutismDevAssessmentRecord(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	interpretation, err := svc.GetAutismDevReportInterpretation(userID, recordID)
+	if err != nil {
+		return "", nil, err
+	}
+	if erxinReportInterpretationIsEmpty(interpretation) {
+		return "", nil, errors.New("请先生成报告解读后再导出")
+	}
+	content, err := buildAutismDevReportInterpretationPDF(interpretation)
+	if err != nil {
+		return "", nil, err
+	}
+	name := nonEmptyString(record.StudentName, "未命名儿童")
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-孤独症儿童发展评估报告解读-%s.pdf", name, time.Now().Format("20060102150405")))
+	return filename, content, nil
+}
+
 func (svc *Service) GenerateERXinCombinedReportPDF(userID, recordID int64) (string, []byte, error) {
 	report, err := svc.GetERXinAssessmentReport(userID, recordID)
 	if err != nil {
@@ -474,6 +495,33 @@ func buildPEP3ReportInterpretationPDF(_ model.PEP3ReportVO, interpretation model
 		headerTitle:        "PEP-3测试员记录册报告解读",
 		domainSectionTitle: "领域表现",
 		footerText:         "本报告解读基于PEP-3结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
+	}
+	renderer.draw(interpretation)
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func buildAutismDevReportInterpretationPDF(interpretation model.ERXinReportInterpretationVO) ([]byte, error) {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return nil, err
+	}
+
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight},
+	})
+	pdf.AddPage()
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return nil, fmt.Errorf("load AutismDev interpretation PDF font: %w", err)
+	}
+
+	renderer := erxinInterpretationPDFRenderer{
+		pdf:                &pdf,
+		currentFontSize:    11,
+		headerTitle:        "孤独症儿童发展评估报告解读",
+		domainSectionTitle: "八大领域表现",
+		footerText:         "本报告解读基于孤独症儿童发展评估结构化结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
 	}
 	renderer.draw(interpretation)
 	return pdf.GetBytesPdfReturnErr()

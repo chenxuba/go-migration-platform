@@ -280,15 +280,31 @@ func (r pep3BookletPDFRenderer) drawCoverGenderMark(gender string) {
 		maleCheckCenterX   = 377.0
 		femaleCheckCenterX = 433.5
 		checkCenterY       = 180.6
-		checkWidth         = 15.0
-		checkFontSize      = 12.5
+		checkSize          = 12.5
 	)
 	switch {
 	case strings.Contains(normalized, "男"):
-		r.centerBoldInBox(maleCheckCenterX, checkCenterY, checkWidth, checkFontSize, "√")
+		r.drawCheckAt(maleCheckCenterX, checkCenterY, checkSize)
 	case strings.Contains(normalized, "女"):
-		r.centerBoldInBox(femaleCheckCenterX, checkCenterY, checkWidth, checkFontSize, "√")
+		r.drawCheckAt(femaleCheckCenterX, checkCenterY, checkSize)
 	}
+}
+
+func (r pep3BookletPDFRenderer) drawCheckOnLine(x, lineY, width, size float64) {
+	r.drawCheckAt(x+width/2, lineY-size*0.38, size)
+}
+
+func (r pep3BookletPDFRenderer) drawCheckAt(centerX, centerY, size float64) {
+	if centerX <= 0 || centerY <= 0 {
+		return
+	}
+	scale := math.Max(0.72, math.Min(1.05, size/12.5))
+	r.pdf.SetLineWidth(1.65 * scale)
+	r.pdf.SetStrokeColor(32, 32, 32)
+	r.pdf.Line(centerX-5.0*scale, centerY+0.7*scale, centerX-1.4*scale, centerY+4.0*scale)
+	r.pdf.Line(centerX-1.4*scale, centerY+4.0*scale, centerX+6.1*scale, centerY-4.5*scale)
+	r.pdf.SetLineWidth(0.8)
+	r.pdf.SetStrokeColor(92, 92, 92)
 }
 
 func pep3RightPageX(spreadX float64) float64 {
@@ -351,7 +367,7 @@ type pep3BookletPDFOptionMark struct {
 	Y     float64 // 标记横线基线位置；向下调大，向上调小。
 	Width float64 // 标记居中区域宽度。
 	Size  float64 // 标记字号。
-	Text  string  // 为空时默认填“√”。
+	Text  string  // 为空时默认画对号。
 }
 
 type pep3BookletPDFProfileScore struct {
@@ -465,9 +481,8 @@ func (r pep3BookletPDFRenderer) drawDevelopmentBehaviorRecordOptionMark(placemen
 		text := mark.Text
 		size := mark.Size
 		if text == "" {
-			text = "√"
 			size += 2.0
-			r.centerBold(mark.X, mark.Y, mark.Width, size, text)
+			r.drawCheckOnLine(mark.X, mark.Y, mark.Width, size)
 			continue
 		}
 		r.center(mark.X, mark.Y, mark.Width, size, text)
@@ -807,7 +822,7 @@ func (r pep3BookletPDFRenderer) drawEducationPlanningPages(items []pep3BookletIt
 			if !ok {
 				continue
 			}
-			r.centerBoldInBox(layout.pdfX(rawX), layout.itemCenterY(index, len(domainItems)), 14, 9.5, "√")
+			r.drawCheckAt(layout.pdfX(rawX), layout.itemCenterY(index, len(domainItems)), 9.5)
 		}
 
 		if summary.Answered > 0 {

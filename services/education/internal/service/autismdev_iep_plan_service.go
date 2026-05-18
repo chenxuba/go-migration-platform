@@ -10,12 +10,13 @@ import (
 )
 
 type autismDevIEPPlanPromptPayload struct {
-	Student       pep3IEPPlanPromptStudent              `json:"student"`
-	Assessment    autismDevResultAnalysisAssessment     `json:"assessment"`
-	Domains       []autismDevResultAnalysisPromptDomain `json:"domains"`
-	Analysis      *model.AutismDevResultAnalysisVO      `json:"analysis,omitempty"`
-	RehabRecords  []pep3IEPPlanPromptRehabRecord        `json:"rehabRecords,omitempty"`
-	OutputRequest pep3IEPPlanPromptOutput               `json:"outputRequest"`
+	Student        pep3IEPPlanPromptStudent              `json:"student"`
+	Assessment     autismDevResultAnalysisAssessment     `json:"assessment"`
+	Domains        []autismDevResultAnalysisPromptDomain `json:"domains"`
+	Analysis       *model.AutismDevResultAnalysisVO      `json:"analysis,omitempty"`
+	Interpretation *model.ERXinReportInterpretationVO    `json:"interpretation,omitempty"`
+	RehabRecords   []pep3IEPPlanPromptRehabRecord        `json:"rehabRecords,omitempty"`
+	OutputRequest  pep3IEPPlanPromptOutput               `json:"outputRequest"`
 }
 
 func (svc *Service) GenerateAutismDevIEPPlanWithAI(userID int64, recordID int64, durationMonths int) (model.PEP3IEPPlanAIResult, error) {
@@ -26,12 +27,12 @@ func (svc *Service) GenerateAutismDevIEPPlanWithAI(userID int64, recordID int64,
 		durationMonths = 6
 	}
 	ctx := context.Background()
-	record, score, data, itemScores, analysis, rehabRows, err := svc.prepareAutismDevIEPPlanSource(ctx, userID, recordID)
+	record, score, data, itemScores, analysis, interpretation, rehabRows, err := svc.prepareAutismDevIEPPlanSource(ctx, userID, recordID)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
 	}
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
-	payload := buildAutismDevIEPPlanPromptPayload(record, score, data, itemScores, analysis, rehabRows, durationMonths)
+	payload := buildAutismDevIEPPlanPromptPayload(record, score, data, itemScores, analysis, interpretation, rehabRows, durationMonths)
 	result, err := callDeepSeekIEPPlanWithPrompt(ctx, payload, autismDevIEPPlanSystemPrompt())
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, err
@@ -49,12 +50,12 @@ func (svc *Service) GenerateAutismDevIEPPlanWithAIStream(ctx context.Context, us
 	if durationMonths <= 0 {
 		durationMonths = 6
 	}
-	record, score, data, itemScores, analysis, rehabRows, err := svc.prepareAutismDevIEPPlanSource(ctx, userID, recordID)
+	record, score, data, itemScores, analysis, interpretation, rehabRows, err := svc.prepareAutismDevIEPPlanSource(ctx, userID, recordID)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, nil, err
 	}
 	currentTeacherName := svc.currentIEPPlanTeacherName(ctx, userID)
-	payload := buildAutismDevIEPPlanPromptPayload(record, score, data, itemScores, analysis, rehabRows, durationMonths)
+	payload := buildAutismDevIEPPlanPromptPayload(record, score, data, itemScores, analysis, interpretation, rehabRows, durationMonths)
 	result, usage, err := callDeepSeekIEPPlanStreamWithPrompt(ctx, payload, autismDevIEPPlanSystemPrompt(), onDelta)
 	if err != nil {
 		return model.PEP3IEPPlanAIResult{}, usage, err
@@ -160,20 +161,24 @@ func (svc *Service) ExportAutismDevExecutionPlanPDF(userID int64, req model.PEP3
 	return svc.ExportPEP3ExecutionPlanPDF(userID, req)
 }
 
-func (svc *Service) prepareAutismDevIEPPlanSource(ctx context.Context, userID, recordID int64) (model.AssessmentRecordDetailVO, autismdevscore.AssessmentResult, autismDevStaticData, map[int]string, model.AutismDevResultAnalysisVO, []pep3IEPPlanPromptRehabRecord, error) {
+func (svc *Service) prepareAutismDevIEPPlanSource(ctx context.Context, userID, recordID int64) (model.AssessmentRecordDetailVO, autismdevscore.AssessmentResult, autismDevStaticData, map[int]string, model.AutismDevResultAnalysisVO, model.ERXinReportInterpretationVO, []pep3IEPPlanPromptRehabRecord, error) {
 	_, record, score, data, itemScores, err := svc.autismDevResultAnalysisContext(userID, recordID)
 	if err != nil {
-		return model.AssessmentRecordDetailVO{}, autismdevscore.AssessmentResult{}, autismDevStaticData{}, nil, model.AutismDevResultAnalysisVO{}, nil, err
+		return model.AssessmentRecordDetailVO{}, autismdevscore.AssessmentResult{}, autismDevStaticData{}, nil, model.AutismDevResultAnalysisVO{}, model.ERXinReportInterpretationVO{}, nil, err
 	}
 	analysis, err := svc.GetAutismDevResultAnalysis(userID, recordID)
 	if err != nil || autismDevResultAnalysisIsEmpty(analysis) {
 		analysis = buildRuleBasedAutismDevResultAnalysis(record, score, data, itemScores)
 	}
+	interpretation, err := svc.GetAutismDevReportInterpretation(userID, recordID)
+	if err != nil {
+		interpretation = model.ERXinReportInterpretationVO{}
+	}
 	rehabRows, err := svc.autismDevIEPPlanPromptRehabRecords(ctx, userID, record)
 	if err != nil {
-		return model.AssessmentRecordDetailVO{}, autismdevscore.AssessmentResult{}, autismDevStaticData{}, nil, model.AutismDevResultAnalysisVO{}, nil, err
+		return model.AssessmentRecordDetailVO{}, autismdevscore.AssessmentResult{}, autismDevStaticData{}, nil, model.AutismDevResultAnalysisVO{}, model.ERXinReportInterpretationVO{}, nil, err
 	}
-	return record, score, data, itemScores, analysis, rehabRows, nil
+	return record, score, data, itemScores, analysis, interpretation, rehabRows, nil
 }
 
 func (svc *Service) validateAutismDevIEPPlanRecord(userID, recordID int64) (model.AssessmentRecordDetailVO, error) {
@@ -198,7 +203,7 @@ func (svc *Service) autismDevIEPPlanPromptRehabRecords(ctx context.Context, user
 	return buildPEP3IEPPlanPromptRehabRecords(rows), nil
 }
 
-func buildAutismDevIEPPlanPromptPayload(record model.AssessmentRecordDetailVO, score autismdevscore.AssessmentResult, data autismDevStaticData, itemScores map[int]string, analysis model.AutismDevResultAnalysisVO, rehabRecords []pep3IEPPlanPromptRehabRecord, durationMonths int) autismDevIEPPlanPromptPayload {
+func buildAutismDevIEPPlanPromptPayload(record model.AssessmentRecordDetailVO, score autismdevscore.AssessmentResult, data autismDevStaticData, itemScores map[int]string, analysis model.AutismDevResultAnalysisVO, interpretation model.ERXinReportInterpretationVO, rehabRecords []pep3IEPPlanPromptRehabRecord, durationMonths int) autismDevIEPPlanPromptPayload {
 	payload := autismDevIEPPlanPromptPayload{
 		Student: pep3IEPPlanPromptStudent{
 			Name:      strings.TrimSpace(record.StudentName),
@@ -222,6 +227,9 @@ func buildAutismDevIEPPlanPromptPayload(record model.AssessmentRecordDetailVO, s
 	}
 	if !autismDevResultAnalysisIsEmpty(analysis) {
 		payload.Analysis = &analysis
+	}
+	if !erxinReportInterpretationIsEmpty(interpretation) {
+		payload.Interpretation = &interpretation
 	}
 	return payload
 }
@@ -297,7 +305,7 @@ func autismDevIEPPlanScoredItems(items []autismdevscore.ItemDefinition, itemScor
 func autismDevIEPPlanSystemPrompt() string {
 	return strings.Join([]string{
 		"你是儿童康复机构的IEP计划生成助手。",
-		"根据孤独症儿童发展评估表8大项记录、具体题目得分、结果分析和近期训练记录，生成可落地的康复教学计划。",
+		"根据孤独症儿童发展评估表8大项记录、具体题目得分、报告解读、结果分析和近期训练记录，生成可落地的康复教学计划；如果没有报告解读，就依据测评结果、结果分析和训练记录生成。",
 		"必须输出严格JSON，不要Markdown，不要代码块，不要解释。",
 		"输出模板必须与PEP3 IEP计划一致：康复领域、长期目标、短期目标、课程形式、起止日期。",
 		"不得更改P/E/F/X/A/M/S计数、题目、年龄段、日期等测评事实；不得做医学诊断；目标要转化为可训练、可观察、可执行的教学目标。",

@@ -7688,6 +7688,8 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   int fetchAutismDevResultAnalysisCalls = 0;
   int saveAutismDevResultAnalysisCalls = 0;
   AutismDevResultAnalysis? savedAutismDevResultAnalysis;
+  ErxinReportInterpretation savedAutismDevReportInterpretation =
+      ErxinReportInterpretation.empty;
 
   static const List<Pep3ScoreOption> _scoreOptions = <Pep3ScoreOption>[
     Pep3ScoreOption(value: 2, label: '通过', description: '可独立完成'),
@@ -8083,6 +8085,14 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Uint8List> downloadAutismDevRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(String token, int id) async* {
     const AutismDevResultAnalysis analysis = AutismDevResultAnalysis(
@@ -8106,6 +8116,48 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     yield const AutismDevResultAnalysisStreamEvent(
       type: 'done',
       data: analysis,
+    );
+  }
+
+  @override
+  Future<ErxinReportInterpretation> fetchAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    return savedAutismDevReportInterpretation;
+  }
+
+  @override
+  Future<ErxinReportInterpretation> generateAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    savedAutismDevReportInterpretation = const ErxinReportInterpretation(
+      title: '孤独症儿童发展评估报告解读',
+      generatedBy: 'ai',
+      summary: '孤独症儿童发展评估结果显示当前表现可作为训练计划参考。',
+      domainAnalysis: <String>['感知觉领域需要结合具体题目继续观察。'],
+      suggestions: <String>['建议优先设置可观察的小目标。'],
+      notes: <String>['本解读仅供参考。'],
+    );
+    return savedAutismDevReportInterpretation;
+  }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateAutismDevRecordReportInterpretationStream(
+    String token,
+    int id,
+  ) async* {
+    final ErxinReportInterpretation interpretation =
+        await generateAutismDevRecordReportInterpretation(token, id);
+    yield const ErxinReportInterpretationStreamEvent(
+      type: 'status',
+      message: '正在读取孤独症儿童发展评估结果',
+    );
+    yield ErxinReportInterpretationStreamEvent(
+      type: 'done',
+      data: interpretation,
     );
   }
 

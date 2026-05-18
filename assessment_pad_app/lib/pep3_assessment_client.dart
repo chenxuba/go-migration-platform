@@ -108,6 +108,29 @@ const String defaultAutismDevRecordResultAnalysisAiStreamPath =
   defaultValue:
       '/api/v1/assessments/autismdev/records/result-analysis/ai/stream',
 );
+const String defaultAutismDevRecordReportInterpretationPdfPath =
+    String.fromEnvironment(
+  'AUTISMDEV_RECORD_REPORT_INTERPRETATION_PDF_PATH',
+  defaultValue:
+      '/api/v1/assessments/autismdev/records/report/interpretation/pdf',
+);
+const String defaultAutismDevRecordReportInterpretationPath =
+    String.fromEnvironment(
+  'AUTISMDEV_RECORD_REPORT_INTERPRETATION_PATH',
+  defaultValue: '/api/v1/assessments/autismdev/records/report/interpretation',
+);
+const String defaultAutismDevRecordReportInterpretationAiPath =
+    String.fromEnvironment(
+  'AUTISMDEV_RECORD_REPORT_INTERPRETATION_AI_PATH',
+  defaultValue:
+      '/api/v1/assessments/autismdev/records/report/interpretation/ai',
+);
+const String defaultAutismDevRecordReportInterpretationAiStreamPath =
+    String.fromEnvironment(
+  'AUTISMDEV_RECORD_REPORT_INTERPRETATION_AI_STREAM_PATH',
+  defaultValue:
+      '/api/v1/assessments/autismdev/records/report/interpretation/ai/stream',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -1063,8 +1086,29 @@ abstract interface class Pep3AssessmentClient {
     AutismDevResultAnalysis? analysis,
   });
 
+  Future<Uint8List> downloadAutismDevRecordReportInterpretationPdf(
+    String token,
+    int id,
+  );
+
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(
+    String token,
+    int id,
+  );
+
+  Future<ErxinReportInterpretation> fetchAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  );
+
+  Future<ErxinReportInterpretation> generateAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  );
+
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateAutismDevRecordReportInterpretationStream(
     String token,
     int id,
   );
@@ -1121,6 +1165,14 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
         defaultAutismDevRecordSelectedReportPdfPath,
     this.autismDevRecordResultAnalysisAiStreamPath =
         defaultAutismDevRecordResultAnalysisAiStreamPath,
+    this.autismDevRecordReportInterpretationPdfPath =
+        defaultAutismDevRecordReportInterpretationPdfPath,
+    this.autismDevRecordReportInterpretationPath =
+        defaultAutismDevRecordReportInterpretationPath,
+    this.autismDevRecordReportInterpretationAiPath =
+        defaultAutismDevRecordReportInterpretationAiPath,
+    this.autismDevRecordReportInterpretationAiStreamPath =
+        defaultAutismDevRecordReportInterpretationAiStreamPath,
   });
 
   final String educationBaseUrl;
@@ -1147,6 +1199,10 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String autismDevRecordResultAnalysisPdfPath;
   final String autismDevRecordSelectedReportPdfPath;
   final String autismDevRecordResultAnalysisAiStreamPath;
+  final String autismDevRecordReportInterpretationPdfPath;
+  final String autismDevRecordReportInterpretationPath;
+  final String autismDevRecordReportInterpretationAiPath;
+  final String autismDevRecordReportInterpretationAiStreamPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1663,6 +1719,41 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<Uint8List> downloadAutismDevRecordReportInterpretationPdf(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(autismDevRecordReportInterpretationPdfPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: _headers(token)).timeout(
+            const Duration(seconds: 20),
+          );
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '报告解读PDF加载失败',
+      );
+    }
+    return _normalizeReportPdfBytes(response.bodyBytes);
+  }
+
+  @override
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(String token, int id) async* {
     final http.Request request = http.Request(
@@ -1698,6 +1789,90 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
 
     await for (final AutismDevResultAnalysisStreamEvent event
         in _decodeAutismDevResultAnalysisSse(response.stream)) {
+      yield event;
+    }
+  }
+
+  @override
+  Future<ErxinReportInterpretation> fetchAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(autismDevRecordReportInterpretationPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final Object? data = await _getJson(uri, token);
+    if (data is! Map) {
+      throw const Pep3ApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ErxinReportInterpretation> generateAutismDevRecordReportInterpretation(
+    String token,
+    int id,
+  ) async {
+    final http.Response response;
+    try {
+      response = await http
+          .post(
+            _uri(autismDevRecordReportInterpretationAiPath),
+            headers: _headers(token),
+            body: jsonEncode(<String, int>{'id': id}),
+          )
+          .timeout(const Duration(seconds: 190));
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读生成超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读接口：$error');
+    }
+    final Object? data = await _handleResponse(response);
+    if (data is! Map) {
+      throw const Pep3ApiException('报告解读返回格式不正确');
+    }
+    return ErxinReportInterpretation.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Stream<ErxinReportInterpretationStreamEvent>
+      generateAutismDevRecordReportInterpretationStream(
+    String token,
+    int id,
+  ) async* {
+    final http.Request request = http.Request(
+      'POST',
+      _uri(autismDevRecordReportInterpretationAiStreamPath),
+    )
+      ..headers.addAll(<String, String>{
+        ..._headers(token),
+        'Accept': 'text/event-stream',
+      })
+      ..body = jsonEncode(<String, int>{'id': id});
+    final http.StreamedResponse response;
+    try {
+      response = await request.send().timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const Pep3ApiException('报告解读生成连接超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接报告解读流式接口：$error');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '报告解读生成失败',
+      );
+    }
+
+    await for (final ErxinReportInterpretationStreamEvent event
+        in _decodePep3ReportInterpretationSse(response.stream)) {
       yield event;
     }
   }

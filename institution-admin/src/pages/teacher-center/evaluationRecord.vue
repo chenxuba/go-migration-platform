@@ -24,9 +24,12 @@ import {
 } from '@/api/edu-center/erxin-assessment'
 import {
   deleteAutismDevAssessmentRecordApi,
+  downloadAutismDevAssessmentRecordReportInterpretationPdfApi,
   downloadAutismDevResultAnalysisWordApi,
   downloadAutismDevSelectedReportPdfApi,
+  generateAutismDevAssessmentRecordReportInterpretationStreamApi,
   generateAutismDevResultAnalysisStreamApi,
+  getAutismDevAssessmentRecordReportInterpretationApi,
   getAutismDevResultAnalysisApi,
   pageAutismDevAssessmentRecordsApi,
 } from '@/api/edu-center/autismdev-assessment'
@@ -171,23 +174,30 @@ const autismDevExportDimensionOptions = [
     pages: '结果分析',
   },
   {
+    value: 'interpretation',
+    title: '报告解读',
+    badge: '03',
+    desc: 'AI生成综合报告解读，辅助IEP目标制定。',
+    pages: '报告解读',
+  },
+  {
     value: 'training',
     title: '训练效果',
-    badge: '03',
+    badge: '04',
     desc: '查看与导出阶段训练效果分析。',
     pages: '训练效果',
   },
   {
     value: 'developmentProfile',
     title: '发展情况剖面图',
-    badge: '04',
+    badge: '05',
     desc: '查看发展能力剖面图。',
     pages: '发展剖面',
   },
   {
     value: 'behaviorProfile',
     title: '情绪行为表现图',
-    badge: '05',
+    badge: '06',
     desc: '查看情绪行为表现图。',
     pages: '情绪行为',
   },
@@ -209,7 +219,7 @@ const autismDevEnabledExportSections = computed(() => autismDevExportDimensionOp
   .filter(option => isAutismDevExportSectionEnabled(option.value))
   .map(option => option.value))
 const autismDevExportAllSelected = computed(() => {
-  const enabled = autismDevEnabledExportSections.value
+  const enabled = autismDevEnabledExportSections.value.filter(section => section !== 'interpretation')
   return !!enabled.length && enabled.every(section => autismDevExportSections.value.includes(section))
 })
 const exportModalWidth = computed(() => (isERXinRecord(exportTargetRecord.value) || isAutismDevRecord(exportTargetRecord.value)) ? 760 : 700)
@@ -715,12 +725,21 @@ function autismDevAnalysisForExport() {
 }
 
 function isAutismDevExportSectionEnabled(section) {
+  if (section === 'interpretation')
+    return !(interpretationLoading.value || interpretationGenerating.value)
   if (section !== 'resultAnalysis')
     return true
   return !autismDevAnalysisGenerating.value && !autismDevAnalysisLoading.value && !autismDevAnalysisIsEmpty()
 }
 
 function autismDevExportSectionStatus(section) {
+  if (section === 'interpretation') {
+    if (interpretationGenerating.value)
+      return '生成中'
+    if (interpretationLoading.value)
+      return '读取中'
+    return ''
+  }
   if (section !== 'resultAnalysis')
     return ''
   if (autismDevAnalysisGenerating.value)
@@ -751,8 +770,13 @@ function toggleAutismDevExportSection(section) {
   const next = new Set(autismDevExportSections.value)
   if (next.has(section))
     next.delete(section)
-  else
+  else {
+    if (section === 'interpretation')
+      next.clear()
+    else
+      next.delete('interpretation')
     next.add(section)
+  }
   setAutismDevExportSections(Array.from(next))
 }
 
@@ -761,7 +785,7 @@ function toggleAllAutismDevExportSections() {
     autismDevExportSections.value = []
     return
   }
-  setAutismDevExportSections(autismDevEnabledExportSections.value)
+  setAutismDevExportSections(autismDevEnabledExportSections.value.filter(section => section !== 'interpretation'))
 }
 
 function reportTitleForRecord(record) {
@@ -774,7 +798,7 @@ function reportTitleForRecord(record) {
 
 function reportModalHint() {
   if (currentReportIsAutismDev())
-    return '按评估情况、结果分析、训练效果和剖面图查看报告'
+    return '按评估情况、结果分析、报告解读、训练效果和剖面图查看报告'
   return currentReportIsERXin() ? '查看儿心量表评估报告内容' : '按记录册导出维度查看报告内容'
 }
 
@@ -785,21 +809,114 @@ function reportFrameTitle() {
 }
 
 function reportInterpretationDefaultTitle(record = currentReport.value?.record) {
+  if (isAutismDevRecord(record))
+    return '孤独症儿童发展评估报告解读'
   return isERXinRecord(record) ? '儿心量表报告解读' : 'PEP-3报告解读'
 }
 
 function reportInterpretationGeneratingHint(record = currentReport.value?.record) {
+  if (isAutismDevRecord(record))
+    return '正在读取孤独症儿童发展评估结果...'
   return isERXinRecord(record) ? '正在分析全量表与五大能区结果...' : '正在分析PEP-3评估结果...'
 }
 
 function reportInterpretationDomainSectionTitle(record = currentReport.value?.record) {
+  if (isAutismDevRecord(record))
+    return '八大领域表现'
   return isERXinRecord(record) ? '能区表现' : '领域表现'
 }
 
-function stringList(value) {
+const interpretationFieldNameTextSet = new Set([
+  'domain',
+  'domainname',
+  'name',
+  'title',
+  'analysis',
+  'content',
+  'text',
+  'value',
+  'summary',
+  'description',
+  'suggestion',
+  'suggestions',
+  'note',
+  'notes',
+  'domainanalysis',
+])
+
+function isInterpretationFieldNameText(value) {
+  const text = String(value || '').trim().replace(/^[:：]+|[:：]+$/g, '').toLowerCase()
+  return interpretationFieldNameTextSet.has(text)
+}
+
+function cleanInterpretationText(value, maxLength = 120) {
+  let text = String(value || '').trim().replace(/^["'`]+|["'`]+$/g, '').trim()
+  text = text.replace(/^\d+[.、)）]\s*/, '').trim()
+  if (!text || isInterpretationFieldNameText(text))
+    return ''
+  const chars = Array.from(text)
+  if (maxLength > 0 && chars.length > maxLength) {
+    let cut = maxLength
+    for (let index = maxLength; index > maxLength - 20 && index > 0; index -= 1) {
+      if ('。；;，,、'.includes(chars[index - 1])) {
+        cut = index
+        break
+      }
+    }
+    text = chars.slice(0, cut).join('').trim()
+  }
+  return text
+}
+
+function interpretationObjectText(source, keys) {
+  if (!source || typeof source !== 'object')
+    return ''
+  for (const key of keys) {
+    const text = cleanInterpretationText(source[key], 160)
+    if (text)
+      return text
+  }
+  return ''
+}
+
+function interpretationTextFromValue(item, key = '') {
+  if (!item)
+    return ''
+  if (typeof item === 'object' && !Array.isArray(item)) {
+    const domain = interpretationObjectText(item, ['domain', 'domainName', 'name', 'title'])
+    let body = interpretationObjectText(item, ['analysis', 'text', 'content', 'summary', 'description', 'value', 'suggestion', 'note'])
+    if (!body) {
+      for (const [field, fieldValue] of Object.entries(item)) {
+        if (isInterpretationFieldNameText(field))
+          continue
+        body = interpretationTextFromValue(fieldValue, key)
+        if (body)
+          break
+      }
+    }
+    if (!body)
+      return ''
+    if (key === 'domainAnalysis' && domain && !body.startsWith(`${domain}：`) && !body.startsWith(`${domain}:`))
+      return `${domain}：${body}`
+    return body
+  }
+  const maxLength = key === 'suggestions' ? 80 : 120
+  return cleanInterpretationText(item, maxLength)
+}
+
+function stringList(value, key = '') {
   if (!Array.isArray(value))
     return []
-  return value.map(item => String(item || '').trim()).filter(Boolean)
+  const seen = new Set()
+  const result = []
+  value.forEach((item) => {
+    const text = interpretationTextFromValue(item, key)
+    if (!text || seen.has(text))
+      return
+    seen.add(text)
+    result.push(text)
+  })
+  return result
 }
 
 function normalizeInterpretation(value) {
@@ -809,20 +926,20 @@ function normalizeInterpretation(value) {
     model: String(data.model || ''),
     generatedBy: String(data.generatedBy || ''),
     generatedAt: String(data.generatedAt || ''),
-    summary: String(data.summary || ''),
-    domainAnalysis: stringList(data.domainAnalysis),
-    suggestions: stringList(data.suggestions),
-    notes: stringList(data.notes),
+    summary: cleanInterpretationText(data.summary, 140),
+    domainAnalysis: stringList(data.domainAnalysis, 'domainAnalysis'),
+    suggestions: stringList(data.suggestions, 'suggestions'),
+    notes: stringList(data.notes, 'notes'),
   }
 }
 
 function previewInterpretationFromMap(value) {
   const data = value || {}
   return {
-    summary: String(data.summary || '').trim(),
-    domainAnalysis: stringList(data.domainAnalysis),
-    suggestions: stringList(data.suggestions),
-    notes: stringList(data.notes),
+    summary: cleanInterpretationText(data.summary, 140),
+    domainAnalysis: stringList(data.domainAnalysis, 'domainAnalysis'),
+    suggestions: stringList(data.suggestions, 'suggestions'),
+    notes: stringList(data.notes, 'notes'),
   }
 }
 
@@ -838,7 +955,7 @@ function interpretationPreviewFromText(raw) {
   catch {
   }
   return {
-    summary: extractPartialJsonStringValue(text, 'summary') || '',
+    summary: cleanInterpretationText(extractPartialJsonStringValue(text, 'summary'), 140),
     domainAnalysis: extractPartialJsonArrayValues(text, 'domainAnalysis'),
     suggestions: extractPartialJsonArrayValues(text, 'suggestions'),
     notes: extractPartialJsonArrayValues(text, 'notes'),
@@ -849,16 +966,16 @@ function interpretationIsEmpty(value = interpretation.value) {
   if (!value)
     return true
   return !String(value.summary || '').trim()
-    && !stringList(value.domainAnalysis).length
-    && !stringList(value.suggestions).length
-    && !stringList(value.notes).length
+    && !stringList(value.domainAnalysis, 'domainAnalysis').length
+    && !stringList(value.suggestions, 'suggestions').length
+    && !stringList(value.notes, 'notes').length
 }
 
 function streamingPreviewIsEmpty(value = streamingInterpretationPreview.value) {
   return !String(value?.summary || '').trim()
-    && !stringList(value?.domainAnalysis).length
-    && !stringList(value?.suggestions).length
-    && !stringList(value?.notes).length
+    && !stringList(value?.domainAnalysis, 'domainAnalysis').length
+    && !stringList(value?.suggestions, 'suggestions').length
+    && !stringList(value?.notes, 'notes').length
 }
 
 function extractPartialJsonStringValue(text, key) {
@@ -875,13 +992,51 @@ function extractPartialJsonArrayValues(text, key) {
     return []
   const arrayEnd = text.indexOf(']', arrayStart)
   const body = text.slice(arrayStart + 1, arrayEnd >= 0 ? arrayEnd : text.length)
+  const objectValues = extractPartialJsonObjectArrayValues(body, key)
+  if (objectValues.length)
+    return stringList(objectValues, key)
   const values = Array.from(body.matchAll(/"((?:\\.|[^"\\])*)"/g))
     .map(match => decodePartialJsonString(match[1] || '').trim())
     .filter(Boolean)
   const trailing = extractTrailingPartialJsonArrayString(body)
   if (trailing)
     values.push(trailing)
+  return stringList(values, key)
+}
+
+function extractPartialJsonObjectArrayValues(body, key) {
+  const objectFields = key === 'domainAnalysis'
+    ? ['analysis', 'text', 'content', 'summary', 'description', 'value']
+    : ['text', 'content', 'summary', 'description', 'value', 'suggestion', 'note']
+  const fieldPattern = objectFields.join('|')
+  if (!new RegExp(`"(${fieldPattern})"\\s*:`).test(body))
+    return []
+  const completeValues = []
+  for (const objectMatch of body.matchAll(/\{([^{}]*)\}/g)) {
+    const objectText = objectMatch[1] || ''
+    const value = extractObjectFieldString(objectText, objectFields)
+    if (!value)
+      continue
+    if (key !== 'domainAnalysis') {
+      completeValues.push(value)
+      continue
+    }
+    const domain = extractObjectFieldString(objectText, ['domain', 'domainName', 'name', 'title'])
+    completeValues.push(domain ? `${domain}：${value}` : value)
+  }
+  if (completeValues.length)
+    return completeValues
+  const values = []
+  const fieldRegex = new RegExp(`"(?:${fieldPattern})"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`,'g')
+  for (const match of body.matchAll(fieldRegex))
+    values.push(decodePartialJsonString(match[1] || '').trim())
   return values
+}
+
+function extractObjectFieldString(body, keys) {
+  const fieldPattern = keys.join('|')
+  const match = new RegExp(`"(?:${fieldPattern})"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"`).exec(body)
+  return match ? decodePartialJsonString(match[1] || '').trim() : ''
 }
 
 function extractTrailingPartialJsonArrayString(body) {
@@ -959,7 +1114,7 @@ function resetAutismDevReportState() {
 }
 
 function interpretationSectionItems(value, key) {
-  return stringList(value?.[key])
+  return stringList(value?.[key], key)
 }
 
 function scrollInterpretationStreamToBottom() {
@@ -1070,8 +1225,11 @@ function reportModulePages(value) {
 }
 
 function reportExportDimension(row, dimension = activeReportModule.value) {
-  if (isAutismDevRecord(row))
+  if (isAutismDevRecord(row)) {
+    if (reportTab.value === 'interpretation')
+      return 'interpretation'
     return activeAutismDevReportSection.value || defaultAutismDevReportSection()
+  }
   if (!isERXinRecord(row) && reportTab.value === 'interpretation')
     return 'pep3_interpretation'
   return dimension
@@ -1145,7 +1303,7 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
     return
   }
   if (isAutismDevRecord(row)) {
-    openExportModal(row, activeAutismDevReportSection.value || defaultAutismDevReportSection())
+    openExportModal(row, reportTab.value === 'interpretation' ? 'interpretation' : activeAutismDevReportSection.value || defaultAutismDevReportSection())
     return
   }
   const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
@@ -1292,6 +1450,12 @@ function revokeReportPreviewUrl() {
 async function loadReportPdfPreview(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id)
     return
+  if (isAutismDevRecord(row) && dimension === 'interpretation') {
+    revokeReportPreviewUrl()
+    if (!interpretationFetched.value && !interpretationLoading.value)
+      loadSavedInterpretation()
+    return
+  }
   if (isAutismDevRecord(row) && dimension === 'resultAnalysis') {
     revokeReportPreviewUrl()
     void loadAutismDevResultAnalysis(row)
@@ -1374,6 +1538,8 @@ async function loadSavedInterpretation() {
   try {
     const res = isERXinRecord(row)
       ? await getERXinAssessmentRecordReportInterpretationApi(row.id)
+      : isAutismDevRecord(row)
+      ? await getAutismDevAssessmentRecordReportInterpretationApi(row.id)
       : await getPEP3AssessmentRecordReportInterpretationApi(row.id)
     const data = normalizeInterpretation(unwrap(res))
     interpretation.value = data
@@ -1424,6 +1590,8 @@ async function generateInterpretation(regenerate = false) {
   try {
     const generateStreamApi = isERXinRecord(row)
       ? generateERXinAssessmentRecordReportInterpretationStreamApi
+      : isAutismDevRecord(row)
+      ? generateAutismDevAssessmentRecordReportInterpretationStreamApi
       : generatePEP3AssessmentRecordReportInterpretationStreamApi
     const data = await generateStreamApi(
       row.id,
@@ -1612,6 +1780,13 @@ function selectAutismDevReportSection(section) {
   if (activeAutismDevReportSection.value === section)
     return
   activeAutismDevReportSection.value = section
+  if (section === 'interpretation') {
+    reportTab.value = 'interpretation'
+    revokeReportPreviewUrl()
+    if (!interpretationFetched.value && !interpretationLoading.value)
+      loadSavedInterpretation()
+    return
+  }
   reportTab.value = 'result'
   if (section === 'resultAnalysis') {
     revokeReportPreviewUrl()
@@ -1629,7 +1804,8 @@ function openExportModal(row, dimension) {
     setAutismDevExportSections(autismDevReportSectionsForDimension(dimension))
     selectedExportDimension.value = autismDevExportSections.value[0] || defaultAutismDevReportSection()
     exportModalOpen.value = true
-    void loadAutismDevAnalysisForExport(row)
+    if (autismDevExportSections.value.includes('resultAnalysis'))
+      void loadAutismDevAnalysisForExport(row)
     return
   }
   selectedExportDimension.value = dimension || defaultExportDimensionForRecord(row)
@@ -1704,7 +1880,7 @@ function autismDevReportSectionsForDimension(dimension) {
   if (autismDevExportDimensionOptions.some(item => item.value === dimension))
     return [dimension]
   if (dimension === 'all' || dimension === 'autismdev_report')
-    return normalizeAutismDevExportSections(autismDevExportDimensionOptions.map(item => item.value))
+    return normalizeAutismDevExportSections(autismDevExportDimensionOptions.map(item => item.value).filter(value => value !== 'interpretation'))
   return [defaultAutismDevReportSection()]
 }
 
@@ -1719,6 +1895,14 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
       messageService.warning('请选择导出内容')
       return
     }
+    if (autismDevSections.includes('interpretation') && autismDevSections.length > 1) {
+      messageService.warning('报告解读请单独导出')
+      return
+    }
+    if (autismDevSections.includes('interpretation') && (interpretationLoading.value || interpretationGenerating.value)) {
+      messageService.warning('报告解读生成或读取中，请稍后')
+      return
+    }
     if (autismDevSections.includes('resultAnalysis') && (autismDevExportAnalysisLoading.value || autismDevAnalysisLoading.value)) {
       messageService.warning('评估结果分析读取中，请稍后')
       return
@@ -1731,7 +1915,9 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   exportingId.value = recordActionKey(row)
   try {
     const response = isAutismDevRecord(row)
-      ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
+      ? (autismDevSections.includes('interpretation')
+          ? await downloadAutismDevAssessmentRecordReportInterpretationPdfApi(row.id)
+          : await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null))
       : isERXinRecord(row)
       ? await downloadERXinExportPdf(row.id, dimension)
       : await downloadPEP3ExportPdf(row.id, dimension)
@@ -2004,6 +2190,22 @@ onBeforeUnmount(() => {
                 {{ autismDevAnalysisGenerating ? '生成中' : (autismDevAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
               </a-button>
             </div>
+          </div>
+          <div
+            v-else-if="activeAutismDevReportSection === 'interpretation'"
+            class="report-module-summary erxin-report-tabs__summary"
+          >
+            <strong>报告解读</strong>
+            <span>查看或生成孤独症儿童发展评估报告解读。</span>
+            <a-button
+              type="primary"
+              size="small"
+              :loading="interpretationGenerating"
+              :disabled="interpretationLoading && !interpretationGenerating"
+              @click="handleGenerateInterpretation"
+            >
+              {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+            </a-button>
           </div>
         </div>
         <div v-else class="report-module-area erxin-report-tabs">

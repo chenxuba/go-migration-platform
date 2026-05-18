@@ -5607,7 +5607,10 @@ _ErxinInterpretationStreamingPreview _erxinInterpretationStreamingPreview(
     // Partial JSON while streaming. Fall through to lightweight extraction.
   }
   return _ErxinInterpretationStreamingPreview(
-    summary: _extractPartialJsonStringValue(text, 'summary') ?? '',
+    summary: _cleanInterpretationPreviewText(
+      _extractPartialJsonStringValue(text, 'summary'),
+      maxLength: 140,
+    ),
     domainAnalysis: _extractPartialJsonArrayValues(text, 'domainAnalysis'),
     suggestions: _extractPartialJsonArrayValues(text, 'suggestions'),
     notes: _extractPartialJsonArrayValues(text, 'notes'),
@@ -5618,21 +5621,159 @@ _ErxinInterpretationStreamingPreview _erxinInterpretationPreviewFromMap(
   Map<String, dynamic> json,
 ) {
   return _ErxinInterpretationStreamingPreview(
-    summary: '${json['summary'] ?? ''}'.trim(),
-    domainAnalysis: _previewStringListFrom(json['domainAnalysis']),
-    suggestions: _previewStringListFrom(json['suggestions']),
-    notes: _previewStringListFrom(json['notes']),
+    summary: _cleanInterpretationPreviewText(
+      json['summary'],
+      maxLength: 140,
+    ),
+    domainAnalysis: _previewStringListFrom(
+      json['domainAnalysis'],
+      'domainAnalysis',
+    ),
+    suggestions: _previewStringListFrom(json['suggestions'], 'suggestions'),
+    notes: _previewStringListFrom(json['notes'], 'notes'),
   );
 }
 
-List<String> _previewStringListFrom(Object? value) {
+const Set<String> _interpretationFieldNameTexts = <String>{
+  'domain',
+  'domainname',
+  'name',
+  'title',
+  'analysis',
+  'content',
+  'text',
+  'value',
+  'summary',
+  'description',
+  'suggestion',
+  'suggestions',
+  'note',
+  'notes',
+  'domainanalysis',
+};
+
+List<String> _previewStringListFrom(Object? value, [String key = '']) {
   if (value is List) {
-    return value
-        .map((Object? item) => '${item ?? ''}'.trim())
-        .where((String item) => item.isNotEmpty)
-        .toList();
+    return _normalizeInterpretationPreviewList(value, key);
   }
   return <String>[];
+}
+
+List<String> _normalizeInterpretationPreviewList(
+  Iterable<Object?> values, [
+  String key = '',
+]) {
+  final Set<String> seen = <String>{};
+  final List<String> result = <String>[];
+  for (final Object? item in values) {
+    final String text = _interpretationPreviewTextFromValue(item, key);
+    if (text.isEmpty || seen.contains(text)) {
+      continue;
+    }
+    seen.add(text);
+    result.add(text);
+  }
+  return result;
+}
+
+String _interpretationPreviewTextFromValue(Object? value, [String key = '']) {
+  if (value == null) {
+    return '';
+  }
+  if (value is Map) {
+    final String domain = _interpretationMapText(
+      value,
+      const <String>['domain', 'domainName', 'name', 'title'],
+    );
+    String body = _interpretationMapText(
+      value,
+      const <String>[
+        'analysis',
+        'text',
+        'content',
+        'summary',
+        'description',
+        'value',
+        'suggestion',
+        'note',
+      ],
+    );
+    if (body.isEmpty) {
+      for (final MapEntry<Object?, Object?> entry
+          in value.cast<Object?, Object?>().entries) {
+        if (_isInterpretationFieldNameText(entry.key)) {
+          continue;
+        }
+        body = _interpretationPreviewTextFromValue(entry.value, key);
+        if (body.isNotEmpty) {
+          break;
+        }
+      }
+    }
+    if (body.isEmpty) {
+      return '';
+    }
+    if (key == 'domainAnalysis' &&
+        domain.isNotEmpty &&
+        !body.startsWith('$domain：') &&
+        !body.startsWith('$domain:')) {
+      return '$domain：$body';
+    }
+    return body;
+  }
+  if (value is List) {
+    return _normalizeInterpretationPreviewList(value, key).join('；');
+  }
+  return _cleanInterpretationPreviewText(
+    value,
+    maxLength: key == 'suggestions' ? 80 : 120,
+  );
+}
+
+String _interpretationMapText(Map<dynamic, dynamic> source, List<String> keys) {
+  for (final String key in keys) {
+    final String text = _cleanInterpretationPreviewText(
+      source[key],
+      maxLength: 160,
+    );
+    if (text.isNotEmpty) {
+      return text;
+    }
+  }
+  return '';
+}
+
+String _cleanInterpretationPreviewText(
+  Object? value, {
+  int maxLength = 120,
+}) {
+  String text = '${value ?? ''}'.trim();
+  text = text.replaceAll(RegExp(r'''^["'`]+|["'`]+$'''), '').trim();
+  text = text.replaceFirst(RegExp(r'^\d+[.、)）]\s*'), '').trim();
+  if (text.isEmpty || _isInterpretationFieldNameText(text)) {
+    return '';
+  }
+  final List<int> chars = text.runes.toList();
+  if (maxLength > 0 && chars.length > maxLength) {
+    int cut = maxLength;
+    for (int index = maxLength; index > maxLength - 20 && index > 0; index--) {
+      final String char = String.fromCharCode(chars[index - 1]);
+      if ('。；;，,、'.contains(char)) {
+        cut = index;
+        break;
+      }
+    }
+    text = String.fromCharCodes(chars.take(cut)).trim();
+  }
+  return text;
+}
+
+bool _isInterpretationFieldNameText(Object? value) {
+  final String text = '${value ?? ''}'
+      .trim()
+      .replaceAll(RegExp(r'^[:：]+|[:：]+$'), '')
+      .toLowerCase();
+  return _interpretationFieldNameTexts.contains(text);
 }
 
 String? _extractPartialJsonStringValue(String text, String key) {
@@ -5658,6 +5799,11 @@ List<String> _extractPartialJsonArrayValues(String text, String key) {
     arrayStart + 1,
     arrayEnd >= 0 ? arrayEnd : text.length,
   );
+  final List<String> objectValues =
+      _extractPartialJsonObjectArrayValues(body, key);
+  if (objectValues.isNotEmpty) {
+    return _normalizeInterpretationPreviewList(objectValues, key);
+  }
   final List<String> values = RegExp('"((?:\\\\.|[^"\\\\])*)"')
       .allMatches(body)
       .map(
@@ -5668,7 +5814,70 @@ List<String> _extractPartialJsonArrayValues(String text, String key) {
   if (trailing != null && trailing.trim().isNotEmpty) {
     values.add(trailing.trim());
   }
-  return values;
+  return _normalizeInterpretationPreviewList(values, key);
+}
+
+List<String> _extractPartialJsonObjectArrayValues(String body, String key) {
+  final List<String> fields = key == 'domainAnalysis'
+      ? const <String>[
+          'analysis',
+          'text',
+          'content',
+          'summary',
+          'description',
+          'value',
+        ]
+      : const <String>[
+          'text',
+          'content',
+          'summary',
+          'description',
+          'value',
+          'suggestion',
+          'note',
+        ];
+  final String fieldPattern = fields.map(RegExp.escape).join('|');
+  if (!RegExp('"($fieldPattern)"\\s*:').hasMatch(body)) {
+    return const <String>[];
+  }
+  final List<String> completeValues = <String>[];
+  for (final RegExpMatch objectMatch
+      in RegExp(r'\{([^{}]*)\}').allMatches(body)) {
+    final String objectBody = objectMatch.group(1) ?? '';
+    final String value = _extractObjectFieldString(objectBody, fields);
+    if (value.isEmpty) {
+      continue;
+    }
+    if (key != 'domainAnalysis') {
+      completeValues.add(value);
+      continue;
+    }
+    final String domain = _extractObjectFieldString(
+      objectBody,
+      const <String>['domain', 'domainName', 'name', 'title'],
+    );
+    completeValues.add(domain.isEmpty ? value : '$domain：$value');
+  }
+  if (completeValues.isNotEmpty) {
+    return completeValues;
+  }
+  return RegExp('"(?:$fieldPattern)"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"')
+      .allMatches(body)
+      .map(
+          (RegExpMatch match) => _decodePartialJsonString(match.group(1) ?? ''))
+      .where((String item) => item.trim().isNotEmpty)
+      .toList();
+}
+
+String _extractObjectFieldString(String body, List<String> keys) {
+  final String fieldPattern = keys.map(RegExp.escape).join('|');
+  final RegExpMatch? match =
+      RegExp('"(?:$fieldPattern)"\\s*:\\s*"((?:\\\\.|[^"\\\\])*)"')
+          .firstMatch(body);
+  if (match == null) {
+    return '';
+  }
+  return _decodePartialJsonString(match.group(1) ?? '').trim();
 }
 
 String? _extractTrailingPartialJsonArrayString(String body) {

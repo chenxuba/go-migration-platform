@@ -3,6 +3,7 @@ part of 'assessment_report_list_page.dart';
 enum _AutismDevReportTab {
   assessmentInfo,
   resultAnalysis,
+  interpretation,
   training,
   developmentProfile,
   behaviorProfile,
@@ -12,6 +13,7 @@ const List<_AutismDevReportTabSpec> _autismDevReportTabs =
     <_AutismDevReportTabSpec>[
   _AutismDevReportTabSpec('评估情况', _AutismDevReportTab.assessmentInfo),
   _AutismDevReportTabSpec('评估结果分析', _AutismDevReportTab.resultAnalysis),
+  _AutismDevReportTabSpec('报告解读', _AutismDevReportTab.interpretation),
   _AutismDevReportTabSpec('训练效果', _AutismDevReportTab.training),
   _AutismDevReportTabSpec('发展情况剖面图', _AutismDevReportTab.developmentProfile),
   _AutismDevReportTabSpec('情绪行为表现图', _AutismDevReportTab.behaviorProfile),
@@ -55,6 +57,15 @@ class _AutismDevReportPreviewDialogState
   String _resultAnalysisStreamText = '';
   int _resultAnalysisGenerateSerial = 0;
   int _resultAnalysisLoadSerial = 0;
+  ErxinReportInterpretation? _interpretation;
+  Future<ErxinReportInterpretation>? _interpretationLoad;
+  bool _interpretationLoading = false;
+  bool _interpretationGenerating = false;
+  bool _interpretationFetched = false;
+  String _interpretationErrorMessage = '';
+  String _interpretationProgressMessage = '准备生成报告解读...';
+  String _interpretationStreamingText = '';
+  int _interpretationGenerateSerial = 0;
   _AutismDevAnalysisEditRequest? _selectedAnalysisCell;
 
   @override
@@ -244,6 +255,21 @@ class _AutismDevReportPreviewDialogState
             ),
             const SizedBox(width: 8),
           ],
+          if (_activeTab == _AutismDevReportTab.interpretation) ...<Widget>[
+            _ToolbarButton(
+              label: _interpretationLoading
+                  ? (_interpretationGenerating ? '生成中' : '读取中')
+                  : (_interpretation == null || _interpretation!.isEmpty)
+                      ? '生成解读'
+                      : '重新生成解读',
+              icon: Icons.auto_awesome_rounded,
+              filled: true,
+              onTap: _interpretationLoading
+                  ? null
+                  : () => unawaited(_handleInterpretationGenerateTap()),
+            ),
+            const SizedBox(width: 8),
+          ],
           _ToolbarButton(
             label: _printing ? '打印中' : '打印',
             icon: Icons.print_rounded,
@@ -264,6 +290,11 @@ class _AutismDevReportPreviewDialogState
         _selectedAnalysisCell = null;
       }
     });
+    if (tab == _AutismDevReportTab.interpretation &&
+        !_interpretationFetched &&
+        !_interpretationLoading) {
+      unawaited(_loadSavedInterpretation());
+    }
   }
 
   Future<void> _generateResultAnalysis() async {
@@ -358,6 +389,206 @@ class _AutismDevReportPreviewDialogState
       });
       await Future<void>.delayed(const Duration(milliseconds: 4));
     }
+  }
+
+  Future<void> _loadSavedInterpretation() async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '请先登录后再查看报告解读';
+      });
+      return;
+    }
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationGenerating = false;
+      _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
+      _interpretationProgressMessage = '正在读取已保存的报告解读...';
+    });
+    final Future<ErxinReportInterpretation> future =
+        widget.client.fetchAutismDevRecordReportInterpretation(
+      token,
+      widget.record.id,
+    );
+    _interpretationLoad = future;
+    try {
+      final ErxinReportInterpretation interpretation = await future;
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretation = interpretation;
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationProgressMessage =
+            interpretation.isEmpty ? '报告解读尚未生成' : '已读取保存的报告解读';
+      });
+    } on Pep3ApiException catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || !identical(_interpretationLoad, future)) {
+        return;
+      }
+      setState(() {
+        _interpretationFetched = true;
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '报告解读读取失败：$error';
+      });
+    }
+  }
+
+  Future<void> _generateInterpretation({bool regenerate = false}) async {
+    if (!mounted) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '请先登录后再生成报告解读';
+      });
+      return;
+    }
+    final int serial = ++_interpretationGenerateSerial;
+    setState(() {
+      _interpretationLoading = true;
+      _interpretationGenerating = true;
+      _interpretationFetched = true;
+      _interpretationErrorMessage = '';
+      _interpretationStreamingText = '';
+      _interpretationProgressMessage =
+          regenerate ? '正在重新生成报告解读...' : '正在生成报告解读...';
+      if (regenerate) {
+        _interpretation = null;
+      }
+    });
+    try {
+      bool completed = false;
+      await for (final ErxinReportInterpretationStreamEvent event
+          in widget.client.generateAutismDevRecordReportInterpretationStream(
+        token,
+        widget.record.id,
+      )) {
+        if (!mounted || serial != _interpretationGenerateSerial) {
+          return;
+        }
+        if (event.type == 'status') {
+          setState(() {
+            _interpretationProgressMessage = event.message.trim().isEmpty
+                ? 'AI 正在分析孤独症儿童发展评估结果...'
+                : event.message.trim();
+          });
+          continue;
+        }
+        if (event.type == 'delta') {
+          if (event.text.isEmpty) {
+            continue;
+          }
+          setState(() {
+            _interpretationStreamingText += event.text;
+            _interpretationProgressMessage = 'AI 正在生成报告解读...';
+          });
+          continue;
+        }
+        if (event.type == 'error') {
+          throw Pep3ApiException(
+            event.message.trim().isEmpty ? '报告解读生成失败' : event.message.trim(),
+          );
+        }
+        if (event.type == 'done') {
+          final ErxinReportInterpretation interpretation =
+              event.data ?? ErxinReportInterpretation.empty;
+          setState(() {
+            _interpretation = interpretation;
+            _interpretationLoading = false;
+            _interpretationGenerating = false;
+            _interpretationStreamingText = '';
+            _interpretationProgressMessage = '报告解读已生成';
+          });
+          completed = true;
+          break;
+        }
+      }
+      if (!mounted || serial != _interpretationGenerateSerial || completed) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationErrorMessage = '报告解读生成中断，请重新生成';
+      });
+    } on Pep3ApiException catch (error) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationErrorMessage = error.message;
+      });
+    } on Object catch (error) {
+      if (!mounted || serial != _interpretationGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _interpretationLoading = false;
+        _interpretationGenerating = false;
+        _interpretationStreamingText = '';
+        _interpretationErrorMessage = '报告解读生成失败：$error';
+      });
+    }
+  }
+
+  Future<void> _handleInterpretationGenerateTap() async {
+    final bool regenerate =
+        _interpretation != null && !_interpretation!.isEmpty;
+    if (!regenerate) {
+      await _generateInterpretation();
+      return;
+    }
+    final bool confirmed = await _confirmRegenerateInterpretation();
+    if (!mounted || !confirmed) {
+      return;
+    }
+    await _generateInterpretation(regenerate: true);
+  }
+
+  Future<bool> _confirmRegenerateInterpretation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: Center(
+            child: _ErxinRegenerateInterpretationConfirmDialog(
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+              onConfirm: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed == true;
   }
 
   Widget _buildContent() {
@@ -489,21 +720,31 @@ class _AutismDevReportPreviewDialogState
     if (tab == _AutismDevReportTab.resultAnalysis) {
       return !_resultAnalysisGenerating && !_resultAnalysis.isEmpty;
     }
+    if (tab == _AutismDevReportTab.interpretation) {
+      return !_interpretationLoading &&
+          !_interpretationGenerating &&
+          _interpretation != null &&
+          !_interpretation!.isEmpty;
+    }
     return true;
   }
 
   Map<_AutismDevReportTab, String> _printSelectionStatusLabels() {
+    final Map<_AutismDevReportTab, String> labels =
+        <_AutismDevReportTab, String>{};
     if (_resultAnalysisGenerating) {
-      return const <_AutismDevReportTab, String>{
-        _AutismDevReportTab.resultAnalysis: '生成中',
-      };
+      labels[_AutismDevReportTab.resultAnalysis] = '生成中';
+    } else if (_resultAnalysis.isEmpty) {
+      labels[_AutismDevReportTab.resultAnalysis] = '未生成';
     }
-    if (_resultAnalysis.isEmpty) {
-      return const <_AutismDevReportTab, String>{
-        _AutismDevReportTab.resultAnalysis: '未生成',
-      };
+    if (_interpretationGenerating) {
+      labels[_AutismDevReportTab.interpretation] = '生成中';
+    } else if (_interpretationLoading) {
+      labels[_AutismDevReportTab.interpretation] = '读取中';
+    } else if (_interpretation == null || _interpretation!.isEmpty) {
+      labels[_AutismDevReportTab.interpretation] = '未生成';
     }
-    return const <_AutismDevReportTab, String>{};
+    return labels;
   }
 
   Future<Uint8List> _buildSelectedPrintPdf(
@@ -512,6 +753,15 @@ class _AutismDevReportPreviewDialogState
     final String token = widget.token.trim();
     if (token.isEmpty || widget.record.id <= 0) {
       throw StateError('缺少报告打印参数');
+    }
+    if (tabs.contains(_AutismDevReportTab.interpretation)) {
+      if (tabs.length > 1) {
+        throw StateError('报告解读请单独打印');
+      }
+      return widget.client.downloadAutismDevRecordReportInterpretationPdf(
+        token,
+        widget.record.id,
+      );
     }
     return widget.client.downloadAutismDevSelectedReportPdf(
       token,
@@ -540,6 +790,7 @@ class _AutismDevReportPreviewDialogState
     return switch (tab) {
       _AutismDevReportTab.assessmentInfo => 'assessmentInfo',
       _AutismDevReportTab.resultAnalysis => 'resultAnalysis',
+      _AutismDevReportTab.interpretation => 'interpretation',
       _AutismDevReportTab.training => 'training',
       _AutismDevReportTab.developmentProfile => 'developmentProfile',
       _AutismDevReportTab.behaviorProfile => 'behaviorProfile',
@@ -570,6 +821,8 @@ class _AutismDevReportPreviewDialogState
           selectedCell: _selectedAnalysisCell,
           onCellTap: _handleResultAnalysisCellTap,
         );
+      case _AutismDevReportTab.interpretation:
+        return _buildInterpretationSection();
       case _AutismDevReportTab.training:
         return _AutismDevProfilePdfSection(
           record: _displayRecord,
@@ -593,6 +846,40 @@ class _AutismDevReportPreviewDialogState
           onRetry: () => _retryProfilePdf(_AutismDevReportTab.behaviorProfile),
         );
     }
+  }
+
+  Widget _buildInterpretationSection() {
+    if (_interpretationLoading) {
+      if (_interpretationGenerating) {
+        return _ErxinInterpretationProgressState(
+          message: _interpretationProgressMessage,
+          streamingText: _interpretationStreamingText,
+          domainSectionTitle: '八大领域表现',
+        );
+      }
+      return _ErxinInterpretationReadLoadingState(
+        message: _interpretationProgressMessage,
+      );
+    }
+    if (_interpretationErrorMessage.isNotEmpty) {
+      return _ReportPreviewErrorState(
+        message: _interpretationErrorMessage,
+        onRetry: () => unawaited(_generateInterpretation(regenerate: true)),
+      );
+    }
+    final ErxinReportInterpretation? interpretation = _interpretation;
+    if (interpretation == null || interpretation.isEmpty) {
+      return _ErxinInterpretationEmptyState(
+        message: '报告解读尚未生成',
+        detail: '点击“生成解读”后，AI 会基于当前评估结果生成并保存。',
+        actionLabel: '生成解读',
+        onAction: () => unawaited(_generateInterpretation()),
+      );
+    }
+    return _ErxinInterpretationView(
+      interpretation: interpretation,
+      domainSectionTitle: '八大领域表现',
+    );
   }
 
   Future<Uint8List> _profilePdfFuture(_AutismDevReportTab tab) {
@@ -869,10 +1156,13 @@ class _AutismDevPrintSelectionDialogState
   }
 
   bool get _allEnabledSelected {
-    if (widget.enabledTabs.isEmpty) {
+    final Iterable<_AutismDevReportTab> batchTabs = widget.enabledTabs.where(
+      (_AutismDevReportTab tab) => tab != _AutismDevReportTab.interpretation,
+    );
+    if (batchTabs.isEmpty) {
       return false;
     }
-    return widget.enabledTabs.every(_selected.contains);
+    return batchTabs.every(_selected.contains);
   }
 
   void _toggle(_AutismDevReportTab tab, bool selected) {
@@ -881,6 +1171,13 @@ class _AutismDevPrintSelectionDialogState
     }
     setState(() {
       if (selected) {
+        if (tab == _AutismDevReportTab.interpretation) {
+          _selected
+            ..clear()
+            ..add(tab);
+          return;
+        }
+        _selected.remove(_AutismDevReportTab.interpretation);
         _selected.add(tab);
       } else {
         _selected.remove(tab);
@@ -895,7 +1192,10 @@ class _AutismDevPrintSelectionDialogState
       } else {
         _selected
           ..clear()
-          ..addAll(widget.enabledTabs);
+          ..addAll(widget.enabledTabs.where(
+            (_AutismDevReportTab tab) =>
+                tab != _AutismDevReportTab.interpretation,
+          ));
       }
     });
   }

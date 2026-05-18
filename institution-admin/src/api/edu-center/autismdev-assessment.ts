@@ -13,6 +13,9 @@ import type {
   PEP3AssessmentRecordQueryModel,
   PEP3AssessmentRecordSummary,
   PEP3DomainProgress,
+  PEP3ReportInterpretation,
+  PEP3ReportInterpretationStreamHandlers,
+  PEP3ReportInterpretationStreamOptions,
   PEP3MonthlyPlanAIResult,
   PEP3WeeklyPlanAIResult,
 } from './pep3-assessment'
@@ -199,6 +202,7 @@ export interface AutismDevRecordConfigUpdateRequest {
 export type AutismDevSelectedReportSection =
   | 'assessmentInfo'
   | 'resultAnalysis'
+  | 'interpretation'
   | 'training'
   | 'developmentProfile'
   | 'behaviorProfile'
@@ -470,6 +474,43 @@ export function downloadAutismDevSelectedReportPdfApi(
       'Content-Type': 'application/json',
     }),
   })
+}
+
+export function getAutismDevAssessmentRecordReportInterpretationApi(id: number | string) {
+  return useGet<PEP3ReportInterpretation>('/api/v1/assessments/autismdev/records/report/interpretation', { id }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function downloadAutismDevAssessmentRecordReportInterpretationPdfApi(id: number | string) {
+  return axios.get('/api/v1/assessments/autismdev/records/report/interpretation/pdf', {
+    params: { id },
+    responseType: 'blob',
+    headers: autismDevAuthHeaders({
+      'Accept-Language': 'zh-CN',
+    }),
+  })
+}
+
+export async function generateAutismDevAssessmentRecordReportInterpretationStreamApi(
+  id: number | string,
+  handlers: PEP3ReportInterpretationStreamHandlers = {},
+  options: PEP3ReportInterpretationStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/autismdev/records/report/interpretation/ai/stream', {
+    method: 'POST',
+    headers: autismDevStreamHeaders(),
+    body: JSON.stringify({ id: Number(id || 0) }),
+    signal: options.signal,
+  })
+  return readAutismDevSSE<PEP3ReportInterpretation>(
+    response,
+    handlers,
+    options,
+    '报告解读生成失败',
+    '报告解读生成未返回结果',
+  )
 }
 
 export function downloadAutismDevResultAnalysisWordApi(

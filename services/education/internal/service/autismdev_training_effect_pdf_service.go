@@ -16,7 +16,7 @@ import (
 
 const (
 	autismDevTrainingEffectTemplateDir     = "assets/autismdev_training_effect"
-	autismDevTrainingEffectCheckFontSize   = 13.5
+	autismDevTrainingEffectScoreFontSize   = 15.0
 	autismDevTrainingEffectCheckCellWidth  = 18.0
 	autismDevTrainingEffectCheckCellHeight = 18.0
 )
@@ -204,12 +204,13 @@ func (r *autismDevTrainingEffectPDFRenderer) drawScoreAt(centerX, centerY float6
 		centerX-autismDevTrainingEffectCheckCellWidth/2,
 		centerY-autismDevTrainingEffectCheckCellHeight/2-1,
 		autismDevTrainingEffectCheckCellWidth,
-		autismDevTrainingEffectCheckFontSize,
+		autismDevTrainingEffectScoreFontSize,
 		score,
 		gopdf.Center|gopdf.Middle,
 		0,
 		0,
 		0,
+		true,
 	)
 }
 
@@ -217,28 +218,27 @@ func (r *autismDevTrainingEffectPDFRenderer) drawEffectAt(centerX, centerY float
 	if centerX <= 0 || centerY <= 0 {
 		return
 	}
-	r.cellText(
-		centerX-autismDevTrainingEffectCheckCellWidth/2,
-		centerY-autismDevTrainingEffectCheckCellHeight/2-1,
-		autismDevTrainingEffectCheckCellWidth,
-		autismDevTrainingEffectCheckFontSize,
-		"√",
-		gopdf.Center|gopdf.Middle,
-		0,
-		0,
-		0,
-	)
+	r.pdf.SetLineWidth(1.8)
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.Line(centerX-5.6, centerY+0.8, centerX-1.6, centerY+4.8)
+	r.pdf.Line(centerX-1.6, centerY+4.8, centerX+6.4, centerY-5.0)
 }
 
-func (r *autismDevTrainingEffectPDFRenderer) cellText(x, y, width, size float64, text string, align int, red, green, blue uint8) {
+func (r *autismDevTrainingEffectPDFRenderer) cellText(x, y, width, size float64, text string, align int, red, green, blue uint8, bold bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
 		return
 	}
+	offsets := []float64{0}
+	if bold {
+		offsets = []float64{-0.16, 0.16}
+	}
 	_ = r.pdf.SetFont(autismDevProfilePDFFontFamily, "", size)
 	r.pdf.SetTextColor(red, green, blue)
-	r.pdf.SetXY(x, y)
-	_ = r.pdf.CellWithOption(&gopdf.Rect{W: width, H: size * 1.65}, text, gopdf.CellOption{Align: align})
+	for _, offset := range offsets {
+		r.pdf.SetXY(x+offset, y)
+		_ = r.pdf.CellWithOption(&gopdf.Rect{W: width, H: size * 1.65}, text, gopdf.CellOption{Align: align})
+	}
 }
 
 func autismDevTrainingEffectTemplatePagesForDomain(domainCode string) []autismDevTrainingEffectTemplatePage {
