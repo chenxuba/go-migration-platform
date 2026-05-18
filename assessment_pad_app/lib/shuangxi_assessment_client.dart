@@ -33,6 +33,14 @@ const String defaultShuangxiDraftSubmitPath = String.fromEnvironment(
   'SHUANGXI_DRAFT_SUBMIT_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/drafts/submit',
 );
+const String defaultShuangxiRecordsPagePath = String.fromEnvironment(
+  'SHUANGXI_RECORDS_PAGE_PATH',
+  defaultValue: '/api/v1/assessments/shuangxi-a/records/page',
+);
+const String defaultShuangxiRecordCategoryStatsPath = String.fromEnvironment(
+  'SHUANGXI_RECORD_CATEGORY_STATS_PATH',
+  defaultValue: '/api/v1/assessments/shuangxi-a/records/category-stats',
+);
 
 abstract class ShuangxiAssessmentClient {
   const ShuangxiAssessmentClient();

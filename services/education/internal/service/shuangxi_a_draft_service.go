@@ -217,6 +217,31 @@ func (svc *Service) PageShuangxiAAssessmentDrafts(userID int64, query model.Asse
 	return svc.repo.PageAssessmentDrafts(context.Background(), instID, query.QueryModel, query.PageRequestModel.PageIndex, query.PageRequestModel.PageSize)
 }
 
+func (svc *Service) PageShuangxiAAssessmentRecords(userID int64, query model.AssessmentRecordPageQueryDTO) (model.PageResult[model.AssessmentRecordSummaryVO], error) {
+	if svc.repo == nil {
+		return model.PageResult[model.AssessmentRecordSummaryVO]{}, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return model.PageResult[model.AssessmentRecordSummaryVO]{}, err
+	}
+	query.QueryModel.AssessmentCode = shuangxiAScaleCode
+	return svc.repo.PageAssessmentRecords(context.Background(), instID, query.QueryModel, query.PageRequestModel.PageIndex, query.PageRequestModel.PageSize)
+}
+
+func (svc *Service) SummarizeShuangxiAAssessmentRecordCategories(userID int64, query model.AssessmentRecordQueryModel) (model.AssessmentRecordCategoryStatsVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordCategoryStatsVO{}, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return model.AssessmentRecordCategoryStatsVO{}, err
+	}
+	query.AssessmentCode = shuangxiAScaleCode
+	query.ScaleCategory = ""
+	return svc.repo.SummarizeAssessmentRecordCategories(context.Background(), instID, query)
+}
+
 func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model.PEP3AssessmentDraftSubmitVO, error) {
 	if svc.repo == nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("assessment repository is not configured")

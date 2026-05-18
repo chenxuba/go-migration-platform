@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_draft_resume_dialog.dart';
@@ -55,6 +56,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   ShuangxiTemplateSummary _template = ShuangxiTemplateSummary.empty;
   ShuangxiAssessmentItem _currentItem = ShuangxiAssessmentItem.empty;
   final Map<int, int> _itemScores = <int, int>{};
+  final TextEditingController _remarkController = TextEditingController();
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
   Future<ShuangxiDraftDetail?>? _saveDraftFuture;
@@ -75,6 +77,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   int _detectedDraftDetailDraftId = 0;
   int _draftDetectionSerial = 0;
   Timer? _autoAdvanceTimer;
+  Timer? _remarkAutoSaveTimer;
   bool _loading = true;
   bool _itemLoading = false;
   bool _autoNext = true;
@@ -102,6 +105,8 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   @override
   void dispose() {
     _autoAdvanceTimer?.cancel();
+    _remarkAutoSaveTimer?.cancel();
+    _remarkController.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -339,6 +344,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       _detectedDraftDetailRequest = null;
       _draftId = 0;
       _itemScores.clear();
+      _remarkController.clear();
       _selectedItemNo =
           _template.allItems.isNotEmpty ? _template.allItems.first.itemNo : 0;
       _autoSaveText = '已重新开始';
@@ -396,6 +402,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (detail.examinerName.trim().isNotEmpty) {
       _examinerName = detail.examinerName.trim();
     }
+    _setRemarkText(detail.input.remark);
     _itemScores
       ..clear()
       ..addAll(detail.input.itemScores);
@@ -656,6 +663,43 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       ..addAll(localScores);
   }
 
+  void _setRemarkText(String remark) {
+    if (_remarkController.text == remark) {
+      return;
+    }
+    _remarkController.text = remark;
+    _remarkController.selection = TextSelection.collapsed(
+      offset: _remarkController.text.length,
+    );
+  }
+
+  void _handleRemarkChanged(String value) {
+    _remarkAutoSaveTimer?.cancel();
+    if (mounted) {
+      setState(() => _autoSaveText = '备注待保存');
+    }
+    if (_token.trim().isEmpty || _studentId <= 0 || _loading || _submitting) {
+      return;
+    }
+    _remarkAutoSaveTimer = Timer(const Duration(milliseconds: 900), () {
+      _remarkAutoSaveTimer = null;
+      if (!mounted || _submitting) {
+        return;
+      }
+      unawaited(_saveDraft(silent: true));
+    });
+  }
+
+  void _finishRemarkEditing() {
+    _remarkAutoSaveTimer?.cancel();
+    _remarkAutoSaveTimer = null;
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (_token.trim().isEmpty || _studentId <= 0 || _loading || _submitting) {
+      return;
+    }
+    unawaited(_saveDraft(silent: true));
+  }
+
   Future<void> _submitDraft() async {
     if (_submitting) {
       return;
@@ -767,6 +811,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       'studentId': _studentId,
       'studentName': _studentName.trim(),
       'examinerName': _examinerName.trim(),
+      'remark': _remarkController.text.trim(),
       'birthDate': _dateOnlyText(_birthDate),
       'assessmentDate': _dateOnlyText(_assessmentDate),
       'itemScoreList': _itemScoreList(),
@@ -995,10 +1040,13 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
                         progressPercent: _progressPercent,
                         answered: _answeredCount,
                         total: _totalCount,
+                        remarkController: _remarkController,
                         currentDomain: _domainByCode(_selectedDomainCode),
                         currentSkillCode: _selectedSkillCode,
                         firstMissingTitle: _firstMissingTitle(),
                         autoNext: _autoNext,
+                        onRemarkChanged: _handleRemarkChanged,
+                        onRemarkEditingComplete: _finishRemarkEditing,
                       ),
                     ),
                   ],
@@ -2241,19 +2289,25 @@ class _RightRail extends StatelessWidget {
     required this.progressPercent,
     required this.answered,
     required this.total,
+    required this.remarkController,
     required this.currentDomain,
     required this.currentSkillCode,
     required this.firstMissingTitle,
     required this.autoNext,
+    required this.onRemarkChanged,
+    required this.onRemarkEditingComplete,
   });
 
   final int progressPercent;
   final int answered;
   final int total;
+  final TextEditingController remarkController;
   final ShuangxiDomainSummary? currentDomain;
   final String currentSkillCode;
   final String firstMissingTitle;
   final bool autoNext;
+  final ValueChanged<String> onRemarkChanged;
+  final VoidCallback onRemarkEditingComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -2265,7 +2319,11 @@ class _RightRail extends StatelessWidget {
           total: total,
         ),
         const SizedBox(height: 8),
-        const _RemarkPanel(),
+        _RemarkPanel(
+          controller: remarkController,
+          onChanged: onRemarkChanged,
+          onEditingComplete: onRemarkEditingComplete,
+        ),
         const SizedBox(height: 8),
         Expanded(
           child: _MissingNavigationPanel(
@@ -2431,7 +2489,15 @@ class _SummaryRow extends StatelessWidget {
 }
 
 class _RemarkPanel extends StatelessWidget {
-  const _RemarkPanel();
+  const _RemarkPanel({
+    required this.controller,
+    required this.onChanged,
+    required this.onEditingComplete,
+  });
+
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+  final VoidCallback onEditingComplete;
 
   @override
   Widget build(BuildContext context) {
@@ -2445,36 +2511,73 @@ class _RemarkPanel extends StatelessWidget {
           const _PanelTitle(icon: Icons.assignment_outlined, title: '观察备注'),
           const SizedBox(height: 8),
           Expanded(
-            child: Container(
-              padding: const EdgeInsets.all(11),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: _ShuangxiColors.line),
+            child: TextField(
+              key: const ValueKey<String>('shuangxi-observation-remark-field'),
+              controller: controller,
+              expands: true,
+              minLines: null,
+              maxLines: null,
+              maxLength: 300,
+              inputFormatters: <TextInputFormatter>[
+                LengthLimitingTextInputFormatter(300),
+              ],
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              textAlignVertical: TextAlignVertical.top,
+              onChanged: onChanged,
+              onEditingComplete: onEditingComplete,
+              onTapOutside: (_) => onEditingComplete(),
+              style: const TextStyle(
+                color: _ShuangxiColors.ink,
+                fontSize: 13,
+                height: 1.35,
+                fontWeight: FontWeight.w700,
               ),
-              child: const Align(
-                alignment: Alignment.topLeft,
-                child: Text(
-                  '记录学生反应、协助程度或环境因素',
-                  style: TextStyle(
-                    color: _ShuangxiColors.muted,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+              decoration: InputDecoration(
+                hintText: '记录学生反应、协助程度或环境因素',
+                hintStyle: const TextStyle(
+                  color: _ShuangxiColors.muted,
+                  fontSize: 13,
+                  height: 1.25,
+                  fontWeight: FontWeight.w600,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                counterText: '',
+                contentPadding: const EdgeInsets.fromLTRB(11, 10, 11, 10),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(color: _ShuangxiColors.line),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(8),
+                  borderSide: const BorderSide(
+                    color: _ShuangxiColors.orange,
+                    width: 1.2,
                   ),
                 ),
               ),
             ),
           ),
-          const Align(
-            alignment: Alignment.bottomRight,
-            child: Text(
-              '0/300',
-              style: TextStyle(
-                color: _ShuangxiColors.muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
+          ValueListenableBuilder<TextEditingValue>(
+            valueListenable: controller,
+            builder: (
+              BuildContext context,
+              TextEditingValue value,
+              Widget? child,
+            ) {
+              return Align(
+                alignment: Alignment.bottomRight,
+                child: Text(
+                  '${value.text.characters.length}/300',
+                  style: const TextStyle(
+                    color: _ShuangxiColors.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              );
+            },
           ),
         ],
       ),

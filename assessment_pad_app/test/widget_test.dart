@@ -137,6 +137,7 @@ void main() {
               recordClient: _FakePep3AssessmentClient(hasPreviousRecord: true),
               erxinRecordClient: _FakePep3AssessmentClient(),
               autismDevRecordClient: _FakePep3AssessmentClient(),
+              shuangxiRecordClient: _FakePep3AssessmentClient(),
             ),
           ),
         ),
@@ -206,6 +207,7 @@ void main() {
                 ),
               ),
               autismDevRecordClient: _FakePep3AssessmentClient(),
+              shuangxiRecordClient: _FakePep3AssessmentClient(),
               erxinClient: erxinClient,
             ),
           ),
@@ -363,6 +365,7 @@ void main() {
               recordClient: _FakePep3AssessmentClient(),
               erxinRecordClient: _FakePep3AssessmentClient(),
               autismDevRecordClient: autismDevClient,
+              shuangxiRecordClient: _FakePep3AssessmentClient(),
             ),
           ),
         ),
@@ -395,8 +398,63 @@ void main() {
 
     expect(find.text('选择打印内容'), findsOneWidget);
     expect(find.text('全选'), findsOneWidget);
-    expect(find.text('未生成'), findsOneWidget);
-    expect(find.byType(Checkbox), findsNWidgets(5));
+    expect(find.text('未生成'), findsWidgets);
+    expect(find.byType(Checkbox), findsNWidgets(6));
+  });
+
+  testWidgets('assessment report list shows Shuangxi records as pending viewer',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    final _FakePep3AssessmentClient shuangxiClient = _FakePep3AssessmentClient(
+      hasPreviousRecord: true,
+      previousRecord: const Pep3RecordSummary(
+        id: 51,
+        studentId: 61,
+        studentName: '双溪学生',
+        assessmentCode: 'SHUANGXI_A',
+        assessmentName: '双溪课程评量表A',
+        birthDate: '2018-01-01',
+        assessmentDate: '2026-05-18',
+        examinerName: '陈老师',
+        updatedTime: '2026-05-18T10:00:00',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: _FakePep3AssessmentClient(),
+              erxinRecordClient: _FakePep3AssessmentClient(),
+              autismDevRecordClient: _FakePep3AssessmentClient(),
+              shuangxiRecordClient: shuangxiClient,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('双溪学生'), findsOneWidget);
+    await tester.tap(find.text('查看'));
+    await tester.pump();
+
+    expect(find.text('双溪课程评量表A评估报告待接入'), findsOneWidget);
   });
 
   testWidgets('home header fallback does not show a fake institution',

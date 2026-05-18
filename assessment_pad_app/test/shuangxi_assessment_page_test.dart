@@ -159,6 +159,61 @@ void main() {
     expect(scoresByItem[209], 0);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Shuangxi observation remark accepts input and saves',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              args: const ShuangxiAssessmentLaunchArgs(
+                studentId: 1,
+                studentName: '小明',
+                assessmentDate: '2026-05-18',
+                examinerName: '陈老师',
+              ),
+              onBack: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    const String remark = '学生能跟随提示完成，注意力维持较短。';
+    final Finder remarkField =
+        find.byKey(const ValueKey<String>('shuangxi-observation-remark-field'));
+    await tester.tap(remarkField);
+    await tester.enterText(remarkField, remark);
+    await tester.pump();
+    expect(find.text(remark), findsOneWidget);
+    expect(tester.testTextInput.isVisible, isTrue);
+
+    await tester.tap(find.text('测评进度'));
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isFalse);
+
+    await tester.tap(find.text('保存草稿'));
+    await tester.pumpAndSettle();
+
+    expect(client.lastSavedDraftPayload?['remark'], remark);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
@@ -427,6 +482,7 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
         studentId: _intFrom(payload['studentId']),
         studentName: '${payload['studentName'] ?? ''}',
         examinerName: '${payload['examinerName'] ?? ''}',
+        remark: '${payload['remark'] ?? ''}',
         birthDate: '${payload['birthDate'] ?? ''}',
         assessmentDate: '${payload['assessmentDate'] ?? ''}',
         itemScores: scores,

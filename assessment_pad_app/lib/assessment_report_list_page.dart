@@ -18,6 +18,7 @@ import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'pep3_assessment_client.dart';
 import 'route_bootstrap.dart';
+import 'shuangxi_assessment_client.dart';
 import 'timetable_client.dart';
 
 part 'autismdev_report_preview.dart';
@@ -37,6 +38,10 @@ class AssessmentReportListScreen extends StatefulWidget {
       recordDetailPath: defaultAutismDevRecordDetailPath,
       recordConfigUpdatePath: defaultAutismDevRecordConfigUpdatePath,
     ),
+    this.shuangxiRecordClient = const ApiPep3AssessmentClient(
+      recordsPagePath: defaultShuangxiRecordsPagePath,
+      recordCategoryStatsPath: defaultShuangxiRecordCategoryStatsPath,
+    ),
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.staffClient = const ApiTimetableClient(),
     super.key,
@@ -47,6 +52,7 @@ class AssessmentReportListScreen extends StatefulWidget {
   final Pep3AssessmentClient recordClient;
   final Pep3AssessmentClient erxinRecordClient;
   final Pep3AssessmentClient autismDevRecordClient;
+  final Pep3AssessmentClient shuangxiRecordClient;
   final ErxinAssessmentClient erxinClient;
   final TimetableClient staffClient;
 
@@ -286,12 +292,23 @@ class _AssessmentReportListScreenState
           assessmentDateBegin: assessmentDateBegin,
           assessmentDateEnd: assessmentDateEnd,
         ),
+        widget.shuangxiRecordClient.fetchRecordsPage(
+          token,
+          pageIndex: pageIndex,
+          pageSize: pageSize,
+          assessmentCode: '',
+          scaleCategory: scaleCategory,
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
       ],
     );
     final List<Pep3RecordSummary> items = <Pep3RecordSummary>[
       ...pages[0].items,
       ...pages[1].items,
       ...pages[2].items,
+      ...pages[3].items,
     ]..sort(_compareRecordSummaryDesc);
     final List<Pep3RecordSummary> visibleItems =
         items.take(pageSize).toList(growable: false);
@@ -328,6 +345,13 @@ class _AssessmentReportListScreenState
           assessmentDateEnd: assessmentDateEnd,
         ),
         widget.autismDevRecordClient.fetchRecordCategoryStats(
+          token,
+          assessmentCode: '',
+          searchKey: searchKey,
+          assessmentDateBegin: assessmentDateBegin,
+          assessmentDateEnd: assessmentDateEnd,
+        ),
+        widget.shuangxiRecordClient.fetchRecordCategoryStats(
           token,
           assessmentCode: '',
           searchKey: searchKey,
@@ -430,6 +454,10 @@ class _AssessmentReportListScreenState
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token = prefs.getString(_authTokenStorageKey) ?? '';
     if (!mounted) {
+      return;
+    }
+    if (_isShuangxiRecord(record)) {
+      _showMessage('双溪课程评量表A评估报告待接入');
       return;
     }
     if (_isAutismDevRecord(record)) {
@@ -536,6 +564,10 @@ class _AssessmentReportListScreenState
 
   bool _isAutismDevRecord(Pep3RecordSummary record) {
     return record.assessmentCode.trim().toUpperCase() == 'AUTISMDEV';
+  }
+
+  bool _isShuangxiRecord(Pep3RecordSummary record) {
+    return record.assessmentCode.trim().toUpperCase() == 'SHUANGXI_A';
   }
 
   Future<_RecordConfigDetail> _loadRecordConfigDetail(
