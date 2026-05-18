@@ -99,3 +99,8 @@ type ScaleAssessmentStudentGenderUpdateRequest struct {
 	StudentID int64  `json:"studentId"`
 	Gender    string `json:"gender"`
 }
+
+type ScaleAssessmentStudentBirthDateUpdateRequest struct {
+	StudentID int64  `json:"studentId"`
+	BirthDate string `json:"birthDate"`
+}

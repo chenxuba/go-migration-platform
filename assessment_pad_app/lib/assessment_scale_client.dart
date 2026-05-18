@@ -24,6 +24,11 @@ const String defaultAssessmentStudentCandidatesPath = String.fromEnvironment(
   'ASSESSMENT_STUDENT_CANDIDATES_PATH',
   defaultValue: '/api/v1/assessments/scales/student-candidates',
 );
+const String defaultAssessmentStudentBirthDateUpdatePath =
+    String.fromEnvironment(
+  'ASSESSMENT_STUDENT_BIRTH_DATE_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/scales/student-birth-date/update',
+);
 
 class AssessmentStudentStatuses {
   const AssessmentStudentStatuses._();
@@ -450,6 +455,8 @@ class AssessmentStudentCandidate {
 
   AssessmentStudentCandidate copyWith({
     String? gender,
+    String? age,
+    String? birthDate,
   }) {
     return AssessmentStudentCandidate(
       id: id,
@@ -457,8 +464,8 @@ class AssessmentStudentCandidate {
       name: name,
       avatarUrl: avatarUrl,
       gender: gender ?? this.gender,
-      age: age,
-      birthDate: birthDate,
+      age: age ?? this.age,
+      birthDate: birthDate ?? this.birthDate,
       contactPhone: contactPhone,
       latestAssessment: latestAssessment,
       studentStatus: studentStatus,
@@ -504,6 +511,12 @@ abstract interface class AssessmentScaleClient {
     int pageIndex = 1,
     int pageSize = 20,
   });
+
+  Future<String> updateStudentBirthDate(
+    String token, {
+    required int studentId,
+    required String birthDate,
+  });
 }
 
 class ApiAssessmentScaleClient implements AssessmentScaleClient {
@@ -513,6 +526,8 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     this.libraryPath = defaultAssessmentScaleLibraryPath,
     this.draftsPagePath = defaultAssessmentDraftsPagePath,
     this.studentCandidatesPath = defaultAssessmentStudentCandidatesPath,
+    this.studentBirthDateUpdatePath =
+        defaultAssessmentStudentBirthDateUpdatePath,
   });
 
   final String educationBaseUrl;
@@ -520,6 +535,7 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
   final String libraryPath;
   final String draftsPagePath;
   final String studentCandidatesPath;
+  final String studentBirthDateUpdatePath;
 
   @override
   Future<List<String>> fetchCategories(String token) async {
@@ -612,6 +628,29 @@ class ApiAssessmentScaleClient implements AssessmentScaleClient {
     return AssessmentStudentCandidatePage.fromJson(
       Map<String, dynamic>.from(data),
     );
+  }
+
+  @override
+  Future<String> updateStudentBirthDate(
+    String token, {
+    required int studentId,
+    required String birthDate,
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, studentBirthDateUpdatePath),
+      token,
+      <String, dynamic>{
+        'studentId': studentId,
+        'birthDate': birthDate,
+      },
+    );
+    if (data is Map) {
+      final String updated = '${data['birthDate'] ?? ''}'.trim();
+      if (updated.isNotEmpty) {
+        return updated;
+      }
+    }
+    return birthDate.trim();
   }
 
   Future<Object?> _getJson(Uri uri, String token) async {

@@ -101,6 +101,25 @@ func (repo *Repository) GetStudentGenderText(ctx context.Context, instID, studen
 	return gender, nil
 }
 
+func (repo *Repository) GetStudentBirthDateText(ctx context.Context, instID, studentID int64) (string, error) {
+	if instID <= 0 || studentID <= 0 {
+		return "", sql.ErrNoRows
+	}
+	var birthday sql.NullTime
+	if err := repo.db.QueryRowContext(ctx, `
+		SELECT birthday
+		FROM inst_student
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+		LIMIT 1
+	`, studentID, instID).Scan(&birthday); err != nil {
+		return "", err
+	}
+	if !birthday.Valid || birthday.Time.IsZero() {
+		return "", nil
+	}
+	return birthday.Time.Format(time.DateOnly), nil
+}
+
 func (repo *Repository) GetStudentStatusSnapshot(ctx context.Context, instID, studentID int64) (StudentStatusSnapshot, error) {
 	row := repo.db.QueryRowContext(ctx, `
 		SELECT follow_up_status, intent_level
@@ -154,6 +173,24 @@ func (repo *Repository) UpdateStudentGender(ctx context.Context, instID, student
 		    update_time = NOW()
 		WHERE id = ? AND inst_id = ? AND del_flag = 0
 	`, sex, operatorID, studentID, instID)
+	if err != nil {
+		return false, err
+	}
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return false, err
+	}
+	return affected > 0, nil
+}
+
+func (repo *Repository) UpdateStudentBirthDate(ctx context.Context, instID, studentID int64, birthDate time.Time, operatorID int64) (bool, error) {
+	result, err := repo.db.ExecContext(ctx, `
+		UPDATE inst_student
+		SET birthday = ?,
+		    update_id = ?,
+		    update_time = NOW()
+		WHERE id = ? AND inst_id = ? AND del_flag = 0
+	`, birthDate, operatorID, studentID, instID)
 	if err != nil {
 		return false, err
 	}

@@ -72,6 +72,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/scales/categories", handler.scaleCategories)
 	mux.HandleFunc("/api/v1/assessments/scales/student-candidates", handler.scaleAssessmentStudentCandidates)
 	mux.HandleFunc("/api/v1/assessments/scales/student-gender/update", handler.updateScaleAssessmentStudentGender)
+	mux.HandleFunc("/api/v1/assessments/scales/student-birth-date/update", handler.updateScaleAssessmentStudentBirthDate)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/form-template/summary", handler.shuangxiAAssessmentFormTemplateSummary)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/form-template/item", handler.shuangxiAAssessmentFormTemplateItem)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/drafts/save", handler.saveShuangxiAAssessmentDraft)

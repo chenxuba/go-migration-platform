@@ -6,6 +6,7 @@ import (
 	"errors"
 	"sort"
 	"strings"
+	"time"
 
 	"go-migration-platform/services/education/internal/model"
 )
@@ -105,6 +106,64 @@ func scaleAssessmentStudentGenderValue(value string) (int, string, error) {
 		return 1, "男", nil
 	}
 	return -1, "", errors.New("gender must be 男 or 女")
+}
+
+func (svc *Service) UpdateScaleAssessmentStudentBirthDate(userID int64, req model.ScaleAssessmentStudentBirthDateUpdateRequest) (string, error) {
+	if svc.repo == nil {
+		return "", errors.New("repository is not configured")
+	}
+	if req.StudentID <= 0 {
+		return "", errors.New("studentId is required")
+	}
+	birthDate, err := scaleAssessmentStudentBirthDateValue(req.BirthDate)
+	if err != nil {
+		return "", err
+	}
+	ctx := context.Background()
+	instID, err := svc.repo.FindInstIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("no institution context")
+		}
+		return "", err
+	}
+	operatorID, err := svc.repo.FindInstUserIDByUserID(ctx, userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", errors.New("no institution user context")
+		}
+		return "", err
+	}
+	updatedBirthDate := birthDate.Format(time.DateOnly)
+	beforeBirthDate, _ := svc.repo.GetStudentBirthDateText(ctx, instID, req.StudentID)
+	updated, err := svc.repo.UpdateStudentBirthDate(ctx, instID, req.StudentID, birthDate, operatorID)
+	if err != nil {
+		return "", err
+	}
+	if !updated {
+		return "", errors.New("学生信息不存在")
+	}
+	if strings.TrimSpace(beforeBirthDate) != updatedBirthDate {
+		_ = svc.repo.InsertStudentChangeRecord(ctx, instID, req.StudentID, operatorID, `出生日期从"`+displayStudentChangeValue(beforeBirthDate)+`"修改为"`+updatedBirthDate+`";`)
+	}
+	return updatedBirthDate, nil
+}
+
+func scaleAssessmentStudentBirthDateValue(value string) (time.Time, error) {
+	raw := strings.TrimSpace(value)
+	if raw == "" {
+		return time.Time{}, errors.New("birthDate is required")
+	}
+	for _, layout := range []string{time.DateOnly, "2006/01/02", time.RFC3339} {
+		if parsed, err := time.ParseInLocation(layout, raw, time.Local); err == nil {
+			birthDate := time.Date(parsed.Year(), parsed.Month(), parsed.Day(), 0, 0, 0, 0, time.Local)
+			if birthDate.After(time.Now()) {
+				return time.Time{}, errors.New("birthDate cannot be in the future")
+			}
+			return birthDate, nil
+		}
+	}
+	return time.Time{}, errors.New("birthDate format should be YYYY-MM-DD")
 }
 
 func (svc *Service) ListScaleCategoryOptions(userID int64) ([]string, error) {

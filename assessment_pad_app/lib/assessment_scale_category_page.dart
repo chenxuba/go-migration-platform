@@ -11,6 +11,7 @@ import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'assessment_age_formatter.dart';
+import 'pad_date_range_picker.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'route_bootstrap.dart';
@@ -547,6 +548,10 @@ class _AssessmentScaleCategoryScreenState
     final bool isPep3Scale = _isPep3Scale(scale);
     final bool isShuangxiAScale = _isShuangxiAScale(scale);
     if (isAutismDevScale || isErxinScale || isPep3Scale || isShuangxiAScale) {
+      if (_needsStudentBirthDateSetup(student)) {
+        unawaited(_handleMissingStudentBirthDate(scale, student));
+        return;
+      }
       final String? validationMessage = _validateScaleLaunch(scale, student);
       if (validationMessage != null) {
         _showMessage(validationMessage, tone: PadMessageTone.error);
@@ -613,6 +618,56 @@ class _AssessmentScaleCategoryScreenState
       return;
     }
     _showMessage('${scale.name} 的作答页待接入');
+  }
+
+  bool _needsStudentBirthDateSetup(AssessmentStudentCandidate student) {
+    return parseAssessmentDateOnly(student.birthDate) == null;
+  }
+
+  Future<void> _handleMissingStudentBirthDate(
+    AssessmentScaleItem scale,
+    AssessmentStudentCandidate student,
+  ) async {
+    final String? updatedBirthDate = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(.22),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _StudentBirthDateRequiredDialog(
+            studentName: student.displayName,
+            scaleName: scale.name,
+            onCancel: () => Navigator.of(dialogContext).pop(),
+            onConfirm: (String birthDate) async {
+              final String token = await _readToken();
+              if (token.trim().isEmpty) {
+                throw const AssessmentScaleApiException('请先登录后再设置出生日期');
+              }
+              final String updated =
+                  await widget.scaleClient.updateStudentBirthDate(
+                token,
+                studentId: student.id,
+                birthDate: birthDate,
+              );
+              if (dialogContext.mounted) {
+                Navigator.of(dialogContext).pop(updated);
+              }
+            },
+          ),
+        );
+      },
+    );
+    if (!mounted || updatedBirthDate == null) {
+      return;
+    }
+    final String normalized = updatedBirthDate.trim();
+    if (parseAssessmentDateOnly(normalized) == null) {
+      _showMessage('出生日期更新失败，请重新设置', tone: PadMessageTone.error);
+      return;
+    }
+    _syncStudentBirthDate(student.id, normalized);
+    _showMessage('出生日期已更新', tone: PadMessageTone.success);
+    _chooseScale(scale);
   }
 
   void _openDraft(AssessmentDraftSummary draft) {
@@ -728,6 +783,38 @@ class _AssessmentScaleCategoryScreenState
       final AssessmentStudentCandidate? selected = _selectedStudent;
       if (selected != null && selected.id == studentId) {
         _selectedStudent = selected.copyWith(gender: normalized);
+      }
+      _studentCandidates = replaceInList(_studentCandidates);
+      final List<int> statuses = _studentCandidatesByStatus.keys.toList();
+      for (final int status in statuses) {
+        _studentCandidatesByStatus[status] = replaceInList(
+          _studentCandidatesByStatus[status] ?? <AssessmentStudentCandidate>[],
+        );
+      }
+    });
+  }
+
+  void _syncStudentBirthDate(int studentId, String birthDate) {
+    final String normalized = birthDate.trim();
+    if (studentId <= 0 || normalized.isEmpty || !mounted) {
+      return;
+    }
+    List<AssessmentStudentCandidate> replaceInList(
+      List<AssessmentStudentCandidate> students,
+    ) {
+      return students
+          .map(
+            (AssessmentStudentCandidate student) => student.id == studentId
+                ? student.copyWith(birthDate: normalized)
+                : student,
+          )
+          .toList();
+    }
+
+    setState(() {
+      final AssessmentStudentCandidate? selected = _selectedStudent;
+      if (selected != null && selected.id == studentId) {
+        _selectedStudent = selected.copyWith(birthDate: normalized);
       }
       _studentCandidates = replaceInList(_studentCandidates);
       final List<int> statuses = _studentCandidatesByStatus.keys.toList();
@@ -2428,9 +2515,258 @@ String _formatAgeLimit(int months) {
 
 String _todayIsoDate() {
   final DateTime now = DateTime.now();
-  return '${now.year.toString().padLeft(4, '0')}-'
-      '${now.month.toString().padLeft(2, '0')}-'
-      '${now.day.toString().padLeft(2, '0')}';
+  return _dateOnlyText(now);
+}
+
+String _dateOnlyText(DateTime value) {
+  return '${value.year.toString().padLeft(4, '0')}-'
+      '${value.month.toString().padLeft(2, '0')}-'
+      '${value.day.toString().padLeft(2, '0')}';
+}
+
+class _StudentBirthDateRequiredDialog extends StatefulWidget {
+  const _StudentBirthDateRequiredDialog({
+    required this.studentName,
+    required this.scaleName,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final String studentName;
+  final String scaleName;
+  final VoidCallback onCancel;
+  final Future<void> Function(String birthDate) onConfirm;
+
+  @override
+  State<_StudentBirthDateRequiredDialog> createState() =>
+      _StudentBirthDateRequiredDialogState();
+}
+
+class _StudentBirthDateRequiredDialogState
+    extends State<_StudentBirthDateRequiredDialog> {
+  DateTime? _selectedDate;
+  String _error = '';
+  bool _saving = false;
+
+  Future<void> _pickDate() async {
+    if (_saving) {
+      return;
+    }
+    final DateTime today = DateTime.now();
+    final DateTime? picked = await showPadDatePicker(
+      context: context,
+      initialDate: _selectedDate ?? today,
+      title: '选择出生日期',
+      helperText: '请选择学生真实出生日期，确认后会同步更新学生资料。',
+      minDate: DateTime(today.year - 30, 1, 1),
+      maxDate: DateTime(today.year, today.month, today.day),
+      disableFutureDates: true,
+      initiallySelectDate: _selectedDate != null,
+    );
+    if (!mounted || picked == null) {
+      return;
+    }
+    setState(() {
+      _selectedDate = picked;
+      _error = '';
+    });
+  }
+
+  Future<void> _submit() async {
+    final DateTime? selected = _selectedDate;
+    if (_saving || selected == null) {
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = '';
+    });
+    try {
+      await widget.onConfirm(_dateOnlyText(selected));
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _saving = false;
+        _error = '更新失败：$error';
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final DateTime? selected = _selectedDate;
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 560,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _ScaleColors.line),
+          boxShadow: _scaleShadow(
+            color: const Color(0x30B05F32),
+            blur: 32,
+            offset: const Offset(0, 18),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 22, 24, 18),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 42,
+                    height: 42,
+                    decoration: const BoxDecoration(
+                      color: Color(0xFFFFE8DA),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.event_rounded,
+                      color: _ScaleColors.orange,
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  const Expanded(
+                    child: Text(
+                      '请先设置出生日期',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: _ScaleColors.ink,
+                        fontSize: 20,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ScaleColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 24, 30, 24),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    '${widget.scaleName} 需要根据出生日期计算适用年龄。请补充 ${widget.studentName} 的出生日期，系统会同步更新学生资料。',
+                    style: const TextStyle(
+                      color: _ScaleColors.text,
+                      fontSize: 15,
+                      height: 1.4,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: _saving ? null : _pickDate,
+                      borderRadius: BorderRadius.circular(14),
+                      child: Ink(
+                        height: 58,
+                        padding: const EdgeInsets.symmetric(horizontal: 18),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFFFAF5),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: _ScaleColors.lineSoft),
+                        ),
+                        child: Row(
+                          children: <Widget>[
+                            const Icon(
+                              Icons.cake_rounded,
+                              color: _ScaleColors.orange,
+                              size: 22,
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text(
+                                selected == null
+                                    ? '选择出生日期'
+                                    : _dateOnlyText(selected),
+                                maxLines: 1,
+                                style: TextStyle(
+                                  color: selected == null
+                                      ? _ScaleColors.muted
+                                      : _ScaleColors.ink,
+                                  fontSize: 16,
+                                  height: 1,
+                                  fontWeight: FontWeight.w900,
+                                ),
+                              ),
+                            ),
+                            const Icon(
+                              Icons.chevron_right_rounded,
+                              color: _ScaleColors.muted,
+                              size: 24,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (_error.isNotEmpty) ...<Widget>[
+                    const SizedBox(height: 14),
+                    Text(
+                      _error,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Color(0xFFB8422E),
+                        fontSize: 13,
+                        height: 1.25,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ScaleColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 22),
+              child: Row(
+                children: <Widget>[
+                  const Expanded(
+                    child: Text(
+                      '确认后继续进入测评',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        color: _ScaleColors.muted,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                  _DialogActionButton(
+                    label: '返回',
+                    primary: false,
+                    onTap: _saving ? null : widget.onCancel,
+                  ),
+                  const SizedBox(width: 12),
+                  _DialogActionButton(
+                    label: _saving ? '更新中...' : '更新并开始测评',
+                    primary: true,
+                    enabled: selected != null && !_saving,
+                    onTap: selected == null || _saving ? null : _submit,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _StudentDialog extends StatefulWidget {

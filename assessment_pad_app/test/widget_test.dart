@@ -10,6 +10,7 @@ import 'package:assessment_pad_app/home_client.dart';
 import 'package:assessment_pad_app/iep_assessment_record_client.dart';
 import 'package:assessment_pad_app/iep_plan_client.dart';
 import 'package:assessment_pad_app/main.dart';
+import 'package:assessment_pad_app/pad_date_range_picker.dart';
 import 'package:assessment_pad_app/pep3_assessment_client.dart';
 import 'package:assessment_pad_app/pep3_assessment_page.dart';
 import 'package:assessment_pad_app/shuangxi_assessment_page.dart';
@@ -2761,6 +2762,206 @@ void main() {
     expect(find.text('顾未知'), findsOneWidget);
     expect(find.text('男'), findsOneWidget);
     expect(find.text('-'), findsNothing);
+  });
+
+  testWidgets('scale launch asks for birth date and updates student profile',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeAssessmentScaleClient scaleClient = _FakeAssessmentScaleClient(
+      scaleItems: const <AssessmentScaleItem>[_shuangxiAScaleItem],
+      studentCandidates: const <AssessmentStudentCandidate>[
+        AssessmentStudentCandidate(
+          id: 42,
+          shortName: '林',
+          name: '林缺生日',
+          avatarUrl: '',
+          gender: '男',
+          age: '',
+          birthDate: '',
+          contactPhone: '妈妈 136****0042',
+          latestAssessment: '未测评',
+        ),
+      ],
+    );
+    ShuangxiAssessmentLaunchArgs? openedArgs;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: scaleClient,
+            onBack: () {},
+          ),
+        ),
+        onGenerateRoute: (RouteSettings settings) {
+          if (settings.name == '/shuangxi-a-assessment') {
+            final ShuangxiAssessmentLaunchArgs args =
+                settings.arguments! as ShuangxiAssessmentLaunchArgs;
+            openedArgs = args;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (BuildContext context) => const Scaffold(
+                body: Center(child: Text('双溪测评已打开')),
+              ),
+            );
+          }
+          return null;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('林缺生日'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('请先设置出生日期'), findsOneWidget);
+    expect(openedArgs, isNull);
+
+    await tester.tap(find.text('选择出生日期'));
+    await tester.pumpAndSettle();
+    final DateTime today = DateTime.now();
+    expect(find.text('${today.year}年'), findsOneWidget);
+    expect(find.text('${today.month}月'), findsOneWidget);
+    expect(find.text('2020年5月'), findsNothing);
+    expect(find.text('未选择'), findsOneWidget);
+    await tester.tap(find.text('确定').last);
+    await tester.pumpAndSettle();
+    expect(find.text('未选择'), findsOneWidget);
+
+    await tester.tap(find.text('${today.day}').first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('更新并开始测评'));
+    await tester.pumpAndSettle();
+
+    expect(scaleClient.updateStudentBirthDateCount, 1);
+    expect(scaleClient.lastUpdatedStudentId, 42);
+    expect(scaleClient.lastUpdatedBirthDate, isNotEmpty);
+    expect(openedArgs?.studentId, 42);
+    expect(openedArgs?.birthDate, scaleClient.lastUpdatedBirthDate);
+    expect(find.text('双溪测评已打开'), findsOneWidget);
+  });
+
+  testWidgets('pad date picker disables future dates when requested',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    DateTime? picked;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            return Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    picked = await showPadDatePicker(
+                      context: context,
+                      initialDate: DateTime(2026, 5, 18),
+                      today: DateTime(2026, 5, 18),
+                      minDate: DateTime(2026, 5, 1),
+                      maxDate: DateTime(2026, 6, 30),
+                      disableFutureDates: true,
+                    );
+                  },
+                  child: const Text('打开日期'),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开日期'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('19'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定').last);
+    await tester.pumpAndSettle();
+
+    expect(picked, DateTime(2026, 5, 18));
+  });
+
+  testWidgets('pad date picker jumps by year and month',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    DateTime? picked;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) {
+            return Scaffold(
+              body: Center(
+                child: ElevatedButton(
+                  onPressed: () async {
+                    picked = await showPadDatePicker(
+                      context: context,
+                      initialDate: DateTime(2026, 5, 18),
+                      today: DateTime(2026, 5, 18),
+                      minDate: DateTime(2020, 1, 1),
+                      maxDate: DateTime(2026, 5, 18),
+                      disableFutureDates: true,
+                      initiallySelectDate: false,
+                    );
+                  },
+                  child: const Text('打开日期'),
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('打开日期'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('未选择'), findsOneWidget);
+    await tester.tap(find.text('2026年'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('2021'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('2021年'), findsOneWidget);
+    await tester.tap(find.text('3月'));
+    await tester.pumpAndSettle();
+    expect(find.text('2021年'), findsOneWidget);
+    expect(find.text('3月'), findsOneWidget);
+
+    await tester.tap(find.text('12'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确定').last);
+    await tester.pumpAndSettle();
+
+    expect(picked, DateTime(2021, 3, 12));
   });
 
   testWidgets('ERXin scale blocks launch when student is over six years old',
@@ -6882,6 +7083,9 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
   final List<AssessmentStudentCandidate> studentCandidates;
   final Map<int, List<AssessmentStudentCandidate>> studentCandidatesByStatus;
   final List<int> requestedStudentStatuses = <int>[];
+  int updateStudentBirthDateCount = 0;
+  int lastUpdatedStudentId = 0;
+  String lastUpdatedBirthDate = '';
 
   static const List<AssessmentScaleItem> _items = <AssessmentScaleItem>[
     AssessmentScaleItem(
@@ -7055,6 +7259,18 @@ class _FakeAssessmentScaleClient implements AssessmentScaleClient {
       size: pageSize,
       items: items,
     );
+  }
+
+  @override
+  Future<String> updateStudentBirthDate(
+    String token, {
+    required int studentId,
+    required String birthDate,
+  }) async {
+    updateStudentBirthDateCount += 1;
+    lastUpdatedStudentId = studentId;
+    lastUpdatedBirthDate = birthDate;
+    return birthDate;
   }
 }
 

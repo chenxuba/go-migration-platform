@@ -49,14 +49,20 @@ Future<DateTime?> showPadDatePicker({
   DateTime? today,
   DateTime? minDate,
   DateTime? maxDate,
+  bool disableFutureDates = false,
+  bool initiallySelectDate = true,
 }) {
   final DateTime currentDay = _dateOnly(today ?? DateTime.now());
   final DateTime resolvedMinDate = _dateOnly(
     minDate ?? DateTime(currentDay.year - 5),
   );
-  final DateTime resolvedMaxDate = _dateOnly(
+  final DateTime requestedMaxDate = _dateOnly(
     maxDate ?? DateTime(currentDay.year + 1, 12, 31),
   );
+  final DateTime resolvedMaxDate =
+      disableFutureDates && requestedMaxDate.isAfter(currentDay)
+          ? currentDay
+          : requestedMaxDate;
   final DateTime resolvedInitialDate = _clampDayWithinBounds(
     _dateOnly(initialDate),
     resolvedMinDate,
@@ -84,6 +90,8 @@ Future<DateTime?> showPadDatePicker({
         today: currentDay,
         minDate: resolvedMinDate,
         maxDate: resolvedMaxDate,
+        disableFutureDates: disableFutureDates,
+        initiallySelectDate: initiallySelectDate,
         onCancel: close,
         onSubmit: close,
       );
@@ -112,6 +120,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
     required this.today,
     required this.minDate,
     required this.maxDate,
+    required this.disableFutureDates,
+    required this.initiallySelectDate,
     required this.onCancel,
     required this.onSubmit,
   });
@@ -122,6 +132,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
   final DateTime today;
   final DateTime minDate;
   final DateTime maxDate;
+  final bool disableFutureDates;
+  final bool initiallySelectDate;
   final VoidCallback onCancel;
   final ValueChanged<DateTime> onSubmit;
 
@@ -143,6 +155,8 @@ class _PadSingleDateOverlay extends StatelessWidget {
                 today: today,
                 minDate: minDate,
                 maxDate: maxDate,
+                disableFutureDates: disableFutureDates,
+                initiallySelectDate: initiallySelectDate,
                 onCancel: onCancel,
                 onSubmit: onSubmit,
               ),
@@ -162,6 +176,8 @@ class _PadSingleDateDialog extends StatefulWidget {
     required this.today,
     required this.minDate,
     required this.maxDate,
+    required this.disableFutureDates,
+    required this.initiallySelectDate,
     required this.onCancel,
     required this.onSubmit,
   });
@@ -172,6 +188,8 @@ class _PadSingleDateDialog extends StatefulWidget {
   final DateTime today;
   final DateTime minDate;
   final DateTime maxDate;
+  final bool disableFutureDates;
+  final bool initiallySelectDate;
   final VoidCallback onCancel;
   final ValueChanged<DateTime> onSubmit;
 
@@ -181,13 +199,15 @@ class _PadSingleDateDialog extends StatefulWidget {
 
 class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
   late DateTime _visibleMonth;
-  late DateTime _selectedDate;
+  DateTime? _selectedDate;
+  _SingleDatePanel _panel = _SingleDatePanel.day;
 
   @override
   void initState() {
     super.initState();
-    _selectedDate = _dateOnly(widget.initialDate);
-    _visibleMonth = _boundedVisibleMonth(_monthOnly(_selectedDate));
+    _selectedDate =
+        widget.initiallySelectDate ? _dateOnly(widget.initialDate) : null;
+    _visibleMonth = _boundedVisibleMonth(_monthOnly(widget.initialDate));
   }
 
   DateTime _boundedVisibleMonth(DateTime month) {
@@ -205,22 +225,86 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
   void _shiftMonth(int offset) {
     setState(() {
       _visibleMonth = _boundedVisibleMonth(_addMonths(_visibleMonth, offset));
+      _panel = _SingleDatePanel.day;
     });
   }
 
   void _selectDay(DateTime day) {
     final DateTime value = _dateOnly(day);
     if (_isBeforeDay(value, widget.minDate) ||
-        _isAfterDay(value, widget.maxDate)) {
+        _isAfterDay(value, widget.maxDate) ||
+        (widget.disableFutureDates && _isAfterDay(value, widget.today))) {
       return;
     }
     setState(() {
       _selectedDate = value;
+      _panel = _SingleDatePanel.day;
     });
+  }
+
+  void _showYearPanel() {
+    setState(() => _panel = _SingleDatePanel.year);
+  }
+
+  void _showMonthPanel() {
+    setState(() => _panel = _SingleDatePanel.month);
+  }
+
+  void _selectYear(int year) {
+    setState(() {
+      _visibleMonth = _boundedVisibleMonth(
+        DateTime(year, _visibleMonth.month),
+      );
+      _panel = _SingleDatePanel.month;
+    });
+  }
+
+  void _selectMonth(int month) {
+    setState(() {
+      _visibleMonth = _boundedVisibleMonth(
+        DateTime(_visibleMonth.year, month),
+      );
+      _panel = _SingleDatePanel.day;
+    });
+  }
+
+  Widget _buildCalendarBody(DateTime? selectedDate) {
+    switch (_panel) {
+      case _SingleDatePanel.year:
+        return _YearQuickGrid(
+          minDate: widget.minDate,
+          maxDate: widget.maxDate,
+          today: widget.today,
+          disableFutureDates: widget.disableFutureDates,
+          visibleMonth: _visibleMonth,
+          onSelect: _selectYear,
+        );
+      case _SingleDatePanel.month:
+        return _MonthQuickGrid(
+          minDate: widget.minDate,
+          maxDate: widget.maxDate,
+          today: widget.today,
+          disableFutureDates: widget.disableFutureDates,
+          visibleMonth: _visibleMonth,
+          onSelect: _selectMonth,
+        );
+      case _SingleDatePanel.day:
+        return _MonthCalendar(
+          month: _visibleMonth,
+          minDate: widget.minDate,
+          maxDate: widget.maxDate,
+          today: widget.today,
+          disableFutureDates: widget.disableFutureDates,
+          start: selectedDate,
+          end: selectedDate,
+          onSelect: _selectDay,
+        );
+    }
   }
 
   @override
   Widget build(BuildContext context) {
+    final DateTime? selectedDate = _selectedDate;
     return Dialog(
       elevation: 0,
       backgroundColor: Colors.transparent,
@@ -255,7 +339,10 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
                   ),
                 ),
                 const Spacer(),
-                _RangePreview(label: '日期', value: _dateText(_selectedDate)),
+                _RangePreview(
+                  label: '日期',
+                  value: selectedDate == null ? '未选择' : _dateText(selectedDate),
+                ),
                 const SizedBox(width: 10),
                 _IconCircleButton(
                   icon: Icons.close_rounded,
@@ -268,28 +355,28 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
               children: <Widget>[
                 _IconCircleButton(
                   icon: Icons.chevron_left_rounded,
-                  enabled: _canShiftPrevious,
+                  enabled: _panel == _SingleDatePanel.day && _canShiftPrevious,
                   onTap: () => _shiftMonth(-1),
                 ),
                 const Spacer(),
-                _MonthTitle(month: _visibleMonth),
+                _MonthJumpControl(
+                  month: _visibleMonth,
+                  panel: _panel,
+                  onYearTap: _showYearPanel,
+                  onMonthTap: _showMonthPanel,
+                ),
                 const Spacer(),
                 _IconCircleButton(
                   icon: Icons.chevron_right_rounded,
-                  enabled: _canShiftNext,
+                  enabled: _panel == _SingleDatePanel.day && _canShiftNext,
                   onTap: () => _shiftMonth(1),
                 ),
               ],
             ),
             const SizedBox(height: 16),
-            _MonthCalendar(
-              month: _visibleMonth,
-              minDate: widget.minDate,
-              maxDate: widget.maxDate,
-              today: widget.today,
-              start: _selectedDate,
-              end: _selectedDate,
-              onSelect: _selectDay,
+            SizedBox(
+              height: 306,
+              child: _buildCalendarBody(selectedDate),
             ),
             const SizedBox(height: 18),
             Column(
@@ -316,7 +403,10 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
                     _DialogActionButton(
                       label: '确定',
                       filled: true,
-                      onTap: () => widget.onSubmit(_selectedDate),
+                      enabled: selectedDate != null,
+                      onTap: selectedDate == null
+                          ? null
+                          : () => widget.onSubmit(selectedDate),
                     ),
                   ],
                 ),
@@ -333,9 +423,16 @@ class _PadSingleDateDialogState extends State<_PadSingleDateDialog> {
   }
 
   bool get _canShiftNext {
-    return !_addMonths(_visibleMonth, 1).isAfter(_monthOnly(widget.maxDate));
+    final DateTime nextMonth = _addMonths(_visibleMonth, 1);
+    if (widget.disableFutureDates &&
+        nextMonth.isAfter(_monthOnly(widget.today))) {
+      return false;
+    }
+    return !nextMonth.isAfter(_monthOnly(widget.maxDate));
   }
 }
+
+enum _SingleDatePanel { day, year, month }
 
 class _PadDateRangeOverlay extends StatelessWidget {
   const _PadDateRangeOverlay({
@@ -840,6 +937,246 @@ class _PresetButton extends StatelessWidget {
   }
 }
 
+class _MonthJumpControl extends StatelessWidget {
+  const _MonthJumpControl({
+    required this.month,
+    required this.panel,
+    required this.onYearTap,
+    required this.onMonthTap,
+  });
+
+  final DateTime month;
+  final _SingleDatePanel panel;
+  final VoidCallback onYearTap;
+  final VoidCallback onMonthTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        _MonthJumpButton(
+          label: '${month.year}年',
+          active: panel == _SingleDatePanel.year,
+          onTap: onYearTap,
+        ),
+        const SizedBox(width: 8),
+        _MonthJumpButton(
+          label: '${month.month}月',
+          active: panel == _SingleDatePanel.month,
+          onTap: onMonthTap,
+        ),
+      ],
+    );
+  }
+}
+
+class _MonthJumpButton extends StatelessWidget {
+  const _MonthJumpButton({
+    required this.label,
+    required this.active,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool active;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        child: Container(
+          height: 40,
+          constraints: const BoxConstraints(minWidth: 84),
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: active ? const Color(0xFFFFF0E7) : const Color(0xFFFFF8F2),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: active ? _PickerColors.orange : _PickerColors.lineSoft,
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: <Widget>[
+              Text(
+                label,
+                style: TextStyle(
+                  color: active ? _PickerColors.orangeDeep : _PickerColors.ink,
+                  fontSize: 17,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 4),
+              Icon(
+                Icons.keyboard_arrow_down_rounded,
+                size: 18,
+                color: active ? _PickerColors.orange : _PickerColors.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _YearQuickGrid extends StatelessWidget {
+  const _YearQuickGrid({
+    required this.minDate,
+    required this.maxDate,
+    required this.today,
+    required this.disableFutureDates,
+    required this.visibleMonth,
+    required this.onSelect,
+  });
+
+  final DateTime minDate;
+  final DateTime maxDate;
+  final DateTime today;
+  final bool disableFutureDates;
+  final DateTime visibleMonth;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    final int minYear = minDate.year;
+    final int maxYear = disableFutureDates && today.year < maxDate.year
+        ? today.year
+        : maxDate.year;
+    final int count = (maxYear - minYear + 1).clamp(0, 200);
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(2, 2, 2, 4),
+      physics: const BouncingScrollPhysics(),
+      itemCount: count,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 5,
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        childAspectRatio: 1.78,
+      ),
+      itemBuilder: (BuildContext context, int index) {
+        final int year = maxYear - index;
+        return _QuickSelectCell(
+          label: '$year',
+          selected: year == visibleMonth.year,
+          enabled: true,
+          onTap: () => onSelect(year),
+        );
+      },
+    );
+  }
+}
+
+class _MonthQuickGrid extends StatelessWidget {
+  const _MonthQuickGrid({
+    required this.minDate,
+    required this.maxDate,
+    required this.today,
+    required this.disableFutureDates,
+    required this.visibleMonth,
+    required this.onSelect,
+  });
+
+  final DateTime minDate;
+  final DateTime maxDate;
+  final DateTime today;
+  final bool disableFutureDates;
+  final DateTime visibleMonth;
+  final ValueChanged<int> onSelect;
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 4),
+      physics: const NeverScrollableScrollPhysics(),
+      itemCount: 12,
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 4,
+        mainAxisSpacing: 12,
+        crossAxisSpacing: 12,
+        childAspectRatio: 2.1,
+      ),
+      itemBuilder: (BuildContext context, int index) {
+        final int month = index + 1;
+        final DateTime candidate = DateTime(visibleMonth.year, month);
+        final bool enabled = !_monthBefore(candidate, minDate) &&
+            !_monthAfter(candidate, maxDate) &&
+            !(disableFutureDates && _monthAfter(candidate, today));
+        return _QuickSelectCell(
+          label: '$month月',
+          selected: enabled && month == visibleMonth.month,
+          enabled: enabled,
+          onTap: () => onSelect(month),
+        );
+      },
+    );
+  }
+}
+
+class _QuickSelectCell extends StatelessWidget {
+  const _QuickSelectCell({
+    required this.label,
+    required this.selected,
+    required this.enabled,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final bool enabled;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color foreground = selected
+        ? _PickerColors.orangeDeep
+        : enabled
+            ? _PickerColors.text
+            : _PickerColors.muted.withOpacity(.48);
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        onTap: enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(12),
+        child: Ink(
+          decoration: BoxDecoration(
+            color: selected
+                ? const Color(0xFFFFF0E7)
+                : enabled
+                    ? const Color(0xFFFFF8F2)
+                    : const Color(0xFFF8EEE6).withOpacity(.56),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(
+              color: selected ? _PickerColors.orange : _PickerColors.lineSoft,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              style: TextStyle(
+                color: foreground,
+                fontSize: 15,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _MonthTitle extends StatelessWidget {
   const _MonthTitle({required this.month});
 
@@ -868,6 +1205,7 @@ class _MonthCalendar extends StatelessWidget {
     required this.minDate,
     required this.maxDate,
     required this.today,
+    this.disableFutureDates = false,
     required this.start,
     required this.end,
     required this.onSelect,
@@ -877,7 +1215,8 @@ class _MonthCalendar extends StatelessWidget {
   final DateTime minDate;
   final DateTime maxDate;
   final DateTime today;
-  final DateTime start;
+  final bool disableFutureDates;
+  final DateTime? start;
   final DateTime? end;
   final ValueChanged<DateTime> onSelect;
 
@@ -911,6 +1250,7 @@ class _MonthCalendar extends StatelessWidget {
                     minDate: minDate,
                     maxDate: maxDate,
                     today: today,
+                    disableFutureDates: disableFutureDates,
                     start: start,
                     end: end,
                     onSelect: onSelect,
@@ -952,6 +1292,7 @@ class _DateCell extends StatelessWidget {
     required this.minDate,
     required this.maxDate,
     required this.today,
+    required this.disableFutureDates,
     required this.start,
     required this.end,
     required this.onSelect,
@@ -962,7 +1303,8 @@ class _DateCell extends StatelessWidget {
   final DateTime minDate;
   final DateTime maxDate;
   final DateTime today;
-  final DateTime start;
+  final bool disableFutureDates;
+  final DateTime? start;
   final DateTime? end;
   final ValueChanged<DateTime> onSelect;
 
@@ -971,13 +1313,18 @@ class _DateCell extends StatelessWidget {
     final DateTime current = _dateOnly(day);
     final bool inCurrentMonth = current.year == visibleMonth.year &&
         current.month == visibleMonth.month;
+    final bool futureDisabled =
+        disableFutureDates && _isAfterDay(current, today);
     final bool enabled = inCurrentMonth &&
         !_isBeforeDay(current, minDate) &&
-        !_isAfterDay(current, maxDate);
-    final bool isStart = inCurrentMonth && _sameDay(current, start);
+        !_isAfterDay(current, maxDate) &&
+        !futureDisabled;
+    final bool isStart =
+        inCurrentMonth && start != null && _sameDay(current, start!);
     final bool isEnd = inCurrentMonth && end != null && _sameDay(current, end!);
-    final bool inRange = end != null &&
-        !current.isBefore(start) &&
+    final bool inRange = start != null &&
+        end != null &&
+        !current.isBefore(start!) &&
         !current.isAfter(end!) &&
         inCurrentMonth;
     final bool isToday = inCurrentMonth && _sameDay(current, today);
@@ -990,11 +1337,13 @@ class _DateCell extends StatelessWidget {
         current.day == lastDayOfMonth;
     final bool isSingleDay = isStart && isEnd;
     final bool shouldShowBand = inRange && !isSingleDay;
-    final Color textColor = isStart || isEnd
-        ? Colors.white
-        : enabled
-            ? _PickerColors.text
-            : _PickerColors.line;
+    final Color textColor = futureDisabled
+        ? const Color(0xFFC9B7AC).withOpacity(.46)
+        : isStart || isEnd
+            ? Colors.white
+            : enabled
+                ? _PickerColors.text
+                : _PickerColors.line;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 3),
       child: Material(
@@ -1030,7 +1379,16 @@ class _DateCell extends StatelessWidget {
                           ),
                         ),
                       ),
-                    if (isStart || isEnd)
+                    if (futureDisabled && inCurrentMonth)
+                      Container(
+                        width: 34,
+                        height: 30,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8EEE6).withOpacity(.64),
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      )
+                    else if (isStart || isEnd)
                       Container(
                         width: 34,
                         height: 30,
@@ -1194,6 +1552,14 @@ bool _isBeforeDay(DateTime left, DateTime right) {
 
 bool _isAfterDay(DateTime left, DateTime right) {
   return _dateOnly(left).isAfter(_dateOnly(right));
+}
+
+bool _monthBefore(DateTime left, DateTime right) {
+  return _monthOnly(left).isBefore(_monthOnly(right));
+}
+
+bool _monthAfter(DateTime left, DateTime right) {
+  return _monthOnly(left).isAfter(_monthOnly(right));
 }
 
 String _dateText(DateTime value) {
