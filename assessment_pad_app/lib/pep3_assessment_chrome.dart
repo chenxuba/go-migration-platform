@@ -113,7 +113,7 @@ class _SaveStatusLabel extends StatelessWidget {
     return saving ||
         text.contains('保存中') ||
         text.contains('草稿保存中') ||
-        text.contains('保存中');
+        text.startsWith('正在');
   }
 
   bool get _failed => text.contains('失败');

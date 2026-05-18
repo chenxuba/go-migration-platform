@@ -499,7 +499,7 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
       }
       setState(() {
         _draft = detail;
-        _autoSaveText = '草稿已保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
       if (!silent) {
         _showMessage('草稿已保存', tone: PadMessageTone.success);
@@ -556,7 +556,7 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
         _draft = detail;
         _savingItems.remove(itemNo);
         _savedItems.add(itemNo);
-        _autoSaveText = '已自动保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
     } on Object catch (error) {
       if (mounted) {

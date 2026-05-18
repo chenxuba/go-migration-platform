@@ -1013,7 +1013,7 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
       setState(() {
         _draftId = detail.id;
         _draftProgress = detail.progress;
-        _autoSaveText = '草稿已保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
       if (!silent) {
         _showMessage('草稿已保存', tone: PadMessageTone.success);
@@ -1085,7 +1085,7 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
       setState(() {
         _draftId = detail.id;
         _draftProgress = detail.progress;
-        _autoSaveText = '已自动保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
     } on Object catch (error) {
       if (_isDraftNotFoundError(error)) {
@@ -1142,7 +1142,7 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
       setState(() {
         _draftId = detail.id;
         _draftProgress = detail.progress;
-        _autoSaveText = '已自动保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
       return true;
     } on Object {

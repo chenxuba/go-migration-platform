@@ -34,7 +34,55 @@ class _Header extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1260;
+          final bool compact = constraints.maxWidth < 1280;
+          final String title =
+              args.scaleName.trim().isEmpty ? '儿心量表-II' : args.scaleName.trim();
+          final List<Widget> headerChildren = <Widget>[
+            Text(
+              '$title 测评工作台',
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: _ErxinColors.ink,
+                fontSize: 22,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            _HeaderMeta(
+              label: '儿童',
+              value: args.studentName.trim().isEmpty
+                  ? '-'
+                  : args.studentName.trim(),
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '出生日期',
+              value:
+                  args.birthDate.trim().isEmpty ? '-' : args.birthDate.trim(),
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: compact ? '日期' : '测查日期',
+              value: args.assessmentDate.trim().isEmpty
+                  ? '-'
+                  : args.assessmentDate.trim(),
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '实足年龄',
+              value:
+                  args.studentAge.trim().isEmpty ? '-' : args.studentAge.trim(),
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '施测者',
+              value: args.examinerName.trim().isEmpty
+                  ? '-'
+                  : args.examinerName.trim(),
+              compact: compact,
+            ),
+          ];
           return Row(
             children: <Widget>[
               _HeaderIconButton(
@@ -43,62 +91,17 @@ class _Header extends StatelessWidget {
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Row(
-                  children: <Widget>[
-                    const Text(
-                      '儿心量表-II 测评工作台',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        color: _ErxinColors.ink,
-                        fontSize: 22,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    _HeaderMeta(
-                      label: '儿童',
-                      value: args.studentName.trim().isEmpty
-                          ? '-'
-                          : args.studentName.trim(),
-                    ),
-                    _HeaderMeta(
-                      label: '出生日期',
-                      value: args.birthDate.trim().isEmpty
-                          ? '-'
-                          : args.birthDate.trim(),
-                    ),
-                    _HeaderMeta(
-                      label: '测查日期',
-                      value: args.assessmentDate.trim().isEmpty
-                          ? '-'
-                          : args.assessmentDate.trim(),
-                    ),
-                    _HeaderMeta(
-                      label: '实足年龄',
-                      value: args.studentAge.trim().isEmpty
-                          ? '-'
-                          : args.studentAge.trim(),
-                    ),
-                  ],
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: headerChildren,
+                  ),
                 ),
               ),
               if (autoSaveText.trim().isNotEmpty)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 116),
-                  child: Text(
-                    autoSaveText,
-                    maxLines: 1,
-                    softWrap: false,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: _ErxinColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+                _SaveStatusLabel(text: autoSaveText.trim(), saving: saving),
               const SizedBox(width: 10),
               _TopActionButton(
                 label: '保存草稿',
@@ -125,17 +128,78 @@ class _Header extends StatelessWidget {
   }
 }
 
+class _SaveStatusLabel extends StatelessWidget {
+  const _SaveStatusLabel({required this.text, required this.saving});
+
+  final String text;
+  final bool saving;
+
+  bool get _saving {
+    return saving ||
+        text.contains('保存中') ||
+        text.contains('草稿保存中') ||
+        text.startsWith('正在') ||
+        text.contains('加载中');
+  }
+
+  bool get _failed => text.contains('失败');
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = _failed
+        ? _ErxinColors.red
+        : (_saving ? _ErxinColors.orangeDeep : _ErxinColors.body);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 116),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          Icon(
+            _failed
+                ? Icons.error_outline_rounded
+                : (_saving
+                    ? Icons.sync_rounded
+                    : Icons.check_circle_outline_rounded),
+            color: _failed
+                ? _ErxinColors.red
+                : (_saving ? _ErxinColors.orangeDeep : _ErxinColors.green),
+            size: _saving ? 17 : 18,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _HeaderMeta extends StatelessWidget {
-  const _HeaderMeta({required this.label, required this.value});
+  const _HeaderMeta({
+    required this.label,
+    required this.value,
+    required this.compact,
+  });
 
   final String label;
   final String value;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      margin: const EdgeInsets.only(left: 8),
-      padding: const EdgeInsets.only(left: 8),
+      margin: EdgeInsets.only(left: compact ? 6 : 8),
+      padding: EdgeInsets.only(left: compact ? 6 : 8),
       decoration: const BoxDecoration(
         border: Border(left: BorderSide(color: _ErxinColors.line)),
       ),

@@ -153,6 +153,11 @@ String _formatDateTime(String value) {
       '${local.minute.toString().padLeft(2, '0')}';
 }
 
+String _formatClock(DateTime value) {
+  return '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
+}
+
 String _compactDateLabel(String value) {
   return _normalizeDate(value) ?? value.trim();
 }

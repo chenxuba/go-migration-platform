@@ -1630,10 +1630,7 @@ class _SaveStatusLabel extends StatelessWidget {
   final bool saving;
 
   bool get _saving {
-    return saving ||
-        text.contains('保存中') ||
-        text.contains('草稿保存中') ||
-        text.contains('保存中');
+    return saving || text.contains('保存中') || text.contains('草稿保存中');
   }
 
   @override
