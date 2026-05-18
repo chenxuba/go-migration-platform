@@ -229,7 +229,7 @@ func (r *shuangxiAProfilePDFRenderer) drawHeader(records []model.AssessmentRecor
 	if len(records) > 0 {
 		current = records[len(records)-1]
 	}
-	r.setFont(12.2)
+	r.setFont(13.2)
 	if err := r.drawInfoField(38, 88, 128, "学生姓名：", current.StudentName); err != nil {
 		return err
 	}
@@ -301,15 +301,15 @@ func (r *shuangxiAProfilePDFRenderer) drawAssessmentLine(x, y float64, slot int,
 		colorName = color.Name
 	}
 	r.setTextColor(0, 0, 0)
-	r.setFont(10.8)
+	r.setFont(12.8)
 	if err := r.drawInfoField(x, y, 92, label, dateText); err != nil {
 		return err
 	}
-	examinerX := x + 168
+	examinerX := x + 185
 	if err := r.drawInfoField(examinerX, y, 50, "评量者：", examiner); err != nil {
 		return err
 	}
-	colorX := x + 272
+	colorX := x + 296
 	if err := r.drawInfoField(colorX, y, 40, "颜色：", ""); err != nil {
 		return err
 	}
