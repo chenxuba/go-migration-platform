@@ -43,6 +43,15 @@ func TestBuildAutismDevSelectedReportDirectPDFCombinesSections(t *testing.T) {
 	if err := builder.appendDirectDraw(funcPDFDrawAutismDevResultAnalysis(analysis)); err != nil {
 		t.Fatalf("append result analysis PDF failed: %v", err)
 	}
+	if err := builder.appendDirectDraw(funcPDFDrawAutismDevReportInterpretation(model.ERXinReportInterpretationVO{
+		Title:          "孤独症儿童发展评估报告解读",
+		Summary:        "语言与沟通仍是当前重点，近期建议围绕少提示和稳定完成把目标拆小。",
+		DomainAnalysis: []string{"语言与沟通：已能理解常用指令，近期练主动表达需求。"},
+		Suggestions:    []string{"优先选择1-2个可观察的小目标。"},
+		Notes:          []string{"本解读仅用于训练计划参考。"},
+	})); err != nil {
+		t.Fatalf("append report interpretation PDF failed: %v", err)
+	}
 	content, err := builder.bytes()
 	if err != nil {
 		t.Fatalf("build selected report PDF failed: %v", err)
@@ -50,8 +59,8 @@ func TestBuildAutismDevSelectedReportDirectPDFCombinesSections(t *testing.T) {
 	if len(content) == 0 {
 		t.Fatal("selected report PDF should not be empty")
 	}
-	if count := strings.Count(string(content), "/Type /Page"); count < 2 {
-		t.Fatalf("selected report PDF should contain at least 2 pages, got %d", count)
+	if count := strings.Count(string(content), "/Type /Page"); count < 3 {
+		t.Fatalf("selected report PDF should contain at least 3 pages, got %d", count)
 	}
 }
 
@@ -64,5 +73,11 @@ func funcPDFDrawAutismDevAssessmentSituation(export autismDevAssessmentSituation
 func funcPDFDrawAutismDevResultAnalysis(export autismDevResultAnalysisWordExport) func(pdf *gopdf.GoPdf) error {
 	return func(pdf *gopdf.GoPdf) error {
 		return drawAutismDevResultAnalysisPDFPages(pdf, export)
+	}
+}
+
+func funcPDFDrawAutismDevReportInterpretation(interpretation model.ERXinReportInterpretationVO) func(pdf *gopdf.GoPdf) error {
+	return func(pdf *gopdf.GoPdf) error {
+		return drawAutismDevReportInterpretationPDFPages(pdf, interpretation)
 	}
 }

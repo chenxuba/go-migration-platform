@@ -16,6 +16,7 @@ import (
 const (
 	AutismDevReportSectionAssessmentInfo     = "assessmentInfo"
 	AutismDevReportSectionResultAnalysis     = "resultAnalysis"
+	AutismDevReportSectionInterpretation     = "interpretation"
 	AutismDevReportSectionTraining           = "training"
 	AutismDevReportSectionDevelopmentProfile = "developmentProfile"
 	AutismDevReportSectionBehaviorProfile    = "behaviorProfile"
@@ -120,6 +121,15 @@ func (svc *Service) autismDevSelectedReportSectionPDF(userID int64, recordID int
 		}
 		content, err := buildAutismDevResultAnalysisPDF(export)
 		return content, err
+	case AutismDevReportSectionInterpretation:
+		interpretation, err := svc.GetAutismDevReportInterpretation(userID, recordID)
+		if err != nil {
+			return nil, err
+		}
+		if erxinReportInterpretationIsEmpty(interpretation) {
+			return nil, errors.New("请先生成报告解读后再导出")
+		}
+		return buildAutismDevReportInterpretationPDF(interpretation)
 	case AutismDevReportSectionTraining:
 		_, content, err := svc.GenerateAutismDevProfilePDF(userID, recordID, "training")
 		return content, err
@@ -152,6 +162,14 @@ func (svc *Service) appendAutismDevSelectedReportDirectSectionPDF(builder *autis
 		}
 		return builder.appendDirectDraw(func(pdf *gopdf.GoPdf) error {
 			return drawAutismDevResultAnalysisPDFPages(pdf, export)
+		})
+	case AutismDevReportSectionInterpretation:
+		interpretation, err := svc.GetAutismDevReportInterpretation(userID, recordID)
+		if err != nil {
+			return err
+		}
+		return builder.appendDirectDraw(func(pdf *gopdf.GoPdf) error {
+			return drawAutismDevReportInterpretationPDFPages(pdf, interpretation)
 		})
 	case AutismDevReportSectionTraining:
 		records := []model.AssessmentRecordDetailVO{record}
@@ -187,9 +205,26 @@ func (svc *Service) appendAutismDevSelectedReportDirectSectionPDF(builder *autis
 	}
 }
 
+func drawAutismDevReportInterpretationPDFPages(pdf *gopdf.GoPdf, interpretation model.ERXinReportInterpretationVO) error {
+	if erxinReportInterpretationIsEmpty(interpretation) {
+		return errors.New("请先生成报告解读后再导出")
+	}
+	pdf.AddPage()
+	renderer := erxinInterpretationPDFRenderer{
+		pdf:                pdf,
+		currentFontSize:    11,
+		headerTitle:        "孤独症儿童发展评估报告解读",
+		domainSectionTitle: "八大领域表现",
+		footerText:         "本报告解读基于孤独症儿童发展评估结构化结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
+	}
+	renderer.draw(interpretation)
+	return nil
+}
+
 func isAutismDevSelectedReportDirectDrawSection(section string) bool {
 	return section == AutismDevReportSectionAssessmentInfo ||
 		section == AutismDevReportSectionResultAnalysis ||
+		section == AutismDevReportSectionInterpretation ||
 		section == AutismDevReportSectionTraining ||
 		section == AutismDevReportSectionDevelopmentProfile ||
 		section == AutismDevReportSectionBehaviorProfile
@@ -199,6 +234,7 @@ func normalizeAutismDevSelectedReportSections(sections []string) []string {
 	allowed := map[string]bool{
 		AutismDevReportSectionAssessmentInfo:     true,
 		AutismDevReportSectionResultAnalysis:     true,
+		AutismDevReportSectionInterpretation:     true,
 		AutismDevReportSectionTraining:           true,
 		AutismDevReportSectionDevelopmentProfile: true,
 		AutismDevReportSectionBehaviorProfile:    true,
@@ -222,6 +258,8 @@ func autismDevSelectedReportSectionLabel(section string) string {
 		return "评估情况"
 	case AutismDevReportSectionResultAnalysis:
 		return "评估结果分析"
+	case AutismDevReportSectionInterpretation:
+		return "报告解读"
 	case AutismDevReportSectionTraining:
 		return "训练效果"
 	case AutismDevReportSectionDevelopmentProfile:
@@ -249,9 +287,26 @@ func newAutismDevSelectedReportPDFBuilder() *autismDevSelectedReportPDFBuilder {
 	return builder
 }
 
+func addAutismDevSelectedReportPDFFonts(pdf *gopdf.GoPdf) error {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return err
+	}
+	if err := pdf.AddTTFFontByReader(autismDevProfilePDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return fmt.Errorf("load AutismDev selected PDF font: %w", err)
+	}
+	if autismDevProfilePDFFontFamily == erxinReportPDFFontFamily {
+		return nil
+	}
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return fmt.Errorf("load AutismDev selected interpretation PDF font: %w", err)
+	}
+	return nil
+}
+
 func (b *autismDevSelectedReportPDFBuilder) appendDirectDraw(draw func(*gopdf.GoPdf) error) error {
 	if !b.fontReady {
-		if err := addAutismDevProfilePDFFont(&b.pdf); err != nil {
+		if err := addAutismDevSelectedReportPDFFonts(&b.pdf); err != nil {
 			return err
 		}
 		b.fontReady = true

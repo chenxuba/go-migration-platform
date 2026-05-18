@@ -24,7 +24,6 @@ import {
 } from '@/api/edu-center/erxin-assessment'
 import {
   deleteAutismDevAssessmentRecordApi,
-  downloadAutismDevAssessmentRecordReportInterpretationPdfApi,
   downloadAutismDevResultAnalysisWordApi,
   downloadAutismDevSelectedReportPdfApi,
   generateAutismDevAssessmentRecordReportInterpretationStreamApi,
@@ -219,7 +218,7 @@ const autismDevEnabledExportSections = computed(() => autismDevExportDimensionOp
   .filter(option => isAutismDevExportSectionEnabled(option.value))
   .map(option => option.value))
 const autismDevExportAllSelected = computed(() => {
-  const enabled = autismDevEnabledExportSections.value.filter(section => section !== 'interpretation')
+  const enabled = autismDevEnabledExportSections.value
   return !!enabled.length && enabled.every(section => autismDevExportSections.value.includes(section))
 })
 const exportModalWidth = computed(() => {
@@ -776,14 +775,11 @@ function toggleAutismDevExportSection(section) {
   const next = new Set(autismDevExportSections.value)
   if (next.has(section))
     next.delete(section)
-  else {
-    if (section === 'interpretation')
-      next.clear()
-    else
-      next.delete('interpretation')
+  else
     next.add(section)
-  }
   setAutismDevExportSections(Array.from(next))
+  if (section === 'interpretation' && next.has(section) && !interpretationFetched.value && !interpretationLoading.value)
+    void loadSavedInterpretation(exportTargetRecord.value)
 }
 
 function toggleAllAutismDevExportSections() {
@@ -791,7 +787,7 @@ function toggleAllAutismDevExportSections() {
     autismDevExportSections.value = []
     return
   }
-  setAutismDevExportSections(autismDevEnabledExportSections.value.filter(section => section !== 'interpretation'))
+  setAutismDevExportSections(autismDevEnabledExportSections.value)
 }
 
 function reportTitleForRecord(record) {
@@ -1531,8 +1527,7 @@ function selectReportTab(tab) {
     loadSavedInterpretation()
 }
 
-async function loadSavedInterpretation() {
-  const row = currentReport.value?.record
+async function loadSavedInterpretation(row = currentReport.value?.record) {
   if (!row?.id)
     return
   interpretationLoading.value = true
@@ -1812,6 +1807,8 @@ function openExportModal(row, dimension) {
     exportModalOpen.value = true
     if (autismDevExportSections.value.includes('resultAnalysis'))
       void loadAutismDevAnalysisForExport(row)
+    if (autismDevExportSections.value.includes('interpretation') && !interpretationFetched.value && !interpretationLoading.value)
+      void loadSavedInterpretation(row)
     return
   }
   selectedExportDimension.value = dimension || defaultExportDimensionForRecord(row)
@@ -1886,7 +1883,7 @@ function autismDevReportSectionsForDimension(dimension) {
   if (autismDevExportDimensionOptions.some(item => item.value === dimension))
     return [dimension]
   if (dimension === 'all' || dimension === 'autismdev_report')
-    return normalizeAutismDevExportSections(autismDevExportDimensionOptions.map(item => item.value).filter(value => value !== 'interpretation'))
+    return normalizeAutismDevExportSections(autismDevExportDimensionOptions.map(item => item.value))
   return [defaultAutismDevReportSection()]
 }
 
@@ -1899,10 +1896,6 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   if (isAutismDevRecord(row)) {
     if (!autismDevSections.length) {
       messageService.warning('请选择导出内容')
-      return
-    }
-    if (autismDevSections.includes('interpretation') && autismDevSections.length > 1) {
-      messageService.warning('报告解读请单独导出')
       return
     }
     if (autismDevSections.includes('interpretation') && (interpretationLoading.value || interpretationGenerating.value)) {
@@ -1921,9 +1914,7 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   exportingId.value = recordActionKey(row)
   try {
     const response = isAutismDevRecord(row)
-      ? (autismDevSections.includes('interpretation')
-          ? await downloadAutismDevAssessmentRecordReportInterpretationPdfApi(row.id)
-          : await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null))
+      ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
       ? await downloadERXinExportPdf(row.id, dimension)
       : await downloadPEP3ExportPdf(row.id, dimension)
