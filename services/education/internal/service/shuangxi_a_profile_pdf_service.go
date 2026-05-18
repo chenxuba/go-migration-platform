@@ -57,6 +57,18 @@ type shuangxiAProfileSkill struct {
 	MaxRawScore int
 }
 
+type shuangxiAProfileItem struct {
+	ItemNo     int
+	Code       string
+	Name       string
+	DomainCode string
+	DomainName string
+	DomainNo   int
+	SkillCode  string
+	SkillName  string
+	SkillNo    int
+}
+
 var shuangxiAProfileColors = []shuangxiAProfileColor{
 	{Name: "红色", R: 220, G: 38, B: 38},
 	{Name: "蓝色", R: 37, G: 99, B: 235},
@@ -210,6 +222,25 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 			return err
 		}
 	}
+	if len(data.domains) > 0 {
+		domain := data.domains[0]
+		items := shuangxiAProfileItemsForDomain(data, domain.ScaleCode)
+		if len(items) > 0 {
+			domainNo := domain.DomainNo
+			if domainNo <= 0 {
+				domainNo = domain.SortNo
+			}
+			r.pdf.AddPage()
+			r.pdf.SetFillColor(255, 255, 255)
+			r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
+			if err := r.drawTitle(fmt.Sprintf("侧面图（三）%d.%s", domainNo, nonEmptyString(domain.ScaleName, domain.ScaleCode))); err != nil {
+				return err
+			}
+			if err := r.drawItemProfile(items, records); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
@@ -283,6 +314,53 @@ func shuangxiAProfileSkills(data shuangxiAStaticData) []shuangxiAProfileSkill {
 		return skills[i].SkillNo < skills[j].SkillNo
 	})
 	return skills
+}
+
+func shuangxiAProfileItemsForDomain(data shuangxiAStaticData, domainCode string) []shuangxiAProfileItem {
+	domainCode = strings.TrimSpace(domainCode)
+	if domainCode == "" {
+		return nil
+	}
+	domainNoByCode := make(map[string]int, len(data.domains))
+	for index, domain := range data.domains {
+		code := strings.TrimSpace(domain.ScaleCode)
+		if code == "" {
+			continue
+		}
+		domainNo := domain.DomainNo
+		if domainNo <= 0 {
+			domainNo = index + 1
+		}
+		domainNoByCode[code] = domainNo
+	}
+	items := make([]shuangxiAProfileItem, 0)
+	for _, item := range data.items {
+		if strings.TrimSpace(item.DomainCode) != domainCode {
+			continue
+		}
+		itemName := strings.TrimSpace(item.TestItem)
+		if itemName == "" {
+			itemName = strings.TrimSpace(item.ItemTitle)
+		}
+		items = append(items, shuangxiAProfileItem{
+			ItemNo:     item.ItemNo,
+			Code:       strings.TrimSpace(item.ItemCode),
+			Name:       nonEmptyString(itemName, item.ItemCode),
+			DomainCode: strings.TrimSpace(item.DomainCode),
+			DomainName: nonEmptyString(item.DomainName, item.Domain),
+			DomainNo:   domainNoByCode[strings.TrimSpace(item.DomainCode)],
+			SkillCode:  strings.TrimSpace(item.SkillCode),
+			SkillName:  nonEmptyString(item.SkillName, item.SkillCode),
+			SkillNo:    item.SkillSortNo,
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		if items[i].SkillNo != items[j].SkillNo {
+			return items[i].SkillNo < items[j].SkillNo
+		}
+		return items[i].ItemNo < items[j].ItemNo
+	})
+	return items
 }
 
 func (r *shuangxiAProfilePDFRenderer) drawTitle(title string) error {
@@ -610,6 +688,91 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 	return nil
 }
 
+func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileItem, records []model.AssessmentRecordDetailVO) error {
+	const (
+		left      = 144.0
+		top       = 116.0
+		width     = 680.0
+		scoreH    = 300.0
+		itemRowH  = 112.0
+		skillRowH = 30.0
+	)
+	if len(items) == 0 {
+		return nil
+	}
+	colW := width / float64(len(items))
+	rowH := scoreH / 3
+	totalH := scoreH + itemRowH + skillRowH
+	itemBottomY := top + scoreH + itemRowH
+
+	if err := r.drawSkillProfileScaleLabels(top, scoreH); err != nil {
+		return err
+	}
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.SetLineWidth(0.95)
+	r.pdf.RectFromUpperLeft(left, top, width, totalH)
+	for row := 1; row < 3; row++ {
+		y := top + float64(row)*rowH
+		r.pdf.Line(left, y, left+width, y)
+	}
+	r.pdf.Line(left, top+scoreH, left+width, top+scoreH)
+	r.pdf.Line(left, itemBottomY, left+width, itemBottomY)
+	for col := 1; col < len(items); col++ {
+		x := left + float64(col)*colW
+		r.pdf.Line(x, top, x, itemBottomY)
+	}
+
+	r.setTextColor(0, 0, 0)
+	for col, item := range items {
+		cellX := left + float64(col)*colW
+		if err := r.drawSkillProfileVerticalLabel(cellX, top+scoreH, colW, itemRowH, item.Name); err != nil {
+			return err
+		}
+	}
+	if err := r.drawItemProfileSkillRow(items, left, itemBottomY, colW, skillRowH); err != nil {
+		return err
+	}
+
+	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: scoreH}
+	for recordIndex, record := range records {
+		itemScores := shuangxiAProfileItemScoreMap(record)
+		if len(itemScores) == 0 {
+			continue
+		}
+		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
+		points := make([]shuangxiAProfilePoint, 0, len(items))
+		for col, item := range items {
+			score, ok := itemScores[item.ItemNo]
+			if !ok {
+				continue
+			}
+			points = append(points, shuangxiAProfilePoint{
+				X:     left + float64(col)*colW + colW/2,
+				Y:     shuangxiAProfileScoreY(score, 3, top, rowH),
+				Score: score,
+			})
+		}
+		if len(points) == 0 {
+			continue
+		}
+		r.pdf.SetLineType("solid")
+		r.pdf.SetLineWidth(1.3)
+		r.pdf.SetStrokeColor(color.R, color.G, color.B)
+		for index := 1; index < len(points); index++ {
+			r.pdf.Line(points[index-1].X, points[index-1].Y, points[index].X, points[index].Y)
+		}
+		for _, point := range points {
+			shuangxiAProfileDrawDot(r.pdf, point, 3, color)
+			r.drawProfilePointScoreSmall(point, color, nil, chartRect)
+		}
+	}
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.SetLineWidth(0.95)
+	r.pdf.SetLineType("solid")
+	r.setTextColor(0, 0, 0)
+	return nil
+}
+
 func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height float64) error {
 	const (
 		leftX  = 20.0
@@ -681,6 +844,30 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfileDomainRow(skills []shuangx
 		start = end
 	}
 	r.pdf.Line(left+float64(len(skills))*colW, y, left+float64(len(skills))*colW, y+height)
+	return nil
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawItemProfileSkillRow(items []shuangxiAProfileItem, left, y, colW, height float64) error {
+	if len(items) == 0 {
+		return nil
+	}
+	start := 0
+	for start < len(items) {
+		end := start + 1
+		for end < len(items) && items[end].SkillCode == items[start].SkillCode {
+			end++
+		}
+		x := left + float64(start)*colW
+		width := float64(end-start) * colW
+		r.pdf.Line(x, y, x, y+height)
+		r.setFont(11.8)
+		r.setTextColor(0, 0, 0)
+		if err := r.cell(x, y+2, width, height-4, items[start].SkillName, gopdf.Center|gopdf.Middle); err != nil {
+			return err
+		}
+		start = end
+	}
+	r.pdf.Line(left+float64(len(items))*colW, y, left+float64(len(items))*colW, y+height)
 	return nil
 }
 
@@ -851,6 +1038,18 @@ func shuangxiAProfileSkillScoreMap(data shuangxiAStaticData, record model.Assess
 	}
 	if len(out) == 0 {
 		return nil
+	}
+	return out
+}
+
+func shuangxiAProfileItemScoreMap(record model.AssessmentRecordDetailVO) map[int]int {
+	itemScores, err := decodeSavedShuangxiAInputScores(record.InputJSON)
+	if err != nil || len(itemScores) == 0 {
+		return nil
+	}
+	out := make(map[int]int, len(itemScores))
+	for itemNo, score := range itemScores {
+		out[itemNo] = maxInt(0, minInt(3, score))
 	}
 	return out
 }

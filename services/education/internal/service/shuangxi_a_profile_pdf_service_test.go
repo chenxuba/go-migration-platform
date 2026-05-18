@@ -33,6 +33,7 @@ func TestBuildShuangxiADevelopmentProfilePDFLandscape(t *testing.T) {
 			AssessmentDate: &assessmentDate,
 			ExaminerName:   "陈老师",
 		},
+		InputJSON:  shuangxiAProfileTestInputJSON(t, data),
 		ResultJSON: shuangxiAProfileTestResultJSON(t, data),
 	}
 	content, err := buildShuangxiADevelopmentProfilePDF(data, []model.AssessmentRecordDetailVO{record})
@@ -113,6 +114,17 @@ func TestShuangxiAProfileSkillsAndScores(t *testing.T) {
 	if got["2.1"] != 3 {
 		t.Fatalf("skill 2.1 score = %d, want 3", got["2.1"])
 	}
+	items := shuangxiAProfileItemsForDomain(data, "SENSORY")
+	if len(items) != 21 {
+		t.Fatalf("sensory items = %d, want 21", len(items))
+	}
+	if items[0].Code != "1.1.1" || items[0].Name != "视觉敏锐度" || items[len(items)-1].Code != "1.5.3" {
+		t.Fatalf("unexpected sensory item ordering: first=%+v last=%+v", items[0], items[len(items)-1])
+	}
+	itemScores := shuangxiAProfileItemScoreMap(model.AssessmentRecordDetailVO{InputJSON: input})
+	if itemScores[1] != 2 || itemScores[2] != 3 {
+		t.Fatalf("item scores = %+v, want item 1=2 item 2=3", itemScores)
+	}
 }
 
 func shuangxiAProfileTestResultJSON(t *testing.T, data shuangxiAStaticData) []byte {
@@ -152,6 +164,19 @@ func shuangxiAProfileTestResultJSON(t *testing.T, data shuangxiAStaticData) []by
 	raw, err := json.Marshal(score)
 	if err != nil {
 		t.Fatalf("marshal score: %v", err)
+	}
+	return raw
+}
+
+func shuangxiAProfileTestInputJSON(t *testing.T, data shuangxiAStaticData) []byte {
+	t.Helper()
+	itemScores := make(map[int]int, len(data.items))
+	for index, item := range data.items {
+		itemScores[item.ItemNo] = index % 4
+	}
+	raw, err := json.Marshal(shuangxiASavedInputSnapshot{ItemScores: itemScores})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
 	}
 	return raw
 }

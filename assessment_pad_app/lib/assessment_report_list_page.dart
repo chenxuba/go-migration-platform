@@ -3519,6 +3519,7 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
 
 const double _reportPreviewRasterDpi = 96;
 const double _erxinReportPreviewRasterDpi = 216;
+const double _shuangxiProfilePdfAspectRatio = 841.89 / 595.28;
 
 String _reportModuleInlineDescription(_ReportModuleOption option) {
   final String pages = option.pages.replaceAll(RegExp(r'\s+'), '');
@@ -5376,8 +5377,9 @@ class _ShuangxiReportPreviewDialogState
           'shuangxi-development-profile-pdf-${widget.record.id}-${widget.record.updatedTime}-${bytes.length}',
         ),
         bytes: bytes,
-        pageCount: 2,
+        pageCount: 3,
         maxPageWidth: 948,
+        placeholderAspectRatio: _shuangxiProfilePdfAspectRatio,
       ),
     );
   }
@@ -6677,6 +6679,7 @@ class _LazyReportPdfPreview extends StatefulWidget {
     required this.pageCount,
     this.dpi = _reportPreviewRasterDpi,
     this.maxPageWidth = 860,
+    this.placeholderAspectRatio = 0.76,
     super.key,
   });
 
@@ -6684,6 +6687,7 @@ class _LazyReportPdfPreview extends StatefulWidget {
   final int pageCount;
   final double dpi;
   final double maxPageWidth;
+  final double placeholderAspectRatio;
 
   @override
   State<_LazyReportPdfPreview> createState() => _LazyReportPdfPreviewState();
@@ -6696,11 +6700,18 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
       <int, Future<_ReportPdfPageSnapshot>>{};
   final LinkedHashMap<int, _ReportPdfPageSnapshot> _pageCache =
       LinkedHashMap<int, _ReportPdfPageSnapshot>();
+  final ScrollController _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     _warmAround(0);
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   Future<_ReportPdfPageSnapshot> _loadPage(int pageIndex) {
@@ -6754,32 +6765,44 @@ class _LazyReportPdfPreviewState extends State<_LazyReportPdfPreview> {
   Widget build(BuildContext context) {
     if (widget.pageCount == 1) {
       _warmAround(0);
-      return SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-        child: _LazyReportPdfPageCard(
-          pageIndex: 0,
-          pageCount: 1,
-          pageFuture: _loadPage(0),
-          maxPageWidth: widget.maxPageWidth,
-          badgeText: '第 1 / 1 页',
-          compact: true,
+      return PrimaryScrollController.none(
+        child: SingleChildScrollView(
+          controller: _scrollController,
+          primary: false,
+          physics: const ClampingScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          child: _LazyReportPdfPageCard(
+            pageIndex: 0,
+            pageCount: 1,
+            pageFuture: _loadPage(0),
+            maxPageWidth: widget.maxPageWidth,
+            placeholderAspectRatio: widget.placeholderAspectRatio,
+            badgeText: '第 1 / 1 页',
+            compact: true,
+          ),
         ),
       );
     }
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
-      cacheExtent: 720,
-      itemCount: widget.pageCount,
-      itemBuilder: (BuildContext context, int index) {
-        _warmAround(index);
-        return _LazyReportPdfPageCard(
-          pageIndex: index,
-          pageCount: widget.pageCount,
-          pageFuture: _loadPage(index),
-          maxPageWidth: widget.maxPageWidth,
-          badgeText: '第 ${index + 1} / ${widget.pageCount} 页',
-        );
-      },
+    return PrimaryScrollController.none(
+      child: ListView.builder(
+        controller: _scrollController,
+        primary: false,
+        physics: const ClampingScrollPhysics(),
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 16),
+        cacheExtent: 720,
+        itemCount: widget.pageCount,
+        itemBuilder: (BuildContext context, int index) {
+          _warmAround(index);
+          return _LazyReportPdfPageCard(
+            pageIndex: index,
+            pageCount: widget.pageCount,
+            pageFuture: _loadPage(index),
+            maxPageWidth: widget.maxPageWidth,
+            placeholderAspectRatio: widget.placeholderAspectRatio,
+            badgeText: '第 ${index + 1} / ${widget.pageCount} 页',
+          );
+        },
+      ),
     );
   }
 }
@@ -6790,6 +6813,7 @@ class _LazyReportPdfPageCard extends StatelessWidget {
     required this.pageCount,
     required this.pageFuture,
     required this.maxPageWidth,
+    required this.placeholderAspectRatio,
     required this.badgeText,
     this.compact = false,
   });
@@ -6798,6 +6822,7 @@ class _LazyReportPdfPageCard extends StatelessWidget {
   final int pageCount;
   final Future<_ReportPdfPageSnapshot> pageFuture;
   final double maxPageWidth;
+  final double placeholderAspectRatio;
   final String badgeText;
   final bool compact;
 
@@ -6840,6 +6865,7 @@ class _LazyReportPdfPageCard extends StatelessWidget {
                         ) {
                           if (snapshot.hasError) {
                             return _ReportPdfPagePlaceholder(
+                              aspectRatio: placeholderAspectRatio,
                               child: Text(
                                 '第 ${pageIndex + 1} 页渲染失败：${snapshot.error}',
                                 textAlign: TextAlign.center,
@@ -6853,7 +6879,8 @@ class _LazyReportPdfPageCard extends StatelessWidget {
                             );
                           }
                           if (!snapshot.hasData) {
-                            return const _ReportPdfPagePlaceholder(
+                            return _ReportPdfPagePlaceholder(
+                              aspectRatio: placeholderAspectRatio,
                               child: _ReportPreviewLoadingState(
                                 message: '评估报告渲染中...',
                               ),
@@ -6893,14 +6920,18 @@ class _LazyReportPdfPageCard extends StatelessWidget {
 }
 
 class _ReportPdfPagePlaceholder extends StatelessWidget {
-  const _ReportPdfPagePlaceholder({required this.child});
+  const _ReportPdfPagePlaceholder({
+    required this.child,
+    required this.aspectRatio,
+  });
 
   final Widget child;
+  final double aspectRatio;
 
   @override
   Widget build(BuildContext context) {
     return AspectRatio(
-      aspectRatio: 0.76,
+      aspectRatio: aspectRatio,
       child: DecoratedBox(
         decoration: BoxDecoration(
           color: const Color(0xFFFFFBF7),
