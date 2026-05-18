@@ -72,7 +72,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
   int _currentItemNo = 0;
   String _expandedGroupKey = '';
   String _errorMessage = '';
-  String _autoSaveText = '';
+  String _autoSaveText = '等待作答';
   String _studentName = '';
   String _studentAge = '';
   String _birthDate = '';
@@ -117,6 +117,7 @@ class _Pep3AssessmentPageState extends State<Pep3AssessmentPage> {
         age: _studentAgeText,
         assessmentDate: _assessmentDate,
         examinerName: _examinerName,
+        autoSaveText: _autoSaveText,
         onBack: widget.onBack,
       );
     }

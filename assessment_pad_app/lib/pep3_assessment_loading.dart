@@ -7,6 +7,7 @@ class _Pep3LoadingShell extends StatelessWidget {
     required this.age,
     required this.assessmentDate,
     required this.examinerName,
+    required this.autoSaveText,
     required this.onBack,
   });
 
@@ -15,6 +16,7 @@ class _Pep3LoadingShell extends StatelessWidget {
   final String age;
   final String assessmentDate;
   final String examinerName;
+  final String autoSaveText;
   final VoidCallback onBack;
 
   @override
@@ -29,6 +31,7 @@ class _Pep3LoadingShell extends StatelessWidget {
             age: age,
             assessmentDate: assessmentDate,
             examinerName: examinerName,
+            autoSaveText: autoSaveText,
             onBack: onBack,
           ),
           const Expanded(
@@ -60,6 +63,7 @@ class _Pep3LoadingHeader extends StatelessWidget {
     required this.age,
     required this.assessmentDate,
     required this.examinerName,
+    required this.autoSaveText,
     required this.onBack,
   });
 
@@ -68,6 +72,7 @@ class _Pep3LoadingHeader extends StatelessWidget {
   final String age;
   final String assessmentDate;
   final String examinerName;
+  final String autoSaveText;
   final VoidCallback onBack;
 
   @override
@@ -131,7 +136,11 @@ class _Pep3LoadingHeader extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              const _SkeletonPill(width: 78, height: 14),
+              _SaveStatusLabel(
+                text:
+                    autoSaveText.trim().isEmpty ? '等待作答' : autoSaveText.trim(),
+                saving: false,
+              ),
               const SizedBox(width: 12),
               const _SkeletonButton(width: 112),
               const SizedBox(width: 9),

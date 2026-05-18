@@ -35,14 +35,12 @@ class _Header extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool compact = constraints.maxWidth < 1280;
-          final String title =
-              args.scaleName.trim().isEmpty ? '儿心量表-II' : args.scaleName.trim();
           final List<Widget> headerChildren = <Widget>[
-            Text(
-              '$title 测评工作台',
+            const Text(
+              '儿心量表-II 测评工作台',
               maxLines: 1,
               softWrap: false,
-              style: const TextStyle(
+              style: TextStyle(
                 color: _ErxinColors.ink,
                 fontSize: 22,
                 height: 1,

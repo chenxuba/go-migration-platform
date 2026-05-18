@@ -5,6 +5,7 @@ extension _ErxinAssessmentBootstrap on _ErxinAssessmentPageState {
     setState(() {
       _loading = true;
       _errorMessage = '';
+      _autoSaveText = '等待作答';
     });
     final SharedPreferences prefs = await SharedPreferences.getInstance();
     final String token =
@@ -47,7 +48,7 @@ extension _ErxinAssessmentBootstrap on _ErxinAssessmentPageState {
       }
       setState(() {
         _loading = false;
-        _autoSaveText = '已准备';
+        _autoSaveText = _draftId > 0 ? '已载入草稿' : '已准备';
       });
       _prefetchSelectedItem();
       _showDetectedDraftDialogIfNeeded();

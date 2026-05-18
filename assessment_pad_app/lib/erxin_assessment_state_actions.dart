@@ -21,7 +21,8 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
         children: <Widget>[
           _Header(
             args: _headerArgs(),
-            autoSaveText: '加载中...',
+            autoSaveText:
+                _autoSaveText.trim().isEmpty ? '等待作答' : _autoSaveText.trim(),
             saving: false,
             submitting: false,
             actionsEnabled: false,

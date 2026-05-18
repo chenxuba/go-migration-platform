@@ -10,6 +10,7 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
     setState(() {
       _loading = true;
       _errorMessage = '';
+      _autoSaveText = '等待作答';
     });
     final String token = await _readToken();
     if (token.trim().isEmpty) {
@@ -55,6 +56,7 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
       }
       setState(() {
         _loading = false;
+        _autoSaveText = (_draft?.id ?? 0) > 0 ? '已载入草稿' : '已准备';
       });
       _keepActiveItemVisible();
       _showDetectedDraftDialogIfNeeded();
@@ -490,7 +492,12 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
       _showMessage('缺少学员信息，无法保存草稿');
       return null;
     }
-    setState(() => _savingDraft = true);
+    setState(() {
+      _savingDraft = true;
+      if (!silent) {
+        _autoSaveText = '保存中...';
+      }
+    });
     try {
       final Pep3DraftDetail detail =
           await widget.client.saveDraft(token, _buildDraftPayload());
@@ -499,7 +506,9 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
       }
       setState(() {
         _draft = detail;
-        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
+        if (!silent) {
+          _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
+        }
       });
       if (!silent) {
         _showMessage('草稿已保存', tone: PadMessageTone.success);
