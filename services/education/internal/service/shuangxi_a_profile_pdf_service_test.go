@@ -125,6 +125,44 @@ func TestShuangxiAProfileSkillsAndScores(t *testing.T) {
 	if itemScores[1] != 2 || itemScores[2] != 3 {
 		t.Fatalf("item scores = %+v, want item 1=2 item 2=3", itemScores)
 	}
+	pages := shuangxiAProfileItemPages(data)
+	if len(pages) != 7 {
+		t.Fatalf("item profile pages = %d, want 7", len(pages))
+	}
+	totalItems := 0
+	for _, page := range pages {
+		totalItems += len(page.Items)
+	}
+	if totalItems != len(data.items) {
+		t.Fatalf("item profile page total items = %d, want %d", totalItems, len(data.items))
+	}
+	if pages[4].DomainName != "沟通" || len(pages[4].Items) != 56 {
+		t.Fatalf("communication page = %s/%d items, want 沟通/56", pages[4].DomainName, len(pages[4].Items))
+	}
+	if pages[6].DomainName != "社会技能" || len(pages[6].Items) != 48 {
+		t.Fatalf("social page = %s/%d items, want 社会技能/48", pages[6].DomainName, len(pages[6].Items))
+	}
+	var communicationExample string
+	for _, item := range pages[4].Items {
+		if item.Code == "5.2.4" {
+			communicationExample = item.Name
+			break
+		}
+	}
+	if communicationExample != "动词+名词短句反应" {
+		t.Fatalf("communication item 5.2.4 label = %q, want bracket text removed", communicationExample)
+	}
+	sensoryScoreH, sensoryItemRowH := shuangxiAProfileItemProfileHeights(pages[0].Items)
+	if sensoryScoreH != 300 || sensoryItemRowH != 112 {
+		t.Fatalf("sensory heights = score %.1f item %.1f, want 300/112", sensoryScoreH, sensoryItemRowH)
+	}
+	communicationScoreH, communicationItemRowH := shuangxiAProfileItemProfileHeights(pages[4].Items)
+	if communicationItemRowH <= 112 || communicationScoreH >= 300 {
+		t.Fatalf("communication heights = score %.1f item %.1f, want item row expanded on demand", communicationScoreH, communicationItemRowH)
+	}
+	if got := shuangxiAProfileSkillLabel("物体恒存性"); got != "恒存" {
+		t.Fatalf("skill label = %q, want 恒存", got)
+	}
 }
 
 func shuangxiAProfileTestResultJSON(t *testing.T, data shuangxiAStaticData) []byte {

@@ -3520,6 +3520,7 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
 const double _reportPreviewRasterDpi = 96;
 const double _erxinReportPreviewRasterDpi = 216;
 const double _shuangxiProfilePdfAspectRatio = 841.89 / 595.28;
+const int _shuangxiDevelopmentProfilePdfPageCount = 9;
 
 String _reportModuleInlineDescription(_ReportModuleOption option) {
   final String pages = option.pages.replaceAll(RegExp(r'\s+'), '');
@@ -5377,7 +5378,7 @@ class _ShuangxiReportPreviewDialogState
           'shuangxi-development-profile-pdf-${widget.record.id}-${widget.record.updatedTime}-${bytes.length}',
         ),
         bytes: bytes,
-        pageCount: 3,
+        pageCount: _shuangxiDevelopmentProfilePdfPageCount,
         maxPageWidth: 948,
         placeholderAspectRatio: _shuangxiProfilePdfAspectRatio,
       ),

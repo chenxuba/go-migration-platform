@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -69,12 +70,20 @@ type shuangxiAProfileItem struct {
 	SkillNo    int
 }
 
+type shuangxiAProfileItemPage struct {
+	DomainNo   int
+	DomainName string
+	Items      []shuangxiAProfileItem
+}
+
 var shuangxiAProfileColors = []shuangxiAProfileColor{
 	{Name: "红色", R: 220, G: 38, B: 38},
 	{Name: "蓝色", R: 37, G: 99, B: 235},
 	{Name: "绿色", R: 22, G: 163, B: 74},
 	{Name: "黑色", R: 17, G: 24, B: 39},
 }
+
+var shuangxiAProfileBracketTextPattern = regexp.MustCompile(`[（(][^（）()]*[）)]`)
 
 func (svc *Service) GenerateShuangxiADevelopmentProfilePDF(userID, recordID int64) (string, []byte, error) {
 	record, err := svc.GetShuangxiAAssessmentRecord(userID, recordID)
@@ -222,23 +231,16 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 			return err
 		}
 	}
-	if len(data.domains) > 0 {
-		domain := data.domains[0]
-		items := shuangxiAProfileItemsForDomain(data, domain.ScaleCode)
-		if len(items) > 0 {
-			domainNo := domain.DomainNo
-			if domainNo <= 0 {
-				domainNo = domain.SortNo
-			}
-			r.pdf.AddPage()
-			r.pdf.SetFillColor(255, 255, 255)
-			r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
-			if err := r.drawTitle(fmt.Sprintf("侧面图（三）%d.%s", domainNo, nonEmptyString(domain.ScaleName, domain.ScaleCode))); err != nil {
-				return err
-			}
-			if err := r.drawItemProfile(items, records); err != nil {
-				return err
-			}
+	for _, page := range shuangxiAProfileItemPages(data) {
+		r.pdf.AddPage()
+		r.pdf.SetFillColor(255, 255, 255)
+		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
+		title := fmt.Sprintf("侧面图（三）%d.%s", page.DomainNo, page.DomainName)
+		if err := r.drawTitle(title); err != nil {
+			return err
+		}
+		if err := r.drawItemProfile(page.Items, records); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -342,6 +344,7 @@ func shuangxiAProfileItemsForDomain(data shuangxiAStaticData, domainCode string)
 		if itemName == "" {
 			itemName = strings.TrimSpace(item.ItemTitle)
 		}
+		itemName = shuangxiAProfileItemLabelText(itemName, item.DomainCode)
 		items = append(items, shuangxiAProfileItem{
 			ItemNo:     item.ItemNo,
 			Code:       strings.TrimSpace(item.ItemCode),
@@ -361,6 +364,45 @@ func shuangxiAProfileItemsForDomain(data shuangxiAStaticData, domainCode string)
 		return items[i].ItemNo < items[j].ItemNo
 	})
 	return items
+}
+
+func shuangxiAProfileItemPages(data shuangxiAStaticData) []shuangxiAProfileItemPage {
+	pages := make([]shuangxiAProfileItemPage, 0, len(data.domains))
+	for domainIndex, domain := range data.domains {
+		items := shuangxiAProfileItemsForDomain(data, domain.ScaleCode)
+		if len(items) == 0 {
+			continue
+		}
+		domainNo := domain.DomainNo
+		if domainNo <= 0 {
+			domainNo = domain.SortNo
+		}
+		if domainNo <= 0 {
+			domainNo = domainIndex + 1
+		}
+		domainName := nonEmptyString(domain.ScaleName, domain.ScaleCode)
+		pages = append(pages, shuangxiAProfileItemPage{
+			DomainNo:   domainNo,
+			DomainName: domainName,
+			Items:      items,
+		})
+	}
+	return pages
+}
+
+func shuangxiAProfileItemLabelText(name, domainCode string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return name
+	}
+	stripped := strings.TrimSpace(shuangxiAProfileBracketTextPattern.ReplaceAllString(name, ""))
+	if stripped == "" {
+		return name
+	}
+	if strings.TrimSpace(domainCode) == "COMMUNICATION" || len([]rune(name)) > 14 {
+		return stripped
+	}
+	return name
 }
 
 func (r *shuangxiAProfilePDFRenderer) drawTitle(title string) error {
@@ -693,13 +735,12 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 		left      = 144.0
 		top       = 116.0
 		width     = 680.0
-		scoreH    = 300.0
-		itemRowH  = 112.0
 		skillRowH = 30.0
 	)
 	if len(items) == 0 {
 		return nil
 	}
+	scoreH, itemRowH := shuangxiAProfileItemProfileHeights(items)
 	colW := width / float64(len(items))
 	rowH := scoreH / 3
 	totalH := scoreH + itemRowH + skillRowH
@@ -725,7 +766,7 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 	r.setTextColor(0, 0, 0)
 	for col, item := range items {
 		cellX := left + float64(col)*colW
-		if err := r.drawSkillProfileVerticalLabel(cellX, top+scoreH, colW, itemRowH, item.Name); err != nil {
+		if err := r.drawItemProfileVerticalLabel(cellX, top+scoreH, colW, itemRowH, item.Name); err != nil {
 			return err
 		}
 	}
@@ -773,6 +814,28 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 	return nil
 }
 
+func shuangxiAProfileItemProfileHeights(items []shuangxiAProfileItem) (float64, float64) {
+	const (
+		scoreAndItemH = 412.0
+		baseItemRowH  = 112.0
+		maxItemRowH   = 172.0
+		labelStep     = 11.2
+		labelPad      = 10.0
+	)
+	maxLen := 0
+	for _, item := range items {
+		if length := len([]rune(strings.TrimSpace(item.Name))); length > maxLen {
+			maxLen = length
+		}
+	}
+	itemRowH := baseItemRowH
+	if maxLen > 0 {
+		needed := math.Ceil(float64(maxLen)*labelStep + labelPad)
+		itemRowH = math.Min(maxItemRowH, math.Max(baseItemRowH, needed))
+	}
+	return scoreAndItemH - itemRowH, itemRowH
+}
+
 func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height float64) error {
 	const (
 		leftX  = 20.0
@@ -788,10 +851,17 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height fl
 	for index, lines := range labels {
 		lineY := top + float64(index)*rowH
 		y := lineY + 10
+		step := 15.0
+		if len(lines) > 1 {
+			maxStep := (rowH - 14) / float64(len(lines)-1)
+			if maxStep > 0 {
+				step = math.Min(step, math.Max(12, maxStep))
+			}
+		}
 		r.setTextColor(0, 0, 0)
 		r.setFont(13.2)
 		for lineIndex, line := range lines {
-			if err := r.text(leftX, y+float64(lineIndex)*15, line); err != nil {
+			if err := r.text(leftX, y+float64(lineIndex)*step, line); err != nil {
 				return err
 			}
 		}
@@ -816,6 +886,26 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfileVerticalLabel(x, y, width,
 	}
 	r.setFont(fontSize)
 	startY := y + 6
+	for index, char := range runes {
+		if err := r.cell(x, startY+float64(index)*step, width, step, string(char), gopdf.Center|gopdf.Middle); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawItemProfileVerticalLabel(x, y, width, height float64, label string) error {
+	runes := []rune(strings.TrimSpace(label))
+	if len(runes) == 0 {
+		return nil
+	}
+	const fontSize = 10.2
+	step := 11.2
+	if float64(len(runes))*step > height-10 {
+		step = math.Max(8.8, (height-10)/float64(len(runes)))
+	}
+	r.setFont(fontSize)
+	startY := y + 5
 	for index, char := range runes {
 		if err := r.cell(x, startY+float64(index)*step, width, step, string(char), gopdf.Center|gopdf.Middle); err != nil {
 			return err
@@ -862,7 +952,7 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfileSkillRow(items []shuangxiAP
 		r.pdf.Line(x, y, x, y+height)
 		r.setFont(11.8)
 		r.setTextColor(0, 0, 0)
-		if err := r.cell(x, y+2, width, height-4, items[start].SkillName, gopdf.Center|gopdf.Middle); err != nil {
+		if err := r.cell(x, y+2, width, height-4, shuangxiAProfileSkillLabel(items[start].SkillName), gopdf.Center|gopdf.Middle); err != nil {
 			return err
 		}
 		start = end
@@ -1143,6 +1233,16 @@ func shuangxiAProfileDomainLabel(name string) string {
 		return "沟    通"
 	case "认知":
 		return "认    知"
+	default:
+		return name
+	}
+}
+
+func shuangxiAProfileSkillLabel(name string) string {
+	name = strings.TrimSpace(name)
+	switch name {
+	case "物体恒存性":
+		return "恒存"
 	default:
 		return name
 	}
