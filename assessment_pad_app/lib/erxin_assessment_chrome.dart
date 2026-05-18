@@ -61,13 +61,6 @@ class _Header extends StatelessWidget {
               compact: compact,
             ),
             _HeaderMeta(
-              label: compact ? '日期' : '测查日期',
-              value: args.assessmentDate.trim().isEmpty
-                  ? '-'
-                  : args.assessmentDate.trim(),
-              compact: compact,
-            ),
-            _HeaderMeta(
               label: '实足年龄',
               value:
                   args.studentAge.trim().isEmpty ? '-' : args.studentAge.trim(),
