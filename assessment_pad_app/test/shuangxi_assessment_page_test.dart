@@ -125,7 +125,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('Shuangxi auto next waits before advancing',
+  testWidgets('Shuangxi auto next waits briefly before advancing',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
       'auth_token': 'test-token',
@@ -157,10 +157,10 @@ void main() {
     await tester.pump();
     expect(find.text('1.1.1 视觉敏锐度'), findsAtLeastNWidgets(1));
 
-    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump(const Duration(milliseconds: 240));
     expect(find.text('1.1.1 视觉敏锐度'), findsAtLeastNWidgets(1));
 
-    await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump(const Duration(milliseconds: 120));
     await tester.pumpAndSettle();
     expect(find.text('1.1.2 视觉追视能力'), findsAtLeastNWidgets(1));
     expect(tester.takeException(), isNull);

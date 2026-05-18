@@ -56,6 +56,7 @@ class ShuangxiAssessmentPage extends StatefulWidget {
 
 class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   static const String _authTokenStorageKey = 'auth_token';
+  static const Duration _autoAdvanceDelay = Duration(milliseconds: 320);
 
   ShuangxiTemplateSummary _template = ShuangxiTemplateSummary.empty;
   ShuangxiAssessmentItem _currentItem = ShuangxiAssessmentItem.empty;
@@ -1032,7 +1033,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (next <= 0 || next == currentItemNo) {
       return;
     }
-    _autoAdvanceTimer = Timer(const Duration(milliseconds: 650), () {
+    _autoAdvanceTimer = Timer(_autoAdvanceDelay, () {
       _autoAdvanceTimer = null;
       if (!mounted || !_autoNext || _selectedItemNo != currentItemNo) {
         return;
