@@ -805,6 +805,13 @@ func shuangxiARawScoresByDomain(itemScores map[int]int) map[string]int {
 	if err != nil {
 		return nil
 	}
+	return shuangxiARawScoresByDomainWithData(data, itemScores)
+}
+
+func shuangxiARawScoresByDomainWithData(data shuangxiAStaticData, itemScores map[int]int) map[string]int {
+	if len(itemScores) == 0 {
+		return nil
+	}
 	itemDomain := make(map[int]string, len(data.items))
 	for _, item := range data.items {
 		itemDomain[item.ItemNo] = item.DomainCode

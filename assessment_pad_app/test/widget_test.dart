@@ -459,7 +459,9 @@ void main() {
     expect(find.text('双溪评估报告'), findsOneWidget);
     expect(find.text('发展侧面图'), findsOneWidget);
     expect(find.text('评量结果分析'), findsOneWidget);
-    expect(find.text('发展侧面图待开发'), findsOneWidget);
+    expect(shuangxiClient.downloadShuangxiDevelopmentProfilePdfCalls, 1);
+    await tester.pump();
+    expect(find.text('暂无发展侧面图PDF'), findsOneWidget);
 
     await tester.tap(find.text('评量结果分析'));
     await tester.pump();
@@ -8160,6 +8162,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   int inviteCompletedCalls = 0;
   int fetchAutismDevResultAnalysisCalls = 0;
   int saveAutismDevResultAnalysisCalls = 0;
+  int downloadShuangxiDevelopmentProfilePdfCalls = 0;
   AutismDevResultAnalysis? savedAutismDevResultAnalysis;
   ErxinReportInterpretation savedAutismDevReportInterpretation =
       ErxinReportInterpretation.empty;
@@ -8563,6 +8566,15 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     int id,
   ) async {
     return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+
+  @override
+  Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
+    String token,
+    int id,
+  ) async {
+    downloadShuangxiDevelopmentProfilePdfCalls += 1;
+    return Uint8List(0);
   }
 
   @override

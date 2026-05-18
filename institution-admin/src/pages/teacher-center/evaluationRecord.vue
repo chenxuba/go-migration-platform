@@ -294,7 +294,7 @@ const allColumns = ref([
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 300,
+    width: 240,
   },
 ])
 
@@ -2060,8 +2060,6 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
-                  <a :class="{ disabled: !canModifyAssessmentRecord(record) }" @click="confirmAssessmentRecordAction(record, 'edit')">修改</a>
-                  <a @click="confirmAssessmentRecordAction(record, 'reuse')">复用</a>
                   <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>

@@ -131,6 +131,12 @@ const String defaultAutismDevRecordReportInterpretationAiStreamPath =
   defaultValue:
       '/api/v1/assessments/autismdev/records/report/interpretation/ai/stream',
 );
+const String defaultShuangxiRecordDevelopmentProfilePdfPath =
+    String.fromEnvironment(
+  'SHUANGXI_RECORD_DEVELOPMENT_PROFILE_PDF_PATH',
+  defaultValue:
+      '/api/v1/assessments/shuangxi-a/records/development-profile/pdf',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -1091,6 +1097,11 @@ abstract interface class Pep3AssessmentClient {
     int id,
   );
 
+  Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
+    String token,
+    int id,
+  );
+
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(
     String token,
@@ -1173,6 +1184,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
         defaultAutismDevRecordReportInterpretationAiPath,
     this.autismDevRecordReportInterpretationAiStreamPath =
         defaultAutismDevRecordReportInterpretationAiStreamPath,
+    this.shuangxiRecordDevelopmentProfilePdfPath =
+        defaultShuangxiRecordDevelopmentProfilePdfPath,
   });
 
   final String educationBaseUrl;
@@ -1203,6 +1216,7 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String autismDevRecordReportInterpretationPath;
   final String autismDevRecordReportInterpretationAiPath;
   final String autismDevRecordReportInterpretationAiStreamPath;
+  final String shuangxiRecordDevelopmentProfilePdfPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1748,6 +1762,41 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
       throw Pep3ApiException(
         _messageFromPayload(await _decodeResponse(response.body)) ??
             '报告解读PDF加载失败',
+      );
+    }
+    return _normalizeReportPdfBytes(response.bodyBytes);
+  }
+
+  @override
+  Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(shuangxiRecordDevelopmentProfilePdfPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final http.Response response;
+    try {
+      response = await http.get(uri, headers: _headers(token)).timeout(
+            const Duration(seconds: 20),
+          );
+    } on TimeoutException {
+      throw const Pep3ApiException('双溪发展侧面图PDF响应超时，请检查网络');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接双溪发展侧面图PDF接口：$error');
+    }
+
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(response.body)) ??
+            '双溪发展侧面图PDF加载失败',
       );
     }
     return _normalizeReportPdfBytes(response.bodyBytes);

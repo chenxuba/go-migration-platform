@@ -463,7 +463,11 @@ class _AssessmentReportListScreenState
         barrierColor: Colors.black.withOpacity(.28),
         builder: (BuildContext dialogContext) {
           return PadDialogViewport(
-            child: _ShuangxiReportPreviewDialog(record: record),
+            child: _ShuangxiReportPreviewDialog(
+              record: record,
+              token: token,
+              client: widget.shuangxiRecordClient,
+            ),
           );
         },
       );
@@ -5247,9 +5251,15 @@ class _ErxinReportTabChip extends StatelessWidget {
 }
 
 class _ShuangxiReportPreviewDialog extends StatefulWidget {
-  const _ShuangxiReportPreviewDialog({required this.record});
+  const _ShuangxiReportPreviewDialog({
+    required this.record,
+    required this.token,
+    required this.client,
+  });
 
   final Pep3RecordSummary record;
+  final String token;
+  final Pep3AssessmentClient client;
 
   @override
   State<_ShuangxiReportPreviewDialog> createState() =>
@@ -5259,6 +5269,30 @@ class _ShuangxiReportPreviewDialog extends StatefulWidget {
 class _ShuangxiReportPreviewDialogState
     extends State<_ShuangxiReportPreviewDialog> {
   bool _showAnalysis = false;
+  Uint8List? _developmentProfilePdfBytes;
+  Future<Uint8List>? _developmentProfilePdfLoad;
+
+  @override
+  void initState() {
+    super.initState();
+    _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+  }
+
+  Future<Uint8List> _loadDevelopmentProfilePdf() async {
+    final Uint8List bytes = await widget.client
+        .downloadShuangxiDevelopmentProfilePdf(widget.token, widget.record.id);
+    if (mounted) {
+      _developmentProfilePdfBytes = bytes;
+    }
+    return bytes;
+  }
+
+  void _retryDevelopmentProfilePdf() {
+    setState(() {
+      _developmentProfilePdfBytes = null;
+      _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -5269,9 +5303,9 @@ class _ShuangxiReportPreviewDialogState
         child: Material(
           color: Colors.transparent,
           child: Container(
-            width: 980,
-            height: 654,
-            padding: const EdgeInsets.fromLTRB(22, 22, 22, 22),
+            width: 1008,
+            height: 704,
+            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(24),
@@ -5292,14 +5326,58 @@ class _ShuangxiReportPreviewDialogState
                 _buildTabBar(),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: _ShuangxiPendingReportPanel(
-                    title: _showAnalysis ? '评量结果分析' : '发展侧面图',
-                  ),
+                  child: _showAnalysis
+                      ? const _ShuangxiPendingReportPanel(title: '评量结果分析')
+                      : _buildDevelopmentProfileContent(),
                 ),
               ],
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildDevelopmentProfileContent() {
+    final Uint8List? cached = _developmentProfilePdfBytes;
+    if (cached != null) {
+      return _buildDevelopmentProfilePdf(cached);
+    }
+    return FutureBuilder<Uint8List>(
+      future: _developmentProfilePdfLoad,
+      builder: (BuildContext context, AsyncSnapshot<Uint8List> snapshot) {
+        if (snapshot.hasError) {
+          return _ReportPreviewErrorState(
+            message: '发展侧面图加载失败：${snapshot.error}',
+            onRetry: _retryDevelopmentProfilePdf,
+          );
+        }
+        if (!snapshot.hasData) {
+          return const _ReportPreviewLoadingState(message: '发展侧面图加载中...');
+        }
+        return _buildDevelopmentProfilePdf(snapshot.data!);
+      },
+    );
+  }
+
+  Widget _buildDevelopmentProfilePdf(Uint8List bytes) {
+    if (bytes.isEmpty) {
+      return const _ReportPreviewEmptyState(message: '暂无发展侧面图PDF');
+    }
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF8F3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: _LazyReportPdfPreview(
+        key: ValueKey<String>(
+          'shuangxi-development-profile-pdf-${widget.record.id}-${widget.record.updatedTime}-${bytes.length}',
+        ),
+        bytes: bytes,
+        pageCount: 1,
+        maxPageWidth: 948,
       ),
     );
   }
