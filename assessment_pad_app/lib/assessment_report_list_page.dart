@@ -5376,7 +5376,7 @@ class _ShuangxiReportPreviewDialogState
           'shuangxi-development-profile-pdf-${widget.record.id}-${widget.record.updatedTime}-${bytes.length}',
         ),
         bytes: bytes,
-        pageCount: 1,
+        pageCount: 2,
         maxPageWidth: 948,
       ),
     );

@@ -76,6 +76,45 @@ func TestShuangxiAProfileScoreYUsesThreeIntervalAxis(t *testing.T) {
 	}
 }
 
+func TestShuangxiAProfileSkillsAndScores(t *testing.T) {
+	dataDir, err := resolveShuangxiADataDir()
+	if err != nil {
+		t.Fatalf("resolve Shuangxi data dir: %v", err)
+	}
+	data, err := loadShuangxiAStaticDataFromFiles(dataDir)
+	if err != nil {
+		t.Fatalf("load Shuangxi data: %v", err)
+	}
+	skills := shuangxiAProfileSkills(data)
+	if len(skills) != 34 {
+		t.Fatalf("skills = %d, want 34", len(skills))
+	}
+	if skills[0].Code != "1.1" || skills[0].MaxRawScore != 24 {
+		t.Fatalf("first skill = %+v, want 1.1 max 24", skills[0])
+	}
+	if skills[len(skills)-1].Code != "7.8" || skills[len(skills)-1].MaxRawScore != 12 {
+		t.Fatalf("last skill = %+v, want 7.8 max 12", skills[len(skills)-1])
+	}
+	input, err := json.Marshal(shuangxiASavedInputSnapshot{
+		ItemScores: map[int]int{
+			1:  2,
+			2:  3,
+			22: 1,
+			23: 2,
+		},
+	})
+	if err != nil {
+		t.Fatalf("marshal input: %v", err)
+	}
+	got := shuangxiAProfileSkillScoreMap(data, model.AssessmentRecordDetailVO{InputJSON: input})
+	if got["1.1"] != 5 {
+		t.Fatalf("skill 1.1 score = %d, want 5", got["1.1"])
+	}
+	if got["2.1"] != 3 {
+		t.Fatalf("skill 2.1 score = %d, want 3", got["2.1"])
+	}
+}
+
 func shuangxiAProfileTestResultJSON(t *testing.T, data shuangxiAStaticData) []byte {
 	t.Helper()
 	rows := make([]shuangxiADomainScoreResult, 0, len(data.domains))

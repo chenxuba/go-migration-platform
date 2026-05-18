@@ -47,6 +47,16 @@ type shuangxiAProfileDomain struct {
 	MaxRawScore int
 }
 
+type shuangxiAProfileSkill struct {
+	Code        string
+	Name        string
+	DomainCode  string
+	DomainName  string
+	DomainNo    int
+	SkillNo     int
+	MaxRawScore int
+}
+
 var shuangxiAProfileColors = []shuangxiAProfileColor{
 	{Name: "红色", R: 220, G: 38, B: 38},
 	{Name: "蓝色", R: 37, G: 99, B: 235},
@@ -178,7 +188,7 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 	}
 	r.pdf.SetFillColor(255, 255, 255)
 	r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
-	if err := r.drawHeader(records); err != nil {
+	if err := r.drawHeader(records, "综合发展侧面图（一）"); err != nil {
 		return err
 	}
 	if err := r.drawScaleLabels(); err != nil {
@@ -188,6 +198,18 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 		return err
 	}
 	r.drawProfiles(data, domains, records)
+	skills := shuangxiAProfileSkills(data)
+	if len(skills) > 0 {
+		r.pdf.AddPage()
+		r.pdf.SetFillColor(255, 255, 255)
+		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
+		if err := r.drawTitle("综合发展侧面图（二）"); err != nil {
+			return err
+		}
+		if err := r.drawSkillProfile(skills, data, records); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -219,10 +241,58 @@ func shuangxiAProfileDomains(data shuangxiAStaticData) []shuangxiAProfileDomain 
 	return domains
 }
 
-func (r *shuangxiAProfilePDFRenderer) drawHeader(records []model.AssessmentRecordDetailVO) error {
+func shuangxiAProfileSkills(data shuangxiAStaticData) []shuangxiAProfileSkill {
+	skills := make([]shuangxiAProfileSkill, 0)
+	for domainIndex, domain := range data.domains {
+		domainCode := strings.TrimSpace(domain.ScaleCode)
+		if domainCode == "" {
+			continue
+		}
+		domainNo := domain.DomainNo
+		if domainNo <= 0 {
+			domainNo = domainIndex + 1
+		}
+		for skillIndex, skill := range domain.Skills {
+			code := strings.TrimSpace(skill.SkillCode)
+			if code == "" {
+				continue
+			}
+			skillNo := skill.SortNo
+			if skillNo <= 0 {
+				skillNo = len(skills) + skillIndex + 1
+			}
+			maxRawScore := skill.ItemCount * 3
+			if maxRawScore <= 0 {
+				maxRawScore = len(skill.ItemNumbers) * 3
+			}
+			skills = append(skills, shuangxiAProfileSkill{
+				Code:        code,
+				Name:        strings.TrimSpace(nonEmptyString(skill.SkillName, code)),
+				DomainCode:  domainCode,
+				DomainName:  strings.TrimSpace(nonEmptyString(domain.ScaleName, domainCode)),
+				DomainNo:    domainNo,
+				SkillNo:     skillNo,
+				MaxRawScore: maxRawScore,
+			})
+		}
+	}
+	sort.SliceStable(skills, func(i, j int) bool {
+		if skills[i].DomainNo != skills[j].DomainNo {
+			return skills[i].DomainNo < skills[j].DomainNo
+		}
+		return skills[i].SkillNo < skills[j].SkillNo
+	})
+	return skills
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawTitle(title string) error {
 	r.setTextColor(0, 0, 0)
 	r.setFont(27)
-	if err := r.cell(0, 34, shuangxiAProfilePDFPageWidth, 34, "综合发展侧面图（一）", gopdf.Center|gopdf.Middle); err != nil {
+	return r.cell(0, 34, shuangxiAProfilePDFPageWidth, 34, title, gopdf.Center|gopdf.Middle)
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawHeader(records []model.AssessmentRecordDetailVO, title string) error {
+	if err := r.drawTitle(title); err != nil {
 		return err
 	}
 	current := model.AssessmentRecordDetailVO{}
@@ -445,6 +515,173 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 	r.pdf.SetLineType("solid")
 }
 
+func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfileSkill, data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) error {
+	const (
+		left       = 164.0
+		top        = 116.0
+		width      = 644.0
+		scoreH     = 300.0
+		skillRowH  = 112.0
+		domainRowH = 30.0
+	)
+	if len(skills) == 0 {
+		return nil
+	}
+	colW := width / float64(len(skills))
+	rowH := scoreH / 3
+	totalH := scoreH + skillRowH + domainRowH
+	skillBottomY := top + scoreH + skillRowH
+
+	if err := r.drawSkillProfileScaleLabels(top, scoreH); err != nil {
+		return err
+	}
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.SetLineWidth(0.95)
+	r.pdf.RectFromUpperLeft(left, top, width, totalH)
+	for row := 1; row < 3; row++ {
+		y := top + float64(row)*rowH
+		r.pdf.Line(left, y, left+width, y)
+	}
+	r.pdf.Line(left, top+scoreH, left+width, top+scoreH)
+	r.pdf.Line(left, skillBottomY, left+width, skillBottomY)
+	for col := 1; col < len(skills); col++ {
+		x := left + float64(col)*colW
+		r.pdf.Line(x, top, x, skillBottomY)
+	}
+
+	r.setTextColor(0, 0, 0)
+	for col, skill := range skills {
+		cellX := left + float64(col)*colW
+		r.setFont(8.2)
+		for level := 3; level >= 1; level-- {
+			value := int(math.Round(float64(skill.MaxRawScore) * float64(level) / 3))
+			cellY := top + float64(3-level)*rowH
+			if err := r.cell(cellX, cellY+2, colW, 12, fmt.Sprintf("%d", value), gopdf.Center|gopdf.Top); err != nil {
+				return err
+			}
+		}
+		if err := r.drawSkillProfileVerticalLabel(cellX, top+scoreH, colW, skillRowH, skill.Name); err != nil {
+			return err
+		}
+	}
+	if err := r.drawSkillProfileDomainRow(skills, left, skillBottomY, colW, domainRowH); err != nil {
+		return err
+	}
+
+	avoidRects := shuangxiAProfileColumnBaseScoreRects(len(skills), left, top, width, scoreH, 18, 14)
+	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: scoreH}
+	for recordIndex, record := range records {
+		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
+		scoreBySkill := shuangxiAProfileSkillScoreMap(data, record)
+		if len(scoreBySkill) == 0 {
+			continue
+		}
+		points := make([]shuangxiAProfilePoint, 0, len(skills))
+		for col, skill := range skills {
+			raw, ok := scoreBySkill[skill.Code]
+			if !ok || skill.MaxRawScore <= 0 {
+				continue
+			}
+			points = append(points, shuangxiAProfilePoint{
+				X:     left + float64(col)*colW + colW/2,
+				Y:     shuangxiAProfileScoreY(raw, skill.MaxRawScore, top, rowH),
+				Score: raw,
+			})
+		}
+		if len(points) == 0 {
+			continue
+		}
+		r.pdf.SetLineType("solid")
+		r.pdf.SetLineWidth(1.2)
+		r.pdf.SetStrokeColor(color.R, color.G, color.B)
+		for index := 1; index < len(points); index++ {
+			r.pdf.Line(points[index-1].X, points[index-1].Y, points[index].X, points[index].Y)
+		}
+		for _, point := range points {
+			shuangxiAProfileDrawDot(r.pdf, point, 2.45, color)
+			r.drawProfilePointScoreSmall(point, color, avoidRects, chartRect)
+		}
+	}
+	r.pdf.SetStrokeColor(0, 0, 0)
+	r.pdf.SetLineWidth(0.95)
+	r.pdf.SetLineType("solid")
+	return nil
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height float64) error {
+	const (
+		leftX  = 20.0
+		scoreX = 116.0
+	)
+	rowH := height / 3
+	labels := [][]string{
+		{"已发展出适应环", "境需要之能力"},
+		{"已发展较多能力，", "只需重点协助，", "便能适应环境之", "需要"},
+		{"仅发展些微能力，", "需要特别协助，", "才能适应环境之", "需要"},
+		{"尚未开始发展，", "无法适应环境之", "需要"},
+	}
+	for index, lines := range labels {
+		lineY := top + float64(index)*rowH
+		y := lineY + 10
+		r.setTextColor(0, 0, 0)
+		r.setFont(13.2)
+		for lineIndex, line := range lines {
+			if err := r.text(leftX, y+float64(lineIndex)*15, line); err != nil {
+				return err
+			}
+		}
+		r.setFont(13.5)
+		if err := r.cell(scoreX, lineY-3, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawSkillProfileVerticalLabel(x, y, width, height float64, label string) error {
+	runes := []rune(strings.TrimSpace(label))
+	if len(runes) == 0 {
+		return nil
+	}
+	fontSize := 10.2
+	step := 12.0
+	if float64(len(runes))*step > height-8 {
+		step = math.Max(8.8, (height-8)/float64(len(runes)))
+		fontSize = math.Min(fontSize, step*.86)
+	}
+	r.setFont(fontSize)
+	startY := y + 6
+	for index, char := range runes {
+		if err := r.cell(x, startY+float64(index)*step, width, step, string(char), gopdf.Center|gopdf.Middle); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (r *shuangxiAProfilePDFRenderer) drawSkillProfileDomainRow(skills []shuangxiAProfileSkill, left, y, colW, height float64) error {
+	if len(skills) == 0 {
+		return nil
+	}
+	start := 0
+	for start < len(skills) {
+		end := start + 1
+		for end < len(skills) && skills[end].DomainCode == skills[start].DomainCode {
+			end++
+		}
+		x := left + float64(start)*colW
+		width := float64(end-start) * colW
+		r.pdf.Line(x, y, x, y+height)
+		r.setFont(11.8)
+		if err := r.cell(x, y+2, width, height-4, shuangxiAProfileDomainLabel(skills[start].DomainName), gopdf.Center|gopdf.Middle); err != nil {
+			return err
+		}
+		start = end
+	}
+	r.pdf.Line(left+float64(len(skills))*colW, y, left+float64(len(skills))*colW, y+height)
+	return nil
+}
+
 func shuangxiAProfileScoreY(rawScore, maxRawScore int, top, rowH float64) float64 {
 	if maxRawScore <= 0 {
 		return top + rowH*3
@@ -457,18 +694,25 @@ func shuangxiAProfileBaseScoreRects(domains []shuangxiAProfileDomain, left, top,
 	if len(domains) == 0 {
 		return nil
 	}
-	colW := width / float64(len(domains))
+	return shuangxiAProfileColumnBaseScoreRects(len(domains), left, top, width, height, 56, 22)
+}
+
+func shuangxiAProfileColumnBaseScoreRects(columnCount int, left, top, width, height, rectWidth, rectHeight float64) []shuangxiAProfileRect {
+	if columnCount <= 0 {
+		return nil
+	}
+	colW := width / float64(columnCount)
 	rowH := height / 3
-	rects := make([]shuangxiAProfileRect, 0, len(domains)*3)
-	for col := range domains {
+	rects := make([]shuangxiAProfileRect, 0, columnCount*3)
+	for col := 0; col < columnCount; col++ {
 		centerX := left + float64(col)*colW + colW/2
 		for level := 3; level >= 1; level-- {
 			cellY := top + float64(3-level)*rowH
 			rects = append(rects, shuangxiAProfileRect{
-				X: centerX - 28,
+				X: centerX - rectWidth/2,
 				Y: cellY,
-				W: 56,
-				H: 22,
+				W: rectWidth,
+				H: rectHeight,
 			})
 		}
 	}
@@ -491,14 +735,33 @@ func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfi
 	r.setTextColor(0, 0, 0)
 }
 
+func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiAProfilePoint, color shuangxiAProfileColor, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) {
+	r.setFont(8.8)
+	r.setTextColor(color.R, color.G, color.B)
+	value := fmt.Sprintf("%d", point.Score)
+	textWidth, err := r.pdf.MeasureTextWidth(value)
+	if err != nil {
+		textWidth = 10
+	}
+	labelWidth := math.Max(12, textWidth+3)
+	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 11, avoidRects, chartRect, 13, 4, 5)
+	_ = r.cell(labelRect.X-0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	_ = r.cell(labelRect.X+0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
+	r.setTextColor(0, 0, 0)
+}
+
 func shuangxiAProfilePointScoreRect(point shuangxiAProfilePoint, width, height float64, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
+	return shuangxiAProfilePointScoreRectWithOffsets(point, width, height, avoidRects, chartRect, 23, 7, 7)
+}
+
+func shuangxiAProfilePointScoreRectWithOffsets(point shuangxiAProfilePoint, width, height float64, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect, aboveOffset, belowOffset, sideOffset float64) shuangxiAProfileRect {
 	candidates := []shuangxiAProfileRect{
-		{X: point.X - width/2, Y: point.Y - 23, W: width, H: height},
-		{X: point.X - width/2, Y: point.Y + 7, W: width, H: height},
-		{X: point.X + 7, Y: point.Y - 20, W: width, H: height},
-		{X: point.X - width - 7, Y: point.Y - 20, W: width, H: height},
-		{X: point.X + 7, Y: point.Y - 8, W: width, H: height},
-		{X: point.X - width - 7, Y: point.Y - 8, W: width, H: height},
+		{X: point.X - width/2, Y: point.Y - aboveOffset, W: width, H: height},
+		{X: point.X - width/2, Y: point.Y + belowOffset, W: width, H: height},
+		{X: point.X + sideOffset, Y: point.Y - aboveOffset + 3, W: width, H: height},
+		{X: point.X - width - sideOffset, Y: point.Y - aboveOffset + 3, W: width, H: height},
+		{X: point.X + sideOffset, Y: point.Y - height/2, W: width, H: height},
+		{X: point.X - width - sideOffset, Y: point.Y - height/2, W: width, H: height},
 	}
 	for _, candidate := range candidates {
 		candidate = shuangxiAProfileClampRectToChart(candidate, chartRect)
@@ -562,6 +825,29 @@ func shuangxiAProfileDomainScoreMap(data shuangxiAStaticData, record model.Asses
 		return out
 	}
 	return shuangxiARawScoresByDomainWithData(data, itemScores)
+}
+
+func shuangxiAProfileSkillScoreMap(data shuangxiAStaticData, record model.AssessmentRecordDetailVO) map[string]int {
+	itemScores, err := decodeSavedShuangxiAInputScores(record.InputJSON)
+	if err != nil || len(itemScores) == 0 {
+		return nil
+	}
+	itemSkill := make(map[int]string, len(data.items))
+	for _, item := range data.items {
+		itemSkill[item.ItemNo] = strings.TrimSpace(item.SkillCode)
+	}
+	out := make(map[string]int)
+	for itemNo, itemScore := range itemScores {
+		skillCode := itemSkill[itemNo]
+		if skillCode == "" {
+			continue
+		}
+		out[skillCode] += itemScore
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func shuangxiAProfileDrawDot(pdf *gopdf.GoPdf, point shuangxiAProfilePoint, radius float64, color shuangxiAProfileColor) {
