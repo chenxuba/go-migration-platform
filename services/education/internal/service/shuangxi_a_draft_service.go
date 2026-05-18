@@ -245,10 +245,15 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
+	data, err := svc.loadShuangxiAStaticData(context.Background())
+	if err != nil {
+		return model.PEP3AssessmentDraftSubmitVO{}, err
+	}
+	itemScores = fillShuangxiAMissingItemScoresWithZero(data, itemScores)
 	if len(itemScores) == 0 {
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("draft item scores are required before submit")
 	}
-	progress, err := buildShuangxiAAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores)
+	progress, err := buildShuangxiAAssessmentDraftProgressWithData(data, draft.BirthDate, draft.AssessmentDate, itemScores)
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
@@ -258,6 +263,10 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 		}
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("草稿尚未完成，请补充评估项目后再提交")
 	}
+	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores)
+	if err != nil {
+		return model.PEP3AssessmentDraftSubmitVO{}, err
+	}
 	record, err := svc.CreateShuangxiAAssessmentRecord(userID, ShuangxiAAssessmentRecordSaveInput{
 		StudentID:      draft.StudentID,
 		StudentName:    draft.StudentName,
@@ -266,7 +275,7 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 		BirthDate:      *draft.BirthDate,
 		AssessmentDate: *draft.AssessmentDate,
 		ItemScores:     itemScores,
-		InputSnapshot:  json.RawMessage(draft.InputJSON),
+		InputSnapshot:  inputSnapshot,
 	})
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
@@ -539,6 +548,24 @@ func decodeSavedShuangxiAInputScores(raw json.RawMessage) (map[int]int, error) {
 		}
 	}
 	return out, nil
+}
+
+func fillShuangxiAMissingItemScoresWithZero(data shuangxiAStaticData, itemScores map[int]int) map[int]int {
+	out := make(map[int]int, len(data.items)+len(itemScores))
+	for itemNo, score := range itemScores {
+		if itemNo > 0 {
+			out[itemNo] = score
+		}
+	}
+	for _, item := range data.items {
+		if item.ItemNo <= 0 {
+			continue
+		}
+		if _, ok := out[item.ItemNo]; !ok {
+			out[item.ItemNo] = 0
+		}
+	}
+	return out
 }
 
 func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]int) (any, error) {

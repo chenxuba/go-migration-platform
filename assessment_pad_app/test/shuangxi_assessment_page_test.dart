@@ -19,12 +19,14 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: PadViewport(
             child: ShuangxiAssessmentPage(
-              client: const _FakeShuangxiAssessmentClient(),
+              client: client,
               onBack: () {},
             ),
           ),
@@ -53,12 +55,14 @@ void main() {
       tester.view.resetDevicePixelRatio();
     });
 
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient();
     await tester.pumpWidget(
       MaterialApp(
         home: Scaffold(
           body: PadViewport(
             child: ShuangxiAssessmentPage(
-              client: const _FakeShuangxiAssessmentClient(),
+              client: client,
               onBack: () {},
             ),
           ),
@@ -79,10 +83,90 @@ void main() {
     expect(find.text('1.1.2 视觉追视能力'), findsAtLeastNWidgets(1));
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('Shuangxi submit defaults missing scores to zero',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client =
+        _FakeShuangxiAssessmentClient();
+    bool backed = false;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              args: const ShuangxiAssessmentLaunchArgs(
+                studentId: 1,
+                studentName: '小明',
+                assessmentDate: '2026-05-18',
+                examinerName: '陈老师',
+              ),
+              onBack: () => backed = true,
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('0分').last);
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('提交记录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('未评分题将按 0 分提交'), findsOneWidget);
+    expect(find.text('按 0 分提交'), findsOneWidget);
+
+    final ButtonStyleButton confirmButton = tester.widget<ButtonStyleButton>(
+      find.byKey(
+        const ValueKey<String>('shuangxi-submit-zero-confirm-button'),
+      ),
+    );
+    confirmButton.onPressed!();
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 700));
+    await tester.pumpAndSettle();
+
+    expect(client.saveDraftCount, greaterThan(0));
+    expect(client.submitDraftCount, 1);
+    expect(backed, isTrue);
+
+    final Map<String, dynamic>? payload = client.lastSavedDraftPayload;
+    expect(payload, isNotNull);
+    final List<dynamic> itemScoreList =
+        (payload!['itemScoreList'] as List<dynamic>? ?? <dynamic>[]);
+    expect(itemScoreList.length, 209);
+    final Map<int, int> scoresByItem = <int, int>{};
+    for (final dynamic raw in itemScoreList) {
+      final Map<String, dynamic> item = Map<String, dynamic>.from(raw as Map);
+      scoresByItem[item['itemNo'] as int] = item['score'] as int;
+    }
+    expect(scoresByItem.length, 209);
+    expect(scoresByItem[1], 0);
+    expect(scoresByItem[2], 0);
+    expect(scoresByItem[209], 0);
+    expect(tester.takeException(), isNull);
+  });
 }
 
 class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
-  const _FakeShuangxiAssessmentClient();
+  _FakeShuangxiAssessmentClient();
+
+  Map<String, dynamic>? lastSavedDraftPayload;
+  int saveDraftCount = 0;
+  int submitDraftCount = 0;
 
   @override
   Future<ShuangxiTemplateSummary> fetchTemplateSummary(String token) async {
@@ -249,6 +333,8 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     String token,
     Map<String, dynamic> payload,
   ) async {
+    saveDraftCount += 1;
+    lastSavedDraftPayload = Map<String, dynamic>.from(payload);
     return _draftDetailFromPayload(payload, id: 101);
   }
 
@@ -285,7 +371,9 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   }
 
   @override
-  Future<void> submitDraft(String token, int draftId) async {}
+  Future<void> submitDraft(String token, int draftId) async {
+    submitDraftCount += 1;
+  }
 
   ShuangxiDraftDetail _draftDetailFromPayload(
     Map<String, dynamic> payload, {

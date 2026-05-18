@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestLoadShuangxiAStaticDataFromFiles(t *testing.T) {
@@ -75,5 +76,37 @@ func TestBuildShuangxiAAssessmentFormTemplateSummary(t *testing.T) {
 	}
 	if firstItem.ItemCode != "1.1.1" || len(firstItem.ScoreOptions) != 4 {
 		t.Fatalf("unexpected first item: %+v", firstItem)
+	}
+}
+
+func TestFillShuangxiAMissingItemScoresWithZeroCompletesAllItems(t *testing.T) {
+	dataDir, err := resolveShuangxiADataDir()
+	if err != nil {
+		t.Fatalf("resolveShuangxiADataDir returned error: %v", err)
+	}
+	data, err := loadShuangxiAStaticDataFromFiles(dataDir)
+	if err != nil {
+		t.Fatalf("load Shuangxi A data: %v", err)
+	}
+
+	filled := fillShuangxiAMissingItemScoresWithZero(data, map[int]int{1: 2})
+	if len(filled) != 209 {
+		t.Fatalf("filled item score count = %d, want 209", len(filled))
+	}
+	if filled[1] != 2 {
+		t.Fatalf("item 1 score = %d, want preserved score 2", filled[1])
+	}
+	if filled[2] != 0 || filled[209] != 0 {
+		t.Fatalf("missing item scores were not defaulted to zero: item2=%d item209=%d", filled[2], filled[209])
+	}
+
+	birthDate := time.Date(2018, 1, 1, 0, 0, 0, 0, time.UTC)
+	assessmentDate := time.Date(2026, 5, 18, 0, 0, 0, 0, time.UTC)
+	progress, err := buildShuangxiAAssessmentDraftProgressWithData(data, &birthDate, &assessmentDate, filled)
+	if err != nil {
+		t.Fatalf("build progress returned error: %v", err)
+	}
+	if !progress.Complete || progress.MissingItemCount != 0 || progress.AnsweredItemCount != 209 {
+		t.Fatalf("unexpected completed progress: %+v", progress)
 	}
 }

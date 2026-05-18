@@ -660,16 +660,10 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (_submitting) {
       return;
     }
-    final int missing = math.max(0, _totalCount - _answeredCount);
-    if (missing > 0) {
-      _showMessage('还有 $missing 道题未评分，完成后再提交记录');
-      return;
-    }
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再提交记录');
       return;
     }
-    setState(() => _submitting = true);
     try {
       final Future<void>? itemSave = _currentItemSaveFuture;
       if (itemSave != null) {
@@ -679,11 +673,30 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       if (draftSave != null) {
         await draftSave;
       }
+      if (!mounted) {
+        return;
+      }
+      final int missing = math.max(0, _totalCount - _answeredCount);
+      if (missing > 0) {
+        final bool confirmed = await _confirmSubmitWithZeroScores(missing);
+        if (!mounted || !confirmed) {
+          return;
+        }
+        setState(() {
+          _fillMissingScoresWithZero();
+        });
+      }
+      setState(() => _submitting = true);
       final ShuangxiDraftDetail? detail = await _saveDraft(silent: true);
       if (!mounted) {
         return;
       }
-      final int draftId = detail?.id ?? _draftId;
+      if (detail == null) {
+        setState(() => _submitting = false);
+        _showMessage('保存草稿失败，请稍后重试');
+        return;
+      }
+      final int draftId = detail.id > 0 ? detail.id : _draftId;
       if (draftId <= 0) {
         setState(() => _submitting = false);
         _showMessage('请先保存草稿，再提交正式记录');
@@ -705,6 +718,46 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       }
       setState(() => _submitting = false);
       _showMessage('提交记录失败：$error');
+    }
+  }
+
+  Future<bool> _confirmSubmitWithZeroScores(int missingCount) async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      barrierColor: Colors.black.withOpacity(.32),
+      builder: (BuildContext dialogContext) {
+        return PopScope(
+          canPop: false,
+          child: PadDialogViewport(
+            child: _SubmitZeroScoreDialog(
+              missingCount: missingCount,
+              totalCount: _totalCount,
+              answeredCount: _answeredCount,
+              onCancel: () => Navigator.of(dialogContext).pop(false),
+              onConfirm: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ),
+        );
+      },
+    );
+    return confirmed ?? false;
+  }
+
+  void _fillMissingScoresWithZero() {
+    final Set<int> itemNos = <int>{};
+    for (final ShuangxiItemSummary item in _template.allItems) {
+      if (item.itemNo > 0) {
+        itemNos.add(item.itemNo);
+      }
+    }
+    if (itemNos.length < _totalCount) {
+      for (int itemNo = 1; itemNo <= _totalCount; itemNo += 1) {
+        itemNos.add(itemNo);
+      }
+    }
+    for (final int itemNo in itemNos) {
+      _itemScores.putIfAbsent(itemNo, () => 0);
     }
   }
 
@@ -1087,6 +1140,39 @@ class _TopBar extends StatelessWidget {
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
           final bool compact = constraints.maxWidth < 1120;
+          final List<Widget> headerChildren = <Widget>[
+            Text(
+              '$title 测评工作台',
+              maxLines: 1,
+              softWrap: false,
+              style: const TextStyle(
+                color: _ShuangxiColors.ink,
+                fontSize: 23,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            _HeaderMeta(
+              label: '儿童',
+              value: student,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '年龄',
+              value: age,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: compact ? '日期' : '测评日期',
+              value: date,
+              compact: compact,
+            ),
+            _HeaderMeta(
+              label: '施测者',
+              value: examiner,
+              compact: compact,
+            ),
+          ];
           return Row(
             children: <Widget>[
               _IconButtonBox(
@@ -1095,41 +1181,16 @@ class _TopBar extends StatelessWidget {
               ),
               const SizedBox(width: 8),
               Expanded(
-                child: Row(
-                  children: <Widget>[
-                    Text(
-                      '$title 测评工作台',
-                      maxLines: 1,
-                      softWrap: false,
-                      style: const TextStyle(
-                        color: _ShuangxiColors.ink,
-                        fontSize: 23,
-                        height: 1,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
-                    _HeaderMeta(
-                      label: '儿童',
-                      value: student,
-                      compact: compact,
-                    ),
-                    _HeaderMeta(
-                      label: '年龄',
-                      value: age,
-                      compact: compact,
-                    ),
-                    _HeaderMeta(
-                      label: compact ? '日期' : '测评日期',
-                      value: date,
-                      compact: compact,
-                    ),
-                    _HeaderMeta(
-                      label: '施测者',
-                      value: examiner,
-                      compact: compact,
-                    ),
-                  ],
-                ),
+                child: compact
+                    ? SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        physics: const ClampingScrollPhysics(),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: headerChildren,
+                        ),
+                      )
+                    : Row(children: headerChildren),
               ),
               if (!compact) ...<Widget>[
                 const Icon(
@@ -1297,6 +1358,218 @@ class _TopActionButton extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+class _SubmitZeroScoreDialog extends StatelessWidget {
+  const _SubmitZeroScoreDialog({
+    required this.missingCount,
+    required this.totalCount,
+    required this.answeredCount,
+    required this.onCancel,
+    required this.onConfirm,
+  });
+
+  final int missingCount;
+  final int totalCount;
+  final int answeredCount;
+  final VoidCallback onCancel;
+  final VoidCallback onConfirm;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      insetPadding: const EdgeInsets.symmetric(horizontal: 32),
+      backgroundColor: Colors.transparent,
+      child: Container(
+        width: 548,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(14),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x33000000),
+              blurRadius: 30,
+              offset: Offset(0, 18),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(22, 20, 22, 18),
+              child: Row(
+                children: <Widget>[
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEEE3),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.priority_high_rounded,
+                      color: _ShuangxiColors.orange,
+                      size: 26,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  const Expanded(
+                    child: Text(
+                      '未评分题将按 0 分提交',
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color: _ShuangxiColors.ink,
+                        fontSize: 19,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ShuangxiColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 26, 30, 26),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Text(
+                    '当前还有 $missingCount 道题未评分。确认提交后，系统会把这些题目默认记录为 0 分，并生成正式测评记录。',
+                    style: const TextStyle(
+                      color: _ShuangxiColors.ink,
+                      fontSize: 15,
+                      height: 1.35,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  const SizedBox(height: 18),
+                  Container(
+                    padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFFBF7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: _ShuangxiColors.line),
+                    ),
+                    child: Column(
+                      children: <Widget>[
+                        _SubmitZeroScoreMetaRow(
+                          label: '已评分题',
+                          value: '$answeredCount / $totalCount',
+                        ),
+                        const SizedBox(height: 13),
+                        _SubmitZeroScoreMetaRow(
+                          label: '未评分题',
+                          value: '$missingCount 道',
+                        ),
+                        const SizedBox(height: 13),
+                        const _SubmitZeroScoreMetaRow(
+                          label: '默认评分',
+                          value: '0 分',
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(height: 1, color: _ShuangxiColors.lineSoft),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(30, 18, 30, 20),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  OutlinedButton.icon(
+                    onPressed: onCancel,
+                    icon: const Icon(Icons.edit_note_rounded, size: 18),
+                    label: const Text('继续作答'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: _ShuangxiColors.body,
+                      side: const BorderSide(color: _ShuangxiColors.line),
+                      minimumSize: const Size(118, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  FilledButton.icon(
+                    key: const ValueKey<String>(
+                      'shuangxi-submit-zero-confirm-button',
+                    ),
+                    onPressed: onConfirm,
+                    icon: const Icon(Icons.check_circle_outline_rounded,
+                        size: 18),
+                    label: const Text('按 0 分提交'),
+                    style: FilledButton.styleFrom(
+                      backgroundColor: _ShuangxiColors.orange,
+                      foregroundColor: Colors.white,
+                      minimumSize: const Size(136, 40),
+                      padding: const EdgeInsets.symmetric(horizontal: 18),
+                      textStyle: const TextStyle(
+                        fontSize: 14,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SubmitZeroScoreMetaRow extends StatelessWidget {
+  const _SubmitZeroScoreMetaRow({
+    required this.label,
+    required this.value,
+  });
+
+  final String label;
+  final String value;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: _ShuangxiColors.body,
+            fontSize: 13,
+            height: 1,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const Spacer(),
+        Text(
+          value,
+          style: const TextStyle(
+            color: _ShuangxiColors.ink,
+            fontSize: 14,
+            height: 1,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -2032,7 +2305,7 @@ class _ProgressPanel extends StatelessWidget {
           Row(
             children: <Widget>[
               _ProgressRing(percent: progressPercent),
-              const SizedBox(width: 14),
+              const SizedBox(width: 9),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -2132,6 +2405,8 @@ class _SummaryRow extends StatelessWidget {
           Expanded(
             child: Text(
               label,
+              maxLines: 1,
+              softWrap: false,
               style: const TextStyle(
                 color: _ShuangxiColors.body,
                 fontSize: 12,
@@ -2141,6 +2416,8 @@ class _SummaryRow extends StatelessWidget {
           ),
           Text(
             value,
+            maxLines: 1,
+            softWrap: false,
             style: TextStyle(
               color: danger ? const Color(0xFFE04438) : _ShuangxiColors.orange,
               fontSize: 14,
