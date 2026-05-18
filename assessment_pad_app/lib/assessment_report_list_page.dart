@@ -5271,6 +5271,9 @@ class _ShuangxiReportPreviewDialog extends StatefulWidget {
 class _ShuangxiReportPreviewDialogState
     extends State<_ShuangxiReportPreviewDialog> {
   bool _showAnalysis = false;
+  bool _printing = false;
+  String _printLoadingText = '';
+  String _printErrorMessage = '';
   Uint8List? _developmentProfilePdfBytes;
   Future<Uint8List>? _developmentProfilePdfLoad;
 
@@ -5293,6 +5296,74 @@ class _ShuangxiReportPreviewDialogState
     setState(() {
       _developmentProfilePdfBytes = null;
       _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+      _printErrorMessage = '';
+    });
+  }
+
+  Future<void> _printDevelopmentProfilePdf() async {
+    if (_printing) {
+      return;
+    }
+    setState(() {
+      _printing = true;
+      _printLoadingText = '正在生成打印文件...';
+      _printErrorMessage = '';
+    });
+    Uint8List? bytes = _developmentProfilePdfBytes;
+    try {
+      if (bytes == null || bytes.isEmpty) {
+        bytes =
+            await (_developmentProfilePdfLoad ?? _loadDevelopmentProfilePdf());
+      }
+      if (!mounted) {
+        return;
+      }
+      if (bytes.isEmpty) {
+        setState(() {
+          _printErrorMessage = '暂无可打印的发展侧面图PDF';
+        });
+        return;
+      }
+      setState(() {
+        _printLoadingText = '正在打开打印预览...';
+      });
+      bool printPreviewRequested = false;
+      await Printing.layoutPdf(
+        name: _shuangxiPrintFileName(widget.record, '发展侧面图'),
+        format: PdfPageFormat.a4.landscape.copyWith(
+          marginLeft: 0,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+        ),
+        dynamicLayout: false,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes!;
+        },
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _printErrorMessage = '发展侧面图打印失败：$error';
+      });
+    } finally {
+      _finishPrintLoading();
+    }
+  }
+
+  void _finishPrintLoading() {
+    if (!mounted || !_printing) {
+      return;
+    }
+    setState(() {
+      _printing = false;
+      _printLoadingText = '';
     });
   }
 
@@ -5301,41 +5372,53 @@ class _ShuangxiReportPreviewDialogState
     final Pep3RecordSummary record = widget.record;
     return PopScope(
       canPop: false,
-      child: Center(
-        child: Material(
-          color: Colors.transparent,
-          child: Container(
-            width: 1008,
-            height: 704,
-            padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(24),
-              border: Border.all(color: _ReportTheme.line),
-              boxShadow: const <BoxShadow>[
-                BoxShadow(
-                  color: Color(0x24000000),
-                  blurRadius: 34,
-                  offset: Offset(0, 18),
+      child: Stack(
+        children: <Widget>[
+          Center(
+            child: Material(
+              color: Colors.transparent,
+              child: Container(
+                width: 1008,
+                height: 704,
+                padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _ReportTheme.line),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x24000000),
+                      blurRadius: 34,
+                      offset: Offset(0, 18),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                _buildHeader(context, record),
-                const SizedBox(height: 14),
-                _buildTabBar(),
-                const SizedBox(height: 12),
-                Expanded(
-                  child: _showAnalysis
-                      ? const _ShuangxiPendingReportPanel(title: '评量结果分析')
-                      : _buildDevelopmentProfileContent(),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    _buildHeader(context, record),
+                    const SizedBox(height: 14),
+                    _buildTabBar(),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: _showAnalysis
+                          ? const _ShuangxiPendingReportPanel(title: '评量结果分析')
+                          : _buildDevelopmentProfileContent(),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
-        ),
+          if (_printing)
+            Positioned.fill(
+              child: _ReportPrintLoadingOverlay(
+                message: _printLoadingText.trim().isEmpty
+                    ? '正在准备打印...'
+                    : _printLoadingText,
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -5366,7 +5449,7 @@ class _ShuangxiReportPreviewDialogState
     if (bytes.isEmpty) {
       return const _ReportPreviewEmptyState(message: '暂无发展侧面图PDF');
     }
-    return Container(
+    final Widget preview = Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDF8F3),
         borderRadius: BorderRadius.circular(18),
@@ -5382,6 +5465,16 @@ class _ShuangxiReportPreviewDialogState
         maxPageWidth: 948,
         placeholderAspectRatio: _shuangxiProfilePdfAspectRatio,
       ),
+    );
+    if (_printErrorMessage.trim().isEmpty) {
+      return preview;
+    }
+    return Column(
+      children: <Widget>[
+        _ShuangxiPrintErrorBanner(message: _printErrorMessage),
+        const SizedBox(height: 10),
+        Expanded(child: preview),
+      ],
     );
   }
 
@@ -5464,7 +5557,46 @@ class _ShuangxiReportPreviewDialogState
             active: _showAnalysis,
             onTap: () => setState(() => _showAnalysis = true),
           ),
+          const Spacer(),
+          const SizedBox(width: 12),
+          _ToolbarButton(
+            label: _printing ? '打印中' : '打印',
+            icon: Icons.print_rounded,
+            onTap: _printing
+                ? null
+                : () => unawaited(_printDevelopmentProfilePdf()),
+          ),
         ],
+      ),
+    );
+  }
+}
+
+class _ShuangxiPrintErrorBanner extends StatelessWidget {
+  const _ShuangxiPrintErrorBanner({required this.message});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFF2EC),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFFFD9C8)),
+      ),
+      child: Text(
+        message,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+        style: const TextStyle(
+          color: Color(0xFF9A3412),
+          fontSize: 13,
+          fontWeight: FontWeight.w900,
+          height: 1.3,
+        ),
       ),
     );
   }
@@ -6664,6 +6796,14 @@ String _erxinPrintFileName(Pep3RecordSummary record, String suffix) {
       : _studentName(record).trim();
   final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
   return '$name-儿心量表-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
+}
+
+String _shuangxiPrintFileName(Pep3RecordSummary record, String suffix) {
+  final String name = _studentName(record).trim().isEmpty
+      ? '未命名儿童'
+      : _studentName(record).trim();
+  final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
+  return '$name-双溪课程评量表A-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
 }
 
 String _pep3PrintFileName(Pep3RecordSummary record, String suffix) {
