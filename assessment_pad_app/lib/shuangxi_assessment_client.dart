@@ -739,16 +739,37 @@ class ShuangxiDraftInput {
     this.birthDate = '',
     this.assessmentDate = '',
     required this.itemScores,
+    this.itemRemarks = const <int, String>{},
   });
 
   factory ShuangxiDraftInput.fromJson(Map<String, dynamic> json) {
     final Map<int, int> itemScores = <int, int>{};
+    final Map<int, String> itemRemarks = <int, String>{};
     for (final MapEntry<String, dynamic> entry
         in _mapFrom(json['itemScores']).entries) {
       final int itemNo = _intFrom(entry.key);
       final int score = _intFrom(entry.value);
       if (itemNo > 0) {
         itemScores[itemNo] = score;
+      }
+    }
+    for (final MapEntry<String, dynamic> entry
+        in _mapFrom(json['itemRemarks']).entries) {
+      final int itemNo = _intFrom(entry.key);
+      final String remark = '${entry.value ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
+      }
+    }
+    for (final Object? raw in _rawListFrom(json['itemRemarkList'])) {
+      if (raw is! Map) {
+        continue;
+      }
+      final Map<String, dynamic> item = Map<String, dynamic>.from(raw);
+      final int itemNo = _intFrom(item['itemNo']);
+      final String remark = '${item['remark'] ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
       }
     }
     for (final Object? raw in _rawListFrom(json['itemScoreList'])) {
@@ -761,6 +782,10 @@ class ShuangxiDraftInput {
       if (itemNo > 0) {
         itemScores[itemNo] = score;
       }
+      final String remark = '${item['remark'] ?? ''}'.trim();
+      if (itemNo > 0 && remark.isNotEmpty) {
+        itemRemarks[itemNo] = remark;
+      }
     }
     return ShuangxiDraftInput(
       studentId: _intFrom(json['studentId']),
@@ -771,11 +796,13 @@ class ShuangxiDraftInput {
       birthDate: _dateOnlyFrom(json['birthDate']),
       assessmentDate: _dateOnlyFrom(json['assessmentDate']),
       itemScores: itemScores,
+      itemRemarks: itemRemarks,
     );
   }
 
   static const ShuangxiDraftInput empty = ShuangxiDraftInput(
     itemScores: <int, int>{},
+    itemRemarks: <int, String>{},
   );
 
   final int studentId;
@@ -786,6 +813,7 @@ class ShuangxiDraftInput {
   final String birthDate;
   final String assessmentDate;
   final Map<int, int> itemScores;
+  final Map<int, String> itemRemarks;
 }
 
 class ShuangxiDraftProgress {

@@ -410,7 +410,20 @@ void main() {
     await tester.tap(find.text('保存草稿'));
     await tester.pumpAndSettle();
 
-    expect(client.lastSavedDraftPayload?['remark'], remark);
+    final Map<String, dynamic>? payload = client.lastSavedDraftPayload;
+    expect(payload, isNotNull);
+    final Map<dynamic, dynamic> itemRemarks =
+        payload!['itemRemarks'] as Map<dynamic, dynamic>? ??
+            <dynamic, dynamic>{};
+    expect(itemRemarks['1'], remark);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text(remark), findsNothing);
+
+    await tester.tap(find.text('上一题'));
+    await tester.pumpAndSettle();
+    expect(find.text(remark), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
@@ -795,6 +808,7 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     required int id,
   }) {
     final Map<int, int> scores = <int, int>{};
+    final Map<int, String> remarks = <int, String>{};
     final Object? rawScores = payload['itemScores'];
     if (rawScores is Map) {
       for (final MapEntry<Object?, Object?> entry in rawScores.entries) {
@@ -802,6 +816,30 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
         final int score = int.tryParse('${entry.value}') ?? 0;
         if (itemNo > 0) {
           scores[itemNo] = score;
+        }
+      }
+    }
+    final Object? rawRemarks = payload['itemRemarks'];
+    if (rawRemarks is Map) {
+      for (final MapEntry<Object?, Object?> entry in rawRemarks.entries) {
+        final int itemNo = int.tryParse('${entry.key}') ?? 0;
+        final String remark = '${entry.value ?? ''}'.trim();
+        if (itemNo > 0 && remark.isNotEmpty) {
+          remarks[itemNo] = remark;
+        }
+      }
+    }
+    final Object? rawRemarkList = payload['itemRemarkList'];
+    if (rawRemarkList is List) {
+      for (final Object? raw in rawRemarkList) {
+        if (raw is! Map) {
+          continue;
+        }
+        final Map<String, dynamic> item = Map<String, dynamic>.from(raw);
+        final int itemNo = _intFrom(item['itemNo']);
+        final String remark = '${item['remark'] ?? ''}'.trim();
+        if (itemNo > 0 && remark.isNotEmpty) {
+          remarks[itemNo] = remark;
         }
       }
     }
@@ -816,6 +854,10 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
         final int score = _intFrom(item['score']);
         if (itemNo > 0) {
           scores[itemNo] = score;
+        }
+        final String remark = '${item['remark'] ?? ''}'.trim();
+        if (itemNo > 0 && remark.isNotEmpty) {
+          remarks[itemNo] = remark;
         }
       }
     }
@@ -847,6 +889,7 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
         birthDate: '${payload['birthDate'] ?? ''}',
         assessmentDate: '${payload['assessmentDate'] ?? ''}',
         itemScores: scores,
+        itemRemarks: remarks,
       ),
     );
   }

@@ -14,28 +14,37 @@ import (
 )
 
 type shuangxiAssessmentDraftSaveRequest struct {
-	ID             int64                      `json:"id,omitempty"`
-	StudentID      int64                      `json:"studentId,omitempty"`
-	StudentName    string                     `json:"studentName,omitempty"`
-	StudentGender  string                     `json:"studentGender,omitempty"`
-	ExaminerName   string                     `json:"examinerName,omitempty"`
-	Remark         string                     `json:"remark,omitempty"`
-	BirthDate      string                     `json:"birthDate,omitempty"`
-	AssessmentDate string                     `json:"assessmentDate,omitempty"`
-	ItemScores     map[int]int                `json:"itemScores,omitempty"`
-	ItemScoreList  []shuangxiItemScoreRequest `json:"itemScoreList,omitempty"`
+	ID             int64                       `json:"id,omitempty"`
+	StudentID      int64                       `json:"studentId,omitempty"`
+	StudentName    string                      `json:"studentName,omitempty"`
+	StudentGender  string                      `json:"studentGender,omitempty"`
+	ExaminerName   string                      `json:"examinerName,omitempty"`
+	Remark         string                      `json:"remark,omitempty"`
+	BirthDate      string                      `json:"birthDate,omitempty"`
+	AssessmentDate string                      `json:"assessmentDate,omitempty"`
+	ItemScores     map[int]int                 `json:"itemScores,omitempty"`
+	ItemScoreList  []shuangxiItemScoreRequest  `json:"itemScoreList,omitempty"`
+	ItemRemarks    map[int]string              `json:"itemRemarks,omitempty"`
+	ItemRemarkList []shuangxiItemRemarkRequest `json:"itemRemarkList,omitempty"`
 }
 
 type shuangxiItemScoreRequest struct {
-	ItemNo int `json:"itemNo"`
-	Score  int `json:"score"`
+	ItemNo int    `json:"itemNo"`
+	Score  int    `json:"score"`
+	Remark string `json:"remark,omitempty"`
+}
+
+type shuangxiItemRemarkRequest struct {
+	ItemNo int    `json:"itemNo"`
+	Remark string `json:"remark"`
 }
 
 type shuangxiAssessmentDraftItemSaveRequest struct {
-	DraftID       int64  `json:"draftId"`
-	ItemNo        int    `json:"itemNo"`
-	Score         *int   `json:"score"`
-	StudentGender string `json:"studentGender,omitempty"`
+	DraftID       int64   `json:"draftId"`
+	ItemNo        int     `json:"itemNo"`
+	Score         *int    `json:"score"`
+	Remark        *string `json:"remark,omitempty"`
+	StudentGender string  `json:"studentGender,omitempty"`
 }
 
 type shuangxiAssessmentDraftDeleteRequest struct {
@@ -118,6 +127,7 @@ func (handler *Handler) saveShuangxiAAssessmentDraftItem(w http.ResponseWriter, 
 		DraftID:       req.DraftID,
 		ItemNo:        req.ItemNo,
 		Score:         req.Score,
+		Remark:        req.Remark,
 		StudentGender: strings.TrimSpace(req.StudentGender),
 	})
 	if err != nil {
@@ -308,6 +318,7 @@ func (req shuangxiAssessmentDraftSaveRequest) toDraftSaveInput() (service.Shuang
 	if err != nil {
 		return service.ShuangxiAAssessmentDraftSaveInput{}, err
 	}
+	itemRemarks := normalizeShuangxiItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
 	return service.ShuangxiAAssessmentDraftSaveInput{
 		ID:             req.ID,
 		StudentID:      req.StudentID,
@@ -318,7 +329,8 @@ func (req shuangxiAssessmentDraftSaveRequest) toDraftSaveInput() (service.Shuang
 		BirthDate:      birthDate,
 		AssessmentDate: assessmentDate,
 		ItemScores:     itemScores,
-		InputSnapshot:  req.normalizedSnapshot(itemScores),
+		ItemRemarks:    itemRemarks,
+		InputSnapshot:  req.normalizedSnapshot(itemScores, itemRemarks),
 	}, nil
 }
 
@@ -339,18 +351,50 @@ func normalizeShuangxiItemScores(itemScores map[int]int, itemScoreList []shuangx
 	return normalized, nil
 }
 
-func (req shuangxiAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]int) any {
+func normalizeShuangxiItemRemarks(
+	itemRemarks map[int]string,
+	itemRemarkList []shuangxiItemRemarkRequest,
+	itemScoreList []shuangxiItemScoreRequest,
+) map[int]string {
+	out := make(map[int]string, len(itemRemarks)+len(itemRemarkList)+len(itemScoreList))
+	for itemNo, remark := range itemRemarks {
+		normalized := strings.TrimSpace(remark)
+		if itemNo > 0 && normalized != "" {
+			out[itemNo] = normalized
+		}
+	}
+	for _, item := range itemRemarkList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	for _, item := range itemScoreList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func (req shuangxiAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[int]int, itemRemarks map[int]string) any {
 	return struct {
-		ID             int64                      `json:"id,omitempty"`
-		StudentID      int64                      `json:"studentId,omitempty"`
-		StudentName    string                     `json:"studentName,omitempty"`
-		StudentGender  string                     `json:"studentGender,omitempty"`
-		ExaminerName   string                     `json:"examinerName,omitempty"`
-		Remark         string                     `json:"remark,omitempty"`
-		BirthDate      string                     `json:"birthDate,omitempty"`
-		AssessmentDate string                     `json:"assessmentDate,omitempty"`
-		ItemScores     map[int]int                `json:"itemScores,omitempty"`
-		ItemScoreList  []shuangxiItemScoreRequest `json:"itemScoreList,omitempty"`
+		ID             int64                       `json:"id,omitempty"`
+		StudentID      int64                       `json:"studentId,omitempty"`
+		StudentName    string                      `json:"studentName,omitempty"`
+		StudentGender  string                      `json:"studentGender,omitempty"`
+		ExaminerName   string                      `json:"examinerName,omitempty"`
+		Remark         string                      `json:"remark,omitempty"`
+		BirthDate      string                      `json:"birthDate,omitempty"`
+		AssessmentDate string                      `json:"assessmentDate,omitempty"`
+		ItemScores     map[int]int                 `json:"itemScores,omitempty"`
+		ItemScoreList  []shuangxiItemScoreRequest  `json:"itemScoreList,omitempty"`
+		ItemRemarks    map[int]string              `json:"itemRemarks,omitempty"`
+		ItemRemarkList []shuangxiItemRemarkRequest `json:"itemRemarkList,omitempty"`
 	}{
 		ID:             req.ID,
 		StudentID:      req.StudentID,
@@ -361,11 +405,13 @@ func (req shuangxiAssessmentDraftSaveRequest) normalizedSnapshot(itemScores map[
 		BirthDate:      strings.TrimSpace(req.BirthDate),
 		AssessmentDate: strings.TrimSpace(req.AssessmentDate),
 		ItemScores:     itemScores,
-		ItemScoreList:  shuangxiItemScoreListFromMap(itemScores),
+		ItemScoreList:  shuangxiItemScoreListFromMap(itemScores, itemRemarks),
+		ItemRemarks:    itemRemarks,
+		ItemRemarkList: shuangxiItemRemarkListFromMap(itemRemarks),
 	}
 }
 
-func shuangxiItemScoreListFromMap(itemScores map[int]int) []shuangxiItemScoreRequest {
+func shuangxiItemScoreListFromMap(itemScores map[int]int, itemRemarks map[int]string) []shuangxiItemScoreRequest {
 	if len(itemScores) == 0 {
 		return nil
 	}
@@ -379,7 +425,35 @@ func shuangxiItemScoreListFromMap(itemScores map[int]int) []shuangxiItemScoreReq
 		out = append(out, shuangxiItemScoreRequest{
 			ItemNo: itemNo,
 			Score:  itemScores[itemNo],
+			Remark: strings.TrimSpace(itemRemarks[itemNo]),
 		})
+	}
+	return out
+}
+
+func shuangxiItemRemarkListFromMap(itemRemarks map[int]string) []shuangxiItemRemarkRequest {
+	if len(itemRemarks) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemRemarks))
+	for itemNo, remark := range itemRemarks {
+		if itemNo > 0 && strings.TrimSpace(remark) != "" {
+			itemNos = append(itemNos, itemNo)
+		}
+	}
+	if len(itemNos) == 0 {
+		return nil
+	}
+	sort.Ints(itemNos)
+	out := make([]shuangxiItemRemarkRequest, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		remark := strings.TrimSpace(itemRemarks[itemNo])
+		if remark != "" {
+			out = append(out, shuangxiItemRemarkRequest{ItemNo: itemNo, Remark: remark})
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

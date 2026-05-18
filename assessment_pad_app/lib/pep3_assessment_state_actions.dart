@@ -537,7 +537,7 @@ extension _Pep3AssessmentStateActions on _Pep3AssessmentPageState {
     setState(() {
       _savingItems.add(itemNo);
       _savedItems.remove(itemNo);
-      _autoSaveText = '自动保存中...';
+      _autoSaveText = '保存中...';
     });
     try {
       final Pep3DraftDetail detail = await widget.client.saveDraftItem(

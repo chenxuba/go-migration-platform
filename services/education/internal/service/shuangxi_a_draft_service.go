@@ -25,6 +25,7 @@ type ShuangxiAAssessmentDraftSaveInput struct {
 	BirthDate      *time.Time
 	AssessmentDate *time.Time
 	ItemScores     map[int]int
+	ItemRemarks    map[int]string
 	InputSnapshot  any
 }
 
@@ -32,6 +33,7 @@ type ShuangxiAAssessmentDraftItemSaveInput struct {
 	DraftID       int64
 	ItemNo        int
 	Score         *int
+	Remark        *string
 	StudentGender string
 }
 
@@ -44,18 +46,27 @@ type ShuangxiAAssessmentRecordSaveInput struct {
 	BirthDate      time.Time
 	AssessmentDate time.Time
 	ItemScores     map[int]int
+	ItemRemarks    map[int]string
 	InputSnapshot  any
 }
 
 type shuangxiASavedInputSnapshot struct {
-	StudentGender string                    `json:"studentGender,omitempty"`
-	ItemScores    map[int]int               `json:"itemScores,omitempty"`
-	ItemScoreList []shuangxiASavedItemScore `json:"itemScoreList,omitempty"`
+	StudentGender  string                     `json:"studentGender,omitempty"`
+	ItemScores     map[int]int                `json:"itemScores,omitempty"`
+	ItemScoreList  []shuangxiASavedItemScore  `json:"itemScoreList,omitempty"`
+	ItemRemarks    map[int]string             `json:"itemRemarks,omitempty"`
+	ItemRemarkList []shuangxiASavedItemRemark `json:"itemRemarkList,omitempty"`
 }
 
 type shuangxiASavedItemScore struct {
-	ItemNo int `json:"itemNo"`
-	Score  int `json:"score"`
+	ItemNo int    `json:"itemNo"`
+	Score  int    `json:"score"`
+	Remark string `json:"remark,omitempty"`
+}
+
+type shuangxiASavedItemRemark struct {
+	ItemNo int    `json:"itemNo"`
+	Remark string `json:"remark"`
 }
 
 type shuangxiAAge struct {
@@ -112,7 +123,7 @@ func (svc *Service) SaveShuangxiAAssessmentDraft(userID int64, input ShuangxiAAs
 	}
 	input.StudentGender = studentGender
 	input.ItemScores = applyShuangxiAGenderDefaults(input.ItemScores, studentGender)
-	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, studentGender)
+	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, input.ItemRemarks, studentGender)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -183,6 +194,10 @@ func (svc *Service) SaveShuangxiAAssessmentDraftItem(userID int64, input Shuangx
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
+	itemRemarks, err := decodeSavedShuangxiAInputRemarks(draft.InputJSON)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
 	studentGender, err := svc.resolveShuangxiAStudentGender(
 		context.Background(),
 		instID,
@@ -194,12 +209,20 @@ func (svc *Service) SaveShuangxiAAssessmentDraftItem(userID int64, input Shuangx
 		return model.AssessmentDraftDetailVO{}, err
 	}
 	itemScores[input.ItemNo] = *input.Score
+	if input.Remark != nil {
+		normalizedRemark := strings.TrimSpace(*input.Remark)
+		if normalizedRemark == "" {
+			delete(itemRemarks, input.ItemNo)
+		} else {
+			itemRemarks[input.ItemNo] = normalizedRemark
+		}
+	}
 	itemScores = applyShuangxiAGenderDefaults(itemScores, studentGender)
 	progress, err := buildShuangxiAAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, itemScores)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, studentGender)
+	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, itemRemarks, studentGender)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -343,7 +366,11 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 		}
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("草稿尚未完成，请补充评估项目后再提交")
 	}
-	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, studentGender)
+	itemRemarks, err := decodeSavedShuangxiAInputRemarks(draft.InputJSON)
+	if err != nil {
+		return model.PEP3AssessmentDraftSubmitVO{}, err
+	}
+	inputSnapshot, err := mergeShuangxiADraftInputSnapshot(draft.InputJSON, itemScores, itemRemarks, studentGender)
 	if err != nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, err
 	}
@@ -356,6 +383,7 @@ func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model
 		BirthDate:      *draft.BirthDate,
 		AssessmentDate: *draft.AssessmentDate,
 		ItemScores:     itemScores,
+		ItemRemarks:    itemRemarks,
 		InputSnapshot:  inputSnapshot,
 	})
 	if err != nil {
@@ -393,7 +421,7 @@ func (svc *Service) CreateShuangxiAAssessmentRecord(userID int64, input Shuangxi
 	}
 	input.StudentGender = studentGender
 	input.ItemScores = applyShuangxiAGenderDefaults(input.ItemScores, studentGender)
-	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, studentGender)
+	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, input.ItemRemarks, studentGender)
 	if err != nil {
 		return model.AssessmentRecordDetailVO{}, err
 	}
@@ -641,6 +669,33 @@ func decodeSavedShuangxiAInputScores(raw json.RawMessage) (map[int]int, error) {
 	return out, nil
 }
 
+func decodeSavedShuangxiAInputRemarks(raw json.RawMessage) (map[int]string, error) {
+	var snapshot shuangxiASavedInputSnapshot
+	if len(raw) > 0 {
+		_ = json.Unmarshal(raw, &snapshot)
+	}
+	out := make(map[int]string, len(snapshot.ItemRemarks)+len(snapshot.ItemRemarkList)+len(snapshot.ItemScoreList))
+	for itemNo, remark := range snapshot.ItemRemarks {
+		normalized := strings.TrimSpace(remark)
+		if itemNo > 0 && normalized != "" {
+			out[itemNo] = normalized
+		}
+	}
+	for _, item := range snapshot.ItemRemarkList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	for _, item := range snapshot.ItemScoreList {
+		normalized := strings.TrimSpace(item.Remark)
+		if item.ItemNo > 0 && normalized != "" {
+			out[item.ItemNo] = normalized
+		}
+	}
+	return out, nil
+}
+
 func fillShuangxiAMissingItemScoresWithZero(data shuangxiAStaticData, itemScores map[int]int) map[int]int {
 	out := make(map[int]int, len(data.items)+len(itemScores))
 	for itemNo, score := range itemScores {
@@ -729,7 +784,7 @@ func shuangxiAStudentGenderFromInputSnapshot(raw json.RawMessage) string {
 	return strings.TrimSpace(snapshot.StudentGender)
 }
 
-func withShuangxiAInputScoresSnapshot(snapshot any, itemScores map[int]int, studentGender string) (any, error) {
+func withShuangxiAInputScoresSnapshot(snapshot any, itemScores map[int]int, itemRemarks map[int]string, studentGender string) (any, error) {
 	out := make(map[string]any)
 	switch typed := snapshot.(type) {
 	case nil:
@@ -749,14 +804,21 @@ func withShuangxiAInputScoresSnapshot(snapshot any, itemScores map[int]int, stud
 		}
 	}
 	out["itemScores"] = itemScores
-	out["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores)
+	out["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores, itemRemarks)
+	if len(itemRemarks) > 0 {
+		out["itemRemarks"] = itemRemarks
+		out["itemRemarkList"] = shuangxiASavedItemRemarkListFromMap(itemRemarks)
+	} else {
+		delete(out, "itemRemarks")
+		delete(out, "itemRemarkList")
+	}
 	if strings.TrimSpace(studentGender) != "" {
 		out["studentGender"] = strings.TrimSpace(studentGender)
 	}
 	return out, nil
 }
 
-func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]int, studentGender string) (any, error) {
+func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]int, itemRemarks map[int]string, studentGender string) (any, error) {
 	var snapshot map[string]any
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &snapshot)
@@ -765,14 +827,21 @@ func mergeShuangxiADraftInputSnapshot(raw json.RawMessage, itemScores map[int]in
 		snapshot = make(map[string]any)
 	}
 	snapshot["itemScores"] = itemScores
-	snapshot["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores)
+	snapshot["itemScoreList"] = shuangxiASavedItemScoreListFromMap(itemScores, itemRemarks)
+	if len(itemRemarks) > 0 {
+		snapshot["itemRemarks"] = itemRemarks
+		snapshot["itemRemarkList"] = shuangxiASavedItemRemarkListFromMap(itemRemarks)
+	} else {
+		delete(snapshot, "itemRemarks")
+		delete(snapshot, "itemRemarkList")
+	}
 	if strings.TrimSpace(studentGender) != "" {
 		snapshot["studentGender"] = strings.TrimSpace(studentGender)
 	}
 	return snapshot, nil
 }
 
-func shuangxiASavedItemScoreListFromMap(itemScores map[int]int) []shuangxiASavedItemScore {
+func shuangxiASavedItemScoreListFromMap(itemScores map[int]int, itemRemarks map[int]string) []shuangxiASavedItemScore {
 	if len(itemScores) == 0 {
 		return nil
 	}
@@ -788,7 +857,35 @@ func shuangxiASavedItemScoreListFromMap(itemScores map[int]int) []shuangxiASaved
 		out = append(out, shuangxiASavedItemScore{
 			ItemNo: itemNo,
 			Score:  itemScores[itemNo],
+			Remark: strings.TrimSpace(itemRemarks[itemNo]),
 		})
+	}
+	return out
+}
+
+func shuangxiASavedItemRemarkListFromMap(itemRemarks map[int]string) []shuangxiASavedItemRemark {
+	if len(itemRemarks) == 0 {
+		return nil
+	}
+	itemNos := make([]int, 0, len(itemRemarks))
+	for itemNo, remark := range itemRemarks {
+		if itemNo > 0 && strings.TrimSpace(remark) != "" {
+			itemNos = append(itemNos, itemNo)
+		}
+	}
+	if len(itemNos) == 0 {
+		return nil
+	}
+	sort.Ints(itemNos)
+	out := make([]shuangxiASavedItemRemark, 0, len(itemNos))
+	for _, itemNo := range itemNos {
+		remark := strings.TrimSpace(itemRemarks[itemNo])
+		if remark != "" {
+			out = append(out, shuangxiASavedItemRemark{ItemNo: itemNo, Remark: remark})
+		}
+	}
+	if len(out) == 0 {
+		return nil
 	}
 	return out
 }

@@ -862,7 +862,7 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
       final int nextSelected = _nextSelectedItemNoForDomain(domainCode, itemNo);
       _selectedItemNo = nextSelected > 0 ? nextSelected : itemNo;
       revealedItemNo = _selectedItemNo;
-      _autoSaveText = _token.trim().isEmpty ? '本地已记录' : '自动保存中...';
+      _autoSaveText = _token.trim().isEmpty ? '本地已记录' : '保存中...';
     });
     _prefetchSelectedItem();
     if (revealedItemNo != itemNo) {
@@ -1072,7 +1072,7 @@ extension _ErxinAssessmentActions on _ErxinAssessmentPageState {
       return;
     }
     setState(() {
-      _autoSaveText = '自动保存中...';
+      _autoSaveText = '保存中...';
     });
     try {
       final ErxinDraftDetail detail = await _sendSaveDraftItem(

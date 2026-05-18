@@ -195,7 +195,7 @@ const autoSaveText = computed(() => {
   if (isRecordEditMode.value)
     return '正式记录编辑中，修改后请重新提交'
   if (autoSaveState.value === 'saving')
-    return '自动保存中...'
+    return '保存中...'
   if (autoSaveState.value === 'saved')
     return `已自动保存为草稿 ${autoSaveLastSavedAt.value}`
   return ''

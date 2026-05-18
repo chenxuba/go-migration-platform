@@ -161,7 +161,7 @@ const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
 })
 const autoSaveText = computed(() => {
   if (autoSaveState.value === 'saving')
-    return '自动保存中...'
+    return '保存中...'
   if (autoSaveState.value === 'saved')
     return `已自动保存 ${autoSaveLastSavedAt.value}`
   return ''

@@ -64,6 +64,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   ShuangxiTemplateSummary _template = ShuangxiTemplateSummary.empty;
   ShuangxiAssessmentItem _currentItem = ShuangxiAssessmentItem.empty;
   final Map<int, int> _itemScores = <int, int>{};
+  final Map<int, String> _itemRemarks = <int, String>{};
   final Map<int, int> _previousItemScores = <int, int>{};
   final TextEditingController _remarkController = TextEditingController();
   final PadMessageOverlayController _messageController =
@@ -79,6 +80,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   String _assessmentDate = '';
   String _examinerName = '';
   String _studentGender = '';
+  String _draftRemark = '';
   String _errorMessage = '';
   String _autoSaveText = '等待作答';
   String _previousAssessmentDate = '';
@@ -444,6 +446,8 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       _detectedDraftDetailRequest = null;
       _draftId = 0;
       _itemScores.clear();
+      _itemRemarks.clear();
+      _draftRemark = '';
       _remarkController.clear();
       _selectedItemNo =
           _template.allItems.isNotEmpty ? _template.allItems.first.itemNo : 0;
@@ -505,10 +509,13 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (detail.examinerName.trim().isNotEmpty) {
       _examinerName = detail.examinerName.trim();
     }
+    _draftRemark = detail.input.remark.trim();
     if (detail.input.studentGender.trim().isNotEmpty) {
       _studentGender = detail.input.studentGender.trim();
     }
-    _setRemarkText(detail.input.remark);
+    _itemRemarks
+      ..clear()
+      ..addAll(detail.input.itemRemarks);
     _itemScores
       ..clear()
       ..addAll(detail.input.itemScores);
@@ -520,6 +527,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
               ? _template.allItems.first.itemNo
               : 0);
     }
+    _syncRemarkControllerForCurrentItem();
   }
 
   Future<void> _loadPreviousAssessment(String token) async {
@@ -640,7 +648,11 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     if (itemNo <= 0 || itemNo == _selectedItemNo && !_itemLoading) {
       return;
     }
-    setState(() => _selectedItemNo = itemNo);
+    _storeRemarkForItem(_selectedItemNo, _remarkController.text);
+    setState(() {
+      _selectedItemNo = itemNo;
+      _syncRemarkControllerForCurrentItem();
+    });
     await _loadSelectedItem(itemNo);
   }
 
@@ -673,7 +685,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     _cancelPendingAutoAdvance();
     setState(() {
       _itemScores[currentItemNo] = score;
-      _autoSaveText = '自动保存中...';
+      _autoSaveText = '保存中...';
     });
     _queueItemSave(itemNo: currentItemNo, score: score);
     if (_autoNext) {
@@ -726,7 +738,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       } else {
         setState(() {
           _savingDraft = true;
-          _autoSaveText = '自动保存中...';
+          _autoSaveText = '保存中...';
         });
         detail = await widget.client.saveDraftItem(
           _token,
@@ -734,6 +746,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
             'draftId': _draftId,
             'itemNo': itemNo,
             'score': score,
+            'remark': _remarkForItem(itemNo).trim(),
             'studentGender': _studentGender.trim(),
           },
         );
@@ -854,6 +867,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
 
   void _mergeDraftDetailInput(ShuangxiDraftDetail detail) {
     final Map<int, int> localScores = Map<int, int>.from(_itemScores);
+    final Map<int, String> localRemarks = Map<int, String>.from(_itemRemarks);
     if (detail.input.studentGender.trim().isNotEmpty) {
       _studentGender = detail.input.studentGender.trim();
     }
@@ -861,7 +875,12 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       ..clear()
       ..addAll(detail.input.itemScores)
       ..addAll(localScores);
+    _itemRemarks
+      ..clear()
+      ..addAll(detail.input.itemRemarks)
+      ..addAll(localRemarks);
     _applyGenderDefaultsToScores();
+    _syncRemarkControllerForCurrentItem();
   }
 
   void _setRemarkText(String remark) {
@@ -874,7 +893,31 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
     );
   }
 
+  String _remarkForItem(int itemNo) {
+    if (itemNo <= 0) {
+      return '';
+    }
+    return _itemRemarks[itemNo] ?? '';
+  }
+
+  void _syncRemarkControllerForCurrentItem() {
+    _setRemarkText(_remarkForItem(_selectedItemNo));
+  }
+
+  void _storeRemarkForItem(int itemNo, String value) {
+    if (itemNo <= 0) {
+      return;
+    }
+    final String trimmed = value.trim();
+    if (trimmed.isEmpty) {
+      _itemRemarks.remove(itemNo);
+    } else {
+      _itemRemarks[itemNo] = value;
+    }
+  }
+
   void _handleRemarkChanged(String value) {
+    _storeRemarkForItem(_selectedItemNo, value);
     _remarkAutoSaveTimer?.cancel();
     if (mounted) {
       setState(() => _autoSaveText = '备注待保存');
@@ -894,6 +937,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   void _finishRemarkEditing() {
     _remarkAutoSaveTimer?.cancel();
     _remarkAutoSaveTimer = null;
+    _storeRemarkForItem(_selectedItemNo, _remarkController.text);
     FocusManager.instance.primaryFocus?.unfocus();
     if (_token.trim().isEmpty || _studentId <= 0 || _loading || _submitting) {
       return;
@@ -1014,10 +1058,13 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
       'studentName': _studentName.trim(),
       'studentGender': _studentGender.trim(),
       'examinerName': _examinerName.trim(),
-      'remark': _remarkController.text.trim(),
+      'remark': _draftRemark.trim(),
       'birthDate': _dateOnlyText(_birthDate),
       'assessmentDate': _dateOnlyText(_assessmentDate),
       'itemScoreList': _itemScoreList(),
+      if (_itemRemarksPayload().isNotEmpty)
+        'itemRemarks': _itemRemarksPayload(),
+      if (_itemRemarkList().isNotEmpty) 'itemRemarkList': _itemRemarkList(),
     };
   }
 
@@ -1029,6 +1076,35 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         <String, dynamic>{
           'itemNo': itemNo,
           'score': scores[itemNo],
+          if (_remarkForItem(itemNo).trim().isNotEmpty)
+            'remark': _remarkForItem(itemNo).trim(),
+        },
+    ];
+  }
+
+  Map<String, String> _itemRemarksPayload() {
+    final Map<String, String> out = <String, String>{};
+    for (final MapEntry<int, String> entry in _itemRemarks.entries) {
+      final String remark = entry.value.trim();
+      if (entry.key > 0 && remark.isNotEmpty) {
+        out['${entry.key}'] = remark;
+      }
+    }
+    return out;
+  }
+
+  List<Map<String, dynamic>> _itemRemarkList() {
+    final Map<String, String> remarks = _itemRemarksPayload();
+    final List<int> itemNos = remarks.keys
+        .map((String itemNo) => int.tryParse(itemNo) ?? 0)
+        .where((int itemNo) => itemNo > 0)
+        .toList()
+      ..sort();
+    return <Map<String, dynamic>>[
+      for (final int itemNo in itemNos)
+        <String, dynamic>{
+          'itemNo': itemNo,
+          'remark': remarks['$itemNo'],
         },
     ];
   }
@@ -1557,7 +1633,7 @@ class _SaveStatusLabel extends StatelessWidget {
     return saving ||
         text.contains('保存中') ||
         text.contains('草稿保存中') ||
-        text.contains('自动保存中');
+        text.contains('保存中');
   }
 
   @override

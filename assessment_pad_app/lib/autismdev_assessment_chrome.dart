@@ -92,20 +92,7 @@ class _AutismDevTopBar extends StatelessWidget {
                 ),
               ),
               if (autoSaveText.trim().isNotEmpty)
-                ConstrainedBox(
-                  constraints: const BoxConstraints(minWidth: 116),
-                  child: Text(
-                    autoSaveText,
-                    maxLines: 1,
-                    softWrap: false,
-                    textAlign: TextAlign.right,
-                    style: const TextStyle(
-                      color: _AutismDevColors.muted,
-                      fontSize: 12,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                ),
+                _SaveStatusLabel(text: autoSaveText.trim(), saving: saving),
               const SizedBox(width: 10),
               _TopActionButton(
                 label: '保存草稿',
@@ -125,6 +112,63 @@ class _AutismDevTopBar extends StatelessWidget {
             ],
           );
         },
+      ),
+    );
+  }
+}
+
+class _SaveStatusLabel extends StatelessWidget {
+  const _SaveStatusLabel({required this.text, required this.saving});
+
+  final String text;
+  final bool saving;
+
+  bool get _saving {
+    return saving ||
+        text.contains('保存中') ||
+        text.contains('草稿保存中') ||
+        text.contains('保存中');
+  }
+
+  bool get _failed => text.contains('失败');
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = _failed
+        ? _AutismDevColors.red
+        : (_saving ? _AutismDevColors.orangeDeep : _AutismDevColors.body);
+    return ConstrainedBox(
+      constraints: const BoxConstraints(minWidth: 116),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          Icon(
+            _failed
+                ? Icons.error_outline_rounded
+                : (_saving
+                    ? Icons.sync_rounded
+                    : Icons.check_circle_outline_rounded),
+            color: _failed
+                ? _AutismDevColors.red
+                : (_saving
+                    ? _AutismDevColors.orangeDeep
+                    : _AutismDevColors.green),
+            size: _saving ? 17 : 18,
+          ),
+          const SizedBox(width: 5),
+          Text(
+            text,
+            maxLines: 1,
+            softWrap: false,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              color: color,
+              fontSize: 12,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
       ),
     );
   }
