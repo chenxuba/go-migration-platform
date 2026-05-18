@@ -4551,6 +4551,10 @@ void main() {
 
     expect(find.text('PEP-3 测评工作台'), findsOneWidget);
     expect(
+      find.textContaining('施测者：-', findRichText: true),
+      findsOneWidget,
+    );
+    expect(
       find.byWidgetPredicate(
         (Widget widget) =>
             widget.runtimeType.toString() == '_Pep3SidebarSkeleton',
