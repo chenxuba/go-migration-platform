@@ -55,3 +55,19 @@ func TestNormalizeQuestionBankRecordFieldOptionsUsesNumericValues(t *testing.T) 
 		}
 	}
 }
+
+func TestScaleQuestionBankScoreOptionsSupportsZeroToThreeStandards(t *testing.T) {
+	got := scaleQuestionBankScoreOptions("0-无法完成\n1-需要协助\n2-提示下完成\n3-独立完成")
+	wantValues := []int{3, 2, 1, 0}
+	if len(got) != len(wantValues) {
+		t.Fatalf("options length = %d, want %d", len(got), len(wantValues))
+	}
+	for idx, option := range got {
+		if option.Value != wantValues[idx] {
+			t.Fatalf("option %d value = %d, want %d", idx, option.Value, wantValues[idx])
+		}
+	}
+	if got[0].Description != "独立完成" || got[3].Description != "无法完成" {
+		t.Fatalf("unexpected descriptions: %+v", got)
+	}
+}

@@ -1,0 +1,19 @@
+{
+  "scale_code": "SHUANGXI_A",
+  "scale_name": "双溪课程评量表A",
+  "scale_version": "A-2012-doc",
+  "source_standard": "双溪心智障碍儿童个别化教育课程",
+  "source_files": [
+    "双溪课程评量表.doc",
+    "双溪心智障碍个别化教育课程.doc",
+    "双溪18-61742597955.pdf"
+  ],
+  "item_count": 209,
+  "domain_count": 7,
+  "skill_count": 34,
+  "score_min": 0,
+  "score_max": 3,
+  "data_status": "draft",
+  "revision": "2026-05-18",
+  "scoring_note": "每题按0、1、2、3四级评分，领域原始分为该领域题目得分合计。"
+}

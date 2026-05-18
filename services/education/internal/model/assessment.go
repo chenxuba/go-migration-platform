@@ -267,6 +267,76 @@ type PEP3ScoreOption struct {
 	Description string `json:"description,omitempty"`
 }
 
+type ShuangxiAssessmentFormTemplateSummaryVO struct {
+	TemplateCode    string                           `json:"templateCode"`
+	TemplateVersion string                           `json:"templateVersion"`
+	Title           string                           `json:"title"`
+	ScaleCode       string                           `json:"scaleCode"`
+	ScaleVersion    string                           `json:"scaleVersion"`
+	DataStatus      string                           `json:"dataStatus,omitempty"`
+	Sources         []string                         `json:"sources,omitempty"`
+	ItemCount       int                              `json:"itemCount"`
+	DomainCount     int                              `json:"domainCount"`
+	SkillCount      int                              `json:"skillCount"`
+	ScoreMin        int                              `json:"scoreMin"`
+	ScoreMax        int                              `json:"scoreMax"`
+	ScoringNote     string                           `json:"scoringNote,omitempty"`
+	Domains         []ShuangxiAssessmentDomain       `json:"domains"`
+	ScoreOptions    []PEP3ScoreOption                `json:"scoreOptions"`
+	ItemGroups      []ShuangxiAssessmentSkillSummary `json:"itemGroups"`
+}
+
+type ShuangxiAssessmentDomain struct {
+	DomainCode  string                           `json:"domainCode"`
+	DomainName  string                           `json:"domainName"`
+	SortNo      int                              `json:"sortNo"`
+	ItemCount   int                              `json:"itemCount"`
+	MaxRawScore int                              `json:"maxRawScore"`
+	Skills      []ShuangxiAssessmentSkillSummary `json:"skills"`
+}
+
+type ShuangxiAssessmentSkillSummary struct {
+	SkillCode  string                          `json:"skillCode"`
+	SkillName  string                          `json:"skillName"`
+	DomainCode string                          `json:"domainCode"`
+	DomainName string                          `json:"domainName"`
+	SortNo     int                             `json:"sortNo"`
+	ItemCount  int                             `json:"itemCount"`
+	Items      []ShuangxiAssessmentItemSummary `json:"items"`
+}
+
+type ShuangxiAssessmentItemSummary struct {
+	ItemNo     int    `json:"itemNo"`
+	ItemCode   string `json:"itemCode"`
+	ItemTitle  string `json:"itemTitle"`
+	TestItem   string `json:"testItem"`
+	DomainCode string `json:"domainCode"`
+	DomainName string `json:"domainName"`
+	SkillCode  string `json:"skillCode"`
+	SkillName  string `json:"skillName"`
+}
+
+type ShuangxiAssessmentItem struct {
+	ItemNo       int               `json:"itemNo"`
+	ItemCode     string            `json:"itemCode"`
+	ItemTitle    string            `json:"itemTitle"`
+	TestItem     string            `json:"testItem"`
+	DomainCode   string            `json:"domainCode"`
+	DomainName   string            `json:"domainName"`
+	DomainSortNo int               `json:"domainSortNo"`
+	SkillCode    string            `json:"skillCode"`
+	SkillName    string            `json:"skillName"`
+	SkillSortNo  int               `json:"skillSortNo"`
+	Method       string            `json:"method,omitempty"`
+	Standard     string            `json:"standard,omitempty"`
+	ScoreMin     int               `json:"scoreMin"`
+	ScoreMax     int               `json:"scoreMax"`
+	ScoreOptions []PEP3ScoreOption `json:"scoreOptions"`
+	SourcePDF    string            `json:"sourcePdf,omitempty"`
+	SourcePages  []int             `json:"sourcePages,omitempty"`
+	OCRStatus    string            `json:"ocrStatus,omitempty"`
+}
+
 type PEP3ItemRecordField struct {
 	Key         string                      `json:"key"`
 	Label       string                      `json:"label"`

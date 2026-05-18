@@ -28,13 +28,29 @@ func (repo *Repository) ensureScaleLibrarySchema(ctx context.Context) error {
 	}); err != nil {
 		return err
 	}
-	_, err = repo.db.ExecContext(ctx, `
+	if _, err = repo.db.ExecContext(ctx, `
 		UPDATE sys_scale
 		SET age_range = '2.6岁-6岁',
 		    age_min_months = 30,
 		    age_max_months = 72
 		WHERE scale_code = 'PEP3' AND del_flag = 0
 		  AND (IFNULL(age_min_months, 0) = 0 OR IFNULL(age_max_months, 0) = 0)
+	`); err != nil {
+		return err
+	}
+	_, err = repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET estimated_duration = '60-90分钟',
+		    duration_min_minutes = 60,
+		    duration_max_minutes = 90,
+		    data_status = '',
+		    execution_entry = 'Pad /shuangxi-a-assessment'
+		WHERE scale_code = 'SHUANGXI_A' AND del_flag = 0
+		  AND (IFNULL(estimated_duration, '') IN ('', '待配置', '待定')
+		       OR IFNULL(duration_min_minutes, 0) = 0
+		       OR IFNULL(duration_max_minutes, 0) = 0
+		       OR IFNULL(data_status, '') IN ('待配置', '待定')
+		       OR IFNULL(execution_entry, '') = '')
 	`)
 	return err
 }

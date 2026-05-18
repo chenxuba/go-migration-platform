@@ -935,6 +935,52 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		}
 	}
 
+	shuangxiAScaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
+		Name:               "双溪课程评量表A",
+		Code:               "SHUANGXI_A",
+		Category:           "课程评量",
+		Scenario:           "课程评估",
+		AgeRange:           "2岁-16岁",
+		AgeMinMonths:       24,
+		AgeMaxMonths:       192,
+		Duration:           "60-90分钟",
+		DurationMinMinutes: 60,
+		DurationMaxMinutes: 90,
+		CurrentVersion:     "A-2012-doc",
+		ItemCount:          209,
+		DomainCount:        7,
+		InstitutionCount:   0,
+		MonthUsage:         0,
+		DataStatus:         "题库已入库；Pad静态测评工作台已接入；评分保存和报告待接入",
+		Summary:            "面向心智障碍儿童个别化教育课程的0-3级课程评量表，覆盖感官知觉、粗大动作、精细动作、生活自理、沟通、认知和社会技能。",
+		ExecutionEntry:     "Pad /shuangxi-a-assessment",
+		Sort:               4,
+	})
+	if err != nil {
+		return err
+	}
+	if err := repo.repairShuangxiAScaleCatalog(ctx, shuangxiAScaleID); err != nil {
+		return err
+	}
+	shuangxiAReferences := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "台北市双溪启智文教基金会《双溪心智障碍儿童个别化教育课程》。",
+			Sort:    1,
+		},
+		{
+			Content: "《双溪课程评量表.doc》结构化题库，0-3级评量标准，共209题。",
+			Sort:    2,
+		},
+	}
+	for _, item := range shuangxiAReferences {
+		if err := repo.ensureScaleReferenceSeed(ctx, shuangxiAScaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1003,6 +1049,32 @@ func (repo *Repository) repairAutismDevScaleCatalog(ctx context.Context, scaleID
 		    sort = 3,
 		    update_time = NOW()
 		WHERE id = ? AND scale_code = 'AUTISMDEV' AND del_flag = 0
+	`, scaleID)
+	return err
+}
+
+func (repo *Repository) repairShuangxiAScaleCatalog(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET scale_name = '双溪课程评量表A',
+		    category = '课程评量',
+		    scenario = '课程评估',
+		    age_range = '2岁-16岁',
+		    age_min_months = 24,
+		    age_max_months = 192,
+		    estimated_duration = '60-90分钟',
+		    duration_min_minutes = 60,
+		    duration_max_minutes = 90,
+		    current_version = 'A-2012-doc',
+		    item_count = 209,
+		    domain_count = 7,
+		    data_status = '题库已入库；Pad静态测评工作台已接入；评分保存和报告待接入',
+		    summary = '面向心智障碍儿童个别化教育课程的0-3级课程评量表，覆盖感官知觉、粗大动作、精细动作、生活自理、沟通、认知和社会技能。',
+		    execution_entry = 'Pad /shuangxi-a-assessment',
+		    api_package = '',
+		    sort = 4,
+		    update_time = NOW()
+		WHERE id = ? AND scale_code = 'SHUANGXI_A' AND del_flag = 0
 	`, scaleID)
 	return err
 }
@@ -1920,7 +1992,15 @@ func normalizeQuestionBankRecordFieldOptions(scaleCode string, options []model.S
 
 func scaleQuestionBankScoreOptions(standard string) []model.ScaleQuestionBankScoreOption {
 	criteria := splitScaleQuestionBankStandardByScore(standard)
-	values := []int{2, 1, 0}
+	values := make([]int, 0, len(criteria))
+	for value := range criteria {
+		values = append(values, value)
+	}
+	if len(values) == 0 {
+		values = []int{2, 1, 0}
+	} else {
+		sort.Slice(values, func(i, j int) bool { return values[i] > values[j] })
+	}
 	options := make([]model.ScaleQuestionBankScoreOption, 0, len(values))
 	for _, value := range values {
 		options = append(options, model.ScaleQuestionBankScoreOption{
@@ -1934,7 +2014,7 @@ func scaleQuestionBankScoreOptions(standard string) []model.ScaleQuestionBankSco
 
 func splitScaleQuestionBankStandardByScore(standard string) map[int]string {
 	out := make(map[int]string, 3)
-	scoreLine := regexp.MustCompile(`^\s*([012])\s*[-－]\s*(.*)$`)
+	scoreLine := regexp.MustCompile(`^\s*([0-9]+)\s*[-－]\s*(.*)$`)
 	current := -1
 	for _, line := range strings.Split(standard, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -1967,6 +2047,10 @@ func appendScaleQuestionBankCriterionText(existing, next string) string {
 
 func scaleQuestionBankFallbackScoreDescription(value int) string {
 	switch value {
+	case 4:
+		return "完全达成 / 独立"
+	case 3:
+		return "达到标准 / 独立"
 	case 2:
 		return "通过 / 恰当"
 	case 1:

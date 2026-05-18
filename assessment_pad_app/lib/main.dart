@@ -22,6 +22,8 @@ import 'pep3_assessment_client.dart';
 import 'pep3_assessment_page.dart';
 import 'pad_responsive.dart';
 import 'route_bootstrap.dart';
+import 'shuangxi_assessment_client.dart';
+import 'shuangxi_assessment_page.dart';
 import 'smart_timetable_page.dart';
 import 'student_archive_page.dart';
 import 'supervision_workbench_page.dart';
@@ -64,6 +66,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.pep3Client = const ApiPep3AssessmentClient(),
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.autismDevClient = const ApiAutismDevAssessmentClient(),
+    this.shuangxiClient = const ApiShuangxiAssessmentClient(),
     this.iepRecordClient = const ApiIepAssessmentRecordClient(),
     this.iepPlanClient = const ApiIepPlanClient(),
     this.timetableClient = const ApiTimetableClient(),
@@ -76,6 +79,7 @@ class AssessmentPadApp extends StatelessWidget {
   final Pep3AssessmentClient pep3Client;
   final ErxinAssessmentClient erxinClient;
   final AutismDevAssessmentClient autismDevClient;
+  final ShuangxiAssessmentClient shuangxiClient;
   final IepAssessmentRecordClient iepRecordClient;
   final IepPlanClient iepPlanClient;
   final TimetableClient timetableClient;
@@ -185,6 +189,7 @@ class AssessmentPadApp extends StatelessWidget {
                 scaleClient: scaleClient,
                 erxinClient: erxinClient,
                 autismDevClient: autismDevClient,
+                shuangxiClient: shuangxiClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -242,6 +247,25 @@ class AssessmentPadApp extends StatelessWidget {
               child: AutismDevAssessmentPage(
                 args: args,
                 client: autismDevClient,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/shuangxi-a-assessment':
+        final Object? rawArgs = settings.arguments;
+        final ShuangxiAssessmentLaunchArgs args =
+            rawArgs is ShuangxiAssessmentLaunchArgs
+                ? rawArgs
+                : const ShuangxiAssessmentLaunchArgs();
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            resizeToAvoidBottomInset: false,
+            body: PadViewport(
+              child: ShuangxiAssessmentPage(
+                args: args,
+                client: shuangxiClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),

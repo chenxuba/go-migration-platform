@@ -14,6 +14,8 @@ import 'assessment_age_formatter.dart';
 import 'pad_responsive.dart';
 import 'pad_top_message.dart';
 import 'route_bootstrap.dart';
+import 'shuangxi_assessment_client.dart';
+import 'shuangxi_assessment_page.dart';
 
 class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({
@@ -21,6 +23,7 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
     this.scaleClient = const ApiAssessmentScaleClient(),
     this.erxinClient,
     this.autismDevClient,
+    this.shuangxiClient,
     super.key,
   });
 
@@ -28,6 +31,7 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
   final AssessmentScaleClient scaleClient;
   final ErxinAssessmentClient? erxinClient;
   final AutismDevAssessmentClient? autismDevClient;
+  final ShuangxiAssessmentClient? shuangxiClient;
 
   @override
   State<AssessmentScaleCategoryScreen> createState() =>
@@ -299,19 +303,29 @@ class _AssessmentScaleCategoryScreenState
               pageSize: 100,
               latestOnly: true,
             );
+      final AssessmentDraftPage shuangxiDrafts = widget.shuangxiClient == null
+          ? AssessmentDraftPage.empty
+          : await widget.shuangxiClient!.fetchDraftsPage(
+              token,
+              pageSize: 100,
+              latestOnly: true,
+            );
       final List<AssessmentDraftSummary> mergedDrafts =
           <AssessmentDraftSummary>[
         ...pep3Drafts.items,
         ...erxinDrafts.items,
         ...autismDevDrafts.items,
+        ...shuangxiDrafts.items,
       ]..sort(_compareDraftUpdatedDesc);
       if (!mounted) {
         return;
       }
       setState(() {
         _drafts = mergedDrafts;
-        _draftCount =
-            pep3Drafts.total + erxinDrafts.total + autismDevDrafts.total;
+        _draftCount = pep3Drafts.total +
+            erxinDrafts.total +
+            autismDevDrafts.total +
+            shuangxiDrafts.total;
         _draftsLoading = false;
         _draftErrorMessage = null;
       });
@@ -531,7 +545,8 @@ class _AssessmentScaleCategoryScreenState
     final bool isAutismDevScale = _isAutismDevScale(scale);
     final bool isErxinScale = _isErxinScale(scale);
     final bool isPep3Scale = _isPep3Scale(scale);
-    if (isAutismDevScale || isErxinScale || isPep3Scale) {
+    final bool isShuangxiAScale = _isShuangxiAScale(scale);
+    if (isAutismDevScale || isErxinScale || isPep3Scale || isShuangxiAScale) {
       final String? validationMessage = _validateScaleLaunch(scale, student);
       if (validationMessage != null) {
         _showMessage(validationMessage, tone: PadMessageTone.error);
@@ -570,6 +585,20 @@ class _AssessmentScaleCategoryScreenState
       final String studentAge = _studentAgeLabel(student);
       _openPep3Assessment(
         Pep3AssessmentLaunchArgs(
+          studentId: student.id,
+          studentName: student.displayName,
+          studentAge: studentAge,
+          birthDate: student.birthDate,
+          assessmentDate: _todayIsoDate(),
+          scaleName: scale.name,
+        ),
+      );
+      return;
+    }
+    if (isShuangxiAScale) {
+      final String studentAge = _studentAgeLabel(student);
+      _openShuangxiAssessment(
+        ShuangxiAssessmentLaunchArgs(
           studentId: student.id,
           studentName: student.displayName,
           studentAge: studentAge,
@@ -626,6 +655,20 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
+    if (_isShuangxiADraft(draft)) {
+      _openShuangxiAssessment(
+        ShuangxiAssessmentLaunchArgs(
+          draftId: draft.id,
+          studentName: draft.studentName,
+          assessmentDate: _todayIsoDate(),
+          examinerName: draft.examinerName,
+          scaleName: draft.assessmentName.trim().isEmpty
+              ? '双溪课程评量表A'
+              : draft.assessmentName.trim(),
+        ),
+      );
+      return;
+    }
     _showMessage('${draft.assessmentName} 的作答页待接入');
   }
 
@@ -655,6 +698,10 @@ class _AssessmentScaleCategoryScreenState
 
   void _openAutismDevAssessment(AutismDevAssessmentLaunchArgs args) {
     Navigator.of(context).pushNamed('/autismdev-assessment', arguments: args);
+  }
+
+  void _openShuangxiAssessment(ShuangxiAssessmentLaunchArgs args) {
+    Navigator.of(context).pushNamed('/shuangxi-a-assessment', arguments: args);
   }
 
   void _openSearchKeyboard() {
@@ -2197,6 +2244,17 @@ bool _isAutismDevScale(AssessmentScaleItem scale) {
   );
 }
 
+bool _isShuangxiAScale(AssessmentScaleItem scale) {
+  return _isShuangxiAText(
+    <String>[
+      scale.executionEntry,
+      scale.apiPackage,
+      scale.code,
+      scale.name,
+    ].join(' '),
+  );
+}
+
 bool _isPep3Draft(AssessmentDraftSummary draft) {
   return _isPep3Text(
     <String>[
@@ -2217,6 +2275,15 @@ bool _isErxinDraft(AssessmentDraftSummary draft) {
 
 bool _isAutismDevDraft(AssessmentDraftSummary draft) {
   return _isAutismDevText(
+    <String>[
+      draft.assessmentCode,
+      draft.assessmentName,
+    ].join(' '),
+  );
+}
+
+bool _isShuangxiADraft(AssessmentDraftSummary draft) {
+  return _isShuangxiAText(
     <String>[
       draft.assessmentCode,
       draft.assessmentName,
@@ -2261,6 +2328,14 @@ bool _isAutismDevText(String value) {
   return normalized.contains('autismdev') ||
       normalized.contains('孤独症儿童发展评估') ||
       normalized.contains('孤独症发展评估');
+}
+
+bool _isShuangxiAText(String value) {
+  final String normalized =
+      value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+  return normalized.contains('shuangxia') ||
+      normalized.contains('shuangxi') ||
+      normalized.contains('双溪课程评量表a');
 }
 
 String? _validateScaleLaunch(
@@ -4860,6 +4935,12 @@ _CoverType _coverTypeForScale(AssessmentScaleItem item) {
       target.contains('asd')) {
     return _CoverType.autism;
   }
+  if (target.contains('shuangxia') ||
+      target.contains('shuangxi') ||
+      target.contains('双溪课程评量表a') ||
+      target.contains('双溪')) {
+    return _CoverType.shuangxi;
+  }
   if (target.contains('社交') ||
       target.contains('social') ||
       target.contains('情绪')) {
@@ -5089,7 +5170,16 @@ class _ChooseButton extends StatelessWidget {
   }
 }
 
-enum _CoverType { book, talk, screen, express, social, autism, review }
+enum _CoverType {
+  book,
+  talk,
+  screen,
+  express,
+  social,
+  autism,
+  shuangxi,
+  review
+}
 
 class _ScaleCoverPainter extends CustomPainter {
   const _ScaleCoverPainter({required this.type});
@@ -5124,6 +5214,8 @@ class _ScaleCoverPainter extends CustomPainter {
         _drawSocial(canvas, size);
       case _CoverType.autism:
         _drawAutism(canvas, size);
+      case _CoverType.shuangxi:
+        _drawShuangxi(canvas, size);
       case _CoverType.review:
         _drawReview(canvas, size);
     }
@@ -5143,6 +5235,8 @@ class _ScaleCoverPainter extends CustomPainter {
         return const <Color>[Color(0xFFF6F3EA), Color(0xFFDDECCF)];
       case _CoverType.autism:
         return const <Color>[Color(0xFFF0F8F4), Color(0xFFCFE9DF)];
+      case _CoverType.shuangxi:
+        return const <Color>[Color(0xFFFFF4E8), Color(0xFFFFD4B8)];
       case _CoverType.review:
         return const <Color>[Color(0xFFFFF2EA), Color(0xFFF8D5C9)];
     }
@@ -5376,6 +5470,80 @@ class _ScaleCoverPainter extends CustomPainter {
         Paint()..color = const Color(0xFF63A999),
       );
     }
+  }
+
+  void _drawShuangxi(Canvas canvas, Size size) {
+    final double w = size.width;
+    final double h = size.height;
+    final Paint route = Paint()
+      ..color = const Color(0xFFE96F43).withOpacity(.26)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 7
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(w * .17, h * .68)
+        ..cubicTo(w * .32, h * .28, w * .54, h * .82, w * .82, h * .34),
+      route,
+    );
+
+    final Paint sheet = Paint()..color = Colors.white.withOpacity(.9);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromLTWH(w * .27, h * .2, w * .42, h * .56),
+        const Radius.circular(18),
+      ),
+      sheet,
+    );
+    final Paint line = Paint()
+      ..color = const Color(0xFFC95D37).withOpacity(.65)
+      ..strokeWidth = 4
+      ..strokeCap = StrokeCap.round;
+    for (final double y in <double>[.34, .47, .6]) {
+      canvas.drawLine(Offset(w * .36, h * y), Offset(w * .62, h * y), line);
+    }
+
+    final List<Color> colors = <Color>[
+      const Color(0xFFE96F43),
+      const Color(0xFFF0B849),
+      const Color(0xFF6F9F70),
+      const Color(0xFF3F82D2),
+      const Color(0xFFD96A7F),
+      const Color(0xFF63A999),
+      const Color(0xFF7F77C8),
+    ];
+    for (int index = 0; index < colors.length; index++) {
+      final double angle = -math.pi / 2 + index * math.pi * 2 / colors.length;
+      final Offset center = Offset(
+        w * .72 + math.cos(angle) * w * .14,
+        h * .48 + math.sin(angle) * h * .22,
+      );
+      canvas.drawCircle(center, 13, Paint()..color = Colors.white);
+      canvas.drawCircle(center, 8, Paint()..color = colors[index]);
+    }
+    canvas.drawCircle(
+      Offset(w * .72, h * .48),
+      18,
+      Paint()..color = const Color(0xFFFFF2EA),
+    );
+    canvas.drawCircle(
+      Offset(w * .72, h * .48),
+      10,
+      Paint()..color = const Color(0xFFE96F43),
+    );
+
+    final Paint check = Paint()
+      ..color = const Color(0xFF6F9F70)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 5
+      ..strokeCap = StrokeCap.round;
+    canvas.drawPath(
+      Path()
+        ..moveTo(w * .34, h * .32)
+        ..lineTo(w * .39, h * .37)
+        ..lineTo(w * .48, h * .26),
+      check,
+    );
   }
 
   void _drawReview(Canvas canvas, Size size) {

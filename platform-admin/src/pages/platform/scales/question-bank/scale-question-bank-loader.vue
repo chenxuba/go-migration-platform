@@ -8,6 +8,7 @@ const props = defineProps<{
 
 const componentMap = {
   PEP3: defineAsyncComponent(() => import('./pep3-question-bank.vue')),
+  SHUANGXI_A: defineAsyncComponent(() => import('./pep3-question-bank.vue')),
 }
 
 const normalizedCode = computed(() => String(props.scaleCode || '').trim().toUpperCase())

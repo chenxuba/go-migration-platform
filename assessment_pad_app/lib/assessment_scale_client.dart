@@ -213,7 +213,11 @@ class AssessmentScaleItem {
   final String executionEntry;
   final String apiPackage;
 
-  bool get available => status == 'available';
+  bool get available {
+    final String normalizedCode =
+        code.trim().toUpperCase().replaceAll(RegExp(r'[\s_\-]'), '');
+    return status == 'available' || normalizedCode == 'SHUANGXIA';
+  }
 
   List<String> get tags {
     final List<String> values = <String>[];
@@ -237,8 +241,16 @@ class AssessmentScaleItem {
   }
 
   String get displayDuration {
-    if (duration.trim().isNotEmpty) {
-      return duration.trim();
+    final String rawDuration = duration.trim();
+    final String normalizedCode =
+        code.trim().toUpperCase().replaceAll(RegExp(r'[\s_\-]'), '');
+    final bool placeholderDuration =
+        rawDuration == '待配置' || rawDuration == '待定';
+    if (rawDuration.isNotEmpty && !placeholderDuration) {
+      return rawDuration;
+    }
+    if (normalizedCode == 'SHUANGXIA') {
+      return '60-90分钟';
     }
     if (durationMinMinutes <= 0 && durationMaxMinutes <= 0) {
       return '';
