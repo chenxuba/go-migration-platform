@@ -400,6 +400,10 @@ export function submitAutismDevAssessmentDraftApi(id: number) {
   return usePost<AutismDevAssessmentDraftSubmitResult>('/api/v1/assessments/autismdev/drafts/submit', { id })
 }
 
+export function updateAutismDevAssessmentRecordApi(data: AutismDevDraftSaveRequest & { id: number }) {
+  return usePost<AutismDevAssessmentRecordDetail>('/api/v1/assessments/autismdev/records/update', data)
+}
+
 export function pageAutismDevAssessmentRecordsApi(data: AutismDevRecordPageRequest) {
   return usePost<PageResult<PEP3AssessmentRecordSummary>>(
     '/api/v1/assessments/autismdev/records/page',

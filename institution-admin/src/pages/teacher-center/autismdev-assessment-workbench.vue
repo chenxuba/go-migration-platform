@@ -16,6 +16,7 @@ import dayjs from 'dayjs'
 import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
+  getAutismDevAssessmentRecordDetailApi,
   getAutismDevAssessmentDraftDetailApi,
   getAutismDevAssessmentFormTemplateItemApi,
   getAutismDevAssessmentFormTemplateSummaryApi,
@@ -23,6 +24,8 @@ import {
   saveAutismDevAssessmentDraftApi,
   saveAutismDevAssessmentDraftItemApi,
   submitAutismDevAssessmentDraftApi,
+  updateAutismDevAssessmentRecordApi,
+  type AutismDevAssessmentRecordDetail,
   type AutismDevAssessmentDraftSummary,
   type AutismDevAssessmentItem,
   type AutismDevDomainGroup,
@@ -55,6 +58,12 @@ const templateLoading = ref(false)
 const itemLoading = ref(false)
 const saving = ref(false)
 const submitting = ref(false)
+const editingRecordId = ref(numberFromQuery('recordId') || 0)
+const recordMode = computed(() => {
+  const raw = route.query.recordMode
+  const value = Array.isArray(raw) ? raw[0] : raw
+  return String(value || '').trim().toLowerCase()
+})
 const draftResumeModalOpen = ref(false)
 const scopeEditorOpen = ref(false)
 const preferenceModalOpen = ref(false)
@@ -189,12 +198,26 @@ const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
     return 'saving'
   return autoSaveLastSavedAt.value ? 'saved' : 'idle'
 })
+const isRecordReuseMode = computed(() => editingRecordId.value > 0 && recordMode.value === 'reuse')
+const isSubmittedRecordMode = computed(() => editingRecordId.value > 0)
+const isRecordEditMode = computed(() => editingRecordId.value > 0 && !isRecordReuseMode.value)
 const autoSaveText = computed(() => {
+  if (isRecordReuseMode.value)
+    return '复用测评中，提交后生成新记录'
+  if (isRecordEditMode.value)
+    return '正式记录修改中，修改后请重新提交'
   if (autoSaveState.value === 'saving')
     return '自动保存中...'
   if (autoSaveState.value === 'saved')
     return `已自动保存 ${autoSaveLastSavedAt.value}`
   return '等待作答'
+})
+const submitActionText = computed(() => {
+  if (isRecordReuseMode.value)
+    return '提交新记录'
+  if (isRecordEditMode.value)
+    return '重新提交'
+  return '提交记录'
 })
 
 watch(selectedItemNo, (itemNo) => {
@@ -321,6 +344,10 @@ function autismDevScaleTitle(raw: string) {
 
 async function initializeWorkbench() {
   await fetchTemplate()
+  if (isSubmittedRecordMode.value) {
+    await fetchRecordForEdit(editingRecordId.value)
+    return
+  }
   if (editor.id) {
     await fetchDraftDetail(editor.id)
     await hydrateStudentBirthDate()
@@ -337,6 +364,34 @@ async function initializeWorkbench() {
     return
   }
   await startNewAssessment()
+}
+
+async function fetchRecordForEdit(recordId: number) {
+  if (!recordId)
+    return
+  try {
+    const res = await getAutismDevAssessmentRecordDetailApi(recordId)
+    const detail = unwrap<AutismDevAssessmentRecordDetail>(res)
+    const input = normalizeDraftInputSnapshot(detail.input)
+    const reuseAssessmentDate = dayjs().format('YYYY-MM-DD')
+    editor.id = undefined
+    editor.studentId = detail.studentId || editor.studentId
+    editor.studentName = detail.studentName || editor.studentName
+    editor.examinerName = detail.examinerName || editor.examinerName
+    editor.birthDate = normalizeDateText(detail.birthDate || input?.birthDate) || editor.birthDate
+    editor.assessmentDate = isRecordReuseMode.value ? reuseAssessmentDate : normalizeDateText(detail.assessmentDate || input?.assessmentDate) || editor.assessmentDate
+    editor.remark = detail.remark || input?.remark || ''
+    applyDraftInput(input)
+    applyDraftQuestionPreference(input?.questionDisplayPreference)
+    if (isRecordReuseMode.value)
+      editor.assessmentDate = reuseAssessmentDate
+    selectInitialItem()
+    messageService.info(isRecordReuseMode.value ? '当前正在复用已提交的孤独症儿童发展评估，提交后会生成新的正式记录' : '当前正在修改已提交的孤独症儿童发展评估记录，修改后请重新提交')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '获取孤独症儿童发展评估记录失败'))
+    void router.push('/teacherCenter/evaluationRecord')
+  }
 }
 
 async function fetchTemplate() {
@@ -502,6 +557,20 @@ function applyDraftInput(input?: AutismDevDraftInput) {
       itemRemarks[item.itemNo] = item.remark.trim()
   })
   applyDraftScope(input)
+}
+
+function normalizeDraftInputSnapshot(input: unknown): AutismDevDraftInput | undefined {
+  if (!input)
+    return undefined
+  if (typeof input === 'string') {
+    try {
+      return JSON.parse(input) as AutismDevDraftInput
+    }
+    catch {
+      return undefined
+    }
+  }
+  return input as AutismDevDraftInput
 }
 
 function clearRecord<T>(record: Record<number, T>) {
@@ -740,6 +809,10 @@ async function persistDraftItem(itemNo: number, draftId?: number) {
 }
 
 async function submitDraft() {
+  if (isRecordEditMode.value) {
+    await submitRecordEdit()
+    return
+  }
   if (!editor.birthDate || !editor.assessmentDate) {
     messageService.warning('缺少出生日期或测查日期，不能提交正式记录')
     return
@@ -770,6 +843,40 @@ async function submitDraft() {
   }
   catch (error: any) {
     messageService.error(getErrorMessage(error, '提交孤独症儿童发展评估记录失败'))
+  }
+  finally {
+    submitting.value = false
+  }
+}
+
+async function submitRecordEdit() {
+  if (!editor.birthDate || !editor.assessmentDate) {
+    messageService.warning('缺少出生日期或测查日期，不能提交正式记录')
+    return
+  }
+  const missingNo = firstUnansweredItemNo()
+  if (missingNo > 0) {
+    selectItem(missingNo)
+    messageService.warning(`本次范围还有 ${missingItemCount.value} 道题未评分，完成后再重新提交`)
+    return
+  }
+  if (isCustomScope.value) {
+    messageService.warning('自定义范围暂不支持直接修改正式记录')
+    return
+  }
+  submitting.value = true
+  try {
+    const res = await updateAutismDevAssessmentRecordApi({
+      ...buildPayload(),
+      id: editingRecordId.value,
+    })
+    const result = unwrap<AutismDevAssessmentRecordDetail>(res)
+    messageService.success('已重新提交，并生成新的孤独症儿童发展评估报告')
+    if (result?.id)
+      await router.push('/teacherCenter/evaluationRecord')
+  }
+  catch (error: any) {
+    messageService.error(getErrorMessage(error, '重新提交孤独症儿童发展评估记录失败'))
   }
   finally {
     submitting.value = false
@@ -815,6 +922,11 @@ function scoreItem(itemNo: number, score: string, moveNext = false) {
   selectedItemNo.value = item.itemNo
   selectedDomainCode.value = item.domainCode
   itemScores[itemNo] = normalizeScoreValue(score)
+  if (isRecordEditMode.value) {
+    if (moveNext)
+      goNextItem()
+    return
+  }
   queueSaveItem(itemNo, moveNext)
 }
 
@@ -831,7 +943,7 @@ function updateItemRemark(value: string) {
 
 function finishItemRemarkEdit() {
   const itemNo = selectedItemNo.value
-  if (itemNo > 0 && hasScore(itemNo))
+  if (!isRecordEditMode.value && itemNo > 0 && hasScore(itemNo))
     queueSaveItem(itemNo)
 }
 
@@ -841,7 +953,8 @@ function setQuestionDisplayPreference(value: NormalizedQuestionPreference) {
   questionDisplayPreference.value = value
   selectedRangeFilter.value = ''
   ensureSelectedDisplayItem()
-  void saveDraft(true)
+  if (!isRecordEditMode.value)
+    void saveDraft(true)
 }
 
 function openQuestionPreferenceEditor() {
@@ -870,7 +983,8 @@ function applyScopeEdit() {
   scopeEditorOpen.value = false
   selectedRangeFilter.value = ''
   ensureSelectedDisplayItem()
-  void saveDraft(true)
+  if (!isRecordEditMode.value)
+    void saveDraft(true)
 }
 
 function orderedValidScopeCodes(codes: string[]) {
@@ -1147,13 +1261,13 @@ function goBack() {
       <span class="header-meta">施测者：<b>{{ examinerName }}</b></span>
       <div class="header-actions">
         <span class="auto-save-status" :class="{ 'is-saving': autoSaveState === 'saving', 'is-saved': autoSaveState === 'saved' }">{{ autoSaveText }}</span>
-        <a-button size="large" class="outline-action" :loading="saving" :disabled="saving" @click="saveDraft(false)">
+        <a-button v-if="!isRecordEditMode" size="large" class="outline-action" :loading="saving" :disabled="saving" @click="saveDraft(false)">
           <template #icon><SaveOutlined /></template>
           保存草稿
         </a-button>
         <a-button size="large" type="primary" class="primary-action" :loading="submitting" @click="submitDraft">
           <template #icon><FileDoneOutlined /></template>
-          提交记录
+          {{ submitActionText }}
         </a-button>
       </div>
     </header>

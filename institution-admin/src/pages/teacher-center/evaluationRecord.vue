@@ -294,7 +294,7 @@ const allColumns = ref([
     key: 'action',
     dataIndex: 'action',
     fixed: 'right',
-    width: 240,
+    width: 300,
   },
 ])
 
@@ -1255,44 +1255,51 @@ function hasIepPlan(record) {
   return !!String(record?.iepPlanStatus || '').trim()
 }
 
-function assessmentRecordActionText(record) {
-  return hasIepPlan(record) ? '复用测评' : '编辑'
+function canModifyAssessmentRecord(record) {
+  return !!record?.id && !(hasIepPlan(record) && !isERXinRecord(record))
 }
 
-function assessmentRecordActionTip(record) {
-  if (isERXinRecord(record))
+function assessmentRecordModifyTip(record) {
+  if (!record?.id)
     return ''
-  return hasIepPlan(record)
-    ? '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
-    : ''
+  if (!canModifyAssessmentRecord(record))
+    return '已生成IEP的评估记录，不支持直接修改。如需调整，请复用测评，提交一份新的测评记录。'
+  return '修改当前测评记录，重新提交后会覆盖当前报告数据。'
 }
 
-function assessmentRecordConfirmTitle(record) {
-  return hasIepPlan(record) ? '确认复用测评？' : '确认编辑测评？'
+function assessmentRecordReuseTip(record) {
+  if (!record?.id)
+    return ''
+  return '复用当前测评的基本信息和作答结果，提交后生成新的正式记录，不覆盖原记录。'
 }
 
-function assessmentRecordConfirmContent(record) {
+function assessmentRecordConfirmTitle(record, mode = 'edit') {
+  return mode === 'reuse' ? '确认复用测评？' : '确认修改测评？'
+}
+
+function assessmentRecordConfirmContent(record, mode = 'edit') {
+  if (mode === 'reuse')
+    return '将复制当前测评记录的基本信息和作答结果，打开测评页面后可继续调整；提交后会生成新的正式记录，不会覆盖原记录。'
   if (isERXinRecord(record))
     return '修改并重新提交后会覆盖当前儿心评估记录和报告数据，请确认后继续。'
-  if (isAutismDevRecord(record)) {
-    if (hasIepPlan(record))
-      return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
+  if (isAutismDevRecord(record))
     return '修改并重新提交后会覆盖当前孤独症儿童发展评估记录和报告数据，请确认后继续。'
-  }
-  if (hasIepPlan(record))
-    return '已生成IEP的评估记录，不支持修改。如需修改，请复用测评，提交一份新的测评记录，然后再选择性地决定是否删除旧的测评记录。'
   return '修改并重新提交后会覆盖当前评估记录和报告数据，请确认后继续。'
 }
 
-function confirmAssessmentRecordAction(record = currentReport.value?.record) {
+function confirmAssessmentRecordAction(record = currentReport.value?.record, mode = 'edit') {
   if (!record?.id)
     return
+  if (mode === 'edit' && !canModifyAssessmentRecord(record)) {
+    messageService.warning('已生成IEP的评估记录不支持直接修改，请使用复用测评')
+    return
+  }
   Modal.confirm({
-    title: assessmentRecordConfirmTitle(record),
-    content: assessmentRecordConfirmContent(record),
-    okText: hasIepPlan(record) ? '确认复用' : '确认编辑',
+    title: assessmentRecordConfirmTitle(record, mode),
+    content: assessmentRecordConfirmContent(record, mode),
+    okText: mode === 'reuse' ? '确认复用' : '确认修改',
     cancelText: '取消',
-    onOk: () => editAssessmentRecord(record),
+    onOk: () => editAssessmentRecord(record, mode),
   })
 }
 
@@ -1830,10 +1837,10 @@ function openConfigModal(row) {
   configModalOpen.value = true
 }
 
-function editAssessmentRecord(row = currentReport.value?.record) {
+function editAssessmentRecord(row = currentReport.value?.record, mode = 'edit') {
   if (!row?.id)
     return
-  const recordMode = hasIepPlan(row) ? 'reuse' : 'edit'
+  const recordMode = mode === 'reuse' ? 'reuse' : 'edit'
   const path = isAutismDevRecord(row)
     ? '/teacherCenter/autismdev-assessment-workbench'
     : isERXinRecord(row)
@@ -2053,6 +2060,8 @@ onBeforeUnmount(() => {
                     <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
                   <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
+                  <a :class="{ disabled: !canModifyAssessmentRecord(record) }" @click="confirmAssessmentRecordAction(record, 'edit')">修改</a>
+                  <a @click="confirmAssessmentRecordAction(record, 'reuse')">复用</a>
                   <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
@@ -2110,14 +2119,24 @@ onBeforeUnmount(() => {
             >
               导出
             </a-button>
-            <a-tooltip :title="assessmentRecordActionTip(currentReport.record)" placement="top">
+            <a-tooltip :title="assessmentRecordModifyTip(currentReport.record)" placement="top">
+              <a-button
+                size="small"
+                class="report-edit-btn"
+                :disabled="exportingId === recordActionKey(currentReport.record) || !canModifyAssessmentRecord(currentReport.record)"
+                @click="confirmAssessmentRecordAction(currentReport.record, 'edit')"
+              >
+                修改
+              </a-button>
+            </a-tooltip>
+            <a-tooltip :title="assessmentRecordReuseTip(currentReport.record)" placement="top">
               <a-button
                 size="small"
                 class="report-edit-btn"
                 :disabled="exportingId === recordActionKey(currentReport.record)"
-                @click="confirmAssessmentRecordAction(currentReport.record)"
+                @click="confirmAssessmentRecordAction(currentReport.record, 'reuse')"
               >
-                {{ assessmentRecordActionText(currentReport.record) }}
+                复用
               </a-button>
             </a-tooltip>
           </div>
