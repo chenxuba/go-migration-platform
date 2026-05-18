@@ -517,9 +517,9 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 
 func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfileSkill, data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) error {
 	const (
-		left       = 164.0
+		left       = 144.0
 		top        = 116.0
-		width      = 644.0
+		width      = 680.0
 		scoreH     = 300.0
 		skillRowH  = 112.0
 		domainRowH = 30.0
@@ -552,7 +552,7 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 	r.setTextColor(0, 0, 0)
 	for col, skill := range skills {
 		cellX := left + float64(col)*colW
-		r.setFont(8.2)
+		r.setFont(9.8)
 		for level := 3; level >= 1; level-- {
 			value := int(math.Round(float64(skill.MaxRawScore) * float64(level) / 3))
 			cellY := top + float64(3-level)*rowH
@@ -568,7 +568,7 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 		return err
 	}
 
-	avoidRects := shuangxiAProfileColumnBaseScoreRects(len(skills), left, top, width, scoreH, 18, 14)
+	avoidRects := shuangxiAProfileColumnBaseScoreRects(len(skills), left, top, width, scoreH, 20, 15)
 	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: scoreH}
 	for recordIndex, record := range records {
 		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
@@ -611,7 +611,7 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height float64) error {
 	const (
 		leftX  = 20.0
-		scoreX = 116.0
+		scoreX = 124.0
 	)
 	rowH := height / 3
 	labels := [][]string{
@@ -631,7 +631,7 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfileScaleLabels(top, height fl
 			}
 		}
 		r.setFont(13.5)
-		if err := r.cell(scoreX, lineY-3, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
+		if err := r.cell(scoreX, lineY-3, 16, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
 			return err
 		}
 	}
@@ -736,15 +736,15 @@ func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfi
 }
 
 func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiAProfilePoint, color shuangxiAProfileColor, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) {
-	r.setFont(8.8)
+	r.setFont(10.4)
 	r.setTextColor(color.R, color.G, color.B)
 	value := fmt.Sprintf("%d", point.Score)
 	textWidth, err := r.pdf.MeasureTextWidth(value)
 	if err != nil {
-		textWidth = 10
+		textWidth = 12
 	}
-	labelWidth := math.Max(12, textWidth+3)
-	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 11, avoidRects, chartRect, 13, 4, 5)
+	labelWidth := math.Max(15, textWidth+4)
+	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 13, avoidRects, chartRect, 15, 5, 5)
 	_ = r.cell(labelRect.X-0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X+0.18, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	r.setTextColor(0, 0, 0)
