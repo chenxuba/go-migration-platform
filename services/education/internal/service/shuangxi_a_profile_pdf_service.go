@@ -352,7 +352,7 @@ func (r *shuangxiAProfilePDFRenderer) drawScaleLabels() error {
 			}
 		}
 		r.setFont(15)
-		if err := r.cell(scoreX, lineY-2, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
+		if err := r.cell(scoreX, lineY-4, 24, 18, fmt.Sprintf("%d", 3-index), gopdf.Center|gopdf.Middle); err != nil {
 			return err
 		}
 	}
