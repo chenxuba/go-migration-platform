@@ -242,6 +242,24 @@ func (svc *Service) SummarizeShuangxiAAssessmentRecordCategories(userID int64, q
 	return svc.repo.SummarizeAssessmentRecordCategories(context.Background(), instID, query)
 }
 
+func (svc *Service) GetShuangxiAAssessmentRecord(userID, recordID int64) (model.AssessmentRecordDetailVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != shuangxiAScaleCode {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment record is not Shuangxi A")
+	}
+	return record, nil
+}
+
 func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model.PEP3AssessmentDraftSubmitVO, error) {
 	if svc.repo == nil {
 		return model.PEP3AssessmentDraftSubmitVO{}, errors.New("assessment repository is not configured")

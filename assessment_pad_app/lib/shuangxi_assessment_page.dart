@@ -56,6 +56,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   ShuangxiTemplateSummary _template = ShuangxiTemplateSummary.empty;
   ShuangxiAssessmentItem _currentItem = ShuangxiAssessmentItem.empty;
   final Map<int, int> _itemScores = <int, int>{};
+  final Map<int, int> _previousItemScores = <int, int>{};
   final TextEditingController _remarkController = TextEditingController();
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
@@ -71,6 +72,8 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
   String _examinerName = '';
   String _errorMessage = '';
   String _autoSaveText = '等待作答';
+  String _previousAssessmentDate = '';
+  String _previousAssessmentLookupKey = '';
   int _selectedItemNo = 0;
   int _studentId = 0;
   int _draftId = 0;
@@ -177,6 +180,7 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         }
       });
       await _loadSelectedItem(_selectedItemNo);
+      await _loadPreviousAssessment(token);
       if (!mounted || draftDetectionSerial != _draftDetectionSerial) {
         return;
       }
@@ -376,6 +380,9 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
         _draftDialogShown = false;
       });
       await _loadSelectedItem(_selectedItemNo);
+      if (_currentPreviousAssessmentLookupKey != _previousAssessmentLookupKey) {
+        await _loadPreviousAssessment(_token);
+      }
       return true;
     } on Object catch (error) {
       if (mounted) {
@@ -413,6 +420,87 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
               ? _template.allItems.first.itemNo
               : 0);
     }
+  }
+
+  Future<void> _loadPreviousAssessment(String token) async {
+    final String lookupKey = _currentPreviousAssessmentLookupKey;
+    final Map<int, int> nextPreviousItemScores = <int, int>{};
+    String nextPreviousAssessmentDate = '';
+    if (lookupKey.isEmpty || token.trim().isEmpty) {
+      _applyPreviousAssessmentState(
+        lookupKey: lookupKey,
+        previousAssessmentDate: '',
+        previousItemScores: nextPreviousItemScores,
+      );
+      return;
+    }
+    try {
+      final ShuangxiRecordPage page = await widget.client.fetchRecordsPage(
+        token,
+        studentId: _studentId,
+        assessmentDateEnd: _assessmentDate,
+        pageSize: 5,
+      );
+      ShuangxiRecordSummary? latest;
+      for (final ShuangxiRecordSummary item in page.items) {
+        if (item.id > 0) {
+          latest = item;
+          break;
+        }
+      }
+      if (latest == null) {
+        _applyPreviousAssessmentState(
+          lookupKey: lookupKey,
+          previousAssessmentDate: '',
+          previousItemScores: nextPreviousItemScores,
+        );
+        return;
+      }
+      final ShuangxiRecordDetail detail =
+          await widget.client.fetchRecordDetail(token, latest.id);
+      nextPreviousAssessmentDate =
+          _dateOnlyText(detail.assessmentDate).isNotEmpty
+              ? _dateOnlyText(detail.assessmentDate)
+              : _dateOnlyText(latest.assessmentDate);
+      nextPreviousItemScores.addAll(detail.input.itemScores);
+    } on Object {
+      nextPreviousAssessmentDate = '';
+      nextPreviousItemScores.clear();
+    }
+    _applyPreviousAssessmentState(
+      lookupKey: lookupKey,
+      previousAssessmentDate: nextPreviousAssessmentDate,
+      previousItemScores: nextPreviousItemScores,
+    );
+  }
+
+  String get _currentPreviousAssessmentLookupKey {
+    if (_studentId <= 0 || _assessmentDate.trim().isEmpty) {
+      return '';
+    }
+    return '$_studentId|${_dateOnlyText(_assessmentDate)}';
+  }
+
+  void _applyPreviousAssessmentState({
+    required String lookupKey,
+    required String previousAssessmentDate,
+    required Map<int, int> previousItemScores,
+  }) {
+    if (!mounted) {
+      _previousAssessmentLookupKey = lookupKey;
+      _previousAssessmentDate = previousAssessmentDate;
+      _previousItemScores
+        ..clear()
+        ..addAll(previousItemScores);
+      return;
+    }
+    setState(() {
+      _previousAssessmentLookupKey = lookupKey;
+      _previousAssessmentDate = previousAssessmentDate;
+      _previousItemScores
+        ..clear()
+        ..addAll(previousItemScores);
+    });
   }
 
   Future<void> _loadSelectedItem(int itemNo) async {
@@ -1030,6 +1118,8 @@ class _ShuangxiAssessmentPageState extends State<ShuangxiAssessmentPage> {
                         fallbackScoreOptions: _template.scoreOptions,
                         itemLoading: _itemLoading,
                         selectedScore: _itemScores[_selectedItemNo] ?? -1,
+                        previousScore: _previousItemScores[_selectedItemNo],
+                        previousAssessmentDate: _previousAssessmentDate,
                         onSelectScore: _selectScore,
                       ),
                     ),
@@ -2068,6 +2158,8 @@ class _QuestionWorkspace extends StatelessWidget {
     required this.fallbackScoreOptions,
     required this.itemLoading,
     required this.selectedScore,
+    required this.previousScore,
+    required this.previousAssessmentDate,
     required this.onSelectScore,
   });
 
@@ -2076,6 +2168,8 @@ class _QuestionWorkspace extends StatelessWidget {
   final List<ShuangxiScoreOption> fallbackScoreOptions;
   final bool itemLoading;
   final int selectedScore;
+  final int? previousScore;
+  final String previousAssessmentDate;
   final ValueChanged<int> onSelectScore;
 
   @override
@@ -2106,6 +2200,8 @@ class _QuestionWorkspace extends StatelessWidget {
                 ShuangxiScoreOption(
                     value: 3, label: '3分', description: '能独立稳定完成'),
               ];
+    final bool hasPrevious =
+        previousScore != null && previousAssessmentDate.trim().isNotEmpty;
     return Container(
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 12),
       decoration: _panelDecoration(radius: 8),
@@ -2171,7 +2267,16 @@ class _QuestionWorkspace extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 14),
+          if (hasPrevious) ...<Widget>[
+            _PreviousScoreSummary(
+              score: previousScore!,
+              date: previousAssessmentDate,
+              scoreOptions: scoreOptions,
+            ),
+            const SizedBox(height: 14),
+          ] else
+            const SizedBox(height: 6),
           if (itemLoading)
             const LinearProgressIndicator(
               minHeight: 2,
@@ -2185,6 +2290,9 @@ class _QuestionWorkspace extends StatelessWidget {
               _ScoreChoice(
                 option: scoreOptions[index],
                 selected: selectedScore == scoreOptions[index].value,
+                previous:
+                    hasPrevious && previousScore == scoreOptions[index].value,
+                previousDate: previousAssessmentDate,
                 onTap: () => onSelectScore(scoreOptions[index].value),
               ),
               if (index != scoreOptions.length - 1) const SizedBox(height: 12),
@@ -2199,11 +2307,15 @@ class _ScoreChoice extends StatelessWidget {
   const _ScoreChoice({
     required this.option,
     required this.selected,
+    required this.previous,
+    required this.previousDate,
     required this.onTap,
   });
 
   final ShuangxiScoreOption option;
   final bool selected;
+  final bool previous;
+  final String previousDate;
   final VoidCallback onTap;
 
   @override
@@ -2276,8 +2388,104 @@ class _ScoreChoice extends StatelessWidget {
                   ),
                 ),
               ),
+              if (previous) ...<Widget>[
+                const SizedBox(width: 8),
+                _PreviousScoreBadge(date: previousDate),
+              ],
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _PreviousScoreSummary extends StatelessWidget {
+  const _PreviousScoreSummary({
+    required this.score,
+    required this.date,
+    required this.scoreOptions,
+  });
+
+  final int score;
+  final String date;
+  final List<ShuangxiScoreOption> scoreOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    final String description = _scoreOptionLabel(score, scoreOptions);
+    return Container(
+      height: 32,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3FFF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFA9D9B1)),
+      ),
+      child: Row(
+        children: <Widget>[
+          const Icon(
+            Icons.history_rounded,
+            color: _ShuangxiColors.green,
+            size: 18,
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '上次测评 ${_compactDateLabel(date)}',
+            maxLines: 1,
+            softWrap: false,
+            style: const TextStyle(
+              color: _ShuangxiColors.body,
+              fontSize: 13,
+              height: 1,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '$score分 · $description',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(
+                color: _ShuangxiColors.green,
+                fontSize: 14,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PreviousScoreBadge extends StatelessWidget {
+  const _PreviousScoreBadge({required this.date});
+
+  final String date;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 26,
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF3FFF5),
+        borderRadius: BorderRadius.circular(8),
+        border: Border.all(color: const Color(0xFFA9D9B1)),
+      ),
+      child: Text(
+        '上次 ${_shortDateLabel(date)}',
+        maxLines: 1,
+        softWrap: false,
+        style: const TextStyle(
+          color: _ShuangxiColors.green,
+          fontSize: 12,
+          height: 1,
+          fontWeight: FontWeight.w900,
         ),
       ),
     );
@@ -3551,6 +3759,38 @@ IconData _domainIcon(String code, String name) {
     return Icons.groups_2_outlined;
   }
   return Icons.grid_view_rounded;
+}
+
+String _scoreOptionLabel(int score, List<ShuangxiScoreOption> options) {
+  for (final ShuangxiScoreOption option in options) {
+    if (option.value == score) {
+      final String description = option.description.trim();
+      if (description.isNotEmpty) {
+        return description;
+      }
+      final String label = option.label.trim();
+      if (label.isNotEmpty) {
+        return label;
+      }
+    }
+  }
+  return '$score分';
+}
+
+String _compactDateLabel(String raw) {
+  final String date = _dateOnlyText(raw);
+  if (date.length >= 10) {
+    return date;
+  }
+  return date.isEmpty ? '-' : date;
+}
+
+String _shortDateLabel(String raw) {
+  final String date = _dateOnlyText(raw);
+  if (date.length >= 10) {
+    return date.substring(5, 10);
+  }
+  return date.isEmpty ? '-' : date;
 }
 
 String _todayIsoDate() {

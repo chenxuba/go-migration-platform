@@ -80,6 +80,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/drafts/submit", handler.submitShuangxiAAssessmentDraft)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/category-stats", handler.shuangxiAAssessmentRecordCategoryStats)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/page", handler.shuangxiAAssessmentRecordsPage)
+	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/detail", handler.shuangxiAAssessmentRecordDetail)
 	mux.HandleFunc("/api/v1/assessments/autismdev/form-template/summary", handler.autismDevAssessmentFormTemplateSummary)
 	mux.HandleFunc("/api/v1/assessments/autismdev/form-template/item", handler.autismDevAssessmentFormTemplateItem)
 	mux.HandleFunc("/api/v1/assessments/autismdev/form-template", handler.autismDevAssessmentFormTemplate)

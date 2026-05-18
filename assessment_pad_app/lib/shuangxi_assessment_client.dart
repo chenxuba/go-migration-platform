@@ -37,6 +37,10 @@ const String defaultShuangxiRecordsPagePath = String.fromEnvironment(
   'SHUANGXI_RECORDS_PAGE_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/records/page',
 );
+const String defaultShuangxiRecordDetailPath = String.fromEnvironment(
+  'SHUANGXI_RECORD_DETAIL_PATH',
+  defaultValue: '/api/v1/assessments/shuangxi-a/records/detail',
+);
 const String defaultShuangxiRecordCategoryStatsPath = String.fromEnvironment(
   'SHUANGXI_RECORD_CATEGORY_STATS_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/records/category-stats',
@@ -73,6 +77,16 @@ abstract class ShuangxiAssessmentClient {
   );
 
   Future<void> submitDraft(String token, int draftId);
+
+  Future<ShuangxiRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  });
+
+  Future<ShuangxiRecordDetail> fetchRecordDetail(String token, int id);
 }
 
 class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
@@ -85,6 +99,8 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
     this.draftDetailPath = defaultShuangxiDraftDetailPath,
     this.draftsPagePath = defaultShuangxiDraftsPagePath,
     this.draftSubmitPath = defaultShuangxiDraftSubmitPath,
+    this.recordsPagePath = defaultShuangxiRecordsPagePath,
+    this.recordDetailPath = defaultShuangxiRecordDetailPath,
     this.httpClient,
   });
 
@@ -96,6 +112,8 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   final String draftDetailPath;
   final String draftsPagePath;
   final String draftSubmitPath;
+  final String recordsPagePath;
+  final String recordDetailPath;
   final http.Client? httpClient;
 
   static final http.Client _sharedHttpClient = http.Client();
@@ -253,6 +271,57 @@ class ApiShuangxiAssessmentClient extends ShuangxiAssessmentClient {
       <String, int>{'id': draftId},
       fallbackMessage: '双溪课程评量表A正式记录提交失败',
     );
+  }
+
+  @override
+  Future<ShuangxiRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  }) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, recordsPagePath),
+      token,
+      <String, dynamic>{
+        'pageRequestModel': <String, int>{
+          'pageIndex': pageIndex,
+          'pageSize': pageSize,
+        },
+        'queryModel': <String, dynamic>{
+          'assessmentCode': 'SHUANGXI_A',
+          if (studentId > 0) 'studentId': studentId,
+          if (assessmentDateEnd.trim().isNotEmpty)
+            'assessmentDateEnd': assessmentDateEnd.trim(),
+        },
+      },
+      fallbackMessage: '双溪课程评量表A记录列表加载失败',
+    );
+    if (data is! Map) {
+      return ShuangxiRecordPage.empty;
+    }
+    return ShuangxiRecordPage.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ShuangxiRecordDetail> fetchRecordDetail(
+    String token,
+    int id,
+  ) async {
+    final Object? data = await _getJson(
+      _uri(
+        educationBaseUrl,
+        recordDetailPath,
+        <String, String>{'id': '$id'},
+      ),
+      token,
+      fallbackMessage: '双溪课程评量表A记录详情加载失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('测评记录详情返回格式不正确');
+    }
+    return ShuangxiRecordDetail.fromJson(Map<String, dynamic>.from(data));
   }
 
   Future<Object?> _getJson(
@@ -723,6 +792,117 @@ class ShuangxiDraftProgress {
   final bool complete;
   final bool canScore;
   final List<int> missingItemNos;
+}
+
+class ShuangxiRecordPage {
+  const ShuangxiRecordPage({
+    required this.items,
+    required this.total,
+    required this.current,
+    required this.size,
+  });
+
+  factory ShuangxiRecordPage.fromJson(Map<String, dynamic> json) {
+    return ShuangxiRecordPage(
+      items:
+          _listFrom(json['items']).map(ShuangxiRecordSummary.fromJson).toList(),
+      total: _intFrom(json['total']),
+      current: _intFrom(json['current']),
+      size: _intFrom(json['size']),
+    );
+  }
+
+  static const ShuangxiRecordPage empty = ShuangxiRecordPage(
+    items: <ShuangxiRecordSummary>[],
+    total: 0,
+    current: 1,
+    size: 0,
+  );
+
+  final List<ShuangxiRecordSummary> items;
+  final int total;
+  final int current;
+  final int size;
+}
+
+class ShuangxiRecordSummary {
+  const ShuangxiRecordSummary({
+    required this.id,
+    required this.studentId,
+    required this.studentName,
+    required this.assessmentCode,
+    required this.assessmentName,
+    required this.birthDate,
+    required this.assessmentDate,
+    required this.examinerName,
+    required this.updatedTime,
+    this.scaleVersion = '',
+    this.createdTime = '',
+  });
+
+  factory ShuangxiRecordSummary.fromJson(Map<String, dynamic> json) {
+    return ShuangxiRecordSummary(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      assessmentCode: '${json['assessmentCode'] ?? ''}',
+      assessmentName: '${json['assessmentName'] ?? ''}',
+      scaleVersion: '${json['scaleVersion'] ?? ''}',
+      birthDate: _dateOnlyFrom(json['birthDate']),
+      assessmentDate: _dateOnlyFrom(json['assessmentDate']),
+      examinerName: '${json['examinerName'] ?? ''}',
+      createdTime: '${json['createdTime'] ?? ''}',
+      updatedTime: '${json['updatedTime'] ?? ''}',
+    );
+  }
+
+  final int id;
+  final int studentId;
+  final String studentName;
+  final String assessmentCode;
+  final String assessmentName;
+  final String scaleVersion;
+  final String birthDate;
+  final String assessmentDate;
+  final String examinerName;
+  final String createdTime;
+  final String updatedTime;
+}
+
+class ShuangxiRecordDetail extends ShuangxiRecordSummary {
+  const ShuangxiRecordDetail({
+    required super.id,
+    required super.studentId,
+    required super.studentName,
+    required super.assessmentCode,
+    required super.assessmentName,
+    required super.birthDate,
+    required super.assessmentDate,
+    required super.examinerName,
+    required super.updatedTime,
+    super.scaleVersion,
+    super.createdTime,
+    required this.input,
+  });
+
+  factory ShuangxiRecordDetail.fromJson(Map<String, dynamic> json) {
+    return ShuangxiRecordDetail(
+      id: _intFrom(json['id']),
+      studentId: _intFrom(json['studentId']),
+      studentName: '${json['studentName'] ?? ''}',
+      assessmentCode: '${json['assessmentCode'] ?? ''}',
+      assessmentName: '${json['assessmentName'] ?? ''}',
+      scaleVersion: '${json['scaleVersion'] ?? ''}',
+      birthDate: _dateOnlyFrom(json['birthDate']),
+      assessmentDate: _dateOnlyFrom(json['assessmentDate']),
+      examinerName: '${json['examinerName'] ?? ''}',
+      createdTime: '${json['createdTime'] ?? ''}',
+      updatedTime: '${json['updatedTime'] ?? ''}',
+      input: ShuangxiDraftInput.fromJson(_mapFrom(json['input'])),
+    );
+  }
+
+  final ShuangxiDraftInput input;
 }
 
 Uri _uri(String baseUrl, String path, [Map<String, String>? query]) {

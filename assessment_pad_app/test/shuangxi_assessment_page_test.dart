@@ -82,6 +82,48 @@ void main() {
     await tester.pumpAndSettle();
   });
 
+  testWidgets('Shuangxi assessment page marks previous score option',
+      (WidgetTester tester) async {
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'test-token',
+    });
+    tester.view.physicalSize = const Size(1024, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _FakeShuangxiAssessmentClient client = _FakeShuangxiAssessmentClient(
+      previousAssessmentDate: '2026-05-01',
+      previousItemScores: const <int, int>{1: 2},
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: ShuangxiAssessmentPage(
+              client: client,
+              args: const ShuangxiAssessmentLaunchArgs(
+                studentId: 1,
+                studentName: '小明',
+                assessmentDate: '2026-05-18',
+                examinerName: '陈老师',
+              ),
+              onBack: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('上次测评 2026-05-01'), findsOneWidget);
+    expect(find.text('上次 05-01'), findsOneWidget);
+    expect(find.textContaining('2分 · 能看到眼前一至二公尺远的小物体'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('Shuangxi auto next waits before advancing',
       (WidgetTester tester) async {
     SharedPreferences.setMockInitialValues(<String, Object>{
@@ -256,11 +298,16 @@ void main() {
 }
 
 class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
-  _FakeShuangxiAssessmentClient({bool holdTemplateSummary = false})
-      : _templateSummaryCompleter =
+  _FakeShuangxiAssessmentClient({
+    bool holdTemplateSummary = false,
+    this.previousAssessmentDate = '',
+    this.previousItemScores = const <int, int>{},
+  }) : _templateSummaryCompleter =
             holdTemplateSummary ? Completer<ShuangxiTemplateSummary>() : null;
 
   final Completer<ShuangxiTemplateSummary>? _templateSummaryCompleter;
+  final String previousAssessmentDate;
+  final Map<int, int> previousItemScores;
   Map<String, dynamic>? lastSavedDraftPayload;
   int saveDraftCount = 0;
   int submitDraftCount = 0;
@@ -487,6 +534,60 @@ class _FakeShuangxiAssessmentClient extends ShuangxiAssessmentClient {
   @override
   Future<void> submitDraft(String token, int draftId) async {
     submitDraftCount += 1;
+  }
+
+  @override
+  Future<ShuangxiRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 5,
+    int studentId = 0,
+    String assessmentDateEnd = '',
+  }) async {
+    if (previousItemScores.isEmpty || previousAssessmentDate.trim().isEmpty) {
+      return ShuangxiRecordPage.empty;
+    }
+    return ShuangxiRecordPage(
+      items: <ShuangxiRecordSummary>[
+        ShuangxiRecordSummary(
+          id: 201,
+          studentId: studentId,
+          studentName: '小明',
+          assessmentCode: 'SHUANGXI_A',
+          assessmentName: '双溪课程评量表A',
+          birthDate: '2018-01-01',
+          assessmentDate: previousAssessmentDate,
+          examinerName: '陈老师',
+          updatedTime: '2026-05-01 10:00:00',
+        ),
+      ],
+      total: 1,
+      current: pageIndex,
+      size: pageSize,
+    );
+  }
+
+  @override
+  Future<ShuangxiRecordDetail> fetchRecordDetail(String token, int id) async {
+    return ShuangxiRecordDetail(
+      id: id,
+      studentId: 1,
+      studentName: '小明',
+      assessmentCode: 'SHUANGXI_A',
+      assessmentName: '双溪课程评量表A',
+      birthDate: '2018-01-01',
+      assessmentDate: previousAssessmentDate,
+      examinerName: '陈老师',
+      updatedTime: '2026-05-01 10:00:00',
+      input: ShuangxiDraftInput(
+        studentId: 1,
+        studentName: '小明',
+        examinerName: '陈老师',
+        birthDate: '2018-01-01',
+        assessmentDate: previousAssessmentDate,
+        itemScores: Map<int, int>.from(previousItemScores),
+      ),
+    );
   }
 
   ShuangxiDraftDetail _draftDetailFromPayload(
