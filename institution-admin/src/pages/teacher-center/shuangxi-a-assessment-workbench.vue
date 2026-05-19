@@ -803,6 +803,17 @@ function skillProgress(skill: ShuangxiASkillSummary) {
   }
 }
 
+function isSkillActive(skill: ShuangxiASkillSummary) {
+  return skill.skillCode === selectedSkillCode.value
+}
+
+function selectSkill(skill: ShuangxiASkillSummary) {
+  const items = skill.items || []
+  const target = items.find(item => !hasScore(item.itemNo)) || items[0]
+  if (target?.itemNo)
+    selectItem(target.itemNo)
+}
+
 function itemStatus(item: ShuangxiAItemSummary) {
   if (item.itemNo === selectedItemNo.value)
     return 'active'
@@ -860,6 +871,14 @@ function displayNumberedItemTitle(item?: Partial<ShuangxiAItemSummary>) {
 function displaySkillTitle(item?: Partial<ShuangxiAItemSummary>) {
   const name = normalizeText(item?.skillName || currentSkillName.value, '-')
   const code = numericCode(item?.itemCode, 2) || numericCode(item?.skillCode)
+  if (!code || name.startsWith(code))
+    return name
+  return `${code} ${name}`
+}
+
+function displaySidebarSkillTitle(skill: ShuangxiASkillSummary) {
+  const name = normalizeText(skill.skillName, '-')
+  const code = numericCode(skill.items?.[0]?.itemCode, 2) || numericCode(skill.skillCode)
   if (!code || name.startsWith(code))
     return name
   return `${code} ${name}`
@@ -1075,20 +1094,31 @@ function goBack() {
     </section>
 
     <main class="workbench-main">
-      <aside ref="skillListRef" class="skill-sidebar">
+      <aside ref="skillListRef" class="page-sidebar">
         <div class="sidebar-title">
           <span>技能项目</span>
           <SlidersOutlined />
         </div>
-        <div v-for="skill in selectedDomainSkills" :key="skill.skillCode" class="skill-group">
-          <div class="skill-group__head" :class="{ 'is-active': skill.skillCode === selectedSkillCode }">
-            <span>{{ skill.skillName }}</span>
-            <strong>{{ skillProgress(skill).answered }}/{{ skillProgress(skill).total }}</strong>
+        <div v-for="skill in selectedDomainSkills" :key="skill.skillCode" class="page-group">
+          <div
+            class="page-group__head"
+            :class="{ 'is-active': isSkillActive(skill) }"
+            @click="selectSkill(skill)"
+          >
+            <span class="page-group__title">
+              <RightOutlined v-if="!isSkillActive(skill)" />
+              <span v-else class="chevron-down">⌄</span>
+              {{ displaySidebarSkillTitle(skill) }}
+            </span>
+            <span>{{ skillProgress(skill).answered }}/{{ skillProgress(skill).total }}</span>
           </div>
-          <div class="skill-group__progress">
-            <i :style="{ width: `${skillProgress(skill).percent}%` }"></i>
+          <div class="page-group__progress">
+            <div class="progress-line">
+              <i :style="{ width: `${skillProgress(skill).percent}%` }"></i>
+            </div>
+            <span class="page-group__percent">{{ skillProgress(skill).percent }}%</span>
           </div>
-          <div class="question-list">
+          <div v-if="isSkillActive(skill)" class="question-list">
             <button
               v-for="item in skill.items"
               :key="item.itemNo"
@@ -1432,8 +1462,7 @@ function goBack() {
   font-size: 13px;
 }
 
-.dimension-card i,
-.skill-group__progress {
+.dimension-card i {
   display: block;
   height: 4px;
   overflow: hidden;
@@ -1441,8 +1470,7 @@ function goBack() {
   border-radius: 999px;
 }
 
-.dimension-card em,
-.skill-group__progress i {
+.dimension-card em {
   display: block;
   height: 100%;
   background: #2563eb;
@@ -1451,120 +1479,207 @@ function goBack() {
 
 .workbench-main {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 292px;
+  grid-template-columns: 240px minmax(420px, 1fr) 292px;
   flex: 1 1 auto;
-  gap: 12px;
+  gap: 10px;
   min-height: 0;
   overflow: hidden;
-  padding: 12px 18px 0;
+  padding: 10px 10px 0;
 }
 
-.skill-sidebar,
+.page-sidebar,
 .question-panel,
 .right-rail {
   min-height: 0;
+  max-height: 100%;
 }
 
-.skill-sidebar {
+.page-sidebar {
   overflow-y: auto;
-  padding: 14px;
-  background: #fff;
-  border: 1px solid #e5eaf2;
-  border-radius: 10px;
+  padding: 0;
+  overscroll-behavior: contain;
+  scrollbar-color: #cbd5e1 transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #e1e7f0;
+  border-radius: 8px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+}
+
+.page-sidebar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.page-sidebar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.page-sidebar::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+
+.page-sidebar::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 
 .sidebar-title {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-bottom: 12px;
-  color: #334155;
-  font-size: 14px;
+  height: 34px;
+  padding: 0 16px;
+  color: #111827;
+  background: rgba(255, 255, 255, 0.98);
+  border-bottom: 1px solid #e5eaf1;
+  border-radius: 8px 8px 0 0;
+  font-size: 13px;
+  font-weight: 700;
+  backdrop-filter: blur(8px);
+}
+
+.page-group {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #e5eaf1;
+}
+
+.page-group__head {
+  display: flex;
+  justify-content: space-between;
+  color: #667085;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.page-group__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  color: #111827;
   font-weight: 700;
 }
 
-.skill-group {
-  padding: 10px 0;
-  border-top: 1px solid #eef2f7;
+.page-group__title :deep(.anticon) {
+  flex: 0 0 auto;
+  font-size: 12px;
 }
 
-.skill-group:first-of-type {
-  border-top: 0;
+.page-group__title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.skill-group__head {
-  display: flex;
-  justify-content: space-between;
-  gap: 8px;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 600;
+.chevron-down {
+  margin-top: -6px;
+  font-size: 18px;
+  line-height: 12px;
 }
 
-.skill-group__head.is-active {
-  color: #2563eb;
+.page-group__progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 38px;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0 2px 18px;
 }
 
-.skill-group__progress {
-  margin: 8px 0;
+.progress-line {
+  height: 5px;
+  overflow: hidden;
+  background: #e5e7eb;
+  border-radius: 999px;
+}
+
+.progress-line i {
+  display: block;
+  height: 100%;
+  background: #18a957;
+  border-radius: inherit;
+}
+
+.page-group__percent {
+  color: #667085;
+  text-align: right;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .question-list {
-  display: grid;
-  gap: 6px;
+  margin-top: 6px;
 }
 
 .question-item {
   position: relative;
   display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) 16px;
+  grid-template-columns: 50px minmax(0, 1fr) 16px;
   align-items: center;
-  gap: 8px;
-  min-height: 38px;
-  padding: 7px 8px;
-  text-align: left;
+  width: 100%;
+  min-height: 30px;
+  padding: 0 8px 0 26px;
+  color: #4b5563;
   cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid transparent;
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  font-size: 12px;
+  text-align: left;
 }
 
 .question-item span {
-  color: #64748b;
-  font-size: 12px;
+  white-space: nowrap;
 }
 
 .question-item strong {
+  min-width: 0;
   overflow: hidden;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 600;
+  color: inherit;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.question-item.is-active {
-  background: #eff6ff;
-  border-color: #93c5fd;
-}
-
-.question-item.is-done :deep(.anticon) {
-  color: #16a34a;
+.question-item :deep(.anticon) {
+  color: #18a957;
+  font-size: 14px;
 }
 
 .question-item i,
 .question-item b {
-  width: 8px;
-  height: 8px;
+  display: inline-block;
+  width: 14px;
+  height: 14px;
   border-radius: 50%;
 }
 
 .question-item i {
-  background: #2563eb;
+  background: radial-gradient(circle at center, #fff 19%, #1769e8 22% 100%);
 }
 
 .question-item b {
-  border: 1px solid #cbd5e1;
+  border: 1px solid #b8c1cf;
+}
+
+.question-item.is-active {
+  position: relative;
+  color: #0757e6;
+  background: #eaf3ff;
+  font-weight: 800;
+}
+
+.question-item.is-active::before {
+  position: absolute;
+  left: 0;
+  width: 4px;
+  height: 100%;
+  background: #0757e6;
+  border-radius: 0 4px 4px 0;
+  content: "";
 }
 
 .question-panel {
@@ -1771,7 +1886,7 @@ function goBack() {
 .score-option span {
   min-width: 0;
   overflow: hidden;
-  color: #64748b;
+  color: #333;
   font-size: 13px;
   line-height: 1.5;
   text-overflow: ellipsis;
