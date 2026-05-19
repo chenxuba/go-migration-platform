@@ -622,7 +622,7 @@ func (r *erxinInterpretationPDFRenderer) drawSection(title string, items []strin
 			prefix = fmt.Sprintf("%d. ", index+1)
 			item = stripERXinInterpretationLeadingNumber(item)
 		}
-		r.drawParagraph(prefix+item, left+2, width-4, 10.5, 17, 10)
+		r.drawParagraph(prefix+item, left+2, width-4, 10.5, 17, 5)
 	}
 	r.y += 8
 }

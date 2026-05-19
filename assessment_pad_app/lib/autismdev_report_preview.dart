@@ -685,6 +685,12 @@ class _AutismDevReportPreviewDialogState
     if (_printing) {
       return;
     }
+    if (!_interpretationFetched && !_interpretationLoading) {
+      await _loadSavedInterpretation();
+      if (!mounted) {
+        return;
+      }
+    }
     final List<_AutismDevReportTab>? selectedTabs =
         await _showPrintSelectionDialog();
     if (selectedTabs == null || selectedTabs.isEmpty || !mounted) {
@@ -804,15 +810,6 @@ class _AutismDevReportPreviewDialogState
     final String token = widget.token.trim();
     if (token.isEmpty || widget.record.id <= 0) {
       throw StateError('缺少报告打印参数');
-    }
-    if (tabs.contains(_AutismDevReportTab.interpretation)) {
-      if (tabs.length > 1) {
-        throw StateError('报告解读请单独打印');
-      }
-      return widget.client.downloadAutismDevRecordReportInterpretationPdf(
-        token,
-        widget.record.id,
-      );
     }
     return widget.client.downloadAutismDevSelectedReportPdf(
       token,
@@ -1202,13 +1199,10 @@ class _AutismDevPrintSelectionDialogState
   }
 
   bool get _allEnabledSelected {
-    final Iterable<_AutismDevReportTab> batchTabs = widget.enabledTabs.where(
-      (_AutismDevReportTab tab) => tab != _AutismDevReportTab.interpretation,
-    );
-    if (batchTabs.isEmpty) {
+    if (widget.enabledTabs.isEmpty) {
       return false;
     }
-    return batchTabs.every(_selected.contains);
+    return widget.enabledTabs.every(_selected.contains);
   }
 
   void _toggle(_AutismDevReportTab tab, bool selected) {
@@ -1217,13 +1211,6 @@ class _AutismDevPrintSelectionDialogState
     }
     setState(() {
       if (selected) {
-        if (tab == _AutismDevReportTab.interpretation) {
-          _selected
-            ..clear()
-            ..add(tab);
-          return;
-        }
-        _selected.remove(_AutismDevReportTab.interpretation);
         _selected.add(tab);
       } else {
         _selected.remove(tab);
@@ -1238,10 +1225,7 @@ class _AutismDevPrintSelectionDialogState
       } else {
         _selected
           ..clear()
-          ..addAll(widget.enabledTabs.where(
-            (_AutismDevReportTab tab) =>
-                tab != _AutismDevReportTab.interpretation,
-          ));
+          ..addAll(widget.enabledTabs);
       }
     });
   }
