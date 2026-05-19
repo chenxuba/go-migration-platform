@@ -1,0 +1,554 @@
+[
+  {
+    "domainCode": "MAND",
+    "domainName": "提要求",
+    "sortNo": 1,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "TACT",
+    "domainName": "命名",
+    "sortNo": 2,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "LR",
+    "domainName": "听者反应",
+    "sortNo": 3,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "VP_MTS",
+    "domainName": "视觉感知和样本配对",
+    "sortNo": 4,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "INDEPENDENT_PLAY",
+    "domainName": "独立游戏",
+    "sortNo": 5,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "SOCIAL",
+    "domainName": "社会行为和社会游戏",
+    "sortNo": 6,
+    "itemCount": 15,
+    "maxScore": 15,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "MOTOR_IMITATION",
+    "domainName": "动作模仿",
+    "sortNo": 7,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "ECHOIC",
+    "domainName": "仿说",
+    "sortNo": 8,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      },
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "SPONT_VOCAL",
+    "domainName": "自发性语音行为",
+    "sortNo": 9,
+    "itemCount": 5,
+    "maxScore": 5,
+    "levels": [
+      {
+        "level": 1,
+        "ageBand": "0-18个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          1,
+          2,
+          3,
+          4,
+          5
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "LRFFC",
+    "domainName": "功能、特性和类别的听者反应",
+    "sortNo": 10,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "INTRAVERBAL",
+    "domainName": "对话",
+    "sortNo": 11,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "GROUP",
+    "domainName": "教室常规和集体能力",
+    "sortNo": 12,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "LINGUISTIC_STRUCTURE",
+    "domainName": "语言结构",
+    "sortNo": 13,
+    "itemCount": 10,
+    "maxScore": 10,
+    "levels": [
+      {
+        "level": 2,
+        "ageBand": "18-30个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          6,
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "READING",
+    "domainName": "阅读",
+    "sortNo": 14,
+    "itemCount": 5,
+    "maxScore": 5,
+    "levels": [
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "WRITING",
+    "domainName": "书写",
+    "sortNo": 15,
+    "itemCount": 5,
+    "maxScore": 5,
+    "levels": [
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  },
+  {
+    "domainCode": "MATH",
+    "domainName": "算术",
+    "sortNo": 16,
+    "itemCount": 5,
+    "maxScore": 5,
+    "levels": [
+      {
+        "level": 3,
+        "ageBand": "30-48个月",
+        "itemCount": 5,
+        "milestoneNos": [
+          11,
+          12,
+          13,
+          14,
+          15
+        ]
+      }
+    ]
+  }
+]

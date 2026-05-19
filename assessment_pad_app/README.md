@@ -29,4 +29,10 @@ Windows `.exe` 需要在 Windows 环境中执行：
 flutter build windows
 ```
 
+Windows 安装包需要在 Windows 环境安装 Flutter、Visual Studio C++ 桌面开发组件和 Inno Setup 6，然后执行：
+
+```powershell
+.\scripts\build_windows_installer.ps1 -Target prod -BuildMode release
+```
+
 当前页面代码集中在 `lib/main.dart`，后续接接口时可以再拆分为 `screens/`、`widgets/` 和 `models/`。

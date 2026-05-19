@@ -1,0 +1,29 @@
+{
+  "scaleCode": "VBMAPP",
+  "scaleVersion": "VBMAPP_CN_2ND_DRAFT_2026_05",
+  "milestoneItemCount": 170,
+  "domainCount": 16,
+  "milestoneScoringRuleCount": 170,
+  "barrierCount": 24,
+  "transitionCount": 18,
+  "domainItemCounts": {
+    "MAND": 15,
+    "TACT": 15,
+    "LR": 15,
+    "VP_MTS": 15,
+    "INDEPENDENT_PLAY": 15,
+    "SOCIAL": 15,
+    "MOTOR_IMITATION": 10,
+    "ECHOIC": 10,
+    "SPONT_VOCAL": 5,
+    "LRFFC": 10,
+    "INTRAVERBAL": 10,
+    "GROUP": 10,
+    "LINGUISTIC_STRUCTURE": 10,
+    "READING": 5,
+    "WRITING": 5,
+    "MATH": 5
+  },
+  "errors": [],
+  "status": "ok"
+}
