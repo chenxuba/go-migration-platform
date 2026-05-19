@@ -5889,7 +5889,8 @@ class _ShuangxiReportPreviewDialogState
   bool _profileShowCompare = true;
   bool _profileShowScore = true;
   bool _profileCompareLoading = false;
-  bool _profileComparePickerOpen = false;
+  final ValueNotifier<bool> _profileComparePickerOpen =
+      ValueNotifier<bool>(false);
   int _profileCompareLoadSerial = 0;
   List<_ShuangxiProfileCompareOption> _profileCompareOptions =
       const <_ShuangxiProfileCompareOption>[];
@@ -5913,6 +5914,7 @@ class _ShuangxiReportPreviewDialogState
 
   @override
   void dispose() {
+    _profileComparePickerOpen.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -6054,7 +6056,7 @@ class _ShuangxiReportPreviewDialogState
     setState(() {
       _profileShowCompare = value;
       if (!value) {
-        _profileComparePickerOpen = false;
+        _profileComparePickerOpen.value = false;
       }
     });
     _reloadDevelopmentProfilePdf();
@@ -6094,12 +6096,7 @@ class _ShuangxiReportPreviewDialogState
     if (!_profileShowCompare || _profileCompareLoading) {
       value = false;
     }
-    if (_profileComparePickerOpen == value) {
-      return;
-    }
-    setState(() {
-      _profileComparePickerOpen = value;
-    });
+    _profileComparePickerOpen.value = value;
   }
 
   Future<Uint8List> _loadDevelopmentProfilePdf() async {
@@ -6680,24 +6677,35 @@ class _ShuangxiReportPreviewDialogState
                         ),
                       ],
                     ),
-                    if (_profileComparePickerOpen) ...<Widget>[
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () => _setProfileComparePickerOpen(false),
-                          child: const SizedBox.expand(),
-                        ),
-                      ),
-                      Positioned(
-                        top: 126,
-                        right: 96,
-                        child: _ShuangxiProfileComparePanel(
-                          options: _profileCompareOptions,
-                          selectedIds: _selectedProfileCompareRecordIds,
-                          onToggle: _toggleProfileCompareRecord,
-                        ),
-                      ),
-                    ],
+                    ValueListenableBuilder<bool>(
+                      valueListenable: _profileComparePickerOpen,
+                      builder: (BuildContext context, bool open, _) {
+                        if (!open) {
+                          return const SizedBox.shrink();
+                        }
+                        return Stack(
+                          children: <Widget>[
+                            Positioned.fill(
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.translucent,
+                                onTap: () =>
+                                    _setProfileComparePickerOpen(false),
+                                child: const SizedBox.expand(),
+                              ),
+                            ),
+                            Positioned(
+                              top: 126,
+                              right: 96,
+                              child: _ShuangxiProfileComparePanel(
+                                options: _profileCompareOptions,
+                                selectedIds: _selectedProfileCompareRecordIds,
+                                onToggle: _toggleProfileCompareRecord,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
                   ],
                 ),
               ),
@@ -7035,7 +7043,7 @@ class _ShuangxiReportPreviewDialogState
             active: _showAnalysis,
             onTap: () => setState(() {
               _showAnalysis = true;
-              _profileComparePickerOpen = false;
+              _profileComparePickerOpen.value = false;
               _selectedAnalysisCell = null;
             }),
           ),
@@ -7091,15 +7099,18 @@ class _ShuangxiReportPreviewDialogState
           onChanged: _setProfileShowScore,
         ),
         const SizedBox(width: 12),
-        _ShuangxiProfileComparePicker(
-          enabled: _profileShowCompare,
-          loading: _profileCompareLoading,
-          open: _profileComparePickerOpen,
-          options: _profileCompareOptions,
-          selectedIds: _selectedProfileCompareRecordIds,
-          onTap: () => _setProfileComparePickerOpen(
-            !_profileComparePickerOpen,
-          ),
+        ValueListenableBuilder<bool>(
+          valueListenable: _profileComparePickerOpen,
+          builder: (BuildContext context, bool open, _) {
+            return _ShuangxiProfileComparePicker(
+              enabled: _profileShowCompare,
+              loading: _profileCompareLoading,
+              open: open,
+              options: _profileCompareOptions,
+              selectedIds: _selectedProfileCompareRecordIds,
+              onTap: () => _setProfileComparePickerOpen(!open),
+            );
+          },
         ),
       ],
     );
