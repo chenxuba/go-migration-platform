@@ -5542,7 +5542,7 @@ class _ShuangxiReportPreviewDialogState
       bool printPreviewRequested = false;
       await Printing.layoutPdf(
         name: _shuangxiPrintFileName(widget.record, '评量结果分析'),
-        format: PdfPageFormat.a4.landscape.copyWith(
+        format: PdfPageFormat.a4.copyWith(
           marginLeft: 0,
           marginTop: 0,
           marginRight: 0,
@@ -5691,44 +5691,48 @@ class _ShuangxiReportPreviewDialogState
   }
 
   Widget _buildResultAnalysisContent() {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDF8F3),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-        physics: const ClampingScrollPhysics(),
-        child: Center(
-          child: RepaintBoundary(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 900),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _ReportTheme.lineSoft),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x0F000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 8),
+    return GestureDetector(
+      behavior: HitTestBehavior.translucent,
+      onTap: _clearResultAnalysisCellSelection,
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFFFDF8F3),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: _ReportTheme.lineSoft),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+          physics: const ClampingScrollPhysics(),
+          child: Center(
+            child: RepaintBoundary(
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 900),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: _ReportTheme.lineSoft),
+                    boxShadow: const <BoxShadow>[
+                      BoxShadow(
+                        color: Color(0x0F000000),
+                        blurRadius: 16,
+                        offset: Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                    child: _ShuangxiResultAnalysisSheet(
+                      record: widget.record,
+                      analysis: _resultAnalysis,
+                      generating: _resultAnalysisGenerating,
+                      generationStatus: _resultAnalysisGenerationStatus,
+                      generationError: _resultAnalysisGenerationError,
+                      streamText: _resultAnalysisStreamText,
+                      selectedCell: _selectedAnalysisCell,
+                      onCellTap: _handleResultAnalysisCellTap,
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-                  child: _ShuangxiResultAnalysisSheet(
-                    record: widget.record,
-                    analysis: _resultAnalysis,
-                    generating: _resultAnalysisGenerating,
-                    generationStatus: _resultAnalysisGenerationStatus,
-                    generationError: _resultAnalysisGenerationError,
-                    streamText: _resultAnalysisStreamText,
-                    selectedCell: _selectedAnalysisCell,
-                    onCellTap: _handleResultAnalysisCellTap,
                   ),
                 ),
               ),
@@ -5737,6 +5741,15 @@ class _ShuangxiReportPreviewDialogState
         ),
       ),
     );
+  }
+
+  void _clearResultAnalysisCellSelection() {
+    if (_selectedAnalysisCell == null) {
+      return;
+    }
+    setState(() {
+      _selectedAnalysisCell = null;
+    });
   }
 
   void _handleResultAnalysisCellTap(_ShuangxiAnalysisEditRequest request) {
@@ -6336,6 +6349,7 @@ Widget _shuangxiAnalysisLabeledText({
   required String label,
   required String text,
 }) {
+  final String displayText = text.trim().isEmpty ? '无' : text.trim();
   const TextStyle style = TextStyle(
     color: Colors.black,
     fontSize: 14.5,
@@ -6346,7 +6360,7 @@ Widget _shuangxiAnalysisLabeledText({
       style: style,
       children: <InlineSpan>[
         TextSpan(text: label),
-        TextSpan(text: text.trim()),
+        TextSpan(text: displayText),
       ],
     ),
     textAlign: TextAlign.left,
@@ -7798,7 +7812,7 @@ Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
 ) async {
   final pw.Font baseFont =
       await fontFromAssetBundle('assets/fonts/NotoSansSC-Regular.ttf');
-  final PdfPageFormat pageFormat = PdfPageFormat.a4.landscape.copyWith(
+  final PdfPageFormat pageFormat = PdfPageFormat.a4.copyWith(
     marginLeft: 30,
     marginTop: 30,
     marginRight: 30,
@@ -7881,7 +7895,7 @@ Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
                 children: <pw.Widget>[
                   _shuangxiAnalysisPrintCell(row.domain, center: true),
                   _shuangxiAnalysisPrintCell(
-                    '优：${row.strengths.trim()}\n\n弱：${row.weaknesses.trim()}',
+                    '优：${_shuangxiAnalysisFallbackText(row.strengths)}\n\n弱：${_shuangxiAnalysisFallbackText(row.weaknesses)}',
                   ),
                   _shuangxiAnalysisPrintCell(row.reason),
                   _shuangxiAnalysisPrintCell(row.strategy),
@@ -7893,6 +7907,11 @@ Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
     ),
   );
   return document.save();
+}
+
+String _shuangxiAnalysisFallbackText(String value) {
+  final String text = value.trim();
+  return text.isEmpty ? '无' : text;
 }
 
 pw.Widget _shuangxiAnalysisPrintMeta(Pep3RecordSummary record) {
