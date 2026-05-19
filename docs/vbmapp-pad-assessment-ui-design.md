@@ -59,9 +59,9 @@ VB-MAPP 页面应沿用当前 Pad 端已有的暖色调，不采用冷灰蓝 Saa
 
 新的 VB-MAPP 页面应和现有 PEP-3 Pad 页面保持同一套温暖、清晰、低干扰的测评工具感。
 
-## 复用现有页头页脚
+## 锁定现有页头页脚
 
-VB-MAPP 的顶部和底部必须继承现有 Pad 测评页，不单独设计一套壳。
+VB-MAPP 的顶部和底部必须继承现有 Pad 测评页，不单独设计一套壳。这里的“保持一致”只限定 Header 和 Footer；中间主体区域按 VB-MAPP 重新设计。
 
 ### 顶部 Header
 
@@ -96,13 +96,13 @@ VB-MAPP 只替换标题文本，例如：
 
 ### 页面主体
 
-中间主体按 VB-MAPP 模块变化：
+中间主体不照搬现有量表页面，按 VB-MAPP 模块重新设计：
 
 - 里程碑：`0 / 0.5 / 1`。
 - 障碍：`0 / 1 / 2 / 3 / 4`。
 - 转衔：`1 / 2 / 3 / 4 / 5`。
 
-但主体外壳仍保持现有三栏结构：左侧题项导航、中间评分区、右侧进度/备注/缺题导航。
+主体建议保持 Pad 测评页适合横屏操作的三栏工作区，但内容组织由 VB-MAPP 决定：左侧题项/模块导航，中间评分与证据录入，右侧进度、历史对比、备注、IEP 候选目标。
 
 ## 统一跳转模型
 
@@ -408,6 +408,9 @@ Level 1 / 提要求 / 1-M                         T/O/E/TO 标签
 
 已生成的暖色方向稿，更接近当前 Pad 端视觉：
 
+- `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-milestones.png`
+- `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-barriers.png`
+- `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-transition.png`
 - `output/imagegen/vbmapp-existing-shell-set/vbmapp-existing-shell-milestones.png`
 - `output/imagegen/vbmapp-existing-shell-set/vbmapp-existing-shell-barriers.png`
 - `output/imagegen/vbmapp-existing-shell-set/vbmapp-existing-shell-transition.png`
@@ -421,7 +424,7 @@ Level 1 / 提要求 / 1-M                         T/O/E/TO 标签
 - `output/imagegen/vbmapp-redesign-batch/vbmapp-pad-redesign-light-workbench.png`
 - `output/imagegen/vbmapp-redesign-batch/vbmapp-pad-redesign-clinical-efficient.png`
 
-其中 `vbmapp-existing-shell-set/` 这一组三张图作为当前主方向：顶部和底部严格继承现有 Pad 测评页，中间主体再按 VB-MAPP 的里程碑、障碍、转衔分别切换评分组件。`vbmapp-pad-connected-workbench-warm.png` 只保留“模块之间是连续流程”的结构参考，不作为视觉主方向。
+其中 `vbmapp-locked-shell-custom-body/` 这一组三张图作为当前主方向：顶部和底部严格继承现有 Pad 测评页，中间主体按 VB-MAPP 的里程碑、障碍、转衔重新设计。`vbmapp-pad-connected-workbench-warm.png` 只保留“模块之间是连续流程”的结构参考，不作为视觉主方向。
 
 ## 给图像模型的提示词草案
 
