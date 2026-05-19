@@ -2,8 +2,8 @@
 import {
   ArrowLeftOutlined,
   CheckCircleFilled,
+  ClockCircleOutlined,
   FileDoneOutlined,
-  FileTextOutlined,
   LeftOutlined,
   RightOutlined,
   SaveOutlined,
@@ -111,9 +111,10 @@ const currentRemark = computed({
   get: () => itemRemarks[selectedItemNo.value] || '',
   set: value => updateRemark(value),
 })
-const currentItemTitle = computed(() => displayItemTitle(currentItem.value || currentItemSummary.value))
+const currentItemDisplayTitle = computed(() => displayNumberedItemTitle(currentItem.value || currentItemSummary.value))
 const currentSkillName = computed(() => currentItemSummary.value?.skillName || currentItem.value?.skillName || '-')
 const currentDomainName = computed(() => currentItemSummary.value?.domainName || currentItem.value?.domainName || '-')
+const currentSkillDisplayTitle = computed(() => displaySkillTitle(currentItem.value || currentItemSummary.value))
 const effectiveItemScores = computed(() => {
   const scores: Record<number, number> = { ...itemScores }
   const sanitaryPadScore = genderDefaultScoreForItem(82)
@@ -134,6 +135,7 @@ const hasPreviousItem = computed(() => currentIndex.value > 0)
 const hasNextItem = computed(() => currentIndex.value >= 0 && currentIndex.value < allItems.value.length - 1)
 const firstMissingNo = computed(() => firstMissingItemNo())
 const selectedSkillCode = computed(() => currentItemSummary.value?.skillCode || currentItem.value?.skillCode || '')
+const previousScoreOption = computed(() => currentScoreOptions.value.find(option => option.value === previousScore.value))
 const normalizedGender = computed(() => normalizeGender(editor.studentGender))
 const genderText = computed(() => normalizedGender.value === 'male' ? '男' : normalizedGender.value === 'female' ? '女' : '未确认')
 const autoSaveState = computed<'idle' | 'saving' | 'saved'>(() => {
@@ -815,7 +817,7 @@ function scoreOptionsForItem(item?: Partial<ShuangxiAAssessmentItem | ShuangxiAI
   const options = 'scoreOptions' in (item || {}) && Array.isArray((item as ShuangxiAAssessmentItem)?.scoreOptions)
     ? (item as ShuangxiAAssessmentItem).scoreOptions
     : template.value?.scoreOptions || []
-  return [...options].sort((a, b) => b.value - a.value)
+  return [...options].sort((a, b) => a.value - b.value)
 }
 
 function scoreOptionLabel(option: ShuangxiAScoreOption) {
@@ -836,6 +838,31 @@ function scoreTone(score: number) {
 
 function displayItemTitle(item?: Partial<ShuangxiAItemSummary>) {
   return normalizeText(item?.testItem || item?.itemTitle || item?.itemCode, '-')
+}
+
+function numericCode(value?: string, maxParts = 0) {
+  const code = String(value || '').trim().match(/\d+(?:\.\d+)*/)?.[0] || ''
+  if (!code)
+    return ''
+  if (!maxParts)
+    return code
+  return code.split('.').slice(0, maxParts).join('.')
+}
+
+function displayNumberedItemTitle(item?: Partial<ShuangxiAItemSummary>) {
+  const title = displayItemTitle(item)
+  const code = numericCode(item?.itemCode)
+  if (!code || title.startsWith(code))
+    return title
+  return `${code} ${title}`
+}
+
+function displaySkillTitle(item?: Partial<ShuangxiAItemSummary>) {
+  const name = normalizeText(item?.skillName || currentSkillName.value, '-')
+  const code = numericCode(item?.itemCode, 2) || numericCode(item?.skillCode)
+  if (!code || name.startsWith(code))
+    return name
+  return `${code} ${name}`
 }
 
 function syncSelectedDomain() {
@@ -1039,8 +1066,10 @@ function goBack() {
         :class="{ 'is-active': domain.active }"
         @click="selectDomain(domain.code)"
       >
-        <span>{{ domain.name }}</span>
-        <strong>{{ domain.answered }}/{{ domain.total }}</strong>
+        <span>
+          <b>{{ domain.name }}</b>
+          <strong>{{ domain.answered }}/{{ domain.total }}</strong>
+        </span>
         <i><em :style="{ width: `${domain.percent}%` }"></em></i>
       </button>
     </section>
@@ -1081,54 +1110,47 @@ function goBack() {
 
       <section class="question-panel">
         <a-spin :spinning="templateLoading || itemLoading">
-          <div class="question-title-row">
-            <h1>第 {{ selectedItemNo || '-' }} 题&nbsp;&nbsp;{{ currentItemTitle }}</h1>
-            <a-tag color="blue">{{ currentDomainName }} / {{ currentSkillName }}</a-tag>
-          </div>
-
-          <article class="instruction-card">
-            <h2><FileTextOutlined />评量项目</h2>
-            <p>{{ normalizeText(currentItem?.testItem || currentItemSummary?.testItem || currentItem?.itemTitle || currentItemSummary?.itemTitle) }}</p>
-          </article>
-
-          <article class="instruction-card">
-            <h2><FileTextOutlined />评分说明</h2>
-            <p v-for="option in currentScoreOptions" :key="option.value">
-              <b>{{ scoreOptionLabel(option) }}：</b>{{ scoreOptionDescription(option) }}
-            </p>
-          </article>
-
-          <div class="score-section">
-            <div class="score-section__head">
-              <h2>评分</h2>
-              <div v-if="previousScore !== undefined && previousAssessmentDate" class="previous-score-summary">
-                <span>上次评量 {{ previousAssessmentDate }}</span>
-                <strong>{{ previousScore }}分</strong>
+          <div class="question-content">
+            <div class="question-kicker-row">
+              <div class="question-kicker">
+                <i></i>
+                <span>{{ currentSkillDisplayTitle }}</span>
               </div>
-              <span v-if="genderDefaultScoreForItem(selectedItemNo) !== undefined" class="fixed-score-tip">
-                {{ genderDefaultReasonForItem(selectedItemNo) }}
-              </span>
+              <strong>第 {{ selectedItemNo || '-' }} 题</strong>
             </div>
-            <div class="score-options">
-              <button
-                v-for="option in currentScoreOptions"
-                :key="option.value"
-                type="button"
-                class="score-option"
-                :class="[`score-${scoreTone(option.value)}`, {
-                  'is-selected': currentScore === option.value,
-                  'is-previous': previousScore === option.value,
-                  'is-fixed': genderDefaultScoreForItem(selectedItemNo) === option.value,
-                }]"
-                @click="selectScore(option.value)"
-              >
-                <strong>{{ scoreOptionLabel(option) }}</strong>
-                <span>{{ scoreOptionDescription(option) }}</span>
-                <em v-if="previousScore === option.value && previousAssessmentDate" class="score-option__previous-badge">
-                  上次 {{ previousAssessmentDate.slice(5) }}
-                </em>
-                <CheckCircleFilled v-if="currentScore === option.value" class="score-option__check" />
-              </button>
+            <h1 class="question-main-title">{{ currentItemDisplayTitle }}</h1>
+            <div v-if="previousScore !== undefined && previousAssessmentDate" class="previous-score-banner">
+              <ClockCircleOutlined />
+              <span>上次评量 {{ previousAssessmentDate }}</span>
+              <strong>{{ previousScore }}分</strong>
+              <em v-if="previousScoreOption">· {{ scoreOptionDescription(previousScoreOption) }}</em>
+            </div>
+            <div v-if="genderDefaultScoreForItem(selectedItemNo) !== undefined" class="fixed-score-tip">
+              {{ genderDefaultReasonForItem(selectedItemNo) }}
+            </div>
+
+            <div class="score-section">
+              <div class="score-options">
+                <button
+                  v-for="option in currentScoreOptions"
+                  :key="option.value"
+                  type="button"
+                  class="score-option"
+                  :class="[`score-${scoreTone(option.value)}`, {
+                    'is-selected': currentScore === option.value,
+                    'is-previous': previousScore === option.value,
+                    'is-fixed': genderDefaultScoreForItem(selectedItemNo) === option.value,
+                  }]"
+                  @click="selectScore(option.value)"
+                >
+                  <i class="score-option__radio"></i>
+                  <strong>{{ scoreOptionLabel(option) }}</strong>
+                  <span>{{ scoreOptionDescription(option) }}</span>
+                  <em v-if="previousScore === option.value && previousAssessmentDate" class="score-option__previous-badge">
+                    上次 {{ previousAssessmentDate.slice(5) }}
+                  </em>
+                </button>
+              </div>
             </div>
           </div>
         </a-spin>
@@ -1240,52 +1262,68 @@ function goBack() {
   display: flex;
   flex-direction: column;
   height: 100vh;
+  min-height: 0;
   min-width: 1180px;
+  margin: 0;
   overflow: hidden;
   color: #1f2937;
-  background: #f4f7fb;
+  background: #f3f5f9;
 }
 
 .workbench-header {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  flex: 0 0 auto;
   display: flex;
   align-items: center;
-  flex: 0 0 72px;
-  gap: 12px;
-  padding: 0 22px;
-  background: #fff;
-  border-bottom: 1px solid #e5eaf2;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.05);
+  min-height: 52px;
+  padding: 0 14px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d8dfe8;
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 8px 22px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(8px);
 }
 
 .back-button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
-  color: #334155;
+  width: 28px;
+  height: 28px;
+  margin-right: 12px;
+  color: #0f2a5f;
   cursor: pointer;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  background: transparent;
+  border: 0;
+  border-radius: 6px;
+  font-size: 18px;
+}
+
+.back-button:hover {
+  color: #155bdc;
+  background: #eef4ff;
 }
 
 .workbench-title {
   flex: 0 0 auto;
-  color: #111827;
+  color: #0f2a5f;
   font-size: 18px;
-  font-weight: 700;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .header-divider {
   width: 1px;
   height: 18px;
-  background: #e5e7eb;
+  margin: 0 12px;
+  background: #cbd5e1;
 }
 
 .header-meta {
   flex: 0 0 auto;
-  color: #64748b;
+  color: #111827;
   font-size: 13px;
   white-space: nowrap;
 }
@@ -1298,13 +1336,16 @@ function goBack() {
 .header-actions {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-left: auto;
 }
 
 .auto-save-status {
+  min-width: 190px;
   color: #64748b;
   font-size: 13px;
+  line-height: 20px;
+  text-align: right;
   white-space: nowrap;
 }
 
@@ -1313,13 +1354,32 @@ function goBack() {
 }
 
 .auto-save-status.is-saved {
-  color: #16a34a;
+  color: #475569;
 }
 
 .outline-action,
 .primary-action {
-  height: 38px;
-  border-radius: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 104px;
+  height: 32px;
+  padding: 0 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.outline-action {
+  color: #155bdc;
+  border-color: #2f6bff;
+}
+
+.primary-action {
+  background: #0757e6;
+  box-shadow: 0 10px 20px rgba(7, 87, 230, 0.24);
 }
 
 .dimension-strip {
@@ -1332,7 +1392,7 @@ function goBack() {
 
 .dimension-card {
   display: grid;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
   padding: 10px 12px;
   text-align: left;
@@ -1349,6 +1409,15 @@ function goBack() {
 }
 
 .dimension-card span {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  overflow: hidden;
+}
+
+.dimension-card b {
+  min-width: 0;
   overflow: hidden;
   color: #334155;
   font-size: 13px;
@@ -1358,6 +1427,7 @@ function goBack() {
 }
 
 .dimension-card strong {
+  flex: 0 0 auto;
   color: #2563eb;
   font-size: 13px;
 }
@@ -1385,7 +1455,8 @@ function goBack() {
   flex: 1 1 auto;
   gap: 12px;
   min-height: 0;
-  padding: 12px 18px 84px;
+  overflow: hidden;
+  padding: 12px 18px 0;
 }
 
 .skill-sidebar,
@@ -1498,28 +1569,102 @@ function goBack() {
 
 .question-panel {
   overflow-y: auto;
-  padding: 18px;
+  padding: 20px 24px 0;
   background: #fff;
   border: 1px solid #e5eaf2;
   border-radius: 10px;
 }
 
-.question-title-row {
+.question-panel :deep(.ant-spin-nested-loading),
+.question-panel :deep(.ant-spin-container) {
+  min-height: 100%;
+}
+
+.question-panel :deep(.ant-spin-container) {
+  display: flex;
+  flex-direction: column;
+}
+
+.question-content {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  padding-bottom: 22px;
+}
+
+.question-kicker-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
-.question-title-row h1 {
+.question-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
-  margin: 0;
+  color: #2563eb;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.question-kicker i {
+  width: 4px;
+  height: 18px;
+  background: #2563eb;
+  border-radius: 999px;
+}
+
+.question-kicker span {
+  min-width: 0;
   overflow: hidden;
-  color: #111827;
-  font-size: 22px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.question-kicker-row > strong {
+  color: #64748b;
+  font-size: 13px;
   font-weight: 700;
+}
+
+.question-main-title {
+  min-width: 0;
+  margin: 0 0 14px;
+  color: #111827;
+  font-size: 24px;
+  font-weight: 800;
   line-height: 32px;
+  text-overflow: ellipsis;
+}
+
+.previous-score-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 6px 12px;
+  margin-bottom: 14px;
+  color: #166534;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.previous-score-banner strong {
+  color: #16a34a;
+}
+
+.previous-score-banner em {
+  min-width: 0;
+  overflow: hidden;
+  color: #15803d;
+  font-style: normal;
+  font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1552,10 +1697,12 @@ function goBack() {
 }
 
 .score-section {
-  padding: 16px;
-  background: #fff;
-  border: 1px solid #dbeafe;
-  border-radius: 10px;
+  padding: 0;
+  margin-top: 0;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 .score-section__head {
@@ -1566,7 +1713,12 @@ function goBack() {
 }
 
 .fixed-score-tip {
+  padding: 8px 12px;
+  margin: -8px 0 16px;
   color: #64748b;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
   font-size: 13px;
 }
 
@@ -1589,14 +1741,18 @@ function goBack() {
 
 .score-options {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 10px;
 }
 
 .score-option {
   position: relative;
-  min-height: 94px;
-  padding: 14px;
+  display: grid;
+  grid-template-columns: 24px 48px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 56px;
+  padding: 10px 16px;
   text-align: left;
   cursor: pointer;
   background: #fff;
@@ -1605,17 +1761,21 @@ function goBack() {
 }
 
 .score-option strong {
-  display: block;
-  margin-bottom: 8px;
+  margin: 0;
   color: #111827;
-  font-size: 20px;
-  font-weight: 800;
+  font-size: 17px;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .score-option span {
+  min-width: 0;
+  overflow: hidden;
   color: #64748b;
   font-size: 13px;
   line-height: 1.5;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .score-option.is-selected {
@@ -1624,16 +1784,25 @@ function goBack() {
 }
 
 .score-option.is-previous:not(.is-selected) {
-  background: #f8fafc;
+  background: #fbfdff;
   border-color: #cbd5e1;
 }
 
-.score-option.score-green.is-selected {
-  border-color: #16a34a;
+.score-option.score-green.is-selected,
+.score-option.score-red.is-selected {
+  border-color: #2563eb;
 }
 
-.score-option.score-red.is-selected {
-  border-color: #ef4444;
+.score-option__radio {
+  width: 16px;
+  height: 16px;
+  background: #fff;
+  border: 2px solid #d1d5db;
+  border-radius: 50%;
+}
+
+.score-option.is-selected .score-option__radio {
+  border: 5px solid #2563eb;
 }
 
 .score-option__check {
@@ -1645,12 +1814,16 @@ function goBack() {
 }
 
 .score-option__previous-badge {
-  position: absolute;
-  right: 10px;
-  bottom: 8px;
-  color: #64748b;
+  justify-self: end;
+  padding: 4px 9px;
+  color: #15803d;
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 7px;
   font-size: 12px;
   font-style: normal;
+  font-weight: 700;
+  white-space: nowrap;
 }
 
 .right-rail {
@@ -1727,51 +1900,63 @@ function goBack() {
 }
 
 .workbench-footer {
-  position: fixed;
-  right: 18px;
-  bottom: 16px;
-  left: 18px;
-  z-index: 10;
-  display: flex;
+  position: sticky;
+  bottom: 0;
+  z-index: 11;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 136px 1fr 146px 158px 142px;
   align-items: center;
-  justify-content: center;
-  gap: 12px;
-  height: 56px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid #e5eaf2;
-  border-radius: 12px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.12);
-  backdrop-filter: blur(8px);
+  gap: 16px;
+  min-height: 58px;
+  padding: 0 20px;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid #d8dfe8;
+  border-radius: 10px 10px 0 0;
+  box-shadow: 0 -8px 24px rgba(15, 23, 42, 0.08);
 }
 
 .nav-button,
 .next-button {
-  min-width: 108px;
-  height: 38px;
-  border-radius: 8px;
+  height: 34px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.nav-button {
+  color: #0757e6;
+  border-color: #9bbcff;
+}
+
+.next-button {
+  background: #0757e6;
+  box-shadow: 0 10px 20px rgba(7, 87, 230, 0.22);
 }
 
 .question-counter {
-  min-width: 74px;
   text-align: center;
 }
 
 .question-counter strong {
-  color: #2563eb;
-  font-size: 22px;
+  color: #1f2937;
+  font-size: 24px;
+  letter-spacing: 0;
 }
 
 .question-counter span {
-  color: #64748b;
-  font-size: 13px;
+  margin-left: 6px;
+  color: #1f2937;
+  font-size: 14px;
 }
 
 .auto-next {
-  display: inline-flex;
+  display: flex;
   align-items: center;
+  justify-content: flex-end;
   gap: 8px;
-  color: #475569;
-  font-size: 13px;
+  color: #374151;
+  font-size: 12px;
 }
 
 .modal-copy {

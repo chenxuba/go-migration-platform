@@ -749,7 +749,6 @@ onBeforeUnmount(() => {
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
                     <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
-                  <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
                   <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
