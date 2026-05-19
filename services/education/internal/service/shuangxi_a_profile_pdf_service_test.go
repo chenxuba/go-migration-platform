@@ -77,6 +77,69 @@ func TestShuangxiAProfileScoreYUsesThreeIntervalAxis(t *testing.T) {
 	}
 }
 
+func TestShuangxiAProfileRecordsThroughCurrentUsesFourRecordCycles(t *testing.T) {
+	records := make([]model.AssessmentRecordDetailVO, 8)
+	for index := range records {
+		assessmentDate := time.Date(2026, 5, index+1, 0, 0, 0, 0, time.Local)
+		records[index] = model.AssessmentRecordDetailVO{
+			AssessmentRecordSummaryVO: model.AssessmentRecordSummaryVO{
+				ID:                 int64(index + 1),
+				AssessmentDate:     &assessmentDate,
+				AssessmentSequence: index + 1,
+			},
+		}
+	}
+	cases := []struct {
+		name         string
+		currentIndex int
+		wantIDs      []int64
+	}{
+		{name: "first cycle fourth assessment", currentIndex: 3, wantIDs: []int64{1, 2, 3, 4}},
+		{name: "second cycle first assessment", currentIndex: 4, wantIDs: []int64{5}},
+		{name: "second cycle fourth assessment", currentIndex: 7, wantIDs: []int64{5, 6, 7, 8}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := shuangxiAProfileRecordsThroughCurrent(records[:tc.currentIndex+1], records[tc.currentIndex])
+			gotIDs := make([]int64, 0, len(got))
+			for _, item := range got {
+				gotIDs = append(gotIDs, item.ID)
+			}
+			if !int64SlicesEqual(gotIDs, tc.wantIDs) {
+				t.Fatalf("records = %v, want %v", gotIDs, tc.wantIDs)
+			}
+		})
+	}
+}
+
+func TestShuangxiAProfilePointScoreRectStaysAbovePoint(t *testing.T) {
+	point := shuangxiAProfilePoint{X: 240, Y: 260, Score: 2}
+	chart := shuangxiAProfileRect{X: 140, Y: 120, W: 260, H: 300}
+	blockingRect := shuangxiAProfileRect{X: 231, Y: 240, W: 18, H: 13}
+	got := shuangxiAProfilePointScoreRectWithOffsets(point, 18, 13, []shuangxiAProfileRect{blockingRect}, chart, 15, 5, 5)
+	want := shuangxiAProfileRect{X: 231, Y: 240, W: 18, H: 13}
+	if got != want {
+		t.Fatalf("point score rect = %+v, want fixed above-point rect %+v", got, want)
+	}
+	nearbyPoint := shuangxiAProfilePoint{X: 242, Y: 260, Score: 2}
+	nearby := shuangxiAProfilePointScoreRectWithOffsets(nearbyPoint, 18, 13, nil, chart, 15, 5, 5)
+	if nearby.X != 233 || nearby.Y != 240 {
+		t.Fatalf("nearby point score rect = %+v, want same above-point rule", nearby)
+	}
+}
+
+func int64SlicesEqual(left, right []int64) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
 func TestShuangxiAProfileSkillsAndScores(t *testing.T) {
 	dataDir, err := resolveShuangxiADataDir()
 	if err != nil {

@@ -451,6 +451,11 @@ function formatAge(row) {
   return parts.join('') || '-'
 }
 
+function formatAssessmentSequence(row) {
+  const value = Number(row?.assessmentSequence || 0)
+  return value > 0 ? `第${value}次` : '-'
+}
+
 function formatCurrentAge(row) {
   const birth = dayjs(row?.birthDate).startOf('day')
   const today = dayjs().startOf('day')
@@ -2994,7 +2999,10 @@ onBeforeUnmount(() => {
                 />
               </template>
               <template v-else-if="column.key === 'assessmentName'">
-                <span class="single-line">{{ record.assessmentName || '-' }}</span>
+                <div class="assessment-name-cell">
+                  <span class="single-line">{{ record.assessmentName || '-' }}</span>
+                  <span class="assessment-sequence-tag">{{ formatAssessmentSequence(record) }}</span>
+                </div>
               </template>
               <template v-else-if="column.key === 'assessmentDate'">
                 {{ formatDate(record.assessmentDate) }}
@@ -3931,6 +3939,27 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   vertical-align: bottom;
   white-space: nowrap;
+}
+
+.assessment-name-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+  min-width: 0;
+}
+
+.assessment-sequence-tag {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 8px;
+  color: var(--pro-ant-color-primary);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  background: #eef6ff;
+  border-radius: 10px;
 }
 
 .action-links {

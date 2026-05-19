@@ -41,6 +41,11 @@ type shuangxiAProfileRect struct {
 	H float64
 }
 
+type shuangxiAProfilePointSeries struct {
+	Color  shuangxiAProfileColor
+	Points []shuangxiAProfilePoint
+}
+
 type shuangxiAProfileDomain struct {
 	Code        string
 	Name        string
@@ -152,15 +157,27 @@ func shuangxiAProfileRecordsThroughCurrent(history []model.AssessmentRecordDetai
 	if currentIndex < 0 {
 		currentIndex = len(records) - 1
 	}
-	start := currentIndex - 3
-	if start < 0 {
-		start = 0
+	for index := range records {
+		if records[index].AssessmentSequence <= 0 {
+			records[index].AssessmentSequence = index + 1
+		}
 	}
-	end := currentIndex + 1
-	if end > len(records) {
-		end = len(records)
+	currentSequence := records[currentIndex].AssessmentSequence
+	if currentSequence <= 0 {
+		currentSequence = currentIndex + 1
 	}
-	return records[start:end]
+	cycleStart := ((currentSequence - 1) / 4 * 4) + 1
+	cycleEnd := cycleStart + 3
+	cycleRecords := make([]model.AssessmentRecordDetailVO, 0, 4)
+	for _, item := range records {
+		if item.AssessmentSequence >= cycleStart && item.AssessmentSequence <= cycleEnd {
+			cycleRecords = append(cycleRecords, item)
+		}
+	}
+	if len(cycleRecords) == 0 {
+		return []model.AssessmentRecordDetailVO{current}
+	}
+	return cycleRecords
 }
 
 func shuangxiAProfileRecordSortTime(record model.AssessmentRecordDetailVO) time.Time {
@@ -619,8 +636,8 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 	)
 	colW := width / float64(len(domains))
 	rowH := height / 3
-	baseScoreRects := shuangxiAProfileBaseScoreRects(domains, left, top, width, height)
 	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: height}
+	seriesList := make([]shuangxiAProfilePointSeries, 0, len(records))
 	for recordIndex, record := range records {
 		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
 		scoreByDomain := shuangxiAProfileDomainScoreMap(data, record)
@@ -639,15 +656,24 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 		if len(points) == 0 {
 			continue
 		}
+		seriesList = append(seriesList, shuangxiAProfilePointSeries{Color: color, Points: points})
+	}
+	for _, series := range seriesList {
 		r.pdf.SetLineType("solid")
 		r.pdf.SetLineWidth(1.45)
-		r.pdf.SetStrokeColor(color.R, color.G, color.B)
-		for index := 1; index < len(points); index++ {
-			r.pdf.Line(points[index-1].X, points[index-1].Y, points[index].X, points[index].Y)
+		r.pdf.SetStrokeColor(series.Color.R, series.Color.G, series.Color.B)
+		for index := 1; index < len(series.Points); index++ {
+			r.pdf.Line(series.Points[index-1].X, series.Points[index-1].Y, series.Points[index].X, series.Points[index].Y)
 		}
-		for _, point := range points {
-			shuangxiAProfileDrawDot(r.pdf, point, 3.3, color)
-			r.drawProfilePointScore(point, color, baseScoreRects, chartRect)
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			shuangxiAProfileDrawDot(r.pdf, point, 3.3, series.Color)
+		}
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			r.drawProfilePointScore(point, series.Color, chartRect)
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -710,8 +736,8 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 		return err
 	}
 
-	avoidRects := shuangxiAProfileColumnBaseScoreRects(len(skills), left, top, width, scoreH, 20, 15)
 	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: scoreH}
+	seriesList := make([]shuangxiAProfilePointSeries, 0, len(records))
 	for recordIndex, record := range records {
 		color := shuangxiAProfileColors[recordIndex%len(shuangxiAProfileColors)]
 		scoreBySkill := shuangxiAProfileSkillScoreMap(data, record)
@@ -733,15 +759,24 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 		if len(points) == 0 {
 			continue
 		}
+		seriesList = append(seriesList, shuangxiAProfilePointSeries{Color: color, Points: points})
+	}
+	for _, series := range seriesList {
 		r.pdf.SetLineType("solid")
 		r.pdf.SetLineWidth(1.2)
-		r.pdf.SetStrokeColor(color.R, color.G, color.B)
-		for index := 1; index < len(points); index++ {
-			r.pdf.Line(points[index-1].X, points[index-1].Y, points[index].X, points[index].Y)
+		r.pdf.SetStrokeColor(series.Color.R, series.Color.G, series.Color.B)
+		for index := 1; index < len(series.Points); index++ {
+			r.pdf.Line(series.Points[index-1].X, series.Points[index-1].Y, series.Points[index].X, series.Points[index].Y)
 		}
-		for _, point := range points {
-			shuangxiAProfileDrawDot(r.pdf, point, 2.45, color)
-			r.drawProfilePointScoreSmall(point, color, avoidRects, chartRect)
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			shuangxiAProfileDrawDot(r.pdf, point, 2.45, series.Color)
+		}
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			r.drawProfilePointScoreSmall(point, series.Color, chartRect)
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -795,6 +830,7 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 	}
 
 	chartRect := shuangxiAProfileRect{X: left, Y: top, W: width, H: scoreH}
+	seriesList := make([]shuangxiAProfilePointSeries, 0, len(records))
 	for recordIndex, record := range records {
 		itemScores := shuangxiAProfileItemScoreMap(record)
 		if len(itemScores) == 0 {
@@ -816,15 +852,24 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 		if len(points) == 0 {
 			continue
 		}
+		seriesList = append(seriesList, shuangxiAProfilePointSeries{Color: color, Points: points})
+	}
+	for _, series := range seriesList {
 		r.pdf.SetLineType("solid")
 		r.pdf.SetLineWidth(1.3)
-		r.pdf.SetStrokeColor(color.R, color.G, color.B)
-		for index := 1; index < len(points); index++ {
-			r.pdf.Line(points[index-1].X, points[index-1].Y, points[index].X, points[index].Y)
+		r.pdf.SetStrokeColor(series.Color.R, series.Color.G, series.Color.B)
+		for index := 1; index < len(series.Points); index++ {
+			r.pdf.Line(series.Points[index-1].X, series.Points[index-1].Y, series.Points[index].X, series.Points[index].Y)
 		}
-		for _, point := range points {
-			shuangxiAProfileDrawDot(r.pdf, point, 3, color)
-			r.drawProfilePointScoreSmall(point, color, nil, chartRect)
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			shuangxiAProfileDrawDot(r.pdf, point, 3, series.Color)
+		}
+	}
+	for _, series := range seriesList {
+		for _, point := range series.Points {
+			r.drawProfilePointScoreSmall(point, series.Color, chartRect)
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -1018,7 +1063,7 @@ func shuangxiAProfileColumnBaseScoreRects(columnCount int, left, top, width, hei
 	return rects
 }
 
-func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfilePoint, color shuangxiAProfileColor, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) {
+func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfilePoint, color shuangxiAProfileColor, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
 	r.setFont(13)
 	r.setTextColor(color.R, color.G, color.B)
 	value := fmt.Sprintf("%d", point.Score)
@@ -1027,14 +1072,15 @@ func (r *shuangxiAProfilePDFRenderer) drawProfilePointScore(point shuangxiAProfi
 		textWidth = 20
 	}
 	labelWidth := math.Max(20, textWidth+6)
-	labelRect := shuangxiAProfilePointScoreRect(point, labelWidth, 16, avoidRects, chartRect)
+	labelRect := shuangxiAProfilePointScoreRect(point, labelWidth, 16, chartRect)
 	_ = r.cell(labelRect.X-0.25, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X+0.25, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X, labelRect.Y-0.15, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	r.setTextColor(0, 0, 0)
+	return labelRect
 }
 
-func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiAProfilePoint, color shuangxiAProfileColor, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) {
+func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiAProfilePoint, color shuangxiAProfileColor, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
 	r.setFont(10.4)
 	r.setTextColor(color.R, color.G, color.B)
 	value := fmt.Sprintf("%d", point.Score)
@@ -1043,35 +1089,31 @@ func (r *shuangxiAProfilePDFRenderer) drawProfilePointScoreSmall(point shuangxiA
 		textWidth = 12
 	}
 	labelWidth := math.Max(15, textWidth+4)
-	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 13, avoidRects, chartRect, 15, 5, 5)
+	labelRect := shuangxiAProfilePointScoreRectWithOffsets(point, labelWidth, 13, nil, chartRect, 15, 0, 0)
 	_ = r.cell(labelRect.X-0.26, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X+0.26, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X, labelRect.Y-0.18, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X, labelRect.Y+0.18, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	_ = r.cell(labelRect.X, labelRect.Y, labelRect.W, labelRect.H, value, gopdf.Center|gopdf.Middle)
 	r.setTextColor(0, 0, 0)
+	return labelRect
 }
 
-func shuangxiAProfilePointScoreRect(point shuangxiAProfilePoint, width, height float64, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
-	return shuangxiAProfilePointScoreRectWithOffsets(point, width, height, avoidRects, chartRect, 23, 7, 7)
+func shuangxiAProfilePointScoreRect(point shuangxiAProfilePoint, width, height float64, chartRect shuangxiAProfileRect) shuangxiAProfileRect {
+	return shuangxiAProfilePointScoreRectWithOffsets(point, width, height, nil, chartRect, 23, 0, 0)
 }
 
 func shuangxiAProfilePointScoreRectWithOffsets(point shuangxiAProfilePoint, width, height float64, avoidRects []shuangxiAProfileRect, chartRect shuangxiAProfileRect, aboveOffset, belowOffset, sideOffset float64) shuangxiAProfileRect {
-	candidates := []shuangxiAProfileRect{
-		{X: point.X - width/2, Y: point.Y - aboveOffset, W: width, H: height},
-		{X: point.X - width/2, Y: point.Y + belowOffset, W: width, H: height},
-		{X: point.X + sideOffset, Y: point.Y - aboveOffset + 3, W: width, H: height},
-		{X: point.X - width - sideOffset, Y: point.Y - aboveOffset + 3, W: width, H: height},
-		{X: point.X + sideOffset, Y: point.Y - height/2, W: width, H: height},
-		{X: point.X - width - sideOffset, Y: point.Y - height/2, W: width, H: height},
-	}
-	for _, candidate := range candidates {
-		candidate = shuangxiAProfileClampRectToChart(candidate, chartRect)
-		if !shuangxiAProfileRectOverlapsAny(candidate, avoidRects) {
-			return candidate
-		}
-	}
-	return shuangxiAProfileClampRectToChart(candidates[0], chartRect)
+	aboveOffset = math.Max(aboveOffset, height+7)
+	_ = avoidRects
+	_ = belowOffset
+	_ = sideOffset
+	return shuangxiAProfileClampRectToChart(shuangxiAProfileRect{
+		X: point.X - width/2,
+		Y: point.Y - aboveOffset,
+		W: width,
+		H: height,
+	}, chartRect)
 }
 
 func shuangxiAProfileClampRectToChart(rect shuangxiAProfileRect, chart shuangxiAProfileRect) shuangxiAProfileRect {
@@ -1089,23 +1131,6 @@ func shuangxiAProfileClampRectToChart(rect shuangxiAProfileRect, chart shuangxiA
 		rect.Y = math.Max(minY, math.Min(maxY, rect.Y))
 	}
 	return rect
-}
-
-func shuangxiAProfileRectOverlapsAny(rect shuangxiAProfileRect, others []shuangxiAProfileRect) bool {
-	for _, other := range others {
-		if shuangxiAProfileRectsOverlap(rect, other) {
-			return true
-		}
-	}
-	return false
-}
-
-func shuangxiAProfileRectsOverlap(a, b shuangxiAProfileRect) bool {
-	const pad = 1.5
-	return a.X < b.X+b.W+pad &&
-		a.X+a.W+pad > b.X &&
-		a.Y < b.Y+b.H+pad &&
-		a.Y+a.H+pad > b.Y
 }
 
 func shuangxiAProfileDomainScoreMap(data shuangxiAStaticData, record model.AssessmentRecordDetailVO) map[string]int {

@@ -531,6 +531,7 @@ export interface PEP3AssessmentRecordSummary {
   ageMonths: number
   ageDays: number
   normAgeMonths: number
+  assessmentSequence?: number
   examinerId?: number
   examinerName?: string
   dataStatus?: string
