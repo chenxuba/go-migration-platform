@@ -727,11 +727,6 @@ DateTime _recordSortTime(Pep3RecordSummary record) {
   if (createdTime != null) {
     return createdTime;
   }
-  final DateTime? assessmentDate =
-      _tryParseRecordDateTime(record.assessmentDate);
-  if (assessmentDate != null) {
-    return assessmentDate;
-  }
   return DateTime.fromMillisecondsSinceEpoch(0);
 }
 
@@ -7592,8 +7587,7 @@ String _assessmentCodeText(String raw) {
 String _sequenceText(int value) => value <= 0 ? '-' : '第$value次';
 
 String _reportTimeRaw(Pep3RecordSummary record) {
-  final String createdTime = record.createdTime.trim();
-  return createdTime.isNotEmpty ? createdTime : record.updatedTime;
+  return record.createdTime.trim();
 }
 
 Color _domainColor(int index) {

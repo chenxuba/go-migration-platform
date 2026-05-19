@@ -169,7 +169,7 @@ void main() {
     expect(find.text('生成解读'), findsWidgets);
   });
 
-  testWidgets('assessment report list sorts by report time, not update time',
+  testWidgets('assessment report list sorts by report timestamp only',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
     tester.view.devicePixelRatio = 1;
@@ -192,7 +192,7 @@ void main() {
         birthDate: '2021-03-01',
         assessmentDate: '2026-05-17',
         examinerName: '陈老师',
-        createdTime: '2026-05-17T09:00:00',
+        createdTime: '2026-05-18T08:00:00',
         updatedTime: '2026-05-19T20:00:00',
       ),
     );
@@ -208,7 +208,7 @@ void main() {
         birthDate: '2022-05-11',
         assessmentDate: '2026-05-16',
         examinerName: '陈老师',
-        createdTime: '2026-05-18T08:00:00',
+        createdTime: '2026-05-18T09:30:00',
         updatedTime: '2026-05-18T08:00:00',
       ),
     );
