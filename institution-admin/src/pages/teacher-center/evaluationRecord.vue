@@ -1209,16 +1209,6 @@ function exportDimensionPages(value) {
   return activeExportDimensionOptions.value.find(item => item.value === value)?.pages || '第 1-26 页'
 }
 
-function exportDimensionDesc(value) {
-  if (value === 'shuangxi_development_profile')
-    return '导出双溪课程评量表A综合发展侧面图。'
-  if (value === 'pep3_interpretation')
-    return '导出已生成的PEP-3报告解读内容。'
-  if (isAutismDevRecord(exportTargetRecord.value))
-    return autismDevExportDimensionOptions.find(item => item.value === value)?.desc || '导出孤独症儿童发展评估报告。'
-  return activeExportDimensionOptions.value.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
-}
-
 function exportModalTitle() {
   if (isShuangxiARecord(exportTargetRecord.value))
     return '导出双溪报告'
@@ -2780,15 +2770,6 @@ onBeforeUnmount(() => {
               <span v-if="option.recommended" class="export-dimension-chip__tag">推荐</span>
             </button>
           </div>
-          <div class="export-dimension__detail">
-            <span class="export-dimension__detail-label">导出内容</span>
-            <strong>{{ exportDimensionTitle(selectedExportDimension) }}</strong>
-            <p>{{ exportDimensionDesc(selectedExportDimension) }}</p>
-            <div class="export-dimension__detail-pages">
-              <span>包含页码</span>
-              <em>{{ exportDimensionPages(selectedExportDimension) }}</em>
-            </div>
-          </div>
         </div>
         <div class="export-dimension__footer">
           <div v-if="isAutismDevRecord(exportTargetRecord)" class="export-dimension__selection">
@@ -3982,7 +3963,7 @@ onBeforeUnmount(() => {
 
 .export-dimension__chooser {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 210px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
 }
@@ -4091,63 +4072,6 @@ onBeforeUnmount(() => {
   line-height: 18px;
   background: #eef6ff;
   border-radius: 4px;
-}
-
-.export-dimension__detail {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  padding: 12px;
-  background: #f8fafc;
-  border: 1px solid #edf1f6;
-  border-radius: 8px;
-}
-
-.export-dimension__detail-label {
-  color: #98a2b3;
-  font-size: 12px;
-  line-height: 18px;
-}
-
-.export-dimension__detail strong {
-  margin-top: 4px;
-  overflow: hidden;
-  color: #1f2937;
-  font-size: 14px;
-  font-weight: 600;
-  line-height: 22px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.export-dimension__detail p {
-  flex: 1 1 auto;
-  display: -webkit-box;
-  margin: 8px 0 12px;
-  overflow: hidden;
-  color: #687386;
-  font-size: 12px;
-  line-height: 19px;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
-}
-
-.export-dimension__detail-pages {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 10px;
-  color: #8a94a6;
-  font-size: 12px;
-  line-height: 18px;
-  border-top: 1px solid #e8edf4;
-
-  em {
-    color: var(--pro-ant-color-primary);
-    font-style: normal;
-    font-weight: 600;
-  }
 }
 
 .export-dimension__footer {
