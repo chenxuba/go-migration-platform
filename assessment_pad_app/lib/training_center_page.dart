@@ -1680,6 +1680,18 @@ const List<_RecommendedGame> _recommendedGames = <_RecommendedGame>[
     ],
     illustration: _HeroIllustration.shadow,
   ),
+  _RecommendedGame(
+    title: '词语小火车',
+    gameId: 'word-train-demo',
+    taskId: 'pad-word-train-demo',
+    difficulty: 'normal',
+    rating: 4,
+    tags: <_Tag>[
+      _languageTag,
+      _Tag(label: '听觉理解', color: _TrainingColors.green),
+    ],
+    illustration: _HeroIllustration.train,
+  ),
 ];
 
 const List<_CollectionGame> _collectionGames = <_CollectionGame>[

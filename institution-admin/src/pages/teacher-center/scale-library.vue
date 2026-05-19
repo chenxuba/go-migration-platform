@@ -952,6 +952,7 @@ onBeforeUnmount(() => {
 }
 
 .scale-content {
+  container: scale-content / inline-size;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1575,19 +1576,15 @@ onBeforeUnmount(() => {
   .category-tabs {
     flex-wrap: nowrap;
   }
-
-  .scale-card-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
 }
 
-@media (max-width: 1080px) {
+@container scale-content (max-width: 1440px) {
   .scale-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@media (max-width: 760px) {
+@container scale-content (max-width: 760px) {
   .scale-card-grid {
     grid-template-columns: 1fr;
   }
