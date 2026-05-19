@@ -952,7 +952,6 @@ onBeforeUnmount(() => {
 }
 
 .scale-content {
-  container: scale-content / inline-size;
   min-width: 0;
   min-height: 0;
   display: flex;
@@ -1578,13 +1577,13 @@ onBeforeUnmount(() => {
   }
 }
 
-@container scale-content (max-width: 1440px) {
+@media (max-width: 1680px) {
   .scale-card-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
-@container scale-content (max-width: 760px) {
+@media (max-width: 760px) {
   .scale-card-grid {
     grid-template-columns: 1fr;
   }

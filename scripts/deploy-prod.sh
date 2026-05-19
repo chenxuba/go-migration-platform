@@ -224,7 +224,7 @@ copy_configs() {
   local docs=()
   while IFS= read -r -d '' file; do
     docs+=("$file")
-  done < <(find "$ROOT_DIR/docs" -maxdepth 1 -type f \( -name 'pep3*.json' -o -name 'erxin*.json' \) -print0)
+  done < <(find "$ROOT_DIR/docs" -maxdepth 1 -type f \( -name 'pep3*.json' -o -name 'erxin*.json' -o -name 'autismdev*.json' -o -name 'shuangxi*.json' \) -print0)
   if [[ "${#docs[@]}" -gt 0 ]]; then
     mkdir -p "$PACKAGE_DIR/docs"
     cp "${docs[@]}" "$PACKAGE_DIR/docs/"
