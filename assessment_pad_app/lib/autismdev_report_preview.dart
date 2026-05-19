@@ -617,6 +617,8 @@ class _AutismDevReportPreviewDialogState
   }
 
   Widget _buildContent() {
+    const EdgeInsets scrollPadding = EdgeInsets.fromLTRB(18, 16, 18, 18);
+    const EdgeInsets sheetPadding = EdgeInsets.fromLTRB(24, 22, 24, 24);
     return Container(
       decoration: BoxDecoration(
         color: const Color(0xFFFDF8F3),
@@ -624,33 +626,57 @@ class _AutismDevReportPreviewDialogState
         border: Border.all(color: _ReportTheme.lineSoft),
       ),
       clipBehavior: Clip.antiAlias,
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
-        child: Center(
-          child: RepaintBoundary(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 880),
-              child: DecoratedBox(
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  border: Border.all(color: _ReportTheme.lineSoft),
-                  boxShadow: const <BoxShadow>[
-                    BoxShadow(
-                      color: Color(0x0F000000),
-                      blurRadius: 16,
-                      offset: Offset(0, 8),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double minSheetHeight =
+              math.max(0, constraints.maxHeight - scrollPadding.vertical);
+          final double minContentHeight =
+              math.max(0, minSheetHeight - sheetPadding.vertical);
+          if (_activeTab == _AutismDevReportTab.interpretation) {
+            return Padding(
+              padding: scrollPadding,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: minSheetHeight),
+                child: _buildInterpretationSection(),
+              ),
+            );
+          }
+          return SingleChildScrollView(
+            padding: scrollPadding,
+            child: Center(
+              child: RepaintBoundary(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: 880,
+                    minHeight: minSheetHeight,
+                  ),
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: _ReportTheme.lineSoft),
+                      boxShadow: const <BoxShadow>[
+                        BoxShadow(
+                          color: Color(0x0F000000),
+                          blurRadius: 16,
+                          offset: Offset(0, 8),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
-                  child: _buildReportPage(),
+                    child: Padding(
+                      padding: sheetPadding,
+                      child: ConstrainedBox(
+                        constraints:
+                            BoxConstraints(minHeight: minContentHeight),
+                        child: _buildReportPage(),
+                      ),
+                    ),
+                  ),
                 ),
               ),
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }
@@ -823,12 +849,7 @@ class _AutismDevReportPreviewDialogState
   }
 
   Widget _buildReportPage() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        _buildActiveSection(),
-      ],
-    );
+    return _buildActiveSection();
   }
 
   Widget _buildActiveSection() {
