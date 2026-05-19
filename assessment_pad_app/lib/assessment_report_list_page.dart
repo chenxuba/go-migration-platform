@@ -4082,6 +4082,15 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     final bool regenerate =
         _interpretation != null && !_interpretation!.isEmpty;
     if (!regenerate) {
+      final bool confirmed = await _showReportAiConfirmDialog(
+        context,
+        title: '确认生成解读',
+        message: 'AI 会基于当前评估结果生成并保存报告解读，确认继续吗？',
+        confirmLabel: '确认生成',
+      );
+      if (!mounted || !confirmed) {
+        return;
+      }
       await _generateInterpretation();
       return;
     }
@@ -4385,7 +4394,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         message: '报告解读尚未生成',
         detail: '点击“生成解读”后，AI 会基于当前评估结果生成并保存。',
         actionLabel: '生成解读',
-        onAction: () => unawaited(_generateInterpretation()),
+        onAction: () => unawaited(_handleInterpretationGenerateTap()),
       );
     }
     return _ErxinInterpretationView(
@@ -4951,6 +4960,15 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     final bool regenerate =
         _interpretation != null && !_interpretation!.isEmpty;
     if (!regenerate) {
+      final bool confirmed = await _showReportAiConfirmDialog(
+        context,
+        title: '确认生成解读',
+        message: 'AI 会基于当前评估结果生成并保存报告解读，确认继续吗？',
+        confirmLabel: '确认生成',
+      );
+      if (!mounted || !confirmed) {
+        return;
+      }
       await _generateInterpretation();
       return;
     }
@@ -5201,7 +5219,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
         message: '报告解读尚未生成',
         detail: '点击“生成解读”后，AI 会基于当前评估结果生成并保存。',
         actionLabel: '生成解读',
-        onAction: () => unawaited(_generateInterpretation()),
+        onAction: () => unawaited(_handleInterpretationGenerateTap()),
       );
     }
     return _ErxinInterpretationView(interpretation: interpretation);
@@ -5428,6 +5446,22 @@ class _ShuangxiReportPreviewDialogState
         SnackBar(content: Text('AI生成失败：$error')),
       );
     }
+  }
+
+  Future<void> _handleResultAnalysisGenerateTap() async {
+    if (_resultAnalysisGenerating) {
+      return;
+    }
+    final bool confirmed = await _showReportAiConfirmDialog(
+      context,
+      title: '确认AI生成',
+      message: 'AI 会基于当前测评结果生成评量结果分析，并覆盖当前表格内容，确认继续吗？',
+      confirmLabel: '确认生成',
+    );
+    if (!mounted || !confirmed) {
+      return;
+    }
+    await _generateResultAnalysis();
   }
 
   Future<void> _appendResultAnalysisDeltaWithTypewriter(
@@ -5966,7 +6000,7 @@ class _ShuangxiReportPreviewDialogState
               filled: true,
               onTap: _resultAnalysisGenerating
                   ? null
-                  : () => unawaited(_generateResultAnalysis()),
+                  : () => unawaited(_handleResultAnalysisGenerateTap()),
             ),
             const SizedBox(width: 8),
           ],
@@ -6793,14 +6827,46 @@ class _ShuangxiAnalysisEditDialogState
   }
 }
 
+Future<bool> _showReportAiConfirmDialog(
+  BuildContext context, {
+  required String title,
+  required String message,
+  required String confirmLabel,
+}) async {
+  final bool? confirmed = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    builder: (BuildContext dialogContext) {
+      return PadDialogViewport(
+        child: Center(
+          child: _ErxinRegenerateInterpretationConfirmDialog(
+            title: title,
+            message: message,
+            confirmLabel: confirmLabel,
+            onCancel: () => Navigator.of(dialogContext).pop(false),
+            onConfirm: () => Navigator.of(dialogContext).pop(true),
+          ),
+        ),
+      );
+    },
+  );
+  return confirmed == true;
+}
+
 class _ErxinRegenerateInterpretationConfirmDialog extends StatelessWidget {
   const _ErxinRegenerateInterpretationConfirmDialog({
     required this.onCancel,
     required this.onConfirm,
+    this.title = '确认重新生成解读',
+    this.message = '重新生成会覆盖当前已保存的报告解读，确认继续吗？',
+    this.confirmLabel = '确认重新生成',
   });
 
   final VoidCallback onCancel;
   final VoidCallback onConfirm;
+  final String title;
+  final String message;
+  final String confirmLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -6827,18 +6893,18 @@ class _ErxinRegenerateInterpretationConfirmDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: <Widget>[
-            const Text(
-              '确认重新生成解读',
-              style: TextStyle(
+            Text(
+              title,
+              style: const TextStyle(
                 color: _ReportTheme.ink,
                 fontSize: 20,
                 fontWeight: FontWeight.w900,
               ),
             ),
             const SizedBox(height: 10),
-            const Text(
-              '重新生成会覆盖当前已保存的报告解读，确认继续吗？',
-              style: TextStyle(
+            Text(
+              message,
+              style: const TextStyle(
                 color: _ReportTheme.text,
                 fontSize: 14,
                 height: 1.45,
@@ -6860,7 +6926,7 @@ class _ErxinRegenerateInterpretationConfirmDialog extends StatelessWidget {
                 SizedBox(
                   width: 122,
                   child: _ToolbarButton(
-                    label: '确认重新生成',
+                    label: confirmLabel,
                     filled: true,
                     onTap: onConfirm,
                   ),
