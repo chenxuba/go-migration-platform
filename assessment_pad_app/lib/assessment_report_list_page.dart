@@ -5807,6 +5807,43 @@ DateTime _shuangxiProfileAssessmentSortTime(Pep3RecordSummary record) {
   return _recordSortTime(record);
 }
 
+Set<int> _defaultShuangxiProfileCompareIds({
+  required List<Pep3RecordSummary> previous,
+  required List<Pep3RecordSummary> visiblePrevious,
+  required Pep3RecordSummary current,
+}) {
+  if (visiblePrevious.isEmpty || current.id <= 0) {
+    return <int>{};
+  }
+  final List<Pep3RecordSummary> ordered = <Pep3RecordSummary>[
+    ...previous,
+    current,
+  ]..sort(_compareShuangxiProfileAssessmentAsc);
+  final Map<int, int> sequenceById = <int, int>{};
+  for (int index = 0; index < ordered.length; index += 1) {
+    final Pep3RecordSummary record = ordered[index];
+    if (record.id <= 0) {
+      continue;
+    }
+    sequenceById[record.id] =
+        record.assessmentSequence > 0 ? record.assessmentSequence : index + 1;
+  }
+  final int currentSequence =
+      sequenceById[current.id] ?? current.assessmentSequence;
+  if (currentSequence <= 0) {
+    return <int>{};
+  }
+  final int cycleStart = ((currentSequence - 1) ~/ 4) * 4 + 1;
+  final int cycleEnd = cycleStart + 3;
+  return <int>{
+    for (final Pep3RecordSummary record in visiblePrevious)
+      if ((sequenceById[record.id] ?? record.assessmentSequence) >=
+              cycleStart &&
+          (sequenceById[record.id] ?? record.assessmentSequence) <= cycleEnd)
+        record.id,
+  };
+}
+
 String _shuangxiProfileCompareDateTimeText(Pep3RecordSummary record) {
   final DateTime? assessment = _parseDateTime(record.assessmentDate);
   final DateTime? created = _parseDateTime(record.createdTime);
@@ -5958,6 +5995,13 @@ class _ShuangxiReportPreviewDialogState
           : previous;
       final Set<int> allowedIds =
           visiblePrevious.map((Pep3RecordSummary record) => record.id).toSet();
+      final Set<int> defaultSelectedIds = _defaultShuangxiProfileCompareIds(
+        previous: previous,
+        visiblePrevious: visiblePrevious,
+        current: current,
+      );
+      final Set<int> retainedSelectedIds =
+          _selectedProfileCompareRecordIds.where(allowedIds.contains).toSet();
       setState(() {
         _profileCompareLoading = false;
         _profileCompareOptions = <_ShuangxiProfileCompareOption>[
@@ -5973,8 +6017,9 @@ class _ShuangxiReportPreviewDialogState
             isCurrent: true,
           ),
         ];
-        _selectedProfileCompareRecordIds =
-            _selectedProfileCompareRecordIds.where(allowedIds.contains).toSet();
+        _selectedProfileCompareRecordIds = retainedSelectedIds.isEmpty
+            ? defaultSelectedIds
+            : retainedSelectedIds;
       });
     } catch (_) {
       if (!mounted || serial != _profileCompareLoadSerial) {
@@ -7144,7 +7189,7 @@ class _ShuangxiProfileComparePicker extends StatelessWidget {
         onTap: _enabled ? onTap : null,
         borderRadius: BorderRadius.circular(13),
         child: Container(
-          width: 310,
+          width: 220,
           height: 42,
           padding: const EdgeInsets.symmetric(horizontal: 13),
           decoration: BoxDecoration(

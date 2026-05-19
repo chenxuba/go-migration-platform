@@ -579,6 +579,30 @@ function compareShuangxiAssessmentAsc(left, right) {
   return Number(left?.id || 0) - Number(right?.id || 0)
 }
 
+function shuangxiDefaultCompareRecordIds(items, previousItems, current) {
+  if (!previousItems.length || !current?.id)
+    return []
+  const ordered = [...items, current].sort(compareShuangxiAssessmentAsc)
+  const sequenceById = new Map()
+  ordered.forEach((item, index) => {
+    if (!item?.id)
+      return
+    const sequence = Number(item.assessmentSequence || 0)
+    sequenceById.set(item.id, sequence > 0 ? sequence : index + 1)
+  })
+  const currentSequence = sequenceById.get(current.id) || Number(current.assessmentSequence || 0)
+  if (currentSequence <= 0)
+    return []
+  const cycleStart = Math.floor((currentSequence - 1) / 4) * 4 + 1
+  const cycleEnd = cycleStart + 3
+  return previousItems
+    .filter((item) => {
+      const sequence = sequenceById.get(item.id) || Number(item.assessmentSequence || 0)
+      return sequence >= cycleStart && sequence <= cycleEnd
+    })
+    .map(item => item.id)
+}
+
 function shuangxiProfileConfigPayload() {
   return {
     showCompare: shuangxiProfileConfig.showCompare,
@@ -627,9 +651,12 @@ async function loadShuangxiProfileCompareOptions(row = currentReport.value?.reco
       },
     ]
     const optionIds = new Set(previousItems.map(item => item.id))
-    shuangxiProfileConfig.compareRecordIds = shuangxiProfileConfig.compareRecordIds
+    const retainedIds = shuangxiProfileConfig.compareRecordIds
       .filter(id => optionIds.has(id))
       .slice(-3)
+    shuangxiProfileConfig.compareRecordIds = retainedIds.length
+      ? retainedIds
+      : shuangxiDefaultCompareRecordIds(items, previousItems, row)
   }
   catch {
     if (requestKey === shuangxiProfileCompareRequestKey)
