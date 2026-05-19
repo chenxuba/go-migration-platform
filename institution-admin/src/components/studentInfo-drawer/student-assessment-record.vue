@@ -5447,119 +5447,6 @@ onBeforeUnmount(() => {
   }
 }
 
-.export-dimension__chooser {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-  align-items: stretch;
-}
-
-.export-dimension__matrix {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  max-height: 188px;
-  overflow-y: auto;
-  scrollbar-color: #cfd8e3 transparent;
-  scrollbar-width: thin;
-
-  &::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  &::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  &::-webkit-scrollbar-thumb {
-    background: #cfd8e3;
-    border-radius: 999px;
-  }
-
-  &::-webkit-scrollbar-thumb:hover {
-    background: #aebacd;
-  }
-}
-
-.export-dimension-chip {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  height: 42px;
-  padding: 0 10px;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  background: #fff;
-  border: 1px solid #edf0f5;
-  border-radius: 8px;
-  transition: border-color 0.16s ease, box-shadow 0.16s ease, background 0.16s ease;
-
-  &:hover {
-    background: #fbfdff;
-    border-color: #c9ddf7;
-  }
-
-  &:focus-visible {
-    outline: 2px solid rgba(24, 144, 255, 0.22);
-    outline-offset: 2px;
-  }
-
-  &:disabled {
-    cursor: not-allowed;
-    opacity: 0.72;
-  }
-}
-
-.export-dimension-chip--active {
-  background: #f7fbff;
-  border-color: #8dc6ff;
-  box-shadow: 0 3px 10px rgba(24, 144, 255, 0.08);
-}
-
-.export-dimension-chip__dot {
-  flex: 0 0 auto;
-  width: 8px;
-  height: 8px;
-  background: #cbd5e1;
-  border-radius: 50%;
-}
-
-.export-dimension-chip--active .export-dimension-chip__dot {
-  background: var(--pro-ant-color-primary);
-  box-shadow: 0 0 0 3px rgba(24, 144, 255, 0.13);
-}
-
-.export-dimension-chip__text {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  color: #334155;
-  font-size: 13px;
-  font-weight: 500;
-  line-height: 20px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.export-dimension-chip--active .export-dimension-chip__text {
-  color: #1f2937;
-  font-weight: 600;
-}
-
-.export-dimension-chip__tag {
-  flex: 0 0 auto;
-  padding: 0 5px;
-  color: var(--pro-ant-color-primary);
-  font-size: 11px;
-  font-weight: 500;
-  line-height: 18px;
-  background: #eef6ff;
-  border-radius: 4px;
-}
-
 .export-dimension__footer {
   display: flex;
   align-items: center;
@@ -6057,14 +5944,6 @@ onBeforeUnmount(() => {
 
   .export-dimension__current {
     display: none;
-  }
-
-  .export-dimension__chooser {
-    grid-template-columns: 1fr;
-  }
-
-  .export-dimension__matrix {
-    max-height: 55vh;
   }
 
   .autismdev-export-card-list {
