@@ -46,6 +46,10 @@ type shuangxiAProfilePointSeries struct {
 	Points []shuangxiAProfilePoint
 }
 
+type shuangxiADevelopmentProfilePDFOptions struct {
+	ShowScore bool
+}
+
 type shuangxiAProfileDomain struct {
 	Code        string
 	Name        string
@@ -90,7 +94,7 @@ var shuangxiAProfileColors = []shuangxiAProfileColor{
 
 var shuangxiAProfileBracketTextPattern = regexp.MustCompile(`[（(][^（）()]*[）)]`)
 
-func (svc *Service) GenerateShuangxiADevelopmentProfilePDF(userID, recordID int64) (string, []byte, error) {
+func (svc *Service) GenerateShuangxiADevelopmentProfilePDF(userID, recordID int64, config model.ShuangxiDevelopmentProfileConfig) (string, []byte, error) {
 	record, err := svc.GetShuangxiAAssessmentRecord(userID, recordID)
 	if err != nil {
 		return "", nil, err
@@ -100,7 +104,7 @@ func (svc *Service) GenerateShuangxiADevelopmentProfilePDF(userID, recordID int6
 		return "", nil, err
 	}
 	records := []model.AssessmentRecordDetailVO{record}
-	if svc.repo != nil && record.InstID > 0 && record.StudentID > 0 {
+	if shuangxiAProfileShowCompare(config) && svc.repo != nil && record.InstID > 0 && record.StudentID > 0 {
 		history, err := svc.repo.ListAssessmentRecordsForStudentScale(
 			context.Background(),
 			record.InstID,
@@ -112,15 +116,89 @@ func (svc *Service) GenerateShuangxiADevelopmentProfilePDF(userID, recordID int6
 		if err != nil {
 			return "", nil, err
 		}
-		records = shuangxiAProfileRecordsThroughCurrent(history, record)
+		records, err = svc.shuangxiAProfileRecordsForConfig(history, record, config)
+		if err != nil {
+			return "", nil, err
+		}
 	}
-	content, err := buildShuangxiADevelopmentProfilePDF(data, records)
+	content, err := buildShuangxiADevelopmentProfilePDF(data, records, shuangxiADevelopmentProfilePDFOptions{
+		ShowScore: shuangxiAProfileShowScore(config),
+	})
 	if err != nil {
 		return "", nil, err
 	}
 	name := nonEmptyString(record.StudentName, "未命名儿童")
 	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-双溪综合发展侧面图-%s.pdf", name, time.Now().Format("20060102150405")))
 	return filename, content, nil
+}
+
+func shuangxiAProfileShowCompare(config model.ShuangxiDevelopmentProfileConfig) bool {
+	return config.ShowCompare == nil || *config.ShowCompare
+}
+
+func shuangxiAProfileShowScore(config model.ShuangxiDevelopmentProfileConfig) bool {
+	return config.ShowScore == nil || *config.ShowScore
+}
+
+func (svc *Service) shuangxiAProfileRecordsForConfig(history []model.AssessmentRecordDetailVO, current model.AssessmentRecordDetailVO, config model.ShuangxiDevelopmentProfileConfig) ([]model.AssessmentRecordDetailVO, error) {
+	if len(config.CompareRecordIDs) == 0 {
+		return shuangxiAProfileRecordsThroughCurrent(history, current), nil
+	}
+	records := make([]model.AssessmentRecordDetailVO, 0, 4)
+	seen := make(map[int64]bool, len(config.CompareRecordIDs)+1)
+	for _, id := range config.CompareRecordIDs {
+		if id <= 0 || id == current.ID || seen[id] {
+			continue
+		}
+		seen[id] = true
+		detail, err := svc.repo.GetAssessmentRecord(context.Background(), current.InstID, id)
+		if err != nil {
+			return nil, err
+		}
+		if !shuangxiAProfileCanCompareRecord(detail, current) {
+			continue
+		}
+		records = append(records, detail)
+	}
+	sort.SliceStable(records, func(i, j int) bool {
+		return shuangxiAProfileCompareRecordOrder(records[i], records[j]) < 0
+	})
+	if len(records) > 3 {
+		records = records[len(records)-3:]
+	}
+	records = append(records, current)
+	return records, nil
+}
+
+func shuangxiAProfileCanCompareRecord(candidate, current model.AssessmentRecordDetailVO) bool {
+	if candidate.ID <= 0 || current.ID <= 0 || candidate.ID == current.ID {
+		return false
+	}
+	if candidate.InstID != current.InstID || candidate.StudentID != current.StudentID {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(candidate.AssessmentCode), strings.TrimSpace(current.AssessmentCode)) {
+		return false
+	}
+	return shuangxiAProfileCompareRecordOrder(candidate, current) < 0
+}
+
+func shuangxiAProfileCompareRecordOrder(left, right model.AssessmentRecordDetailVO) int {
+	leftTime := shuangxiAProfileRecordSortTime(left)
+	rightTime := shuangxiAProfileRecordSortTime(right)
+	if leftTime.Before(rightTime) {
+		return -1
+	}
+	if leftTime.After(rightTime) {
+		return 1
+	}
+	if left.ID < right.ID {
+		return -1
+	}
+	if left.ID > right.ID {
+		return 1
+	}
+	return 0
 }
 
 func shuangxiAProfileRecordsThroughCurrent(history []model.AssessmentRecordDetailVO, current model.AssessmentRecordDetailVO) []model.AssessmentRecordDetailVO {
@@ -193,7 +271,7 @@ func shuangxiAProfileRecordSortTime(record model.AssessmentRecordDetailVO) time.
 	return time.Unix(0, 0)
 }
 
-func buildShuangxiADevelopmentProfilePDF(data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) ([]byte, error) {
+func buildShuangxiADevelopmentProfilePDF(data shuangxiAStaticData, records []model.AssessmentRecordDetailVO, options ...shuangxiADevelopmentProfilePDFOptions) ([]byte, error) {
 	var pdf gopdf.GoPdf
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
@@ -202,7 +280,7 @@ func buildShuangxiADevelopmentProfilePDF(data shuangxiAStaticData, records []mod
 	if err := addShuangxiAPDFFont(&pdf); err != nil {
 		return nil, err
 	}
-	if err := drawShuangxiADevelopmentProfilePDFPages(&pdf, data, records); err != nil {
+	if err := drawShuangxiADevelopmentProfilePDFPages(&pdf, data, records, options...); err != nil {
 		return nil, err
 	}
 	return pdf.GetBytesPdfReturnErr()
@@ -219,18 +297,26 @@ func addShuangxiAPDFFont(pdf *gopdf.GoPdf) error {
 	return nil
 }
 
-func drawShuangxiADevelopmentProfilePDFPages(pdf *gopdf.GoPdf, data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) error {
+func drawShuangxiADevelopmentProfilePDFPages(pdf *gopdf.GoPdf, data shuangxiAStaticData, records []model.AssessmentRecordDetailVO, options ...shuangxiADevelopmentProfilePDFOptions) error {
 	pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: shuangxiAProfilePDFPageWidth, H: shuangxiAProfilePDFPageHeight}})
-	renderer := shuangxiAProfilePDFRenderer{pdf: pdf}
+	renderer := shuangxiAProfilePDFRenderer{pdf: pdf, options: normalizeShuangxiADevelopmentProfilePDFOptions(options...)}
 	if err := renderer.draw(data, records); err != nil {
 		return err
 	}
 	return nil
 }
 
+func normalizeShuangxiADevelopmentProfilePDFOptions(options ...shuangxiADevelopmentProfilePDFOptions) shuangxiADevelopmentProfilePDFOptions {
+	if len(options) == 0 {
+		return shuangxiADevelopmentProfilePDFOptions{ShowScore: true}
+	}
+	return options[0]
+}
+
 type shuangxiAProfilePDFRenderer struct {
 	pdf      *gopdf.GoPdf
 	fontSize float64
+	options  shuangxiADevelopmentProfilePDFOptions
 }
 
 func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) error {
@@ -671,9 +757,11 @@ func (r *shuangxiAProfilePDFRenderer) drawProfiles(data shuangxiAStaticData, dom
 			shuangxiAProfileDrawDot(r.pdf, point, 3.3, series.Color)
 		}
 	}
-	for _, series := range seriesList {
-		for _, point := range series.Points {
-			r.drawProfilePointScore(point, series.Color, chartRect)
+	if r.options.ShowScore {
+		for _, series := range seriesList {
+			for _, point := range series.Points {
+				r.drawProfilePointScore(point, series.Color, chartRect)
+			}
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -774,9 +862,11 @@ func (r *shuangxiAProfilePDFRenderer) drawSkillProfile(skills []shuangxiAProfile
 			shuangxiAProfileDrawDot(r.pdf, point, 2.45, series.Color)
 		}
 	}
-	for _, series := range seriesList {
-		for _, point := range series.Points {
-			r.drawProfilePointScoreSmall(point, series.Color, chartRect)
+	if r.options.ShowScore {
+		for _, series := range seriesList {
+			for _, point := range series.Points {
+				r.drawProfilePointScoreSmall(point, series.Color, chartRect)
+			}
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)
@@ -867,9 +957,11 @@ func (r *shuangxiAProfilePDFRenderer) drawItemProfile(items []shuangxiAProfileIt
 			shuangxiAProfileDrawDot(r.pdf, point, 3, series.Color)
 		}
 	}
-	for _, series := range seriesList {
-		for _, point := range series.Points {
-			r.drawProfilePointScoreSmall(point, series.Color, chartRect)
+	if r.options.ShowScore {
+		for _, series := range seriesList {
+			for _, point := range series.Points {
+				r.drawProfilePointScoreSmall(point, series.Color, chartRect)
+			}
 		}
 	}
 	r.pdf.SetStrokeColor(0, 0, 0)

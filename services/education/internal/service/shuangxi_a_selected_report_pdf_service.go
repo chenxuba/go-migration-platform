@@ -34,7 +34,7 @@ type shuangxiAResultAnalysisPDFExport struct {
 	Rows           []model.ShuangxiResultAnalysisRow
 }
 
-func (svc *Service) ExportShuangxiASelectedReportPDF(userID int64, recordID int64, sections []string, analysis *model.ShuangxiResultAnalysisVO) (string, string, []byte, error) {
+func (svc *Service) ExportShuangxiASelectedReportPDF(userID int64, recordID int64, sections []string, analysis *model.ShuangxiResultAnalysisVO, profileConfig model.ShuangxiDevelopmentProfileConfig) (string, string, []byte, error) {
 	normalizedSections := normalizeShuangxiASelectedReportSections(sections)
 	if len(normalizedSections) == 0 {
 		return "", "", nil, errors.New("请选择导出内容")
@@ -46,7 +46,7 @@ func (svc *Service) ExportShuangxiASelectedReportPDF(userID int64, recordID int6
 	}
 
 	if len(normalizedSections) == 1 {
-		content, err := svc.shuangxiASelectedReportSectionPDF(userID, recordID, record, normalizedSections[0], analysis)
+		content, err := svc.shuangxiASelectedReportSectionPDF(userID, recordID, record, normalizedSections[0], analysis, profileConfig)
 		if err != nil {
 			return "", "", nil, err
 		}
@@ -58,7 +58,7 @@ func (svc *Service) ExportShuangxiASelectedReportPDF(userID int64, recordID int6
 
 	builder := newShuangxiASelectedReportPDFBuilder()
 	for _, section := range normalizedSections {
-		if err := svc.appendShuangxiASelectedReportSectionPDF(builder, userID, recordID, record, section, analysis); err != nil {
+		if err := svc.appendShuangxiASelectedReportSectionPDF(builder, userID, recordID, record, section, analysis, profileConfig); err != nil {
 			return "", "", nil, err
 		}
 	}
@@ -72,14 +72,14 @@ func (svc *Service) ExportShuangxiASelectedReportPDF(userID int64, recordID int6
 	return shuangxiASelectedReportPDFFileName(record, normalizedSections), iepPlanPDFContentType, content, nil
 }
 
-func (svc *Service) shuangxiASelectedReportSectionPDF(userID int64, recordID int64, record model.AssessmentRecordDetailVO, section string, analysis *model.ShuangxiResultAnalysisVO) ([]byte, error) {
+func (svc *Service) shuangxiASelectedReportSectionPDF(userID int64, recordID int64, record model.AssessmentRecordDetailVO, section string, analysis *model.ShuangxiResultAnalysisVO, profileConfig model.ShuangxiDevelopmentProfileConfig) ([]byte, error) {
 	switch section {
 	case ShuangxiAReportSectionDevelopmentProfile:
-		data, records, err := svc.shuangxiADevelopmentProfilePDFSource(record)
+		data, records, options, err := svc.shuangxiADevelopmentProfilePDFSource(record, profileConfig)
 		if err != nil {
 			return nil, err
 		}
-		return buildShuangxiADevelopmentProfilePDF(data, records)
+		return buildShuangxiADevelopmentProfilePDF(data, records, options)
 	case ShuangxiAReportSectionResultAnalysis:
 		export, err := svc.shuangxiAResultAnalysisPDFExport(userID, recordID, analysis)
 		if err != nil {
@@ -91,15 +91,15 @@ func (svc *Service) shuangxiASelectedReportSectionPDF(userID int64, recordID int
 	}
 }
 
-func (svc *Service) appendShuangxiASelectedReportSectionPDF(builder *shuangxiASelectedReportPDFBuilder, userID int64, recordID int64, record model.AssessmentRecordDetailVO, section string, analysis *model.ShuangxiResultAnalysisVO) error {
+func (svc *Service) appendShuangxiASelectedReportSectionPDF(builder *shuangxiASelectedReportPDFBuilder, userID int64, recordID int64, record model.AssessmentRecordDetailVO, section string, analysis *model.ShuangxiResultAnalysisVO, profileConfig model.ShuangxiDevelopmentProfileConfig) error {
 	switch section {
 	case ShuangxiAReportSectionDevelopmentProfile:
-		data, records, err := svc.shuangxiADevelopmentProfilePDFSource(record)
+		data, records, options, err := svc.shuangxiADevelopmentProfilePDFSource(record, profileConfig)
 		if err != nil {
 			return err
 		}
 		return builder.appendDirectDraw(func(pdf *gopdf.GoPdf) error {
-			return drawShuangxiADevelopmentProfilePDFPages(pdf, data, records)
+			return drawShuangxiADevelopmentProfilePDFPages(pdf, data, records, options)
 		})
 	case ShuangxiAReportSectionResultAnalysis:
 		export, err := svc.shuangxiAResultAnalysisPDFExport(userID, recordID, analysis)
@@ -114,13 +114,13 @@ func (svc *Service) appendShuangxiASelectedReportSectionPDF(builder *shuangxiASe
 	}
 }
 
-func (svc *Service) shuangxiADevelopmentProfilePDFSource(record model.AssessmentRecordDetailVO) (shuangxiAStaticData, []model.AssessmentRecordDetailVO, error) {
+func (svc *Service) shuangxiADevelopmentProfilePDFSource(record model.AssessmentRecordDetailVO, profileConfig model.ShuangxiDevelopmentProfileConfig) (shuangxiAStaticData, []model.AssessmentRecordDetailVO, shuangxiADevelopmentProfilePDFOptions, error) {
 	data, err := svc.loadShuangxiAStaticData(context.Background())
 	if err != nil {
-		return shuangxiAStaticData{}, nil, err
+		return shuangxiAStaticData{}, nil, shuangxiADevelopmentProfilePDFOptions{}, err
 	}
 	records := []model.AssessmentRecordDetailVO{record}
-	if svc.repo != nil && record.InstID > 0 && record.StudentID > 0 {
+	if shuangxiAProfileShowCompare(profileConfig) && svc.repo != nil && record.InstID > 0 && record.StudentID > 0 {
 		history, err := svc.repo.ListAssessmentRecordsForStudentScale(
 			context.Background(),
 			record.InstID,
@@ -130,11 +130,14 @@ func (svc *Service) shuangxiADevelopmentProfilePDFSource(record model.Assessment
 			100,
 		)
 		if err != nil {
-			return shuangxiAStaticData{}, nil, err
+			return shuangxiAStaticData{}, nil, shuangxiADevelopmentProfilePDFOptions{}, err
 		}
-		records = shuangxiAProfileRecordsThroughCurrent(history, record)
+		records, err = svc.shuangxiAProfileRecordsForConfig(history, record, profileConfig)
+		if err != nil {
+			return shuangxiAStaticData{}, nil, shuangxiADevelopmentProfilePDFOptions{}, err
+		}
 	}
-	return data, records, nil
+	return data, records, shuangxiADevelopmentProfilePDFOptions{ShowScore: shuangxiAProfileShowScore(profileConfig)}, nil
 }
 
 func (svc *Service) shuangxiAResultAnalysisPDFExport(userID int64, recordID int64, analysis *model.ShuangxiResultAnalysisVO) (shuangxiAResultAnalysisPDFExport, error) {

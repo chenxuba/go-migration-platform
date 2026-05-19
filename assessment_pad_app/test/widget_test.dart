@@ -9098,8 +9098,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   @override
   Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
     String token,
-    int id,
-  ) async {
+    int id, {
+    ShuangxiDevelopmentProfilePdfConfig config =
+        const ShuangxiDevelopmentProfilePdfConfig(),
+  }) async {
     downloadShuangxiDevelopmentProfilePdfCalls += 1;
     return Uint8List(0);
   }

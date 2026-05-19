@@ -97,12 +97,20 @@ const shuangxiAnalysisStreamText = ref('')
 const shuangxiAnalysisRecordKey = ref('')
 const shuangxiExportSections = ref([])
 const shuangxiExportAnalysisLoading = ref(false)
+const shuangxiProfileCompareOptions = ref([])
+const shuangxiProfileCompareLoading = ref(false)
+const shuangxiProfileConfig = reactive({
+  showCompare: true,
+  showScore: true,
+  compareRecordIds: [],
+})
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const router = useRouter()
 let reportPdfReadyTimer = 0
 let interpretationAbortController = null
 let autismDevAnalysisAbortController = null
 let shuangxiAnalysisAbortController = null
+let shuangxiProfileCompareRequestKey = 0
 let interpretationScrollFrame = 0
 let interpretationProgressAnchored = false
 const autismDevAnalysisStreamReadableText = computed(() => autismDevAnalysisReadableStreamText(autismDevAnalysisStreamText.value))
@@ -456,6 +464,30 @@ function formatAssessmentSequence(row) {
   return value > 0 ? `第${value}次` : '-'
 }
 
+function shuangxiCompareOrdinal(index) {
+  return ['第一次', '第二次', '第三次'][index] || `第${index + 1}次`
+}
+
+function formatShuangxiCompareDateTime(record) {
+  const assessment = dayjs(record?.assessmentDate)
+  const created = dayjs(record?.createdTime)
+  const updated = dayjs(record?.updatedTime)
+  if (assessment.isValid()) {
+    if (assessment.hour() || assessment.minute() || assessment.second())
+      return assessment.format('YYYY-MM-DD HH:mm:ss')
+    if (created.isValid())
+      return `${assessment.format('YYYY-MM-DD')} ${created.format('HH:mm:ss')}`
+    if (updated.isValid())
+      return `${assessment.format('YYYY-MM-DD')} ${updated.format('HH:mm:ss')}`
+    return assessment.format('YYYY-MM-DD HH:mm:ss')
+  }
+  if (created.isValid())
+    return created.format('YYYY-MM-DD HH:mm:ss')
+  if (updated.isValid())
+    return updated.format('YYYY-MM-DD HH:mm:ss')
+  return formatDate(record?.assessmentDate)
+}
+
 function formatCurrentAge(row) {
   const birth = dayjs(row?.birthDate).startOf('day')
   const today = dayjs().startOf('day')
@@ -531,6 +563,91 @@ function compareRecordDesc(left, right) {
   if (timeDiff)
     return timeDiff
   return Number(right?.id || 0) - Number(left?.id || 0)
+}
+
+function shuangxiAssessmentSortValue(record) {
+  const parsed = dayjs(record?.assessmentDate)
+  if (parsed.isValid())
+    return parsed.valueOf()
+  return recordSortValue(record)
+}
+
+function compareShuangxiAssessmentAsc(left, right) {
+  const timeDiff = shuangxiAssessmentSortValue(left) - shuangxiAssessmentSortValue(right)
+  if (timeDiff)
+    return timeDiff
+  return Number(left?.id || 0) - Number(right?.id || 0)
+}
+
+function shuangxiProfileConfigPayload() {
+  return {
+    showCompare: shuangxiProfileConfig.showCompare,
+    showScore: shuangxiProfileConfig.showScore,
+    compareRecordIds: shuangxiProfileConfig.showCompare ? shuangxiProfileConfig.compareRecordIds : [],
+  }
+}
+
+function updateShuangxiProfilePreview() {
+  if (!currentReportIsShuangxiA() || activeShuangxiReportSection.value !== 'developmentProfile')
+    return
+  loadReportPdfPreview(currentReport.value?.record, 'shuangxi_development_profile')
+}
+
+async function loadShuangxiProfileCompareOptions(row = currentReport.value?.record) {
+  if (!row?.id || !isShuangxiARecord(row) || !row.studentId) {
+    shuangxiProfileCompareOptions.value = []
+    shuangxiProfileConfig.compareRecordIds = []
+    return
+  }
+  const requestKey = ++shuangxiProfileCompareRequestKey
+  shuangxiProfileCompareLoading.value = true
+  try {
+    const response = await pageShuangxiAAssessmentRecordsApi({
+      pageRequestModel: { pageIndex: 1, pageSize: 100 },
+      queryModel: {
+        studentId: row.studentId,
+      },
+    })
+    if (requestKey !== shuangxiProfileCompareRequestKey)
+      return
+    const items = (unwrap(response)?.items || [])
+      .filter(item => item.id && item.id !== row.id && compareShuangxiAssessmentAsc(item, row) < 0)
+      .sort(compareShuangxiAssessmentAsc)
+    const previousItems = items.slice(-3)
+    const previousOptions = previousItems.map((item, index) => ({
+      label: `${shuangxiCompareOrdinal(index)} ${formatShuangxiCompareDateTime(item)}`,
+      value: item.id,
+    }))
+    shuangxiProfileCompareOptions.value = [
+      ...previousOptions,
+      {
+        label: `本次 ${formatShuangxiCompareDateTime(row)}`,
+        value: row.id,
+        disabled: true,
+      },
+    ]
+    const optionIds = new Set(previousItems.map(item => item.id))
+    shuangxiProfileConfig.compareRecordIds = shuangxiProfileConfig.compareRecordIds
+      .filter(id => optionIds.has(id))
+      .slice(-3)
+  }
+  catch {
+    if (requestKey === shuangxiProfileCompareRequestKey)
+      shuangxiProfileCompareOptions.value = []
+  }
+  finally {
+    if (requestKey === shuangxiProfileCompareRequestKey)
+      shuangxiProfileCompareLoading.value = false
+  }
+}
+
+function handleShuangxiProfileCompareChange(values) {
+  shuangxiProfileConfig.compareRecordIds = Array.isArray(values) ? values.slice(-3) : []
+  updateShuangxiProfilePreview()
+}
+
+function handleShuangxiProfileSwitchChange() {
+  updateShuangxiProfilePreview()
 }
 
 function currentReportIsERXin() {
@@ -1720,6 +1837,12 @@ function resetShuangxiReportState() {
   shuangxiAnalysisRecordKey.value = ''
   shuangxiExportSections.value = []
   shuangxiExportAnalysisLoading.value = false
+  shuangxiProfileCompareRequestKey += 1
+  shuangxiProfileCompareOptions.value = []
+  shuangxiProfileCompareLoading.value = false
+  shuangxiProfileConfig.showCompare = true
+  shuangxiProfileConfig.showScore = true
+  shuangxiProfileConfig.compareRecordIds = []
 }
 
 function interpretationSectionItems(value, key) {
@@ -2052,8 +2175,10 @@ async function viewReport(row) {
     activeAutismDevReportSection.value = defaultAutismDevReportSection()
     void loadAutismDevResultAnalysis(row, { silent: true })
   }
-  if (isShuangxiARecord(row))
+  if (isShuangxiARecord(row)) {
     activeShuangxiReportSection.value = 'developmentProfile'
+    void loadShuangxiProfileCompareOptions(row)
+  }
   loadReportPdfPreview(row, defaultReportPreviewDimension(row))
 }
 
@@ -2109,7 +2234,7 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
   try {
     const autismDevSections = isAutismDevRecord(row) ? autismDevReportSectionsForDimension(dimension) : []
     const response = isShuangxiARecord(row)
-      ? await downloadShuangxiADevelopmentProfilePdfApi(row.id)
+      ? await downloadShuangxiADevelopmentProfilePdfApi(row.id, shuangxiProfileConfigPayload())
       : isAutismDevRecord(row)
       ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
@@ -2602,6 +2727,7 @@ function selectShuangxiReportSection(section) {
     void loadShuangxiResultAnalysis()
     return
   }
+  void loadShuangxiProfileCompareOptions(currentReport.value?.record)
   loadReportPdfPreview(currentReport.value?.record, 'shuangxi_development_profile')
 }
 
@@ -2781,6 +2907,7 @@ async function downloadShuangxiAExportPdf(recordId, sections = ['developmentProf
     recordId,
     sections,
     sections.includes('resultAnalysis') ? shuangxiAnalysisForExport() : null,
+    shuangxiProfileConfigPayload(),
   )
 }
 
@@ -3135,7 +3262,7 @@ onBeforeUnmount(() => {
             </div>
           </div>
         </div>
-        <div v-else-if="isShuangxiARecord(currentReport.record)" class="report-module-area erxin-report-tabs">
+        <div v-else-if="isShuangxiARecord(currentReport.record)" class="report-module-area erxin-report-tabs shuangxi-report-tabs">
           <div class="report-module-grid">
             <button
               v-for="option in shuangxiReportSectionOptions"
@@ -3148,6 +3275,43 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__dot" />
               <span class="report-module-chip__text">{{ option.title }}</span>
             </button>
+          </div>
+          <div
+            v-if="activeShuangxiReportSection === 'developmentProfile'"
+            class="shuangxi-profile-config"
+          >
+            <div class="shuangxi-profile-config__switches">
+              <span class="shuangxi-profile-config__title">配置</span>
+              <span class="shuangxi-profile-config__switch">
+                展示对比
+                <a-switch
+                  v-model:checked="shuangxiProfileConfig.showCompare"
+                  size="small"
+                  @change="handleShuangxiProfileSwitchChange"
+                />
+              </span>
+              <span class="shuangxi-profile-config__switch">
+                展示分数
+                <a-switch
+                  v-model:checked="shuangxiProfileConfig.showScore"
+                  size="small"
+                  @change="handleShuangxiProfileSwitchChange"
+                />
+              </span>
+            </div>
+            <a-select
+              v-model:value="shuangxiProfileConfig.compareRecordIds"
+              class="shuangxi-profile-config__select"
+              mode="multiple"
+              size="small"
+              :disabled="!shuangxiProfileConfig.showCompare"
+              :loading="shuangxiProfileCompareLoading"
+              :options="shuangxiProfileCompareOptions"
+              max-tag-count="responsive"
+              placeholder="选择对比记录"
+              :max-tag-placeholder="omitted => `+${omitted.length}`"
+              @change="handleShuangxiProfileCompareChange"
+            />
           </div>
           <div
             v-if="activeShuangxiReportSection === 'resultAnalysis'"
@@ -4182,6 +4346,69 @@ onBeforeUnmount(() => {
     flex: 0 0 auto;
     height: 28px;
     padding: 0 12px;
+    font-size: 12px;
+  }
+}
+
+.erxin-report-tabs {
+  align-items: center;
+}
+
+.shuangxi-report-tabs .report-module-grid {
+  flex: 0 0 auto;
+  max-width: 320px;
+}
+
+.shuangxi-profile-config {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: 1 1 auto;
+  gap: 12px;
+  min-width: 0;
+  padding-left: 12px;
+  margin-left: auto;
+  border-left: 1px solid #e6edf6;
+}
+
+.shuangxi-profile-config__switches {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 10px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.shuangxi-profile-config__title {
+  color: #1f2937;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.shuangxi-profile-config__switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 20px;
+}
+
+.shuangxi-profile-config__select {
+  flex: 1 1 320px;
+  width: 320px;
+  min-width: 260px;
+  max-width: 420px;
+
+  :deep(.ant-select-selector) {
+    min-height: 28px;
+  }
+
+  :deep(.ant-select-selection-placeholder),
+  :deep(.ant-select-selection-item) {
     font-size: 12px;
   }
 }
@@ -5779,6 +6006,28 @@ onBeforeUnmount(() => {
   .report-module-summary__actions {
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .shuangxi-profile-config {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+    width: 100%;
+    padding-top: 8px;
+    padding-left: 0;
+    border-top: 1px solid #e6edf6;
+    border-left: 0;
+  }
+
+  .shuangxi-profile-config__switches {
+    justify-content: flex-start;
+    width: 100%;
+  }
+
+  .shuangxi-profile-config__select {
+    flex: none;
+    width: 100%;
+    max-width: none;
   }
 
   .export-dimension__current {

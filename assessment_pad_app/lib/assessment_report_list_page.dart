@@ -5766,6 +5766,79 @@ const List<_ShuangxiPrintSectionSpec> _shuangxiPrintSections =
 
 const double _shuangxiPrintMergeRasterDpi = 120;
 
+class _ShuangxiProfileCompareOption {
+  const _ShuangxiProfileCompareOption({
+    required this.record,
+    required this.label,
+    this.isCurrent = false,
+  });
+
+  final Pep3RecordSummary record;
+  final String label;
+  final bool isCurrent;
+}
+
+String _shuangxiProfileCompareOrdinal(int index) {
+  const List<String> labels = <String>['第一次', '第二次', '第三次'];
+  if (index >= 0 && index < labels.length) {
+    return labels[index];
+  }
+  return '第${index + 1}次';
+}
+
+int _compareShuangxiProfileAssessmentAsc(
+  Pep3RecordSummary left,
+  Pep3RecordSummary right,
+) {
+  final DateTime leftTime = _shuangxiProfileAssessmentSortTime(left);
+  final DateTime rightTime = _shuangxiProfileAssessmentSortTime(right);
+  final int timeCompare = leftTime.compareTo(rightTime);
+  if (timeCompare != 0) {
+    return timeCompare;
+  }
+  return left.id.compareTo(right.id);
+}
+
+DateTime _shuangxiProfileAssessmentSortTime(Pep3RecordSummary record) {
+  final DateTime? assessment = _parseDateTime(record.assessmentDate);
+  if (assessment != null) {
+    return assessment.toLocal();
+  }
+  return _recordSortTime(record);
+}
+
+String _shuangxiProfileCompareDateTimeText(Pep3RecordSummary record) {
+  final DateTime? assessment = _parseDateTime(record.assessmentDate);
+  final DateTime? created = _parseDateTime(record.createdTime);
+  final DateTime? updated = _parseDateTime(record.updatedTime);
+  if (assessment != null) {
+    final DateTime localAssessment = assessment.toLocal();
+    if (localAssessment.hour != 0 ||
+        localAssessment.minute != 0 ||
+        localAssessment.second != 0) {
+      return '${_dateText(localAssessment)} ${_timeText(localAssessment)}';
+    }
+    final DateTime? timeSource = created ?? updated;
+    if (timeSource != null) {
+      return '${_dateText(localAssessment)} ${_timeText(timeSource.toLocal())}';
+    }
+    return '${_dateText(localAssessment)} 00:00:00';
+  }
+  final DateTime? fallback = created ?? updated;
+  if (fallback != null) {
+    final DateTime local = fallback.toLocal();
+    return '${_dateText(local)} ${_timeText(local)}';
+  }
+  return _dateOnlyText(record.assessmentDate);
+}
+
+String _timeText(DateTime value) {
+  final String hour = value.hour.toString().padLeft(2, '0');
+  final String minute = value.minute.toString().padLeft(2, '0');
+  final String second = value.second.toString().padLeft(2, '0');
+  return '$hour:$minute:$second';
+}
+
 class _ShuangxiReportPreviewDialogState
     extends State<_ShuangxiReportPreviewDialog> {
   final PadMessageOverlayController _messageController =
@@ -5776,6 +5849,14 @@ class _ShuangxiReportPreviewDialogState
   String _printErrorMessage = '';
   Uint8List? _developmentProfilePdfBytes;
   Future<Uint8List>? _developmentProfilePdfLoad;
+  bool _profileShowCompare = true;
+  bool _profileShowScore = true;
+  bool _profileCompareLoading = false;
+  bool _profileComparePickerOpen = false;
+  int _profileCompareLoadSerial = 0;
+  List<_ShuangxiProfileCompareOption> _profileCompareOptions =
+      const <_ShuangxiProfileCompareOption>[];
+  Set<int> _selectedProfileCompareRecordIds = <int>{};
   ShuangxiResultAnalysis _resultAnalysis = _emptyShuangxiResultAnalysis();
   bool _resultAnalysisGenerating = false;
   String _resultAnalysisGenerationStatus = '';
@@ -5789,6 +5870,7 @@ class _ShuangxiReportPreviewDialogState
   void initState() {
     super.initState();
     _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+    unawaited(_loadProfileCompareOptions());
     unawaited(_loadSavedResultAnalysis());
   }
 
@@ -5814,9 +5896,174 @@ class _ShuangxiReportPreviewDialogState
     );
   }
 
+  ShuangxiDevelopmentProfilePdfConfig _profilePdfConfig() {
+    final Set<int> selected = _selectedProfileCompareRecordIds;
+    return ShuangxiDevelopmentProfilePdfConfig(
+      showCompare: _profileShowCompare,
+      showScore: _profileShowScore,
+      compareRecordIds: _profileShowCompare
+          ? <int>[
+              for (final _ShuangxiProfileCompareOption option
+                  in _profileCompareOptions)
+                if (!option.isCurrent && selected.contains(option.record.id))
+                  option.record.id,
+            ]
+          : const <int>[],
+    );
+  }
+
+  Future<void> _loadProfileCompareOptions() async {
+    final String token = widget.token.trim();
+    final Pep3RecordSummary current = widget.record;
+    if (token.isEmpty || current.id <= 0 || current.studentId <= 0) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _profileCompareOptions = <_ShuangxiProfileCompareOption>[
+          _ShuangxiProfileCompareOption(
+            record: current,
+            label: '本次 ${_shuangxiProfileCompareDateTimeText(current)}',
+            isCurrent: true,
+          ),
+        ];
+        _selectedProfileCompareRecordIds = <int>{};
+      });
+      return;
+    }
+    final int serial = ++_profileCompareLoadSerial;
+    setState(() {
+      _profileCompareLoading = true;
+    });
+    try {
+      final Pep3RecordPage page = await widget.client.fetchRecordsPage(
+        token,
+        pageIndex: 1,
+        pageSize: 100,
+        studentId: current.studentId,
+        assessmentCode: 'SHUANGXI_A',
+      );
+      if (!mounted || serial != _profileCompareLoadSerial) {
+        return;
+      }
+      final List<Pep3RecordSummary> previous = page.items
+          .where((Pep3RecordSummary record) =>
+              record.id > 0 &&
+              record.id != current.id &&
+              _compareShuangxiProfileAssessmentAsc(record, current) < 0)
+          .toList()
+        ..sort(_compareShuangxiProfileAssessmentAsc);
+      final List<Pep3RecordSummary> visiblePrevious = previous.length > 3
+          ? previous.sublist(previous.length - 3)
+          : previous;
+      final Set<int> allowedIds =
+          visiblePrevious.map((Pep3RecordSummary record) => record.id).toSet();
+      setState(() {
+        _profileCompareLoading = false;
+        _profileCompareOptions = <_ShuangxiProfileCompareOption>[
+          for (int index = 0; index < visiblePrevious.length; index += 1)
+            _ShuangxiProfileCompareOption(
+              record: visiblePrevious[index],
+              label:
+                  '${_shuangxiProfileCompareOrdinal(index)} ${_shuangxiProfileCompareDateTimeText(visiblePrevious[index])}',
+            ),
+          _ShuangxiProfileCompareOption(
+            record: current,
+            label: '本次 ${_shuangxiProfileCompareDateTimeText(current)}',
+            isCurrent: true,
+          ),
+        ];
+        _selectedProfileCompareRecordIds =
+            _selectedProfileCompareRecordIds.where(allowedIds.contains).toSet();
+      });
+    } catch (_) {
+      if (!mounted || serial != _profileCompareLoadSerial) {
+        return;
+      }
+      setState(() {
+        _profileCompareLoading = false;
+        _profileCompareOptions = <_ShuangxiProfileCompareOption>[
+          _ShuangxiProfileCompareOption(
+            record: current,
+            label: '本次 ${_shuangxiProfileCompareDateTimeText(current)}',
+            isCurrent: true,
+          ),
+        ];
+        _selectedProfileCompareRecordIds = <int>{};
+      });
+    }
+  }
+
+  void _reloadDevelopmentProfilePdf() {
+    setState(() {
+      _developmentProfilePdfBytes = null;
+      _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+      _printErrorMessage = '';
+    });
+  }
+
+  void _setProfileShowCompare(bool value) {
+    if (_profileShowCompare == value) {
+      return;
+    }
+    setState(() {
+      _profileShowCompare = value;
+      if (!value) {
+        _profileComparePickerOpen = false;
+      }
+    });
+    _reloadDevelopmentProfilePdf();
+  }
+
+  void _setProfileShowScore(bool value) {
+    if (_profileShowScore == value) {
+      return;
+    }
+    setState(() {
+      _profileShowScore = value;
+    });
+    _reloadDevelopmentProfilePdf();
+  }
+
+  void _toggleProfileCompareRecord(int recordId) {
+    if (recordId <= 0) {
+      return;
+    }
+    final Set<int> next = <int>{..._selectedProfileCompareRecordIds};
+    if (next.contains(recordId)) {
+      next.remove(recordId);
+    } else {
+      if (next.length >= 3) {
+        _showMessage('最多选择3次对比记录');
+        return;
+      }
+      next.add(recordId);
+    }
+    setState(() {
+      _selectedProfileCompareRecordIds = next;
+    });
+    _reloadDevelopmentProfilePdf();
+  }
+
+  void _setProfileComparePickerOpen(bool value) {
+    if (!_profileShowCompare || _profileCompareLoading) {
+      value = false;
+    }
+    if (_profileComparePickerOpen == value) {
+      return;
+    }
+    setState(() {
+      _profileComparePickerOpen = value;
+    });
+  }
+
   Future<Uint8List> _loadDevelopmentProfilePdf() async {
-    final Uint8List bytes = await widget.client
-        .downloadShuangxiDevelopmentProfilePdf(widget.token, widget.record.id);
+    final Uint8List bytes =
+        await widget.client.downloadShuangxiDevelopmentProfilePdf(
+      widget.token,
+      widget.record.id,
+      config: _profilePdfConfig(),
+    );
     if (mounted) {
       _developmentProfilePdfBytes = bytes;
     }
@@ -6371,18 +6618,41 @@ class _ShuangxiReportPreviewDialogState
                     ),
                   ],
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+                child: Stack(
+                  clipBehavior: Clip.none,
                   children: <Widget>[
-                    _buildHeader(context, record),
-                    const SizedBox(height: 14),
-                    _buildTabBar(),
-                    const SizedBox(height: 12),
-                    Expanded(
-                      child: _showAnalysis
-                          ? _buildResultAnalysisContent()
-                          : _buildDevelopmentProfileContent(),
+                    Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: <Widget>[
+                        _buildHeader(context, record),
+                        const SizedBox(height: 14),
+                        _buildTabBar(),
+                        const SizedBox(height: 12),
+                        Expanded(
+                          child: _showAnalysis
+                              ? _buildResultAnalysisContent()
+                              : _buildDevelopmentProfileContent(),
+                        ),
+                      ],
                     ),
+                    if (_profileComparePickerOpen) ...<Widget>[
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: () => _setProfileComparePickerOpen(false),
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
+                      Positioned(
+                        top: 126,
+                        right: 96,
+                        child: _ShuangxiProfileComparePanel(
+                          options: _profileCompareOptions,
+                          selectedIds: _selectedProfileCompareRecordIds,
+                          onToggle: _toggleProfileCompareRecord,
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),
@@ -6720,10 +6990,15 @@ class _ShuangxiReportPreviewDialogState
             active: _showAnalysis,
             onTap: () => setState(() {
               _showAnalysis = true;
+              _profileComparePickerOpen = false;
               _selectedAnalysisCell = null;
             }),
           ),
-          const Spacer(),
+          const SizedBox(width: 14),
+          if (_showAnalysis)
+            const Spacer()
+          else
+            Expanded(child: _buildProfileConfigToolbar()),
           const SizedBox(width: 12),
           if (_showAnalysis) ...<Widget>[
             _ToolbarButton(
@@ -6742,6 +7017,308 @@ class _ShuangxiReportPreviewDialogState
             onTap: _printing ? null : () => unawaited(_printCurrentTab()),
           ),
         ],
+      ),
+    );
+  }
+
+  Widget _buildProfileConfigToolbar() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: <Widget>[
+        const Text(
+          '配置',
+          style: TextStyle(
+            color: _ReportTheme.ink,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 12),
+        _ShuangxiProfileSwitch(
+          label: '展示对比',
+          value: _profileShowCompare,
+          onChanged: _setProfileShowCompare,
+        ),
+        const SizedBox(width: 10),
+        _ShuangxiProfileSwitch(
+          label: '展示分数',
+          value: _profileShowScore,
+          onChanged: _setProfileShowScore,
+        ),
+        const SizedBox(width: 12),
+        _ShuangxiProfileComparePicker(
+          enabled: _profileShowCompare,
+          loading: _profileCompareLoading,
+          open: _profileComparePickerOpen,
+          options: _profileCompareOptions,
+          selectedIds: _selectedProfileCompareRecordIds,
+          onTap: () => _setProfileComparePickerOpen(
+            !_profileComparePickerOpen,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShuangxiProfileSwitch extends StatelessWidget {
+  const _ShuangxiProfileSwitch({
+    required this.label,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String label;
+  final bool value;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: _ReportTheme.text,
+            fontSize: 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 5),
+        Switch(
+          value: value,
+          activeColor: _ReportTheme.blue,
+          materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+          onChanged: onChanged,
+        ),
+      ],
+    );
+  }
+}
+
+class _ShuangxiProfileComparePicker extends StatelessWidget {
+  const _ShuangxiProfileComparePicker({
+    required this.enabled,
+    required this.loading,
+    required this.open,
+    required this.options,
+    required this.selectedIds,
+    required this.onTap,
+  });
+
+  final bool enabled;
+  final bool loading;
+  final bool open;
+  final List<_ShuangxiProfileCompareOption> options;
+  final Set<int> selectedIds;
+  final VoidCallback onTap;
+
+  List<String> get _selectedLabels {
+    return <String>[
+      for (final _ShuangxiProfileCompareOption option in options)
+        if (!option.isCurrent && selectedIds.contains(option.record.id))
+          option.label,
+    ];
+  }
+
+  String get _label {
+    if (loading) {
+      return '读取中';
+    }
+    final List<String> selectedLabels = _selectedLabels;
+    if (selectedLabels.isEmpty) {
+      return '选择对比记录';
+    }
+    return selectedLabels.join('、');
+  }
+
+  bool get _enabled => enabled && !loading && options.isNotEmpty;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(13),
+      child: InkWell(
+        onTap: _enabled ? onTap : null,
+        borderRadius: BorderRadius.circular(13),
+        child: Container(
+          width: 310,
+          height: 42,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
+          decoration: BoxDecoration(
+            color: enabled ? Colors.white : const Color(0xFFFFF8F2),
+            borderRadius: BorderRadius.circular(13),
+            border: Border.all(
+              color: open
+                  ? _ReportTheme.blue
+                  : enabled
+                      ? _ReportTheme.line
+                      : _ReportTheme.lineSoft,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  _label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: enabled ? _ReportTheme.text : _ReportTheme.muted,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Icon(
+                open ? Icons.expand_less_rounded : Icons.expand_more_rounded,
+                size: 20,
+                color: enabled ? _ReportTheme.text : _ReportTheme.muted,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ShuangxiProfileComparePanel extends StatelessWidget {
+  const _ShuangxiProfileComparePanel({
+    required this.options,
+    required this.selectedIds,
+    required this.onToggle,
+  });
+
+  final List<_ShuangxiProfileCompareOption> options;
+  final Set<int> selectedIds;
+  final ValueChanged<int> onToggle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 360,
+      constraints: const BoxConstraints(maxHeight: 264),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: _ReportTheme.lineSoft),
+        boxShadow: const <BoxShadow>[
+          BoxShadow(
+            color: Color(0x22000000),
+            blurRadius: 22,
+            offset: Offset(0, 12),
+          ),
+        ],
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        shrinkWrap: true,
+        itemCount: options.length,
+        separatorBuilder: (_, __) =>
+            const Divider(height: 1, color: _ReportTheme.lineSoft),
+        itemBuilder: (BuildContext context, int index) {
+          final _ShuangxiProfileCompareOption option = options[index];
+          final bool selected =
+              !option.isCurrent && selectedIds.contains(option.record.id);
+          return _ShuangxiProfileComparePanelRow(
+            option: option,
+            selected: selected,
+            onTap: option.isCurrent ? null : () => onToggle(option.record.id),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _ShuangxiProfileComparePanelRow extends StatelessWidget {
+  const _ShuangxiProfileComparePanelRow({
+    required this.option,
+    required this.selected,
+    this.onTap,
+  });
+
+  final _ShuangxiProfileCompareOption option;
+  final bool selected;
+  final VoidCallback? onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = onTap != null;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        child: Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          color: selected ? const Color(0xFFF2F7FF) : Colors.white,
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 18,
+                height: 18,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: selected ? _ReportTheme.blue : Colors.white,
+                  borderRadius: BorderRadius.circular(5),
+                  border: Border.all(
+                    color: selected
+                        ? _ReportTheme.blue
+                        : enabled
+                            ? _ReportTheme.line
+                            : _ReportTheme.lineSoft,
+                  ),
+                ),
+                child: selected
+                    ? const Icon(
+                        Icons.check_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      )
+                    : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  option.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: enabled ? _ReportTheme.ink : _ReportTheme.muted,
+                    fontSize: 13,
+                    fontWeight: enabled ? FontWeight.w900 : FontWeight.w800,
+                  ),
+                ),
+              ),
+              if (option.isCurrent) ...<Widget>[
+                const SizedBox(width: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF8F2),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: _ReportTheme.lineSoft),
+                  ),
+                  child: const Text(
+                    '本次',
+                    style: TextStyle(
+                      color: _ReportTheme.muted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
       ),
     );
   }

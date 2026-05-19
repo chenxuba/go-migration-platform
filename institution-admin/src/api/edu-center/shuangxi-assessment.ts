@@ -26,6 +26,12 @@ export type ShuangxiAAssessmentRecordDetail = PEP3AssessmentRecordDetail
 export type ShuangxiARecordConfigUpdateRequest = PEP3RecordConfigUpdateRequest
 export type ShuangxiASelectedReportSection = 'developmentProfile' | 'resultAnalysis'
 
+export interface ShuangxiADevelopmentProfileConfig {
+  showCompare?: boolean
+  showScore?: boolean
+  compareRecordIds?: number[]
+}
+
 export interface ShuangxiAScoreOption {
   value: number
   label: string
@@ -246,9 +252,14 @@ export function deleteShuangxiAAssessmentRecordApi(id: number) {
   return usePost<boolean>('/api/v1/assessments/shuangxi-a/records/delete', { id })
 }
 
-export function downloadShuangxiADevelopmentProfilePdfApi(id: number) {
+export function downloadShuangxiADevelopmentProfilePdfApi(id: number, config: ShuangxiADevelopmentProfileConfig = {}) {
   return axios.get('/api/v1/assessments/shuangxi-a/records/development-profile/pdf', {
-    params: { id },
+    params: {
+      id,
+      showCompare: config.showCompare,
+      showScore: config.showScore,
+      compareRecordIds: config.compareRecordIds?.join(','),
+    },
     responseType: 'blob',
     headers: shuangxiAAuthHeaders(),
   })
@@ -258,11 +269,13 @@ export function downloadShuangxiASelectedReportPdfApi(
   id: number | string,
   sections: ShuangxiASelectedReportSection[] = ['developmentProfile'],
   analysis?: ShuangxiAResultAnalysis | null,
+  developmentProfileConfig: ShuangxiADevelopmentProfileConfig = {},
 ) {
   return axios.post('/api/v1/assessments/shuangxi-a/records/selected-report/pdf', {
     id: Number(id || 0),
     sections,
     ...(analysis ? { analysis } : {}),
+    developmentProfileConfig,
   }, {
     responseType: 'blob',
     headers: shuangxiAAuthHeaders({

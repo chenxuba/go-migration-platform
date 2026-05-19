@@ -15,9 +15,16 @@ type ShuangxiResultAnalysisExportRequest struct {
 }
 
 type ShuangxiSelectedReportExportRequest struct {
-	ID       int64                     `json:"id"`
-	Sections []string                  `json:"sections"`
-	Analysis *ShuangxiResultAnalysisVO `json:"analysis,omitempty"`
+	ID                       int64                            `json:"id"`
+	Sections                 []string                         `json:"sections"`
+	Analysis                 *ShuangxiResultAnalysisVO        `json:"analysis,omitempty"`
+	DevelopmentProfileConfig ShuangxiDevelopmentProfileConfig `json:"developmentProfileConfig,omitempty"`
+}
+
+type ShuangxiDevelopmentProfileConfig struct {
+	ShowCompare      *bool   `json:"showCompare,omitempty"`
+	ShowScore        *bool   `json:"showScore,omitempty"`
+	CompareRecordIDs []int64 `json:"compareRecordIds,omitempty"`
 }
 
 type ShuangxiResultAnalysisVO struct {

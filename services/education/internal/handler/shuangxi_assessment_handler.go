@@ -362,7 +362,8 @@ func (handler *Handler) shuangxiAAssessmentRecordDevelopmentProfilePDF(w http.Re
 		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
 		return
 	}
-	filename, content, err := handler.service.GenerateShuangxiADevelopmentProfilePDF(claims.UserID, id)
+	config := parseShuangxiDevelopmentProfileConfigQuery(r)
+	filename, content, err := handler.service.GenerateShuangxiADevelopmentProfilePDF(claims.UserID, id, config)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -371,6 +372,43 @@ func (handler *Handler) shuangxiAAssessmentRecordDevelopmentProfilePDF(w http.Re
 	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(filename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func parseShuangxiDevelopmentProfileConfigQuery(r *http.Request) model.ShuangxiDevelopmentProfileConfig {
+	query := r.URL.Query()
+	return model.ShuangxiDevelopmentProfileConfig{
+		ShowCompare:      parseOptionalBoolQuery(query.Get("showCompare")),
+		ShowScore:        parseOptionalBoolQuery(query.Get("showScore")),
+		CompareRecordIDs: parseInt64CSVQuery(query.Get("compareRecordIds")),
+	}
+}
+
+func parseOptionalBoolQuery(raw string) *bool {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	value, err := strconv.ParseBool(raw)
+	if err != nil {
+		return nil
+	}
+	return &value
+}
+
+func parseInt64CSVQuery(raw string) []int64 {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	parts := strings.Split(raw, ",")
+	out := make([]int64, 0, len(parts))
+	for _, part := range parts {
+		value, err := strconv.ParseInt(strings.TrimSpace(part), 10, 64)
+		if err == nil && value > 0 {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func (handler *Handler) shuangxiAAssessmentRecordResultAnalysis(w http.ResponseWriter, r *http.Request) {
@@ -432,7 +470,7 @@ func (handler *Handler) shuangxiAAssessmentRecordSelectedReportPDF(w http.Respon
 		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
 		return
 	}
-	fileName, contentType, content, err := handler.service.ExportShuangxiASelectedReportPDF(claims.UserID, req.ID, req.Sections, req.Analysis)
+	fileName, contentType, content, err := handler.service.ExportShuangxiASelectedReportPDF(claims.UserID, req.ID, req.Sections, req.Analysis, req.DevelopmentProfileConfig)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return

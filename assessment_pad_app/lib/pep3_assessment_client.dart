@@ -180,6 +180,18 @@ class Pep3ApiException implements Exception {
   String toString() => message;
 }
 
+class ShuangxiDevelopmentProfilePdfConfig {
+  const ShuangxiDevelopmentProfilePdfConfig({
+    this.showCompare = true,
+    this.showScore = true,
+    this.compareRecordIds = const <int>[],
+  });
+
+  final bool showCompare;
+  final bool showScore;
+  final List<int> compareRecordIds;
+}
+
 class Pep3ScoreOption {
   const Pep3ScoreOption({
     required this.value,
@@ -1253,8 +1265,10 @@ abstract interface class Pep3AssessmentClient {
 
   Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
     String token,
-    int id,
-  );
+    int id, {
+    ShuangxiDevelopmentProfilePdfConfig config =
+        const ShuangxiDevelopmentProfilePdfConfig(),
+  });
 
   Future<ShuangxiResultAnalysis> fetchShuangxiResultAnalysis(
     String token,
@@ -1947,10 +1961,22 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   @override
   Future<Uint8List> downloadShuangxiDevelopmentProfilePdf(
     String token,
-    int id,
-  ) async {
+    int id, {
+    ShuangxiDevelopmentProfilePdfConfig config =
+        const ShuangxiDevelopmentProfilePdfConfig(),
+  }) async {
+    final List<int> compareRecordIds = config.compareRecordIds
+        .where((int value) => value > 0)
+        .toSet()
+        .toList(growable: false);
     final Uri uri = _uri(shuangxiRecordDevelopmentProfilePdfPath).replace(
-      queryParameters: <String, String>{'id': '$id'},
+      queryParameters: <String, String>{
+        'id': '$id',
+        'showCompare': '${config.showCompare}',
+        'showScore': '${config.showScore}',
+        if (compareRecordIds.isNotEmpty)
+          'compareRecordIds': compareRecordIds.join(','),
+      },
     );
     final http.Response response;
     try {
