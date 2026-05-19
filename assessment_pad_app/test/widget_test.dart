@@ -552,6 +552,14 @@ void main() {
     expect(find.text('领域\n（依优弱序）'), findsOneWidget);
     expect(find.text('现况分析'), findsOneWidget);
     expect(find.text('AI生成'), findsOneWidget);
+
+    await tester.tap(find.text('打印'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('选择打印内容'), findsOneWidget);
+    expect(find.byType(Checkbox), findsNWidgets(2));
+    expect(find.text('未生成'), findsOneWidget);
   });
 
   testWidgets('Shuangxi report config saves with Shuangxi record client',

@@ -5298,6 +5298,35 @@ class _ShuangxiReportPreviewDialog extends StatefulWidget {
       _ShuangxiReportPreviewDialogState();
 }
 
+enum _ShuangxiPrintSection {
+  developmentProfile,
+  resultAnalysis,
+}
+
+class _ShuangxiPrintSectionSpec {
+  const _ShuangxiPrintSectionSpec({
+    required this.section,
+    required this.label,
+  });
+
+  final _ShuangxiPrintSection section;
+  final String label;
+}
+
+const List<_ShuangxiPrintSectionSpec> _shuangxiPrintSections =
+    <_ShuangxiPrintSectionSpec>[
+  _ShuangxiPrintSectionSpec(
+    section: _ShuangxiPrintSection.developmentProfile,
+    label: '发展侧面图',
+  ),
+  _ShuangxiPrintSectionSpec(
+    section: _ShuangxiPrintSection.resultAnalysis,
+    label: '评量结果分析',
+  ),
+];
+
+const double _shuangxiPrintMergeRasterDpi = 120;
+
 class _ShuangxiReportPreviewDialogState
     extends State<_ShuangxiReportPreviewDialog> {
   final PadMessageOverlayController _messageController =
@@ -5506,78 +5535,98 @@ class _ShuangxiReportPreviewDialogState
     }
   }
 
-  Future<void> _printDevelopmentProfilePdf() async {
-    if (_printing) {
-      return;
-    }
-    setState(() {
-      _printing = true;
-      _printLoadingText = '正在生成打印文件...';
-      _printErrorMessage = '';
-    });
+  Future<Uint8List> _loadDevelopmentProfilePrintBytes() async {
     Uint8List? bytes = _developmentProfilePdfBytes;
-    try {
-      if (bytes == null || bytes.isEmpty) {
-        bytes =
-            await (_developmentProfilePdfLoad ?? _loadDevelopmentProfilePdf());
-      }
-      if (!mounted) {
-        return;
-      }
-      if (bytes.isEmpty) {
-        setState(() {
-          _printErrorMessage = '暂无可打印的发展侧面图PDF';
-        });
-        return;
-      }
-      setState(() {
-        _printLoadingText = '正在打开打印预览...';
-      });
-      bool printPreviewRequested = false;
-      await Printing.layoutPdf(
-        name: _shuangxiPrintFileName(widget.record, '发展侧面图'),
-        format: PdfPageFormat.a4.landscape.copyWith(
-          marginLeft: 0,
-          marginTop: 0,
-          marginRight: 0,
-          marginBottom: 0,
-        ),
-        dynamicLayout: false,
-        onLayout: (_) async {
-          if (!printPreviewRequested) {
-            printPreviewRequested = true;
-            _finishPrintLoading();
-          }
-          return bytes!;
-        },
-      );
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _printErrorMessage = '发展侧面图打印失败：$error';
-      });
-    } finally {
-      _finishPrintLoading();
+    if (bytes == null || bytes.isEmpty) {
+      bytes =
+          await (_developmentProfilePdfLoad ?? _loadDevelopmentProfilePdf());
     }
+    if (bytes.isEmpty) {
+      throw StateError('暂无可打印的发展侧面图PDF');
+    }
+    return bytes;
   }
 
   Future<void> _printCurrentTab() async {
-    if (_showAnalysis) {
-      await _printResultAnalysisPdf();
+    if (_printing) {
       return;
     }
-    await _printDevelopmentProfilePdf();
+    final List<_ShuangxiPrintSection>? selectedSections =
+        await _showPrintSelectionDialog();
+    if (selectedSections == null || selectedSections.isEmpty || !mounted) {
+      return;
+    }
+    await _printSelectedSections(selectedSections);
   }
 
-  Future<void> _printResultAnalysisPdf() async {
+  Future<List<_ShuangxiPrintSection>?> _showPrintSelectionDialog() {
+    final Set<_ShuangxiPrintSection> enabledSections =
+        _enabledPrintSections().toSet();
+    final _ShuangxiPrintSection activeSection = _showAnalysis
+        ? _ShuangxiPrintSection.resultAnalysis
+        : _ShuangxiPrintSection.developmentProfile;
+    final Set<_ShuangxiPrintSection> initialSelection =
+        <_ShuangxiPrintSection>{};
+    if (enabledSections.contains(activeSection)) {
+      initialSelection.add(activeSection);
+    } else if (enabledSections.isNotEmpty) {
+      initialSelection.add(enabledSections.first);
+    }
+    return showDialog<List<_ShuangxiPrintSection>>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _ShuangxiPrintSelectionDialog(
+            options: _shuangxiPrintSections,
+            enabledSections: enabledSections,
+            initialSelection: initialSelection,
+            statusLabels: _printSelectionStatusLabels(),
+          ),
+        );
+      },
+    );
+  }
+
+  List<_ShuangxiPrintSection> _enabledPrintSections() {
+    return <_ShuangxiPrintSection>[
+      for (final _ShuangxiPrintSectionSpec spec in _shuangxiPrintSections)
+        if (_canPrintSection(spec.section)) spec.section,
+    ];
+  }
+
+  bool _canPrintSection(_ShuangxiPrintSection section) {
+    if (section == _ShuangxiPrintSection.resultAnalysis) {
+      return !_resultAnalysisGenerating &&
+          !_mergeShuangxiResultAnalysis(_resultAnalysis).isEmpty;
+    }
+    return true;
+  }
+
+  Map<_ShuangxiPrintSection, String> _printSelectionStatusLabels() {
+    final Map<_ShuangxiPrintSection, String> labels =
+        <_ShuangxiPrintSection, String>{};
+    if (_resultAnalysisGenerating) {
+      labels[_ShuangxiPrintSection.resultAnalysis] = '生成中';
+    } else if (_mergeShuangxiResultAnalysis(_resultAnalysis).isEmpty) {
+      labels[_ShuangxiPrintSection.resultAnalysis] = '未生成';
+    }
+    if (_developmentProfilePdfBytes == null) {
+      labels[_ShuangxiPrintSection.developmentProfile] = '读取中';
+    }
+    return labels;
+  }
+
+  Future<void> _printSelectedSections(
+    List<_ShuangxiPrintSection> sections,
+  ) async {
     if (_printing) {
       return;
     }
     final ShuangxiResultAnalysis analysis =
         _mergeShuangxiResultAnalysis(_resultAnalysis);
-    if (analysis.isEmpty) {
+    if (sections.contains(_ShuangxiPrintSection.resultAnalysis) &&
+        analysis.isEmpty) {
       _showMessage('请先生成评量结果分析');
       return;
     }
@@ -5587,42 +5636,264 @@ class _ShuangxiReportPreviewDialogState
       _printErrorMessage = '';
     });
     try {
-      final Uint8List bytes =
-          await _buildShuangxiResultAnalysisPrintPdf(widget.record, analysis);
-      if (!mounted) {
-        return;
+      if (sections.length == 1) {
+        final bool completed = await _printSingleSection(
+          sections.first,
+          analysis: analysis,
+        );
+        if (!completed) {
+          return;
+        }
+      } else {
+        final Uint8List bytes = await _buildSelectedPrintPdf(
+          sections,
+          analysis: analysis,
+          forcePortrait: true,
+        );
+        if (!mounted) {
+          return;
+        }
+        setState(() {
+          _printLoadingText = '正在打开打印预览...';
+        });
+        final bool completed = await _printCombinedSectionsPdf(
+          sections,
+          bytes,
+        );
+        if (!completed) {
+          return;
+        }
       }
-      setState(() {
-        _printLoadingText = '正在打开打印预览...';
-      });
-      bool printPreviewRequested = false;
-      await Printing.layoutPdf(
-        name: _shuangxiPrintFileName(widget.record, '评量结果分析'),
-        format: PdfPageFormat.a4.copyWith(
-          marginLeft: 0,
-          marginTop: 0,
-          marginRight: 0,
-          marginBottom: 0,
-        ),
-        dynamicLayout: false,
-        onLayout: (_) async {
-          if (!printPreviewRequested) {
-            printPreviewRequested = true;
-            _finishPrintLoading();
-          }
-          return bytes;
-        },
-      );
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('评量结果分析打印失败：$error')),
-      );
+      final String message = '打印失败：$error';
+      setState(() {
+        _printErrorMessage = message;
+      });
+      _showMessage(message, tone: PadMessageTone.error);
     } finally {
       _finishPrintLoading();
     }
+  }
+
+  Future<bool> _printSingleSection(
+    _ShuangxiPrintSection section, {
+    required ShuangxiResultAnalysis analysis,
+  }) async {
+    return switch (section) {
+      _ShuangxiPrintSection.developmentProfile => _printDevelopmentProfilePdf(),
+      _ShuangxiPrintSection.resultAnalysis => _printResultAnalysisPdf(analysis),
+    };
+  }
+
+  Future<bool> _printDevelopmentProfilePdf() async {
+    final Uint8List bytes = await _loadDevelopmentProfilePrintBytes();
+    bool printPreviewRequested = false;
+    return Printing.layoutPdf(
+      name: _shuangxiPrintFileName(widget.record, '发展侧面图'),
+      format: PdfPageFormat.a4.landscape.copyWith(
+        marginLeft: 0,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+      ),
+      dynamicLayout: false,
+      onLayout: (_) async {
+        if (!printPreviewRequested) {
+          printPreviewRequested = true;
+        }
+        return bytes;
+      },
+    );
+  }
+
+  Future<bool> _printResultAnalysisPdf(
+    ShuangxiResultAnalysis analysis,
+  ) async {
+    if (analysis.isEmpty) {
+      _showMessage('请先生成评量结果分析');
+      return false;
+    }
+    bool printPreviewRequested = false;
+    return Printing.layoutPdf(
+      name: _shuangxiPrintFileName(widget.record, '评量结果分析'),
+      format: PdfPageFormat.a4.copyWith(
+        marginLeft: 0,
+        marginTop: 0,
+        marginRight: 0,
+        marginBottom: 0,
+      ),
+      dynamicLayout: false,
+      onLayout: (PdfPageFormat format) async {
+        final Uint8List bytes = await _buildShuangxiResultAnalysisPrintPdf(
+          widget.record,
+          analysis,
+          landscape: format.width > format.height,
+        );
+        if (!printPreviewRequested) {
+          printPreviewRequested = true;
+        }
+        return bytes;
+      },
+    );
+  }
+
+  Future<bool> _printCombinedSectionsPdf(
+    List<_ShuangxiPrintSection> sections,
+    Uint8List bytes,
+  ) async {
+    bool printPreviewRequested = false;
+    return Printing.layoutPdf(
+      name: _shuangxiPrintFileNameForSections(widget.record, sections),
+      format: _shuangxiPrintPageFormatForSections(sections),
+      dynamicLayout: false,
+      onLayout: (_) async {
+        if (!printPreviewRequested) {
+          printPreviewRequested = true;
+        }
+        return bytes;
+      },
+    );
+  }
+
+  Future<Uint8List> _buildSelectedPrintPdf(
+    List<_ShuangxiPrintSection> sections, {
+    required ShuangxiResultAnalysis analysis,
+    bool forcePortrait = false,
+  }) async {
+    if (sections.length == 1) {
+      return switch (sections.first) {
+        _ShuangxiPrintSection.developmentProfile =>
+          _loadDevelopmentProfilePrintBytes(),
+        _ShuangxiPrintSection.resultAnalysis =>
+          _buildShuangxiResultAnalysisPrintPdf(widget.record, analysis),
+      };
+    }
+
+    final pw.Document document = pw.Document();
+    for (final _ShuangxiPrintSection section in sections) {
+      final Uint8List bytes = switch (section) {
+        _ShuangxiPrintSection.developmentProfile =>
+          await _loadDevelopmentProfilePrintBytes(),
+        _ShuangxiPrintSection.resultAnalysis =>
+          await _buildShuangxiResultAnalysisPrintPdf(widget.record, analysis),
+      };
+      await _appendPdfRasterPages(
+        document,
+        bytes,
+        _labelForPrintSection(section),
+        forcePortrait: forcePortrait,
+      );
+    }
+    return document.save();
+  }
+
+  Future<void> _appendPdfRasterPages(
+    pw.Document document,
+    Uint8List bytes,
+    String label, {
+    bool forcePortrait = false,
+  }) async {
+    bool appended = false;
+    await for (final PdfRaster raster in Printing.raster(
+      bytes,
+      dpi: _shuangxiPrintMergeRasterDpi,
+    )) {
+      if (raster.width <= 0 || raster.height <= 0) {
+        continue;
+      }
+      appended = true;
+      final PdfPageFormat pageFormat = forcePortrait
+          ? PdfPageFormat.a4.copyWith(
+              marginLeft: 0,
+              marginTop: 0,
+              marginRight: 0,
+              marginBottom: 0,
+            )
+          : PdfPageFormat(
+              raster.width / _shuangxiPrintMergeRasterDpi * PdfPageFormat.inch,
+              raster.height / _shuangxiPrintMergeRasterDpi * PdfPageFormat.inch,
+            );
+      final pw.RawImage image = pw.RawImage(
+        bytes: raster.pixels,
+        width: raster.width,
+        height: raster.height,
+      );
+      final bool rotateLandscapeIntoPortrait =
+          forcePortrait && raster.width > raster.height;
+      document.addPage(
+        pw.Page(
+          pageFormat: pageFormat,
+          build: (pw.Context context) {
+            return pw.FullPage(
+              ignoreMargins: true,
+              child: forcePortrait
+                  ? pw.Container(
+                      width: pageFormat.width,
+                      height: pageFormat.height,
+                      alignment: pw.Alignment.center,
+                      child: rotateLandscapeIntoPortrait
+                          ? pw.Transform.rotateBox(
+                              angle: -math.pi / 2,
+                              child: pw.Image(
+                                image,
+                                fit: pw.BoxFit.contain,
+                                width: pageFormat.height,
+                                height: pageFormat.width,
+                              ),
+                            )
+                          : pw.Image(
+                              image,
+                              fit: pw.BoxFit.contain,
+                              width: pageFormat.width,
+                              height: pageFormat.height,
+                            ),
+                    )
+                  : pw.Image(
+                      image,
+                      fit: pw.BoxFit.fill,
+                    ),
+            );
+          },
+        ),
+      );
+    }
+    if (!appended) {
+      throw StateError('$label暂无可打印页面');
+    }
+  }
+
+  PdfPageFormat _shuangxiPrintPageFormatForSections(
+    List<_ShuangxiPrintSection> sections,
+  ) {
+    final PdfPageFormat format = sections.length == 1 &&
+            sections.first == _ShuangxiPrintSection.developmentProfile
+        ? PdfPageFormat.a4.landscape
+        : PdfPageFormat.a4;
+    return format.copyWith(
+      marginLeft: 0,
+      marginTop: 0,
+      marginRight: 0,
+      marginBottom: 0,
+    );
+  }
+
+  String _shuangxiPrintFileNameForSections(
+    Pep3RecordSummary record,
+    List<_ShuangxiPrintSection> sections,
+  ) {
+    if (sections.length == 1) {
+      return _shuangxiPrintFileName(record, _labelForPrintSection(sections[0]));
+    }
+    return _shuangxiPrintFileName(record, '所选内容');
+  }
+
+  String _labelForPrintSection(_ShuangxiPrintSection section) {
+    return _shuangxiPrintSections
+        .firstWhere((_ShuangxiPrintSectionSpec spec) => spec.section == section)
+        .label;
   }
 
   void _finishPrintLoading() {
@@ -6061,6 +6332,252 @@ class _ShuangxiPrintErrorBanner extends StatelessWidget {
           fontSize: 13,
           fontWeight: FontWeight.w900,
           height: 1.3,
+        ),
+      ),
+    );
+  }
+}
+
+class _ShuangxiPrintSelectionDialog extends StatefulWidget {
+  const _ShuangxiPrintSelectionDialog({
+    required this.options,
+    required this.enabledSections,
+    required this.initialSelection,
+    required this.statusLabels,
+  });
+
+  final List<_ShuangxiPrintSectionSpec> options;
+  final Set<_ShuangxiPrintSection> enabledSections;
+  final Set<_ShuangxiPrintSection> initialSelection;
+  final Map<_ShuangxiPrintSection, String> statusLabels;
+
+  @override
+  State<_ShuangxiPrintSelectionDialog> createState() =>
+      _ShuangxiPrintSelectionDialogState();
+}
+
+class _ShuangxiPrintSelectionDialogState
+    extends State<_ShuangxiPrintSelectionDialog> {
+  late final Set<_ShuangxiPrintSection> _selected =
+      Set<_ShuangxiPrintSection>.from(widget.initialSelection);
+
+  List<_ShuangxiPrintSection> get _orderedSelection {
+    return <_ShuangxiPrintSection>[
+      for (final _ShuangxiPrintSectionSpec spec in widget.options)
+        if (_selected.contains(spec.section)) spec.section,
+    ];
+  }
+
+  bool get _allEnabledSelected {
+    if (widget.enabledSections.isEmpty) {
+      return false;
+    }
+    return widget.enabledSections.every(_selected.contains);
+  }
+
+  void _toggle(_ShuangxiPrintSection section, bool selected) {
+    if (!widget.enabledSections.contains(section)) {
+      return;
+    }
+    setState(() {
+      if (selected) {
+        _selected.add(section);
+      } else {
+        _selected.remove(section);
+      }
+    });
+  }
+
+  void _toggleAll() {
+    setState(() {
+      if (_allEnabledSelected) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(widget.enabledSections);
+      }
+    });
+  }
+
+  void _submit() {
+    final List<_ShuangxiPrintSection> selected = _orderedSelection;
+    if (selected.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '选择打印内容',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                _AutismDevPrintTextAction(
+                  label: _allEnabledSelected ? '清空' : '全选',
+                  onTap: _toggleAll,
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: Column(
+                children: <Widget>[
+                  for (int index = 0; index < widget.options.length; index++)
+                    _ShuangxiPrintOptionRow(
+                      spec: widget.options[index],
+                      selected:
+                          _selected.contains(widget.options[index].section),
+                      enabled: widget.enabledSections
+                          .contains(widget.options[index].section),
+                      statusLabel:
+                          widget.statusLabels[widget.options[index].section] ??
+                              '',
+                      bottom: index != widget.options.length - 1,
+                      onChanged: (bool selected) =>
+                          _toggle(widget.options[index].section, selected),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                Opacity(
+                  opacity: _selected.isEmpty ? .45 : 1,
+                  child: _AutismDevDialogAction(
+                    label: '打印',
+                    filled: true,
+                    icon: Icons.print_rounded,
+                    onTap: _submit,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ShuangxiPrintOptionRow extends StatelessWidget {
+  const _ShuangxiPrintOptionRow({
+    required this.spec,
+    required this.selected,
+    required this.enabled,
+    required this.statusLabel,
+    required this.bottom,
+    required this.onChanged,
+  });
+
+  final _ShuangxiPrintSectionSpec spec;
+  final bool selected;
+  final bool enabled;
+  final String statusLabel;
+  final bool bottom;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? () => onChanged(!selected) : null,
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.only(left: 8, right: 14),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: bottom
+                ? const BorderSide(color: _ReportTheme.lineSoft)
+                : BorderSide.none,
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            Checkbox(
+              value: selected,
+              activeColor: _ReportTheme.orange,
+              onChanged:
+                  enabled ? (bool? value) => onChanged(value ?? false) : null,
+            ),
+            Expanded(
+              child: Text(
+                spec.label,
+                style: TextStyle(
+                  color: enabled ? Colors.black : _ReportTheme.muted,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (statusLabel.trim().isNotEmpty)
+              Container(
+                height: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3EA),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                ),
+                child: Text(
+                  statusLabel.trim(),
+                  style: const TextStyle(
+                    color: _ReportTheme.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
         ),
       ),
     );
@@ -8116,11 +8633,14 @@ String _canonicalShuangxiResultAnalysisDomain(String code, String domain) {
 
 Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
   Pep3RecordSummary record,
-  ShuangxiResultAnalysis analysis,
-) async {
+  ShuangxiResultAnalysis analysis, {
+  bool landscape = false,
+}) async {
   final pw.Font baseFont =
       await fontFromAssetBundle('assets/fonts/NotoSansSC-Regular.ttf');
-  final PdfPageFormat pageFormat = PdfPageFormat.a4.copyWith(
+  final PdfPageFormat baseFormat =
+      landscape ? PdfPageFormat.a4.landscape : PdfPageFormat.a4;
+  final PdfPageFormat pageFormat = baseFormat.copyWith(
     marginLeft: 30,
     marginTop: 30,
     marginRight: 30,
