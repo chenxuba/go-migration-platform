@@ -226,6 +226,10 @@ function openStartModal(scale: ScaleLibraryItem) {
     messageService.warning('该量表暂不可发起测评')
     return
   }
+  if (isVBMAPPScale(scale)) {
+    messageService.info('VB-MAPP测评请先从Pad端开始')
+    return
+  }
   activeScale.value = scale
   childOptions.value = []
   selectedChildId.value = undefined
@@ -296,6 +300,12 @@ function isAutismDevScale(scale: ScaleLibraryItem) {
   const code = String(scale.code || '').trim().toUpperCase()
   const name = String(scale.name || '').trim()
   return code === 'AUTISMDEV' || name.includes('孤独症儿童发展') || name.includes('孤独症发展评估')
+}
+
+function isVBMAPPScale(scale: ScaleLibraryItem) {
+  const code = String(scale.code || '').trim().toUpperCase().replace(/[\s_-]/g, '')
+  const name = String(scale.name || '').trim()
+  return code === 'VBMAPP' || name.includes('VB-MAPP') || name.includes('语言行为里程碑')
 }
 
 onMounted(() => {

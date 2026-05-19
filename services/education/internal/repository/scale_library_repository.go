@@ -52,6 +52,65 @@ func (repo *Repository) ensureScaleLibrarySchema(ctx context.Context) error {
 		       OR IFNULL(data_status, '') IN ('待配置', '待定')
 		       OR IFNULL(execution_entry, '') = '')
 	`)
+	if err != nil {
+		return err
+	}
+	return repo.ensureVBMAPPScaleCatalog(ctx)
+}
+
+func (repo *Repository) ensureVBMAPPScaleCatalog(ctx context.Context) error {
+	_, err := repo.db.ExecContext(ctx, `
+		INSERT INTO sys_scale (
+			scale_name, scale_code, category, scenario, age_range, age_min_months, age_max_months,
+			estimated_duration, duration_min_minutes, duration_max_minutes, current_version,
+			item_count, domain_count, institution_count, month_usage, data_status, summary,
+			execution_entry, api_package, sort, create_time, update_time, del_flag
+		) VALUES (
+			'VB-MAPP语言行为里程碑评估及安置计划',
+			'VBMAPP',
+			'语言行为评估',
+			'现场测评',
+			'0岁-4岁',
+			0,
+			48,
+			'60-120分钟',
+			60,
+			120,
+			'VBMAPP_CN_2ND_DRAFT_2026_05',
+			212,
+			16,
+			0,
+			0,
+			'资料已结构化；计分、草稿、正式记录、历史对比和Pad入口已接入；完整题库作答页持续完善中',
+			'VB-MAPP覆盖里程碑评估、障碍评估和转衔评估，用于儿童语言行为能力评估、教学目标选择和安置计划制定。',
+			'Pad /vbmapp-assessment',
+			'/api/v1/assessments/vbmapp/*',
+			5,
+			NOW(),
+			NOW(),
+			0
+		)
+		ON DUPLICATE KEY UPDATE
+			scale_name = VALUES(scale_name),
+			category = VALUES(category),
+			scenario = VALUES(scenario),
+			age_range = VALUES(age_range),
+			age_min_months = VALUES(age_min_months),
+			age_max_months = VALUES(age_max_months),
+			estimated_duration = VALUES(estimated_duration),
+			duration_min_minutes = VALUES(duration_min_minutes),
+			duration_max_minutes = VALUES(duration_max_minutes),
+			current_version = VALUES(current_version),
+			item_count = VALUES(item_count),
+			domain_count = VALUES(domain_count),
+			data_status = VALUES(data_status),
+			summary = VALUES(summary),
+			execution_entry = VALUES(execution_entry),
+			api_package = VALUES(api_package),
+			sort = VALUES(sort),
+			update_time = NOW(),
+			del_flag = 0
+	`)
 	return err
 }
 

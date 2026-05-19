@@ -16,6 +16,7 @@ import 'package:assessment_pad_app/pep3_assessment_page.dart';
 import 'package:assessment_pad_app/shuangxi_assessment_page.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
+import 'package:assessment_pad_app/vbmapp_assessment_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -3558,6 +3559,73 @@ void main() {
 
     expect(find.textContaining('超过6岁'), findsOneWidget);
     expect(find.text('孤独症儿童发展评估表测评工作台'), findsNothing);
+  });
+
+  testWidgets('VB-MAPP scale opens pad assessment route',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    VbmappAssessmentLaunchArgs? openedArgs;
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AssessmentScaleCategoryScreen(
+            scaleClient: _FakeAssessmentScaleClient(
+              scaleItems: const <AssessmentScaleItem>[_vbmappScaleItem],
+              studentCandidates: const <AssessmentStudentCandidate>[
+                AssessmentStudentCandidate(
+                  id: 51,
+                  shortName: '王',
+                  name: '王小语',
+                  avatarUrl: '',
+                  gender: '女',
+                  age: '3岁',
+                  birthDate: '2023-01-01',
+                  contactPhone: '妈妈 136****0051',
+                  latestAssessment: '未测评',
+                ),
+              ],
+            ),
+            onBack: () {},
+          ),
+        ),
+        onGenerateRoute: (RouteSettings settings) {
+          if (settings.name == '/vbmapp-assessment') {
+            openedArgs = settings.arguments! as VbmappAssessmentLaunchArgs;
+            return MaterialPageRoute<void>(
+              settings: settings,
+              builder: (BuildContext context) => const Scaffold(
+                body: Center(child: Text('VB-MAPP测评已打开')),
+              ),
+            );
+          }
+          return null;
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('未选择学员'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('王小语'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('确认选择'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('开始测评').last);
+    await tester.pumpAndSettle();
+
+    expect(openedArgs?.studentId, 51);
+    expect(openedArgs?.scaleName, _vbmappScaleItem.name);
+    expect(find.text('VB-MAPP测评已打开'), findsOneWidget);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',
@@ -7989,6 +8057,34 @@ const AssessmentScaleItem _erxinScaleItem = AssessmentScaleItem(
   posterUrl: '',
   executionEntry: 'erxin',
   apiPackage: 'erxin',
+);
+
+const AssessmentScaleItem _vbmappScaleItem = AssessmentScaleItem(
+  id: 6,
+  name: 'VB-MAPP语言行为里程碑评估及安置计划',
+  code: 'VBMAPP',
+  category: '语言行为评估',
+  scenario: '现场测评',
+  ageRange: '0岁-4岁',
+  ageMinMonths: 0,
+  ageMaxMonths: 48,
+  duration: '60-120分钟',
+  durationMinMinutes: 60,
+  durationMaxMinutes: 120,
+  currentVersion: 'VBMAPP_CN_2ND_DRAFT_2026_05',
+  itemCount: 212,
+  domainCount: 16,
+  monthUsage: 0,
+  usageCount: 0,
+  latestUse: '',
+  dataStatus: 'ready',
+  status: 'available',
+  statusText: '可用',
+  updatedAt: '2026-05-19 10:00:00',
+  summary: 'VB-MAPP',
+  posterUrl: '',
+  executionEntry: 'Pad /vbmapp-assessment',
+  apiPackage: '/api/v1/assessments/vbmapp/*',
 );
 
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {

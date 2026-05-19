@@ -17,6 +17,8 @@ import 'pad_top_message.dart';
 import 'route_bootstrap.dart';
 import 'shuangxi_assessment_client.dart';
 import 'shuangxi_assessment_page.dart';
+import 'vbmapp_assessment_client.dart';
+import 'vbmapp_assessment_page.dart';
 
 class AssessmentScaleCategoryScreen extends StatefulWidget {
   const AssessmentScaleCategoryScreen({
@@ -25,6 +27,7 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
     this.erxinClient,
     this.autismDevClient,
     this.shuangxiClient,
+    this.vbmappClient,
     super.key,
   });
 
@@ -33,6 +36,7 @@ class AssessmentScaleCategoryScreen extends StatefulWidget {
   final ErxinAssessmentClient? erxinClient;
   final AutismDevAssessmentClient? autismDevClient;
   final ShuangxiAssessmentClient? shuangxiClient;
+  final VbmappAssessmentClient? vbmappClient;
 
   @override
   State<AssessmentScaleCategoryScreen> createState() =>
@@ -310,12 +314,20 @@ class _AssessmentScaleCategoryScreenState
               pageSize: 100,
               latestOnly: true,
             );
+      final AssessmentDraftPage vbmappDrafts = widget.vbmappClient == null
+          ? AssessmentDraftPage.empty
+          : await widget.vbmappClient!.fetchDraftsPage(
+              token,
+              pageSize: 100,
+              latestOnly: true,
+            );
       final List<AssessmentDraftSummary> mergedDrafts =
           <AssessmentDraftSummary>[
         ...pep3Drafts.items,
         ...erxinDrafts.items,
         ...autismDevDrafts.items,
         ...shuangxiDrafts.items,
+        ...vbmappDrafts.items,
       ]..sort(_compareDraftUpdatedDesc);
       if (!mounted) {
         return;
@@ -325,7 +337,8 @@ class _AssessmentScaleCategoryScreenState
         _draftCount = pep3Drafts.total +
             erxinDrafts.total +
             autismDevDrafts.total +
-            shuangxiDrafts.total;
+            shuangxiDrafts.total +
+            vbmappDrafts.total;
         _draftsLoading = false;
         _draftErrorMessage = null;
       });
@@ -515,7 +528,12 @@ class _AssessmentScaleCategoryScreenState
     final bool isErxinScale = _isErxinScale(scale);
     final bool isPep3Scale = _isPep3Scale(scale);
     final bool isShuangxiAScale = _isShuangxiAScale(scale);
-    if (isAutismDevScale || isErxinScale || isPep3Scale || isShuangxiAScale) {
+    final bool isVbmappScale = _isVbmappScale(scale);
+    if (isAutismDevScale ||
+        isErxinScale ||
+        isPep3Scale ||
+        isShuangxiAScale ||
+        isVbmappScale) {
       if (_needsStudentBirthDateSetup(student)) {
         unawaited(_handleMissingStudentBirthDate(scale, student));
         return;
@@ -577,6 +595,20 @@ class _AssessmentScaleCategoryScreenState
           studentGender: student.gender,
           onStudentGenderUpdated: (String gender) =>
               _syncStudentGender(student.id, gender),
+          studentAge: studentAge,
+          birthDate: student.birthDate,
+          assessmentDate: _todayIsoDate(),
+          scaleName: scale.name,
+        ),
+      );
+      return;
+    }
+    if (isVbmappScale) {
+      final String studentAge = _studentAgeLabel(student);
+      _openVbmappAssessment(
+        VbmappAssessmentLaunchArgs(
+          studentId: student.id,
+          studentName: student.displayName,
           studentAge: studentAge,
           birthDate: student.birthDate,
           assessmentDate: _todayIsoDate(),
@@ -695,6 +727,20 @@ class _AssessmentScaleCategoryScreenState
       );
       return;
     }
+    if (_isVbmappDraft(draft)) {
+      _openVbmappAssessment(
+        VbmappAssessmentLaunchArgs(
+          draftId: draft.id,
+          studentName: draft.studentName,
+          assessmentDate: _todayIsoDate(),
+          examinerName: draft.examinerName,
+          scaleName: draft.assessmentName.trim().isEmpty
+              ? 'VB-MAPP语言行为里程碑评估及安置计划'
+              : draft.assessmentName.trim(),
+        ),
+      );
+      return;
+    }
     _showMessage('${draft.assessmentName} 的作答页待接入');
   }
 
@@ -728,6 +774,10 @@ class _AssessmentScaleCategoryScreenState
 
   void _openShuangxiAssessment(ShuangxiAssessmentLaunchArgs args) {
     Navigator.of(context).pushNamed('/shuangxi-a-assessment', arguments: args);
+  }
+
+  void _openVbmappAssessment(VbmappAssessmentLaunchArgs args) {
+    Navigator.of(context).pushNamed('/vbmapp-assessment', arguments: args);
   }
 
   void _syncStudentGender(int studentId, String gender) {
@@ -2300,6 +2350,17 @@ bool _isShuangxiAScale(AssessmentScaleItem scale) {
   );
 }
 
+bool _isVbmappScale(AssessmentScaleItem scale) {
+  return _isVbmappText(
+    <String>[
+      scale.executionEntry,
+      scale.apiPackage,
+      scale.code,
+      scale.name,
+    ].join(' '),
+  );
+}
+
 bool _isPep3Draft(AssessmentDraftSummary draft) {
   return _isPep3Text(
     <String>[
@@ -2329,6 +2390,15 @@ bool _isAutismDevDraft(AssessmentDraftSummary draft) {
 
 bool _isShuangxiADraft(AssessmentDraftSummary draft) {
   return _isShuangxiAText(
+    <String>[
+      draft.assessmentCode,
+      draft.assessmentName,
+    ].join(' '),
+  );
+}
+
+bool _isVbmappDraft(AssessmentDraftSummary draft) {
+  return _isVbmappText(
     <String>[
       draft.assessmentCode,
       draft.assessmentName,
@@ -2381,6 +2451,15 @@ bool _isShuangxiAText(String value) {
   return normalized.contains('shuangxia') ||
       normalized.contains('shuangxi') ||
       normalized.contains('双溪课程评量表a');
+}
+
+bool _isVbmappText(String value) {
+  final String normalized =
+      value.toLowerCase().replaceAll(RegExp(r'[\s_\-]'), '');
+  return normalized.contains('vbmapp') ||
+      normalized.contains('vb-mapp') ||
+      normalized.contains('语言行为里程碑') ||
+      normalized.contains('vb语言行为');
 }
 
 String? _validateScaleLaunch(

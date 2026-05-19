@@ -29,6 +29,8 @@ import 'student_archive_page.dart';
 import 'supervision_workbench_page.dart';
 import 'timetable_client.dart';
 import 'training_center_page.dart';
+import 'vbmapp_assessment_client.dart';
+import 'vbmapp_assessment_page.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +69,7 @@ class AssessmentPadApp extends StatelessWidget {
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.autismDevClient = const ApiAutismDevAssessmentClient(),
     this.shuangxiClient = const ApiShuangxiAssessmentClient(),
+    this.vbmappClient = const ApiVbmappAssessmentClient(),
     this.iepRecordClient = const ApiIepAssessmentRecordClient(),
     this.iepPlanClient = const ApiIepPlanClient(),
     this.timetableClient = const ApiTimetableClient(),
@@ -80,6 +83,7 @@ class AssessmentPadApp extends StatelessWidget {
   final ErxinAssessmentClient erxinClient;
   final AutismDevAssessmentClient autismDevClient;
   final ShuangxiAssessmentClient shuangxiClient;
+  final VbmappAssessmentClient vbmappClient;
   final IepAssessmentRecordClient iepRecordClient;
   final IepPlanClient iepPlanClient;
   final TimetableClient timetableClient;
@@ -190,6 +194,7 @@ class AssessmentPadApp extends StatelessWidget {
                 erxinClient: erxinClient,
                 autismDevClient: autismDevClient,
                 shuangxiClient: shuangxiClient,
+                vbmappClient: vbmappClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),
             ),
@@ -268,6 +273,26 @@ class AssessmentPadApp extends StatelessWidget {
               child: ShuangxiAssessmentPage(
                 args: args,
                 client: shuangxiClient,
+                homeClient: homeClient,
+                onBack: () => Navigator.of(context).maybePop(),
+              ),
+            ),
+          ),
+        );
+      case '/vbmapp-assessment':
+        final Object? rawArgs = settings.arguments;
+        final VbmappAssessmentLaunchArgs args =
+            rawArgs is VbmappAssessmentLaunchArgs
+                ? rawArgs
+                : const VbmappAssessmentLaunchArgs();
+        return MaterialPageRoute<void>(
+          settings: settings,
+          builder: (BuildContext context) => Scaffold(
+            resizeToAvoidBottomInset: false,
+            body: PadViewport(
+              child: VbmappAssessmentPage(
+                args: args,
+                client: vbmappClient,
                 homeClient: homeClient,
                 onBack: () => Navigator.of(context).maybePop(),
               ),

@@ -981,6 +981,53 @@ func (repo *Repository) seedScaleCatalog(ctx context.Context) error {
 		}
 	}
 
+	vbmappScaleID, err := repo.ensureScaleSeed(ctx, scaleSeed{
+		Name:               "VB-MAPP语言行为里程碑评估及安置计划",
+		Code:               "VBMAPP",
+		Category:           "语言行为评估",
+		Scenario:           "现场测评",
+		AgeRange:           "0岁-4岁",
+		AgeMinMonths:       0,
+		AgeMaxMonths:       48,
+		Duration:           "60-120分钟",
+		DurationMinMinutes: 60,
+		DurationMaxMinutes: 120,
+		CurrentVersion:     "VBMAPP_CN_2ND_DRAFT_2026_05",
+		ItemCount:          212,
+		DomainCount:        16,
+		InstitutionCount:   0,
+		MonthUsage:         0,
+		DataStatus:         "资料已结构化；计分、草稿、正式记录、历史对比和Pad入口已接入；完整题库作答页持续完善中",
+		Summary:            "VB-MAPP覆盖里程碑评估、障碍评估和转衔评估，用于儿童语言行为能力评估、教学目标选择和安置计划制定。",
+		ExecutionEntry:     "Pad /vbmapp-assessment",
+		APIPackage:         "/api/v1/assessments/vbmapp/*",
+		Sort:               5,
+	})
+	if err != nil {
+		return err
+	}
+	if err := repo.repairVBMAPPScaleCatalog(ctx, vbmappScaleID); err != nil {
+		return err
+	}
+	vbmappReferences := []struct {
+		Content string
+		Sort    int
+	}{
+		{
+			Content: "《VB-MAPP语言行为里程碑评估及安置计划》第2版指南和概况表。",
+			Sort:    1,
+		},
+		{
+			Content: "VB-MAPP里程碑评估、障碍评估、转衔评估结构化资料，当前共212个评分项目。",
+			Sort:    2,
+		},
+	}
+	for _, item := range vbmappReferences {
+		if err := repo.ensureScaleReferenceSeed(ctx, vbmappScaleID, item.Content, item.Sort); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -1075,6 +1122,32 @@ func (repo *Repository) repairShuangxiAScaleCatalog(ctx context.Context, scaleID
 		    sort = 4,
 		    update_time = NOW()
 		WHERE id = ? AND scale_code = 'SHUANGXI_A' AND del_flag = 0
+	`, scaleID)
+	return err
+}
+
+func (repo *Repository) repairVBMAPPScaleCatalog(ctx context.Context, scaleID int64) error {
+	_, err := repo.db.ExecContext(ctx, `
+		UPDATE sys_scale
+		SET scale_name = 'VB-MAPP语言行为里程碑评估及安置计划',
+		    category = '语言行为评估',
+		    scenario = '现场测评',
+		    age_range = '0岁-4岁',
+		    age_min_months = 0,
+		    age_max_months = 48,
+		    estimated_duration = '60-120分钟',
+		    duration_min_minutes = 60,
+		    duration_max_minutes = 120,
+		    current_version = 'VBMAPP_CN_2ND_DRAFT_2026_05',
+		    item_count = 212,
+		    domain_count = 16,
+		    data_status = '资料已结构化；计分、草稿、正式记录、历史对比和Pad入口已接入；完整题库作答页持续完善中',
+		    summary = 'VB-MAPP覆盖里程碑评估、障碍评估和转衔评估，用于儿童语言行为能力评估、教学目标选择和安置计划制定。',
+		    execution_entry = 'Pad /vbmapp-assessment',
+		    api_package = '/api/v1/assessments/vbmapp/*',
+		    sort = 5,
+		    update_time = NOW()
+		WHERE id = ? AND scale_code = 'VBMAPP' AND del_flag = 0
 	`, scaleID)
 	return err
 }
