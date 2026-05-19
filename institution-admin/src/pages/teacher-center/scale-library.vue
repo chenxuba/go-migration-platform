@@ -977,10 +977,16 @@ onBeforeUnmount(() => {
   }
 }
 
+.scale-content-scroll :deep(.ant-spin-nested-loading),
+.scale-content-scroll :deep(.ant-spin-container) {
+  width: 100%;
+}
+
 .scale-card-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(483.5px, 483.5px));
-  justify-content: start;
+  width: 100%;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  justify-content: stretch;
   gap: 18px;
 }
 
@@ -991,6 +997,7 @@ onBeforeUnmount(() => {
 .scale-card {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   min-height: 244px;
   padding: 16px 18px;
   background: #fff;
@@ -1253,6 +1260,13 @@ onBeforeUnmount(() => {
   border-top: 1px solid #edf1f6;
   color: #667085;
   font-size: 13px;
+
+  > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
 }
 
 .card-actions {
