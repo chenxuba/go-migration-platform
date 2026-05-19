@@ -87,6 +87,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/delete", handler.deleteShuangxiAAssessmentRecord)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/development-profile/pdf", handler.shuangxiAAssessmentRecordDevelopmentProfilePDF)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/result-analysis", handler.shuangxiAAssessmentRecordResultAnalysis)
+	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/selected-report/pdf", handler.shuangxiAAssessmentRecordSelectedReportPDF)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/result-analysis/ai/stream", handler.shuangxiAAssessmentRecordResultAnalysisAIStream)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/iep-plan/detail", handler.shuangxiAAssessmentRecordIEPPlanDetail)
 	mux.HandleFunc("/api/v1/assessments/shuangxi-a/records/iep-plan/save", handler.shuangxiAAssessmentRecordIEPPlanSave)

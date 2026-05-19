@@ -35,6 +35,9 @@ import {
 import {
   deleteShuangxiAAssessmentRecordApi,
   downloadShuangxiADevelopmentProfilePdfApi,
+  downloadShuangxiASelectedReportPdfApi,
+  generateShuangxiAResultAnalysisStreamApi,
+  getShuangxiAResultAnalysisApi,
   pageShuangxiAAssessmentRecordsApi,
 } from '@/api/edu-center/shuangxi-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
@@ -81,16 +84,31 @@ const autismDevAnalysisRecordKey = ref('')
 const autismDevAnalysisWordExporting = ref(false)
 const autismDevExportSections = ref([])
 const autismDevExportAnalysisLoading = ref(false)
+const activeShuangxiReportSection = ref('developmentProfile')
+const shuangxiAnalysis = ref(null)
+const shuangxiAnalysisLoading = ref(false)
+const shuangxiAnalysisGenerating = ref(false)
+const shuangxiAnalysisFetched = ref(false)
+const shuangxiAnalysisError = ref('')
+const shuangxiAnalysisProgress = ref('')
+const shuangxiAnalysisStreamText = ref('')
+const shuangxiAnalysisRecordKey = ref('')
+const shuangxiExportSections = ref([])
+const shuangxiExportAnalysisLoading = ref(false)
 const simpleEmptyImage = Empty.PRESENTED_IMAGE_SIMPLE
 const router = useRouter()
 let reportPdfReadyTimer = 0
 let interpretationAbortController = null
 let autismDevAnalysisAbortController = null
+let shuangxiAnalysisAbortController = null
 let interpretationScrollFrame = 0
 let interpretationProgressAnchored = false
 const autismDevAnalysisStreamReadableText = computed(() => autismDevAnalysisReadableStreamText(autismDevAnalysisStreamText.value))
 const autismDevAnalysisStreamRows = computed(() => autismDevAnalysisPreviewRows(autismDevAnalysisStreamReadableText.value))
 const autismDevAnalysisStreamProgressPercent = computed(() => Math.round(autismDevResultAnalysisStreamProgress(autismDevAnalysisStreamText.value) * 100))
+const shuangxiAnalysisStreamReadableText = computed(() => shuangxiAnalysisReadableStreamText(shuangxiAnalysisStreamText.value))
+const shuangxiAnalysisStreamRows = computed(() => shuangxiAnalysisPreviewRows(shuangxiAnalysisStreamReadableText.value))
+const shuangxiAnalysisStreamProgressPercent = computed(() => Math.round(autismDevResultAnalysisStreamProgress(shuangxiAnalysisStreamText.value) * 100))
 
 const exportDimensionOptions = [
   {
@@ -208,12 +226,29 @@ const autismDevExportDimensionOptions = [
 ]
 const shuangxiExportDimensionOptions = [
   {
-    value: 'shuangxi_development_profile',
+    value: 'developmentProfile',
     title: '综合发展侧面图',
     badge: '01',
     desc: '导出双溪课程评量表A综合发展侧面图。',
-    pages: 'PDF',
+    pages: '侧面图',
     recommended: true,
+  },
+  {
+    value: 'resultAnalysis',
+    title: '评量结果分析',
+    badge: '02',
+    desc: '导出已生成的双溪评量结果分析表。',
+    pages: '结果分析',
+  },
+]
+const shuangxiReportSectionOptions = [
+  {
+    value: 'developmentProfile',
+    title: '综合发展侧面图',
+  },
+  {
+    value: 'resultAnalysis',
+    title: '评量结果分析',
   },
 ]
 const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
@@ -238,8 +273,17 @@ const autismDevExportAllSelected = computed(() => {
   const enabled = autismDevEnabledExportSections.value
   return !!enabled.length && enabled.every(section => autismDevExportSections.value.includes(section))
 })
+const shuangxiEnabledExportSections = computed(() => shuangxiExportDimensionOptions
+  .filter(option => isShuangxiExportSectionEnabled(option.value))
+  .map(option => option.value))
+const shuangxiExportAllSelected = computed(() => {
+  const enabled = shuangxiEnabledExportSections.value
+  return !!enabled.length && enabled.every(section => shuangxiExportSections.value.includes(section))
+})
 const exportModalWidth = computed(() => {
   if (isAutismDevRecord(exportTargetRecord.value))
+    return 700
+  if (isShuangxiARecord(exportTargetRecord.value))
     return 700
   if (isERXinRecord(exportTargetRecord.value))
     return 760
@@ -488,6 +532,10 @@ function defaultAutismDevReportSection() {
   return autismDevExportDimensionOptions.find(item => item.recommended)?.value || 'assessmentInfo'
 }
 
+function shuangxiReportSectionTitle(value) {
+  return shuangxiExportDimensionOptions.find(item => item.value === value)?.title || '双溪报告'
+}
+
 function normalizeAutismDevAnalysis(value) {
   const data = value || {}
   const rows = Array.isArray(data.rows) ? data.rows : []
@@ -514,6 +562,95 @@ function emptyAutismDevAnalysis() {
   })
 }
 
+function emptyShuangxiAnalysis() {
+  return {
+    title: '双溪心智障碍个别化教育课程（三）评量结果分析表',
+    courseName: '',
+    model: '',
+    generatedBy: '',
+    generatedAt: '',
+    rows: [
+      { domainCode: 'SENSORY', domain: '感官知觉' },
+      { domainCode: 'GROSS_MOTOR', domain: '粗大动作' },
+      { domainCode: 'FINE_MOTOR', domain: '精细动作' },
+      { domainCode: 'SELF_CARE', domain: '生活自理' },
+      { domainCode: 'COMMUNICATION', domain: '沟通' },
+      { domainCode: 'COGNITION', domain: '认知' },
+      { domainCode: 'SOCIAL_SKILLS', domain: '社会技能' },
+    ].map(row => ({
+      ...row,
+      strengths: '',
+      weaknesses: '',
+      reason: '',
+      strategy: '',
+    })),
+  }
+}
+
+function canonicalShuangxiAnalysisDomain(code, domain) {
+  const normalizedCode = String(code || '').trim().toUpperCase()
+  if (normalizedCode)
+    return normalizedCode
+  const normalizedDomain = String(domain || '').replace(/\s+/g, '').trim()
+  const domainMap = {
+    感官知觉: 'SENSORY',
+    粗大动作: 'GROSS_MOTOR',
+    精细动作: 'FINE_MOTOR',
+    生活自理: 'SELF_CARE',
+    沟通: 'COMMUNICATION',
+    认知: 'COGNITION',
+    社会技能: 'SOCIAL_SKILLS',
+  }
+  return domainMap[normalizedDomain] || normalizedDomain
+}
+
+function normalizeShuangxiAnalysis(value) {
+  const data = value || {}
+  const fallback = emptyShuangxiAnalysis()
+  const rows = Array.isArray(data.rows) ? data.rows : []
+  if (!rows.length) {
+    return {
+      ...fallback,
+      title: String(data.title || fallback.title),
+      courseName: String(data.courseName || ''),
+      model: String(data.model || ''),
+      generatedBy: String(data.generatedBy || ''),
+      generatedAt: String(data.generatedAt || ''),
+    }
+  }
+  const fallbackByKey = new Map(fallback.rows.map(row => [canonicalShuangxiAnalysisDomain(row.domainCode, row.domain), row]))
+  const seen = new Set()
+  const normalizedRows = []
+  rows.forEach((row) => {
+    const key = canonicalShuangxiAnalysisDomain(row?.domainCode, row?.domain)
+    if (!key || seen.has(key))
+      return
+    seen.add(key)
+    const fallbackRow = fallbackByKey.get(key) || { domainCode: String(row?.domainCode || ''), domain: String(row?.domain || '') }
+    normalizedRows.push({
+      domainCode: String(row?.domainCode || fallbackRow.domainCode || ''),
+      domain: String(row?.domain || fallbackRow.domain || ''),
+      strengths: String(row?.strengths || ''),
+      weaknesses: String(row?.weaknesses || ''),
+      reason: String(row?.reason || ''),
+      strategy: String(row?.strategy || ''),
+    })
+  })
+  fallback.rows.forEach((row) => {
+    const key = canonicalShuangxiAnalysisDomain(row.domainCode, row.domain)
+    if (!seen.has(key))
+      normalizedRows.push({ ...row })
+  })
+  return {
+    title: String(data.title || fallback.title),
+    courseName: String(data.courseName || ''),
+    model: String(data.model || ''),
+    generatedBy: String(data.generatedBy || ''),
+    generatedAt: String(data.generatedAt || ''),
+    rows: normalizedRows,
+  }
+}
+
 function canonicalAutismDevAnalysisDomain(value) {
   const normalized = String(value || '').replace(/\s+/g, '').replaceAll('和', '与').trim()
   return emptyAutismDevAnalysis().rows.find((row) => {
@@ -531,6 +668,217 @@ function autismDevStrengthWeaknessText(row) {
   if (weaknesses)
     lines.push(`劣势：${weaknesses}`)
   return lines.join('\n')
+}
+
+function shuangxiStatusText(row) {
+  const strengths = String(row?.strengths || '').trim() || '无'
+  const weaknesses = String(row?.weaknesses || '').trim() || '无'
+  return `优：${strengths}\n弱：${weaknesses}`
+}
+
+function shuangxiAnalysisIsEmpty(value = shuangxiAnalysis.value) {
+  const rows = Array.isArray(value?.rows) ? value.rows : []
+  return !rows.some(row => String(row?.strengths || row?.weaknesses || row?.reason || row?.strategy || '').trim())
+}
+
+function shuangxiAnalysisPreviewRows(readableText) {
+  const rows = emptyShuangxiAnalysis().rows.map(row => ({ ...row }))
+  const byDomain = new Map(rows.map(row => [canonicalShuangxiAnalysisDomain(row.domainCode, row.domain), row]))
+  const text = String(readableText || '').trim()
+  if (!text || text.startsWith('正在连接AI生成服务'))
+    return rows
+
+  let activeRow = null
+  let activeField = ''
+  const appendField = (value) => {
+    if (!activeRow || !activeField)
+      return
+    const text = String(value || '').trim()
+    if (!text)
+      return
+    activeRow[activeField] = [activeRow[activeField], text].filter(Boolean).join(activeRow[activeField] ? '\n' : '')
+  }
+
+  for (const rawLine of text.split(/\n+/)) {
+    const line = rawLine.trim()
+    if (!line)
+      continue
+    const domainMatch = line.match(/^【(.+?)】?$/)
+    if (domainMatch) {
+      activeRow = byDomain.get(canonicalShuangxiAnalysisDomain('', domainMatch[1])) || null
+      activeField = ''
+      continue
+    }
+    const fieldMatch = line.match(/^(优|弱|原因推断|建议策略)：(.*)$/)
+    if (fieldMatch) {
+      const [, label, value] = fieldMatch
+      activeField = {
+        优: 'strengths',
+        弱: 'weaknesses',
+        原因推断: 'reason',
+        建议策略: 'strategy',
+      }[label] || ''
+      appendField(value)
+      continue
+    }
+    appendField(line)
+  }
+  return rows
+}
+
+function isShuangxiAnalysisReadableField(key) {
+  return ['domain', 'strengths', 'weaknesses', 'reason', 'strategy'].includes(key)
+}
+
+function shuangxiAnalysisStreamLabel(key) {
+  return {
+    strengths: '优',
+    weaknesses: '弱',
+    reason: '原因推断',
+    strategy: '建议策略',
+  }[key] || key
+}
+
+function shuangxiAnalysisReadableStreamText(raw) {
+  const text = String(raw || '').trim()
+  if (!text)
+    return '正在连接AI生成服务，准备读取评量记录...'
+
+  let output = ''
+  let token = ''
+  let mode = 'outside'
+  let currentKey = ''
+  let visibleKey = ''
+  let expectingValue = false
+  let escaping = false
+  let lastWasNewline = true
+
+  const writeText = (value) => {
+    if (!value)
+      return
+    output += value
+    lastWasNewline = value.endsWith('\n')
+  }
+
+  const startVisibleField = (key) => {
+    if (output && !lastWasNewline)
+      writeText('\n')
+    if (key === 'domain') {
+      if (output)
+        writeText('\n')
+      writeText('【')
+      return
+    }
+    writeText(`${shuangxiAnalysisStreamLabel(key)}：`)
+  }
+
+  const endVisibleField = (key) => {
+    if (key === 'domain') {
+      writeText('】\n')
+      return
+    }
+    if (output && !lastWasNewline)
+      writeText('\n')
+  }
+
+  const writeEscaped = (char) => {
+    if (['n', 'r', 't'].includes(char)) {
+      writeText(' ')
+      return
+    }
+    if (char === '"')
+      writeText('"')
+    else if (char === '/')
+      writeText('/')
+    else if (char === '\\')
+      writeText('\\')
+    else
+      writeText(char)
+  }
+
+  for (const char of text) {
+    if (escaping) {
+      if (mode === 'visibleValue')
+        writeEscaped(char)
+      else if (mode === 'key')
+        token += char
+      escaping = false
+      continue
+    }
+    if (char === '\\') {
+      escaping = true
+      continue
+    }
+    if (mode === 'outside') {
+      if (char === '"') {
+        token = ''
+        if (expectingValue) {
+          if (isShuangxiAnalysisReadableField(currentKey)) {
+            visibleKey = currentKey
+            startVisibleField(visibleKey)
+            mode = 'visibleValue'
+          }
+          else {
+            mode = 'hiddenValue'
+          }
+        }
+        else {
+          mode = 'key'
+        }
+      }
+      else if (char === ':') {
+        expectingValue = !!currentKey
+      }
+      else if (char === ',' || char === '}' || char === ']') {
+        if (expectingValue) {
+          expectingValue = false
+          currentKey = ''
+        }
+      }
+    }
+    else if (mode === 'key') {
+      if (char === '"') {
+        currentKey = token
+        token = ''
+        mode = 'outside'
+      }
+      else {
+        token += char
+      }
+    }
+    else if (mode === 'visibleValue') {
+      if (char === '"') {
+        endVisibleField(visibleKey)
+        mode = 'outside'
+        expectingValue = false
+        currentKey = ''
+        visibleKey = ''
+      }
+      else {
+        writeText(char)
+      }
+    }
+    else if (mode === 'hiddenValue') {
+      if (char === '"') {
+        mode = 'outside'
+        expectingValue = false
+        currentKey = ''
+      }
+    }
+  }
+
+  const normalized = output.trimEnd()
+  if (normalized)
+    return normalized
+  const fallback = text
+    .replaceAll('{', '')
+    .replaceAll('}', '')
+    .replaceAll('[', '')
+    .replaceAll(']', '')
+    .replaceAll('"', '')
+    .replaceAll(',', '')
+    .trim()
+  return fallback || '正在连接AI生成服务，准备读取评量记录...'
 }
 
 function autismDevAnalysisPreviewRows(readableText) {
@@ -757,6 +1105,10 @@ function autismDevAnalysisForExport() {
   return autismDevAnalysisIsEmpty() ? null : autismDevAnalysis.value
 }
 
+function shuangxiAnalysisForExport() {
+  return shuangxiAnalysisIsEmpty() ? null : shuangxiAnalysis.value
+}
+
 function isAutismDevExportSectionEnabled(section) {
   if (section === 'interpretation')
     return !(interpretationLoading.value || interpretationGenerating.value)
@@ -818,6 +1170,70 @@ function toggleAllAutismDevExportSections() {
   setAutismDevExportSections(autismDevEnabledExportSections.value)
 }
 
+function shuangxiExportAnalysisNeedsLoad(row = exportTargetRecord.value) {
+  if (!row?.id || !isShuangxiARecord(row))
+    return false
+  return !shuangxiAnalysisFetched.value || shuangxiAnalysisRecordKey.value !== recordActionKey(row)
+}
+
+function isShuangxiExportSectionEnabled(section) {
+  if (section !== 'resultAnalysis')
+    return true
+  if (shuangxiAnalysisGenerating.value || shuangxiAnalysisLoading.value || shuangxiExportAnalysisLoading.value)
+    return false
+  if (shuangxiExportAnalysisNeedsLoad())
+    return false
+  return !shuangxiAnalysisIsEmpty()
+}
+
+function shuangxiExportSectionStatus(section) {
+  if (section !== 'resultAnalysis')
+    return ''
+  if (shuangxiAnalysisGenerating.value)
+    return '生成中'
+  if (shuangxiAnalysisLoading.value || shuangxiExportAnalysisLoading.value || shuangxiExportAnalysisNeedsLoad())
+    return '读取中'
+  if (shuangxiAnalysisIsEmpty())
+    return '未生成'
+  return ''
+}
+
+function normalizeShuangxiExportSections(sections = []) {
+  const allowed = shuangxiExportDimensionOptions.map(item => item.value)
+  const enabled = shuangxiEnabledExportSections.value
+  return sections
+    .filter(section => allowed.includes(section) && enabled.includes(section))
+    .filter((section, index, array) => array.indexOf(section) === index)
+}
+
+function defaultShuangxiReportSection() {
+  return shuangxiExportDimensionOptions.find(item => item.recommended)?.value || 'developmentProfile'
+}
+
+function setShuangxiExportSections(sections = []) {
+  const normalized = normalizeShuangxiExportSections(sections)
+  shuangxiExportSections.value = normalized.length ? normalized : normalizeShuangxiExportSections([defaultShuangxiReportSection()])
+}
+
+function toggleShuangxiExportSection(section) {
+  if (!isShuangxiExportSectionEnabled(section))
+    return
+  const next = new Set(shuangxiExportSections.value)
+  if (next.has(section))
+    next.delete(section)
+  else
+    next.add(section)
+  setShuangxiExportSections(Array.from(next))
+}
+
+function toggleAllShuangxiExportSections() {
+  if (shuangxiExportAllSelected.value) {
+    shuangxiExportSections.value = []
+    return
+  }
+  setShuangxiExportSections(shuangxiEnabledExportSections.value)
+}
+
 function reportTitleForRecord(record) {
   if (isShuangxiARecord(record))
     return record?.assessmentName || '双溪课程评量表A'
@@ -830,13 +1246,15 @@ function reportTitleForRecord(record) {
 
 function reportModalHint() {
   if (currentReportIsShuangxiA())
-    return '查看双溪课程评量表A综合发展侧面图'
+    return '查看双溪课程评量表A综合发展侧面图和评量结果分析'
   if (currentReportIsAutismDev())
     return '按评估情况、结果分析、报告解读、训练效果和剖面图查看报告'
   return currentReportIsERXin() ? '查看儿心量表评估报告内容' : '按记录册导出维度查看报告内容'
 }
 
 function reportFrameTitle() {
+  if (currentReportIsShuangxiA() && activeShuangxiReportSection.value === 'resultAnalysis')
+    return '双溪评量结果分析表'
   if (currentReportIsShuangxiA())
     return '双溪综合发展侧面图PDF预览'
   if (currentReportIsAutismDev())
@@ -1149,6 +1567,24 @@ function resetAutismDevReportState() {
   autismDevExportAnalysisLoading.value = false
 }
 
+function resetShuangxiReportState() {
+  if (shuangxiAnalysisAbortController) {
+    shuangxiAnalysisAbortController.abort()
+    shuangxiAnalysisAbortController = null
+  }
+  activeShuangxiReportSection.value = 'developmentProfile'
+  shuangxiAnalysis.value = emptyShuangxiAnalysis()
+  shuangxiAnalysisLoading.value = false
+  shuangxiAnalysisGenerating.value = false
+  shuangxiAnalysisFetched.value = false
+  shuangxiAnalysisError.value = ''
+  shuangxiAnalysisProgress.value = ''
+  shuangxiAnalysisStreamText.value = ''
+  shuangxiAnalysisRecordKey.value = ''
+  shuangxiExportSections.value = []
+  shuangxiExportAnalysisLoading.value = false
+}
+
 function interpretationSectionItems(value, key) {
   return stringList(value?.[key], key)
 }
@@ -1194,6 +1630,8 @@ function exportDimensionTitle(value) {
     return '综合发展侧面图'
   if (value === 'pep3_interpretation')
     return '报告解读'
+  if (isShuangxiARecord(exportTargetRecord.value))
+    return shuangxiExportDimensionOptions.find(item => item.value === value)?.title || '双溪报告'
   if (isAutismDevRecord(exportTargetRecord.value))
     return autismDevExportDimensionOptions.find(item => item.value === value)?.title || '评估报告'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.title || '全维度导出'
@@ -1204,6 +1642,8 @@ function exportDimensionPages(value) {
     return 'PDF'
   if (value === 'pep3_interpretation')
     return '报告'
+  if (isShuangxiARecord(exportTargetRecord.value))
+    return shuangxiExportDimensionOptions.find(item => item.value === value)?.pages || 'PDF'
   if (isAutismDevRecord(exportTargetRecord.value))
     return autismDevExportDimensionOptions.find(item => item.value === value)?.pages || '报告'
   return activeExportDimensionOptions.value.find(item => item.value === value)?.pages || '第 1-26 页'
@@ -1219,7 +1659,7 @@ function exportModalTitle() {
 
 function exportModalHint() {
   if (isShuangxiARecord(exportTargetRecord.value))
-    return '导出双溪课程评量表A综合发展侧面图'
+    return '选择本次导出的双溪报告内容'
   if (isAutismDevRecord(exportTargetRecord.value))
     return '按评估情况、结果分析、训练效果和剖面图选择导出内容'
   return isERXinRecord(exportTargetRecord.value) ? '选择本次导出的报告内容' : '选择本次导出的内容范围'
@@ -1227,7 +1667,7 @@ function exportModalHint() {
 
 function defaultExportDimensionForRecord(record) {
   if (isShuangxiARecord(record))
-    return shuangxiExportDimensionOptions.find(item => item.recommended)?.value || shuangxiExportDimensionOptions[0]?.value || 'shuangxi_development_profile'
+    return defaultShuangxiReportSection()
   if (isERXinRecord(record))
     return erxinExportDimensionOptions.find(item => item.recommended)?.value || erxinExportDimensionOptions[0]?.value || 'erxin_result'
   if (isAutismDevRecord(record))
@@ -1354,15 +1794,7 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
     return
   }
   if (isShuangxiARecord(row)) {
-    const dimension = 'shuangxi_development_profile'
-    const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, dimension)}PDF。`
-    Modal.confirm({
-      title: '确认导出评估报告？',
-      content,
-      okText: '确认导出',
-      cancelText: '取消',
-      onOk: () => exportReport(row, dimension),
-    })
+    openExportModal(row, activeShuangxiReportSection.value === 'resultAnalysis' ? 'resultAnalysis' : 'developmentProfile')
     return
   }
   const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
@@ -1481,6 +1913,7 @@ async function viewReport(row) {
     return
   resetInterpretationState()
   resetAutismDevReportState()
+  resetShuangxiReportState()
   reportTab.value = 'result'
   activeReportModule.value = defaultReportModule
   currentReport.value = {
@@ -1492,6 +1925,8 @@ async function viewReport(row) {
     activeAutismDevReportSection.value = defaultAutismDevReportSection()
     void loadAutismDevResultAnalysis(row, { silent: true })
   }
+  if (isShuangxiARecord(row))
+    activeShuangxiReportSection.value = 'developmentProfile'
   loadReportPdfPreview(row, defaultReportPreviewDimension(row))
 }
 
@@ -1524,6 +1959,11 @@ function revokeReportPreviewUrl() {
 async function loadReportPdfPreview(row = currentReport.value?.record, dimension = activeReportModule.value) {
   if (!row?.id)
     return
+  if (isShuangxiARecord(row) && dimension === 'resultAnalysis') {
+    revokeReportPreviewUrl()
+    void loadShuangxiResultAnalysis(row)
+    return
+  }
   if (isAutismDevRecord(row) && dimension === 'interpretation') {
     revokeReportPreviewUrl()
     if (!interpretationFetched.value && !interpretationLoading.value)
@@ -1593,6 +2033,7 @@ function closeReportModal() {
   revokeReportPreviewUrl()
   resetInterpretationState()
   resetAutismDevReportState()
+  resetShuangxiReportState()
 }
 
 function selectReportTab(tab) {
@@ -1812,6 +2253,114 @@ async function generateAutismDevResultAnalysis() {
   }
 }
 
+async function loadShuangxiResultAnalysis(row = currentReport.value?.record, options = {}) {
+  if (!row?.id || !isShuangxiARecord(row))
+    return null
+  const targetKey = recordActionKey(row)
+  if (shuangxiAnalysisFetched.value && shuangxiAnalysisRecordKey.value === targetKey && !options.force)
+    return shuangxiAnalysis.value
+  shuangxiAnalysisRecordKey.value = targetKey
+  shuangxiAnalysisLoading.value = !options.silent
+  shuangxiAnalysisError.value = ''
+  if (!options.keepProgress)
+    shuangxiAnalysisProgress.value = '正在读取评量结果分析...'
+  try {
+    const response = await getShuangxiAResultAnalysisApi(row.id)
+    if (shuangxiAnalysisRecordKey.value !== targetKey)
+      return null
+    const data = normalizeShuangxiAnalysis(unwrap(response))
+    shuangxiAnalysis.value = data.rows.length ? data : emptyShuangxiAnalysis()
+    shuangxiAnalysisFetched.value = true
+    shuangxiAnalysisProgress.value = shuangxiAnalysisIsEmpty(shuangxiAnalysis.value) ? '评量结果分析尚未生成' : '已读取评量结果分析'
+    return shuangxiAnalysis.value
+  }
+  catch (error) {
+    if (shuangxiAnalysisRecordKey.value === targetKey) {
+      shuangxiAnalysisError.value = getErrorMessage(error, '评量结果分析读取失败')
+      shuangxiAnalysis.value = emptyShuangxiAnalysis()
+      shuangxiAnalysisFetched.value = true
+    }
+    return null
+  }
+  finally {
+    if (shuangxiAnalysisRecordKey.value === targetKey)
+      shuangxiAnalysisLoading.value = false
+  }
+}
+
+async function loadShuangxiAnalysisForExport(row = exportTargetRecord.value) {
+  if (!row?.id || !isShuangxiARecord(row))
+    return
+  shuangxiExportAnalysisLoading.value = true
+  try {
+    await loadShuangxiResultAnalysis(row, { silent: true })
+    setShuangxiExportSections(shuangxiExportSections.value)
+  }
+  finally {
+    shuangxiExportAnalysisLoading.value = false
+  }
+}
+
+async function generateShuangxiResultAnalysis() {
+  const row = currentReport.value?.record
+  if (!row?.id || !isShuangxiARecord(row) || shuangxiAnalysisGenerating.value)
+    return
+  if (shuangxiAnalysisAbortController)
+    shuangxiAnalysisAbortController.abort()
+  const targetKey = recordActionKey(row)
+  const controller = new AbortController()
+  shuangxiAnalysisAbortController = controller
+  shuangxiAnalysisRecordKey.value = targetKey
+  shuangxiAnalysisLoading.value = false
+  shuangxiAnalysisGenerating.value = true
+  shuangxiAnalysisFetched.value = true
+  shuangxiAnalysisError.value = ''
+  shuangxiAnalysisProgress.value = '正在生成评量结果分析...'
+  shuangxiAnalysisStreamText.value = ''
+  shuangxiAnalysis.value = emptyShuangxiAnalysis()
+  try {
+    const data = await generateShuangxiAResultAnalysisStreamApi(
+      row.id,
+      {
+        onStatus(message) {
+          if (shuangxiAnalysisRecordKey.value !== targetKey)
+            return
+          shuangxiAnalysisProgress.value = message || '正在生成评量结果分析...'
+        },
+        onDelta(text) {
+          if (shuangxiAnalysisRecordKey.value !== targetKey)
+            return
+          if (text)
+            shuangxiAnalysisStreamText.value += text
+          shuangxiAnalysisProgress.value = 'AI正在生成评量结果分析...'
+        },
+        onDone(data) {
+          if (shuangxiAnalysisRecordKey.value !== targetKey)
+            return
+          shuangxiAnalysis.value = normalizeShuangxiAnalysis(data)
+        },
+      },
+      { signal: controller.signal },
+    )
+    if (shuangxiAnalysisRecordKey.value !== targetKey)
+      return
+    shuangxiAnalysis.value = normalizeShuangxiAnalysis(data)
+    shuangxiAnalysisProgress.value = '评量结果分析已生成'
+    shuangxiAnalysisStreamText.value = ''
+    setShuangxiExportSections(shuangxiExportSections.value)
+  }
+  catch (error) {
+    if (error?.name !== 'AbortError' && shuangxiAnalysisRecordKey.value === targetKey)
+      shuangxiAnalysisError.value = getErrorMessage(error, '评量结果分析生成失败')
+  }
+  finally {
+    if (shuangxiAnalysisAbortController === controller) {
+      shuangxiAnalysisGenerating.value = false
+      shuangxiAnalysisAbortController = null
+    }
+  }
+}
+
 async function exportAutismDevResultAnalysisWord() {
   const row = currentReport.value?.record
   if (!row?.id || !isAutismDevRecord(row) || autismDevAnalysisWordExporting.value)
@@ -1871,10 +2420,32 @@ function selectAutismDevReportSection(section) {
   loadReportPdfPreview(currentReport.value?.record, section)
 }
 
+function selectShuangxiReportSection(section) {
+  if (!currentReportIsShuangxiA())
+    return
+  if (activeShuangxiReportSection.value === section)
+    return
+  activeShuangxiReportSection.value = section
+  reportTab.value = 'result'
+  if (section === 'resultAnalysis') {
+    revokeReportPreviewUrl()
+    void loadShuangxiResultAnalysis()
+    return
+  }
+  loadReportPdfPreview(currentReport.value?.record, 'shuangxi_development_profile')
+}
+
 function openExportModal(row, dimension) {
   if (!row || exportingId.value)
     return
   exportTargetRecord.value = row
+  if (isShuangxiARecord(row)) {
+    setShuangxiExportSections(shuangxiReportSectionsForDimension(dimension))
+    selectedExportDimension.value = shuangxiExportSections.value[0] || defaultShuangxiReportSection()
+    exportModalOpen.value = true
+    void loadShuangxiAnalysisForExport(row)
+    return
+  }
   if (isAutismDevRecord(row)) {
     setAutismDevExportSections(autismDevReportSectionsForDimension(dimension))
     selectedExportDimension.value = autismDevExportSections.value[0] || defaultAutismDevReportSection()
@@ -1987,8 +2558,22 @@ async function downloadPEP3ExportPdf(recordId, dimension) {
   return downloadPEP3AssessmentBookletPdfApi(recordId, dimension)
 }
 
-async function downloadShuangxiAExportPdf(recordId) {
-  return downloadShuangxiADevelopmentProfilePdfApi(recordId)
+async function downloadShuangxiAExportPdf(recordId, sections = ['developmentProfile']) {
+  return downloadShuangxiASelectedReportPdfApi(
+    recordId,
+    sections,
+    sections.includes('resultAnalysis') ? shuangxiAnalysisForExport() : null,
+  )
+}
+
+function shuangxiReportSectionsForDimension(dimension) {
+  if (Array.isArray(dimension))
+    return normalizeShuangxiExportSections(dimension)
+  if (shuangxiExportDimensionOptions.some(item => item.value === dimension))
+    return [dimension]
+  if (dimension === 'all' || dimension === 'shuangxi_report')
+    return normalizeShuangxiExportSections(shuangxiExportDimensionOptions.map(item => item.value))
+  return [defaultShuangxiReportSection()]
 }
 
 function autismDevReportSectionsForDimension(dimension) {
@@ -2004,9 +2589,32 @@ function autismDevReportSectionsForDimension(dimension) {
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
+  const shuangxiSections = isShuangxiARecord(row)
+    ? normalizeShuangxiExportSections(shuangxiExportSections.value.length ? shuangxiExportSections.value : shuangxiReportSectionsForDimension(dimension))
+    : []
   const autismDevSections = isAutismDevRecord(row)
     ? normalizeAutismDevExportSections(autismDevExportSections.value.length ? autismDevExportSections.value : autismDevReportSectionsForDimension(dimension))
     : []
+  if (isShuangxiARecord(row)) {
+    if (!shuangxiSections.length) {
+      messageService.warning('请选择导出内容')
+      return
+    }
+    if (shuangxiSections.includes('resultAnalysis') && shuangxiAnalysisGenerating.value) {
+      messageService.warning('评量结果分析生成中，请稍后导出')
+      return
+    }
+    if (shuangxiSections.includes('resultAnalysis') && shuangxiExportAnalysisNeedsLoad(row))
+      await loadShuangxiAnalysisForExport(row)
+    if (shuangxiSections.includes('resultAnalysis') && (shuangxiExportAnalysisLoading.value || shuangxiAnalysisLoading.value)) {
+      messageService.warning('评量结果分析读取中，请稍后')
+      return
+    }
+    if (shuangxiSections.includes('resultAnalysis') && shuangxiAnalysisIsEmpty()) {
+      messageService.warning('请先生成评量结果分析后再导出')
+      return
+    }
+  }
   if (isAutismDevRecord(row)) {
     if (!autismDevSections.length) {
       messageService.warning('请选择导出内容')
@@ -2028,7 +2636,7 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   exportingId.value = recordActionKey(row)
   try {
     const response = isShuangxiARecord(row)
-      ? await downloadShuangxiAExportPdf(row.id)
+      ? await downloadShuangxiAExportPdf(row.id, shuangxiSections)
       : isAutismDevRecord(row)
       ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
@@ -2038,7 +2646,7 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
     const link = document.createElement('a')
     link.href = url
     const fallbackName = isShuangxiARecord(row)
-      ? `${row.studentName || '学员'}-双溪综合发展侧面图-${formatDate(row.assessmentDate)}.pdf`
+      ? `${row.studentName || '学员'}-双溪报告-${shuangxiSections.map(shuangxiReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
       : isAutismDevRecord(row)
       ? `${row.studentName || '学员'}-孤独症儿童发展评估报告-${autismDevSections.map(autismDevReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
       : isERXinRecord(row)
@@ -2092,6 +2700,7 @@ onBeforeUnmount(() => {
   resetReportPdfReady()
   resetInterpretationState()
   resetAutismDevReportState()
+  resetShuangxiReportState()
 })
 </script>
 
@@ -2280,12 +2889,32 @@ onBeforeUnmount(() => {
         <div v-else-if="isShuangxiARecord(currentReport.record)" class="report-module-area erxin-report-tabs">
           <div class="report-module-grid">
             <button
+              v-for="option in shuangxiReportSectionOptions"
+              :key="option.value"
               type="button"
-              class="report-module-chip report-module-chip--active"
+              class="report-module-chip"
+              :class="{ 'report-module-chip--active': activeShuangxiReportSection === option.value }"
+              @click="selectShuangxiReportSection(option.value)"
             >
               <span class="report-module-chip__dot" />
-              <span class="report-module-chip__text">综合发展侧面图</span>
+              <span class="report-module-chip__text">{{ option.title }}</span>
             </button>
+          </div>
+          <div
+            v-if="activeShuangxiReportSection === 'resultAnalysis'"
+            class="report-module-summary report-module-summary--actions-only erxin-report-tabs__summary"
+          >
+            <div class="report-module-summary__actions">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="shuangxiAnalysisGenerating"
+                :disabled="shuangxiAnalysisLoading"
+                @click="generateShuangxiResultAnalysis"
+              >
+                {{ shuangxiAnalysisGenerating ? '生成中' : (shuangxiAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
+              </a-button>
+            </div>
           </div>
         </div>
         <div v-else-if="isAutismDevRecord(currentReport.record)" class="report-module-area erxin-report-tabs">
@@ -2385,7 +3014,172 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="report-module-content">
-          <div v-if="currentReportIsAutismDev() && activeAutismDevReportSection === 'resultAnalysis'" class="autismdev-analysis-shell">
+          <div v-if="currentReportIsShuangxiA() && activeShuangxiReportSection === 'resultAnalysis'" class="autismdev-analysis-shell shuangxi-analysis-shell">
+            <div v-if="shuangxiAnalysisLoading" class="autismdev-analysis-state">
+              <a-spin size="small" />
+              <strong>评量结果分析读取中</strong>
+              <span>{{ shuangxiAnalysisProgress || '正在读取已保存的评量结果分析...' }}</span>
+            </div>
+            <div v-else-if="shuangxiAnalysisGenerating" class="autismdev-analysis-stream">
+              <div class="autismdev-analysis-stream__head">
+                <span>AI</span>
+                <div class="autismdev-analysis-stream__title">
+                  <strong>正在生成 {{ currentReport?.record?.studentName || '学员' }} 的评量结果分析</strong>
+                  <div class="autismdev-analysis-stream__progress-line">
+                    <small>{{ shuangxiAnalysisProgress || 'AI正在生成评量结果分析...' }}</small>
+                    <div class="autismdev-analysis-progress">
+                      <i :style="{ width: `${shuangxiAnalysisStreamProgressPercent}%` }" />
+                    </div>
+                    <em>{{ shuangxiAnalysisStreamProgressPercent }}%</em>
+                  </div>
+                </div>
+              </div>
+              <div class="autismdev-analysis-content autismdev-analysis-content--streaming">
+                <div class="shuangxi-analysis-doc-title">
+                  <strong>双溪心智障碍个别化教育课程（三）</strong>
+                  <span>评量结果分析表</span>
+                </div>
+                <div class="shuangxi-analysis-meta">
+                  <div>
+                    <span>学生姓名：</span>
+                    <em>{{ currentReport?.record?.studentName || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>性别：</span>
+                    <em>{{ currentReport?.record?.studentGender || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>出生日期：</span>
+                    <em>{{ formatDate(currentReport?.record?.birthDate) }}</em>
+                  </div>
+                  <div>
+                    <span>课程名称：</span>
+                    <em>{{ shuangxiAnalysis?.courseName || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>评量者：</span>
+                    <em>{{ currentReport?.record?.examinerName || '-' }}</em>
+                  </div>
+                  <div>
+                    <span>评量日期：</span>
+                    <em>{{ formatDate(currentReport?.record?.assessmentDate) }}</em>
+                  </div>
+                </div>
+                <div class="autismdev-analysis-table-wrap">
+                  <table class="shuangxi-analysis-table">
+                    <colgroup>
+                      <col class="shuangxi-analysis-table__col-domain">
+                      <col class="shuangxi-analysis-table__col-status">
+                      <col class="shuangxi-analysis-table__col-reason">
+                      <col class="shuangxi-analysis-table__col-strategy">
+                    </colgroup>
+                    <thead>
+                      <tr>
+                        <th>领域<br>（依优弱序）</th>
+                        <th>现况分析</th>
+                        <th>原因推断<br>（生理、心理、教学、环境、互动）</th>
+                        <th>建议策略</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr
+                        v-for="(row, index) in shuangxiAnalysisStreamRows"
+                        :key="`shuangxi-stream-${row.domain}-${index}`"
+                      >
+                        <td>{{ row.domain || '' }}</td>
+                        <td>{{ shuangxiStatusText(row) }}</td>
+                        <td>{{ row.reason || '' }}</td>
+                        <td>{{ row.strategy || '' }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+            <div v-else-if="shuangxiAnalysisError" class="autismdev-analysis-state">
+              <a-empty
+                description="评量结果分析加载失败"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <p>{{ shuangxiAnalysisError }}</p>
+              <a-button size="small" type="primary" @click="generateShuangxiResultAnalysis">
+                重新生成
+              </a-button>
+            </div>
+            <div v-else-if="shuangxiAnalysisIsEmpty()" class="autismdev-analysis-state">
+              <a-empty
+                description="评量结果分析尚未生成"
+                :image="simpleEmptyImage"
+                :image-style="{ height: '48px' }"
+              />
+              <a-button size="small" type="primary" @click="generateShuangxiResultAnalysis">
+                AI生成
+              </a-button>
+            </div>
+            <div v-else class="autismdev-analysis-content">
+              <div class="shuangxi-analysis-doc-title">
+                <strong>双溪心智障碍个别化教育课程（三）</strong>
+                <span>评量结果分析表</span>
+              </div>
+              <div class="shuangxi-analysis-meta">
+                <div>
+                  <span>学生姓名：</span>
+                  <em>{{ currentReport?.record?.studentName || '-' }}</em>
+                </div>
+                <div>
+                  <span>性别：</span>
+                  <em>{{ currentReport?.record?.studentGender || '-' }}</em>
+                </div>
+                <div>
+                  <span>出生日期：</span>
+                  <em>{{ formatDate(currentReport?.record?.birthDate) }}</em>
+                </div>
+                <div>
+                  <span>课程名称：</span>
+                  <em>{{ shuangxiAnalysis?.courseName || '-' }}</em>
+                </div>
+                <div>
+                  <span>评量者：</span>
+                  <em>{{ currentReport?.record?.examinerName || '-' }}</em>
+                </div>
+                <div>
+                  <span>评量日期：</span>
+                  <em>{{ formatDate(currentReport?.record?.assessmentDate) }}</em>
+                </div>
+              </div>
+              <div class="autismdev-analysis-table-wrap">
+                <table class="shuangxi-analysis-table">
+                  <colgroup>
+                    <col class="shuangxi-analysis-table__col-domain">
+                    <col class="shuangxi-analysis-table__col-status">
+                    <col class="shuangxi-analysis-table__col-reason">
+                    <col class="shuangxi-analysis-table__col-strategy">
+                  </colgroup>
+                  <thead>
+                    <tr>
+                      <th>领域<br>（依优弱序）</th>
+                      <th>现况分析</th>
+                      <th>原因推断<br>（生理、心理、教学、环境、互动）</th>
+                      <th>建议策略</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr
+                      v-for="(row, index) in shuangxiAnalysis.rows"
+                      :key="`shuangxi-${row.domain}-${index}`"
+                    >
+                      <td>{{ row.domain || '' }}</td>
+                      <td>{{ shuangxiStatusText(row) }}</td>
+                      <td>{{ row.reason || '' }}</td>
+                      <td>{{ row.strategy || '' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div v-else-if="currentReportIsAutismDev() && activeAutismDevReportSection === 'resultAnalysis'" class="autismdev-analysis-shell">
             <div v-if="autismDevAnalysisLoading" class="autismdev-analysis-state">
               <a-spin size="small" />
               <strong>评估结果分析读取中</strong>
@@ -2681,6 +3475,7 @@ onBeforeUnmount(() => {
         :class="{
           'export-dimension--erxin': isERXinRecord(exportTargetRecord),
           'export-dimension--autismdev': isAutismDevRecord(exportTargetRecord),
+          'export-dimension--shuangxi': isShuangxiARecord(exportTargetRecord),
         }"
       >
         <div class="export-dimension__summary">
@@ -2700,7 +3495,37 @@ onBeforeUnmount(() => {
             <strong>{{ activeExportDimensionOptions.length }} 项</strong>
           </div>
         </div>
-        <div v-if="isAutismDevRecord(exportTargetRecord)" class="autismdev-export-card-list">
+        <div v-if="isShuangxiARecord(exportTargetRecord)" class="autismdev-export-card-list shuangxi-export-card-list">
+          <div class="autismdev-export-toolbar">
+            <span>导出内容</span>
+            <button type="button" :disabled="!!exportingId" @click="toggleAllShuangxiExportSections">
+              {{ shuangxiExportAllSelected ? '清空' : '全选' }}
+            </button>
+          </div>
+          <button
+            v-for="option in shuangxiExportDimensionOptions"
+            :key="option.value"
+            type="button"
+            class="autismdev-export-row"
+            :class="{
+              'autismdev-export-row--active': shuangxiExportSections.includes(option.value),
+              'autismdev-export-row--disabled': !isShuangxiExportSectionEnabled(option.value),
+            }"
+            :disabled="!!exportingId || !isShuangxiExportSectionEnabled(option.value)"
+            @click="toggleShuangxiExportSection(option.value)"
+          >
+            <span class="autismdev-export-row__check" />
+            <span class="autismdev-export-row__body">
+              <span class="autismdev-export-row__head">
+                <strong>{{ option.title }}</strong>
+                <em v-if="option.recommended">默认</em>
+                <em v-if="shuangxiExportSectionStatus(option.value)" class="is-muted">{{ shuangxiExportSectionStatus(option.value) }}</em>
+              </span>
+              <span class="autismdev-export-row__desc">{{ option.desc }}</span>
+            </span>
+          </button>
+        </div>
+        <div v-else-if="isAutismDevRecord(exportTargetRecord)" class="autismdev-export-card-list">
           <div class="autismdev-export-toolbar">
             <span>按 pad 端报告分段选择导出内容</span>
             <button type="button" :disabled="!!exportingId" @click="toggleAllAutismDevExportSections">
@@ -2772,7 +3597,12 @@ onBeforeUnmount(() => {
           </div>
         </div>
         <div class="export-dimension__footer">
-          <div v-if="isAutismDevRecord(exportTargetRecord)" class="export-dimension__selection">
+          <div v-if="isShuangxiARecord(exportTargetRecord)" class="export-dimension__selection">
+            <span>将导出</span>
+            <strong>{{ shuangxiExportSections.length }} 项内容</strong>
+            <em>{{ shuangxiExportSections.map(shuangxiReportSectionTitle).join('、') || '未选择' }}</em>
+          </div>
+          <div v-else-if="isAutismDevRecord(exportTargetRecord)" class="export-dimension__selection">
             <span>将导出</span>
             <strong>{{ autismDevExportSections.length }} 项内容</strong>
             <em>{{ autismDevExportSections.map(autismDevReportSectionTitle).join('、') || '未选择' }}</em>
@@ -3860,6 +4690,133 @@ onBeforeUnmount(() => {
   box-shadow: none;
 }
 
+.shuangxi-analysis-shell {
+  background: #fffdf9;
+}
+
+.shuangxi-analysis-doc-title {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  gap: 10px;
+  margin: 2px 0 14px;
+  color: #000;
+  text-align: center;
+
+  strong {
+    font-size: 19px;
+    font-weight: 500;
+    line-height: 1.2;
+  }
+
+  span {
+    min-width: 210px;
+    padding: 7px 18px;
+    font-size: 18px;
+    font-weight: 500;
+    line-height: 1.2;
+    letter-spacing: 2px;
+    border: 1px solid #000;
+  }
+}
+
+.shuangxi-analysis-meta {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px 26px;
+  margin-bottom: 10px;
+
+  div {
+    display: flex;
+    align-items: center;
+    min-width: 0;
+  }
+
+  span {
+    flex: 0 0 auto;
+    color: #000;
+    font-size: 13px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  em {
+    flex: 1 1 auto;
+    min-width: 0;
+    height: 20px;
+    overflow: hidden;
+    color: #000;
+    font-size: 13px;
+    font-style: normal;
+    line-height: 20px;
+    text-align: center;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    border-bottom: 1px solid #000;
+  }
+}
+
+.shuangxi-analysis-table {
+  width: 100%;
+  min-width: 0;
+  color: #000;
+  table-layout: fixed;
+  background: #fff;
+  border: 1px solid #000;
+  border-collapse: collapse;
+}
+
+.shuangxi-analysis-table__col-domain {
+  width: 14%;
+}
+
+.shuangxi-analysis-table__col-status {
+  width: 33%;
+}
+
+.shuangxi-analysis-table__col-reason {
+  width: 23%;
+}
+
+.shuangxi-analysis-table__col-strategy {
+  width: 30%;
+}
+
+.shuangxi-analysis-table th {
+  height: 54px;
+  padding: 0 8px;
+  color: #000;
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.25;
+  text-align: center;
+  vertical-align: middle;
+  background: #fff;
+  border: 1px solid #000;
+}
+
+.shuangxi-analysis-table td {
+  height: 132px;
+  padding: 8px 10px;
+  color: #000;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.55;
+  white-space: pre-line;
+  word-break: break-word;
+  vertical-align: top;
+  background: #fff;
+  border: 1px solid #000;
+}
+
+.shuangxi-analysis-table td:first-child {
+  padding: 0 8px;
+  font-size: 13px;
+  line-height: 1.2;
+  text-align: center;
+  vertical-align: middle;
+}
+
 .export-modal-title {
   display: flex;
   flex-direction: column;
@@ -4185,10 +5142,49 @@ onBeforeUnmount(() => {
   }
 }
 
+.export-dimension--shuangxi {
+  padding-top: 12px;
+
+  .export-dimension__summary {
+    gap: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+  }
+
+  .export-dimension__file {
+    width: 34px;
+    height: 34px;
+    font-size: 11px;
+    border-radius: 7px;
+  }
+
+  .export-dimension__name {
+    font-size: 14px;
+    line-height: 20px;
+  }
+
+  .export-dimension__meta {
+    margin-top: 1px;
+  }
+
+  .export-dimension__current {
+    min-width: 76px;
+    padding-left: 12px;
+  }
+
+  .export-dimension__footer {
+    margin-top: 12px;
+  }
+}
+
 .autismdev-export-card-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+}
+
+.shuangxi-export-card-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .autismdev-export-toolbar {

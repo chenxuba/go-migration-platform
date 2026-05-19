@@ -9,6 +9,17 @@ type ShuangxiResultAnalysisSaveRequest struct {
 	Analysis ShuangxiResultAnalysisVO `json:"analysis"`
 }
 
+type ShuangxiResultAnalysisExportRequest struct {
+	ID       int64                     `json:"id"`
+	Analysis *ShuangxiResultAnalysisVO `json:"analysis,omitempty"`
+}
+
+type ShuangxiSelectedReportExportRequest struct {
+	ID       int64                     `json:"id"`
+	Sections []string                  `json:"sections"`
+	Analysis *ShuangxiResultAnalysisVO `json:"analysis,omitempty"`
+}
+
 type ShuangxiResultAnalysisVO struct {
 	Title       string                      `json:"title"`
 	CourseName  string                      `json:"courseName,omitempty"`

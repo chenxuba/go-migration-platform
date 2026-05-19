@@ -381,6 +381,39 @@ func (handler *Handler) shuangxiAAssessmentRecordResultAnalysis(w http.ResponseW
 	}
 }
 
+func (handler *Handler) shuangxiAAssessmentRecordSelectedReportPDF(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ShuangxiSelectedReportExportRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	fileName, contentType, content, err := handler.service.ExportShuangxiASelectedReportPDF(claims.UserID, req.ID, req.Sections, req.Analysis)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/pdf"
+	}
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(fileName))
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(content)
+}
+
 func (handler *Handler) shuangxiAAssessmentRecordResultAnalysisAIStream(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)

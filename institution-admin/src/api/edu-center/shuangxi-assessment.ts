@@ -21,6 +21,31 @@ export type ShuangxiARecordPageRequest = PEP3RecordPageRequest
 export type ShuangxiAAssessmentRecordSummary = PEP3AssessmentRecordSummary
 export type ShuangxiAAssessmentRecordDetail = PEP3AssessmentRecordDetail
 export type ShuangxiARecordConfigUpdateRequest = PEP3RecordConfigUpdateRequest
+export type ShuangxiASelectedReportSection = 'developmentProfile' | 'resultAnalysis'
+
+export interface ShuangxiAResultAnalysisRow {
+  domainCode?: string
+  domain: string
+  strengths: string
+  weaknesses: string
+  reason: string
+  strategy: string
+}
+
+export interface ShuangxiAResultAnalysis {
+  title: string
+  courseName?: string
+  model?: string
+  generatedBy?: string
+  generatedAt?: string
+  rows: ShuangxiAResultAnalysisRow[]
+}
+
+export interface ShuangxiAResultAnalysisStreamHandlers {
+  onStatus?: (message: string) => void
+  onDelta?: (text: string) => void
+  onDone?: (data: ShuangxiAResultAnalysis) => void
+}
 
 function normalizeShuangxiARecordPageRequest(data: ShuangxiARecordPageRequest): ShuangxiARecordPageRequest {
   const normalized = {
@@ -64,6 +89,41 @@ export function downloadShuangxiADevelopmentProfilePdfApi(id: number) {
     params: { id },
     responseType: 'blob',
     headers: shuangxiAAuthHeaders(),
+  })
+}
+
+export function downloadShuangxiASelectedReportPdfApi(
+  id: number | string,
+  sections: ShuangxiASelectedReportSection[] = ['developmentProfile'],
+  analysis?: ShuangxiAResultAnalysis | null,
+) {
+  return axios.post('/api/v1/assessments/shuangxi-a/records/selected-report/pdf', {
+    id: Number(id || 0),
+    sections,
+    ...(analysis ? { analysis } : {}),
+  }, {
+    responseType: 'blob',
+    headers: shuangxiAAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+  })
+}
+
+export function getShuangxiAResultAnalysisApi(id: number | string) {
+  return useGet<ShuangxiAResultAnalysis>('/api/v1/assessments/shuangxi-a/records/result-analysis', { id }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function saveShuangxiAResultAnalysisApi(id: number | string, analysis: ShuangxiAResultAnalysis) {
+  return usePost<ShuangxiAResultAnalysis>('/api/v1/assessments/shuangxi-a/records/result-analysis', {
+    id: Number(id || 0),
+    analysis,
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
   })
 }
 
@@ -249,6 +309,26 @@ export async function generateShuangxiAIEPPlanAIStreamApi(
     options,
     'AI生成失败',
     'AI生成未返回计划数据',
+  )
+}
+
+export async function generateShuangxiAResultAnalysisStreamApi(
+  id: number | string,
+  handlers: ShuangxiAResultAnalysisStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/shuangxi-a/records/result-analysis/ai/stream', {
+    method: 'POST',
+    headers: shuangxiAStreamHeaders(),
+    body: JSON.stringify({ id: Number(id || 0) }),
+    signal: options.signal,
+  })
+  return readShuangxiSSE<ShuangxiAResultAnalysis>(
+    response,
+    handlers,
+    options,
+    '评量结果分析生成失败',
+    '评量结果分析生成未返回结果',
   )
 }
 

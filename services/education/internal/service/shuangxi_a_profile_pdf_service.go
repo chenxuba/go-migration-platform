@@ -177,24 +177,38 @@ func shuangxiAProfileRecordSortTime(record model.AssessmentRecordDetailVO) time.
 }
 
 func buildShuangxiADevelopmentProfilePDF(data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) ([]byte, error) {
-	fontBytes, err := loadPEP3PDFFontBytes()
-	if err != nil {
-		return nil, err
-	}
 	var pdf gopdf.GoPdf
 	pdf.Start(gopdf.Config{
 		Unit:     gopdf.UnitPT,
 		PageSize: gopdf.Rect{W: shuangxiAProfilePDFPageWidth, H: shuangxiAProfilePDFPageHeight},
 	})
-	pdf.AddPage()
-	if err := pdf.AddTTFFontByReader(shuangxiAProfilePDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
-		return nil, fmt.Errorf("load Shuangxi profile PDF font: %w", err)
+	if err := addShuangxiAPDFFont(&pdf); err != nil {
+		return nil, err
 	}
-	renderer := shuangxiAProfilePDFRenderer{pdf: &pdf}
-	if err := renderer.draw(data, records); err != nil {
+	if err := drawShuangxiADevelopmentProfilePDFPages(&pdf, data, records); err != nil {
 		return nil, err
 	}
 	return pdf.GetBytesPdfReturnErr()
+}
+
+func addShuangxiAPDFFont(pdf *gopdf.GoPdf) error {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return err
+	}
+	if err := pdf.AddTTFFontByReader(shuangxiAProfilePDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return fmt.Errorf("load Shuangxi PDF font: %w", err)
+	}
+	return nil
+}
+
+func drawShuangxiADevelopmentProfilePDFPages(pdf *gopdf.GoPdf, data shuangxiAStaticData, records []model.AssessmentRecordDetailVO) error {
+	pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: shuangxiAProfilePDFPageWidth, H: shuangxiAProfilePDFPageHeight}})
+	renderer := shuangxiAProfilePDFRenderer{pdf: pdf}
+	if err := renderer.draw(data, records); err != nil {
+		return err
+	}
+	return nil
 }
 
 type shuangxiAProfilePDFRenderer struct {
@@ -221,7 +235,7 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 	r.drawProfiles(data, domains, records)
 	skills := shuangxiAProfileSkills(data)
 	if len(skills) > 0 {
-		r.pdf.AddPage()
+		r.pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: shuangxiAProfilePDFPageWidth, H: shuangxiAProfilePDFPageHeight}})
 		r.pdf.SetFillColor(255, 255, 255)
 		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
 		if err := r.drawLoweredTitle("综合发展侧面图（二）"); err != nil {
@@ -232,7 +246,7 @@ func (r *shuangxiAProfilePDFRenderer) draw(data shuangxiAStaticData, records []m
 		}
 	}
 	for _, page := range shuangxiAProfileItemPages(data) {
-		r.pdf.AddPage()
+		r.pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: shuangxiAProfilePDFPageWidth, H: shuangxiAProfilePDFPageHeight}})
 		r.pdf.SetFillColor(255, 255, 255)
 		r.pdf.RectFromUpperLeftWithStyle(0, 0, shuangxiAProfilePDFPageWidth, shuangxiAProfilePDFPageHeight, "F")
 		title := fmt.Sprintf("侧面图（三）%d.%s", page.DomainNo, page.DomainName)
