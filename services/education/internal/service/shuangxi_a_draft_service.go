@@ -50,6 +50,11 @@ type ShuangxiAAssessmentRecordSaveInput struct {
 	InputSnapshot  any
 }
 
+type ShuangxiAAssessmentRecordConfigInput struct {
+	ExaminerName   string
+	AssessmentDate time.Time
+}
+
 type shuangxiASavedInputSnapshot struct {
 	StudentGender  string                     `json:"studentGender,omitempty"`
 	ItemScores     map[int]int                `json:"itemScores,omitempty"`
@@ -308,6 +313,61 @@ func (svc *Service) GetShuangxiAAssessmentRecord(userID, recordID int64) (model.
 		return model.AssessmentRecordDetailVO{}, errors.New("assessment record is not Shuangxi A")
 	}
 	return record, nil
+}
+
+func (svc *Service) UpdateShuangxiAAssessmentRecordConfig(userID, recordID int64, input ShuangxiAAssessmentRecordConfigInput) (model.AssessmentRecordDetailVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment repository is not configured")
+	}
+	examinerName := strings.TrimSpace(input.ExaminerName)
+	if examinerName == "" {
+		return model.AssessmentRecordDetailVO{}, errors.New("评估老师不能为空")
+	}
+	if input.AssessmentDate.IsZero() {
+		return model.AssessmentRecordDetailVO{}, errors.New("评估日期不能为空")
+	}
+
+	instID, operatorID, _, err := svc.pep3AssessmentActor(userID, "")
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentRecordDetailVO{}, errors.New("assessment record not found")
+		}
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != shuangxiAScaleCode {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment record is not Shuangxi A")
+	}
+
+	assessmentDate := dateOnlyShuangxiARecordConfig(input.AssessmentDate)
+	if err := svc.repo.UpdateAssessmentRecordConfig(context.Background(), instID, recordID, examinerName, assessmentDate); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if err := svc.syncShuangxiASubmittedDraftRecordConfig(instID, operatorID, recordID, examinerName, assessmentDate); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+}
+
+func (svc *Service) syncShuangxiASubmittedDraftRecordConfig(instID, operatorID, recordID int64, examinerName string, assessmentDate time.Time) error {
+	draft, err := svc.repo.GetAssessmentDraftBySubmittedRecordID(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	return svc.repo.UpdateAssessmentDraftConfigIncludingSubmitted(context.Background(), instID, draft.ID, examinerName, assessmentDate, operatorID)
+}
+
+func dateOnlyShuangxiARecordConfig(value time.Time) time.Time {
+	if value.IsZero() {
+		return value
+	}
+	return time.Date(value.Year(), value.Month(), value.Day(), 0, 0, 0, 0, time.Local)
 }
 
 func (svc *Service) SubmitShuangxiAAssessmentDraft(userID, draftID int64) (model.PEP3AssessmentDraftSubmitVO, error) {

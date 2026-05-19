@@ -41,6 +41,10 @@ const String defaultShuangxiRecordDetailPath = String.fromEnvironment(
   'SHUANGXI_RECORD_DETAIL_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/records/detail',
 );
+const String defaultShuangxiRecordConfigUpdatePath = String.fromEnvironment(
+  'SHUANGXI_RECORD_CONFIG_UPDATE_PATH',
+  defaultValue: '/api/v1/assessments/shuangxi-a/records/config/update',
+);
 const String defaultShuangxiRecordCategoryStatsPath = String.fromEnvironment(
   'SHUANGXI_RECORD_CATEGORY_STATS_PATH',
   defaultValue: '/api/v1/assessments/shuangxi-a/records/category-stats',

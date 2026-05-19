@@ -469,6 +469,72 @@ void main() {
     expect(find.text('评量结果分析待开发'), findsOneWidget);
   });
 
+  testWidgets('Shuangxi report config saves with Shuangxi record client',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    final _FakePep3AssessmentClient pep3Client = _FakePep3AssessmentClient();
+    final _FakePep3AssessmentClient shuangxiClient = _FakePep3AssessmentClient(
+      hasPreviousRecord: true,
+      previousRecord: const Pep3RecordSummary(
+        id: 51,
+        studentId: 61,
+        studentName: '双溪学生',
+        assessmentCode: 'SHUANGXI_A',
+        assessmentName: '双溪课程评量表A',
+        birthDate: '2018-01-01',
+        assessmentDate: '2026-05-18',
+        examinerName: '陈老师',
+        updatedTime: '2026-05-18T10:00:00',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: pep3Client,
+              erxinRecordClient: _FakePep3AssessmentClient(),
+              autismDevRecordClient: _FakePep3AssessmentClient(),
+              shuangxiRecordClient: shuangxiClient,
+              staffClient: _FakeTimetableClient(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('双溪学生'), findsOneWidget);
+    await tester.tap(find.text('配置'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('配置评估记录'), findsOneWidget);
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+
+    expect(shuangxiClient.updateRecordConfigCalls, 1);
+    expect(shuangxiClient.lastUpdatedRecordConfigId, 51);
+    expect(shuangxiClient.lastUpdatedRecordConfigExaminerName, '陈老师');
+    expect(shuangxiClient.lastUpdatedRecordConfigAssessmentDate, '2026-05-18');
+    expect(pep3Client.updateRecordConfigCalls, 0);
+    expect(find.text('评估配置已保存'), findsOneWidget);
+  });
+
   testWidgets('home header fallback does not show a fake institution',
       (WidgetTester tester) async {
     final HomeSummary summary = HomeSummary.fallback();
@@ -8185,6 +8251,10 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   int fetchAutismDevResultAnalysisCalls = 0;
   int saveAutismDevResultAnalysisCalls = 0;
   int downloadShuangxiDevelopmentProfilePdfCalls = 0;
+  int updateRecordConfigCalls = 0;
+  int lastUpdatedRecordConfigId = 0;
+  String lastUpdatedRecordConfigExaminerName = '';
+  String lastUpdatedRecordConfigAssessmentDate = '';
   AutismDevResultAnalysis? savedAutismDevResultAnalysis;
   ErxinReportInterpretation savedAutismDevReportInterpretation =
       ErxinReportInterpretation.empty;
@@ -8452,29 +8522,7 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
 
   @override
   Future<Pep3RecordDetail> fetchRecordDetail(String token, int id) async {
-    return const Pep3RecordDetail(
-      id: 21,
-      studentId: 3,
-      studentName: '张一鸣',
-      assessmentCode: 'PEP3',
-      assessmentName: 'PEP-3',
-      birthDate: '2021-03-01',
-      assessmentDate: '2026-05-04',
-      examinerName: '陈老师',
-      updatedTime: '2026-05-04T16:00:00',
-      input: Pep3DraftInput(
-        studentId: 3,
-        studentName: '张一鸣',
-        examinerName: '陈老师',
-        birthDate: '2021-03-01',
-        assessmentDate: '2026-05-04',
-        remark: '',
-        allowMissingItems: true,
-        itemScores: <int, int>{1: 0},
-        itemScoreLabels: <int, String>{1: '0'},
-        itemRecordValues: <int, Map<String, dynamic>>{},
-      ),
-    );
+    return _recordDetailFromSummary(previousRecord, id: id);
   }
 
   @override
@@ -8484,22 +8532,66 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
     required String examinerName,
     required String assessmentDate,
   }) async {
-    return Pep3RecordDetail(
+    updateRecordConfigCalls += 1;
+    lastUpdatedRecordConfigId = id;
+    lastUpdatedRecordConfigExaminerName = examinerName;
+    lastUpdatedRecordConfigAssessmentDate = assessmentDate;
+    return _recordDetailFromSummary(
+      previousRecord,
       id: id,
-      studentId: 3,
-      studentName: '张一鸣',
-      assessmentCode: 'PEP3',
-      assessmentName: 'PEP-3',
-      birthDate: '2021-03-01',
-      assessmentDate: assessmentDate,
       examinerName: examinerName,
+      assessmentDate: assessmentDate,
+    );
+  }
+
+  Pep3RecordDetail _recordDetailFromSummary(
+    Pep3RecordSummary? summary, {
+    required int id,
+    String? examinerName,
+    String? assessmentDate,
+  }) {
+    final Pep3RecordSummary record = summary ??
+        const Pep3RecordSummary(
+          id: 21,
+          studentId: 3,
+          studentName: '张一鸣',
+          assessmentCode: 'PEP3',
+          assessmentName: 'PEP-3',
+          birthDate: '2021-03-01',
+          assessmentDate: '2026-05-04',
+          examinerName: '陈老师',
+          updatedTime: '2026-05-04T16:00:00',
+        );
+    final String resolvedExaminer = examinerName ?? record.examinerName;
+    final String resolvedAssessmentDate =
+        assessmentDate ?? record.assessmentDate;
+    return Pep3RecordDetail(
+      id: id > 0 ? id : record.id,
+      studentId: record.studentId,
+      studentName: record.studentName,
+      studentGender: record.studentGender,
+      studentAvatar: record.studentAvatar,
+      studentPhone: record.studentPhone,
+      assessmentCode: record.assessmentCode,
+      assessmentName: record.assessmentName,
+      scaleCategory: record.scaleCategory,
+      scaleVersion: record.scaleVersion,
+      birthDate: record.birthDate,
+      assessmentDate: resolvedAssessmentDate,
+      ageYears: record.ageYears,
+      ageMonths: record.ageMonths,
+      ageDays: record.ageDays,
+      normAgeMonths: record.normAgeMonths,
+      assessmentSequence: record.assessmentSequence,
+      examinerName: resolvedExaminer,
+      createdTime: record.createdTime,
       updatedTime: '2026-05-07T10:00:00',
       input: Pep3DraftInput(
-        studentId: 3,
-        studentName: '张一鸣',
-        examinerName: examinerName,
-        birthDate: '2021-03-01',
-        assessmentDate: assessmentDate,
+        studentId: record.studentId,
+        studentName: record.studentName,
+        examinerName: record.examinerName,
+        birthDate: record.birthDate,
+        assessmentDate: record.assessmentDate,
         remark: '',
         allowMissingItems: true,
         itemScores: const <int, int>{1: 0},

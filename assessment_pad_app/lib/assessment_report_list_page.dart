@@ -41,6 +41,8 @@ class AssessmentReportListScreen extends StatefulWidget {
     this.shuangxiRecordClient = const ApiPep3AssessmentClient(
       recordsPagePath: defaultShuangxiRecordsPagePath,
       recordCategoryStatsPath: defaultShuangxiRecordCategoryStatsPath,
+      recordDetailPath: defaultShuangxiRecordDetailPath,
+      recordConfigUpdatePath: defaultShuangxiRecordConfigUpdatePath,
     ),
     this.erxinClient = const ApiErxinAssessmentClient(),
     this.staffClient = const ApiTimetableClient(),
@@ -612,6 +614,17 @@ class _AssessmentReportListScreenState
             _originalAssessmentDateText(record) ?? record.assessmentDate,
       );
     }
+    if (_isShuangxiRecord(record)) {
+      final Pep3RecordDetail detail =
+          await widget.shuangxiRecordClient.fetchRecordDetail(token, record.id);
+      return _RecordConfigDetail(
+        currentExaminerName: detail.examinerName,
+        currentAssessmentDate: detail.assessmentDate,
+        originalExaminerName: detail.input.examinerName,
+        originalAssessmentDate:
+            _originalAssessmentDateText(record) ?? record.assessmentDate,
+      );
+    }
     final Pep3RecordDetail detail =
         await widget.recordClient.fetchRecordDetail(token, record.id);
     return _RecordConfigDetail(
@@ -662,6 +675,14 @@ class _AssessmentReportListScreenState
     }
     if (_isAutismDevRecord(record)) {
       return widget.autismDevRecordClient.updateRecordConfig(
+        token,
+        record.id,
+        examinerName: examinerName,
+        assessmentDate: assessmentDate,
+      );
+    }
+    if (_isShuangxiRecord(record)) {
+      return widget.shuangxiRecordClient.updateRecordConfig(
         token,
         record.id,
         examinerName: examinerName,
