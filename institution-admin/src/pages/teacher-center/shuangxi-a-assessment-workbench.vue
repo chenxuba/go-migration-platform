@@ -1,18 +1,25 @@
 <script setup lang="ts">
 import {
   ArrowLeftOutlined,
+  BulbOutlined,
   CheckCircleFilled,
   ClockCircleOutlined,
+  EyeOutlined,
   FileDoneOutlined,
+  HomeOutlined,
   LeftOutlined,
+  MessageOutlined,
   RightOutlined,
   SaveOutlined,
   SlidersOutlined,
   SwapOutlined,
+  TeamOutlined,
+  ThunderboltOutlined,
+  ToolOutlined,
 } from '@ant-design/icons-vue'
 import dayjs from 'dayjs'
 import { Modal } from 'ant-design-vue'
-import { computed, nextTick, onMounted, reactive, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   getShuangxiAAssessmentDraftDetailApi,
@@ -44,6 +51,7 @@ import messageService from '@/utils/messageService'
 
 type DraftItemSaveStatus = 'saving' | 'saved' | 'error'
 type NormalizedGender = 'male' | 'female' | ''
+const AUTO_NEXT_DELAY_MS = 350
 
 const route = useRoute()
 const router = useRouter()
@@ -74,6 +82,7 @@ const skillListRef = ref<HTMLElement | null>(null)
 let draftSavePromise: Promise<ShuangxiADraftDetail | undefined> | undefined
 let draftCreationPromise: Promise<ShuangxiADraftDetail | undefined> | undefined
 let itemSaveChain: Promise<void> = Promise.resolve()
+let autoNextTimer: ReturnType<typeof setTimeout> | undefined
 
 const editingRecordId = ref(numberFromQuery('recordId') || 0)
 const recordMode = computed(() => textFromQuery('recordMode').toLowerCase())
@@ -171,12 +180,31 @@ const domainCards = computed(() => allDomains.value.map((domain) => {
   return {
     code: domain.domainCode,
     name: domain.domainName,
+    icon: domainIconForName(domain.domainName),
     answered,
     total: items.length,
     percent,
     active: domain.domainCode === selectedDomainCode.value,
   }
 }))
+
+function domainIconForName(name = '') {
+  if (name.includes('感官') || name.includes('知觉'))
+    return EyeOutlined
+  if (name.includes('粗大'))
+    return ThunderboltOutlined
+  if (name.includes('精细'))
+    return ToolOutlined
+  if (name.includes('生活') || name.includes('自理'))
+    return HomeOutlined
+  if (name.includes('沟通'))
+    return MessageOutlined
+  if (name.includes('认知'))
+    return BulbOutlined
+  if (name.includes('社会') || name.includes('社交'))
+    return TeamOutlined
+  return SlidersOutlined
+}
 
 watch(selectedItemNo, (itemNo) => {
   if (itemNo > 0)
@@ -191,6 +219,10 @@ watch(allItems, () => {
 
 onMounted(() => {
   void initializeWorkbench()
+})
+
+onBeforeUnmount(() => {
+  clearPendingAutoNext()
 })
 
 async function initializeWorkbench() {
@@ -577,7 +609,7 @@ function selectScore(score: number) {
 function queueSaveItem(itemNo: number, moveNext = false) {
   if (isRecordEditMode.value) {
     if (moveNext)
-      goNextItem()
+      scheduleAutoNext(itemNo)
     return
   }
   itemSaveChain = itemSaveChain.then(() => persistItem(itemNo, moveNext)).catch(() => undefined)
@@ -602,7 +634,7 @@ async function persistItem(itemNo: number, moveNext = false) {
     autoSaveLastSavedAt.value = dayjs().format('MM-DD HH:mm')
     draftItemSaveStatus.value = { ...draftItemSaveStatus.value, [itemNo]: 'saved' }
     if (moveNext && selectedItemNo.value === itemNo)
-      goNextItem()
+      scheduleAutoNext(itemNo)
   }
   catch (error: any) {
     const message = getErrorMessage(error, `第 ${itemNo} 题自动保存失败`)
@@ -610,6 +642,24 @@ async function persistItem(itemNo: number, moveNext = false) {
     draftItemSaveErrors.value = { ...draftItemSaveErrors.value, [itemNo]: message }
     messageService.error(message)
   }
+}
+
+function clearPendingAutoNext() {
+  if (!autoNextTimer)
+    return
+  clearTimeout(autoNextTimer)
+  autoNextTimer = undefined
+}
+
+function scheduleAutoNext(itemNo: number) {
+  if (itemNo <= 0 || !hasNextItem.value)
+    return
+  clearPendingAutoNext()
+  autoNextTimer = setTimeout(() => {
+    autoNextTimer = undefined
+    if (selectedItemNo.value === itemNo)
+      goNextItem()
+  }, AUTO_NEXT_DELAY_MS)
 }
 
 function updateRemark(value: string) {
@@ -751,6 +801,7 @@ async function loadPreviousAssessment() {
 function selectDomain(code: string) {
   if (!code)
     return
+  clearPendingAutoNext()
   selectedDomainCode.value = code
   const domain = allDomains.value.find(item => item.domainCode === code)
   const items = (domain?.skills || []).flatMap(skill => skill.items || [])
@@ -763,18 +814,21 @@ function selectDomain(code: string) {
 function selectItem(itemNo: number) {
   if (itemNo <= 0)
     return
+  clearPendingAutoNext()
   selectedItemNo.value = itemNo
 }
 
 function goPreviousItem() {
   if (!hasPreviousItem.value)
     return
+  clearPendingAutoNext()
   selectedItemNo.value = allItems.value[currentIndex.value - 1].itemNo
 }
 
 function goNextItem() {
   if (!hasNextItem.value)
     return
+  clearPendingAutoNext()
   selectedItemNo.value = allItems.value[currentIndex.value + 1].itemNo
 }
 
@@ -1101,8 +1155,13 @@ function goBack() {
         :class="{ 'is-active': domain.active }"
         @click="selectDomain(domain.code)"
       >
-        <span>
-          <b>{{ domain.name }}</b>
+        <span class="dimension-card__head">
+          <b>
+            <span class="dimension-card__icon">
+              <component :is="domain.icon" />
+            </span>
+            <span class="dimension-card__name">{{ domain.name }}</span>
+          </b>
           <strong>{{ domain.answered }}/{{ domain.total }}</strong>
         </span>
         <i><em :style="{ width: `${domain.percent}%` }"></em></i>
@@ -1167,7 +1226,7 @@ function goBack() {
             <h1 class="question-main-title">{{ currentItemDisplayTitle }}</h1>
             <div v-if="previousScore !== undefined && previousAssessmentDate" class="previous-score-banner">
               <ClockCircleOutlined />
-              <span>上次评量 {{ previousAssessmentDate }}</span>
+              <span class="previous-score-banner__date">上次评量 {{ previousAssessmentDate }}</span>
               <strong>{{ previousScore }}分</strong>
               <em v-if="previousScoreOption">· {{ scoreOptionDescription(previousScoreOption) }}</em>
             </div>
@@ -1480,7 +1539,7 @@ function goBack() {
   box-shadow: 0 8px 18px rgba(37, 99, 235, 0.12);
 }
 
-.dimension-card span {
+.dimension-card__head {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
@@ -1489,11 +1548,34 @@ function goBack() {
 }
 
 .dimension-card b {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   min-width: 0;
   overflow: hidden;
   color: #334155;
   font-size: 13px;
   font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dimension-card__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  color: #2563eb;
+  background: #eff6ff;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.dimension-card__name {
+  min-width: 0;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1816,6 +1898,10 @@ function goBack() {
   color: #16a34a;
 }
 
+.previous-score-banner__date {
+  color: #111827;
+}
+
 .previous-score-banner em {
   min-width: 0;
   overflow: hidden;
@@ -1928,8 +2014,9 @@ function goBack() {
 .score-option span {
   min-width: 0;
   overflow: hidden;
-  color: #333;
+  color: #111827;
   font-size: 13px;
+  font-weight: 700;
   line-height: 1.5;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1951,15 +2038,36 @@ function goBack() {
 }
 
 .score-option__radio {
+  position: relative;
   width: 16px;
   height: 16px;
-  background: #fff;
-  border: 2px solid #d1d5db;
+  background-color: transparent;
+  border: 1px solid #d9d9d9;
   border-radius: 50%;
+  transition: border-color 0.2s ease;
+}
+
+.score-option__radio::after {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  content: '';
+  background-color: #2563eb;
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0);
+  transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
 .score-option.is-selected .score-option__radio {
-  border: 5px solid #2563eb;
+  border-color: #2563eb;
+}
+
+.score-option.is-selected .score-option__radio::after {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .score-option__check {
