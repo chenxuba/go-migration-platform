@@ -851,6 +851,14 @@ function displayItemTitle(item?: Partial<ShuangxiAItemSummary>) {
   return normalizeText(item?.testItem || item?.itemTitle || item?.itemCode, '-')
 }
 
+function stripLeadingCode(text: string, code: string) {
+  if (!code)
+    return text
+  return text
+    .replace(new RegExp(`^\\s*${code.replace(/\./g, '\\.')}\\s*[-—、.．]?\\s*`), '')
+    .trim() || text
+}
+
 function numericCode(value?: string, maxParts = 0) {
   const code = String(value || '').trim().match(/\d+(?:\.\d+)*/)?.[0] || ''
   if (!code)
@@ -882,6 +890,14 @@ function displaySidebarSkillTitle(skill: ShuangxiASkillSummary) {
   if (!code || name.startsWith(code))
     return name
   return `${code} ${name}`
+}
+
+function displaySidebarItemCode(item: ShuangxiAItemSummary) {
+  return numericCode(item.itemCode) || `第 ${item.itemNo} 题`
+}
+
+function displaySidebarItemTitle(item: ShuangxiAItemSummary) {
+  return stripLeadingCode(displayItemTitle(item), numericCode(item.itemCode))
 }
 
 function syncSelectedDomain() {
@@ -1128,8 +1144,8 @@ function goBack() {
               :data-item-no="item.itemNo"
               @click="selectItem(item.itemNo)"
             >
-              <span>第 {{ item.itemNo }} 题</span>
-              <strong>{{ displayItemTitle(item) }}</strong>
+              <span>{{ displaySidebarItemCode(item) }}</span>
+              <strong>{{ displaySidebarItemTitle(item) }}</strong>
               <CheckCircleFilled v-if="itemStatus(item) === 'done'" />
               <i v-else-if="itemStatus(item) === 'active'"></i>
               <b v-else></b>
@@ -1479,7 +1495,7 @@ function goBack() {
 
 .workbench-main {
   display: grid;
-  grid-template-columns: 240px minmax(420px, 1fr) 292px;
+  grid-template-columns: 300px minmax(420px, 1fr) 292px;
   flex: 1 1 auto;
   gap: 10px;
   min-height: 0;
