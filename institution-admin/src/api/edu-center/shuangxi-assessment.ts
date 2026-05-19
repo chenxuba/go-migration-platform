@@ -1,0 +1,342 @@
+import axios from 'axios'
+import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authorization'
+import { useGet, usePost } from '~/utils/request'
+import type {
+  PageResult,
+  PEP3ExecutionPlanSavedVO,
+  PEP3AssessmentRecordDetail,
+  PEP3AssessmentRecordSummary,
+  PEP3IEPPlanAIResult,
+  PEP3IEPPlanAIStreamHandlers,
+  PEP3IEPPlanAIStreamOptions,
+  PEP3IEPPlanPeriodSyncVO,
+  PEP3IEPPlanSavedVO,
+  PEP3MonthlyPlanAIResult,
+  PEP3RecordConfigUpdateRequest,
+  PEP3RecordPageRequest,
+  PEP3WeeklyPlanAIResult,
+} from './pep3-assessment'
+
+export type ShuangxiARecordPageRequest = PEP3RecordPageRequest
+export type ShuangxiAAssessmentRecordSummary = PEP3AssessmentRecordSummary
+export type ShuangxiAAssessmentRecordDetail = PEP3AssessmentRecordDetail
+export type ShuangxiARecordConfigUpdateRequest = PEP3RecordConfigUpdateRequest
+
+function normalizeShuangxiARecordPageRequest(data: ShuangxiARecordPageRequest): ShuangxiARecordPageRequest {
+  const normalized = {
+    ...data,
+    queryModel: {
+      ...data.queryModel,
+      assessmentCode: 'SHUANGXI_A',
+    },
+  }
+  const rawStudentId = normalized.queryModel?.studentId
+  if (rawStudentId !== undefined && rawStudentId !== null && `${rawStudentId}`.trim() !== '') {
+    const studentId = Number(rawStudentId)
+    if (Number.isFinite(studentId) && studentId > 0)
+      normalized.queryModel.studentId = studentId
+  }
+  return normalized
+}
+
+export function pageShuangxiAAssessmentRecordsApi(data: ShuangxiARecordPageRequest) {
+  return usePost<PageResult<ShuangxiAAssessmentRecordSummary>>(
+    '/api/v1/assessments/shuangxi-a/records/page',
+    normalizeShuangxiARecordPageRequest(data),
+    { silentError: true },
+  )
+}
+
+export function getShuangxiAAssessmentRecordDetailApi(id: number) {
+  return useGet<ShuangxiAAssessmentRecordDetail>('/api/v1/assessments/shuangxi-a/records/detail', { id })
+}
+
+export function updateShuangxiAAssessmentRecordConfigApi(data: ShuangxiARecordConfigUpdateRequest) {
+  return usePost<ShuangxiAAssessmentRecordDetail>('/api/v1/assessments/shuangxi-a/records/config/update', data)
+}
+
+export function deleteShuangxiAAssessmentRecordApi(id: number) {
+  return usePost<boolean>('/api/v1/assessments/shuangxi-a/records/delete', { id })
+}
+
+export function downloadShuangxiADevelopmentProfilePdfApi(id: number) {
+  return axios.get('/api/v1/assessments/shuangxi-a/records/development-profile/pdf', {
+    params: { id },
+    responseType: 'blob',
+    headers: shuangxiAAuthHeaders(),
+  })
+}
+
+function shuangxiAAuthHeaders(extra: Record<string, string> = {}) {
+  const token = useAuthorization()
+  return {
+    [STORAGE_AUTHORIZE_KEY]: token.value || '',
+    Authorization: token.value ? `Bearer ${token.value}` : '',
+    'Accept-Language': 'zh-CN',
+    ...extra,
+  }
+}
+
+function shuangxiAStreamHeaders() {
+  const headers: Record<string, string> = shuangxiAAuthHeaders({
+    'Content-Type': 'application/json',
+  })
+  if (typeof window !== 'undefined')
+    headers['X-Tenant-Domain'] = window.location.hostname.toLowerCase()
+  return headers
+}
+
+async function readShuangxiSSE<T>(
+  response: Response,
+  handlers: {
+    onStatus?: (message: string) => void
+    onDelta?: (text: string) => void
+    onDone?: (data: T) => void
+  },
+  options: PEP3IEPPlanAIStreamOptions,
+  errorMessage: string,
+  missingResultMessage: string,
+) {
+  if (!response.ok) {
+    const text = await response.text()
+    let message = text || errorMessage
+    try {
+      const payload = JSON.parse(text)
+      message = payload?.message || message
+    }
+    catch {
+    }
+    throw new Error(message)
+  }
+  if (!response.body)
+    throw new Error('当前浏览器不支持流式生成')
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder('utf-8')
+  let buffer = ''
+  let finalData: T | null = null
+
+  function handleFrame(frame: string) {
+    const lines = frame.split('\n')
+    const dataLines = lines
+      .filter(line => line.startsWith('data:'))
+      .map(line => line.slice(5).trim())
+    if (!dataLines.length)
+      return
+    const payload = JSON.parse(dataLines.join('\n'))
+    if (payload?.type === 'status')
+      handlers.onStatus?.(payload.message || '')
+    else if (payload?.type === 'delta')
+      handlers.onDelta?.(payload.text || '')
+    else if (payload?.type === 'done') {
+      finalData = payload.data
+      if (finalData)
+        handlers.onDone?.(finalData)
+    }
+    else if (payload?.type === 'error') {
+      throw new Error(payload.message || errorMessage)
+    }
+  }
+
+  while (true) {
+    const { value, done } = await reader.read()
+    buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
+    const frames = buffer.split(/\n\n/)
+    buffer = frames.pop() || ''
+    for (const frame of frames) {
+      if (frame.trim())
+        handleFrame(frame)
+    }
+    if (done)
+      break
+  }
+  if (buffer.trim())
+    handleFrame(buffer)
+  if (options.signal?.aborted)
+    throw new DOMException('AI生成已取消', 'AbortError')
+  if (!finalData)
+    throw new Error(missingResultMessage)
+  return finalData
+}
+
+export function downloadShuangxiAIEPPlanWordApi(params: { id?: number | string, duration?: number | string, plan?: PEP3IEPPlanAIResult } = {}) {
+  const headers = shuangxiAAuthHeaders()
+  if (params.plan) {
+    return axios.post('/api/v1/assessments/shuangxi-a/records/iep-plan/word', {
+      id: Number(params.id || 0),
+      durationMonths: Number(params.duration || 0),
+      plan: params.plan,
+    }, {
+      responseType: 'blob',
+      headers: {
+        ...headers,
+        'Content-Type': 'application/json',
+      },
+    })
+  }
+  return axios.get('/api/v1/assessments/shuangxi-a/records/iep-plan/word', {
+    params,
+    responseType: 'blob',
+    headers,
+  })
+}
+
+export function getShuangxiAIEPPlanApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3IEPPlanSavedVO>('/api/v1/assessments/shuangxi-a/records/iep-plan/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function saveShuangxiAIEPPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  status?: string
+  resetExecutionPlans?: boolean
+  plan: PEP3IEPPlanAIResult
+}) {
+  return usePost<PEP3IEPPlanSavedVO>('/api/v1/assessments/shuangxi-a/records/iep-plan/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
+}
+
+export function syncShuangxiAIEPPlanPeriodApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  sourceDurationMonths?: number | string
+  startDate?: string
+  startMonth?: string
+}) {
+  return usePost<PEP3IEPPlanPeriodSyncVO>('/api/v1/assessments/shuangxi-a/records/iep-plan/period/sync', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    sourceDurationMonths: Number(data.sourceDurationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
+}
+
+export async function generateShuangxiAIEPPlanAIStreamApi(
+  data: { id?: number | string, durationMonths?: number | string },
+  handlers: PEP3IEPPlanAIStreamHandlers = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/shuangxi-a/records/iep-plan/ai/stream', {
+    method: 'POST',
+    headers: shuangxiAStreamHeaders(),
+    body: JSON.stringify({
+      ...data,
+      id: Number(data.id || 0),
+      durationMonths: Number(data.durationMonths || 0),
+    }),
+    signal: options.signal,
+  })
+  return readShuangxiSSE<PEP3IEPPlanAIResult>(
+    response,
+    handlers,
+    options,
+    'AI生成失败',
+    'AI生成未返回计划数据',
+  )
+}
+
+export async function generateShuangxiAExecutionPlanAIStreamApi(
+  data: {
+    id?: number | string
+    durationMonths?: number | string
+    planType: 'monthly' | 'weekly'
+    targetMonthIndex?: number | string
+    targetWeekIndex?: number | string
+    restWeekdays?: number[]
+    sourcePlan: PEP3IEPPlanAIResult
+    monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  },
+  handlers: {
+    onStatus?: (message: string) => void
+    onDelta?: (text: string) => void
+    onDone?: (data: PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult) => void
+  } = {},
+  options: PEP3IEPPlanAIStreamOptions = {},
+) {
+  const response = await fetch('/api/v1/assessments/shuangxi-a/records/iep-plan/execution/ai/stream', {
+    method: 'POST',
+    headers: shuangxiAStreamHeaders(),
+    body: JSON.stringify({
+      ...data,
+      id: Number(data.id || 0),
+      durationMonths: Number(data.durationMonths || 0),
+      targetMonthIndex: Number(data.targetMonthIndex || 0),
+      targetWeekIndex: Number(data.targetWeekIndex || 0),
+    }),
+    signal: options.signal,
+  })
+  return readShuangxiSSE<PEP3MonthlyPlanAIResult | PEP3WeeklyPlanAIResult>(
+    response,
+    handlers,
+    options,
+    'AI生成失败',
+    'AI生成未返回计划数据',
+  )
+}
+
+export function downloadShuangxiAExecutionPlanWordApi(data: {
+  id?: number | string
+  planType: 'monthly' | 'weekly'
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+}) {
+  return axios.post('/api/v1/assessments/shuangxi-a/records/iep-plan/execution/word', {
+    ...data,
+    id: Number(data.id || 0),
+  }, {
+    responseType: 'blob',
+    headers: shuangxiAAuthHeaders({
+      'Content-Type': 'application/json',
+    }),
+  })
+}
+
+export function getShuangxiAExecutionPlansApi(id: number | string, durationMonths?: number | string) {
+  return useGet<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/shuangxi-a/records/iep-plan/execution/detail', {
+    id,
+    durationMonths: Number(durationMonths || 0),
+  }, {
+    loading: false,
+    silentError: true,
+  })
+}
+
+export function saveShuangxiAExecutionPlanApi(data: {
+  id?: number | string
+  durationMonths?: number | string
+  planType: 'monthly' | 'weekly'
+  targetMonthIndex?: number | string
+  targetWeekIndex?: number | string
+  monthlyPlan?: PEP3MonthlyPlanAIResult | null
+  weeklyPlan?: PEP3WeeklyPlanAIResult | null
+  preserveWeeklyPlans?: boolean
+}) {
+  return usePost<PEP3ExecutionPlanSavedVO>('/api/v1/assessments/shuangxi-a/records/iep-plan/execution/save', {
+    ...data,
+    id: Number(data.id || 0),
+    durationMonths: Number(data.durationMonths || 0),
+    targetMonthIndex: Number(data.targetMonthIndex || 0),
+    targetWeekIndex: Number(data.targetWeekIndex || 0),
+  }, {
+    loading: false,
+    silentError: true,
+    timeout: 60000,
+  })
+}

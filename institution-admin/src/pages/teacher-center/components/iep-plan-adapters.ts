@@ -34,6 +34,17 @@ import {
   saveAutismDevIEPPlanApi,
   syncAutismDevIEPPlanPeriodApi,
 } from '@/api/edu-center/autismdev-assessment'
+import {
+  downloadShuangxiAExecutionPlanWordApi,
+  downloadShuangxiAIEPPlanWordApi,
+  generateShuangxiAExecutionPlanAIStreamApi,
+  generateShuangxiAIEPPlanAIStreamApi,
+  getShuangxiAExecutionPlansApi,
+  getShuangxiAIEPPlanApi,
+  saveShuangxiAExecutionPlanApi,
+  saveShuangxiAIEPPlanApi,
+  syncShuangxiAIEPPlanPeriodApi,
+} from '@/api/edu-center/shuangxi-assessment'
 
 const pep3MissingInterpretationConfirm = {
   title: '报告解读未生成',
@@ -140,7 +151,39 @@ const autismDevAdapter = {
   downloadExecutionPlanWord: downloadAutismDevExecutionPlanWordApi,
 }
 
-const adapters = [pep3Adapter, erxinAdapter, autismDevAdapter]
+const shuangxiAMissingAnalysisConfirm = {
+  title: '评量结果分析未生成',
+  content: '系统会基于双溪课程评量结果、规则分析和儿童训练记录生成IEP。',
+  okText: '确定',
+  cancelText: '取消',
+}
+
+const shuangxiAAdapter = {
+  key: 'SHUANGXI_A',
+  code: 'SHUANGXI_A',
+  aiLibraryLabel: 'IEP教研库v3.0',
+  generationBasisText: '双溪课程评量结果、评量结果分析和儿童训练记录',
+  generationSourceText: 'IEP教研库v3.0、双溪课程评量结果、评量结果分析和儿童训练记录',
+  generationFallbackBasisText: '双溪课程评量结果和儿童训练记录',
+  generationFallbackSourceText: 'IEP教研库v3.0、双溪课程评量结果和儿童训练记录',
+  generationDescription: '正在读取双溪课程评量结果、评量结果分析和近期训练记录，并生成可编辑的IEP表格。',
+  emptyDescription: '点击“AI智能生成”后，系统会根据双溪课程评量结果、评量结果分析和近期训练记录实时生成表格。',
+  missingInterpretationConfirm: shuangxiAMissingAnalysisConfirm,
+  async shouldConfirmBeforeGenerate() {
+    return null
+  },
+  getIepPlan: getShuangxiAIEPPlanApi,
+  saveIepPlan: saveShuangxiAIEPPlanApi,
+  syncIepPlanPeriod: syncShuangxiAIEPPlanPeriodApi,
+  generateIepPlanStream: generateShuangxiAIEPPlanAIStreamApi,
+  downloadIepPlanWord: downloadShuangxiAIEPPlanWordApi,
+  getExecutionPlans: getShuangxiAExecutionPlansApi,
+  saveExecutionPlan: saveShuangxiAExecutionPlanApi,
+  generateExecutionPlanStream: generateShuangxiAExecutionPlanAIStreamApi,
+  downloadExecutionPlanWord: downloadShuangxiAExecutionPlanWordApi,
+}
+
+const adapters = [pep3Adapter, erxinAdapter, autismDevAdapter, shuangxiAAdapter]
 
 export type IEPPlanAssessmentAdapter = typeof pep3Adapter
 

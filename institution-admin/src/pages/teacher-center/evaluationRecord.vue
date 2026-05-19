@@ -32,6 +32,11 @@ import {
   getAutismDevResultAnalysisApi,
   pageAutismDevAssessmentRecordsApi,
 } from '@/api/edu-center/autismdev-assessment'
+import {
+  deleteShuangxiAAssessmentRecordApi,
+  downloadShuangxiADevelopmentProfilePdfApi,
+  pageShuangxiAAssessmentRecordsApi,
+} from '@/api/edu-center/shuangxi-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
 
 const displayArray = ref(['scaleCategory', 'createTime'])
@@ -201,6 +206,16 @@ const autismDevExportDimensionOptions = [
     pages: '情绪行为',
   },
 ]
+const shuangxiExportDimensionOptions = [
+  {
+    value: 'shuangxi_development_profile',
+    title: '综合发展侧面图',
+    badge: '01',
+    desc: '导出双溪课程评量表A综合发展侧面图。',
+    pages: 'PDF',
+    recommended: true,
+  },
+]
 const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
 const selectedExportDimension = ref(defaultExportDimension)
 const reportModuleValues = ['test_score', 'development_profile', 'score_and_profile', 'scoring_tables']
@@ -208,6 +223,8 @@ const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleVa
 const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
 const activeReportModule = ref(defaultReportModule)
 const activeExportDimensionOptions = computed(() => {
+  if (isShuangxiARecord(exportTargetRecord.value))
+    return shuangxiExportDimensionOptions
   if (isERXinRecord(exportTargetRecord.value))
     return erxinExportDimensionOptions
   if (isAutismDevRecord(exportTargetRecord.value))
@@ -398,7 +415,14 @@ function isAutismDevRecord(record) {
   return source === 'AUTISMDEV'
 }
 
+function isShuangxiARecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'SHUANGXI_A' || source === 'SHUANGXIA' || source.startsWith('SHUANGXI')
+}
+
 function recordSourceType(record) {
+  if (isShuangxiARecord(record))
+    return 'SHUANGXI_A'
   if (isAutismDevRecord(record))
     return 'AUTISMDEV'
   if (isERXinRecord(record))
@@ -420,7 +444,7 @@ function markRecordSource(record, source) {
 }
 
 function recordSortValue(record) {
-  const values = [record?.updatedTime, record?.createdTime, record?.assessmentDate]
+  const values = [record?.createdTime]
   for (const value of values) {
     const parsed = dayjs(value)
     if (parsed.isValid())
@@ -442,6 +466,10 @@ function currentReportIsERXin() {
 
 function currentReportIsAutismDev() {
   return isAutismDevRecord(currentReport.value?.record)
+}
+
+function currentReportIsShuangxiA() {
+  return isShuangxiARecord(currentReport.value?.record)
 }
 
 function autismDevReportSectionOption(value) {
@@ -791,6 +819,8 @@ function toggleAllAutismDevExportSections() {
 }
 
 function reportTitleForRecord(record) {
+  if (isShuangxiARecord(record))
+    return record?.assessmentName || '双溪课程评量表A'
   if (isAutismDevRecord(record))
     return record?.assessmentName || '孤独症儿童发展评估报告'
   return isERXinRecord(record)
@@ -799,12 +829,16 @@ function reportTitleForRecord(record) {
 }
 
 function reportModalHint() {
+  if (currentReportIsShuangxiA())
+    return '查看双溪课程评量表A综合发展侧面图'
   if (currentReportIsAutismDev())
     return '按评估情况、结果分析、报告解读、训练效果和剖面图查看报告'
   return currentReportIsERXin() ? '查看儿心量表评估报告内容' : '按记录册导出维度查看报告内容'
 }
 
 function reportFrameTitle() {
+  if (currentReportIsShuangxiA())
+    return '双溪综合发展侧面图PDF预览'
   if (currentReportIsAutismDev())
     return `孤独症儿童发展评估报告-${autismDevReportSectionTitle()}PDF预览`
   return currentReportIsERXin() ? '儿心量表评估报告PDF预览' : 'PEP-3记录册PDF预览'
@@ -1156,6 +1190,8 @@ function scrollInterpretationProgressIntoView() {
 }
 
 function exportDimensionTitle(value) {
+  if (value === 'shuangxi_development_profile')
+    return '综合发展侧面图'
   if (value === 'pep3_interpretation')
     return '报告解读'
   if (isAutismDevRecord(exportTargetRecord.value))
@@ -1164,6 +1200,8 @@ function exportDimensionTitle(value) {
 }
 
 function exportDimensionPages(value) {
+  if (value === 'shuangxi_development_profile')
+    return 'PDF'
   if (value === 'pep3_interpretation')
     return '报告'
   if (isAutismDevRecord(exportTargetRecord.value))
@@ -1172,6 +1210,8 @@ function exportDimensionPages(value) {
 }
 
 function exportDimensionDesc(value) {
+  if (value === 'shuangxi_development_profile')
+    return '导出双溪课程评量表A综合发展侧面图。'
   if (value === 'pep3_interpretation')
     return '导出已生成的PEP-3报告解读内容。'
   if (isAutismDevRecord(exportTargetRecord.value))
@@ -1180,18 +1220,24 @@ function exportDimensionDesc(value) {
 }
 
 function exportModalTitle() {
+  if (isShuangxiARecord(exportTargetRecord.value))
+    return '导出双溪报告'
   if (isAutismDevRecord(exportTargetRecord.value))
     return '导出孤独症评估报告'
   return isERXinRecord(exportTargetRecord.value) ? '导出儿心报告' : '导出记录册'
 }
 
 function exportModalHint() {
+  if (isShuangxiARecord(exportTargetRecord.value))
+    return '导出双溪课程评量表A综合发展侧面图'
   if (isAutismDevRecord(exportTargetRecord.value))
     return '按评估情况、结果分析、训练效果和剖面图选择导出内容'
   return isERXinRecord(exportTargetRecord.value) ? '选择本次导出的报告内容' : '选择本次导出的内容范围'
 }
 
 function defaultExportDimensionForRecord(record) {
+  if (isShuangxiARecord(record))
+    return shuangxiExportDimensionOptions.find(item => item.recommended)?.value || shuangxiExportDimensionOptions[0]?.value || 'shuangxi_development_profile'
   if (isERXinRecord(record))
     return erxinExportDimensionOptions.find(item => item.recommended)?.value || erxinExportDimensionOptions[0]?.value || 'erxin_result'
   if (isAutismDevRecord(record))
@@ -1238,6 +1284,8 @@ function reportExportDimension(row, dimension = activeReportModule.value) {
 }
 
 function reportExportTitle(row, dimension) {
+  if (isShuangxiARecord(row))
+    return exportDimensionTitle(dimension)
   if (isAutismDevRecord(row))
     return exportDimensionTitle(dimension)
   if (!isERXinRecord(row) && dimension === 'pep3_interpretation')
@@ -1290,6 +1338,10 @@ function assessmentRecordConfirmContent(record, mode = 'edit') {
 function confirmAssessmentRecordAction(record = currentReport.value?.record, mode = 'edit') {
   if (!record?.id)
     return
+  if (isShuangxiARecord(record)) {
+    messageService.warning(mode === 'reuse' ? '双溪量表记录暂不支持复用' : '双溪量表记录暂不支持修改')
+    return
+  }
   if (mode === 'edit' && !canModifyAssessmentRecord(record)) {
     messageService.warning('已生成IEP的评估记录不支持直接修改，请使用复用测评')
     return
@@ -1313,6 +1365,18 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
   }
   if (isAutismDevRecord(row)) {
     openExportModal(row, reportTab.value === 'interpretation' ? 'interpretation' : activeAutismDevReportSection.value || defaultAutismDevReportSection())
+    return
+  }
+  if (isShuangxiARecord(row)) {
+    const dimension = 'shuangxi_development_profile'
+    const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, dimension)}PDF。`
+    Modal.confirm({
+      title: '确认导出评估报告？',
+      content,
+      okText: '确认导出',
+      cancelText: '取消',
+      onOk: () => exportReport(row, dimension),
+    })
     return
   }
   const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
@@ -1383,22 +1447,34 @@ async function fetchRecords() {
         assessmentDateEnd: queryModel.assessmentDateEnd,
       },
     }
-    const [pep3Res, erxinRes, autismDevRes] = await Promise.all([
-      pagePEP3AssessmentRecordsApi(request),
-      pageERXinAssessmentRecordsApi(request),
-      pageAutismDevAssessmentRecordsApi(request),
-    ])
-    const pep3Data = unwrap(pep3Res)
-    const erxinData = unwrap(erxinRes)
-    const autismDevData = unwrap(autismDevRes)
-    const merged = [
-      ...(pep3Data?.items || []).map(item => markRecordSource(item, 'PEP3')),
-      ...(erxinData?.items || []).map(item => markRecordSource(item, 'ERXIN')),
-      ...(autismDevData?.items || []).map(item => markRecordSource(item, 'AUTISMDEV')),
-    ].sort(compareRecordDesc)
+    const recordRequests = [
+      { label: 'PEP-3', source: 'PEP3', promise: pagePEP3AssessmentRecordsApi(request) },
+      { label: '儿心量表', source: 'ERXIN', promise: pageERXinAssessmentRecordsApi(request) },
+      { label: '孤独症儿童发展评估表', source: 'AUTISMDEV', promise: pageAutismDevAssessmentRecordsApi(request) },
+      { label: '双溪量表A', source: 'SHUANGXI_A', promise: pageShuangxiAAssessmentRecordsApi(request) },
+    ]
+    const results = await Promise.allSettled(recordRequests.map(item => item.promise))
+    const failedMessages = []
+    const merged = []
+    let total = 0
+    results.forEach((result, index) => {
+      const recordRequest = recordRequests[index]
+      if (result.status === 'rejected') {
+        failedMessages.push(`${recordRequest.label}加载失败`)
+        return
+      }
+      const data = unwrap(result.value)
+      total += Number(data?.total || 0)
+      merged.push(...(data?.items || []).map(item => markRecordSource(item, recordRequest.source)))
+    })
+    if (failedMessages.length === recordRequests.length)
+      throw new Error('获取评估记录失败')
+    if (failedMessages.length)
+      messageService.error(failedMessages.join('，'))
+    merged.sort(compareRecordDesc)
     const start = (pagination.current - 1) * pagination.pageSize
     dataSource.value = merged.slice(start, start + pagination.pageSize)
-    pagination.total = Number(pep3Data?.total || 0) + Number(erxinData?.total || 0) + Number(autismDevData?.total || 0)
+    pagination.total = total
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '获取评估记录失败'))
@@ -1419,6 +1495,7 @@ async function viewReport(row) {
     return
   resetInterpretationState()
   resetAutismDevReportState()
+  reportTab.value = 'result'
   activeReportModule.value = defaultReportModule
   currentReport.value = {
     title: reportTitleForRecord(row),
@@ -1433,6 +1510,8 @@ async function viewReport(row) {
 }
 
 function defaultReportPreviewDimension(row) {
+  if (isShuangxiARecord(row))
+    return 'shuangxi_development_profile'
   if (isAutismDevRecord(row))
     return defaultAutismDevReportSection()
   if (isERXinRecord(row))
@@ -1476,7 +1555,9 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
   previewLoading.value = true
   try {
     const autismDevSections = isAutismDevRecord(row) ? autismDevReportSectionsForDimension(dimension) : []
-    const response = isAutismDevRecord(row)
+    const response = isShuangxiARecord(row)
+      ? await downloadShuangxiADevelopmentProfilePdfApi(row.id)
+      : isAutismDevRecord(row)
       ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
       ? (dimension === 'erxin_interpretation'
@@ -1502,7 +1583,7 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
 }
 
 function selectReportModule(value) {
-  if (currentReportIsERXin() || currentReportIsAutismDev())
+  if (currentReportIsERXin() || currentReportIsAutismDev() || currentReportIsShuangxiA())
     return
   reportTab.value = 'result'
   if (activeReportModule.value === value)
@@ -1840,6 +1921,10 @@ function openConfigModal(row) {
 function editAssessmentRecord(row = currentReport.value?.record, mode = 'edit') {
   if (!row?.id)
     return
+  if (isShuangxiARecord(row)) {
+    messageService.warning(mode === 'reuse' ? '双溪量表记录暂不支持复用' : '双溪量表记录暂不支持修改')
+    return
+  }
   const recordMode = mode === 'reuse' ? 'reuse' : 'edit'
   const path = isAutismDevRecord(row)
     ? '/teacherCenter/autismdev-assessment-workbench'
@@ -1884,6 +1969,10 @@ async function downloadPEP3ExportPdf(recordId, dimension) {
   return downloadPEP3AssessmentBookletPdfApi(recordId, dimension)
 }
 
+async function downloadShuangxiAExportPdf(recordId) {
+  return downloadShuangxiADevelopmentProfilePdfApi(recordId)
+}
+
 function autismDevReportSectionsForDimension(dimension) {
   if (Array.isArray(dimension))
     return normalizeAutismDevExportSections(dimension)
@@ -1920,7 +2009,9 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   }
   exportingId.value = recordActionKey(row)
   try {
-    const response = isAutismDevRecord(row)
+    const response = isShuangxiARecord(row)
+      ? await downloadShuangxiAExportPdf(row.id)
+      : isAutismDevRecord(row)
       ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
       ? await downloadERXinExportPdf(row.id, dimension)
@@ -1928,7 +2019,9 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    const fallbackName = isAutismDevRecord(row)
+    const fallbackName = isShuangxiARecord(row)
+      ? `${row.studentName || '学员'}-双溪综合发展侧面图-${formatDate(row.assessmentDate)}.pdf`
+      : isAutismDevRecord(row)
       ? `${row.studentName || '学员'}-孤独症儿童发展评估报告-${autismDevSections.map(autismDevReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
       : isERXinRecord(row)
       ? `${row.studentName || '学员'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
@@ -1950,7 +2043,9 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
 async function deleteRecord(row) {
   deletingId.value = recordActionKey(row)
   try {
-    if (isAutismDevRecord(row))
+    if (isShuangxiARecord(row))
+      await deleteShuangxiAAssessmentRecordApi(row.id)
+    else if (isAutismDevRecord(row))
       await deleteAutismDevAssessmentRecordApi(row.id)
     else if (isERXinRecord(row))
       await deleteERXinAssessmentRecordApi(row.id)
@@ -2092,7 +2187,7 @@ onBeforeUnmount(() => {
             <div class="report-subtitle">
               {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
             </div>
-            <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record)" class="report-inline-summary">
+            <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record) && !isShuangxiARecord(currentReport.record)" class="report-inline-summary">
               <strong>{{ reportTab === 'interpretation' ? '报告解读' : reportModulePages(activeReportModule) }}</strong>
               <span>{{ reportTab === 'interpretation' ? '查看或生成PEP-3报告解读。' : reportModuleDesc(activeReportModule) }}</span>
               <a-button
@@ -2139,7 +2234,7 @@ onBeforeUnmount(() => {
             </a-tooltip>
           </div>
         </div>
-        <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record)" class="report-module-area pep3-report-tabs">
+        <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record) && !isShuangxiARecord(currentReport.record)" class="report-module-area pep3-report-tabs">
           <div class="report-module-grid">
             <button
               v-for="option in reportModuleOptions"
@@ -2163,6 +2258,21 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__dot" />
               <span class="report-module-chip__text">报告解读</span>
             </button>
+          </div>
+        </div>
+        <div v-else-if="isShuangxiARecord(currentReport.record)" class="report-module-area erxin-report-tabs">
+          <div class="report-module-grid">
+            <button
+              type="button"
+              class="report-module-chip report-module-chip--active"
+            >
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">综合发展侧面图</span>
+            </button>
+          </div>
+          <div class="report-module-summary erxin-report-tabs__summary">
+            <strong>PDF报告</strong>
+            <span>查看双溪课程评量表A综合发展侧面图。</span>
           </div>
         </div>
         <div v-else-if="isAutismDevRecord(currentReport.record)" class="report-module-area erxin-report-tabs">

@@ -4262,6 +4262,8 @@ bool _isAutismDevAnalysisReadableField(String key) {
     'status',
     'strengths',
     'weaknesses',
+    'reason',
+    'strategy',
     'targets',
   }.contains(key);
 }
@@ -4271,6 +4273,8 @@ String _autismDevAnalysisStreamLabel(String key) {
     'status' => '能力现状描述',
     'strengths' => '优势',
     'weaknesses' => '劣势',
+    'reason' => '原因推断',
+    'strategy' => '建议策略',
     'targets' => '训练目标',
     _ => key,
   };

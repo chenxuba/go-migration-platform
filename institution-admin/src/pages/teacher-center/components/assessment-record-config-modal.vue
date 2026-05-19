@@ -13,6 +13,10 @@ import {
   getAutismDevAssessmentRecordDetailApi,
   updateAutismDevAssessmentRecordConfigApi,
 } from '@/api/edu-center/autismdev-assessment'
+import {
+  getShuangxiAAssessmentRecordDetailApi,
+  updateShuangxiAAssessmentRecordConfigApi,
+} from '@/api/edu-center/shuangxi-assessment'
 import { getUserListApi } from '@/api/internal-manage/staff-manage'
 
 const props = defineProps({
@@ -74,7 +78,14 @@ function isAutismDevRecord(record) {
   return source === 'AUTISMDEV'
 }
 
+function isShuangxiARecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'SHUANGXI_A' || source === 'SHUANGXIA' || source.startsWith('SHUANGXI')
+}
+
 function recordSourceType(record) {
+  if (isShuangxiARecord(record))
+    return 'SHUANGXI_A'
   if (isAutismDevRecord(record))
     return 'AUTISMDEV'
   if (isERXinRecord(record))
@@ -205,6 +216,8 @@ async function initializeConfig() {
   try {
     const detail = unwrap(await (recordSource === 'AUTISMDEV'
       ? getAutismDevAssessmentRecordDetailApi(recordId)
+      : recordSource === 'SHUANGXI_A'
+        ? getShuangxiAAssessmentRecordDetailApi(recordId)
       : recordSource === 'ERXIN'
         ? getERXinAssessmentRecordDetailApi(recordId)
         : getPEP3AssessmentRecordDetailApi(recordId)))
@@ -277,6 +290,8 @@ async function saveConfig() {
     }
     if (isAutismDevRecord(row))
       await updateAutismDevAssessmentRecordConfigApi(payload)
+    else if (isShuangxiARecord(row))
+      await updateShuangxiAAssessmentRecordConfigApi(payload)
     else if (isERXinRecord(row))
       await updateERXinAssessmentRecordConfigApi(payload)
     else

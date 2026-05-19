@@ -137,6 +137,16 @@ const String defaultShuangxiRecordDevelopmentProfilePdfPath =
   defaultValue:
       '/api/v1/assessments/shuangxi-a/records/development-profile/pdf',
 );
+const String defaultShuangxiRecordResultAnalysisPath = String.fromEnvironment(
+  'SHUANGXI_RECORD_RESULT_ANALYSIS_PATH',
+  defaultValue: '/api/v1/assessments/shuangxi-a/records/result-analysis',
+);
+const String defaultShuangxiRecordResultAnalysisAiStreamPath =
+    String.fromEnvironment(
+  'SHUANGXI_RECORD_RESULT_ANALYSIS_AI_STREAM_PATH',
+  defaultValue:
+      '/api/v1/assessments/shuangxi-a/records/result-analysis/ai/stream',
+);
 
 class Pep3AssessmentLaunchArgs {
   const Pep3AssessmentLaunchArgs({
@@ -987,6 +997,128 @@ class AutismDevResultAnalysisStreamEvent {
   final AutismDevResultAnalysis? data;
 }
 
+class ShuangxiResultAnalysis {
+  const ShuangxiResultAnalysis({
+    required this.title,
+    required this.rows,
+    this.model = '',
+    this.generatedBy = '',
+    this.generatedAt = '',
+  });
+
+  factory ShuangxiResultAnalysis.fromJson(Map<String, dynamic> json) {
+    return ShuangxiResultAnalysis(
+      title: '${json['title'] ?? ''}',
+      model: '${json['model'] ?? ''}',
+      generatedBy: '${json['generatedBy'] ?? ''}',
+      generatedAt: '${json['generatedAt'] ?? ''}',
+      rows: _listFrom(json['rows'])
+          .map(ShuangxiResultAnalysisRow.fromJson)
+          .toList(),
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'title': title,
+      if (model.trim().isNotEmpty) 'model': model,
+      if (generatedBy.trim().isNotEmpty) 'generatedBy': generatedBy,
+      if (generatedAt.trim().isNotEmpty) 'generatedAt': generatedAt,
+      'rows':
+          rows.map((ShuangxiResultAnalysisRow row) => row.toJson()).toList(),
+    };
+  }
+
+  static const ShuangxiResultAnalysis empty = ShuangxiResultAnalysis(
+    title: '',
+    rows: <ShuangxiResultAnalysisRow>[],
+  );
+
+  final String title;
+  final String model;
+  final String generatedBy;
+  final String generatedAt;
+  final List<ShuangxiResultAnalysisRow> rows;
+
+  bool get isEmpty => rows.every((ShuangxiResultAnalysisRow row) =>
+      row.strengths.trim().isEmpty &&
+      row.weaknesses.trim().isEmpty &&
+      row.reason.trim().isEmpty &&
+      row.strategy.trim().isEmpty);
+}
+
+class ShuangxiResultAnalysisRow {
+  const ShuangxiResultAnalysisRow({
+    required this.domain,
+    this.domainCode = '',
+    this.strengths = '',
+    this.weaknesses = '',
+    this.reason = '',
+    this.strategy = '',
+  });
+
+  factory ShuangxiResultAnalysisRow.fromJson(Map<String, dynamic> json) {
+    return ShuangxiResultAnalysisRow(
+      domainCode: '${json['domainCode'] ?? ''}',
+      domain: '${json['domain'] ?? ''}',
+      strengths: '${json['strengths'] ?? ''}',
+      weaknesses: '${json['weaknesses'] ?? ''}',
+      reason: '${json['reason'] ?? ''}',
+      strategy: '${json['strategy'] ?? ''}',
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      if (domainCode.trim().isNotEmpty) 'domainCode': domainCode,
+      'domain': domain,
+      'strengths': strengths,
+      'weaknesses': weaknesses,
+      'reason': reason,
+      'strategy': strategy,
+    };
+  }
+
+  final String domainCode;
+  final String domain;
+  final String strengths;
+  final String weaknesses;
+  final String reason;
+  final String strategy;
+
+  ShuangxiResultAnalysisRow copyWith({
+    String? domainCode,
+    String? domain,
+    String? strengths,
+    String? weaknesses,
+    String? reason,
+    String? strategy,
+  }) {
+    return ShuangxiResultAnalysisRow(
+      domainCode: domainCode ?? this.domainCode,
+      domain: domain ?? this.domain,
+      strengths: strengths ?? this.strengths,
+      weaknesses: weaknesses ?? this.weaknesses,
+      reason: reason ?? this.reason,
+      strategy: strategy ?? this.strategy,
+    );
+  }
+}
+
+class ShuangxiResultAnalysisStreamEvent {
+  const ShuangxiResultAnalysisStreamEvent({
+    required this.type,
+    this.message = '',
+    this.text = '',
+    this.data,
+  });
+
+  final String type;
+  final String message;
+  final String text;
+  final ShuangxiResultAnalysis? data;
+}
+
 abstract interface class Pep3AssessmentClient {
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token);
 
@@ -1102,6 +1234,23 @@ abstract interface class Pep3AssessmentClient {
     int id,
   );
 
+  Future<ShuangxiResultAnalysis> fetchShuangxiResultAnalysis(
+    String token,
+    int id,
+  );
+
+  Future<ShuangxiResultAnalysis> saveShuangxiResultAnalysis(
+    String token,
+    int id,
+    ShuangxiResultAnalysis analysis,
+  );
+
+  Stream<ShuangxiResultAnalysisStreamEvent>
+      generateShuangxiResultAnalysisStream(
+    String token,
+    int id,
+  );
+
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(
     String token,
@@ -1186,6 +1335,10 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
         defaultAutismDevRecordReportInterpretationAiStreamPath,
     this.shuangxiRecordDevelopmentProfilePdfPath =
         defaultShuangxiRecordDevelopmentProfilePdfPath,
+    this.shuangxiRecordResultAnalysisPath =
+        defaultShuangxiRecordResultAnalysisPath,
+    this.shuangxiRecordResultAnalysisAiStreamPath =
+        defaultShuangxiRecordResultAnalysisAiStreamPath,
   });
 
   final String educationBaseUrl;
@@ -1217,6 +1370,8 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   final String autismDevRecordReportInterpretationAiPath;
   final String autismDevRecordReportInterpretationAiStreamPath;
   final String shuangxiRecordDevelopmentProfilePdfPath;
+  final String shuangxiRecordResultAnalysisPath;
+  final String shuangxiRecordResultAnalysisAiStreamPath;
 
   @override
   Future<Pep3TemplateSummary> fetchTemplateSummary(String token) async {
@@ -1803,6 +1958,84 @@ class ApiPep3AssessmentClient implements Pep3AssessmentClient {
   }
 
   @override
+  Future<ShuangxiResultAnalysis> fetchShuangxiResultAnalysis(
+    String token,
+    int id,
+  ) async {
+    final Uri uri = _uri(shuangxiRecordResultAnalysisPath).replace(
+      queryParameters: <String, String>{'id': '$id'},
+    );
+    final Object? data = await _getJson(uri, token);
+    if (data is! Map) {
+      return ShuangxiResultAnalysis.empty;
+    }
+    return ShuangxiResultAnalysis.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Future<ShuangxiResultAnalysis> saveShuangxiResultAnalysis(
+    String token,
+    int id,
+    ShuangxiResultAnalysis analysis,
+  ) async {
+    final Object? data = await _postJson(
+      _uri(shuangxiRecordResultAnalysisPath),
+      token,
+      <String, dynamic>{
+        'id': id,
+        'analysis': analysis.toJson(),
+      },
+    );
+    if (data is! Map) {
+      throw const Pep3ApiException('双溪评量结果分析保存返回格式不正确');
+    }
+    return ShuangxiResultAnalysis.fromJson(Map<String, dynamic>.from(data));
+  }
+
+  @override
+  Stream<ShuangxiResultAnalysisStreamEvent>
+      generateShuangxiResultAnalysisStream(
+    String token,
+    int id,
+  ) async* {
+    final http.Request request = http.Request(
+      'POST',
+      _uri(shuangxiRecordResultAnalysisAiStreamPath),
+    )
+      ..headers.addAll(<String, String>{
+        ..._headers(token),
+        'Accept': 'text/event-stream',
+      })
+      ..body = jsonEncode(<String, int>{'id': id});
+    final http.StreamedResponse response;
+    try {
+      response = await request.send().timeout(const Duration(seconds: 20));
+    } on TimeoutException {
+      throw const Pep3ApiException('双溪评量结果分析生成连接超时，请稍后重试');
+    } on Object catch (error) {
+      throw Pep3ApiException('无法连接双溪评量结果分析流式接口：$error');
+    }
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '登录已失效，请重新登录',
+        unauthorized: true,
+      );
+    }
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final String body = await response.stream.bytesToString();
+      throw Pep3ApiException(
+        _messageFromPayload(await _decodeResponse(body)) ?? '双溪评量结果分析生成失败',
+      );
+    }
+
+    await for (final ShuangxiResultAnalysisStreamEvent event
+        in _decodeShuangxiResultAnalysisSse(response.stream)) {
+      yield event;
+    }
+  }
+
+  @override
   Stream<AutismDevResultAnalysisStreamEvent>
       generateAutismDevResultAnalysisStream(String token, int id) async* {
     final http.Request request = http.Request(
@@ -2256,6 +2489,93 @@ Stream<AutismDevResultAnalysisStreamEvent> _decodeAutismDevResultAnalysisSse(
     }
   }
   final AutismDevResultAnalysisStreamEvent? event =
+      parseEvent(eventName, dataBuffer.toString());
+  if (event != null) {
+    yield event;
+  }
+}
+
+Stream<ShuangxiResultAnalysisStreamEvent> _decodeShuangxiResultAnalysisSse(
+  Stream<List<int>> byteStream,
+) async* {
+  final Stream<String> lines =
+      byteStream.transform(utf8.decoder).transform(const LineSplitter());
+  String eventName = 'message';
+  final StringBuffer dataBuffer = StringBuffer();
+
+  ShuangxiResultAnalysisStreamEvent? parseEvent(String event, String data) {
+    final String trimmed = data.trim();
+    if (trimmed.isEmpty) {
+      return null;
+    }
+    final Object? decoded = jsonDecode(trimmed);
+    if (decoded is! Map) {
+      return null;
+    }
+    final Map<String, dynamic> payload = Map<String, dynamic>.from(decoded);
+    final String type = '${payload['type'] ?? event}'.trim();
+    switch (type) {
+      case 'status':
+        return ShuangxiResultAnalysisStreamEvent(
+          type: 'status',
+          message: '${payload['message'] ?? ''}',
+        );
+      case 'delta':
+        return ShuangxiResultAnalysisStreamEvent(
+          type: 'delta',
+          text: '${payload['text'] ?? ''}',
+        );
+      case 'done':
+        final Object? data = payload['data'];
+        return ShuangxiResultAnalysisStreamEvent(
+          type: 'done',
+          data: data is Map
+              ? ShuangxiResultAnalysis.fromJson(
+                  Map<String, dynamic>.from(data),
+                )
+              : ShuangxiResultAnalysis.empty,
+        );
+      case 'error':
+        return ShuangxiResultAnalysisStreamEvent(
+          type: 'error',
+          message: '${payload['message'] ?? '双溪评量结果分析生成失败'}',
+        );
+      default:
+        return ShuangxiResultAnalysisStreamEvent(
+          type: type.isEmpty ? event : type,
+          message: '${payload['message'] ?? ''}',
+          text: '${payload['text'] ?? ''}',
+        );
+    }
+  }
+
+  await for (final String rawLine in lines) {
+    final String line = rawLine.trimRight();
+    if (line.isEmpty) {
+      final ShuangxiResultAnalysisStreamEvent? event =
+          parseEvent(eventName, dataBuffer.toString());
+      if (event != null) {
+        yield event;
+      }
+      eventName = 'message';
+      dataBuffer.clear();
+      continue;
+    }
+    if (line.startsWith(':')) {
+      continue;
+    }
+    if (line.startsWith('event:')) {
+      eventName = line.substring(6).trim();
+      continue;
+    }
+    if (line.startsWith('data:')) {
+      if (dataBuffer.isNotEmpty) {
+        dataBuffer.write('\n');
+      }
+      dataBuffer.write(line.substring(5).trimLeft());
+    }
+  }
+  final ShuangxiResultAnalysisStreamEvent? event =
       parseEvent(eventName, dataBuffer.toString());
   if (event != null) {
     yield event;

@@ -10,6 +10,7 @@ import (
 
 	"go-migration-platform/pkg/httpx"
 	"go-migration-platform/pkg/tenant"
+	"go-migration-platform/services/education/internal/model"
 	"go-migration-platform/services/education/internal/service"
 )
 
@@ -287,6 +288,33 @@ func (handler *Handler) updateShuangxiAAssessmentRecordConfig(w http.ResponseWri
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) deleteShuangxiAAssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req shuangxiAssessmentDraftDeleteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid id", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.DeleteShuangxiAAssessmentRecord(claims.UserID, req.ID)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) shuangxiAAssessmentRecordDevelopmentProfilePDF(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -311,6 +339,89 @@ func (handler *Handler) shuangxiAAssessmentRecordDevelopmentProfilePDF(w http.Re
 	w.Header().Set("Content-Disposition", "inline; filename*=UTF-8''"+url.QueryEscape(filename))
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(content)
+}
+
+func (handler *Handler) shuangxiAAssessmentRecordResultAnalysis(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	switch r.Method {
+	case http.MethodGet:
+		id, err := strconv.ParseInt(strings.TrimSpace(r.URL.Query().Get("id")), 10, 64)
+		if err != nil || id <= 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid assessment record id", ctx.RequestID)
+			return
+		}
+		result, err := handler.service.GetShuangxiAResultAnalysis(claims.UserID, id)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	case http.MethodPost:
+		var req model.ShuangxiResultAnalysisSaveRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+			return
+		}
+		if req.ID <= 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid assessment record id", ctx.RequestID)
+			return
+		}
+		result, err := handler.service.SaveShuangxiAResultAnalysis(r.Context(), claims.UserID, req.ID, req.Analysis)
+		if err != nil {
+			httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+			return
+		}
+		httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+	default:
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+	}
+}
+
+func (handler *Handler) shuangxiAAssessmentRecordResultAnalysisAIStream(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req model.ShuangxiResultAnalysisGenerateRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		httpx.WriteError(w, http.StatusInternalServerError, "streaming is not supported", ctx.RequestID)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	writeEvent := func(event string, payload any) error {
+		return writePEP3IEPPlanSSE(w, flusher, event, payload)
+	}
+	if err := writeEvent("status", map[string]any{"type": "status", "message": "正在读取双溪课程评量结果"}); err != nil {
+		return
+	}
+	result, err := handler.service.GenerateShuangxiAResultAnalysisStream(r.Context(), claims.UserID, req.ID, func(text string) error {
+		return writeEvent("delta", map[string]any{"type": "delta", "text": text})
+	})
+	if err != nil {
+		_ = writeEvent("error", map[string]any{"type": "error", "message": err.Error()})
+		return
+	}
+	_ = writeEvent("done", map[string]any{"type": "done", "data": result})
 }
 
 func (handler *Handler) submitShuangxiAAssessmentDraft(w http.ResponseWriter, r *http.Request) {

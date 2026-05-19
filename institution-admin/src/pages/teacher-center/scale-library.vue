@@ -985,7 +985,7 @@ onBeforeUnmount(() => {
 .scale-card-grid {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   justify-content: stretch;
   gap: 18px;
 }
@@ -1567,6 +1567,18 @@ onBeforeUnmount(() => {
     flex-wrap: nowrap;
   }
 
+  .scale-card-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 1080px) {
+  .scale-card-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
   .scale-card-grid {
     grid-template-columns: 1fr;
   }

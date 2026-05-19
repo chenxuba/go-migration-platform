@@ -315,6 +315,27 @@ func (svc *Service) GetShuangxiAAssessmentRecord(userID, recordID int64) (model.
 	return record, nil
 }
 
+func (svc *Service) DeleteShuangxiAAssessmentRecord(userID, recordID int64) (bool, error) {
+	if svc.repo == nil {
+		return false, errors.New("assessment repository is not configured")
+	}
+	instID, err := svc.pep3AssessmentInstID(userID)
+	if err != nil {
+		return false, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return false, errors.New("assessment record not found")
+		}
+		return false, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != shuangxiAScaleCode {
+		return false, errors.New("assessment record is not Shuangxi A")
+	}
+	return svc.repo.DeleteAssessmentRecord(context.Background(), instID, recordID)
+}
+
 func (svc *Service) UpdateShuangxiAAssessmentRecordConfig(userID, recordID int64, input ShuangxiAAssessmentRecordConfigInput) (model.AssessmentRecordDetailVO, error) {
 	if svc.repo == nil {
 		return model.AssessmentRecordDetailVO{}, errors.New("assessment repository is not configured")

@@ -5288,11 +5288,20 @@ class _ShuangxiReportPreviewDialogState
   String _printErrorMessage = '';
   Uint8List? _developmentProfilePdfBytes;
   Future<Uint8List>? _developmentProfilePdfLoad;
+  ShuangxiResultAnalysis _resultAnalysis = _emptyShuangxiResultAnalysis();
+  bool _resultAnalysisGenerating = false;
+  String _resultAnalysisGenerationStatus = '';
+  String _resultAnalysisGenerationError = '';
+  String _resultAnalysisStreamText = '';
+  int _resultAnalysisGenerateSerial = 0;
+  int _resultAnalysisLoadSerial = 0;
+  _ShuangxiAnalysisEditRequest? _selectedAnalysisCell;
 
   @override
   void initState() {
     super.initState();
     _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
+    unawaited(_loadSavedResultAnalysis());
   }
 
   Future<Uint8List> _loadDevelopmentProfilePdf() async {
@@ -5310,6 +5319,133 @@ class _ShuangxiReportPreviewDialogState
       _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
       _printErrorMessage = '';
     });
+  }
+
+  Future<void> _loadSavedResultAnalysis() async {
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      return;
+    }
+    final int serial = ++_resultAnalysisLoadSerial;
+    try {
+      final ShuangxiResultAnalysis saved =
+          await widget.client.fetchShuangxiResultAnalysis(
+        token,
+        widget.record.id,
+      );
+      if (!mounted || serial != _resultAnalysisLoadSerial) {
+        return;
+      }
+      if (saved.rows.isEmpty ||
+          _resultAnalysisGenerating ||
+          !_resultAnalysis.isEmpty) {
+        return;
+      }
+      setState(() {
+        _resultAnalysis = _mergeShuangxiResultAnalysis(saved);
+        _resultAnalysisGenerationError = '';
+      });
+    } catch (_) {
+      // The report remains editable even if the cached analysis lookup fails.
+    }
+  }
+
+  Future<void> _generateResultAnalysis() async {
+    if (_resultAnalysisGenerating) {
+      return;
+    }
+    final String token = widget.token.trim();
+    if (token.isEmpty || widget.record.id <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('缺少AI生成参数')),
+      );
+      return;
+    }
+    final int serial = ++_resultAnalysisGenerateSerial;
+    setState(() {
+      _resultAnalysisGenerating = true;
+      _resultAnalysisGenerationStatus = '正在生成评量结果分析';
+      _resultAnalysisGenerationError = '';
+      _resultAnalysisStreamText = '';
+      _selectedAnalysisCell = null;
+      _resultAnalysis = _emptyShuangxiResultAnalysis();
+    });
+    try {
+      await for (final ShuangxiResultAnalysisStreamEvent event
+          in widget.client.generateShuangxiResultAnalysisStream(
+        token,
+        widget.record.id,
+      )) {
+        if (!mounted || serial != _resultAnalysisGenerateSerial) {
+          return;
+        }
+        switch (event.type) {
+          case 'status':
+            setState(() {
+              _resultAnalysisGenerationStatus = event.message.trim().isEmpty
+                  ? '正在生成评量结果分析'
+                  : event.message.trim();
+            });
+          case 'delta':
+            await _appendResultAnalysisDeltaWithTypewriter(event.text, serial);
+            if (!mounted || serial != _resultAnalysisGenerateSerial) {
+              return;
+            }
+            setState(() {
+              _resultAnalysisGenerationStatus = 'AI正在生成评量结果分析';
+            });
+          case 'done':
+            setState(() {
+              _resultAnalysis = _mergeShuangxiResultAnalysis(event.data);
+              _resultAnalysisGenerating = false;
+              _resultAnalysisGenerationStatus = '';
+              _resultAnalysisGenerationError = '';
+            });
+          case 'error':
+            throw Pep3ApiException(
+              event.message.trim().isEmpty ? '评量结果分析生成失败' : event.message,
+            );
+          default:
+            break;
+        }
+      }
+      if (mounted && serial == _resultAnalysisGenerateSerial) {
+        setState(() {
+          _resultAnalysisGenerating = false;
+          _resultAnalysisGenerationStatus = '';
+        });
+      }
+    } catch (error) {
+      if (!mounted || serial != _resultAnalysisGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _resultAnalysisGenerating = false;
+        _resultAnalysisGenerationStatus = '';
+        _resultAnalysisGenerationError = '$error';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('AI生成失败：$error')),
+      );
+    }
+  }
+
+  Future<void> _appendResultAnalysisDeltaWithTypewriter(
+    String delta,
+    int serial,
+  ) async {
+    if (delta.isEmpty) {
+      return;
+    }
+    for (final int codePoint in delta.runes) {
+      if (!mounted || serial != _resultAnalysisGenerateSerial) {
+        return;
+      }
+      setState(() {
+        _resultAnalysisStreamText += String.fromCharCode(codePoint);
+      });
+      await Future<void>.delayed(const Duration(milliseconds: 4));
+    }
   }
 
   Future<void> _printDevelopmentProfilePdf() async {
@@ -5369,6 +5505,70 @@ class _ShuangxiReportPreviewDialogState
     }
   }
 
+  Future<void> _printCurrentTab() async {
+    if (_showAnalysis) {
+      await _printResultAnalysisPdf();
+      return;
+    }
+    await _printDevelopmentProfilePdf();
+  }
+
+  Future<void> _printResultAnalysisPdf() async {
+    if (_printing) {
+      return;
+    }
+    final ShuangxiResultAnalysis analysis =
+        _mergeShuangxiResultAnalysis(_resultAnalysis);
+    if (analysis.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('请先生成评量结果分析')),
+      );
+      return;
+    }
+    setState(() {
+      _printing = true;
+      _printLoadingText = '正在生成打印文件...';
+      _printErrorMessage = '';
+    });
+    try {
+      final Uint8List bytes =
+          await _buildShuangxiResultAnalysisPrintPdf(widget.record, analysis);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _printLoadingText = '正在打开打印预览...';
+      });
+      bool printPreviewRequested = false;
+      await Printing.layoutPdf(
+        name: _shuangxiPrintFileName(widget.record, '评量结果分析'),
+        format: PdfPageFormat.a4.landscape.copyWith(
+          marginLeft: 0,
+          marginTop: 0,
+          marginRight: 0,
+          marginBottom: 0,
+        ),
+        dynamicLayout: false,
+        onLayout: (_) async {
+          if (!printPreviewRequested) {
+            printPreviewRequested = true;
+            _finishPrintLoading();
+          }
+          return bytes;
+        },
+      );
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('评量结果分析打印失败：$error')),
+      );
+    } finally {
+      _finishPrintLoading();
+    }
+  }
+
   void _finishPrintLoading() {
     if (!mounted || !_printing) {
       return;
@@ -5414,7 +5614,7 @@ class _ShuangxiReportPreviewDialogState
                     const SizedBox(height: 12),
                     Expanded(
                       child: _showAnalysis
-                          ? const _ShuangxiPendingReportPanel(title: '评量结果分析')
+                          ? _buildResultAnalysisContent()
                           : _buildDevelopmentProfileContent(),
                     ),
                   ],
@@ -5490,6 +5690,134 @@ class _ShuangxiReportPreviewDialogState
     );
   }
 
+  Widget _buildResultAnalysisContent() {
+    return Container(
+      decoration: BoxDecoration(
+        color: const Color(0xFFFDF8F3),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _ReportTheme.lineSoft),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(18, 16, 18, 18),
+        physics: const ClampingScrollPhysics(),
+        child: Center(
+          child: RepaintBoundary(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 900),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                  boxShadow: const <BoxShadow>[
+                    BoxShadow(
+                      color: Color(0x0F000000),
+                      blurRadius: 16,
+                      offset: Offset(0, 8),
+                    ),
+                  ],
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(24, 22, 24, 24),
+                  child: _ShuangxiResultAnalysisSheet(
+                    record: widget.record,
+                    analysis: _resultAnalysis,
+                    generating: _resultAnalysisGenerating,
+                    generationStatus: _resultAnalysisGenerationStatus,
+                    generationError: _resultAnalysisGenerationError,
+                    streamText: _resultAnalysisStreamText,
+                    selectedCell: _selectedAnalysisCell,
+                    onCellTap: _handleResultAnalysisCellTap,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _handleResultAnalysisCellTap(_ShuangxiAnalysisEditRequest request) {
+    if (_selectedAnalysisCell == request) {
+      unawaited(_showResultAnalysisEditDialog(request));
+      return;
+    }
+    setState(() {
+      _selectedAnalysisCell = request;
+    });
+  }
+
+  Future<void> _showResultAnalysisEditDialog(
+    _ShuangxiAnalysisEditRequest request,
+  ) async {
+    final List<ShuangxiResultAnalysisRow> rows =
+        _mergeShuangxiResultAnalysis(_resultAnalysis).rows;
+    if (request.rowIndex < 0 || request.rowIndex >= rows.length) {
+      return;
+    }
+    final ShuangxiResultAnalysisRow row = rows[request.rowIndex];
+    final _ShuangxiAnalysisEditResult? result =
+        await showDialog<_ShuangxiAnalysisEditResult>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ShuangxiAnalysisEditDialog(
+            domain: row.domain,
+            request: request,
+            row: row,
+          ),
+        );
+      },
+    );
+    if (result == null || !mounted) {
+      return;
+    }
+    final ShuangxiResultAnalysis base =
+        _mergeShuangxiResultAnalysis(_resultAnalysis);
+    final List<ShuangxiResultAnalysisRow> nextRows =
+        List<ShuangxiResultAnalysisRow>.from(base.rows);
+    nextRows[request.rowIndex] = row.copyWith(
+      strengths: result.strengths,
+      weaknesses: result.weaknesses,
+      reason: result.reason,
+      strategy: result.strategy,
+    );
+    final ShuangxiResultAnalysis nextAnalysis = ShuangxiResultAnalysis(
+      title: base.title,
+      model: base.model,
+      generatedBy: base.generatedBy,
+      generatedAt: base.generatedAt,
+      rows: nextRows,
+    );
+    setState(() {
+      _resultAnalysis = nextAnalysis;
+      _selectedAnalysisCell = null;
+    });
+    try {
+      final ShuangxiResultAnalysis saved =
+          await widget.client.saveShuangxiResultAnalysis(
+        widget.token.trim(),
+        widget.record.id,
+        nextAnalysis,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resultAnalysis = _mergeShuangxiResultAnalysis(saved);
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存修改失败：$error')),
+        );
+      }
+    }
+  }
+
   Widget _buildHeader(BuildContext context, Pep3RecordSummary record) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -5561,22 +5889,37 @@ class _ShuangxiReportPreviewDialogState
           _ErxinReportTabChip(
             label: '发展侧面图',
             active: !_showAnalysis,
-            onTap: () => setState(() => _showAnalysis = false),
+            onTap: () => setState(() {
+              _showAnalysis = false;
+              _selectedAnalysisCell = null;
+            }),
           ),
           const SizedBox(width: 8),
           _ErxinReportTabChip(
             label: '评量结果分析',
             active: _showAnalysis,
-            onTap: () => setState(() => _showAnalysis = true),
+            onTap: () => setState(() {
+              _showAnalysis = true;
+              _selectedAnalysisCell = null;
+            }),
           ),
           const Spacer(),
           const SizedBox(width: 12),
+          if (_showAnalysis) ...<Widget>[
+            _ToolbarButton(
+              label: _resultAnalysisGenerating ? '生成中' : 'AI生成',
+              icon: Icons.auto_awesome_rounded,
+              filled: true,
+              onTap: _resultAnalysisGenerating
+                  ? null
+                  : () => unawaited(_generateResultAnalysis()),
+            ),
+            const SizedBox(width: 8),
+          ],
           _ToolbarButton(
             label: _printing ? '打印中' : '打印',
             icon: Icons.print_rounded,
-            onTap: _printing
-                ? null
-                : () => unawaited(_printDevelopmentProfilePdf()),
+            onTap: _printing ? null : () => unawaited(_printCurrentTab()),
           ),
         ],
       ),
@@ -5614,57 +5957,601 @@ class _ShuangxiPrintErrorBanner extends StatelessWidget {
   }
 }
 
-class _ShuangxiPendingReportPanel extends StatelessWidget {
-  const _ShuangxiPendingReportPanel({required this.title});
+class _ShuangxiResultAnalysisSheet extends StatelessWidget {
+  const _ShuangxiResultAnalysisSheet({
+    required this.record,
+    required this.analysis,
+    required this.generating,
+    required this.generationStatus,
+    required this.generationError,
+    required this.streamText,
+    required this.selectedCell,
+    required this.onCellTap,
+  });
 
-  final String title;
+  final Pep3RecordSummary record;
+  final ShuangxiResultAnalysis analysis;
+  final bool generating;
+  final String generationStatus;
+  final String generationError;
+  final String streamText;
+  final _ShuangxiAnalysisEditRequest? selectedCell;
+  final ValueChanged<_ShuangxiAnalysisEditRequest> onCellTap;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      width: double.infinity,
-      decoration: BoxDecoration(
-        color: const Color(0xFFFDF8F3),
-        borderRadius: BorderRadius.circular(18),
-        border: Border.all(color: _ReportTheme.lineSoft),
-      ),
-      child: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 54,
-              height: 54,
-              alignment: Alignment.center,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFE8DA),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.insights_rounded,
-                color: _ReportTheme.orange,
-                size: 27,
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              '$title待开发',
-              style: const TextStyle(
-                color: _ReportTheme.ink,
-                fontSize: 18,
-                height: 1,
-                fontWeight: FontWeight.w900,
-              ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        const SizedBox(height: 4),
+        const _ShuangxiResultAnalysisTitle(),
+        const SizedBox(height: 14),
+        _ShuangxiResultAnalysisMeta(record: record),
+        const SizedBox(height: 10),
+        if (generating) ...<Widget>[
+          _AutismDevAnalysisStreamPanel(
+            studentName: _studentName(record),
+            status: generationStatus,
+            streamText: streamText,
+          ),
+        ] else ...<Widget>[
+          if (generationError.trim().isNotEmpty) ...<Widget>[
+            _AutismDevAnalysisGenerationBanner(
+              message: generationError.trim(),
+              isError: true,
             ),
             const SizedBox(height: 8),
-            const Text(
-              '后续接入双溪评估报告数据后展示。',
-              style: TextStyle(
-                color: _ReportTheme.muted,
-                fontSize: 14,
-                height: 1,
-                fontWeight: FontWeight.w800,
+          ],
+          _ShuangxiResultAnalysisTable(
+            rows: analysis.rows,
+            selectedCell: selectedCell,
+            onCellTap: onCellTap,
+          ),
+        ],
+      ],
+    );
+  }
+}
+
+class _ShuangxiResultAnalysisTitle extends StatelessWidget {
+  const _ShuangxiResultAnalysisTitle();
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        const Text(
+          '双溪心智障碍个别化教育课程（三）',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 21,
+            height: 1.18,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Container(
+          width: 237,
+          height: 42,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.white,
+            border: Border.all(color: Colors.black, width: .8),
+          ),
+          child: const Text(
+            '评量结果分析表',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: Colors.black,
+              fontSize: 21,
+              height: 1.0,
+              letterSpacing: 3,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _ShuangxiResultAnalysisMeta extends StatelessWidget {
+  const _ShuangxiResultAnalysisMeta({required this.record});
+
+  final Pep3RecordSummary record;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '学生姓名：',
+                value: _studentName(record),
               ),
+            ),
+            const SizedBox(width: 26),
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '性别：',
+                value: record.studentGender.trim().isEmpty
+                    ? '-'
+                    : record.studentGender.trim(),
+              ),
+            ),
+            const SizedBox(width: 26),
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '出生日期：',
+                value: _dateOnlyText(record.birthDate),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '课程名称：',
+                value: record.assessmentName.trim().isEmpty
+                    ? '双溪课程评量表A'
+                    : record.assessmentName.trim(),
+              ),
+            ),
+            const SizedBox(width: 26),
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '评量者：',
+                value: record.examinerName.trim().isEmpty
+                    ? '-'
+                    : record.examinerName.trim(),
+              ),
+            ),
+            const SizedBox(width: 26),
+            Expanded(
+              child: _AutismDevAnalysisMetaLine(
+                label: '评量日期：',
+                value: _dateOnlyText(record.assessmentDate),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+enum _ShuangxiAnalysisEditField {
+  status,
+  reason,
+  strategy,
+}
+
+class _ShuangxiAnalysisEditRequest {
+  const _ShuangxiAnalysisEditRequest({
+    required this.rowIndex,
+    required this.field,
+  });
+
+  final int rowIndex;
+  final _ShuangxiAnalysisEditField field;
+
+  @override
+  bool operator ==(Object other) {
+    return identical(this, other) ||
+        other is _ShuangxiAnalysisEditRequest &&
+            other.rowIndex == rowIndex &&
+            other.field == field;
+  }
+
+  @override
+  int get hashCode => Object.hash(rowIndex, field);
+}
+
+class _ShuangxiAnalysisEditResult {
+  const _ShuangxiAnalysisEditResult({
+    this.strengths = '',
+    this.weaknesses = '',
+    this.reason = '',
+    this.strategy = '',
+  });
+
+  final String strengths;
+  final String weaknesses;
+  final String reason;
+  final String strategy;
+}
+
+class _ShuangxiResultAnalysisTable extends StatelessWidget {
+  const _ShuangxiResultAnalysisTable({
+    required this.rows,
+    required this.selectedCell,
+    required this.onCellTap,
+  });
+
+  final List<ShuangxiResultAnalysisRow> rows;
+  final _ShuangxiAnalysisEditRequest? selectedCell;
+  final ValueChanged<_ShuangxiAnalysisEditRequest> onCellTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final List<ShuangxiResultAnalysisRow> displayRows =
+        _normalizeShuangxiResultAnalysisRows(rows);
+    return ClipRect(
+      child: Table(
+        columnWidths: const <int, TableColumnWidth>{
+          0: FlexColumnWidth(1.04),
+          1: FlexColumnWidth(2.15),
+          2: FlexColumnWidth(1.9),
+          3: FlexColumnWidth(2.15),
+        },
+        border: TableBorder.all(color: Colors.black, width: .8),
+        children: <TableRow>[
+          TableRow(
+            children: <Widget>[
+              _shuangxiAnalysisHeaderCell('领域\n（依优弱序）'),
+              _shuangxiAnalysisHeaderCell('现况分析'),
+              _shuangxiAnalysisHeaderCell('原因推断\n（生理、心理、教学、\n环境、互动）'),
+              _shuangxiAnalysisHeaderCell('建议策略'),
+            ],
+          ),
+          for (int index = 0; index < displayRows.length; index += 1)
+            TableRow(
+              children: <Widget>[
+                _shuangxiAnalysisDomainCell(displayRows[index].domain),
+                _shuangxiAnalysisStatusCell(
+                  displayRows[index],
+                  editable: selectedCell ==
+                      _ShuangxiAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _ShuangxiAnalysisEditField.status,
+                      ),
+                  onTap: () => onCellTap(
+                    _ShuangxiAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _ShuangxiAnalysisEditField.status,
+                    ),
+                  ),
+                ),
+                _shuangxiAnalysisTextCell(
+                  displayRows[index].reason,
+                  editable: selectedCell ==
+                      _ShuangxiAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _ShuangxiAnalysisEditField.reason,
+                      ),
+                  onTap: () => onCellTap(
+                    _ShuangxiAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _ShuangxiAnalysisEditField.reason,
+                    ),
+                  ),
+                ),
+                _shuangxiAnalysisTextCell(
+                  displayRows[index].strategy,
+                  editable: selectedCell ==
+                      _ShuangxiAnalysisEditRequest(
+                        rowIndex: index,
+                        field: _ShuangxiAnalysisEditField.strategy,
+                      ),
+                  onTap: () => onCellTap(
+                    _ShuangxiAnalysisEditRequest(
+                      rowIndex: index,
+                      field: _ShuangxiAnalysisEditField.strategy,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+Widget _shuangxiAnalysisHeaderCell(String text) {
+  return Container(
+    height: 58,
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    color: Colors.white,
+    child: Text(
+      text,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 15,
+        height: 1.18,
+      ),
+    ),
+  );
+}
+
+Widget _shuangxiAnalysisDomainCell(String domain) {
+  return Container(
+    constraints: const BoxConstraints(minHeight: 154),
+    alignment: Alignment.center,
+    padding: const EdgeInsets.symmetric(horizontal: 8),
+    color: Colors.white,
+    child: Text(
+      domain,
+      textAlign: TextAlign.center,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 15,
+        height: 1.2,
+      ),
+    ),
+  );
+}
+
+Widget _shuangxiAnalysisStatusCell(
+  ShuangxiResultAnalysisRow row, {
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  return _shuangxiAnalysisEditableFrame(
+    editable: editable,
+    onTap: onTap,
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        _shuangxiAnalysisLabeledText(
+          label: '优：',
+          text: row.strengths,
+        ),
+        const SizedBox(height: 18),
+        _shuangxiAnalysisLabeledText(
+          label: '弱：',
+          text: row.weaknesses,
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _shuangxiAnalysisTextCell(
+  String text, {
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  return _shuangxiAnalysisEditableFrame(
+    editable: editable,
+    onTap: onTap,
+    child: Text(
+      text.trim(),
+      textAlign: TextAlign.left,
+      style: const TextStyle(
+        color: Colors.black,
+        fontSize: 14.5,
+        height: 1.34,
+      ),
+    ),
+  );
+}
+
+Widget _shuangxiAnalysisLabeledText({
+  required String label,
+  required String text,
+}) {
+  const TextStyle style = TextStyle(
+    color: Colors.black,
+    fontSize: 14.5,
+    height: 1.34,
+  );
+  return Text.rich(
+    TextSpan(
+      style: style,
+      children: <InlineSpan>[
+        TextSpan(text: label),
+        TextSpan(text: text.trim()),
+      ],
+    ),
+    textAlign: TextAlign.left,
+  );
+}
+
+Widget _shuangxiAnalysisEditableFrame({
+  required Widget child,
+  required bool editable,
+  required VoidCallback onTap,
+}) {
+  final Widget content = Container(
+    constraints: const BoxConstraints(minHeight: 154),
+    alignment: Alignment.topLeft,
+    padding: EdgeInsets.fromLTRB(10, 8, editable ? 20 : 10, 8),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      boxShadow: editable
+          ? const <BoxShadow>[
+              BoxShadow(
+                color: Color(0x22E96F43),
+                blurRadius: 0,
+                spreadRadius: 1.4,
+              ),
+            ]
+          : null,
+    ),
+    child: Stack(
+      clipBehavior: Clip.none,
+      children: <Widget>[
+        SizedBox(width: double.infinity, child: child),
+        if (editable)
+          const Positioned(
+            right: -10,
+            top: -2,
+            child: Icon(
+              Icons.edit_rounded,
+              size: 12,
+              color: _ReportTheme.orangeDeep,
+            ),
+          ),
+      ],
+    ),
+  );
+  return Material(
+    color: Colors.transparent,
+    child: InkWell(
+      onTap: onTap,
+      child: content,
+    ),
+  );
+}
+
+class _ShuangxiAnalysisEditDialog extends StatefulWidget {
+  const _ShuangxiAnalysisEditDialog({
+    required this.domain,
+    required this.request,
+    required this.row,
+  });
+
+  final String domain;
+  final _ShuangxiAnalysisEditRequest request;
+  final ShuangxiResultAnalysisRow row;
+
+  @override
+  State<_ShuangxiAnalysisEditDialog> createState() =>
+      _ShuangxiAnalysisEditDialogState();
+}
+
+class _ShuangxiAnalysisEditDialogState
+    extends State<_ShuangxiAnalysisEditDialog> {
+  late final TextEditingController _strengthsController;
+  late final TextEditingController _weaknessesController;
+  late final TextEditingController _reasonController;
+  late final TextEditingController _strategyController;
+
+  bool get _editingStatus =>
+      widget.request.field == _ShuangxiAnalysisEditField.status;
+
+  @override
+  void initState() {
+    super.initState();
+    _strengthsController = TextEditingController(text: widget.row.strengths);
+    _weaknessesController = TextEditingController(text: widget.row.weaknesses);
+    _reasonController = TextEditingController(text: widget.row.reason);
+    _strategyController = TextEditingController(text: widget.row.strategy);
+  }
+
+  @override
+  void dispose() {
+    _strengthsController.dispose();
+    _weaknessesController.dispose();
+    _reasonController.dispose();
+    _strategyController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(
+      _ShuangxiAnalysisEditResult(
+        strengths: _strengthsController.text.trim(),
+        weaknesses: _weaknessesController.text.trim(),
+        reason: _reasonController.text.trim(),
+        strategy: _strategyController.text.trim(),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final String title = switch (widget.request.field) {
+      _ShuangxiAnalysisEditField.status => '编辑现况分析',
+      _ShuangxiAnalysisEditField.reason => '编辑原因推断',
+      _ShuangxiAnalysisEditField.strategy => '编辑建议策略',
+    };
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: _editingStatus ? 720 : 640,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                _AutismDevEditPill(text: widget.domain),
+                const Spacer(),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            if (widget.request.field ==
+                _ShuangxiAnalysisEditField.status) ...<Widget>[
+              _AutismDevAnalysisDialogField(
+                label: '优',
+                controller: _strengthsController,
+                minLines: 3,
+                maxLines: 6,
+              ),
+              const SizedBox(height: 12),
+              _AutismDevAnalysisDialogField(
+                label: '弱',
+                controller: _weaknessesController,
+                minLines: 3,
+                maxLines: 6,
+              ),
+            ] else if (widget.request.field ==
+                _ShuangxiAnalysisEditField.reason)
+              _AutismDevAnalysisDialogField(
+                label: '原因推断',
+                controller: _reasonController,
+                minLines: 4,
+                maxLines: 8,
+              )
+            else
+              _AutismDevAnalysisDialogField(
+                label: '建议策略',
+                controller: _strategyController,
+                minLines: 4,
+                maxLines: 8,
+              ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogAction(
+                  label: '保存',
+                  filled: true,
+                  icon: Icons.save_outlined,
+                  onTap: _submit,
+                ),
+              ],
             ),
           ],
         ),
@@ -6816,6 +7703,290 @@ String _shuangxiPrintFileName(Pep3RecordSummary record, String suffix) {
       : _studentName(record).trim();
   final String date = _dateOnlyText(record.assessmentDate).replaceAll('-', '');
   return '$name-双溪课程评量表A-$suffix${date.isEmpty ? '' : '-$date'}.pdf';
+}
+
+ShuangxiResultAnalysis _emptyShuangxiResultAnalysis() {
+  return const ShuangxiResultAnalysis(
+    title: '双溪心智障碍个别化教育课程（三）评量结果分析表',
+    rows: <ShuangxiResultAnalysisRow>[
+      ShuangxiResultAnalysisRow(domainCode: 'SENSORY', domain: '感官知觉'),
+      ShuangxiResultAnalysisRow(domainCode: 'GROSS_MOTOR', domain: '粗大动作'),
+      ShuangxiResultAnalysisRow(domainCode: 'FINE_MOTOR', domain: '精细动作'),
+      ShuangxiResultAnalysisRow(domainCode: 'SELF_CARE', domain: '生活自理'),
+      ShuangxiResultAnalysisRow(domainCode: 'COMMUNICATION', domain: '沟通'),
+      ShuangxiResultAnalysisRow(domainCode: 'COGNITION', domain: '认知'),
+      ShuangxiResultAnalysisRow(domainCode: 'SOCIAL_SKILLS', domain: '社会技能'),
+    ],
+  );
+}
+
+ShuangxiResultAnalysis _mergeShuangxiResultAnalysis(
+  ShuangxiResultAnalysis? source,
+) {
+  final ShuangxiResultAnalysis fallback = _emptyShuangxiResultAnalysis();
+  if (source == null || source.rows.isEmpty) {
+    return fallback;
+  }
+  final Map<String, ShuangxiResultAnalysisRow> fallbackByKey =
+      <String, ShuangxiResultAnalysisRow>{
+    for (final ShuangxiResultAnalysisRow row in fallback.rows)
+      _canonicalShuangxiResultAnalysisDomain(row.domainCode, row.domain): row,
+  };
+  final Set<String> seen = <String>{};
+  final List<ShuangxiResultAnalysisRow> rows = <ShuangxiResultAnalysisRow>[];
+  for (final ShuangxiResultAnalysisRow row in source.rows) {
+    final String key =
+        _canonicalShuangxiResultAnalysisDomain(row.domainCode, row.domain);
+    if (key.isEmpty || !seen.add(key)) {
+      continue;
+    }
+    final ShuangxiResultAnalysisRow fallbackRow =
+        fallbackByKey[key] ?? ShuangxiResultAnalysisRow(domain: row.domain);
+    rows.add(row.copyWith(
+      domainCode: row.domainCode.trim().isEmpty
+          ? fallbackRow.domainCode
+          : row.domainCode.trim(),
+      domain:
+          row.domain.trim().isEmpty ? fallbackRow.domain : row.domain.trim(),
+    ));
+  }
+  for (final ShuangxiResultAnalysisRow row in fallback.rows) {
+    final String key =
+        _canonicalShuangxiResultAnalysisDomain(row.domainCode, row.domain);
+    if (!seen.contains(key)) {
+      rows.add(row);
+    }
+  }
+  return ShuangxiResultAnalysis(
+    title: source.title.trim().isEmpty ? fallback.title : source.title.trim(),
+    model: source.model,
+    generatedBy: source.generatedBy,
+    generatedAt: source.generatedAt,
+    rows: rows,
+  );
+}
+
+List<ShuangxiResultAnalysisRow> _normalizeShuangxiResultAnalysisRows(
+  List<ShuangxiResultAnalysisRow> rows,
+) {
+  return _mergeShuangxiResultAnalysis(
+    ShuangxiResultAnalysis(title: '', rows: rows),
+  ).rows;
+}
+
+String _canonicalShuangxiResultAnalysisDomain(String code, String domain) {
+  final String normalizedCode = code.trim().toUpperCase();
+  if (normalizedCode.isNotEmpty) {
+    return normalizedCode;
+  }
+  final String normalizedDomain = domain.replaceAll(RegExp(r'\s+'), '').trim();
+  const Map<String, String> byName = <String, String>{
+    '感官知觉': 'SENSORY',
+    '粗大动作': 'GROSS_MOTOR',
+    '精细动作': 'FINE_MOTOR',
+    '生活自理': 'SELF_CARE',
+    '沟通': 'COMMUNICATION',
+    '认知': 'COGNITION',
+    '社会技能': 'SOCIAL_SKILLS',
+  };
+  return byName[normalizedDomain] ?? normalizedDomain;
+}
+
+Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
+  Pep3RecordSummary record,
+  ShuangxiResultAnalysis analysis,
+) async {
+  final pw.Font baseFont =
+      await fontFromAssetBundle('assets/fonts/NotoSansSC-Regular.ttf');
+  final PdfPageFormat pageFormat = PdfPageFormat.a4.landscape.copyWith(
+    marginLeft: 30,
+    marginTop: 30,
+    marginRight: 30,
+    marginBottom: 30,
+  );
+  final pw.Document document = pw.Document(
+    theme: pw.ThemeData.withFont(
+      base: baseFont,
+      bold: baseFont,
+      fontFallback: <pw.Font>[baseFont],
+    ),
+  );
+  final List<ShuangxiResultAnalysisRow> rows =
+      _normalizeShuangxiResultAnalysisRows(analysis.rows);
+
+  document.addPage(
+    pw.MultiPage(
+      pageFormat: pageFormat,
+      build: (pw.Context context) => <pw.Widget>[
+        pw.Center(
+          child: pw.Text(
+            '双溪心智障碍个别化教育课程（三）',
+            style: pw.TextStyle(
+              color: const PdfColor.fromInt(0xff000000),
+              fontSize: 15,
+              fontWeight: pw.FontWeight.bold,
+            ),
+          ),
+        ),
+        pw.SizedBox(height: 8),
+        pw.Center(
+          child: pw.Container(
+            width: 126,
+            height: 28,
+            alignment: pw.Alignment.center,
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(
+                color: const PdfColor.fromInt(0xff000000),
+                width: .7,
+              ),
+            ),
+            child: pw.Text(
+              '评量结果分析表',
+              style: pw.TextStyle(
+                color: const PdfColor.fromInt(0xff000000),
+                fontSize: 15,
+                fontWeight: pw.FontWeight.bold,
+              ),
+            ),
+          ),
+        ),
+        pw.SizedBox(height: 10),
+        _shuangxiAnalysisPrintMeta(record),
+        pw.SizedBox(height: 10),
+        pw.Table(
+          border: pw.TableBorder.all(
+            color: const PdfColor.fromInt(0xff000000),
+            width: .7,
+          ),
+          columnWidths: const <int, pw.TableColumnWidth>{
+            0: pw.FlexColumnWidth(1.0),
+            1: pw.FlexColumnWidth(2.05),
+            2: pw.FlexColumnWidth(1.8),
+            3: pw.FlexColumnWidth(2.1),
+          },
+          children: <pw.TableRow>[
+            pw.TableRow(
+              children: <pw.Widget>[
+                _shuangxiAnalysisPrintCell('领域\n（依优弱序）', header: true),
+                _shuangxiAnalysisPrintCell('现况分析', header: true),
+                _shuangxiAnalysisPrintCell(
+                  '原因推断\n（生理、心理、教学、\n环境、互动）',
+                  header: true,
+                ),
+                _shuangxiAnalysisPrintCell('建议策略', header: true),
+              ],
+            ),
+            for (final ShuangxiResultAnalysisRow row in rows)
+              pw.TableRow(
+                children: <pw.Widget>[
+                  _shuangxiAnalysisPrintCell(row.domain, center: true),
+                  _shuangxiAnalysisPrintCell(
+                    '优：${row.strengths.trim()}\n\n弱：${row.weaknesses.trim()}',
+                  ),
+                  _shuangxiAnalysisPrintCell(row.reason),
+                  _shuangxiAnalysisPrintCell(row.strategy),
+                ],
+              ),
+          ],
+        ),
+      ],
+    ),
+  );
+  return document.save();
+}
+
+pw.Widget _shuangxiAnalysisPrintMeta(Pep3RecordSummary record) {
+  return pw.Column(
+    children: <pw.Widget>[
+      pw.Row(
+        children: <pw.Widget>[
+          _shuangxiAnalysisPrintMetaItem('学生姓名：', _studentName(record)),
+          pw.SizedBox(width: 16),
+          _shuangxiAnalysisPrintMetaItem(
+            '性别：',
+            record.studentGender.trim().isEmpty ? '-' : record.studentGender,
+          ),
+          pw.SizedBox(width: 16),
+          _shuangxiAnalysisPrintMetaItem(
+            '出生日期：',
+            _dateOnlyText(record.birthDate),
+          ),
+        ],
+      ),
+      pw.SizedBox(height: 8),
+      pw.Row(
+        children: <pw.Widget>[
+          _shuangxiAnalysisPrintMetaItem(
+            '课程名称：',
+            record.assessmentName.trim().isEmpty
+                ? '双溪课程评量表A'
+                : record.assessmentName.trim(),
+          ),
+          pw.SizedBox(width: 16),
+          _shuangxiAnalysisPrintMetaItem(
+            '评量者：',
+            record.examinerName.trim().isEmpty ? '-' : record.examinerName,
+          ),
+          pw.SizedBox(width: 16),
+          _shuangxiAnalysisPrintMetaItem(
+            '评量日期：',
+            _dateOnlyText(record.assessmentDate),
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+pw.Widget _shuangxiAnalysisPrintMetaItem(String label, String value) {
+  return pw.Expanded(
+    child: pw.Row(
+      children: <pw.Widget>[
+        pw.Text(label, style: const pw.TextStyle(fontSize: 10)),
+        pw.Expanded(
+          child: pw.Container(
+            height: 16,
+            alignment: pw.Alignment.center,
+            decoration: const pw.BoxDecoration(
+              border: pw.Border(
+                bottom: pw.BorderSide(
+                  color: PdfColor.fromInt(0xff000000),
+                  width: .6,
+                ),
+              ),
+            ),
+            child: pw.Text(
+              value.trim(),
+              maxLines: 1,
+              style: const pw.TextStyle(fontSize: 9.5),
+            ),
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+pw.Widget _shuangxiAnalysisPrintCell(
+  String text, {
+  bool header = false,
+  bool center = false,
+}) {
+  return pw.Container(
+    constraints: pw.BoxConstraints(minHeight: header ? 38 : 78),
+    alignment: center ? pw.Alignment.center : pw.Alignment.topLeft,
+    padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+    child: pw.Text(
+      text.trim(),
+      textAlign: center || header ? pw.TextAlign.center : pw.TextAlign.left,
+      style: pw.TextStyle(
+        color: const PdfColor.fromInt(0xff000000),
+        fontSize: header ? 9.5 : 8.2,
+        lineSpacing: 2,
+        fontWeight: header ? pw.FontWeight.bold : pw.FontWeight.normal,
+      ),
+    ),
+  );
 }
 
 String _pep3PrintFileName(Pep3RecordSummary record, String suffix) {

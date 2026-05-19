@@ -477,7 +477,7 @@ void main() {
     expect(find.byType(Checkbox), findsNWidgets(6));
   });
 
-  testWidgets('assessment report list opens Shuangxi pending report tabs',
+  testWidgets('assessment report list opens Shuangxi report analysis tab',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
     tester.view.devicePixelRatio = 1;
@@ -533,13 +533,18 @@ void main() {
     expect(find.text('发展侧面图'), findsOneWidget);
     expect(find.text('评量结果分析'), findsOneWidget);
     expect(shuangxiClient.downloadShuangxiDevelopmentProfilePdfCalls, 1);
+    expect(shuangxiClient.fetchShuangxiResultAnalysisCalls, 1);
     await tester.pump();
     expect(find.text('暂无发展侧面图PDF'), findsOneWidget);
 
     await tester.tap(find.text('评量结果分析'));
     await tester.pump();
 
-    expect(find.text('评量结果分析待开发'), findsOneWidget);
+    expect(find.text('双溪心智障碍个别化教育课程（三）'), findsOneWidget);
+    expect(find.text('评量结果分析表'), findsOneWidget);
+    expect(find.text('领域\n（依优弱序）'), findsOneWidget);
+    expect(find.text('现况分析'), findsOneWidget);
+    expect(find.text('AI生成'), findsOneWidget);
   });
 
   testWidgets('Shuangxi report config saves with Shuangxi record client',
@@ -8324,11 +8329,14 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   int fetchAutismDevResultAnalysisCalls = 0;
   int saveAutismDevResultAnalysisCalls = 0;
   int downloadShuangxiDevelopmentProfilePdfCalls = 0;
+  int fetchShuangxiResultAnalysisCalls = 0;
+  int saveShuangxiResultAnalysisCalls = 0;
   int updateRecordConfigCalls = 0;
   int lastUpdatedRecordConfigId = 0;
   String lastUpdatedRecordConfigExaminerName = '';
   String lastUpdatedRecordConfigAssessmentDate = '';
   AutismDevResultAnalysis? savedAutismDevResultAnalysis;
+  ShuangxiResultAnalysis? savedShuangxiResultAnalysis;
   ErxinReportInterpretation savedAutismDevReportInterpretation =
       ErxinReportInterpretation.empty;
 
@@ -8762,6 +8770,54 @@ class _FakePep3AssessmentClient implements Pep3AssessmentClient {
   ) async {
     downloadShuangxiDevelopmentProfilePdfCalls += 1;
     return Uint8List(0);
+  }
+
+  @override
+  Future<ShuangxiResultAnalysis> fetchShuangxiResultAnalysis(
+    String token,
+    int id,
+  ) async {
+    fetchShuangxiResultAnalysisCalls += 1;
+    return savedShuangxiResultAnalysis ?? ShuangxiResultAnalysis.empty;
+  }
+
+  @override
+  Future<ShuangxiResultAnalysis> saveShuangxiResultAnalysis(
+    String token,
+    int id,
+    ShuangxiResultAnalysis analysis,
+  ) async {
+    saveShuangxiResultAnalysisCalls += 1;
+    savedShuangxiResultAnalysis = analysis;
+    return analysis;
+  }
+
+  @override
+  Stream<ShuangxiResultAnalysisStreamEvent>
+      generateShuangxiResultAnalysisStream(String token, int id) async* {
+    const ShuangxiResultAnalysis analysis = ShuangxiResultAnalysis(
+      title: '双溪心智障碍个别化教育课程（三）评量结果分析表',
+      generatedBy: 'ai',
+      rows: <ShuangxiResultAnalysisRow>[
+        ShuangxiResultAnalysisRow(
+          domainCode: 'SELF_CARE',
+          domain: '生活自理',
+          strengths: '能配合部分生活自理流程。',
+          weaknesses: '连续步骤仍需提示。',
+          reason: '可能与生活练习机会和提示撤除不足有关。',
+          strategy: '采用视觉流程卡和分步骤提示进行练习。',
+        ),
+      ],
+    );
+    savedShuangxiResultAnalysis = analysis;
+    yield const ShuangxiResultAnalysisStreamEvent(
+      type: 'status',
+      message: '正在读取双溪课程评量结果',
+    );
+    yield const ShuangxiResultAnalysisStreamEvent(
+      type: 'done',
+      data: analysis,
+    );
   }
 
   @override
