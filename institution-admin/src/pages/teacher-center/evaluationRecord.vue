@@ -128,14 +128,6 @@ const pep3ReportModuleOptions = [
     pages: '第 19 页',
   },
   {
-    value: 'score_and_profile',
-    title: '测验分数与发展表现图',
-    badge: '03',
-    desc: '包含测验分数汇总和发展表现图，适合简版报告。',
-    pages: '第 1、19 页',
-    recommended: true,
-  },
-  {
     value: 'scoring_tables',
     title: '测验评分表',
     badge: '04',
@@ -1828,7 +1820,6 @@ function reportModuleShortTitle(value) {
   const titleMap = {
     test_score: '测验分数',
     development_profile: '发展表现图',
-    score_and_profile: '分数+表现图',
     scoring_tables: '评分表',
   }
   return titleMap[value] || reportModuleTitle(value)
@@ -2203,19 +2194,24 @@ async function loadSavedInterpretation(row = currentReport.value?.record) {
 }
 
 function handleGenerateInterpretation() {
-  if (!interpretationIsEmpty()) {
-    Modal.confirm({
-      title: '重新生成报告解读？',
-      content: '重新生成会覆盖当前已保存的报告解读，确认继续吗？',
-      okText: '重新生成',
-      cancelText: '取消',
-      onOk: () => {
-        generateInterpretation(true)
-      },
-    })
-    return
-  }
-  generateInterpretation(false)
+  confirmGenerateInterpretation(!interpretationIsEmpty())
+}
+
+function confirmGenerateInterpretation(regenerate = false) {
+  const shouldRegenerate = !!regenerate
+  Modal.confirm({
+    title: shouldRegenerate ? '重新生成报告解读？' : '确认生成报告解读？',
+    content: shouldRegenerate
+      ? '重新生成会覆盖当前已保存的报告解读，确认继续吗？'
+      : 'AI 会基于当前评估结果生成并保存报告解读，确认继续吗？',
+    okText: shouldRegenerate ? '重新生成' : '确认生成',
+    cancelText: '取消',
+    closable: true,
+    centered: true,
+    onOk: () => {
+      generateInterpretation(shouldRegenerate)
+    },
+  })
 }
 
 async function generateInterpretation(regenerate = false) {
@@ -2386,6 +2382,25 @@ async function generateAutismDevResultAnalysis() {
   }
 }
 
+function confirmGenerateAutismDevResultAnalysis() {
+  if (autismDevAnalysisGenerating.value)
+    return
+  const shouldRegenerate = !autismDevAnalysisIsEmpty()
+  Modal.confirm({
+    title: shouldRegenerate ? '重新生成评估结果分析？' : '确认AI生成评估结果分析？',
+    content: shouldRegenerate
+      ? '重新生成会覆盖当前已保存的评估结果分析表，确认继续吗？'
+      : 'AI 会基于当前评估结果生成并保存评估结果分析表，确认继续吗？',
+    okText: shouldRegenerate ? '重新生成' : '确认生成',
+    cancelText: '取消',
+    closable: true,
+    centered: true,
+    onOk: () => {
+      generateAutismDevResultAnalysis()
+    },
+  })
+}
+
 async function loadShuangxiResultAnalysis(row = currentReport.value?.record, options = {}) {
   if (!row?.id || !isShuangxiARecord(row))
     return null
@@ -2492,6 +2507,25 @@ async function generateShuangxiResultAnalysis() {
       shuangxiAnalysisAbortController = null
     }
   }
+}
+
+function confirmGenerateShuangxiResultAnalysis() {
+  if (shuangxiAnalysisGenerating.value)
+    return
+  const shouldRegenerate = !shuangxiAnalysisIsEmpty()
+  Modal.confirm({
+    title: shouldRegenerate ? '重新生成评量结果分析？' : '确认AI生成评量结果分析？',
+    content: shouldRegenerate
+      ? '重新生成会覆盖当前已保存的评量结果分析表，确认继续吗？'
+      : 'AI 会基于当前评量结果生成并保存评量结果分析表，确认继续吗？',
+    okText: shouldRegenerate ? '重新生成' : '确认生成',
+    cancelText: '取消',
+    closable: true,
+    centered: true,
+    onOk: () => {
+      generateShuangxiResultAnalysis()
+    },
+  })
 }
 
 async function exportAutismDevResultAnalysisWord() {
@@ -3021,19 +3055,6 @@ onBeforeUnmount(() => {
             <div class="report-subtitle">
               {{ currentReport.record?.studentName || '-' }} / {{ formatDate(currentReport.record?.assessmentDate) }}
             </div>
-            <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record) && !isShuangxiARecord(currentReport.record)" class="report-inline-summary">
-              <strong>{{ reportTab === 'interpretation' ? '报告解读' : reportModulePages(activeReportModule) }}</strong>
-              <a-button
-                v-if="reportTab === 'interpretation'"
-                type="primary"
-                size="small"
-                :loading="interpretationGenerating"
-                :disabled="interpretationLoading && !interpretationGenerating"
-                @click="handleGenerateInterpretation"
-              >
-                {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
-              </a-button>
-            </div>
           </div>
           <div class="report-head__actions">
             <a-button
@@ -3092,6 +3113,22 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__text">报告解读</span>
             </button>
           </div>
+          <div
+            v-if="reportTab === 'interpretation'"
+            class="report-module-summary report-module-summary--actions-only pep3-report-tabs__summary"
+          >
+            <div class="report-module-summary__actions">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="interpretationGenerating"
+                :disabled="interpretationLoading && !interpretationGenerating"
+                @click="handleGenerateInterpretation"
+              >
+                {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+              </a-button>
+            </div>
+          </div>
         </div>
         <div v-else-if="isShuangxiARecord(currentReport.record)" class="report-module-area erxin-report-tabs">
           <div class="report-module-grid">
@@ -3117,7 +3154,7 @@ onBeforeUnmount(() => {
                 size="small"
                 :loading="shuangxiAnalysisGenerating"
                 :disabled="shuangxiAnalysisLoading"
-                @click="generateShuangxiResultAnalysis"
+                @click="confirmGenerateShuangxiResultAnalysis"
               >
                 {{ shuangxiAnalysisGenerating ? '生成中' : (shuangxiAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
               </a-button>
@@ -3158,7 +3195,7 @@ onBeforeUnmount(() => {
                 size="small"
                 :loading="autismDevAnalysisGenerating"
                 :disabled="autismDevAnalysisLoading || autismDevAnalysisWordExporting"
-                @click="generateAutismDevResultAnalysis"
+                @click="confirmGenerateAutismDevResultAnalysis"
               >
                 {{ autismDevAnalysisGenerating ? '生成中' : (autismDevAnalysisIsEmpty() ? 'AI生成' : '重新生成') }}
               </a-button>
@@ -3310,7 +3347,7 @@ onBeforeUnmount(() => {
                 :image-style="{ height: '48px' }"
               />
               <p>{{ shuangxiAnalysisError }}</p>
-              <a-button size="small" type="primary" @click="generateShuangxiResultAnalysis">
+              <a-button size="small" type="primary" @click="confirmGenerateShuangxiResultAnalysis">
                 重新生成
               </a-button>
             </div>
@@ -3320,7 +3357,7 @@ onBeforeUnmount(() => {
                 :image="simpleEmptyImage"
                 :image-style="{ height: '48px' }"
               />
-              <a-button size="small" type="primary" @click="generateShuangxiResultAnalysis">
+              <a-button size="small" type="primary" @click="confirmGenerateShuangxiResultAnalysis">
                 AI生成
               </a-button>
             </div>
@@ -3462,7 +3499,7 @@ onBeforeUnmount(() => {
                 :image-style="{ height: '48px' }"
               />
               <p>{{ autismDevAnalysisError }}</p>
-              <a-button size="small" type="primary" @click="generateAutismDevResultAnalysis">
+              <a-button size="small" type="primary" @click="confirmGenerateAutismDevResultAnalysis">
                 重新生成
               </a-button>
             </div>
@@ -3473,7 +3510,7 @@ onBeforeUnmount(() => {
                 :image-style="{ height: '48px' }"
               />
               <p>点击“AI生成”后，系统会基于当前评估结果生成并保存分析表。</p>
-              <a-button size="small" type="primary" @click="generateAutismDevResultAnalysis">
+              <a-button size="small" type="primary" @click="confirmGenerateAutismDevResultAnalysis">
                 AI生成
               </a-button>
             </div>
@@ -3606,7 +3643,7 @@ onBeforeUnmount(() => {
                 :image-style="{ height: '48px' }"
               />
               <p>{{ interpretationError }}</p>
-              <a-button size="small" type="primary" @click="generateInterpretation(true)">
+              <a-button size="small" type="primary" @click="confirmGenerateInterpretation(true)">
                 重新生成
               </a-button>
             </div>
@@ -3617,7 +3654,7 @@ onBeforeUnmount(() => {
                 :image-style="{ height: '48px' }"
               />
               <p>点击“生成解读”后，AI 会基于当前评估结果生成并保存。</p>
-              <a-button size="small" type="primary" @click="generateInterpretation(false)">
+              <a-button size="small" type="primary" @click="confirmGenerateInterpretation(false)">
                 生成解读
               </a-button>
             </div>
@@ -3968,33 +4005,6 @@ onBeforeUnmount(() => {
   white-space: nowrap;
 }
 
-.report-inline-summary {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  gap: 8px;
-  min-width: 120px;
-  padding-left: 12px;
-  overflow: hidden;
-  border-left: 1px solid #e6edf6;
-
-  strong {
-    flex: 0 0 auto;
-    color: var(--pro-ant-color-primary);
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 20px;
-    white-space: nowrap;
-  }
-
-  :deep(.ant-btn) {
-    flex: 0 0 auto;
-    height: 26px;
-    padding: 0 10px;
-    font-size: 12px;
-  }
-}
-
 .report-head__actions {
   display: flex;
   flex: 0 0 auto;
@@ -4137,7 +4147,17 @@ onBeforeUnmount(() => {
 }
 
 .pep3-report-tabs .report-module-grid {
-  width: 100%;
+  flex: 1 1 auto;
+  width: auto;
+}
+
+.pep3-report-tabs__summary {
+  :deep(.ant-btn) {
+    flex: 0 0 auto;
+    height: 28px;
+    padding: 0 12px;
+    font-size: 12px;
+  }
 }
 
 .erxin-report-tabs__summary {

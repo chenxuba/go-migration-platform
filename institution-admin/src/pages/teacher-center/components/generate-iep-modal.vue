@@ -1384,7 +1384,7 @@ async function generateMonthlyPlan(options = {}) {
 
 function confirmRegenerateMonthlyPlan() {
   if (!selectedExecutionMonthGenerated.value) {
-    generateMonthlyPlan()
+    confirmGenerateMonthlyPlan()
     return
   }
   Modal.confirm({
@@ -1412,6 +1412,40 @@ function confirmGenerateMonthlyPlan() {
     centered: true,
     onOk() {
       runAfterConfirmClosed(() => generateMonthlyPlan())
+    },
+  })
+}
+
+function confirmGenerateWeeklyPlan() {
+  if (!monthlyPlan.value?.rows?.length) {
+    Modal.confirm({
+      title: '当前还没有月度计划',
+      content: `可以直接基于${planTitle.value}生成周计划，也可以先生成${selectedExecutionMonthLabel.value}计划。确认后系统会开始AI生成。`,
+      okText: '直接生成周计划',
+      cancelText: '先生成月度计划',
+      closable: true,
+      centered: true,
+      onOk() {
+        runAfterConfirmClosed(() => generateWeeklyPlan(true))
+      },
+      onCancel(...args) {
+        if (isConfirmDialogDismiss(args))
+          return
+        runAfterConfirmClosed(() => confirmGenerateMonthlyPlan())
+      },
+    })
+    return
+  }
+  Modal.confirm({
+    title: `生成${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划`,
+    content: `将基于${generationSourceText.value}、当前IEP总计划和${selectedExecutionMonthLabel.value}计划，生成${selectedExecutionMonthLabel.value}${selectedExecutionWeekLabel.value}周计划。确认要继续吗？`,
+    okText: '确认生成',
+    cancelText: '先不生成',
+    okButtonProps: { type: 'primary' },
+    closable: true,
+    centered: true,
+    onOk() {
+      runAfterConfirmClosed(() => generateWeeklyPlan())
     },
   })
 }
@@ -1521,7 +1555,7 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
       onCancel(...args) {
         if (isConfirmDialogDismiss(args))
           return
-        runAfterConfirmClosed(() => generateMonthlyPlan())
+        runAfterConfirmClosed(() => confirmGenerateMonthlyPlan())
       },
     })
     return
@@ -1616,7 +1650,7 @@ async function generateWeeklyPlan(skipConfirm = false, options = {}) {
 
 function confirmRegenerateWeeklyPlan() {
   if (!selectedExecutionWeekGenerated.value) {
-    generateWeeklyPlan()
+    confirmGenerateWeeklyPlan()
     return
   }
   Modal.confirm({
@@ -3536,7 +3570,7 @@ onBeforeUnmount(() => {
             type="primary"
             :loading="generatingExecutionPlan && executionPlanGeneratingType === 'weekly'"
             :disabled="!planRows.length || navigationDisabled"
-            @click="() => generateWeeklyPlan()"
+            @click="confirmGenerateWeeklyPlan"
           >
             生成{{ selectedExecutionMonthLabel }}{{ selectedExecutionWeekLabel }}计划
           </a-button>
