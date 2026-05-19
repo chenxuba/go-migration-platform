@@ -264,6 +264,7 @@ function confirmStartAssessment() {
       scaleCode: activeScale.value.code,
       childId: selectedChild.value.id,
       childName: selectedChild.value.name,
+      childGender: selectedChild.value.gender,
       childAge: selectedChild.value.age,
       childBirthDate: selectedChild.value.birthDate,
     },
@@ -271,6 +272,8 @@ function confirmStartAssessment() {
 }
 
 function assessmentWorkbenchPath(scale: ScaleLibraryItem) {
+  if (isShuangxiScale(scale))
+    return '/teacherCenter/shuangxi-a-assessment-workbench'
   if (isAutismDevScale(scale))
     return '/teacherCenter/autismdev-assessment-workbench'
   if (isERXinScale(scale))
@@ -281,6 +284,12 @@ function assessmentWorkbenchPath(scale: ScaleLibraryItem) {
 function isERXinScale(scale: ScaleLibraryItem) {
   const code = String(scale.code || '').trim().toUpperCase()
   return code === 'ERXIN2' || code === 'ERXIN'
+}
+
+function isShuangxiScale(scale: ScaleLibraryItem) {
+  const code = String(scale.code || '').trim().toUpperCase()
+  const name = String(scale.name || '').trim()
+  return code === 'SHUANGXI_A' || name.includes('双溪')
 }
 
 function isAutismDevScale(scale: ScaleLibraryItem) {

@@ -782,6 +782,130 @@ class _IepRegenerateConfirmDialog extends StatelessWidget {
   }
 }
 
+class _IepAiGenerateConfirmDialog extends StatelessWidget {
+  const _IepAiGenerateConfirmDialog({
+    required this.title,
+    required this.message,
+    required this.confirmLabel,
+  });
+
+  final String title;
+  final String message;
+  final String confirmLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: _IepColors.surface,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _IepColors.line),
+          boxShadow: _iepShadow(
+            color: const Color(0x20B05F32),
+            blur: 32,
+            offset: const Offset(0, 16),
+          ),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                Container(
+                  width: 42,
+                  height: 42,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(
+                    color: _IepColors.orangeSoft,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.auto_awesome_rounded,
+                    color: _IepColors.orangeDeep,
+                    size: 23,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    title,
+                    style: const TextStyle(
+                      color: _IepColors.ink,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                _IepDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFFAF6),
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: _IepColors.lightLine),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    size: 18,
+                    color: _IepColors.orangeDeep,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      message,
+                      style: const TextStyle(
+                        color: _IepColors.text,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        height: 1.45,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 22),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _IepDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(false),
+                ),
+                const SizedBox(width: 10),
+                _IepDialogAction(
+                  label: confirmLabel,
+                  filled: true,
+                  icon: Icons.auto_awesome_rounded,
+                  onTap: () => Navigator.of(context).pop(true),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _IepGenerationCostDialog extends StatelessWidget {
   const _IepGenerationCostDialog({
     required this.planLabel,

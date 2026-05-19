@@ -19,6 +19,8 @@ import 'package:assessment_pad_app/timetable_client.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
@@ -1340,6 +1342,160 @@ void main() {
     expect(find.text('集体课'), findsWidgets);
   });
 
+  test('IEP assessment record client includes Shuangxi records', () async {
+    final List<String> paths = <String>[];
+    final ApiIepAssessmentRecordClient client = ApiIepAssessmentRecordClient(
+      educationBaseUrl: 'https://api.test',
+      httpClient: MockClient((http.Request request) async {
+        paths.add(request.url.path);
+        final bool isShuangxi = request.url.path.contains('/shuangxi-a/');
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'success': true,
+            'data': <String, dynamic>{
+              'items': isShuangxi
+                  ? <Map<String, dynamic>>[
+                      <String, dynamic>{
+                        'id': 301,
+                        'studentId': 88,
+                        'studentName': '双溪学生',
+                        'studentGender': '男',
+                        'assessmentCode': 'SHUANGXI_A',
+                        'assessmentName': '双溪课程评量表A',
+                        'birthDate': '2019-12-01',
+                        'assessmentDate': '2026-05-18',
+                        'ageYears': 6,
+                        'ageMonths': 5,
+                        'ageDays': 17,
+                        'examinerName': '陈老师',
+                        'iepPlanStatus': '',
+                        'updatedTime': '2026-05-18T13:30:00Z',
+                      },
+                    ]
+                  : <Map<String, dynamic>>[],
+              'total': isShuangxi ? 1 : 0,
+            },
+          })),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final IepAssessmentRecordPage page = await client.fetchRecordsPage(
+      'token',
+      pageIndex: 1,
+      pageSize: 10,
+    );
+
+    expect(paths, contains('/api/v1/assessments/shuangxi-a/records/page'));
+    expect(page.items, hasLength(1));
+    expect(page.items.first.source, 'SHUANGXI');
+    expect(page.items.first.assessmentCode, 'SHUANGXI_A');
+    expect(page.items.first.studentName, '双溪学生');
+  });
+
+  test('IEP plan client maps Shuangxi records to Shuangxi AI task path',
+      () async {
+    String requestedPath = '';
+    Map<String, dynamic> requestedPayload = <String, dynamic>{};
+    final ApiIepPlanClient client = ApiIepPlanClient(
+      educationBaseUrl: 'https://api.test',
+      httpClient: MockClient((http.Request request) async {
+        requestedPath = request.url.path;
+        requestedPayload =
+            Map<String, dynamic>.from(jsonDecode(request.body) as Map);
+        return http.Response.bytes(
+          utf8.encode(jsonEncode(<String, dynamic>{
+            'success': true,
+            'data': <String, dynamic>{
+              'taskId': 'sx-task',
+              'status': 'running',
+              'durationMonths': 3,
+            },
+          })),
+          200,
+          headers: <String, String>{'content-type': 'application/json'},
+        );
+      }),
+    );
+
+    final IepPlanGenerationTask task = await client.createIepPlanGenerationTask(
+      'token',
+      record: const IepAssessmentRecordSummary(
+        id: 301,
+        source: 'SHUANGXI',
+        studentId: 88,
+        studentName: '双溪学生',
+        assessmentCode: 'SHUANGXI_A',
+        assessmentName: '双溪课程评量表A',
+        birthDate: '2019-12-01',
+        assessmentDate: '2026-05-18',
+        examinerName: '陈老师',
+        updatedTime: '2026-05-18T13:30:00Z',
+      ),
+      durationMonths: 3,
+    );
+
+    expect(
+      requestedPath,
+      '/api/v1/assessments/shuangxi-a/records/iep-plan/ai/tasks',
+    );
+    expect(requestedPayload['id'], 301);
+    expect(requestedPayload['durationMonths'], 3);
+    expect(task.taskId, 'sx-task');
+  });
+
+  testWidgets('IEP center lists Shuangxi record and starts IEP generation',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    final _ShuangxiCaptureIepPlanClient iepPlanClient =
+        _ShuangxiCaptureIepPlanClient();
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    await tester.pumpWidget(
+      AssessmentPadApp(
+        authClient: _FakeAuthClient(),
+        homeClient: _FakeHomeClient(),
+        scaleClient: _FakeAssessmentScaleClient(),
+        iepRecordClient: _FakeShuangxiIepAssessmentRecordClient(),
+        iepPlanClient: iepPlanClient,
+        timetableClient: _FakeTimetableClient(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('IEP中心'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.textContaining('双溪学生 · 6岁5月'), findsOneWidget);
+    expect(find.text('双溪课程评量表A · 2026-05-18'), findsOneWidget);
+    expect(find.text('双溪学生 暂无IEP计划'), findsOneWidget);
+
+    await _tapIepAiGenerateAndConfirm(tester, last: true);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 30));
+
+    expect(iepPlanClient.createdRecordSource, 'SHUANGXI');
+    expect(iepPlanClient.createdRecordCode, 'SHUANGXI_A');
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+    expect(find.text('能完成双溪课程目标'), findsOneWidget);
+    if (find.text('知道了').evaluate().isNotEmpty) {
+      await tester.tap(find.text('知道了'));
+      await tester.pump();
+    }
+  });
+
   testWidgets('IEP center expands long and short goal cells without truncating',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -1417,7 +1573,7 @@ void main() {
     expect(find.text('林一诺 暂无IEP计划'), findsOneWidget);
     expect(find.text('确认IEP'), findsNothing);
 
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 30));
 
@@ -1511,13 +1667,19 @@ void main() {
     await tester.pump();
 
     await tester.tap(find.text('6月'));
-    await tester.pumpAndSettle();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('6月计划未生成'), findsOneWidget);
 
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 220));
+    expect(find.text('确认并生成'), findsOneWidget);
+    await tester.tap(find.text('确认并生成'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 260));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
 
     expect(iepPlanClient.generateMonthlyPlanCalls, 1);
     expect(iepPlanClient.saveMonthlyPlanCalls, 1);
@@ -1554,14 +1716,24 @@ void main() {
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
 
-    await tester.tap(find.text('5月 W2'));
-    await tester.pumpAndSettle();
-    expect(find.text('5月 W2 周计划未生成'), findsOneWidget);
+    final InkWell weekTab = tester.widget<InkWell>(
+      find
+          .ancestor(
+            of: find.text('5月 W2'),
+            matching: find.byType(InkWell),
+          )
+          .last,
+    );
+    weekTab.onTap?.call();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('5月第2周计划未生成'), findsOneWidget);
 
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 260));
-    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 900));
+    await tester.pump();
 
     expect(iepPlanClient.generateWeeklyPlanCalls, 1);
     expect(iepPlanClient.saveWeeklyPlanCalls, 1);
@@ -1653,7 +1825,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 180));
 
     expect(find.textContaining('接口连接失败'), findsWidgets);
@@ -1709,7 +1881,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
 
     expect(find.text('林一诺 暂无IEP计划'), findsOneWidget);
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 180));
 
     expect(find.textContaining('接口连接失败'), findsWidgets);
@@ -1770,7 +1942,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump(const Duration(milliseconds: 200));
 
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 180));
 
     expect(find.textContaining('接口连接失败'), findsWidgets);
@@ -1923,7 +2095,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 620));
 
     expect(find.textContaining('"longGoal":"提升动态'), findsOneWidget);
@@ -1962,7 +2134,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 700));
 
     expect(find.textContaining('"domain":"大肌'), findsOneWidget);
@@ -2003,7 +2175,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
     await tester.pump();
-    await tester.tap(find.text('AI生成'));
+    await _tapIepAiGenerateAndConfirm(tester);
     await tester.pump(const Duration(milliseconds: 1200));
 
     expect(iepPlanClient.savePlanCalls, 0);
@@ -5395,6 +5567,21 @@ Future<void> _enterWithCustomKeyboard(
   }
 }
 
+Future<void> _tapIepAiGenerateAndConfirm(
+  WidgetTester tester, {
+  bool last = false,
+}) async {
+  final Finder generateButton = find.text('AI生成');
+  final int matchCount = generateButton.evaluate().length;
+  await tester
+      .tap(last || matchCount > 1 ? generateButton.last : generateButton);
+  await tester.pump();
+  await tester.pump(const Duration(milliseconds: 220));
+  expect(find.text('确认生成'), findsOneWidget);
+  await tester.tap(find.text('确认生成'));
+  await tester.pump();
+}
+
 class _FakeAuthClient implements AuthClient {
   @override
   Uri buildQrLoginUri(String nonce) {
@@ -5580,6 +5767,44 @@ class _FakePendingIepAssessmentRecordClient
           examinerName: '陈瑞',
           iepPlanStatus: '',
           updatedTime: '2026-04-29T11:30:00Z',
+        ),
+      ],
+    );
+  }
+}
+
+class _FakeShuangxiIepAssessmentRecordClient
+    implements IepAssessmentRecordClient {
+  @override
+  Future<IepAssessmentRecordPage> fetchRecordsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 20,
+    String searchKey = '',
+    String assessmentDateBegin = '',
+    String assessmentDateEnd = '',
+  }) async {
+    return const IepAssessmentRecordPage(
+      total: 1,
+      current: 1,
+      size: 1,
+      items: <IepAssessmentRecordSummary>[
+        IepAssessmentRecordSummary(
+          id: 301,
+          source: 'SHUANGXI',
+          studentId: 88,
+          studentName: '双溪学生',
+          studentGender: '男',
+          assessmentCode: 'SHUANGXI_A',
+          assessmentName: '双溪课程评量表A',
+          birthDate: '2019-12-01',
+          assessmentDate: '2026-05-18',
+          ageYears: 6,
+          ageMonths: 5,
+          ageDays: 17,
+          examinerName: '陈老师',
+          iepPlanStatus: '',
+          updatedTime: '2026-05-18T13:30:00Z',
         ),
       ],
     );
@@ -7326,6 +7551,69 @@ class _EmptyThenGeneratedIepPlanClient implements IepPlanClient {
     required IepWeeklyPlan plan,
   }) async {
     return Uint8List.fromList(const <int>[37, 80, 68, 70]);
+  }
+}
+
+class _ShuangxiCaptureIepPlanClient extends _EmptyThenGeneratedIepPlanClient {
+  String createdRecordSource = '';
+  String createdRecordCode = '';
+
+  @override
+  Future<IepPlanGenerationTask> createIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required int durationMonths,
+  }) {
+    createdRecordSource = record.source;
+    createdRecordCode = record.assessmentCode;
+    return super.createIepPlanGenerationTask(
+      token,
+      record: record,
+      durationMonths: durationMonths,
+    );
+  }
+
+  @override
+  Stream<IepPlanGenerationEvent> watchIepPlanGenerationTask(
+    String token, {
+    required IepAssessmentRecordSummary record,
+    required String taskId,
+  }) async* {
+    yield IepPlanGenerationEvent.status('正在读取双溪评估结果');
+    final IepPlan plan = IepPlan(
+      title: '康复教学季度计划',
+      student: IepPlanStudent(
+        name: record.studentName,
+        gender: record.studentGender,
+        birthDate: record.birthDate,
+      ),
+      meta: IepPlanMeta(
+        planDate: record.assessmentDate,
+        participant: record.examinerName,
+        implementer: record.examinerName,
+        startDate: '2026-05-01',
+        endDate: '2026-07-31',
+      ),
+      rows: const <IepPlanRow>[
+        IepPlanRow(
+          domain: '生活自理',
+          longGoal: '提升日常生活自理能力',
+          shortGoal: '能完成双溪课程目标',
+          courseForm: '个训',
+          startEndDate: '2026-05-01 - 2026-05-31',
+        ),
+      ],
+    );
+    yield IepPlanGenerationEvent.done(
+      plan,
+      savedPlan: IepPlanSaved(
+        exists: true,
+        status: 'draft',
+        durationMonths: 3,
+        plan: plan,
+        updatedTime: '2026-05-18T14:00:00Z',
+      ),
+    );
   }
 }
 

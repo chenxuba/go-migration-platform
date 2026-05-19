@@ -9,6 +9,21 @@ import {
   downloadPEP3AssessmentBookletPdfApi,
   pagePEP3AssessmentRecordsApi,
 } from '@/api/edu-center/pep3-assessment'
+import {
+  deleteERXinAssessmentRecordApi,
+  downloadERXinAssessmentRecordReportPdfApi,
+  pageERXinAssessmentRecordsApi,
+} from '@/api/edu-center/erxin-assessment'
+import {
+  deleteAutismDevAssessmentRecordApi,
+  downloadAutismDevSelectedReportPdfApi,
+  pageAutismDevAssessmentRecordsApi,
+} from '@/api/edu-center/autismdev-assessment'
+import {
+  deleteShuangxiAAssessmentRecordApi,
+  downloadShuangxiADevelopmentProfilePdfApi,
+  pageShuangxiAAssessmentRecordsApi,
+} from '@/api/edu-center/shuangxi-assessment'
 import { getScaleCategoryOptionsApi } from '@/api/teacher-center/scale-library'
 import { useStudentStore } from '@/stores/student'
 
@@ -100,6 +115,52 @@ const reportModuleValues = ['test_score', 'development_profile', 'score_and_prof
 const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleValues.includes(item.value))
 const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
 const activeReportModule = ref(defaultReportModule)
+const erxinExportDimensionOptions = [
+  {
+    value: 'erxin_result',
+    title: '评估记录',
+    desc: '导出儿心量表评估记录PDF。',
+    pages: 'PDF',
+    recommended: true,
+  },
+]
+const autismDevExportDimensionOptions = [
+  {
+    value: 'assessmentInfo',
+    title: '评估情况',
+    desc: '导出发展能力计分汇总与评估基本情况。',
+    pages: '报告',
+    recommended: true,
+  },
+  {
+    value: 'training',
+    title: '训练效果',
+    desc: '导出阶段训练效果分析。',
+    pages: '报告',
+  },
+  {
+    value: 'developmentProfile',
+    title: '发展情况剖面图',
+    desc: '导出发展能力剖面图。',
+    pages: '报告',
+  },
+  {
+    value: 'behaviorProfile',
+    title: '情绪行为表现图',
+    desc: '导出情绪行为表现图。',
+    pages: '报告',
+  },
+]
+const shuangxiExportDimensionOptions = [
+  {
+    value: 'developmentProfile',
+    title: '综合发展侧面图',
+    desc: '导出双溪课程评量表A综合发展侧面图。',
+    pages: 'PDF',
+    recommended: true,
+  },
+]
+const activeExportDimensionOptions = computed(() => exportDimensionOptionsForRecord(exportTargetRecord.value))
 
 const columns = [
   {
@@ -199,16 +260,115 @@ function formatAge(row) {
   return parts.join('') || '-'
 }
 
-function exportDimensionTitle(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.title || '全维度导出'
+function isERXinRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'ERXIN' || source.startsWith('ERXIN')
 }
 
-function exportDimensionPages(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.pages || '第 1-26 页'
+function isAutismDevRecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'AUTISMDEV'
 }
 
-function exportDimensionDesc(value) {
-  return exportDimensionOptions.find(item => item.value === value)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
+function isShuangxiARecord(record) {
+  const source = String(record?._recordSource || record?.assessmentCode || '').trim().toUpperCase()
+  return source === 'SHUANGXI_A' || source === 'SHUANGXIA' || source.startsWith('SHUANGXI')
+}
+
+function recordSourceType(record) {
+  if (isShuangxiARecord(record))
+    return 'SHUANGXI_A'
+  if (isAutismDevRecord(record))
+    return 'AUTISMDEV'
+  if (isERXinRecord(record))
+    return 'ERXIN'
+  return 'PEP3'
+}
+
+function recordActionKey(record) {
+  if (!record?.id)
+    return ''
+  return `${recordSourceType(record)}-${record.id}`
+}
+
+function markRecordSource(record, source) {
+  return {
+    ...record,
+    _recordSource: source,
+  }
+}
+
+function recordSortValue(record) {
+  const parsed = dayjs(record?.createdTime)
+  return parsed.isValid() ? parsed.valueOf() : 0
+}
+
+function compareRecordDesc(left, right) {
+  const timeDiff = recordSortValue(right) - recordSortValue(left)
+  if (timeDiff)
+    return timeDiff
+  return Number(right?.id || 0) - Number(left?.id || 0)
+}
+
+function currentReportIsPEP3() {
+  return recordSourceType(currentReport.value?.record) === 'PEP3'
+}
+
+function reportTitleForRecord(record) {
+  if (isShuangxiARecord(record))
+    return record?.assessmentName || '双溪课程评量表A'
+  if (isAutismDevRecord(record))
+    return record?.assessmentName || '孤独症儿童发展评估报告'
+  return isERXinRecord(record)
+    ? (record?.assessmentName || '儿心量表-II发育行为评估报告')
+    : 'PEP-3测试员记录册'
+}
+
+function reportDefaultSectionTitle(record) {
+  if (isShuangxiARecord(record))
+    return '综合发展侧面图'
+  if (isAutismDevRecord(record))
+    return '评估情况'
+  return isERXinRecord(record) ? '评估记录' : reportModuleShortTitle(activeReportModule.value)
+}
+
+function reportFrameTitle() {
+  if (isShuangxiARecord(currentReport.value?.record))
+    return '双溪综合发展侧面图PDF预览'
+  if (isAutismDevRecord(currentReport.value?.record))
+    return '孤独症儿童发展评估报告PDF预览'
+  return isERXinRecord(currentReport.value?.record) ? '儿心量表评估报告PDF预览' : 'PEP-3记录册PDF预览'
+}
+
+function exportDimensionOptionsForRecord(record) {
+  if (isShuangxiARecord(record))
+    return shuangxiExportDimensionOptions
+  if (isAutismDevRecord(record))
+    return autismDevExportDimensionOptions
+  if (isERXinRecord(record))
+    return erxinExportDimensionOptions
+  return exportDimensionOptions
+}
+
+function defaultExportDimensionForRecord(record) {
+  const options = exportDimensionOptionsForRecord(record)
+  return options.find(item => item.recommended)?.value || options[0]?.value || defaultExportDimension
+}
+
+function exportDimensionOption(value, record = exportTargetRecord.value) {
+  return exportDimensionOptionsForRecord(record).find(item => item.value === value)
+}
+
+function exportDimensionTitle(value, record = exportTargetRecord.value) {
+  return exportDimensionOption(value, record)?.title || '全维度导出'
+}
+
+function exportDimensionPages(value, record = exportTargetRecord.value) {
+  return exportDimensionOption(value, record)?.pages || '第 1-26 页'
+}
+
+function exportDimensionDesc(value, record = exportTargetRecord.value) {
+  return exportDimensionOption(value, record)?.desc || '导出完整测试员记录册，包含所有维度与分析表。'
 }
 
 function reportModuleTitle(value) {
@@ -270,10 +430,11 @@ async function fetchRecords() {
   }
   loading.value = true
   try {
-    const res = await pagePEP3AssessmentRecordsApi({
+    const pageSize = Math.max(pagination.current * pagination.pageSize, pagination.pageSize)
+    const request = {
       pageRequestModel: {
-        pageIndex: pagination.current,
-        pageSize: pagination.pageSize,
+        pageIndex: 1,
+        pageSize,
       },
       queryModel: {
         studentId: currentStudentId,
@@ -281,10 +442,35 @@ async function fetchRecords() {
         assessmentDateBegin: queryModel.assessmentDateBegin,
         assessmentDateEnd: queryModel.assessmentDateEnd,
       },
+    }
+    const recordRequests = [
+      { label: 'PEP-3', source: 'PEP3', promise: pagePEP3AssessmentRecordsApi(request) },
+      { label: '儿心量表', source: 'ERXIN', promise: pageERXinAssessmentRecordsApi(request) },
+      { label: '孤独症儿童发展评估表', source: 'AUTISMDEV', promise: pageAutismDevAssessmentRecordsApi(request) },
+      { label: '双溪量表A', source: 'SHUANGXI_A', promise: pageShuangxiAAssessmentRecordsApi(request) },
+    ]
+    const results = await Promise.allSettled(recordRequests.map(item => item.promise))
+    const failedMessages = []
+    const merged = []
+    let total = 0
+    results.forEach((result, index) => {
+      const recordRequest = recordRequests[index]
+      if (result.status === 'rejected') {
+        failedMessages.push(`${recordRequest.label}加载失败`)
+        return
+      }
+      const data = unwrap(result.value)
+      total += Number(data?.total || 0)
+      merged.push(...(data?.items || []).map(item => markRecordSource(item, recordRequest.source)))
     })
-    const data = unwrap(res)
-    dataSource.value = data?.items || []
-    pagination.total = data?.total || 0
+    if (failedMessages.length === recordRequests.length)
+      throw new Error('获取评估记录失败')
+    if (failedMessages.length)
+      messageService.error(failedMessages.join('，'))
+    merged.sort(compareRecordDesc)
+    const start = (pagination.current - 1) * pagination.pageSize
+    dataSource.value = merged.slice(start, start + pagination.pageSize)
+    pagination.total = total
   }
   catch (error) {
     messageService.error(getErrorMessage(error, '获取评估记录失败'))
@@ -332,7 +518,7 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
   resetReportPdfReady()
   previewLoading.value = true
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+    const response = await downloadReportPdf(row, dimension)
     const nextUrl = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     if (requestKey !== reportPreviewRequestKey.value) {
       URL.revokeObjectURL(nextUrl)
@@ -354,20 +540,32 @@ async function loadReportPdfPreview(row = currentReport.value?.record, dimension
 function viewReport(row) {
   if (!row)
     return
-  activeReportModule.value = defaultReportModule
+  activeReportModule.value = defaultReportPreviewDimension(row)
   currentReport.value = {
-    title: 'PEP-3测试员记录册',
+    title: reportTitleForRecord(row),
     record: row,
   }
   reportModalOpen.value = true
-  loadReportPdfPreview(row, defaultReportModule)
+  loadReportPdfPreview(row, activeReportModule.value)
 }
 
 function selectReportModule(value) {
+  if (!currentReportIsPEP3())
+    return
   if (activeReportModule.value === value)
     return
   activeReportModule.value = value
   loadReportPdfPreview()
+}
+
+function defaultReportPreviewDimension(row) {
+  if (isShuangxiARecord(row))
+    return 'developmentProfile'
+  if (isAutismDevRecord(row))
+    return 'assessmentInfo'
+  if (isERXinRecord(row))
+    return 'erxin_result'
+  return defaultReportModule
 }
 
 function handleReportPdfFrameLoad() {
@@ -389,7 +587,7 @@ function openExportModal(row) {
   if (!row || exportingId.value)
     return
   exportTargetRecord.value = row
-  selectedExportDimension.value = defaultExportDimension
+  selectedExportDimension.value = defaultExportDimensionForRecord(row)
   exportModalOpen.value = true
 }
 
@@ -416,13 +614,13 @@ function openConfigModal(row) {
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
-  exportingId.value = row.id
+  exportingId.value = recordActionKey(row)
   try {
-    const response = await downloadPEP3AssessmentBookletPdfApi(row.id, dimension)
+    const response = await downloadReportPdf(row, dimension)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
-    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
+    const fallbackName = `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension, row)}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -437,13 +635,32 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
   }
 }
 
+function downloadReportPdf(row, dimension = defaultExportDimensionForRecord(row)) {
+  if (isShuangxiARecord(row))
+    return downloadShuangxiADevelopmentProfilePdfApi(row.id)
+  if (isAutismDevRecord(row))
+    return downloadAutismDevSelectedReportPdfApi(row.id, [dimension || 'assessmentInfo'])
+  if (isERXinRecord(row))
+    return downloadERXinAssessmentRecordReportPdfApi(row.id)
+  return downloadPEP3AssessmentBookletPdfApi(row.id, dimension || defaultReportModule)
+}
+
 async function deleteRecord(row) {
   if (!row?.id)
     return
-  deletingId.value = row.id
+  deletingId.value = recordActionKey(row)
   try {
-    await deletePEP3AssessmentRecordApi(row.id)
+    if (isShuangxiARecord(row))
+      await deleteShuangxiAAssessmentRecordApi(row.id)
+    else if (isAutismDevRecord(row))
+      await deleteAutismDevAssessmentRecordApi(row.id)
+    else if (isERXinRecord(row))
+      await deleteERXinAssessmentRecordApi(row.id)
+    else
+      await deletePEP3AssessmentRecordApi(row.id)
     messageService.success('评估记录已删除')
+    if (dataSource.value.length === 1 && pagination.current > 1)
+      pagination.current -= 1
     fetchRecords()
   }
   catch (error) {
@@ -500,7 +717,7 @@ onBeforeUnmount(() => {
             :columns="columns"
             :loading="loading"
             :scroll="{ x: totalWidth }"
-            row-key="id"
+            :row-key="recordActionKey"
             size="small"
             @change="handleTableChange"
           >
@@ -530,9 +747,9 @@ onBeforeUnmount(() => {
                   <a :class="{ disabled: previewLoading }" @click="viewReport(record)">查看</a>
                   <a @click="openConfigModal(record)">配置</a>
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
-                    <a :class="{ disabled: deletingId === record.id }">删除</a>
+                    <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
-                  <a :class="{ disabled: exportingId === record.id }" @click="openExportModal(record)">导出</a>
+                  <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
                   <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
@@ -570,13 +787,13 @@ onBeforeUnmount(() => {
             type="primary"
             size="small"
             class="report-export-btn"
-            :loading="exportingId === currentReport.record?.id"
+            :loading="exportingId === recordActionKey(currentReport.record)"
             @click="exportReport(currentReport.record, activeReportModule)"
           >
             导出
           </a-button>
         </div>
-        <div class="report-module-area">
+        <div v-if="currentReportIsPEP3()" class="report-module-area">
           <div class="report-module-grid">
             <button
               v-for="option in reportModuleOptions"
@@ -593,6 +810,14 @@ onBeforeUnmount(() => {
             </button>
           </div>
         </div>
+        <div v-else class="report-module-area">
+          <div class="report-module-grid">
+            <button type="button" class="report-module-chip report-module-chip--active">
+              <span class="report-module-chip__dot" />
+              <span class="report-module-chip__text">{{ reportDefaultSectionTitle(currentReport.record) }}</span>
+            </button>
+          </div>
+        </div>
 
         <div class="report-module-content">
           <div class="report-pdf-shell">
@@ -602,7 +827,7 @@ onBeforeUnmount(() => {
               class="report-pdf-frame"
               :class="{ 'report-pdf-frame--ready': reportPdfReady }"
               :src="`${reportPreviewUrl}#toolbar=0&navpanes=0`"
-              title="PEP-3记录册PDF预览"
+              :title="reportFrameTitle()"
               @load="handleReportPdfFrameLoad"
             />
             <div v-if="previewLoading || (reportPreviewUrl && !reportPdfReady)" class="report-pdf-loading">
@@ -639,7 +864,7 @@ onBeforeUnmount(() => {
       <div class="export-dimension">
         <div class="export-dimension__list">
           <button
-            v-for="option in exportDimensionOptions"
+            v-for="option in activeExportDimensionOptions"
             :key="option.value"
             type="button"
             class="export-dimension-chip"

@@ -539,6 +539,111 @@ func (svc *Service) CreateShuangxiAAssessmentRecord(userID int64, input Shuangxi
 	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
 }
 
+func (svc *Service) UpdateShuangxiAAssessmentRecord(userID, recordID int64, input ShuangxiAAssessmentRecordSaveInput) (model.AssessmentRecordDetailVO, error) {
+	if svc.repo == nil {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment repository is not configured")
+	}
+	instID, examinerID, examinerName, err := svc.pep3AssessmentActor(userID, input.ExaminerName)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	record, err := svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return model.AssessmentRecordDetailVO{}, errors.New("assessment record not found")
+		}
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if strings.TrimSpace(record.AssessmentCode) != shuangxiAScaleCode {
+		return model.AssessmentRecordDetailVO{}, errors.New("assessment record is not Shuangxi A")
+	}
+	hasIEPPlan, err := svc.repo.AssessmentRecordHasIEPPlan(context.Background(), instID, recordID)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if hasIEPPlan {
+		return model.AssessmentRecordDetailVO{}, errors.New("该测评已生成IEP，请使用复用测评生成新记录")
+	}
+	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	studentGender, err := svc.resolveShuangxiAStudentGender(context.Background(), instID, input.StudentID, input.StudentGender)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	input.StudentGender = studentGender
+	input.ItemScores = applyShuangxiAGenderDefaults(input.ItemScores, studentGender)
+	input.InputSnapshot, err = withShuangxiAInputScoresSnapshot(input.InputSnapshot, input.ItemScores, input.ItemRemarks, studentGender)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	result, progress, err := buildShuangxiAAssessmentScoreResponse(input.BirthDate, input.AssessmentDate, input.ItemScores)
+	if err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if !progress.Complete {
+		return model.AssessmentRecordDetailVO{}, fmt.Errorf("评估记录未完成，仍有 %d 道题目缺少评分", progress.MissingItemCount)
+	}
+	if err := svc.repo.UpdateAssessmentRecordBaseInputAndResult(context.Background(), repository.AssessmentRecordEntity{
+		ID:             recordID,
+		InstID:         instID,
+		StudentID:      input.StudentID,
+		StudentName:    input.StudentName,
+		AssessmentCode: shuangxiAScaleCode,
+		AssessmentName: "双溪课程评量表A",
+		ScaleVersion:   shuangxiAScaleVersion,
+		BirthDate:      input.BirthDate,
+		AssessmentDate: input.AssessmentDate,
+		AgeYears:       result.Result.Age.Years,
+		AgeMonths:      result.Result.Age.Months,
+		AgeDays:        result.Result.Age.Days,
+		NormAgeMonths:  result.Result.Age.Years*12 + result.Result.Age.Months,
+		ExaminerID:     examinerID,
+		ExaminerName:   examinerName,
+		Input:          input.InputSnapshot,
+		Result:         result,
+		DataStatus:     result.DataStatus,
+		Remark:         input.Remark,
+	}); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	if err := svc.syncShuangxiASubmittedDraftAfterRecordUpdate(userID, instID, recordID, input, progress); err != nil {
+		return model.AssessmentRecordDetailVO{}, err
+	}
+	return svc.repo.GetAssessmentRecord(context.Background(), instID, recordID)
+}
+
+func (svc *Service) syncShuangxiASubmittedDraftAfterRecordUpdate(userID, instID, recordID int64, input ShuangxiAAssessmentRecordSaveInput, progress model.PEP3AssessmentDraftProgress) error {
+	draft, err := svc.repo.GetAssessmentDraftBySubmittedRecordID(context.Background(), instID, recordID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil
+		}
+		return err
+	}
+	examinerID, err := svc.repo.FindInstUserIDByUserID(context.Background(), userID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("no institution user context")
+		}
+		return err
+	}
+	return svc.repo.UpdateAssessmentDraftInputAndProgressIncludingSubmitted(
+		context.Background(),
+		instID,
+		draft.ID,
+		input.InputSnapshot,
+		progress,
+		progress.AnsweredItemCount,
+		len(shuangxiARawScoresByDomain(input.ItemScores)),
+		"submitted",
+		examinerID,
+		input.ItemScores,
+		shuangxiARawScoresByDomain(input.ItemScores),
+		nil,
+	)
+}
+
 func buildShuangxiAAssessmentDraftProgress(birthDate, assessmentDate *time.Time, itemScores map[int]int) (model.PEP3AssessmentDraftProgress, error) {
 	dataDir, err := resolveShuangxiADataDir()
 	if err != nil {

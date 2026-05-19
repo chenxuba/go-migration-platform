@@ -253,6 +253,38 @@ func (handler *Handler) shuangxiAAssessmentRecordDetail(w http.ResponseWriter, r
 	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
 }
 
+func (handler *Handler) updateShuangxiAAssessmentRecord(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	claims, ok := handler.requireAuth(w, r, ctx)
+	if !ok {
+		return
+	}
+	if r.Method != http.MethodPost {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	var req shuangxiAssessmentDraftSaveRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, "invalid request body", ctx.RequestID)
+		return
+	}
+	if req.ID <= 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "id is required", ctx.RequestID)
+		return
+	}
+	input, err := req.toRecordSaveInput()
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	result, err := handler.service.UpdateShuangxiAAssessmentRecord(claims.UserID, req.ID, input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
 func (handler *Handler) updateShuangxiAAssessmentRecordConfig(w http.ResponseWriter, r *http.Request) {
 	ctx := tenant.FromContext(r.Context())
 	claims, ok := handler.requireAuth(w, r, ctx)
@@ -500,6 +532,34 @@ func (req shuangxiAssessmentDraftSaveRequest) toDraftSaveInput() (service.Shuang
 	itemRemarks := normalizeShuangxiItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
 	return service.ShuangxiAAssessmentDraftSaveInput{
 		ID:             req.ID,
+		StudentID:      req.StudentID,
+		StudentName:    strings.TrimSpace(req.StudentName),
+		StudentGender:  strings.TrimSpace(req.StudentGender),
+		ExaminerName:   strings.TrimSpace(req.ExaminerName),
+		Remark:         strings.TrimSpace(req.Remark),
+		BirthDate:      birthDate,
+		AssessmentDate: assessmentDate,
+		ItemScores:     itemScores,
+		ItemRemarks:    itemRemarks,
+		InputSnapshot:  req.normalizedSnapshot(itemScores, itemRemarks),
+	}, nil
+}
+
+func (req shuangxiAssessmentDraftSaveRequest) toRecordSaveInput() (service.ShuangxiAAssessmentRecordSaveInput, error) {
+	birthDate, err := parsePEP3Date(req.BirthDate, "birthDate")
+	if err != nil {
+		return service.ShuangxiAAssessmentRecordSaveInput{}, err
+	}
+	assessmentDate, err := parsePEP3Date(req.AssessmentDate, "assessmentDate")
+	if err != nil {
+		return service.ShuangxiAAssessmentRecordSaveInput{}, err
+	}
+	itemScores, err := normalizeShuangxiItemScores(req.ItemScores, req.ItemScoreList)
+	if err != nil {
+		return service.ShuangxiAAssessmentRecordSaveInput{}, err
+	}
+	itemRemarks := normalizeShuangxiItemRemarks(req.ItemRemarks, req.ItemRemarkList, req.ItemScoreList)
+	return service.ShuangxiAAssessmentRecordSaveInput{
 		StudentID:      req.StudentID,
 		StudentName:    strings.TrimSpace(req.StudentName),
 		StudentGender:  strings.TrimSpace(req.StudentGender),

@@ -763,6 +763,9 @@ String _recordAssessmentName(IepAssessmentRecordSummary record) {
   if (source == 'AUTISMDEV' || code == 'AUTISMDEV') {
     return '孤独症儿童发展评估表';
   }
+  if (source == 'SHUANGXI' || code == 'SHUANGXI_A') {
+    return '双溪课程评量表A';
+  }
   if (record.assessmentName.trim().isNotEmpty) {
     return record.assessmentName.trim();
   }

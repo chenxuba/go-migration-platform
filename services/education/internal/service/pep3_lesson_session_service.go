@@ -37,6 +37,13 @@ func (svc *Service) GetAutismDevLessonSessionWeekState(
 	return svc.getLessonSessionWeekState(userID, req, autismDevScaleCode)
 }
 
+func (svc *Service) GetShuangxiALessonSessionWeekState(
+	userID int64,
+	req model.PEP3LessonSessionWeekQueryRequest,
+) (model.PEP3LessonSessionWeekStateVO, error) {
+	return svc.getLessonSessionWeekState(userID, req, shuangxiAScaleCode)
+}
+
 func (svc *Service) StartPEP3LessonSession(
 	userID int64,
 	req model.PEP3LessonSessionOperateRequest,
@@ -56,6 +63,13 @@ func (svc *Service) StartAutismDevLessonSession(
 	req model.PEP3LessonSessionOperateRequest,
 ) (model.PEP3LessonSessionWeekStateVO, error) {
 	return svc.startLessonSession(userID, req, autismDevScaleCode)
+}
+
+func (svc *Service) StartShuangxiALessonSession(
+	userID int64,
+	req model.PEP3LessonSessionOperateRequest,
+) (model.PEP3LessonSessionWeekStateVO, error) {
+	return svc.startLessonSession(userID, req, shuangxiAScaleCode)
 }
 
 func (svc *Service) PausePEP3LessonSession(
@@ -79,6 +93,13 @@ func (svc *Service) PauseAutismDevLessonSession(
 	return svc.pauseLessonSession(userID, req, autismDevScaleCode)
 }
 
+func (svc *Service) PauseShuangxiALessonSession(
+	userID int64,
+	req model.PEP3LessonSessionOperateRequest,
+) (model.PEP3LessonSessionWeekStateVO, error) {
+	return svc.pauseLessonSession(userID, req, shuangxiAScaleCode)
+}
+
 func (svc *Service) CompletePEP3LessonSession(
 	userID int64,
 	req model.PEP3LessonSessionOperateRequest,
@@ -100,6 +121,13 @@ func (svc *Service) CompleteAutismDevLessonSession(
 	return svc.completeLessonSession(userID, req, autismDevScaleCode)
 }
 
+func (svc *Service) CompleteShuangxiALessonSession(
+	userID int64,
+	req model.PEP3LessonSessionOperateRequest,
+) (model.PEP3LessonSessionWeekStateVO, error) {
+	return svc.completeLessonSession(userID, req, shuangxiAScaleCode)
+}
+
 func (svc *Service) HeartbeatPEP3LessonSession(
 	userID int64,
 	req model.PEP3LessonSessionOperateRequest,
@@ -119,6 +147,13 @@ func (svc *Service) HeartbeatAutismDevLessonSession(
 	req model.PEP3LessonSessionOperateRequest,
 ) (model.PEP3LessonSessionWeekStateVO, error) {
 	return svc.heartbeatLessonSession(userID, req, autismDevScaleCode)
+}
+
+func (svc *Service) HeartbeatShuangxiALessonSession(
+	userID int64,
+	req model.PEP3LessonSessionOperateRequest,
+) (model.PEP3LessonSessionWeekStateVO, error) {
+	return svc.heartbeatLessonSession(userID, req, shuangxiAScaleCode)
 }
 
 func (svc *Service) getLessonSessionWeekState(

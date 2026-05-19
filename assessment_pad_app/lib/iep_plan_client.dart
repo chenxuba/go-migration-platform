@@ -2587,11 +2587,20 @@ bool _isAutismDevRecord(IepAssessmentRecordSummary record) {
   return source == 'AUTISMDEV' || code == 'AUTISMDEV';
 }
 
+bool _isShuangxiRecord(IepAssessmentRecordSummary record) {
+  final String source = record.source.trim().toUpperCase();
+  final String code = record.assessmentCode.trim().toUpperCase();
+  return source == 'SHUANGXI' || code == 'SHUANGXI_A';
+}
+
 String _pathForRecord(
   IepAssessmentRecordSummary record,
   String pep3Path,
   String erxinPath,
 ) {
+  if (_isShuangxiRecord(record)) {
+    return _shuangxiPathFrom(pep3Path);
+  }
   if (_isAutismDevRecord(record)) {
     return _autismDevPathFrom(pep3Path);
   }
@@ -2604,6 +2613,19 @@ String _autismDevPathFrom(String path) {
   }
   if (path.contains('/erxin/')) {
     return path.replaceFirst('/erxin/', '/autismdev/');
+  }
+  return path;
+}
+
+String _shuangxiPathFrom(String path) {
+  if (path.contains('/pep3/')) {
+    return path.replaceFirst('/pep3/', '/shuangxi-a/');
+  }
+  if (path.contains('/erxin/')) {
+    return path.replaceFirst('/erxin/', '/shuangxi-a/');
+  }
+  if (path.contains('/autismdev/')) {
+    return path.replaceFirst('/autismdev/', '/shuangxi-a/');
   }
   return path;
 }

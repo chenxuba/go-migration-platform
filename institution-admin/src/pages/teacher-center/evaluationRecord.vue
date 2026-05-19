@@ -1889,16 +1889,14 @@ function assessmentRecordConfirmContent(record, mode = 'edit') {
     return '修改并重新提交后会覆盖当前儿心评估记录和报告数据，请确认后继续。'
   if (isAutismDevRecord(record))
     return '修改并重新提交后会覆盖当前孤独症儿童发展评估记录和报告数据，请确认后继续。'
+  if (isShuangxiARecord(record))
+    return '修改并重新提交后会覆盖当前双溪评量记录和报告数据，请确认后继续。'
   return '修改并重新提交后会覆盖当前评估记录和报告数据，请确认后继续。'
 }
 
 function confirmAssessmentRecordAction(record = currentReport.value?.record, mode = 'edit') {
   if (!record?.id)
     return
-  if (isShuangxiARecord(record)) {
-    messageService.warning(mode === 'reuse' ? '双溪量表记录暂不支持复用' : '双溪量表记录暂不支持修改')
-    return
-  }
   if (mode === 'edit' && !canModifyAssessmentRecord(record)) {
     messageService.warning('已生成IEP的评估记录不支持直接修改，请使用复用测评')
     return
@@ -2693,26 +2691,25 @@ function openConfigModal(row) {
 function editAssessmentRecord(row = currentReport.value?.record, mode = 'edit') {
   if (!row?.id)
     return
-  if (isShuangxiARecord(row)) {
-    messageService.warning(mode === 'reuse' ? '双溪量表记录暂不支持复用' : '双溪量表记录暂不支持修改')
-    return
-  }
   const recordMode = mode === 'reuse' ? 'reuse' : 'edit'
   const path = isAutismDevRecord(row)
     ? '/teacherCenter/autismdev-assessment-workbench'
-    : isERXinRecord(row)
-      ? '/teacherCenter/erxin-assessment-workbench'
-      : '/teacherCenter/scale-assessment-workbench'
+    : isShuangxiARecord(row)
+      ? '/teacherCenter/shuangxi-a-assessment-workbench'
+      : isERXinRecord(row)
+        ? '/teacherCenter/erxin-assessment-workbench'
+        : '/teacherCenter/scale-assessment-workbench'
   closeReportModal()
   void router.push({
     path,
     query: {
       recordId: row.id,
       recordMode,
-      scaleName: row.assessmentName || (isAutismDevRecord(row) ? '孤独症儿童发展评估表' : isERXinRecord(row) ? '儿心量表-II' : 'PEP-3'),
-      scaleCode: row.assessmentCode || (isAutismDevRecord(row) ? 'AUTISMDEV' : isERXinRecord(row) ? 'ERXIN2' : 'PEP3'),
+      scaleName: row.assessmentName || (isAutismDevRecord(row) ? '孤独症儿童发展评估表' : isShuangxiARecord(row) ? '双溪课程评量表A' : isERXinRecord(row) ? '儿心量表-II' : 'PEP-3'),
+      scaleCode: row.assessmentCode || (isAutismDevRecord(row) ? 'AUTISMDEV' : isShuangxiARecord(row) ? 'SHUANGXI_A' : isERXinRecord(row) ? 'ERXIN2' : 'PEP3'),
       childId: row.studentId,
       childName: row.studentName,
+      childGender: row.studentGender,
       childAge: formatAge(row),
       childBirthDate: formatDate(row.birthDate),
       assessmentDate: formatDate(row.assessmentDate),

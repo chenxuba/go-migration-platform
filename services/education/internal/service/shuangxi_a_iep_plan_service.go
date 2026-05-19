@@ -101,6 +101,27 @@ func (svc *Service) ExportShuangxiAIEPPlanWordFromAIResult(userID int64, recordI
 	return svc.ExportPEP3IEPPlanWordFromAIResult(userID, recordID, planResult, durationMonths)
 }
 
+func (svc *Service) ExportShuangxiAIEPPlanPDF(userID int64, recordID int64, durationMonths int) (string, string, []byte, error) {
+	if _, err := svc.validateShuangxiAIEPPlanRecord(userID, recordID); err != nil {
+		return "", "", nil, err
+	}
+	saved, err := svc.GetPEP3IEPPlan(userID, recordID, durationMonths)
+	if err != nil {
+		return "", "", nil, err
+	}
+	if !saved.Exists || saved.Plan == nil || len(saved.Plan.Rows) == 0 {
+		return "", "", nil, errors.New("暂无可打印的IEP计划")
+	}
+	return svc.ExportPEP3IEPPlanPDFFromAIResult(userID, recordID, *saved.Plan, durationMonths)
+}
+
+func (svc *Service) ExportShuangxiAIEPPlanPDFFromAIResult(userID int64, recordID int64, planResult model.PEP3IEPPlanAIResult, durationMonths int) (string, string, []byte, error) {
+	if _, err := svc.validateShuangxiAIEPPlanRecord(userID, recordID); err != nil {
+		return "", "", nil, err
+	}
+	return svc.ExportPEP3IEPPlanPDFFromAIResult(userID, recordID, planResult, durationMonths)
+}
+
 func (svc *Service) GenerateShuangxiAExecutionPlanWithAI(ctx context.Context, userID int64, req model.PEP3ExecutionPlanGenerateRequest) (any, error) {
 	if _, err := svc.validateShuangxiAIEPPlanRecord(userID, req.ID); err != nil {
 		return nil, err
@@ -134,6 +155,13 @@ func (svc *Service) ExportShuangxiAExecutionPlanWord(userID int64, req model.PEP
 		return "", "", nil, err
 	}
 	return svc.ExportPEP3ExecutionPlanWord(userID, req)
+}
+
+func (svc *Service) ExportShuangxiAExecutionPlanPDF(userID int64, req model.PEP3ExecutionPlanWordExportRequest) (string, string, []byte, error) {
+	if _, err := svc.validateShuangxiAIEPPlanRecord(userID, req.ID); err != nil {
+		return "", "", nil, err
+	}
+	return svc.ExportPEP3ExecutionPlanPDF(userID, req)
 }
 
 func (svc *Service) prepareShuangxiAIEPPlanSource(ctx context.Context, userID, recordID int64) (model.AssessmentRecordDetailVO, shuangxiAStaticData, map[int]int, model.ShuangxiResultAnalysisVO, []pep3IEPPlanPromptRehabRecord, error) {

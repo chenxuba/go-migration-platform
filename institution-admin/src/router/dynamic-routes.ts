@@ -293,6 +293,18 @@ export default [
         },
       },
       {
+        path: '/teacherCenter/shuangxi-a-assessment-workbench',
+        name: 'ShuangxiAAssessmentWorkbench',
+        component: () => import('~/pages/teacher-center/shuangxi-a-assessment-workbench.vue'),
+        meta: {
+          title: '双溪测评工作台',
+          access: [AccessEnum.teacher_scale],
+          hideInMenu: true,
+          purePage: true,
+          parentKeys: ['/teacherCenter/scale-library'],
+        },
+      },
+      {
         path: '/teacherCenter/evaluationRecord',
         name: 'EvaluationRecord',
         component: () => import('~/pages/teacher-center/evaluationRecord.vue'),

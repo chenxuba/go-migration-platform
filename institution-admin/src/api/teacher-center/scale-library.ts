@@ -1,4 +1,4 @@
-import { useGet } from '~/utils/request'
+import { useGet, usePost } from '~/utils/request'
 
 export interface ScaleLibraryTextResource {
   id: number
@@ -111,4 +111,8 @@ export function getScaleCategoryOptionsApi() {
 
 export function getScaleAssessmentStudentCandidatesApi(params?: ScaleAssessmentStudentCandidateQuery) {
   return useGet<ScaleAssessmentStudentCandidateResponse, ScaleAssessmentStudentCandidateQuery>('/api/v1/assessments/scales/student-candidates', params)
+}
+
+export function updateScaleAssessmentStudentGenderApi(data: { studentId: number, gender: string }) {
+  return usePost<{ gender: string }>('/api/v1/assessments/scales/student-gender/update', data)
 }

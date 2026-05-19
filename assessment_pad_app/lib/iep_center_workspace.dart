@@ -704,6 +704,10 @@ class _IepWorkspaceState extends State<_IepWorkspace>
     if (_restoreGenerationSessionFor(record)) {
       return;
     }
+    final bool confirmed = await _showAiGenerateConfirmDialog();
+    if (!mounted || !confirmed) {
+      return;
+    }
     if (_previewMode == _IepPreviewMode.week &&
         !_currentWeekCanGenerateDirectly()) {
       await _showWeeklyPlanMissingMonthConfirmDialog();
@@ -1927,6 +1931,33 @@ class _IepWorkspaceState extends State<_IepWorkspace>
       return;
     }
     await _syncPeriodStart(draft.start);
+  }
+
+  Future<bool> _showAiGenerateConfirmDialog() async {
+    final String planLabel = switch (_previewMode) {
+      _IepPreviewMode.total => 'IEP总计划',
+      _IepPreviewMode.month => '$_previewMonth月计划',
+      _IepPreviewMode.week => '$_previewMonth第$_previewWeek周周计划',
+    };
+    final String impactText = switch (_previewMode) {
+      _IepPreviewMode.total => 'AI会基于当前评估记录生成IEP总计划，并自动保存为草稿。',
+      _IepPreviewMode.month => 'AI会基于当前IEP总计划生成$planLabel，并自动保存为草稿。',
+      _IepPreviewMode.week => 'AI会基于当前IEP总计划或月计划生成$planLabel，并自动保存为草稿。',
+    };
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _IepAiGenerateConfirmDialog(
+            title: '确认生成$planLabel？',
+            message: '$impactText\n生成过程会产生AI费用，确认后开始生成。',
+            confirmLabel: '确认生成',
+          ),
+        );
+      },
+    );
+    return confirmed == true;
   }
 
   Future<void> _showRegeneratePlanConfirmDialog() async {

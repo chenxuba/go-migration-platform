@@ -3,6 +3,9 @@ import { STORAGE_AUTHORIZE_KEY, useAuthorization } from '~/composables/authoriza
 import { useGet, usePost } from '~/utils/request'
 import type {
   PageResult,
+  PEP3AssessmentDraftProgress,
+  PEP3AssessmentDraftQueryModel,
+  PEP3AssessmentDraftSubmitResult,
   PEP3ExecutionPlanSavedVO,
   PEP3AssessmentRecordDetail,
   PEP3AssessmentRecordSummary,
@@ -22,6 +25,133 @@ export type ShuangxiAAssessmentRecordSummary = PEP3AssessmentRecordSummary
 export type ShuangxiAAssessmentRecordDetail = PEP3AssessmentRecordDetail
 export type ShuangxiARecordConfigUpdateRequest = PEP3RecordConfigUpdateRequest
 export type ShuangxiASelectedReportSection = 'developmentProfile' | 'resultAnalysis'
+
+export interface ShuangxiAScoreOption {
+  value: number
+  label: string
+  description?: string
+}
+
+export interface ShuangxiAItemSummary {
+  itemNo: number
+  itemCode?: string
+  itemTitle?: string
+  testItem?: string
+  domainCode: string
+  domainName: string
+  skillCode: string
+  skillName: string
+}
+
+export interface ShuangxiASkillSummary {
+  skillCode: string
+  skillName: string
+  domainCode: string
+  domainName: string
+  sortNo?: number
+  itemCount: number
+  items: ShuangxiAItemSummary[]
+}
+
+export interface ShuangxiADomainSummary {
+  domainCode: string
+  domainName: string
+  sortNo?: number
+  itemCount: number
+  maxRawScore?: number
+  skills: ShuangxiASkillSummary[]
+}
+
+export interface ShuangxiATemplateSummary {
+  title: string
+  itemCount: number
+  domainCount: number
+  skillCount: number
+  scoreMin?: number
+  scoreMax?: number
+  domains: ShuangxiADomainSummary[]
+  scoreOptions: ShuangxiAScoreOption[]
+}
+
+export interface ShuangxiAAssessmentItem extends ShuangxiAItemSummary {
+  scoreOptions: ShuangxiAScoreOption[]
+}
+
+export interface ShuangxiAItemScoreInput {
+  itemNo: number
+  score: number
+  remark?: string
+}
+
+export interface ShuangxiAItemRemarkInput {
+  itemNo: number
+  remark: string
+}
+
+export interface ShuangxiADraftInput {
+  studentId?: number
+  studentName?: string
+  studentGender?: string
+  examinerName?: string
+  remark?: string
+  birthDate?: string
+  assessmentDate?: string
+  itemScores?: Record<number, number>
+  itemScoreList?: ShuangxiAItemScoreInput[]
+  itemRemarks?: Record<number, string>
+  itemRemarkList?: ShuangxiAItemRemarkInput[]
+}
+
+export interface ShuangxiADraftSaveRequest extends ShuangxiADraftInput {
+  id?: number
+}
+
+export interface ShuangxiADraftItemSaveRequest {
+  draftId: number
+  itemNo: number
+  score: number
+  remark?: string
+  studentGender?: string
+}
+
+export interface ShuangxiADraftSummary {
+  id: number
+  instId?: number
+  studentId?: number
+  studentName?: string
+  assessmentCode: string
+  assessmentName: string
+  scaleVersion?: string
+  birthDate?: string
+  assessmentDate?: string
+  examinerId?: number
+  examinerName?: string
+  status: string
+  submittedRecordId?: number
+  answeredItemCount: number
+  completionPercent: number
+  progress: PEP3AssessmentDraftProgress
+  remark?: string
+  createdTime?: string
+  updatedTime?: string
+}
+
+export interface ShuangxiADraftDetail extends ShuangxiADraftSummary {
+  input?: ShuangxiADraftInput
+}
+
+export interface ShuangxiADraftPageRequest {
+  pageRequestModel: {
+    pageIndex: number
+    pageSize: number
+  }
+  queryModel?: PEP3AssessmentDraftQueryModel
+  latestOnly?: boolean
+}
+
+export interface ShuangxiARecordUpdateRequest extends ShuangxiADraftInput {
+  id: number
+}
 
 export interface ShuangxiAResultAnalysisRow {
   domainCode?: string
@@ -72,8 +202,40 @@ export function pageShuangxiAAssessmentRecordsApi(data: ShuangxiARecordPageReque
   )
 }
 
+export function getShuangxiAAssessmentFormTemplateSummaryApi() {
+  return useGet<ShuangxiATemplateSummary>('/api/v1/assessments/shuangxi-a/form-template/summary')
+}
+
+export function getShuangxiAAssessmentFormTemplateItemApi(itemNo: number) {
+  return useGet<ShuangxiAAssessmentItem>('/api/v1/assessments/shuangxi-a/form-template/item', { itemNo })
+}
+
+export function saveShuangxiAAssessmentDraftApi(data: ShuangxiADraftSaveRequest) {
+  return usePost<ShuangxiADraftDetail>('/api/v1/assessments/shuangxi-a/drafts/save', data)
+}
+
+export function saveShuangxiAAssessmentDraftItemApi(data: ShuangxiADraftItemSaveRequest) {
+  return usePost<ShuangxiADraftDetail>('/api/v1/assessments/shuangxi-a/drafts/item/save', data)
+}
+
+export function getShuangxiAAssessmentDraftDetailApi(id: number) {
+  return useGet<ShuangxiADraftDetail>('/api/v1/assessments/shuangxi-a/drafts/detail', { id })
+}
+
+export function pageShuangxiAAssessmentDraftsApi(data: ShuangxiADraftPageRequest) {
+  return usePost<PageResult<ShuangxiADraftSummary>>('/api/v1/assessments/shuangxi-a/drafts/page', data, { silentError: true })
+}
+
+export function submitShuangxiAAssessmentDraftApi(id: number) {
+  return usePost<PEP3AssessmentDraftSubmitResult>('/api/v1/assessments/shuangxi-a/drafts/submit', { id })
+}
+
 export function getShuangxiAAssessmentRecordDetailApi(id: number) {
   return useGet<ShuangxiAAssessmentRecordDetail>('/api/v1/assessments/shuangxi-a/records/detail', { id })
+}
+
+export function updateShuangxiAAssessmentRecordApi(data: ShuangxiARecordUpdateRequest) {
+  return usePost<ShuangxiAAssessmentRecordDetail>('/api/v1/assessments/shuangxi-a/records/update', data)
 }
 
 export function updateShuangxiAAssessmentRecordConfigApi(data: ShuangxiARecordConfigUpdateRequest) {

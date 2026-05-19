@@ -26,6 +26,7 @@ const (
 	iepPlanGenerationTaskKindPEP3      iepPlanGenerationTaskKind = "pep3"
 	iepPlanGenerationTaskKindERXin     iepPlanGenerationTaskKind = "erxin"
 	iepPlanGenerationTaskKindAutismDev iepPlanGenerationTaskKind = "autismdev"
+	iepPlanGenerationTaskKindShuangxiA iepPlanGenerationTaskKind = "shuangxi_a"
 )
 
 type iepPlanGenerationTask struct {
@@ -157,6 +158,10 @@ func (svc *Service) CreateAutismDevIEPPlanGenerationTask(userID int64, req model
 	return svc.createIEPPlanGenerationTask(iepPlanGenerationTaskKindAutismDev, userID, req)
 }
 
+func (svc *Service) CreateShuangxiAIEPPlanGenerationTask(userID int64, req model.PEP3IEPPlanGenerateRequest) (model.PEP3IEPPlanGenerationTaskVO, error) {
+	return svc.createIEPPlanGenerationTask(iepPlanGenerationTaskKindShuangxiA, userID, req)
+}
+
 func (svc *Service) GetPEP3ActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
 	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindPEP3, userID, recordID)
 }
@@ -167,6 +172,10 @@ func (svc *Service) GetERXinActiveIEPPlanGenerationTask(userID int64, recordID i
 
 func (svc *Service) GetAutismDevActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
 	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindAutismDev, userID, recordID)
+}
+
+func (svc *Service) GetShuangxiAActiveIEPPlanGenerationTask(userID int64, recordID int64) (model.PEP3IEPPlanGenerationTaskVO, error) {
+	return svc.getActiveIEPPlanGenerationTask(iepPlanGenerationTaskKindShuangxiA, userID, recordID)
 }
 
 func (svc *Service) createIEPPlanGenerationTask(kind iepPlanGenerationTaskKind, userID int64, req model.PEP3IEPPlanGenerateRequest) (model.PEP3IEPPlanGenerationTaskVO, error) {
@@ -312,6 +321,8 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	switch iepPlanGenerationTaskKind(entity.AssessmentType) {
 	case iepPlanGenerationTaskKindAutismDev:
 		plan, usage, err = svc.GenerateAutismDevIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
+	case iepPlanGenerationTaskKindShuangxiA:
+		plan, usage, err = svc.GenerateShuangxiAIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	case iepPlanGenerationTaskKindERXin:
 		plan, usage, err = svc.GenerateERXinIEPPlanWithAIStream(ctx, entity.UserID, entity.RecordID, entity.DurationMonths, onDelta)
 	default:
@@ -344,6 +355,8 @@ func (svc *Service) runIEPPlanGenerationTask(taskID string) {
 	switch iepPlanGenerationTaskKind(entity.AssessmentType) {
 	case iepPlanGenerationTaskKindAutismDev:
 		saved, err = svc.SaveAutismDevIEPPlan(entity.UserID, saveReq)
+	case iepPlanGenerationTaskKindShuangxiA:
+		saved, err = svc.SaveShuangxiAIEPPlan(entity.UserID, saveReq)
 	case iepPlanGenerationTaskKindERXin:
 		saved, err = svc.SaveERXinIEPPlan(entity.UserID, saveReq)
 	default:
