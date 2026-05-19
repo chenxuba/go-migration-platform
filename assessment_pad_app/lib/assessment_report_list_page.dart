@@ -5732,6 +5732,7 @@ class _ShuangxiReportPreviewDialogState
                       streamText: _resultAnalysisStreamText,
                       selectedCell: _selectedAnalysisCell,
                       onCellTap: _handleResultAnalysisCellTap,
+                      onCourseNameTap: _showResultAnalysisCourseNameDialog,
                     ),
                   ),
                 ),
@@ -5760,6 +5761,52 @@ class _ShuangxiReportPreviewDialogState
     setState(() {
       _selectedAnalysisCell = request;
     });
+  }
+
+  Future<void> _showResultAnalysisCourseNameDialog() async {
+    _clearResultAnalysisCellSelection();
+    final ShuangxiResultAnalysis base =
+        _mergeShuangxiResultAnalysis(_resultAnalysis);
+    final String? courseName = await showDialog<String>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext dialogContext) {
+        return PadDialogViewport(
+          child: _ShuangxiCourseNameEditDialog(
+            initialValue: base.courseName,
+          ),
+        );
+      },
+    );
+    if (courseName == null || !mounted) {
+      return;
+    }
+    final ShuangxiResultAnalysis nextAnalysis = base.copyWith(
+      courseName: courseName.trim(),
+    );
+    setState(() {
+      _resultAnalysis = nextAnalysis;
+    });
+    try {
+      final ShuangxiResultAnalysis saved =
+          await widget.client.saveShuangxiResultAnalysis(
+        widget.token.trim(),
+        widget.record.id,
+        nextAnalysis,
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _resultAnalysis = _mergeShuangxiResultAnalysis(saved);
+      });
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('保存课程名称失败：$error')),
+        );
+      }
+    }
   }
 
   Future<void> _showResultAnalysisEditDialog(
@@ -5798,13 +5845,7 @@ class _ShuangxiReportPreviewDialogState
       reason: result.reason,
       strategy: result.strategy,
     );
-    final ShuangxiResultAnalysis nextAnalysis = ShuangxiResultAnalysis(
-      title: base.title,
-      model: base.model,
-      generatedBy: base.generatedBy,
-      generatedAt: base.generatedAt,
-      rows: nextRows,
-    );
+    final ShuangxiResultAnalysis nextAnalysis = base.copyWith(rows: nextRows);
     setState(() {
       _resultAnalysis = nextAnalysis;
       _selectedAnalysisCell = null;
@@ -5980,6 +6021,7 @@ class _ShuangxiResultAnalysisSheet extends StatelessWidget {
     required this.streamText,
     required this.selectedCell,
     required this.onCellTap,
+    required this.onCourseNameTap,
   });
 
   final Pep3RecordSummary record;
@@ -5990,6 +6032,7 @@ class _ShuangxiResultAnalysisSheet extends StatelessWidget {
   final String streamText;
   final _ShuangxiAnalysisEditRequest? selectedCell;
   final ValueChanged<_ShuangxiAnalysisEditRequest> onCellTap;
+  final VoidCallback onCourseNameTap;
 
   @override
   Widget build(BuildContext context) {
@@ -5999,7 +6042,11 @@ class _ShuangxiResultAnalysisSheet extends StatelessWidget {
         const SizedBox(height: 4),
         const _ShuangxiResultAnalysisTitle(),
         const SizedBox(height: 14),
-        _ShuangxiResultAnalysisMeta(record: record),
+        _ShuangxiResultAnalysisMeta(
+          record: record,
+          courseName: analysis.courseName,
+          onCourseNameTap: onCourseNameTap,
+        ),
         const SizedBox(height: 10),
         if (generating) ...<Widget>[
           _AutismDevAnalysisStreamPanel(
@@ -6068,9 +6115,15 @@ class _ShuangxiResultAnalysisTitle extends StatelessWidget {
 }
 
 class _ShuangxiResultAnalysisMeta extends StatelessWidget {
-  const _ShuangxiResultAnalysisMeta({required this.record});
+  const _ShuangxiResultAnalysisMeta({
+    required this.record,
+    required this.courseName,
+    required this.onCourseNameTap,
+  });
 
   final Pep3RecordSummary record;
+  final String courseName;
+  final VoidCallback onCourseNameTap;
 
   @override
   Widget build(BuildContext context) {
@@ -6106,11 +6159,10 @@ class _ShuangxiResultAnalysisMeta extends StatelessWidget {
         Row(
           children: <Widget>[
             Expanded(
-              child: _AutismDevAnalysisMetaLine(
+              child: _ShuangxiEditableAnalysisMetaLine(
                 label: '课程名称：',
-                value: record.assessmentName.trim().isEmpty
-                    ? '双溪课程评量表A'
-                    : record.assessmentName.trim(),
+                value: courseName,
+                onTap: onCourseNameTap,
               ),
             ),
             const SizedBox(width: 26),
@@ -6130,6 +6182,69 @@ class _ShuangxiResultAnalysisMeta extends StatelessWidget {
               ),
             ),
           ],
+        ),
+      ],
+    );
+  }
+}
+
+class _ShuangxiEditableAnalysisMetaLine extends StatelessWidget {
+  const _ShuangxiEditableAnalysisMetaLine({
+    required this.label,
+    required this.value,
+    required this.onTap,
+  });
+
+  final String label;
+  final String value;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Text(
+          label,
+          style: const TextStyle(
+            color: Colors.black,
+            fontSize: 17,
+            height: 1.2,
+          ),
+        ),
+        Expanded(
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: onTap,
+              child: Container(
+                height: 24,
+                alignment: Alignment.center,
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom: BorderSide(color: Colors.black, width: .8),
+                  ),
+                ),
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: <Widget>[
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: Text(
+                        value.trim(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 16,
+                          height: 1.15,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
         ),
       ],
     );
@@ -6412,6 +6527,110 @@ Widget _shuangxiAnalysisEditableFrame({
       child: content,
     ),
   );
+}
+
+class _ShuangxiCourseNameEditDialog extends StatefulWidget {
+  const _ShuangxiCourseNameEditDialog({required this.initialValue});
+
+  final String initialValue;
+
+  @override
+  State<_ShuangxiCourseNameEditDialog> createState() =>
+      _ShuangxiCourseNameEditDialogState();
+}
+
+class _ShuangxiCourseNameEditDialogState
+    extends State<_ShuangxiCourseNameEditDialog> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialValue);
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    Navigator.of(context).pop(_controller.text.trim());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 520,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '编辑课程名称',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            _AutismDevAnalysisDialogField(
+              label: '课程名称',
+              controller: _controller,
+              minLines: 1,
+              maxLines: 1,
+            ),
+            const SizedBox(height: 14),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogAction(
+                  label: '保存',
+                  filled: true,
+                  icon: Icons.save_outlined,
+                  onTap: _submit,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ShuangxiAnalysisEditDialog extends StatefulWidget {
@@ -7773,6 +7992,7 @@ ShuangxiResultAnalysis _mergeShuangxiResultAnalysis(
   }
   return ShuangxiResultAnalysis(
     title: source.title.trim().isEmpty ? fallback.title : source.title.trim(),
+    courseName: source.courseName.trim(),
     model: source.model,
     generatedBy: source.generatedBy,
     generatedAt: source.generatedAt,
@@ -7865,7 +8085,7 @@ Future<Uint8List> _buildShuangxiResultAnalysisPrintPdf(
           ),
         ),
         pw.SizedBox(height: 10),
-        _shuangxiAnalysisPrintMeta(record),
+        _shuangxiAnalysisPrintMeta(record, analysis.courseName),
         pw.SizedBox(height: 10),
         pw.Table(
           border: pw.TableBorder.all(
@@ -7914,7 +8134,10 @@ String _shuangxiAnalysisFallbackText(String value) {
   return text.isEmpty ? '无' : text;
 }
 
-pw.Widget _shuangxiAnalysisPrintMeta(Pep3RecordSummary record) {
+pw.Widget _shuangxiAnalysisPrintMeta(
+  Pep3RecordSummary record,
+  String courseName,
+) {
   return pw.Column(
     children: <pw.Widget>[
       pw.Row(
@@ -7937,9 +8160,7 @@ pw.Widget _shuangxiAnalysisPrintMeta(Pep3RecordSummary record) {
         children: <pw.Widget>[
           _shuangxiAnalysisPrintMetaItem(
             '课程名称：',
-            record.assessmentName.trim().isEmpty
-                ? '双溪课程评量表A'
-                : record.assessmentName.trim(),
+            courseName.trim(),
           ),
           pw.SizedBox(width: 16),
           _shuangxiAnalysisPrintMetaItem(

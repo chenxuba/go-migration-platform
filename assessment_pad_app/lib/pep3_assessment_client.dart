@@ -1001,6 +1001,7 @@ class ShuangxiResultAnalysis {
   const ShuangxiResultAnalysis({
     required this.title,
     required this.rows,
+    this.courseName = '',
     this.model = '',
     this.generatedBy = '',
     this.generatedAt = '',
@@ -1009,6 +1010,7 @@ class ShuangxiResultAnalysis {
   factory ShuangxiResultAnalysis.fromJson(Map<String, dynamic> json) {
     return ShuangxiResultAnalysis(
       title: '${json['title'] ?? ''}',
+      courseName: '${json['courseName'] ?? ''}',
       model: '${json['model'] ?? ''}',
       generatedBy: '${json['generatedBy'] ?? ''}',
       generatedAt: '${json['generatedAt'] ?? ''}',
@@ -1021,6 +1023,7 @@ class ShuangxiResultAnalysis {
   Map<String, dynamic> toJson() {
     return <String, dynamic>{
       'title': title,
+      if (courseName.trim().isNotEmpty) 'courseName': courseName,
       if (model.trim().isNotEmpty) 'model': model,
       if (generatedBy.trim().isNotEmpty) 'generatedBy': generatedBy,
       if (generatedAt.trim().isNotEmpty) 'generatedAt': generatedAt,
@@ -1035,6 +1038,7 @@ class ShuangxiResultAnalysis {
   );
 
   final String title;
+  final String courseName;
   final String model;
   final String generatedBy;
   final String generatedAt;
@@ -1045,6 +1049,24 @@ class ShuangxiResultAnalysis {
       row.weaknesses.trim().isEmpty &&
       row.reason.trim().isEmpty &&
       row.strategy.trim().isEmpty);
+
+  ShuangxiResultAnalysis copyWith({
+    String? title,
+    String? courseName,
+    String? model,
+    String? generatedBy,
+    String? generatedAt,
+    List<ShuangxiResultAnalysisRow>? rows,
+  }) {
+    return ShuangxiResultAnalysis(
+      title: title ?? this.title,
+      courseName: courseName ?? this.courseName,
+      model: model ?? this.model,
+      generatedBy: generatedBy ?? this.generatedBy,
+      generatedAt: generatedAt ?? this.generatedAt,
+      rows: rows ?? this.rows,
+    );
+  }
 }
 
 class ShuangxiResultAnalysisRow {

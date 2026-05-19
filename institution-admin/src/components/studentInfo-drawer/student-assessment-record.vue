@@ -225,16 +225,12 @@ function reportModuleShortTitle(value) {
   return titleMap[value] || reportModuleTitle(value)
 }
 
-function reportModuleDesc(value) {
-  return reportModuleOptions.find(item => item.value === value)?.desc || ''
-}
-
-function reportModulePages(value) {
-  return reportModuleOptions.find(item => item.value === value)?.pages || ''
-}
-
 function iepActionText(record) {
-  return record?.iepPlanStatus === 'confirmed' ? '查看IEP' : '生成IEP'
+  return hasIepPlan(record) ? '查看IEP' : '生成IEP'
+}
+
+function hasIepPlan(record) {
+  return !!String(record?.iepPlanStatus || '').trim()
 }
 
 function getDownloadFilename(response, fallback) {
@@ -596,10 +592,6 @@ onBeforeUnmount(() => {
               <span v-if="option.recommended" class="report-module-chip__tag">推荐</span>
             </button>
           </div>
-          <div class="report-module-summary">
-            <strong>{{ reportModulePages(activeReportModule) }}</strong>
-            <span>{{ reportModuleDesc(activeReportModule) }}</span>
-          </div>
         </div>
 
         <div class="report-module-content">
@@ -901,38 +893,6 @@ onBeforeUnmount(() => {
   line-height: 18px;
   background: #eef6ff;
   border-radius: 4px;
-}
-
-.report-module-summary {
-  display: flex;
-  align-items: center;
-  flex: 1 1 auto;
-  gap: 8px;
-  min-width: 0;
-  padding-left: 12px;
-  border-left: 1px solid #e6edf6;
-
-  span {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    color: #687386;
-    font-size: 12px;
-    line-height: 18px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  strong {
-    flex: 0 0 auto;
-    overflow: hidden;
-    color: var(--pro-ant-color-primary);
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 20px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 .report-module-content {

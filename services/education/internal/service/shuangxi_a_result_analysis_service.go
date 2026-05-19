@@ -434,6 +434,7 @@ func buildDeepSeekShuangxiAResultAnalysisRequestBody(payload shuangxiResultAnaly
 
 func normalizeShuangxiAResultAnalysis(result, fallback model.ShuangxiResultAnalysisVO, generatedBy string) model.ShuangxiResultAnalysisVO {
 	result.Title = "双溪心智障碍个别化教育课程（三）评量结果分析表"
+	result.CourseName = strings.TrimSpace(result.CourseName)
 	if strings.TrimSpace(result.Model) == "" && strings.TrimSpace(generatedBy) == "ai" {
 		result.Model = deepSeekIEPPlanModel
 	}

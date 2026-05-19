@@ -1264,10 +1264,6 @@ function reportModuleShortTitle(value) {
   return titleMap[value] || reportModuleTitle(value)
 }
 
-function reportModuleDesc(value) {
-  return reportModuleOptions.find(item => item.value === value)?.desc || ''
-}
-
 function reportModulePages(value) {
   return reportModuleOptions.find(item => item.value === value)?.pages || ''
 }
@@ -1296,7 +1292,7 @@ function reportExportTitle(row, dimension) {
 }
 
 function iepActionText(record) {
-  return record?.iepPlanStatus === 'confirmed' ? '查看IEP' : '生成IEP'
+  return hasIepPlan(record) ? '查看IEP' : '生成IEP'
 }
 
 function hasIepPlan(record) {
@@ -1304,7 +1300,7 @@ function hasIepPlan(record) {
 }
 
 function canModifyAssessmentRecord(record) {
-  return !!record?.id && !(hasIepPlan(record) && !isERXinRecord(record))
+  return !!record?.id && !hasIepPlan(record)
 }
 
 function assessmentRecordModifyTip(record) {
@@ -1911,6 +1907,38 @@ function openIepModal(row) {
   iepModalOpen.value = true
 }
 
+function resolveIepPlanStatus(data, fallback = '') {
+  return String(data?.status || data?.iepPlan?.status || fallback || '').trim()
+}
+
+function syncRecordIepPlanStatus(status) {
+  const nextStatus = String(status || '').trim()
+  const targetRecord = iepTargetRecord.value
+  if (!targetRecord?.id || !nextStatus)
+    return
+  const targetType = recordSourceType(targetRecord)
+  const sameRecord = record => record?.id === targetRecord.id && recordSourceType(record) === targetType
+  const patchRecord = record => ({ ...record, iepPlanStatus: nextStatus })
+  iepTargetRecord.value = patchRecord(targetRecord)
+  if (currentReport.value?.record && sameRecord(currentReport.value.record)) {
+    currentReport.value = {
+      ...currentReport.value,
+      record: patchRecord(currentReport.value.record),
+    }
+  }
+  dataSource.value = dataSource.value.map(record => sameRecord(record) ? patchRecord(record) : record)
+}
+
+function handleIepPlanSaved(data) {
+  syncRecordIepPlanStatus(resolveIepPlanStatus(data, iepTargetRecord.value?.iepPlanStatus || 'draft'))
+  fetchRecords()
+}
+
+function handleIepPlanConfirmed(data) {
+  syncRecordIepPlanStatus(resolveIepPlanStatus(data, 'confirmed'))
+  fetchRecords()
+}
+
 function openConfigModal(row) {
   if (!row)
     return
@@ -2189,7 +2217,6 @@ onBeforeUnmount(() => {
             </div>
             <div v-if="!isERXinRecord(currentReport.record) && !isAutismDevRecord(currentReport.record) && !isShuangxiARecord(currentReport.record)" class="report-inline-summary">
               <strong>{{ reportTab === 'interpretation' ? '报告解读' : reportModulePages(activeReportModule) }}</strong>
-              <span>{{ reportTab === 'interpretation' ? '查看或生成PEP-3报告解读。' : reportModuleDesc(activeReportModule) }}</span>
               <a-button
                 v-if="reportTab === 'interpretation'"
                 type="primary"
@@ -2270,10 +2297,6 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__text">综合发展侧面图</span>
             </button>
           </div>
-          <div class="report-module-summary erxin-report-tabs__summary">
-            <strong>PDF报告</strong>
-            <span>查看双溪课程评量表A综合发展侧面图。</span>
-          </div>
         </div>
         <div v-else-if="isAutismDevRecord(currentReport.record)" class="report-module-area erxin-report-tabs">
           <div class="report-module-grid autismdev-report-tabs">
@@ -2353,19 +2376,21 @@ onBeforeUnmount(() => {
               <span class="report-module-chip__text">报告解读</span>
             </button>
           </div>
-          <div class="report-module-summary erxin-report-tabs__summary">
-            <strong>{{ reportTab === 'interpretation' ? '报告解读' : 'PDF报告' }}</strong>
-            <span>{{ reportTab === 'interpretation' ? '查看或生成儿心量表报告解读。' : '查看儿心量表评估结果记录。' }}</span>
-            <a-button
-              v-if="reportTab === 'interpretation'"
-              type="primary"
-              size="small"
-              :loading="interpretationGenerating"
-              :disabled="interpretationLoading && !interpretationGenerating"
-              @click="handleGenerateInterpretation"
-            >
-              {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
-            </a-button>
+          <div
+            v-if="reportTab === 'interpretation'"
+            class="report-module-summary report-module-summary--actions-only erxin-report-tabs__summary"
+          >
+            <div class="report-module-summary__actions">
+              <a-button
+                type="primary"
+                size="small"
+                :loading="interpretationGenerating"
+                :disabled="interpretationLoading && !interpretationGenerating"
+                @click="handleGenerateInterpretation"
+              >
+                {{ interpretationGenerating ? '生成中' : (interpretationIsEmpty() ? '生成解读' : '重新生成解读') }}
+              </a-button>
+            </div>
           </div>
         </div>
 
@@ -2797,8 +2822,8 @@ onBeforeUnmount(() => {
     <generate-iep-modal
       v-model:open="iepModalOpen"
       :record="iepTargetRecord"
-      @saved="fetchRecords"
-      @confirmed="fetchRecords"
+      @saved="handleIepPlanSaved"
+      @confirmed="handleIepPlanConfirmed"
     />
   </div>
 </template>
@@ -2917,17 +2942,6 @@ onBeforeUnmount(() => {
     font-size: 13px;
     font-weight: 600;
     line-height: 20px;
-    white-space: nowrap;
-  }
-
-  span {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    color: #687386;
-    font-size: 12px;
-    line-height: 18px;
-    text-overflow: ellipsis;
     white-space: nowrap;
   }
 
@@ -3059,28 +3073,6 @@ onBeforeUnmount(() => {
   min-width: 0;
   padding-left: 12px;
   border-left: 1px solid #e6edf6;
-
-  span {
-    flex: 1 1 auto;
-    min-width: 0;
-    overflow: hidden;
-    color: #687386;
-    font-size: 12px;
-    line-height: 18px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  strong {
-    flex: 0 0 auto;
-    overflow: hidden;
-    color: var(--pro-ant-color-primary);
-    font-size: 13px;
-    font-weight: 600;
-    line-height: 20px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
 }
 
 .report-module-summary__actions {

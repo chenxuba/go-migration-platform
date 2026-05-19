@@ -11,6 +11,7 @@ type ShuangxiResultAnalysisSaveRequest struct {
 
 type ShuangxiResultAnalysisVO struct {
 	Title       string                      `json:"title"`
+	CourseName  string                      `json:"courseName,omitempty"`
 	Model       string                      `json:"model,omitempty"`
 	GeneratedBy string                      `json:"generatedBy,omitempty"`
 	GeneratedAt string                      `json:"generatedAt,omitempty"`
