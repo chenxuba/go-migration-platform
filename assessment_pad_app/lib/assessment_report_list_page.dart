@@ -5300,6 +5300,8 @@ class _ShuangxiReportPreviewDialog extends StatefulWidget {
 
 class _ShuangxiReportPreviewDialogState
     extends State<_ShuangxiReportPreviewDialog> {
+  final PadMessageOverlayController _messageController =
+      PadMessageOverlayController();
   bool _showAnalysis = false;
   bool _printing = false;
   String _printLoadingText = '';
@@ -5320,6 +5322,28 @@ class _ShuangxiReportPreviewDialogState
     super.initState();
     _developmentProfilePdfLoad = _loadDevelopmentProfilePdf();
     unawaited(_loadSavedResultAnalysis());
+  }
+
+  @override
+  void dispose() {
+    _messageController.dispose();
+    super.dispose();
+  }
+
+  void _showMessage(
+    String message, {
+    PadMessageTone tone = PadMessageTone.info,
+  }) {
+    if (!mounted || message.trim().isEmpty) {
+      return;
+    }
+    _messageController.show(
+      context,
+      message,
+      tone: tone,
+      topMargin: 12,
+      key: 'shuangxi-report-message',
+    );
   }
 
   Future<Uint8List> _loadDevelopmentProfilePdf() async {
@@ -5554,9 +5578,7 @@ class _ShuangxiReportPreviewDialogState
     final ShuangxiResultAnalysis analysis =
         _mergeShuangxiResultAnalysis(_resultAnalysis);
     if (analysis.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请先生成评量结果分析')),
-      );
+      _showMessage('请先生成评量结果分析');
       return;
     }
     setState(() {

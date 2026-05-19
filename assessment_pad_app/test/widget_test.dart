@@ -324,6 +324,13 @@ void main() {
     await tester.tap(find.text('生成解读').last);
     await tester.pump();
 
+    expect(find.text('确认生成解读'), findsOneWidget);
+    expect(find.text('正在读取儿心评估结果'), findsNothing);
+    expect(erxinClient.generateInterpretationCalls, 0);
+
+    await tester.tap(find.text('确认生成'));
+    await tester.pump();
+
     expect(find.text('正在读取儿心评估结果'), findsOneWidget);
     expect(find.text('本次测评显示儿童整体发育水平需结合日常观察综合判断。'), findsNothing);
 
