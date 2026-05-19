@@ -8,7 +8,7 @@ import GenerateIepModal from './components/generate-iep-modal.vue'
 import {
   deletePEP3AssessmentRecordApi,
   downloadPEP3AssessmentBookletPdfApi,
-  downloadPEP3AssessmentRecordReportInterpretationPdfApi,
+  downloadPEP3AssessmentSelectedReportPdfApi,
   generatePEP3AssessmentRecordReportInterpretationStreamApi,
   getPEP3AssessmentRecordReportInterpretationApi,
   pagePEP3AssessmentRecordsApi,
@@ -53,6 +53,8 @@ const currentReport = ref(null)
 const reportModalOpen = ref(false)
 const exportModalOpen = ref(false)
 const exportTargetRecord = ref(null)
+const pep3ExportSections = ref([])
+const erxinExportSections = ref([])
 const iepModalOpen = ref(false)
 const iepTargetRecord = ref(null)
 const configModalOpen = ref(false)
@@ -110,24 +112,24 @@ const shuangxiAnalysisStreamReadableText = computed(() => shuangxiAnalysisReadab
 const shuangxiAnalysisStreamRows = computed(() => shuangxiAnalysisPreviewRows(shuangxiAnalysisStreamReadableText.value))
 const shuangxiAnalysisStreamProgressPercent = computed(() => Math.round(autismDevResultAnalysisStreamProgress(shuangxiAnalysisStreamText.value) * 100))
 
-const exportDimensionOptions = [
+const pep3ReportModuleOptions = [
   {
     value: 'test_score',
-    title: '仅导出测验分数',
+    title: '测验分数',
     badge: '01',
     desc: '导出首页测验分数汇总，适合快速归档总览。',
     pages: '第 1 页',
   },
   {
     value: 'development_profile',
-    title: '仅导出发展表现图',
+    title: '发展表现图',
     badge: '02',
     desc: '只导出发展表现图，用于查看各领域发展曲线。',
     pages: '第 19 页',
   },
   {
     value: 'score_and_profile',
-    title: '导出测验分数与发展表现图',
+    title: '测验分数与发展表现图',
     badge: '03',
     desc: '包含测验分数汇总和发展表现图，适合简版报告。',
     pages: '第 1、19 页',
@@ -135,24 +137,48 @@ const exportDimensionOptions = [
   },
   {
     value: 'scoring_tables',
-    title: '仅导出测验评分表',
+    title: '测验评分表',
     badge: '04',
     desc: '导出儿童表现记录、评分统计和照顾者评分表。',
     pages: '第 2-18 页',
   },
+]
+const exportDimensionOptions = [
+  {
+    value: 'test_score',
+    title: '测验分数',
+    badge: '01',
+    desc: '导出首页测验分数汇总，适合快速归档总览。',
+    pages: '第 1 页',
+    recommended: true,
+  },
+  {
+    value: 'scoring_tables',
+    title: '测验评分表',
+    badge: '02',
+    desc: '导出儿童表现记录、评分统计和照顾者评分表。',
+    pages: '第 2-18 页',
+  },
+  {
+    value: 'development_profile',
+    title: '发展表现图',
+    badge: '03',
+    desc: '导出发展表现图，用于查看各领域发展曲线。',
+    pages: '第 19 页',
+  },
   {
     value: 'education_plan',
-    title: '仅导出教育计划分析用表',
-    badge: '05',
+    title: '教育计划分析用表',
+    badge: '04',
     desc: '导出教育计划分析相关页，便于教学计划制定。',
     pages: '第 20-26 页',
   },
   {
-    value: 'all',
-    title: '全维度导出',
-    badge: 'ALL',
-    desc: '导出完整测试员记录册，包含所有维度与分析表。',
-    pages: '第 1-26 页',
+    value: 'interpretation',
+    title: '报告解读',
+    badge: '05',
+    desc: '导出已生成的报告解读内容。',
+    pages: '报告解读',
   },
 ]
 const erxinExportDimensionOptions = [
@@ -170,13 +196,6 @@ const erxinExportDimensionOptions = [
     badge: '02',
     desc: '导出已生成的报告解读内容。',
     pages: '报告',
-  },
-  {
-    value: 'erxin_combined',
-    title: '记录+报告',
-    badge: '03',
-    desc: '合并导出评估记录和报告解读。',
-    pages: '记录+报告',
   },
 ]
 const autismDevExportDimensionOptions = [
@@ -251,10 +270,9 @@ const shuangxiReportSectionOptions = [
     title: '评量结果分析',
   },
 ]
-const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'all'
+const defaultExportDimension = exportDimensionOptions.find(item => item.recommended)?.value || 'test_score'
 const selectedExportDimension = ref(defaultExportDimension)
-const reportModuleValues = ['test_score', 'development_profile', 'score_and_profile', 'scoring_tables']
-const reportModuleOptions = exportDimensionOptions.filter(item => reportModuleValues.includes(item.value))
+const reportModuleOptions = pep3ReportModuleOptions
 const defaultReportModule = reportModuleOptions.find(item => item.recommended)?.value || reportModuleOptions[0]?.value || 'test_score'
 const activeReportModule = ref(defaultReportModule)
 const activeExportDimensionOptions = computed(() => {
@@ -265,6 +283,20 @@ const activeExportDimensionOptions = computed(() => {
   if (isAutismDevRecord(exportTargetRecord.value))
     return autismDevExportDimensionOptions
   return exportDimensionOptions
+})
+const pep3EnabledExportSections = computed(() => exportDimensionOptions
+  .filter(option => isPEP3ExportSectionEnabled(option.value))
+  .map(option => option.value))
+const pep3ExportAllSelected = computed(() => {
+  const enabled = pep3EnabledExportSections.value
+  return !!enabled.length && enabled.every(section => pep3ExportSections.value.includes(section))
+})
+const erxinEnabledExportSections = computed(() => erxinExportDimensionOptions
+  .filter(option => isERXinExportSectionEnabled(option.value))
+  .map(option => option.value))
+const erxinExportAllSelected = computed(() => {
+  const enabled = erxinEnabledExportSections.value
+  return !!enabled.length && enabled.every(section => erxinExportSections.value.includes(section))
 })
 const autismDevEnabledExportSections = computed(() => autismDevExportDimensionOptions
   .filter(option => isAutismDevExportSectionEnabled(option.value))
@@ -534,6 +566,14 @@ function defaultAutismDevReportSection() {
 
 function shuangxiReportSectionTitle(value) {
   return shuangxiExportDimensionOptions.find(item => item.value === value)?.title || '双溪报告'
+}
+
+function pep3ReportSectionTitle(value) {
+  return exportDimensionOptions.find(item => item.value === value)?.title || 'PEP-3记录册'
+}
+
+function erxinReportSectionTitle(value) {
+  return erxinExportDimensionOptions.find(item => item.value === value)?.title || '儿心报告'
 }
 
 function normalizeAutismDevAnalysis(value) {
@@ -1170,6 +1210,106 @@ function toggleAllAutismDevExportSections() {
   setAutismDevExportSections(autismDevEnabledExportSections.value)
 }
 
+function isPEP3ExportSectionEnabled(section) {
+  if (section !== 'interpretation')
+    return true
+  return !(interpretationLoading.value || interpretationGenerating.value)
+}
+
+function pep3ExportSectionStatus(section) {
+  if (section !== 'interpretation')
+    return ''
+  if (interpretationGenerating.value)
+    return '生成中'
+  if (interpretationLoading.value)
+    return '读取中'
+  return ''
+}
+
+function normalizePEP3ExportSections(sections = []) {
+  const allowed = exportDimensionOptions.map(item => item.value)
+  const enabled = pep3EnabledExportSections.value
+  return sections
+    .filter(section => allowed.includes(section) && enabled.includes(section))
+    .filter((section, index, array) => array.indexOf(section) === index)
+}
+
+function setPEP3ExportSections(sections = []) {
+  const normalized = normalizePEP3ExportSections(sections)
+  pep3ExportSections.value = normalized.length ? normalized : normalizePEP3ExportSections([defaultExportDimension])
+}
+
+function togglePEP3ExportSection(section) {
+  if (!isPEP3ExportSectionEnabled(section))
+    return
+  const next = new Set(pep3ExportSections.value)
+  if (next.has(section))
+    next.delete(section)
+  else
+    next.add(section)
+  setPEP3ExportSections(Array.from(next))
+}
+
+function toggleAllPEP3ExportSections() {
+  if (pep3ExportAllSelected.value) {
+    pep3ExportSections.value = []
+    return
+  }
+  setPEP3ExportSections(pep3EnabledExportSections.value)
+}
+
+function isERXinExportSectionEnabled(section) {
+  if (section !== 'erxin_interpretation')
+    return true
+  return !(interpretationLoading.value || interpretationGenerating.value)
+}
+
+function erxinExportSectionStatus(section) {
+  if (section !== 'erxin_interpretation')
+    return ''
+  if (interpretationGenerating.value)
+    return '生成中'
+  if (interpretationLoading.value)
+    return '读取中'
+  return ''
+}
+
+function normalizeERXinExportSections(sections = []) {
+  const allowed = erxinExportDimensionOptions.map(item => item.value)
+  const enabled = erxinEnabledExportSections.value
+  return sections
+    .filter(section => allowed.includes(section) && enabled.includes(section))
+    .filter((section, index, array) => array.indexOf(section) === index)
+}
+
+function defaultERXinReportSection() {
+  return erxinExportDimensionOptions.find(item => item.recommended)?.value || 'erxin_result'
+}
+
+function setERXinExportSections(sections = []) {
+  const normalized = normalizeERXinExportSections(sections)
+  erxinExportSections.value = normalized.length ? normalized : normalizeERXinExportSections([defaultERXinReportSection()])
+}
+
+function toggleERXinExportSection(section) {
+  if (!isERXinExportSectionEnabled(section))
+    return
+  const next = new Set(erxinExportSections.value)
+  if (next.has(section))
+    next.delete(section)
+  else
+    next.add(section)
+  setERXinExportSections(Array.from(next))
+}
+
+function toggleAllERXinExportSections() {
+  if (erxinExportAllSelected.value) {
+    erxinExportSections.value = []
+    return
+  }
+  setERXinExportSections(erxinEnabledExportSections.value)
+}
+
 function shuangxiExportAnalysisNeedsLoad(row = exportTargetRecord.value) {
   if (!row?.id || !isShuangxiARecord(row))
     return false
@@ -1634,7 +1774,7 @@ function exportDimensionTitle(value) {
     return shuangxiExportDimensionOptions.find(item => item.value === value)?.title || '双溪报告'
   if (isAutismDevRecord(exportTargetRecord.value))
     return autismDevExportDimensionOptions.find(item => item.value === value)?.title || '评估报告'
-  return activeExportDimensionOptions.value.find(item => item.value === value)?.title || '全维度导出'
+  return activeExportDimensionOptions.value.find(item => item.value === value)?.title || 'PEP-3记录册'
 }
 
 function exportDimensionPages(value) {
@@ -1669,7 +1809,7 @@ function defaultExportDimensionForRecord(record) {
   if (isShuangxiARecord(record))
     return defaultShuangxiReportSection()
   if (isERXinRecord(record))
-    return erxinExportDimensionOptions.find(item => item.recommended)?.value || erxinExportDimensionOptions[0]?.value || 'erxin_result'
+    return defaultERXinReportSection()
   if (isAutismDevRecord(record))
     return defaultAutismDevReportSection()
   return defaultExportDimension
@@ -1797,14 +1937,7 @@ function confirmReportExport(row = currentReport.value?.record, dimension = acti
     openExportModal(row, activeShuangxiReportSection.value === 'resultAnalysis' ? 'resultAnalysis' : 'developmentProfile')
     return
   }
-  const content = `将导出「${row.studentName || '-'} / ${formatDate(row.assessmentDate)}」的${reportExportTitle(row, exportDimension)}PDF。`
-  Modal.confirm({
-    title: '确认导出评估报告？',
-    content,
-    okText: '确认导出',
-    cancelText: '取消',
-    onOk: () => exportReport(row, exportDimension),
-  })
+  openExportModal(row, exportDimension)
 }
 
 function getDownloadFilename(response, fallback) {
@@ -2456,6 +2589,22 @@ function openExportModal(row, dimension) {
       void loadSavedInterpretation(row)
     return
   }
+  if (!isERXinRecord(row)) {
+    setPEP3ExportSections(pep3ReportSectionsForDimension(dimension))
+    selectedExportDimension.value = pep3ExportSections.value[0] || defaultExportDimension
+    exportModalOpen.value = true
+    if (pep3ExportSections.value.includes('interpretation') && !interpretationFetched.value && !interpretationLoading.value)
+      void loadSavedInterpretation(row)
+    return
+  }
+  if (isERXinRecord(row)) {
+    setERXinExportSections(erxinReportSectionsForDimension(dimension))
+    selectedExportDimension.value = erxinExportSections.value[0] || defaultERXinReportSection()
+    exportModalOpen.value = true
+    if (erxinExportSections.value.includes('erxin_interpretation') && !interpretationFetched.value && !interpretationLoading.value)
+      void loadSavedInterpretation(row)
+    return
+  }
   selectedExportDimension.value = dimension || defaultExportDimensionForRecord(row)
   normalizeSelectedExportDimension()
   exportModalOpen.value = true
@@ -2545,6 +2694,13 @@ function closeExportModal() {
 }
 
 async function downloadERXinExportPdf(recordId, dimension) {
+  if (Array.isArray(dimension)) {
+    if (dimension.includes('erxin_result') && dimension.includes('erxin_interpretation'))
+      return downloadERXinAssessmentRecordReportCombinedPdfApi(recordId)
+    if (dimension.includes('erxin_interpretation'))
+      return downloadERXinAssessmentRecordReportInterpretationPdfApi(recordId)
+    return downloadERXinAssessmentRecordReportPdfApi(recordId)
+  }
   if (dimension === 'erxin_interpretation')
     return downloadERXinAssessmentRecordReportInterpretationPdfApi(recordId)
   if (dimension === 'erxin_combined')
@@ -2552,10 +2708,36 @@ async function downloadERXinExportPdf(recordId, dimension) {
   return downloadERXinAssessmentRecordReportPdfApi(recordId)
 }
 
+function erxinReportSectionsForDimension(dimension) {
+  if (Array.isArray(dimension))
+    return normalizeERXinExportSections(dimension)
+  if (dimension === 'erxin_combined')
+    return normalizeERXinExportSections(['erxin_result', 'erxin_interpretation'])
+  if (erxinExportDimensionOptions.some(item => item.value === dimension))
+    return [dimension]
+  return [defaultERXinReportSection()]
+}
+
 async function downloadPEP3ExportPdf(recordId, dimension) {
-  if (dimension === 'pep3_interpretation')
-    return downloadPEP3AssessmentRecordReportInterpretationPdfApi(recordId)
+  if (Array.isArray(dimension))
+    return downloadPEP3AssessmentSelectedReportPdfApi(recordId, dimension)
+  if (dimension === 'pep3_interpretation' || dimension === 'interpretation')
+    return downloadPEP3AssessmentSelectedReportPdfApi(recordId, ['interpretation'])
   return downloadPEP3AssessmentBookletPdfApi(recordId, dimension)
+}
+
+function pep3ReportSectionsForDimension(dimension) {
+  if (Array.isArray(dimension))
+    return normalizePEP3ExportSections(dimension)
+  if (dimension === 'pep3_interpretation' || dimension === 'interpretation')
+    return normalizePEP3ExportSections(['interpretation'])
+  if (dimension === 'score_and_profile')
+    return normalizePEP3ExportSections(['test_score', 'development_profile'])
+  if (dimension === 'all' || dimension === 'pep3_report')
+    return normalizePEP3ExportSections(exportDimensionOptions.map(item => item.value))
+  if (exportDimensionOptions.some(item => item.value === dimension))
+    return [dimension]
+  return [defaultExportDimension]
 }
 
 async function downloadShuangxiAExportPdf(recordId, sections = ['developmentProfile']) {
@@ -2589,6 +2771,12 @@ function autismDevReportSectionsForDimension(dimension) {
 async function exportReport(row = exportTargetRecord.value, dimension = selectedExportDimension.value) {
   if (!row)
     return
+  const pep3Sections = (!isERXinRecord(row) && !isAutismDevRecord(row) && !isShuangxiARecord(row))
+    ? normalizePEP3ExportSections(pep3ExportSections.value.length ? pep3ExportSections.value : pep3ReportSectionsForDimension(dimension))
+    : []
+  const erxinSections = isERXinRecord(row)
+    ? normalizeERXinExportSections(erxinExportSections.value.length ? erxinExportSections.value : erxinReportSectionsForDimension(dimension))
+    : []
   const shuangxiSections = isShuangxiARecord(row)
     ? normalizeShuangxiExportSections(shuangxiExportSections.value.length ? shuangxiExportSections.value : shuangxiReportSectionsForDimension(dimension))
     : []
@@ -2633,6 +2821,26 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
       return
     }
   }
+  if (isERXinRecord(row)) {
+    if (!erxinSections.length) {
+      messageService.warning('请选择导出内容')
+      return
+    }
+    if (erxinSections.includes('erxin_interpretation') && (interpretationLoading.value || interpretationGenerating.value)) {
+      messageService.warning('报告解读生成或读取中，请稍后')
+      return
+    }
+  }
+  if (pep3Sections.length) {
+    if (pep3Sections.includes('interpretation') && (interpretationLoading.value || interpretationGenerating.value)) {
+      messageService.warning('报告解读生成或读取中，请稍后')
+      return
+    }
+  }
+  else if (!isERXinRecord(row) && !isAutismDevRecord(row) && !isShuangxiARecord(row)) {
+    messageService.warning('请选择导出内容')
+    return
+  }
   exportingId.value = recordActionKey(row)
   try {
     const response = isShuangxiARecord(row)
@@ -2640,8 +2848,8 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
       : isAutismDevRecord(row)
       ? await downloadAutismDevSelectedReportPdfApi(row.id, autismDevSections, autismDevSections.includes('resultAnalysis') ? autismDevAnalysisForExport() : null)
       : isERXinRecord(row)
-      ? await downloadERXinExportPdf(row.id, dimension)
-      : await downloadPEP3ExportPdf(row.id, dimension)
+      ? await downloadERXinExportPdf(row.id, erxinSections)
+      : await downloadPEP3ExportPdf(row.id, pep3Sections)
     const url = URL.createObjectURL(new Blob([response.data], { type: 'application/pdf' }))
     const link = document.createElement('a')
     link.href = url
@@ -2650,8 +2858,8 @@ async function exportReport(row = exportTargetRecord.value, dimension = selected
       : isAutismDevRecord(row)
       ? `${row.studentName || '学员'}-孤独症儿童发展评估报告-${autismDevSections.map(autismDevReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
       : isERXinRecord(row)
-      ? `${row.studentName || '学员'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
-      : `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${exportDimensionTitle(dimension)}-${formatDate(row.assessmentDate)}.pdf`
+      ? `${row.studentName || '学员'}-儿心报告-${erxinSections.map(erxinReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
+      : `${row.studentName || '学员'}-${row.assessmentName || '评估记录'}-${pep3Sections.map(pep3ReportSectionTitle).join('+')}-${formatDate(row.assessmentDate)}.pdf`
     link.download = getDownloadFilename(response, fallbackName)
     link.click()
     window.setTimeout(() => URL.revokeObjectURL(url), 60_000)
@@ -2781,7 +2989,6 @@ onBeforeUnmount(() => {
                   <a-popconfirm title="确认删除这条评估记录？" ok-text="删除" cancel-text="取消" @confirm="deleteRecord(record)">
                     <a :class="{ disabled: deletingId === recordActionKey(record) }">删除</a>
                   </a-popconfirm>
-                  <a :class="{ disabled: exportingId === recordActionKey(record) }" @click="openExportModal(record)">导出</a>
                   <a @click="openIepModal(record)">{{ iepActionText(record) }}</a>
                 </a-space>
               </template>
@@ -3555,46 +3762,65 @@ onBeforeUnmount(() => {
             </span>
           </button>
         </div>
-        <div v-else-if="isERXinRecord(exportTargetRecord)" class="erxin-export-card-list">
+        <div v-else-if="isERXinRecord(exportTargetRecord)" class="autismdev-export-card-list erxin-export-multi-list">
+          <div class="autismdev-export-toolbar">
+            <span>导出内容</span>
+            <button type="button" :disabled="!!exportingId" @click="toggleAllERXinExportSections">
+              {{ erxinExportAllSelected ? '清空' : '全选' }}
+            </button>
+          </div>
           <button
             v-for="option in activeExportDimensionOptions"
             :key="option.value"
             type="button"
-            class="erxin-export-card"
-            :class="{ 'erxin-export-card--active': selectedExportDimension === option.value }"
-            :aria-pressed="selectedExportDimension === option.value"
-            :disabled="!!exportingId"
-            @click="selectedExportDimension = option.value"
+            class="autismdev-export-row"
+            :class="{
+              'autismdev-export-row--active': erxinExportSections.includes(option.value),
+              'autismdev-export-row--disabled': !isERXinExportSectionEnabled(option.value),
+            }"
+            :disabled="!!exportingId || !isERXinExportSectionEnabled(option.value)"
+            @click="toggleERXinExportSection(option.value)"
           >
-            <span class="erxin-export-card__check" />
-            <span class="erxin-export-card__body">
-              <span class="erxin-export-card__head">
+            <span class="autismdev-export-row__check" />
+            <span class="autismdev-export-row__body">
+              <span class="autismdev-export-row__head">
                 <strong>{{ option.title }}</strong>
-                <em v-if="option.recommended">推荐</em>
+                <em v-if="option.recommended">默认</em>
+                <em v-if="erxinExportSectionStatus(option.value)" class="is-muted">{{ erxinExportSectionStatus(option.value) }}</em>
               </span>
-              <span class="erxin-export-card__desc">{{ option.desc }}</span>
-              <span class="erxin-export-card__pages">{{ option.pages }}</span>
+              <span class="autismdev-export-row__desc">{{ option.desc }}</span>
             </span>
           </button>
         </div>
-        <div v-else class="export-dimension__chooser">
-          <div class="export-dimension__matrix">
-            <button
-              v-for="option in activeExportDimensionOptions"
-              :key="option.value"
-              type="button"
-              class="export-dimension-chip"
-              :class="{ 'export-dimension-chip--active': selectedExportDimension === option.value }"
-              :aria-pressed="selectedExportDimension === option.value"
-              :title="option.title"
-              :disabled="!!exportingId"
-              @click="selectedExportDimension = option.value"
-            >
-              <span class="export-dimension-chip__dot" />
-              <span class="export-dimension-chip__text">{{ option.title }}</span>
-              <span v-if="option.recommended" class="export-dimension-chip__tag">推荐</span>
+        <div v-else class="autismdev-export-card-list pep3-export-card-list">
+          <div class="autismdev-export-toolbar">
+            <span>导出内容</span>
+            <button type="button" :disabled="!!exportingId" @click="toggleAllPEP3ExportSections">
+              {{ pep3ExportAllSelected ? '清空' : '全选' }}
             </button>
           </div>
+          <button
+            v-for="option in activeExportDimensionOptions"
+            :key="option.value"
+            type="button"
+            class="autismdev-export-row"
+            :class="{
+              'autismdev-export-row--active': pep3ExportSections.includes(option.value),
+              'autismdev-export-row--disabled': !isPEP3ExportSectionEnabled(option.value),
+            }"
+            :disabled="!!exportingId || !isPEP3ExportSectionEnabled(option.value)"
+            @click="togglePEP3ExportSection(option.value)"
+          >
+            <span class="autismdev-export-row__check" />
+            <span class="autismdev-export-row__body">
+              <span class="autismdev-export-row__head">
+                <strong>{{ option.title }}</strong>
+                <em v-if="option.recommended">默认</em>
+                <em v-if="pep3ExportSectionStatus(option.value)" class="is-muted">{{ pep3ExportSectionStatus(option.value) }}</em>
+              </span>
+              <span class="autismdev-export-row__desc">{{ option.desc }}</span>
+            </span>
+          </button>
         </div>
         <div class="export-dimension__footer">
           <div v-if="isShuangxiARecord(exportTargetRecord)" class="export-dimension__selection">
@@ -3607,10 +3833,15 @@ onBeforeUnmount(() => {
             <strong>{{ autismDevExportSections.length }} 项内容</strong>
             <em>{{ autismDevExportSections.map(autismDevReportSectionTitle).join('、') || '未选择' }}</em>
           </div>
+          <div v-else-if="!isERXinRecord(exportTargetRecord)" class="export-dimension__selection">
+            <span>将导出</span>
+            <strong>{{ pep3ExportSections.length }} 项内容</strong>
+            <em>{{ pep3ExportSections.map(pep3ReportSectionTitle).join('、') || '未选择' }}</em>
+          </div>
           <div v-else class="export-dimension__selection">
             <span>将导出</span>
-            <strong>{{ exportDimensionTitle(selectedExportDimension) }}</strong>
-            <em>{{ exportDimensionPages(selectedExportDimension) }}</em>
+            <strong>{{ erxinExportSections.length }} 项内容</strong>
+            <em>{{ erxinExportSections.map(erxinReportSectionTitle).join('、') || '未选择' }}</em>
           </div>
           <div class="export-dimension__actions">
             <a-button :disabled="!!exportingId" @click="closeExportModal">
@@ -4691,7 +4922,7 @@ onBeforeUnmount(() => {
 }
 
 .shuangxi-analysis-shell {
-  background: #fffdf9;
+  background: #fff;
 }
 
 .shuangxi-analysis-doc-title {
@@ -5184,6 +5415,14 @@ onBeforeUnmount(() => {
 }
 
 .shuangxi-export-card-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.pep3-export-card-list {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.erxin-export-multi-list {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 

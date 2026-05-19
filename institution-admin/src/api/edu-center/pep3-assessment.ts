@@ -782,6 +782,13 @@ export type PEP3BookletPdfExportDimension =
   | 'education_plan'
   | 'all'
 
+export type PEP3SelectedReportSection =
+  | 'test_score'
+  | 'scoring_tables'
+  | 'development_profile'
+  | 'education_plan'
+  | 'interpretation'
+
 export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3BookletPdfExportDimension = 'all') {
   const token = useAuthorization()
   return axios.get('/api/v1/assessments/pep3/records/booklet/pdf', {
@@ -791,6 +798,22 @@ export function downloadPEP3AssessmentBookletPdfApi(id: number, dimension: PEP3B
       [STORAGE_AUTHORIZE_KEY]: token.value || '',
       Authorization: token.value ? `Bearer ${token.value}` : '',
       'Accept-Language': 'zh-CN',
+    },
+  })
+}
+
+export function downloadPEP3AssessmentSelectedReportPdfApi(id: number | string, sections: PEP3SelectedReportSection[] = ['test_score']) {
+  const token = useAuthorization()
+  return axios.post('/api/v1/assessments/pep3/records/selected-report/pdf', {
+    id: Number(id || 0),
+    sections,
+  }, {
+    responseType: 'blob',
+    headers: {
+      [STORAGE_AUTHORIZE_KEY]: token.value || '',
+      Authorization: token.value ? `Bearer ${token.value}` : '',
+      'Accept-Language': 'zh-CN',
+      'Content-Type': 'application/json',
     },
   })
 }

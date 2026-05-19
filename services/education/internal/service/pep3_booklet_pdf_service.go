@@ -54,7 +54,7 @@ func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64, exp
 		return "", nil, err
 	}
 	scope := normalizePEP3BookletPDFExportScope(exportDimension)
-	content, err := buildPEP3BookletPDF(detail, institutionName, scope.Code)
+	content, err := buildPEP3BookletPDFWithScope(detail, institutionName, scope)
 	if err != nil {
 		return "", nil, err
 	}
@@ -64,64 +64,70 @@ func (svc *Service) GeneratePEP3AssessmentBookletPDF(userID, recordID int64, exp
 }
 
 func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName string, exportDimension string) ([]byte, error) {
+	return buildPEP3BookletPDFWithScope(record, institutionName, normalizePEP3BookletPDFExportScope(exportDimension))
+}
+
+func buildPEP3BookletPDFWithScope(record model.AssessmentRecordDetailVO, institutionName string, scope pep3BookletPDFExportScope) ([]byte, error) {
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: pep3BookletPDFPageWidth, H: pep3BookletPDFPageHeight},
+	})
+	if err := drawPEP3BookletPDFPages(&pdf, record, institutionName, scope); err != nil {
+		return nil, err
+	}
+	return pdf.GetBytesPdfReturnErr()
+}
+
+func drawPEP3BookletPDFPages(pdf *gopdf.GoPdf, record model.AssessmentRecordDetailVO, institutionName string, scope pep3BookletPDFExportScope) error {
 	score, err := decodeSavedPEP3Score(record.ResultJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	itemScores, rawScores, err := decodeSavedPEP3InputScores(record.InputJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	itemRecordValues, err := decodeSavedPEP3ItemRecordValues(record.InputJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	caregiverReport, err := decodeSavedPEP3CaregiverReport(record.InputJSON)
 	if err != nil {
-		return nil, err
+		return err
 	}
 	if len(rawScores) == 0 {
 		rawScores = rawScoresFromPEP3Result(score.Result.Scales)
 	}
 	items, err := loadPEP3BookletItems()
 	if err != nil {
-		return nil, err
+		return err
 	}
 	normRecords, err := loadPEP3BookletPDFNormRecords()
 	if err != nil {
-		return nil, err
+		return err
 	}
-	fontBytes, err := loadPEP3PDFFontBytes()
-	if err != nil {
-		return nil, err
-	}
-	scope := normalizePEP3BookletPDFExportScope(exportDimension)
 	pageMap := make(map[int]int, len(scope.Pages))
 
-	var pdf gopdf.GoPdf
-	pdf.Start(gopdf.Config{
-		Unit:     gopdf.UnitPT,
-		PageSize: gopdf.Rect{W: pep3BookletPDFPageWidth, H: pep3BookletPDFPageHeight},
-	})
 	for index, pageNo := range scope.Pages {
-		pdf.AddPage()
+		pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: pep3BookletPDFPageWidth, H: pep3BookletPDFPageHeight}})
 		pageMap[pageNo] = index + 1
 		raw, err := pep3RecordBookletTemplateImages.ReadFile(fmt.Sprintf("assets/pep3_record_booklet/page_%02d.jpg", pageNo))
 		if err != nil {
-			return nil, fmt.Errorf("load PEP-3 booklet template page %d: %w", pageNo, err)
+			return fmt.Errorf("load PEP-3 booklet template page %d: %w", pageNo, err)
 		}
 		holder, err := gopdf.ImageHolderByBytes(raw)
 		if err != nil {
-			return nil, fmt.Errorf("decode PEP-3 booklet template page %d: %w", pageNo, err)
+			return fmt.Errorf("decode PEP-3 booklet template page %d: %w", pageNo, err)
 		}
 		if err := pdf.ImageByHolder(holder, 0, 0, &gopdf.Rect{W: pep3BookletPDFPageWidth, H: pep3BookletPDFPageHeight}); err != nil {
-			return nil, fmt.Errorf("draw PEP-3 booklet template page %d: %w", pageNo, err)
+			return fmt.Errorf("draw PEP-3 booklet template page %d: %w", pageNo, err)
 		}
 	}
-	if err := pdf.AddTTFFontByReader(pep3BookletPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
-		return nil, fmt.Errorf("load PEP-3 PDF font: %w", err)
+	if err := addPEP3BookletPDFFont(pdf); err != nil {
+		return err
 	}
-	renderer := pep3BookletPDFRenderer{pdf: &pdf, pageMap: pageMap}
+	renderer := pep3BookletPDFRenderer{pdf: pdf, pageMap: pageMap}
 	itemDomainByNo := pep3BookletPDFItemDomainMap(items)
 	renderer.drawCoverPage(record, score, institutionName)
 	renderer.drawDevelopmentBehaviorScorePages(itemScores, itemDomainByNo)
@@ -131,7 +137,18 @@ func buildPEP3BookletPDF(record model.AssessmentRecordDetailVO, institutionName 
 	renderer.drawDevelopmentProfilePage(record, score, rawScores, itemScores, itemDomainByNo, caregiverReport, normRecords)
 	renderer.drawEducationPlanningPages(items, itemScores, rawScores, score.Result.Scales)
 
-	return pdf.GetBytesPdfReturnErr()
+	return nil
+}
+
+func addPEP3BookletPDFFont(pdf *gopdf.GoPdf) error {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return err
+	}
+	if err := pdf.AddTTFFontByReader(pep3BookletPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return fmt.Errorf("load PEP-3 PDF font: %w", err)
+	}
+	return nil
 }
 
 type pep3BookletPDFExportScope struct {
@@ -166,6 +183,172 @@ func pep3BookletPDFPageRange(start, end int) []int {
 		pages = append(pages, pageNo)
 	}
 	return pages
+}
+
+const (
+	PEP3ReportSectionTestScore          = "test_score"
+	PEP3ReportSectionScoringTables      = "scoring_tables"
+	PEP3ReportSectionDevelopmentProfile = "development_profile"
+	PEP3ReportSectionEducationPlan      = "education_plan"
+	PEP3ReportSectionInterpretation     = "interpretation"
+)
+
+func (svc *Service) ExportPEP3SelectedReportPDF(userID int64, recordID int64, sections []string) (string, string, []byte, error) {
+	normalizedSections := normalizePEP3SelectedReportSections(sections)
+	if len(normalizedSections) == 0 {
+		return "", "", nil, errors.New("请选择导出内容")
+	}
+	detail, err := svc.GetPEP3AssessmentRecord(userID, recordID)
+	if err != nil {
+		return "", "", nil, err
+	}
+	detail = svc.rescorePEP3AssessmentRecordDetail(detail)
+
+	var pdf gopdf.GoPdf
+	pdf.Start(gopdf.Config{
+		Unit:     gopdf.UnitPT,
+		PageSize: gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight},
+	})
+
+	bookletScope := pep3SelectedReportBookletScope(normalizedSections)
+	if len(bookletScope.Pages) > 0 {
+		institutionName, err := svc.repo.GetInstitutionName(context.Background(), detail.InstID)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if err := drawPEP3BookletPDFPages(&pdf, detail, institutionName, bookletScope); err != nil {
+			return "", "", nil, err
+		}
+	}
+
+	if pep3SelectedReportHasSection(normalizedSections, PEP3ReportSectionInterpretation) {
+		interpretation, err := svc.GetPEP3ReportInterpretation(userID, recordID)
+		if err != nil {
+			return "", "", nil, err
+		}
+		if erxinReportInterpretationIsEmpty(interpretation) {
+			return "", "", nil, errors.New("请先生成报告解读后再导出")
+		}
+		if err := addPEP3SelectedReportInterpretationPDFFont(&pdf); err != nil {
+			return "", "", nil, err
+		}
+		pdf.AddPageWithOption(gopdf.PageOption{PageSize: &gopdf.Rect{W: erxinReportPDFPageWidth, H: erxinReportPDFPageHeight}})
+		renderer := erxinInterpretationPDFRenderer{
+			pdf:                &pdf,
+			currentFontSize:    11,
+			headerTitle:        "PEP-3测试员记录册报告解读",
+			domainSectionTitle: "领域表现",
+			footerText:         "本报告解读基于PEP-3结构化评分结果生成，仅用于评估沟通与训练计划参考，不替代医学诊断。",
+		}
+		renderer.draw(interpretation)
+	}
+
+	content, err := pdf.GetBytesPdfReturnErr()
+	if err != nil {
+		return "", "", nil, err
+	}
+	name := nonEmptyString(detail.StudentName, "未命名儿童")
+	filename := sanitizeTemplateFileName(fmt.Sprintf("%s-PEP3测试员记录册-%s-%s.pdf", name, pep3SelectedReportFileLabel(normalizedSections), time.Now().Format("20060102150405")))
+	return filename, iepPlanPDFContentType, content, nil
+}
+
+func normalizePEP3SelectedReportSections(sections []string) []string {
+	allowed := map[string]bool{
+		PEP3ReportSectionTestScore:          true,
+		PEP3ReportSectionScoringTables:      true,
+		PEP3ReportSectionDevelopmentProfile: true,
+		PEP3ReportSectionEducationPlan:      true,
+		PEP3ReportSectionInterpretation:     true,
+	}
+	out := make([]string, 0, len(sections))
+	seen := make(map[string]bool, len(sections))
+	for _, raw := range sections {
+		section := strings.TrimSpace(raw)
+		if !allowed[section] || seen[section] {
+			continue
+		}
+		seen[section] = true
+		out = append(out, section)
+	}
+	return out
+}
+
+func pep3SelectedReportBookletScope(sections []string) pep3BookletPDFExportScope {
+	pages := make([]int, 0, 26)
+	for _, section := range sections {
+		switch section {
+		case PEP3ReportSectionTestScore:
+			pages = append(pages, 1)
+		case PEP3ReportSectionScoringTables:
+			pages = append(pages, pep3BookletPDFPageRange(2, 18)...)
+		case PEP3ReportSectionDevelopmentProfile:
+			pages = append(pages, 19)
+		case PEP3ReportSectionEducationPlan:
+			pages = append(pages, pep3BookletPDFPageRange(20, 26)...)
+		}
+	}
+	return pep3BookletPDFExportScope{
+		Code:  "selected",
+		Label: "所选内容",
+		Pages: pep3UniqueBookletPages(pages),
+	}
+}
+
+func pep3UniqueBookletPages(pages []int) []int {
+	out := make([]int, 0, len(pages))
+	seen := make(map[int]bool, len(pages))
+	for _, page := range pages {
+		if page <= 0 || seen[page] {
+			continue
+		}
+		seen[page] = true
+		out = append(out, page)
+	}
+	return out
+}
+
+func pep3SelectedReportHasSection(sections []string, target string) bool {
+	for _, section := range sections {
+		if section == target {
+			return true
+		}
+	}
+	return false
+}
+
+func pep3SelectedReportFileLabel(sections []string) string {
+	if len(sections) == 1 {
+		return pep3SelectedReportSectionLabel(sections[0])
+	}
+	return "所选内容"
+}
+
+func pep3SelectedReportSectionLabel(section string) string {
+	switch section {
+	case PEP3ReportSectionTestScore:
+		return "测验分数"
+	case PEP3ReportSectionScoringTables:
+		return "测验评分表"
+	case PEP3ReportSectionDevelopmentProfile:
+		return "发展表现图"
+	case PEP3ReportSectionEducationPlan:
+		return "教育计划分析用表"
+	case PEP3ReportSectionInterpretation:
+		return "报告解读"
+	default:
+		return "所选内容"
+	}
+}
+
+func addPEP3SelectedReportInterpretationPDFFont(pdf *gopdf.GoPdf) error {
+	fontBytes, err := loadPEP3PDFFontBytes()
+	if err != nil {
+		return err
+	}
+	if err := pdf.AddTTFFontByReader(erxinReportPDFFontFamily, bytes.NewReader(fontBytes)); err != nil {
+		return fmt.Errorf("load PEP-3 interpretation PDF font: %w", err)
+	}
+	return nil
 }
 
 func (r pep3BookletPDFRenderer) setSourcePage(pageNo int) bool {
