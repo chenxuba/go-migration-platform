@@ -102,7 +102,36 @@ VB-MAPP 只替换标题文本，例如：
 - 障碍：`0 / 1 / 2 / 3 / 4`。
 - 转衔：`1 / 2 / 3 / 4 / 5`。
 
-主体建议保持 Pad 测评页适合横屏操作的三栏工作区，但内容组织由 VB-MAPP 决定：左侧题项/模块导航，中间评分与证据录入，右侧进度、历史对比、备注、IEP 候选目标。
+主体建议保持 Pad 测评页适合横屏操作的三栏工作区，但内容组织由 VB-MAPP 决定：左侧题项导航，中间评分与证据录入，右侧进度、历史对比、备注、IEP 候选目标。
+
+### 低调模块切换入口
+
+不要在主体顶部放一条很大的 `里程碑 / 障碍 / 转衔` 三段式模块条，会破坏当前页面的清爽感。
+
+推荐做法：把当前模块做成一个低调下拉入口，放在中间主卡片标题行右侧，替换或合并现在的 `里程碑项目` 小标签：
+
+```text
+Level 1 / 提要求 / 1-M 一般提要求                         [ 里程碑评估 ▾ ]
+```
+
+点击后弹出轻量菜单：
+
+```text
+当前评估模块
+✓ 里程碑评估    23 / 170
+  障碍评估       0 / 24
+  转衔评估       0 / 18
+```
+
+交互规则：
+
+- 当前模块只用浅橙底和勾选表示，不做大面积高亮。
+- 未完成模块显示进度，低风险信息不在这里展开。
+- 切换前自动保存当前题项草稿。
+- 切换到障碍或转衔后，Header 标题随模块变化，Footer 仍保持一致。
+- 左侧栏只显示当前模块内部目录，不承担三大模块切换职责。
+
+这样入口存在但不抢主任务，老师需要切换时一眼能找到，不需要时不会干扰连续评分。
 
 ## 统一跳转模型
 
@@ -119,14 +148,14 @@ Milestones Level 1
 -> 生成报告 / IEP
 ```
 
-### 左侧模块导航
+### 模块切换与左侧导航
 
-左侧导航负责“跳模块”和“跳领域”：
+模块切换由中间主卡片标题行右侧的低调下拉入口负责。左侧导航只负责当前模块内部跳转：
 
-- 点 `里程碑`：进入 Milestones，展开 Level 1/2/3 和 16 个领域。
-- 点 `障碍评估`：进入 Barriers，中央区域切换为 24 个障碍项。
-- 点 `转衔评估`：进入 Transition，中央区域切换为 18 个转衔项。
-- 点 `任务分析`：进入低分里程碑对应的技能拆解列表。
+- 里程碑页面：左侧显示 Level 1/2/3 和领域、题项。
+- 障碍页面：左侧显示 B01-B24 障碍项。
+- 转衔页面：左侧显示 T01-T18 转衔项。
+- 任务分析如进入首版，可作为低分里程碑的后续工作区，不优先放入主模块切换。
 
 跳转前自动保存当前题项。模块旁显示完成数、低分提醒、是否有未保存改动。
 
@@ -408,6 +437,8 @@ Level 1 / 提要求 / 1-M                         T/O/E/TO 标签
 
 已生成的暖色方向稿，更接近当前 Pad 端视觉：
 
+- `output/imagegen/vbmapp-subtle-module-switch/vbmapp-milestones-module-chip-closed.png`
+- `output/imagegen/vbmapp-subtle-module-switch/vbmapp-milestones-module-chip-open.png`
 - `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-milestones.png`
 - `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-barriers.png`
 - `output/imagegen/vbmapp-locked-shell-custom-body/vbmapp-locked-shell-transition.png`
@@ -424,7 +455,7 @@ Level 1 / 提要求 / 1-M                         T/O/E/TO 标签
 - `output/imagegen/vbmapp-redesign-batch/vbmapp-pad-redesign-light-workbench.png`
 - `output/imagegen/vbmapp-redesign-batch/vbmapp-pad-redesign-clinical-efficient.png`
 
-其中 `vbmapp-locked-shell-custom-body/` 这一组三张图作为当前主方向：顶部和底部严格继承现有 Pad 测评页，中间主体按 VB-MAPP 的里程碑、障碍、转衔重新设计。`vbmapp-pad-connected-workbench-warm.png` 只保留“模块之间是连续流程”的结构参考，不作为视觉主方向。
+其中 `vbmapp-subtle-module-switch/` 作为当前模块切换主方向：保持清爽主体布局，只在主卡片标题行右侧放低调模块下拉入口。`vbmapp-locked-shell-custom-body/` 作为主体布局主方向；`vbmapp-pad-connected-workbench-warm.png` 只保留“模块之间是连续流程”的结构参考，不作为视觉主方向。
 
 ## 给图像模型的提示词草案
 
