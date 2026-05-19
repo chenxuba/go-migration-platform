@@ -156,9 +156,23 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
 
-    expect(find.text('分数+表现图'), findsOneWidget);
+    expect(find.text('PEP-3评估报告'), findsOneWidget);
+    expect(find.text('测验分数'), findsOneWidget);
+    expect(find.text('分数+表现图'), findsNothing);
     expect(find.text('报告解读'), findsOneWidget);
     expect(find.text('暂无评估报告内容'), findsOneWidget);
+
+    await tester.tap(find.text('打印'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('选择打印内容'), findsOneWidget);
+    expect(find.byType(Checkbox), findsNWidgets(4));
+    expect(find.text('未生成'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('报告解读'));
     await tester.pump();
@@ -297,9 +311,24 @@ void main() {
     expect(find.text('陈旭'), findsOneWidget);
     await tester.tap(find.text('查看'));
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
 
+    expect(find.text('0岁～6岁儿童发育行为评估报告'), findsOneWidget);
     expect(find.text('评估结果记录'), findsOneWidget);
     expect(find.text('报告解读'), findsOneWidget);
+
+    await tester.tap(find.text('打印'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.pump();
+
+    expect(find.text('选择打印内容'), findsOneWidget);
+    expect(find.byType(Checkbox), findsNWidgets(2));
+    expect(find.text('未生成'), findsOneWidget);
+
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('报告解读'));
     await tester.pump();

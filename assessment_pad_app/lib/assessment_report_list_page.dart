@@ -3504,6 +3504,7 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
     pages: '第 1 页',
     pageCount: 1,
     description: '导出首页测验分数汇总，适合快速归档总览。',
+    recommended: true,
   ),
   _ReportModuleOption(
     value: 'development_profile',
@@ -3511,14 +3512,6 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
     pages: '第 19 页',
     pageCount: 1,
     description: '只导出发展表现图，用于查看各领域发展曲线。',
-  ),
-  _ReportModuleOption(
-    value: 'score_and_profile',
-    label: '分数+表现图',
-    pages: '第 1、19 页',
-    pageCount: 2,
-    description: '包含测验分数汇总和发展表现图，适合简版报告。',
-    recommended: true,
   ),
   _ReportModuleOption(
     value: 'scoring_tables',
@@ -3531,12 +3524,321 @@ const List<_ReportModuleOption> _reportModuleOptions = <_ReportModuleOption>[
 
 const double _reportPreviewRasterDpi = 96;
 const double _erxinReportPreviewRasterDpi = 216;
+const double _reportPrintMergeRasterDpi = 120;
 const double _shuangxiProfilePdfAspectRatio = 841.89 / 595.28;
 const int _shuangxiDevelopmentProfilePdfPageCount = 9;
+const String _pep3PrintInterpretationCode = 'report_interpretation';
+const String _erxinPrintResultRecordCode = 'result_record';
+const String _erxinPrintInterpretationCode = 'report_interpretation';
 
 String _reportModuleInlineDescription(_ReportModuleOption option) {
   final String pages = option.pages.replaceAll(RegExp(r'\s+'), '');
   return '$pages：${option.description}';
+}
+
+class _ReportPrintOption {
+  const _ReportPrintOption({
+    required this.code,
+    required this.label,
+  });
+
+  final String code;
+  final String label;
+}
+
+class _ReportPrintSelectionDialog extends StatefulWidget {
+  const _ReportPrintSelectionDialog({
+    required this.options,
+    required this.enabledCodes,
+    required this.initialSelection,
+    required this.statusLabels,
+  });
+
+  final List<_ReportPrintOption> options;
+  final Set<String> enabledCodes;
+  final Set<String> initialSelection;
+  final Map<String, String> statusLabels;
+
+  @override
+  State<_ReportPrintSelectionDialog> createState() =>
+      _ReportPrintSelectionDialogState();
+}
+
+class _ReportPrintSelectionDialogState
+    extends State<_ReportPrintSelectionDialog> {
+  late final Set<String> _selected = Set<String>.from(widget.initialSelection);
+
+  List<String> get _orderedSelection {
+    return <String>[
+      for (final _ReportPrintOption option in widget.options)
+        if (_selected.contains(option.code)) option.code,
+    ];
+  }
+
+  bool get _allEnabledSelected {
+    if (widget.enabledCodes.isEmpty) {
+      return false;
+    }
+    return widget.enabledCodes.every(_selected.contains);
+  }
+
+  void _toggle(String code, bool selected) {
+    if (!widget.enabledCodes.contains(code)) {
+      return;
+    }
+    setState(() {
+      if (selected) {
+        _selected.add(code);
+      } else {
+        _selected.remove(code);
+      }
+    });
+  }
+
+  void _toggleAll() {
+    setState(() {
+      if (_allEnabledSelected) {
+        _selected.clear();
+      } else {
+        _selected
+          ..clear()
+          ..addAll(widget.enabledCodes);
+      }
+    });
+  }
+
+  void _submit() {
+    final List<String> selected = _orderedSelection;
+    if (selected.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(selected);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Dialog(
+      elevation: 0,
+      backgroundColor: Colors.transparent,
+      insetPadding: const EdgeInsets.symmetric(horizontal: 40, vertical: 28),
+      child: Container(
+        width: 500,
+        padding: const EdgeInsets.fromLTRB(24, 22, 24, 22),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFFFCF8),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: _ReportTheme.lineSoft),
+          boxShadow: const <BoxShadow>[
+            BoxShadow(
+              color: Color(0x20000000),
+              blurRadius: 30,
+              offset: Offset(0, 16),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: <Widget>[
+            Row(
+              children: <Widget>[
+                const Text(
+                  '选择打印内容',
+                  style: TextStyle(
+                    color: Colors.black,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                    height: 1,
+                  ),
+                ),
+                const Spacer(),
+                _AutismDevPrintTextAction(
+                  label: _allEnabledSelected ? '清空' : '全选',
+                  onTap: _toggleAll,
+                ),
+                const SizedBox(width: 10),
+                _AutismDevDialogIconButton(
+                  icon: Icons.close_rounded,
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+              ],
+            ),
+            const SizedBox(height: 18),
+            Container(
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(14),
+                border: Border.all(color: _ReportTheme.lineSoft),
+              ),
+              child: Column(
+                children: <Widget>[
+                  for (int index = 0; index < widget.options.length; index++)
+                    _ReportPrintOptionRow(
+                      option: widget.options[index],
+                      selected: _selected.contains(widget.options[index].code),
+                      enabled: widget.enabledCodes
+                          .contains(widget.options[index].code),
+                      statusLabel:
+                          widget.statusLabels[widget.options[index].code] ?? '',
+                      bottom: index != widget.options.length - 1,
+                      onChanged: (bool selected) =>
+                          _toggle(widget.options[index].code, selected),
+                    ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 16),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: <Widget>[
+                _AutismDevDialogAction(
+                  label: '取消',
+                  onTap: () => Navigator.of(context).pop(),
+                ),
+                const SizedBox(width: 10),
+                Opacity(
+                  opacity: _selected.isEmpty ? .45 : 1,
+                  child: _AutismDevDialogAction(
+                    label: '打印',
+                    filled: true,
+                    icon: Icons.print_rounded,
+                    onTap: _submit,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ReportPrintOptionRow extends StatelessWidget {
+  const _ReportPrintOptionRow({
+    required this.option,
+    required this.selected,
+    required this.enabled,
+    required this.statusLabel,
+    required this.bottom,
+    required this.onChanged,
+  });
+
+  final _ReportPrintOption option;
+  final bool selected;
+  final bool enabled;
+  final String statusLabel;
+  final bool bottom;
+  final ValueChanged<bool> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: enabled ? () => onChanged(!selected) : null,
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.only(left: 8, right: 14),
+        decoration: BoxDecoration(
+          border: Border(
+            bottom: bottom
+                ? const BorderSide(color: _ReportTheme.lineSoft)
+                : BorderSide.none,
+          ),
+        ),
+        child: Row(
+          children: <Widget>[
+            Checkbox(
+              value: selected,
+              activeColor: _ReportTheme.orange,
+              onChanged:
+                  enabled ? (bool? value) => onChanged(value ?? false) : null,
+            ),
+            Expanded(
+              child: Text(
+                option.label,
+                style: TextStyle(
+                  color: enabled ? Colors.black : _ReportTheme.muted,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            if (statusLabel.trim().isNotEmpty)
+              Container(
+                height: 24,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF3EA),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: _ReportTheme.lineSoft),
+                ),
+                child: Text(
+                  statusLabel.trim(),
+                  style: const TextStyle(
+                    color: _ReportTheme.muted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+Future<Uint8List> _mergeReportPrintPdfs(
+  List<Uint8List> documents,
+) async {
+  final pw.Document document = pw.Document();
+  for (final Uint8List bytes in documents) {
+    await _appendReportPrintRasterPages(document, bytes);
+  }
+  return document.save();
+}
+
+Future<void> _appendReportPrintRasterPages(
+  pw.Document document,
+  Uint8List bytes,
+) async {
+  bool appended = false;
+  await for (final PdfRaster raster in Printing.raster(
+    bytes,
+    dpi: _reportPrintMergeRasterDpi,
+  )) {
+    if (raster.width <= 0 || raster.height <= 0) {
+      continue;
+    }
+    appended = true;
+    final PdfPageFormat pageFormat = PdfPageFormat(
+      raster.width / _reportPrintMergeRasterDpi * PdfPageFormat.inch,
+      raster.height / _reportPrintMergeRasterDpi * PdfPageFormat.inch,
+    );
+    final pw.RawImage image = pw.RawImage(
+      bytes: raster.pixels,
+      width: raster.width,
+      height: raster.height,
+    );
+    document.addPage(
+      pw.Page(
+        pageFormat: pageFormat,
+        build: (pw.Context context) {
+          return pw.FullPage(
+            ignoreMargins: true,
+            child: pw.Image(
+              image,
+              fit: pw.BoxFit.fill,
+            ),
+          );
+        },
+      ),
+    );
+  }
+  if (!appended) {
+    throw StateError('暂无可打印页面');
+  }
 }
 
 class _ReportPreviewDialog extends StatefulWidget {
@@ -3937,26 +4239,109 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
     unawaited(_activateModule(option));
   }
 
-  Future<void> _printCurrentModule() async {
+  List<_ReportPrintOption> _pep3PrintOptions() {
+    return <_ReportPrintOption>[
+      for (final _ReportModuleOption option in _reportModuleOptions)
+        _ReportPrintOption(code: option.value, label: option.label),
+      const _ReportPrintOption(
+        code: _pep3PrintInterpretationCode,
+        label: '报告解读',
+      ),
+    ];
+  }
+
+  Set<String> _enabledPep3PrintCodes() {
+    final Set<String> codes = <String>{
+      for (final _ReportModuleOption option in _reportModuleOptions)
+        option.value,
+    };
+    final ErxinReportInterpretation? interpretation = _interpretation;
+    if (!_interpretationLoading &&
+        !_interpretationGenerating &&
+        interpretation != null &&
+        !interpretation.isEmpty) {
+      codes.add(_pep3PrintInterpretationCode);
+    }
+    return codes;
+  }
+
+  Map<String, String> _pep3PrintStatusLabels() {
+    final Map<String, String> labels = <String, String>{};
+    if (_interpretationGenerating) {
+      labels[_pep3PrintInterpretationCode] = '生成中';
+    } else if (_interpretationLoading) {
+      labels[_pep3PrintInterpretationCode] = '读取中';
+    } else if (_interpretation == null || _interpretation!.isEmpty) {
+      labels[_pep3PrintInterpretationCode] = '未生成';
+    }
+    return labels;
+  }
+
+  Future<List<String>?> _showPep3PrintSelectionDialog() {
+    final List<_ReportPrintOption> options = _pep3PrintOptions();
+    final Set<String> enabledCodes = _enabledPep3PrintCodes();
+    final String activeCode = _showInterpretation
+        ? _pep3PrintInterpretationCode
+        : _activeOption.value;
+    final Set<String> initialSelection = <String>{};
+    if (enabledCodes.contains(activeCode)) {
+      initialSelection.add(activeCode);
+    } else if (enabledCodes.contains(_activeOption.value)) {
+      initialSelection.add(_activeOption.value);
+    } else if (enabledCodes.isNotEmpty) {
+      initialSelection.add(enabledCodes.first);
+    }
+    return showDialog<List<String>>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _ReportPrintSelectionDialog(
+            options: options,
+            enabledCodes: enabledCodes,
+            initialSelection: initialSelection,
+            statusLabels: _pep3PrintStatusLabels(),
+          ),
+        );
+      },
+    );
+  }
+
+  _ReportModuleOption _moduleOptionForPrintCode(String code) {
+    return _reportModuleOptions.firstWhere(
+      (_ReportModuleOption option) => option.value == code,
+      orElse: () => _activeOption,
+    );
+  }
+
+  String _pep3PrintLabelForCode(String code) {
+    if (code == _pep3PrintInterpretationCode) {
+      return '报告解读';
+    }
+    return _moduleOptionForPrintCode(code).label;
+  }
+
+  String _pep3PrintFileNameForCodes(List<String> codes) {
+    final String suffix =
+        codes.length == 1 ? _pep3PrintLabelForCode(codes.first) : '所选内容';
+    return _pep3PrintFileName(_displayRecord, suffix);
+  }
+
+  Future<void> _printSelectedPep3Content(List<String> codes) async {
     if (_printing) {
       return;
     }
-    final _ReportModuleOption option = _activeOption;
     setState(() {
       _printing = true;
       _printLoadingText = '正在生成打印文件...';
       _errorMessage = '';
+      _interpretationErrorMessage = '';
     });
     try {
-      final Uint8List bytes =
-          _pdfBytes ?? await _ensureModulePdf(option, refresh: false);
-      if (!mounted || _activeOption.value != option.value) {
-        return;
-      }
+      final Uint8List bytes = await _buildPep3SelectedPrintPdf(codes);
+      if (!mounted) return;
       if (bytes.isEmpty) {
-        setState(() {
-          _errorMessage = '暂无可打印的评估报告';
-        });
+        _setPep3PrintError('暂无可打印的评估报告');
         return;
       }
       if (mounted) {
@@ -3966,7 +4351,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
       }
       bool printPreviewRequested = false;
       await Printing.layoutPdf(
-        name: _pep3PrintFileName(_displayRecord, option.label),
+        name: _pep3PrintFileNameForCodes(codes),
         onLayout: (_) async {
           if (!printPreviewRequested) {
             printPreviewRequested = true;
@@ -3976,96 +4361,72 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
         },
       );
     } on Pep3ApiException catch (error) {
-      if (!mounted || _activeOption.value != option.value) {
-        return;
-      }
-      setState(() {
-        _errorMessage = error.message;
-      });
+      if (!mounted) return;
+      _setPep3PrintError(error.message);
     } on Object catch (error) {
-      if (!mounted || _activeOption.value != option.value) {
-        return;
-      }
-      setState(() {
-        _errorMessage = '评估报告打印失败：$error';
-      });
+      if (!mounted) return;
+      _setPep3PrintError('评估报告打印失败：$error');
     } finally {
       _finishPrintLoading();
     }
+  }
+
+  void _setPep3PrintError(String message) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (_showInterpretation) {
+        _interpretationErrorMessage = message;
+      } else {
+        _errorMessage = message;
+      }
+    });
+  }
+
+  Future<Uint8List> _buildPep3SelectedPrintPdf(List<String> codes) async {
+    final List<Uint8List> documents = <Uint8List>[];
+    for (final String code in codes) {
+      documents.add(await _loadPep3PrintBytes(code));
+    }
+    if (documents.length == 1) {
+      return documents.first;
+    }
+    return _mergeReportPrintPdfs(documents);
+  }
+
+  Future<Uint8List> _loadPep3PrintBytes(String code) async {
+    if (code == _pep3PrintInterpretationCode) {
+      final ErxinReportInterpretation? interpretation = _interpretation;
+      if (interpretation == null || interpretation.isEmpty) {
+        throw const Pep3ApiException('请先生成报告解读后再打印');
+      }
+      return widget.client.downloadRecordReportInterpretationPdf(
+        widget.token.trim(),
+        widget.record.id,
+      );
+    }
+    final _ReportModuleOption option = _moduleOptionForPrintCode(code);
+    final Uint8List? cached =
+        option.value == _activeOption.value ? _pdfBytes : null;
+    return cached ?? await _ensureModulePdf(option, refresh: false);
   }
 
   Future<void> _printCurrentTab() async {
     if (_printing) {
       return;
     }
-    if (_showInterpretation) {
-      await _printInterpretation();
-      return;
-    }
-    await _printCurrentModule();
-  }
-
-  Future<void> _printInterpretation() async {
-    ErxinReportInterpretation? interpretation = _interpretation;
-    if (interpretation == null || interpretation.isEmpty) {
-      if (!_interpretationFetched && !_interpretationLoading) {
-        await _loadSavedInterpretation();
-        interpretation = _interpretation;
-      }
-    }
-    if (!mounted) {
-      return;
-    }
-    if (interpretation == null || interpretation.isEmpty) {
-      setState(() {
-        _interpretationErrorMessage = '请先生成报告解读后再打印';
-      });
-      return;
-    }
-    setState(() {
-      _printing = true;
-      _printLoadingText = '正在生成打印文件...';
-      _interpretationErrorMessage = '';
-    });
-    try {
-      final Uint8List bytes =
-          await widget.client.downloadRecordReportInterpretationPdf(
-        widget.token.trim(),
-        widget.record.id,
-      );
-      if (mounted) {
-        setState(() {
-          _printLoadingText = '正在打开打印预览...';
-        });
-      }
-      bool printPreviewRequested = false;
-      await Printing.layoutPdf(
-        name: _pep3PrintFileName(_displayRecord, '报告解读'),
-        onLayout: (_) async {
-          if (!printPreviewRequested) {
-            printPreviewRequested = true;
-            _finishPrintLoading();
-          }
-          return bytes;
-        },
-      );
-    } on Pep3ApiException catch (error) {
+    if (!_interpretationFetched && !_interpretationLoading) {
+      await _loadSavedInterpretation();
       if (!mounted) {
         return;
       }
-      setState(() {
-        _interpretationErrorMessage = error.message;
-      });
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _interpretationErrorMessage = '报告解读打印失败：$error';
-      });
-    } finally {
-      _finishPrintLoading();
     }
+    final List<String>? selectedCodes = await _showPep3PrintSelectionDialog();
+    if (selectedCodes == null || selectedCodes.isEmpty || !mounted) {
+      return;
+    }
+    await _printSelectedPep3Content(selectedCodes);
   }
 
   void _finishPrintLoading() {
@@ -4184,7 +4545,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '评估报告',
+                'PEP-3评估报告',
                 style: TextStyle(
                   color: _ReportTheme.ink,
                   fontSize: 24,
@@ -4197,7 +4558,7 @@ class _ReportPreviewDialogState extends State<_ReportPreviewDialog> {
                   children: <InlineSpan>[
                     TextSpan(
                       text:
-                          '${record.assessmentName.trim().isEmpty ? 'PEP-3测试员记录册' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}   ',
+                          'PEP-3   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}   ',
                     ),
                     TextSpan(
                       text: _showInterpretation
@@ -4823,102 +5184,127 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
     }
   }
 
+  List<_ReportPrintOption> _erxinPrintOptions() {
+    return const <_ReportPrintOption>[
+      _ReportPrintOption(
+        code: _erxinPrintResultRecordCode,
+        label: '评估结果记录',
+      ),
+      _ReportPrintOption(
+        code: _erxinPrintInterpretationCode,
+        label: '报告解读',
+      ),
+    ];
+  }
+
+  Set<String> _enabledErxinPrintCodes() {
+    final Set<String> codes = <String>{_erxinPrintResultRecordCode};
+    final ErxinReportInterpretation? interpretation = _interpretation;
+    if (!_interpretationLoading &&
+        !_interpretationGenerating &&
+        interpretation != null &&
+        !interpretation.isEmpty) {
+      codes.add(_erxinPrintInterpretationCode);
+    }
+    return codes;
+  }
+
+  Map<String, String> _erxinPrintStatusLabels() {
+    final Map<String, String> labels = <String, String>{};
+    if (_loading && (_pdfBytes == null || _pdfBytes!.isEmpty)) {
+      labels[_erxinPrintResultRecordCode] = '读取中';
+    }
+    if (_interpretationGenerating) {
+      labels[_erxinPrintInterpretationCode] = '生成中';
+    } else if (_interpretationLoading) {
+      labels[_erxinPrintInterpretationCode] = '读取中';
+    } else if (_interpretation == null || _interpretation!.isEmpty) {
+      labels[_erxinPrintInterpretationCode] = '未生成';
+    }
+    return labels;
+  }
+
+  Future<List<String>?> _showErxinPrintSelectionDialog() {
+    final Set<String> enabledCodes = _enabledErxinPrintCodes();
+    final String activeCode = _showInterpretation
+        ? _erxinPrintInterpretationCode
+        : _erxinPrintResultRecordCode;
+    final Set<String> initialSelection = <String>{};
+    if (enabledCodes.contains(activeCode)) {
+      initialSelection.add(activeCode);
+    } else if (enabledCodes.isNotEmpty) {
+      initialSelection.add(enabledCodes.first);
+    }
+    return showDialog<List<String>>(
+      context: context,
+      barrierColor: const Color(0x33000000),
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _ReportPrintSelectionDialog(
+            options: _erxinPrintOptions(),
+            enabledCodes: enabledCodes,
+            initialSelection: initialSelection,
+            statusLabels: _erxinPrintStatusLabels(),
+          ),
+        );
+      },
+    );
+  }
+
+  String _erxinPrintLabelForCode(String code) {
+    return switch (code) {
+      _erxinPrintInterpretationCode => '报告解读',
+      _ => '评估结果记录',
+    };
+  }
+
+  String _erxinPrintFileNameForCodes(List<String> codes) {
+    final Pep3RecordSummary record = _displayRecord ?? widget.record;
+    final String suffix =
+        codes.length == 1 ? _erxinPrintLabelForCode(codes.first) : '所选内容';
+    return _erxinPrintFileName(record, suffix);
+  }
+
   Future<void> _printCurrentTab() async {
     if (_printing) {
       return;
     }
-    if (_showInterpretation) {
-      await _printInterpretation();
+    if (!_interpretationFetched && !_interpretationLoading) {
+      await _loadSavedInterpretation();
+      if (!mounted) {
+        return;
+      }
+    }
+    final List<String>? selectedCodes = await _showErxinPrintSelectionDialog();
+    if (selectedCodes == null || selectedCodes.isEmpty || !mounted) {
       return;
     }
-    await _printResultRecord();
+    await _printSelectedErxinContent(selectedCodes);
   }
 
-  Future<void> _printResultRecord() async {
+  Future<void> _printSelectedErxinContent(List<String> codes) async {
+    if (_printing) {
+      return;
+    }
     setState(() {
       _printing = true;
       _printLoadingText = '正在生成打印文件...';
       _errorMessage = '';
+      _interpretationErrorMessage = '';
     });
-    Uint8List? bytes = _pdfBytes;
     try {
-      if (bytes == null || bytes.isEmpty) {
-        await _loadPdf();
-        bytes = _pdfBytes;
-      }
-      if (!mounted) {
-        return;
-      }
-      if (bytes == null || bytes.isEmpty) {
-        setState(() {
-          _errorMessage = '暂无可打印的评估结果记录';
-        });
+      final Uint8List bytes = await _buildErxinSelectedPrintPdf(codes);
+      if (!mounted) return;
+      if (bytes.isEmpty) {
+        _setErxinPrintError('暂无可打印的评估报告');
         return;
       }
       setState(() {
         _printLoadingText = '正在打开打印预览...';
       });
-      final Pep3RecordSummary record = _displayRecord ?? widget.record;
       bool printPreviewRequested = false;
       await Printing.layoutPdf(
-        name: _erxinPrintFileName(record, '评估结果记录'),
-        onLayout: (_) async {
-          if (!printPreviewRequested) {
-            printPreviewRequested = true;
-            _finishPrintLoading();
-          }
-          return bytes!;
-        },
-      );
-    } on Object catch (error) {
-      if (!mounted) {
-        return;
-      }
-      setState(() {
-        _errorMessage = '评估结果记录打印失败：$error';
-      });
-    } finally {
-      _finishPrintLoading();
-    }
-  }
-
-  Future<void> _printInterpretation() async {
-    ErxinReportInterpretation? interpretation = _interpretation;
-    if (interpretation == null || interpretation.isEmpty) {
-      if (!_interpretationFetched && !_interpretationLoading) {
-        await _loadSavedInterpretation();
-        interpretation = _interpretation;
-      }
-    }
-    if (!mounted) {
-      return;
-    }
-    if (interpretation == null || interpretation.isEmpty) {
-      setState(() {
-        _interpretationErrorMessage = '请先生成报告解读后再打印';
-      });
-      return;
-    }
-    setState(() {
-      _printing = true;
-      _printLoadingText = '正在生成打印文件...';
-      _interpretationErrorMessage = '';
-    });
-    try {
-      final Uint8List bytes =
-          await widget.client.downloadRecordReportInterpretationPdf(
-        widget.token.trim(),
-        widget.record.id,
-      );
-      final Pep3RecordSummary record = _displayRecord ?? widget.record;
-      if (mounted) {
-        setState(() {
-          _printLoadingText = '正在打开打印预览...';
-        });
-      }
-      bool printPreviewRequested = false;
-      await Printing.layoutPdf(
-        name: _erxinPrintFileName(record, '报告解读'),
+        name: _erxinPrintFileNameForCodes(codes),
         onLayout: (_) async {
           if (!printPreviewRequested) {
             printPreviewRequested = true;
@@ -4931,19 +5317,72 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _interpretationErrorMessage = error.message;
-      });
+      _setErxinPrintError(error.message);
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() {
-        _interpretationErrorMessage = '报告解读打印失败：$error';
-      });
+      _setErxinPrintError('评估报告打印失败：$error');
     } finally {
       _finishPrintLoading();
     }
+  }
+
+  Future<Uint8List> _buildErxinSelectedPrintPdf(List<String> codes) async {
+    final List<Uint8List> documents = <Uint8List>[];
+    for (final String code in codes) {
+      documents.add(await _loadErxinPrintBytes(code));
+    }
+    if (documents.length == 1) {
+      return documents.first;
+    }
+    return _mergeReportPrintPdfs(documents);
+  }
+
+  Future<Uint8List> _loadErxinPrintBytes(String code) async {
+    final String token = widget.token.trim();
+    if (token.isEmpty) {
+      throw const AssessmentScaleApiException('请先登录后再打印评估报告');
+    }
+    if (code == _erxinPrintInterpretationCode) {
+      final ErxinReportInterpretation? interpretation = _interpretation;
+      if (interpretation == null || interpretation.isEmpty) {
+        throw const AssessmentScaleApiException('请先生成报告解读后再打印');
+      }
+      return widget.client.downloadRecordReportInterpretationPdf(
+        token,
+        widget.record.id,
+      );
+    }
+    if (code != _erxinPrintResultRecordCode) {
+      throw const AssessmentScaleApiException('不支持的打印内容');
+    }
+    final Uint8List? cached = _pdfBytes;
+    if (cached != null && cached.isNotEmpty) {
+      return cached;
+    }
+    final Uint8List bytes =
+        await widget.client.downloadRecordReportPdf(token, widget.record.id);
+    if (mounted) {
+      setState(() {
+        _pdfBytes = bytes;
+        _loading = false;
+      });
+    }
+    return bytes;
+  }
+
+  void _setErxinPrintError(String message) {
+    if (!mounted) {
+      return;
+    }
+    setState(() {
+      if (_showInterpretation) {
+        _interpretationErrorMessage = message;
+      } else {
+        _errorMessage = message;
+      }
+    });
   }
 
   void _finishPrintLoading() {
@@ -5062,7 +5501,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
               const Text(
-                '评估报告',
+                '0岁～6岁儿童发育行为评估报告',
                 style: TextStyle(
                   color: _ReportTheme.ink,
                   fontSize: 24,
@@ -5071,7 +5510,7 @@ class _ErxinReportPreviewDialogState extends State<_ErxinReportPreviewDialog> {
               ),
               const SizedBox(height: 7),
               Text(
-                '${record.assessmentName.trim().isEmpty ? '儿心量表-II发育行为评估报告' : record.assessmentName}   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
+                '儿心量表-II   ${_studentName(record)} / ${_dateOnlyText(record.assessmentDate)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
