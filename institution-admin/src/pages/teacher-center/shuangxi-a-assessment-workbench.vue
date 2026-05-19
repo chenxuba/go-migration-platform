@@ -1203,35 +1203,61 @@ function goBack() {
       </section>
 
       <aside class="right-rail">
-        <section class="right-card progress-card">
-          <h2>当前进度</h2>
-          <div class="progress-card__body">
-            <div class="donut" :style="donutStyle">{{ progressPercent }}%</div>
-            <div class="progress-stats">
-              <span>已完成</span>
-              <strong>{{ answeredItemCount }} <i>/ {{ totalItemCount }} 题</i></strong>
-              <span>缺题</span>
-              <strong class="danger">{{ missingItemCount }} <i>题</i></strong>
+        <section class="right-panel">
+          <div class="right-panel__section progress-card">
+            <h2>当前进度</h2>
+            <div class="progress-card__body">
+              <div class="donut" :style="donutStyle">{{ progressPercent }}%</div>
+              <div class="progress-stats">
+                <span>已完成</span>
+                <strong>{{ answeredItemCount }} <i>/ {{ totalItemCount }} 题</i></strong>
+                <span>缺题</span>
+                <strong class="danger">{{ missingItemCount }} <i>题</i></strong>
+              </div>
             </div>
           </div>
-        </section>
 
-        <section class="right-card remark-card">
-          <h2>本题备注</h2>
-          <a-textarea
-            v-model:value="currentRemark"
-            :auto-size="{ minRows: 6, maxRows: 8 }"
-            placeholder="可记录现场观察、辅助方式或异常情况"
-            @blur="persistRemark"
-          />
-        </section>
+          <div class="right-panel__section remark-card">
+            <div class="remark-card__head">
+              <h2>本题备注</h2>
+              <span>{{ currentRemark.length }}/300</span>
+            </div>
+            <div class="remark-input-shell">
+              <a-textarea
+                v-model:value="currentRemark"
+                class="remark-textarea"
+                :auto-size="false"
+                placeholder="可记录现场观察、辅助方式或异常情况"
+                @blur="persistRemark"
+              />
+            </div>
+          </div>
 
-        <section class="right-card current-card">
-          <h2>当前定位</h2>
-          <div class="current-meta">
-            <span>领域</span><strong>{{ currentDomainName }}</strong>
-            <span>技能</span><strong>{{ currentSkillName }}</strong>
-            <span>题号</span><strong>第 {{ selectedItemNo || '-' }} 题</strong>
+          <div class="right-panel__section missing-nav-card">
+            <h2>缺题导航</h2>
+            <div class="missing-nav-list">
+              <button type="button" class="missing-nav-row" @click="autoNext = !autoNext">
+                <span>自动下一题</span>
+                <strong>{{ autoNext ? '已开启' : '已关闭' }}</strong>
+              </button>
+              <button type="button" class="missing-nav-row" @click="selectDomain(selectedDomain?.domainCode || '')">
+                <span>当前维度</span>
+                <strong>{{ currentDomainName }}</strong>
+              </button>
+              <button type="button" class="missing-nav-row">
+                <span>当前技能</span>
+                <strong>{{ currentSkillDisplayTitle }}</strong>
+              </button>
+              <button
+                type="button"
+                class="missing-nav-row"
+                :disabled="!firstMissingNo"
+                @click="jumpToMissingItem"
+              >
+                <span>第一缺题</span>
+                <strong>{{ firstMissingNo ? displayNumberedItemTitle(summaryByNo(firstMissingNo)) : '无缺题' }}</strong>
+              </button>
+            </div>
           </div>
         </section>
       </aside>
@@ -1810,7 +1836,7 @@ function goBack() {
 
 .instruction-card h2,
 .score-section h2,
-.right-card h2 {
+.right-panel h2 {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1958,40 +1984,93 @@ function goBack() {
 }
 
 .right-rail {
-  display: grid;
-  align-content: start;
-  gap: 12px;
+  min-height: 0;
+  overflow: hidden;
 }
 
-.right-card {
-  padding: 16px;
+.right-panel {
+  display: grid;
+  grid-template-rows: auto minmax(88px, 1fr) auto;
+  gap: 10px;
+  height: 100%;
+  min-height: 0;
+  padding: 12px;
   background: #fff;
   border: 1px solid #e5eaf2;
   border-radius: 10px;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+
+.right-panel__section {
+  min-width: 0;
+}
+
+.progress-card,
+.remark-card {
+  padding-bottom: 10px;
+  border-bottom: 1px solid #eef2f7;
+}
+
+.remark-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+}
+
+.remark-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.remark-card__head h2 {
+  margin-bottom: 0;
+}
+
+.remark-card__head span {
+  color: #94a3b8;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.remark-input-shell {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.remark-input-shell :deep(.ant-input),
+.remark-input-shell :deep(textarea) {
+  height: 100% !important;
+  min-height: 0 !important;
+  resize: none;
 }
 
 .progress-card__body {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 
 .donut {
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 88px;
-  width: 88px;
-  height: 88px;
+  flex: 0 0 72px;
+  width: 72px;
+  height: 72px;
   color: #2563eb;
-  font-size: 18px;
+  font-size: 16px;
   font-weight: 800;
   border-radius: 50%;
 }
 
 .progress-stats {
   display: grid;
-  gap: 4px;
+  gap: 2px;
 }
 
 .progress-stats span {
@@ -2001,7 +2080,7 @@ function goBack() {
 
 .progress-stats strong {
   color: #111827;
-  font-size: 18px;
+  font-size: 16px;
 }
 
 .progress-stats i {
@@ -2014,20 +2093,85 @@ function goBack() {
   color: #dc2626;
 }
 
-.current-meta {
+.missing-nav-list {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  gap: 8px 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.missing-nav-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-content: center;
+  gap: 2px;
+  min-height: 42px;
+  padding: 5px 8px;
   color: #64748b;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fafc;
+  border: 1px solid #e5eaf2;
+  border-radius: 7px;
   font-size: 13px;
 }
 
-.current-meta strong {
+.missing-nav-row:disabled {
+  cursor: not-allowed;
+  opacity: 0.68;
+}
+
+.missing-nav-row strong {
   min-width: 0;
   overflow: hidden;
   color: #1f2937;
+  font-weight: 700;
+  font-size: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 1400px) {
+  .workbench-main {
+    grid-template-columns: 260px minmax(400px, 1fr) 240px;
+    gap: 8px;
+    padding-inline: 8px;
+  }
+
+  .right-rail {
+    min-height: 0;
+  }
+
+  .right-panel {
+    grid-template-rows: auto minmax(72px, 1fr) auto;
+    gap: 8px;
+    padding: 10px;
+    border-radius: 8px;
+  }
+
+  .progress-card__body {
+    gap: 12px;
+  }
+
+  .donut {
+    flex-basis: 62px;
+    width: 62px;
+    height: 62px;
+    font-size: 14px;
+  }
+
+  .progress-stats strong {
+    font-size: 15px;
+  }
+
+  .missing-nav-row {
+    min-height: 40px;
+    padding-inline: 7px;
+    font-size: 12px;
+  }
+
+  .remark-card {
+    min-height: 0;
+  }
 }
 
 .workbench-footer {
