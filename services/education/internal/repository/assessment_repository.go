@@ -864,7 +864,7 @@ func (repo *Repository) PageAssessmentRecords(ctx context.Context, instID int64,
 	       ar.examiner_id, ar.examiner_name, ar.remark, IFNULL(aip.status, ''), ar.create_time, ar.update_time
 		`+pageFromSQL+`
 		WHERE `+whereSQL+`
-		ORDER BY ar.assessment_date DESC, ar.id DESC
+		ORDER BY COALESCE(ar.create_time, ar.assessment_date, ar.update_time) DESC, ar.id DESC
 		LIMIT ? OFFSET ?
 	`, append(pageArgs, size, offset)...)
 	if err != nil {

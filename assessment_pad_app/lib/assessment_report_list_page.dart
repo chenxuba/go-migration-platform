@@ -723,10 +723,6 @@ int _compareRecordSummaryDesc(Pep3RecordSummary left, Pep3RecordSummary right) {
 }
 
 DateTime _recordSortTime(Pep3RecordSummary record) {
-  final DateTime? updatedTime = _tryParseRecordDateTime(record.updatedTime);
-  if (updatedTime != null) {
-    return updatedTime;
-  }
   final DateTime? createdTime = _tryParseRecordDateTime(record.createdTime);
   if (createdTime != null) {
     return createdTime;

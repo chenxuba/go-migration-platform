@@ -169,6 +169,79 @@ void main() {
     expect(find.text('生成解读'), findsWidgets);
   });
 
+  testWidgets('assessment report list sorts by report time, not update time',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 768);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'mock-token',
+    });
+    final _FakePep3AssessmentClient operatedClient = _FakePep3AssessmentClient(
+      hasPreviousRecord: true,
+      previousRecord: const Pep3RecordSummary(
+        id: 11,
+        studentId: 3,
+        studentName: '被操作记录',
+        assessmentCode: 'PEP3',
+        assessmentName: 'PEP-3',
+        birthDate: '2021-03-01',
+        assessmentDate: '2026-05-17',
+        examinerName: '陈老师',
+        createdTime: '2026-05-17T09:00:00',
+        updatedTime: '2026-05-19T20:00:00',
+      ),
+    );
+    final _FakePep3AssessmentClient newerReportClient =
+        _FakePep3AssessmentClient(
+      hasPreviousRecord: true,
+      previousRecord: const Pep3RecordSummary(
+        id: 22,
+        studentId: 31,
+        studentName: '新报告记录',
+        assessmentCode: 'ERXIN2',
+        assessmentName: '儿心量表-II',
+        birthDate: '2022-05-11',
+        assessmentDate: '2026-05-16',
+        examinerName: '陈老师',
+        createdTime: '2026-05-18T08:00:00',
+        updatedTime: '2026-05-18T08:00:00',
+      ),
+    );
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: PadViewport(
+            child: AssessmentReportListScreen(
+              onBack: () {},
+              scaleClient: _FakeAssessmentScaleClient(),
+              recordClient: operatedClient,
+              erxinRecordClient: newerReportClient,
+              autismDevRecordClient: _FakePep3AssessmentClient(),
+              shuangxiRecordClient: _FakePep3AssessmentClient(),
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+
+    expect(find.text('被操作记录'), findsOneWidget);
+    expect(find.text('新报告记录'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('新报告记录')).dy,
+      lessThan(tester.getTopLeft(find.text('被操作记录')).dy),
+    );
+  });
+
   testWidgets('erxin report preview keeps AI interpretation tab non-empty',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
