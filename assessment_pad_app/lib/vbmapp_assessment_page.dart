@@ -1282,22 +1282,83 @@ class _VbmappScoreDock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 10,
-          runSpacing: 10,
-          children: <Widget>[
-            for (final _VbmappScoreOption option in item.scoreOptions)
-              _VbmappScoreOptionButton(
-                option: option,
-                selected: score == option.score,
-                accent: item.color,
-                onTap: () => onSelectScore(option.score),
-              ),
-          ],
+        _VbmappScoreOptionGrid(
+          options: item.scoreOptions,
+          selectedScore: score,
+          accent: item.color,
+          onSelectScore: onSelectScore,
         ),
         const SizedBox(height: 12),
         _VbmappMaterialHint(item: item),
       ],
+    );
+  }
+}
+
+class _VbmappScoreOptionGrid extends StatelessWidget {
+  const _VbmappScoreOptionGrid({
+    required this.options,
+    required this.selectedScore,
+    required this.accent,
+    required this.onSelectScore,
+  });
+
+  final List<_VbmappScoreOption> options;
+  final num? selectedScore;
+  final Color accent;
+  final ValueChanged<num> onSelectScore;
+
+  int _columnCount(double width) {
+    if (options.length <= 3) {
+      return options.length.clamp(1, 3);
+    }
+    return width < 560 ? 2 : 3;
+  }
+
+  List<List<_VbmappScoreOption>> _optionRows(int columns) {
+    final List<List<_VbmappScoreOption>> rows = <List<_VbmappScoreOption>>[];
+    for (int start = 0; start < options.length; start += columns) {
+      final int end = (start + columns).clamp(0, options.length);
+      rows.add(options.sublist(start, end));
+    }
+    return rows;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const double spacing = 10;
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final int columns = _columnCount(constraints.maxWidth);
+        final List<List<_VbmappScoreOption>> rows = _optionRows(columns);
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int rowIndex = 0;
+                rowIndex < rows.length;
+                rowIndex++) ...<Widget>[
+              if (rowIndex > 0) const SizedBox(height: spacing),
+              Row(
+                children: <Widget>[
+                  for (int index = 0;
+                      index < rows[rowIndex].length;
+                      index++) ...<Widget>[
+                    if (index > 0) const SizedBox(width: spacing),
+                    Expanded(
+                      child: _VbmappScoreOptionButton(
+                        option: rows[rowIndex][index],
+                        selected: selectedScore == rows[rowIndex][index].score,
+                        accent: accent,
+                        onTap: () => onSelectScore(rows[rowIndex][index].score),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
@@ -1323,7 +1384,7 @@ class _VbmappScoreOptionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Ink(
-          width: 174,
+          width: double.infinity,
           height: 90,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
