@@ -254,6 +254,38 @@ FIELD_TEMPLATES: dict[str, dict[str, Any]] = {
 
 
 MATERIAL_PROFILES: dict[str, dict[str, Any]] = {
+    "mand_1m_request_starter_set": {
+        "label": "提要求1M入门强化物/动作",
+        "sourceLogic": "1M允许仿说、模仿或其他非肢体辅助，快捷素材优先放简单、易辅助发出的要求。",
+        "suggestedTypes": ["食物/饮料", "实物/活动", "实物玩具", "社交游戏", "动作/帮助"],
+        "recommendedMaterials": [
+            {"id": "mand_1m_food_cookie", "name": "饼干", "type": "食物/饮料"},
+            {"id": "mand_1m_book", "name": "书", "type": "实物/活动"},
+            {"id": "mand_1m_ball", "name": "球", "type": "实物玩具"},
+            {"id": "mand_1m_bubbles", "name": "泡泡", "type": "社交游戏"},
+            {"id": "mand_1m_open", "name": "打开", "type": "动作/帮助"},
+            {"id": "mand_1m_car", "name": "车", "type": "实物玩具"},
+            {"id": "mand_1m_blocks", "name": "积木", "type": "实物玩具"},
+            {"id": "mand_1m_music", "name": "音乐", "type": "活动"},
+        ],
+        "preparationChecks": ["确认动机存在", "可使用非肢体辅助", "避免肢体辅助", "记录孩子实际表达形式"],
+    },
+    "mand_2m_visible_request_set": {
+        "label": "提要求2M可见强化物/活动",
+        "sourceLogic": "2M要求在无辅助下提出4个不同要求；除“你想要什么？”外，不应依赖其他辅助。",
+        "suggestedTypes": ["活动", "实物玩具", "社交游戏", "食物/饮料"],
+        "recommendedMaterials": [
+            {"id": "mand_2m_music", "name": "音乐", "type": "活动"},
+            {"id": "mand_2m_slinky", "name": "彩虹弹簧", "type": "实物玩具"},
+            {"id": "mand_2m_ball", "name": "球", "type": "实物玩具"},
+            {"id": "mand_2m_bubbles", "name": "泡泡", "type": "社交游戏"},
+            {"id": "mand_2m_swing", "name": "秋千", "type": "活动"},
+            {"id": "mand_2m_spin", "name": "转圈", "type": "活动"},
+            {"id": "mand_2m_car", "name": "车", "type": "实物玩具"},
+            {"id": "mand_2m_blocks", "name": "积木", "type": "实物玩具"},
+        ],
+        "preparationChecks": ["目标物可在眼前", "确认动机存在", "只能使用“你想要什么？”提问", "记录提问下或自发地"],
+    },
     "potential_reinforcer_set": {
         "label": "潜在强化物/活动",
         "sourceLogic": "提要求评估优先准备孩子想要的实物或活动，让孩子看得到但不能直接取得。",
@@ -761,6 +793,13 @@ def item_specific_design(item: dict[str, Any]) -> dict[str, Any]:
             "标记是否使用仿说、模仿或其他辅助；若使用肢体辅助则不得计为达标事件。",
         ]
         design["uiEmphasis"] = ["快速新增一次要求", "原话/手势/图片必填", "自动去重统计2个有效要求"]
+    elif domain == "MAND" and no == 2:
+        design["recordingInstructions"] = [
+            "逐条记录孩子在“提问下”或“自发地”提出的要求。",
+            "目标物可在眼前，但除“你想要什么？”外不使用其他辅助。",
+            "自动去重统计4个不同的有效要求。",
+        ]
+        design["uiEmphasis"] = ["提问下/自发地切换", "目标物快捷选择", "自动去重统计4个有效要求"]
     elif domain == "MAND" and no == 3:
         design["recordingInstructions"] = [
             "选择一个强化物，分别记录人物、环境、样本三个维度的泛化。",
@@ -791,6 +830,16 @@ def item_specific_design(item: dict[str, Any]) -> dict[str, Any]:
     return design
 
 
+def material_profile_for_milestone(item: dict[str, Any], domain_design: dict[str, str]) -> str:
+    if item["domainCode"] == "MAND":
+        no = int(item["milestoneNo"])
+        if no == 1:
+            return "mand_1m_request_starter_set"
+        if no == 2:
+            return "mand_2m_visible_request_set"
+    return domain_design["materialProfile"]
+
+
 def schema_for_milestone(
     item: dict[str, Any],
     rule: dict[str, Any],
@@ -812,7 +861,7 @@ def schema_for_milestone(
         "recordDepth": record_depth_for(item, fields),
         "recordType": domain_design["recordType"],
         "uiPattern": domain_design["uiPattern"],
-        "materialProfileId": domain_design["materialProfile"],
+        "materialProfileId": material_profile_for_milestone(item, domain_design),
         "whyRecord": domain_design["why"],
         "evidenceTargets": evidence_targets(item),
         "fieldTemplateIds": fields,

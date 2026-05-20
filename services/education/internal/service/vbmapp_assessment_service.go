@@ -127,7 +127,9 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 	if svc != nil && svc.repo != nil {
 		dbProfiles, dbErr := svc.repo.ListVBMAPPResponseMaterialProfiles(context.Background(), vbmappScaleVersion)
 		if dbErr == nil && len(dbProfiles) > 0 {
-			materialProfiles = dbProfiles
+			for profileID, profile := range dbProfiles {
+				materialProfiles[profileID] = profile
+			}
 		} else if dbErr != nil && !isVBMAPPMaterialLibraryFallbackError(dbErr) {
 			return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP DB material profiles: %w", dbErr)
 		}

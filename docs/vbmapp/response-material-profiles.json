@@ -1,4 +1,121 @@
 {
+  "mand_1m_request_starter_set": {
+    "label": "提要求1M入门强化物/动作",
+    "sourceLogic": "1M允许仿说、模仿或其他非肢体辅助，快捷素材优先放简单、易辅助发出的要求。",
+    "suggestedTypes": [
+      "食物/饮料",
+      "实物/活动",
+      "实物玩具",
+      "社交游戏",
+      "动作/帮助"
+    ],
+    "recommendedMaterials": [
+      {
+        "id": "mand_1m_food_cookie",
+        "name": "饼干",
+        "type": "食物/饮料"
+      },
+      {
+        "id": "mand_1m_book",
+        "name": "书",
+        "type": "实物/活动"
+      },
+      {
+        "id": "mand_1m_ball",
+        "name": "球",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_1m_bubbles",
+        "name": "泡泡",
+        "type": "社交游戏"
+      },
+      {
+        "id": "mand_1m_open",
+        "name": "打开",
+        "type": "动作/帮助"
+      },
+      {
+        "id": "mand_1m_car",
+        "name": "车",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_1m_blocks",
+        "name": "积木",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_1m_music",
+        "name": "音乐",
+        "type": "活动"
+      }
+    ],
+    "preparationChecks": [
+      "确认动机存在",
+      "可使用非肢体辅助",
+      "避免肢体辅助",
+      "记录孩子实际表达形式"
+    ]
+  },
+  "mand_2m_visible_request_set": {
+    "label": "提要求2M可见强化物/活动",
+    "sourceLogic": "2M要求在无辅助下提出4个不同要求；除“你想要什么？”外，不应依赖其他辅助。",
+    "suggestedTypes": [
+      "活动",
+      "实物玩具",
+      "社交游戏",
+      "食物/饮料"
+    ],
+    "recommendedMaterials": [
+      {
+        "id": "mand_2m_music",
+        "name": "音乐",
+        "type": "活动"
+      },
+      {
+        "id": "mand_2m_slinky",
+        "name": "彩虹弹簧",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_2m_ball",
+        "name": "球",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_2m_bubbles",
+        "name": "泡泡",
+        "type": "社交游戏"
+      },
+      {
+        "id": "mand_2m_swing",
+        "name": "秋千",
+        "type": "活动"
+      },
+      {
+        "id": "mand_2m_spin",
+        "name": "转圈",
+        "type": "活动"
+      },
+      {
+        "id": "mand_2m_car",
+        "name": "车",
+        "type": "实物玩具"
+      },
+      {
+        "id": "mand_2m_blocks",
+        "name": "积木",
+        "type": "实物玩具"
+      }
+    ],
+    "preparationChecks": [
+      "目标物可在眼前",
+      "确认动机存在",
+      "只能使用“你想要什么？”提问",
+      "记录提问下或自发地"
+    ]
+  },
   "potential_reinforcer_set": {
     "label": "潜在强化物/活动",
     "sourceLogic": "提要求评估优先准备孩子想要的实物或活动，让孩子看得到但不能直接取得。",

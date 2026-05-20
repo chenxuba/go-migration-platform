@@ -34,7 +34,7 @@
     "transition_rating_with_auto_basis": 18
   },
   "fieldTemplateCount": 26,
-  "materialProfileCount": 15,
+  "materialProfileCount": 17,
   "sources": [
     "docs/vbmapp/milestone-items.json",
     "docs/vbmapp/milestone-scoring-rules.json",

@@ -1514,6 +1514,37 @@ class _VbmappQuestionHeader extends StatelessWidget {
               fontWeight: FontWeight.w900,
             ),
           ),
+          Container(
+            width: 1,
+            height: 14,
+            color: accent.withOpacity(.28),
+          ),
+          Text(
+            _vbmappQuestionModuleLabel(item.moduleCode),
+            style: const TextStyle(
+              color: _VbmappColors.body,
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+            decoration: BoxDecoration(
+              color: accent.withOpacity(.11),
+              borderRadius: BorderRadius.circular(999),
+              border: Border.all(color: accent.withOpacity(.18)),
+            ),
+            child: Text(
+              item.assessmentMode,
+              style: TextStyle(
+                color: accent,
+                fontSize: 11.5,
+                height: 1,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -1528,29 +1559,20 @@ class _VbmappQuestionHeader extends StatelessWidget {
       ),
     );
 
-    final Widget meta = Wrap(
-      spacing: 6,
-      runSpacing: 5,
-      children: <Widget>[
-        _VbmappQuestionMetaPill(
-          text: _vbmappQuestionModuleLabel(item.moduleCode),
-          color: accent,
-        ),
-        _VbmappQuestionMetaPill(text: item.assessmentMode, color: accent),
-      ],
-    );
-
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         if (constraints.maxWidth < 760) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: <Widget>[
-              badge,
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: <Widget>[
+                  Flexible(child: badge),
+                ],
+              ),
               const SizedBox(height: 7),
               title,
-              const SizedBox(height: 6),
-              meta,
             ],
           );
         }
@@ -1558,52 +1580,16 @@ class _VbmappQuestionHeader extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                Padding(
-                  padding: const EdgeInsets.only(top: 1),
-                  child: badge,
-                ),
-                const SizedBox(width: 10),
-                Expanded(child: title),
+                Flexible(child: badge),
               ],
             ),
-            const SizedBox(height: 7),
-            meta,
+            const SizedBox(height: 8),
+            title,
           ],
         );
       },
-    );
-  }
-}
-
-class _VbmappQuestionMetaPill extends StatelessWidget {
-  const _VbmappQuestionMetaPill({
-    required this.text,
-    required this.color,
-  });
-
-  final String text;
-  final Color color;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: color.withOpacity(.07),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(.14)),
-      ),
-      child: Text(
-        text,
-        style: TextStyle(
-          color: _VbmappColors.body,
-          fontSize: 11.5,
-          height: 1,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
     );
   }
 }
@@ -1681,7 +1667,7 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (item.itemCode == 'MAND_01M') {
+    if (item.itemCode == 'MAND_01M' || item.itemCode == 'MAND_02M') {
       return _VbmappMand1InlinePanel(
         item: item,
         materialProfile: materialProfile,
@@ -1738,8 +1724,49 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
 
   String _environment = '呈现物品';
   String _targetKind = '物品';
-  bool _physicalPrompt = false;
+  String _promptChoice = '否';
   int? _selectedRecordIndex;
+
+  bool get _usesExtraPromptRule => widget.item.itemCode == 'MAND_02M';
+
+  int get _onePointRequestCount =>
+      _scoreCountThreshold(widget.item, 1) ?? (_usesExtraPromptRule ? 4 : 2);
+
+  int get _halfPointRequestCount =>
+      _scoreCountThreshold(widget.item, .5) ?? (_usesExtraPromptRule ? 3 : 1);
+
+  String get _recordTitle =>
+      '${_vbmappQuestionDomainLabel(widget.item)}${widget.item.navCode}现场记录';
+
+  String get _promptLabel => _usesExtraPromptRule ? '辅助' : '肢体辅助';
+
+  List<String> get _promptValues => _usesExtraPromptRule
+      ? const <String>['提问下', '自发地']
+      : const <String>['否', '是'];
+
+  String get _currentPromptChoice {
+    final List<String> values = _promptValues;
+    if (values.contains(_promptChoice)) {
+      return _promptChoice;
+    }
+    return values.first;
+  }
+
+  String get _promptLevel {
+    if (_usesExtraPromptRule) {
+      return _currentPromptChoice;
+    }
+    return _currentPromptChoice == '是' ? '肢体辅助' : '无肢体辅助';
+  }
+
+  String get _requestHint => _usesExtraPromptRule ? '如：音乐、彩虹弹簧、球' : '如：饼干、书、打开';
+
+  String get _scoreReference {
+    final String promptRule =
+        _usesExtraPromptRule ? '提问下仅限“你想要什么？”，自发地也计入有效要求。' : '肢体辅助不计入有效要求。';
+    return '参考：0个计0分，$_halfPointRequestCount个计0.5分，'
+        '$_onePointRequestCount个计1分；$promptRule';
+  }
 
   @override
   void didUpdateWidget(covariant _VbmappMand1InlinePanel oldWidget) {
@@ -1780,10 +1807,10 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
                   Icon(Icons.record_voice_over_outlined,
                       color: widget.item.color, size: 19),
                   const SizedBox(width: 7),
-                  const Expanded(
+                  Expanded(
                     child: Text(
-                      '提要求1M现场记录',
-                      style: TextStyle(
+                      _recordTitle,
+                      style: const TextStyle(
                         color: _VbmappColors.ink,
                         fontSize: 14,
                         fontWeight: FontWeight.w900,
@@ -1792,7 +1819,7 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
                   ),
                   _VbmappEvidenceMetric(
                     label: '有效',
-                    value: '$qualifiedCount/2',
+                    value: '$qualifiedCount/$_onePointRequestCount',
                     color: widget.item.color,
                   ),
                   const SizedBox(width: 8),
@@ -1836,45 +1863,7 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
-        Row(
-          children: <Widget>[
-            Expanded(
-              flex: 5,
-              child: _VbmappMandInlineChoiceGroup(
-                label: '环境',
-                value: _environment,
-                values: const <String>['呈现物品', '未呈现物品'],
-                onChanged: (String value) => setState(() {
-                  _environment = value;
-                }),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 4,
-              child: _VbmappMandInlineChoiceGroup(
-                label: '对象',
-                value: _targetKind,
-                values: const <String>['物品', '动作'],
-                onChanged: (String value) => setState(() {
-                  _targetKind = value;
-                }),
-              ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              flex: 4,
-              child: _VbmappMandInlineChoiceGroup(
-                label: '肢体辅助',
-                value: _physicalPrompt ? '是' : '否',
-                values: const <String>['否', '是'],
-                onChanged: (String value) => setState(() {
-                  _physicalPrompt = value == '是';
-                }),
-              ),
-            ),
-          ],
-        ),
+        _buildChoiceRow(),
         const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -1883,7 +1872,7 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
               child: _VbmappMandInlineTextField(
                 controller: _requestController,
                 label: '孩子要求内容',
-                hintText: '如：饼干、书、打开',
+                hintText: _requestHint,
               ),
             ),
             const SizedBox(width: 10),
@@ -1907,6 +1896,53 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
               ),
           ],
         ),
+      ],
+    );
+  }
+
+  Widget _buildChoiceRow() {
+    final Widget environmentChoice = Expanded(
+      flex: 5,
+      child: _VbmappMandInlineChoiceGroup(
+        label: '环境',
+        value: _environment,
+        values: const <String>['呈现物品', '未呈现物品'],
+        onChanged: (String value) => setState(() {
+          _environment = value;
+        }),
+      ),
+    );
+    final Widget targetChoice = Expanded(
+      flex: 4,
+      child: _VbmappMandInlineChoiceGroup(
+        label: '对象',
+        value: _targetKind,
+        values: const <String>['物品', '动作'],
+        onChanged: (String value) => setState(() {
+          _targetKind = value;
+        }),
+      ),
+    );
+    final Widget promptChoice = Expanded(
+      flex: _usesExtraPromptRule ? 5 : 4,
+      child: _VbmappMandInlineChoiceGroup(
+        label: _promptLabel,
+        value: _currentPromptChoice,
+        values: _promptValues,
+        onChanged: (String value) => setState(() {
+          _promptChoice = value;
+        }),
+      ),
+    );
+    final List<Widget> choices = _usesExtraPromptRule
+        ? <Widget>[promptChoice, environmentChoice, targetChoice]
+        : <Widget>[environmentChoice, targetChoice, promptChoice];
+    return Row(
+      children: <Widget>[
+        for (int index = 0; index < choices.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 10),
+          choices[index],
+        ],
       ],
     );
   }
@@ -1939,13 +1975,14 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
         const SizedBox(height: 8),
         _VbmappMand1RecordGrid(
           events: widget.events,
+          minSlots: _onePointRequestCount,
           selectedIndex: _selectedRecordIndex,
           onSelectIndex: _selectRecord,
           onDeleteIndex: _deleteRecord,
         ),
         const SizedBox(height: 10),
         Text(
-          '参考：0个计0分，1个计0.5分，2个计1分；肢体辅助不计入有效要求。',
+          _scoreReference,
           style: const TextStyle(
             color: _VbmappColors.body,
             fontSize: 12,
@@ -1979,13 +2016,13 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
         setting: '',
         example: '',
         responseMode: '要求',
-        promptLevel: _physicalPrompt ? '肢体辅助' : '无肢体辅助',
+        promptLevel: _promptLevel,
         functional: true,
       ),
     );
     _requestController.clear();
     setState(() {
-      _physicalPrompt = false;
+      _promptChoice = _promptValues.first;
       _selectedRecordIndex = null;
     });
   }
@@ -2205,12 +2242,14 @@ class _VbmappMandMaterialChip extends StatelessWidget {
 class _VbmappMand1RecordGrid extends StatelessWidget {
   const _VbmappMand1RecordGrid({
     required this.events,
+    required this.minSlots,
     required this.selectedIndex,
     required this.onSelectIndex,
     required this.onDeleteIndex,
   });
 
   final List<_VbmappMandEvent> events;
+  final int minSlots;
   final int? selectedIndex;
   final ValueChanged<int> onSelectIndex;
   final ValueChanged<int> onDeleteIndex;
@@ -2220,7 +2259,8 @@ class _VbmappMand1RecordGrid extends StatelessWidget {
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
         const double spacing = 8;
-        final int itemCount = events.length < 2 ? 2 : events.length;
+        final int itemCount =
+            events.length < minSlots ? minSlots : events.length;
         final bool twoColumns = constraints.maxWidth >= 360;
         if (!twoColumns) {
           return Column(
@@ -4020,7 +4060,13 @@ class _VbmappMandEvent {
 
   bool get hasPhysicalPrompt => promptLevel == '肢体辅助';
 
-  bool get isQualified => functional && isNotEmpty && !hasPhysicalPrompt;
+  bool get hasDisallowedPrompt =>
+      hasPhysicalPrompt ||
+      promptLevel == '有额外辅助' ||
+      promptLevel == '额外辅助' ||
+      promptLevel == '其他辅助';
+
+  bool get isQualified => functional && isNotEmpty && !hasDisallowedPrompt;
 
   String get uniqueKey {
     final String text = target.trim().isNotEmpty ? target : utterance;

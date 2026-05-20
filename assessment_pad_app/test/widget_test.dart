@@ -3670,6 +3670,10 @@ void main() {
     expect(find.text('0.0 / 170'), findsOneWidget);
     expect(find.text('0 / 96'), findsOneWidget);
     expect(find.text('0 / 90'), findsOneWidget);
+    expect(
+      tester.getTopLeft(find.text('E')).dy,
+      lessThan(tester.getTopLeft(find.textContaining('发出2个话语')).dy),
+    );
     expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
 
     await tester.tap(find.text('1分：2 个'));
@@ -3726,9 +3730,10 @@ void main() {
     expect(find.text('建议 0分'), findsOneWidget);
     expect(find.text('动机情境'), findsNothing);
     expect(find.text('形式'), findsNothing);
-    expect(find.text('海苔'), findsOneWidget);
-    expect(find.text('转圈'), findsOneWidget);
-    expect(find.text('积木'), findsNothing);
+    expect(find.text('饼干'), findsOneWidget);
+    expect(find.text('书'), findsOneWidget);
+    expect(find.text('打开'), findsOneWidget);
+    expect(find.text('彩虹弹簧'), findsNothing);
 
     final Finder requestField = find.byType(TextField).first;
     await tester.enterText(requestField, '饼干');
@@ -3846,6 +3851,108 @@ void main() {
     expect(find.text('建议 1分'), findsOneWidget);
     expect(find.text('删除'), findsNothing);
     expect(client.saveDraftItemCalls, 5);
+  });
+
+  testWidgets('VB-MAPP MAND 2M records unprompted requests and suggests score',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('提要求2M现场记录'), findsOneWidget);
+    expect(find.text('有效 0/4'), findsOneWidget);
+    expect(find.text('建议 0分'), findsOneWidget);
+    expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('提问下'), findsOneWidget);
+    expect(find.text('自发地'), findsOneWidget);
+    expect(find.text('其他辅助'), findsNothing);
+    expect(find.text('音乐'), findsOneWidget);
+    expect(find.text('彩虹弹簧'), findsOneWidget);
+    expect(find.text('打开'), findsNothing);
+    expect(
+      tester.getTopLeft(find.text('辅助')).dx,
+      lessThan(tester.getTopLeft(find.text('环境')).dx),
+    );
+    expect(
+      tester.getTopLeft(find.text('环境')).dx,
+      lessThan(tester.getTopLeft(find.text('对象')).dx),
+    );
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-3')),
+        findsOneWidget);
+    expect(
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-0')))
+          .dy,
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-1')))
+          .dy,
+    );
+    expect(
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-2')))
+          .dy,
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-3')))
+          .dy,
+    );
+
+    final Finder requestField = find.byType(TextField).first;
+    for (final String request in <String>['音乐', '球', '彩虹弹簧']) {
+      await tester.enterText(requestField, request);
+      await tester.tap(find.text('记录本次要求'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('有效 3/4'), findsOneWidget);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+    expect(find.text('0.5 / 170'), findsOneWidget);
+
+    await tester.tap(find.text('自发地'));
+    await tester.pumpAndSettle();
+    await tester.enterText(requestField, '泡泡');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('有效 4/4'), findsOneWidget);
+    expect(find.text('建议 1分'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
+    expect(find.textContaining('提问下'), findsWidgets);
+    expect(find.textContaining('自发地'), findsWidgets);
+    expect(client.saveDraftItemCalls, 4);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',
@@ -8336,7 +8443,20 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_01M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'structured_event_log',
-          materialProfileId: 'potential_reinforcer_set',
+          materialProfileId: 'mand_1m_request_starter_set',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>[],
+          scoreStrategy: 'count_qualified_unique_mand_events',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
+        'milestones::MAND_02M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'MAND_02M',
+          uiPattern: 'mand_event_recorder',
+          recordDepth: 'structured_event_log',
+          materialProfileId: 'mand_2m_visible_request_set',
           whyRecord: '',
           evidenceTargets: <String>[],
           qualityChecks: <String>[],
@@ -8346,13 +8466,28 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
         ),
       },
       materialProfiles: <String, VbmappMaterialProfile>{
-        'potential_reinforcer_set': VbmappMaterialProfile(
-          label: '潜在强化物/活动',
-          suggestedTypes: <String>['食物/饮料', '活动'],
+        'mand_1m_request_starter_set': VbmappMaterialProfile(
+          label: '提要求1M入门强化物/动作',
+          suggestedTypes: <String>['食物/饮料', '实物/活动', '动作/帮助'],
           recommendedMaterials: <VbmappMaterialSuggestion>[
             VbmappMaterialSuggestion(
-                id: 'test-nori', name: '海苔', type: '食物/饮料'),
-            VbmappMaterialSuggestion(id: 'test-spin', name: '转圈', type: '活动'),
+                id: 'test-cookie', name: '饼干', type: '食物/饮料'),
+            VbmappMaterialSuggestion(id: 'test-book', name: '书', type: '实物/活动'),
+            VbmappMaterialSuggestion(
+                id: 'test-open', name: '打开', type: '动作/帮助'),
+          ],
+          preparationChecks: <String>[],
+        ),
+        'mand_2m_visible_request_set': VbmappMaterialProfile(
+          label: '提要求2M可见强化物/活动',
+          suggestedTypes: <String>['活动', '实物玩具', '社交游戏'],
+          recommendedMaterials: <VbmappMaterialSuggestion>[
+            VbmappMaterialSuggestion(id: 'test-music', name: '音乐', type: '活动'),
+            VbmappMaterialSuggestion(
+                id: 'test-slinky', name: '彩虹弹簧', type: '实物玩具'),
+            VbmappMaterialSuggestion(id: 'test-ball', name: '球', type: '实物玩具'),
+            VbmappMaterialSuggestion(
+                id: 'test-bubbles', name: '泡泡', type: '社交游戏'),
           ],
           preparationChecks: <String>[],
         ),

@@ -56,15 +56,24 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	if _, ok := profiles["potential_reinforcer_set"]; !ok {
 		t.Fatal("expected potential_reinforcer_set material profile")
 	}
-	if !containsMaterialSuggestion(profiles["potential_reinforcer_set"].RecommendedMaterials, "饼干") {
-		t.Fatalf("expected MAND material quick picks in potential_reinforcer_set: %+v", profiles["potential_reinforcer_set"].RecommendedMaterials)
+	if _, ok := profiles["mand_1m_request_starter_set"]; !ok {
+		t.Fatal("expected mand_1m_request_starter_set material profile")
+	}
+	if _, ok := profiles["mand_2m_visible_request_set"]; !ok {
+		t.Fatal("expected mand_2m_visible_request_set material profile")
+	}
+	if !containsMaterialSuggestion(profiles["mand_1m_request_starter_set"].RecommendedMaterials, "饼干") {
+		t.Fatalf("expected MAND 1M material quick picks: %+v", profiles["mand_1m_request_starter_set"].RecommendedMaterials)
+	}
+	if !containsMaterialSuggestion(profiles["mand_2m_visible_request_set"].RecommendedMaterials, "彩虹弹簧") {
+		t.Fatalf("expected MAND 2M material quick picks: %+v", profiles["mand_2m_visible_request_set"].RecommendedMaterials)
 	}
 
 	mand1 := findMilestoneResponseSchema(t, milestones, "MAND_01M")
 	if mand1.UIPattern != "mand_event_recorder" {
 		t.Fatalf("unexpected MAND_01M ui pattern: %s", mand1.UIPattern)
 	}
-	if mand1.MaterialProfileID != "potential_reinforcer_set" {
+	if mand1.MaterialProfileID != "mand_1m_request_starter_set" {
 		t.Fatalf("unexpected MAND_01M material profile: %s", mand1.MaterialProfileID)
 	}
 	if !contains(mand1.FieldTemplateIDs, "mand_event_log") {
@@ -72,6 +81,11 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	}
 	if mand1.AutoCompletion.ScoreStrategy != "count_qualified_unique_mand_events" {
 		t.Fatalf("unexpected MAND_01M auto strategy: %s", mand1.AutoCompletion.ScoreStrategy)
+	}
+
+	mand2 := findMilestoneResponseSchema(t, milestones, "MAND_02M")
+	if mand2.MaterialProfileID != "mand_2m_visible_request_set" {
+		t.Fatalf("unexpected MAND_02M material profile: %s", mand2.MaterialProfileID)
 	}
 
 	mand3 := findMilestoneResponseSchema(t, milestones, "MAND_03M")

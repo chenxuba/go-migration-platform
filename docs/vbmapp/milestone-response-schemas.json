@@ -12,7 +12,7 @@
     "recordDepth": "trial_or_event_log_required",
     "recordType": "mand_event_log",
     "uiPattern": "mand_event_recorder",
-    "materialProfileId": "potential_reinforcer_set",
+    "materialProfileId": "mand_1m_request_starter_set",
     "whyRecord": "提要求题必须保留孩子实际提出的内容、沟通形式、动机情境和辅助水平，否则无法判断是否为功能性要求。",
     "evidenceTargets": [
       "孩子实际发出的要求",
@@ -97,7 +97,7 @@
     "recordDepth": "trial_or_event_log_required",
     "recordType": "mand_event_log",
     "uiPattern": "mand_event_recorder",
-    "materialProfileId": "potential_reinforcer_set",
+    "materialProfileId": "mand_2m_visible_request_set",
     "whyRecord": "提要求题必须保留孩子实际提出的内容、沟通形式、动机情境和辅助水平，否则无法判断是否为功能性要求。",
     "evidenceTargets": [
       "孩子实际发出的要求",
@@ -154,8 +154,16 @@
       }
     ],
     "itemDesign": {
-      "recordingInstructions": [],
-      "uiEmphasis": []
+      "recordingInstructions": [
+        "逐条记录孩子在“提问下”或“自发地”提出的要求。",
+        "目标物可在眼前，但除“你想要什么？”外不使用其他辅助。",
+        "自动去重统计4个不同的有效要求。"
+      ],
+      "uiEmphasis": [
+        "提问下/自发地切换",
+        "目标物快捷选择",
+        "自动去重统计4个有效要求"
+      ]
     },
     "sourceFiles": [
       "VB-MAPP第一阶段孤独症儿童测评量表社会行为和社会性游戏-922f359d0a4e767f5acfa1c7aa00b52acfc79cbc.docx",

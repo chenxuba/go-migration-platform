@@ -74,8 +74,14 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	if schema.MilestoneResponseSchemas[0].MilestoneID != "MAND_01M" || schema.MilestoneResponseSchemas[0].UIPattern == "" {
 		t.Fatalf("unexpected first milestone schema: %+v", schema.MilestoneResponseSchemas[0])
 	}
+	if schema.MilestoneResponseSchemas[0].MaterialProfileID != "mand_1m_request_starter_set" {
+		t.Fatalf("unexpected MAND_01M material profile: %s", schema.MilestoneResponseSchemas[0].MaterialProfileID)
+	}
 	if len(schema.ResponseFieldTemplates) == 0 || len(schema.ResponseMaterialProfiles) == 0 || len(schema.ResponseSchemaSummary) == 0 {
 		t.Fatalf("expected schema support dictionaries: %+v", schema)
+	}
+	if _, ok := schema.ResponseMaterialProfiles["mand_2m_visible_request_set"]; !ok {
+		t.Fatalf("expected MAND_02M material profile in schema response")
 	}
 }
 
