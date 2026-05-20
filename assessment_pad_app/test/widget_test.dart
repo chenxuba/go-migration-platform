@@ -3756,8 +3756,18 @@ void main() {
     expect(find.text('形式'), findsNothing);
     expect(find.text('饼干'), findsOneWidget);
     expect(find.text('书'), findsOneWidget);
+    expect(find.text('打开'), findsNothing);
+    expect(find.text('彩虹弹簧'), findsOneWidget);
+
+    await tester.tap(find.text('动作'));
+    await tester.pumpAndSettle();
     expect(find.text('打开'), findsOneWidget);
-    expect(find.text('彩虹弹簧'), findsNothing);
+    expect(find.text('帮我'), findsOneWidget);
+    expect(find.text('饼干'), findsNothing);
+
+    await tester.tap(find.text('物品'));
+    await tester.pumpAndSettle();
+    expect(find.text('饼干'), findsOneWidget);
 
     final Finder requestField = find.byType(TextField).first;
     await tester.enterText(requestField, '饼干');
@@ -3766,7 +3776,6 @@ void main() {
 
     expect(find.text('有效 1/2'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(find.text('饼干 -> 饼干'), findsNothing);
     expect(
       tester
@@ -3783,7 +3792,6 @@ void main() {
 
     expect(find.text('有效 2/2'), findsOneWidget);
     expect(find.text('建议 1分'), findsOneWidget);
-    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(find.text('书 -> 书'), findsNothing);
     expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-0')),
         findsOneWidget);
@@ -3920,9 +3928,17 @@ void main() {
     expect(find.text('提问下'), findsOneWidget);
     expect(find.text('自发地'), findsOneWidget);
     expect(find.text('其他辅助'), findsNothing);
-    expect(find.text('音乐'), findsOneWidget);
+    expect(find.text('音乐'), findsNothing);
     expect(find.text('彩虹弹簧'), findsOneWidget);
     expect(find.text('打开'), findsNothing);
+    await tester.tap(find.text('动作'));
+    await tester.pumpAndSettle();
+    expect(find.text('打开'), findsOneWidget);
+    expect(find.text('帮我'), findsOneWidget);
+    expect(find.text('彩虹弹簧'), findsNothing);
+    await tester.tap(find.text('物品'));
+    await tester.pumpAndSettle();
+    expect(find.text('彩虹弹簧'), findsOneWidget);
     expect(
       tester.getTopLeft(find.text('辅助')).dx,
       lessThan(tester.getTopLeft(find.text('环境')).dx),
@@ -4155,6 +4171,18 @@ void main() {
     expect(find.text('口头辅助'), findsNothing);
     expect(find.text('不同 0/5'), findsOneWidget);
     expect(find.text('建议 0分'), findsOneWidget);
+    expect(find.text('球'), findsOneWidget);
+    expect(find.text('音乐'), findsNothing);
+
+    await tester.tap(find.text('活动'));
+    await tester.pumpAndSettle();
+    expect(find.text('音乐'), findsOneWidget);
+    expect(find.text('秋千'), findsOneWidget);
+    expect(find.text('球'), findsNothing);
+
+    await tester.tap(find.text('物品'));
+    await tester.pumpAndSettle();
+    expect(find.text('球'), findsOneWidget);
 
     await tester.tap(
       find.byKey(const ValueKey<String>('vbmapp-mand4-primary-timer')),
@@ -4182,7 +4210,6 @@ void main() {
 
     expect(find.text('不同 2/5'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
@@ -4388,8 +4415,12 @@ void main() {
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
 
-    expect(find.text('自发性地提出15个不同的要求，'), findsOneWidget);
-    expect(find.text('（如我们一起玩、打开、我想要书）（TO：30分钟）'), findsOneWidget);
+    expect(
+      find.text(
+        '自发性地提出15个不同的要求，（如我们一起玩、打开、我想要书）（TO：30分钟）',
+      ),
+      findsOneWidget,
+    );
     expect(find.text('提要求9M观察记录'), findsOneWidget);
     expect(find.text('观察窗 30分钟'), findsOneWidget);
     expect(find.text('语言'), findsNothing);

@@ -1825,6 +1825,15 @@ class _VbmappWorkspace extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
                   _VbmappQuestionHeader(item: item),
+                  if (_hasPreparationContent(
+                      responseSchema, materialProfile)) ...<Widget>[
+                    const SizedBox(height: 10),
+                    _VbmappPreparationPanel(
+                      item: item,
+                      schema: responseSchema,
+                      materialProfile: materialProfile,
+                    ),
+                  ],
                   const SizedBox(height: 12),
                   _VbmappSmartEvidencePanel(
                     item: item,
@@ -1850,6 +1859,280 @@ class _VbmappWorkspace extends StatelessWidget {
             onSelectScore: onSelectScore,
           ),
         ],
+      ),
+    );
+  }
+}
+
+bool _hasPreparationContent(
+  VbmappItemResponseSchema? schema,
+  VbmappMaterialProfile? materialProfile,
+) {
+  return (materialProfile != null &&
+          (materialProfile.quickPickLabels.isNotEmpty ||
+              materialProfile.preparationChecks.isNotEmpty ||
+              materialProfile.quickPicksByField.isNotEmpty)) ||
+      (schema != null && schema.qualityChecks.isNotEmpty);
+}
+
+class _VbmappPreparationPanel extends StatefulWidget {
+  const _VbmappPreparationPanel({
+    required this.item,
+    required this.schema,
+    required this.materialProfile,
+  });
+
+  final _VbmappItem item;
+  final VbmappItemResponseSchema? schema;
+  final VbmappMaterialProfile? materialProfile;
+
+  @override
+  State<_VbmappPreparationPanel> createState() =>
+      _VbmappPreparationPanelState();
+}
+
+class _VbmappPreparationPanelState extends State<_VbmappPreparationPanel> {
+  bool _expanded = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final VbmappMaterialProfile? profile = widget.materialProfile;
+    final List<String> quickPicks =
+        profile?.quickPickLabels ?? const <String>[];
+    final List<String> checks = <String>[
+      ...?profile?.preparationChecks,
+      ...?widget.schema?.qualityChecks,
+    ];
+    final Map<String, List<String>> fieldQuickPicks =
+        _normalizedMaterialQuickPicks(
+      profile?.quickPicksByField ?? const <String, Object?>{},
+    );
+    final List<MapEntry<String, List<String>>> visibleFieldQuickPicks =
+        fieldQuickPicks.entries.take(3).toList(growable: false);
+    final Color accent = widget.item.color;
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 180),
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFCF8),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _VbmappColors.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: () => setState(() => _expanded = !_expanded),
+              borderRadius: BorderRadius.circular(10),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 2),
+                child: Row(
+                  children: <Widget>[
+                    Icon(Icons.inventory_2_outlined, color: accent, size: 18),
+                    const SizedBox(width: 8),
+                    const Expanded(
+                      child: Text(
+                        '题前准备',
+                        style: TextStyle(
+                          color: _VbmappColors.ink,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                    if (quickPicks.isNotEmpty)
+                      _VbmappPreparationPill(
+                        label: '素材',
+                        value: '${quickPicks.length}',
+                        accent: accent,
+                      ),
+                    if (checks.isNotEmpty) ...<Widget>[
+                      const SizedBox(width: 6),
+                      _VbmappPreparationPill(
+                        label: '检查',
+                        value: '${checks.length}',
+                        accent: accent,
+                      ),
+                    ],
+                    const SizedBox(width: 6),
+                    Icon(
+                      _expanded
+                          ? Icons.keyboard_arrow_up_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: _VbmappColors.body,
+                      size: 20,
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          if (_expanded) ...<Widget>[
+            const SizedBox(height: 10),
+            if (profile != null && profile.label.trim().isNotEmpty)
+              Text(
+                profile.label.trim(),
+                style: const TextStyle(
+                  color: _VbmappColors.body,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            if (quickPicks.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              _VbmappPreparationSection(
+                title: '推荐素材',
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    for (final String label in quickPicks.take(12))
+                      _VbmappPreparationChip(label: label),
+                  ],
+                ),
+              ),
+            ],
+            if (fieldQuickPicks.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              _VbmappPreparationSection(
+                title: '快捷词',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (int index = 0;
+                        index < visibleFieldQuickPicks.length;
+                        index++) ...<Widget>[
+                      if (index > 0) const SizedBox(height: 4),
+                      Text(
+                        '${_materialFieldLabel(visibleFieldQuickPicks[index].key)}：${visibleFieldQuickPicks[index].value.take(4).join('、')}',
+                        style: const TextStyle(
+                          color: _VbmappColors.body,
+                          fontSize: 12,
+                          height: 1.35,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+            if (checks.isNotEmpty) ...<Widget>[
+              const SizedBox(height: 10),
+              _VbmappPreparationSection(
+                title: '准备检查',
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (final String check in _deduplicatedTexts(checks))
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 4),
+                        child: Text(
+                          '- $check',
+                          style: const TextStyle(
+                            color: _VbmappColors.body,
+                            fontSize: 12,
+                            height: 1.35,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _VbmappPreparationSection extends StatelessWidget {
+  const _VbmappPreparationSection({
+    required this.title,
+    required this.child,
+  });
+
+  final String title;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(
+          title,
+          style: const TextStyle(
+            color: _VbmappColors.ink,
+            fontSize: 12.5,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 6),
+        child,
+      ],
+    );
+  }
+}
+
+class _VbmappPreparationPill extends StatelessWidget {
+  const _VbmappPreparationPill({
+    required this.label,
+    required this.value,
+    required this.accent,
+  });
+
+  final String label;
+  final String value;
+  final Color accent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(.08),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: accent.withOpacity(.16)),
+      ),
+      child: Text(
+        '$label $value',
+        style: TextStyle(
+          color: accent,
+          fontSize: 11.5,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _VbmappPreparationChip extends StatelessWidget {
+  const _VbmappPreparationChip({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _VbmappColors.line),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          color: _VbmappColors.body,
+          fontSize: 12,
+          fontWeight: FontWeight.w800,
+        ),
       ),
     );
   }
@@ -2434,9 +2717,11 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
   }
 
   List<String> _mandMaterialQuickPicks(VbmappMaterialProfile? profile) {
-    final List<String> configured =
-        profile?.quickPickLabels ?? const <String>[];
-    return configured.isEmpty ? _fallbackMaterials : configured;
+    return _smartMandQuickPicks(
+      profile,
+      targetKind: _targetKind,
+      fallback: _fallbackMaterials,
+    );
   }
 
   Widget _buildRecordSummary() {
@@ -2939,11 +3224,11 @@ class _VbmappTimedMandInlinePanelState
   }
 
   List<String> _mandMaterialQuickPicks(VbmappMaterialProfile? profile) {
-    final List<String> configured =
-        profile?.quickPickLabels ?? const <String>[];
-    return configured.isEmpty
-        ? _fallbackMaterials
-        : configured.take(8).toList();
+    return _smartMandQuickPicks(
+      profile,
+      targetKind: _targetKind,
+      fallback: _fallbackMaterials,
+    );
   }
 
   Widget _buildRecordSummary() {
@@ -4848,10 +5133,11 @@ class _VbmappMand4QuickRecordDialogState
 
   @override
   Widget build(BuildContext context) {
-    final List<String> configured =
-        widget.materialProfile?.quickPickLabels ?? const <String>[];
-    final List<String> materials =
-        configured.isEmpty ? _fallbackMaterials : configured.take(8).toList();
+    final List<String> materials = _smartMandQuickPicks(
+      widget.materialProfile,
+      targetKind: _targetKind,
+      fallback: _fallbackMaterials,
+    );
     return Center(
       child: Material(
         color: Colors.transparent,
@@ -5357,8 +5643,6 @@ class _VbmappScoreDock extends StatelessWidget {
           accent: item.color,
           onSelectScore: onSelectScore,
         ),
-        const SizedBox(height: 8),
-        _VbmappMaterialHint(item: item),
       ],
     );
   }
@@ -5501,47 +5785,6 @@ class _VbmappScoreOptionButton extends StatelessWidget {
             ],
           ),
         ),
-      ),
-    );
-  }
-}
-
-class _VbmappMaterialHint extends StatelessWidget {
-  const _VbmappMaterialHint({required this.item});
-
-  final _VbmappItem item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      constraints: const BoxConstraints(maxHeight: 58),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
-      decoration: BoxDecoration(
-        color: const Color(0xFFFFFAF5),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _VbmappColors.lineSoft),
-      ),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Icon(Icons.inventory_2_outlined, color: item.color, size: 18),
-          const SizedBox(width: 8),
-          Expanded(
-            child: SingleChildScrollView(
-              padding: EdgeInsets.zero,
-              physics: const ClampingScrollPhysics(),
-              child: Text(
-                item.materialHint,
-                style: const TextStyle(
-                  color: _VbmappColors.body,
-                  fontSize: 12,
-                  height: 1.25,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -7177,6 +7420,142 @@ String _formatScore(num score) {
     return score.toInt().toString();
   }
   return score.toString();
+}
+
+Map<String, List<String>> _normalizedMaterialQuickPicks(
+  Map<String, Object?> raw,
+) {
+  if (raw.isEmpty) {
+    return const <String, List<String>>{};
+  }
+  final Map<String, List<String>> out = <String, List<String>>{};
+  raw.forEach((String key, Object? value) {
+    final List<String> values = _materialStringList(value);
+    if (key.trim().isNotEmpty && values.isNotEmpty) {
+      out[key.trim()] = values;
+    }
+  });
+  return out;
+}
+
+List<String> _materialStringList(Object? raw) {
+  if (raw is! List) {
+    return const <String>[];
+  }
+  return raw
+      .map((Object? value) => _safeText(value))
+      .where((String value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
+String _materialFieldLabel(String key) {
+  if (key.contains('people')) {
+    return '人物';
+  }
+  if (key.contains('settings')) {
+    return '环境';
+  }
+  if (key.contains('examples')) {
+    return '例子';
+  }
+  return '词库';
+}
+
+List<String> _deduplicatedTexts(List<String> values) {
+  final Set<String> seen = <String>{};
+  final List<String> out = <String>[];
+  for (final String value in values) {
+    final String normalized = value.trim();
+    if (normalized.isEmpty || seen.contains(normalized)) {
+      continue;
+    }
+    seen.add(normalized);
+    out.add(normalized);
+  }
+  return out;
+}
+
+List<String> _smartMandQuickPicks(
+  VbmappMaterialProfile? profile, {
+  required String targetKind,
+  required List<String> fallback,
+  int limit = 8,
+}) {
+  final List<String> typed = <String>[
+    for (final VbmappMaterialSuggestion material
+        in profile?.recommendedMaterials ?? const <VbmappMaterialSuggestion>[])
+      if (_materialMatchesMandTarget(
+        name: material.name,
+        type: material.type,
+        targetKind: targetKind,
+      ))
+        material.name,
+  ];
+  final List<String> untyped = profile?.quickPicks ?? const <String>[];
+  final List<String> targetFallback = _mandFallbackQuickPicksForTarget(
+    targetKind,
+  );
+  final List<String> filteredFallback = fallback
+      .where((String value) => _materialMatchesMandTarget(
+            name: value,
+            type: '',
+            targetKind: targetKind,
+          ))
+      .toList(growable: false);
+  final List<String> source = typed.isEmpty
+      ? <String>[
+          ...untyped,
+          ...targetFallback,
+          ...filteredFallback,
+        ]
+      : <String>[...typed, ...targetFallback, ...untyped, ...filteredFallback];
+  return _deduplicatedTexts(source).take(limit).toList(growable: false);
+}
+
+List<String> _mandFallbackQuickPicksForTarget(String targetKind) {
+  switch (targetKind.trim()) {
+    case '动作':
+      return const <String>['打开', '出去', '帮我', '给我', '推', '倒果汁'];
+    case '活动':
+      return const <String>['音乐', '秋千', '泡泡', '转圈', '一起玩', '出去'];
+    case '物品':
+    default:
+      return const <String>['饼干', '书', '球', '泡泡', '车', '积木', '彩虹弹簧'];
+  }
+}
+
+bool _materialMatchesMandTarget({
+  required String name,
+  required String type,
+  required String targetKind,
+}) {
+  final String normalizedName = name.trim();
+  final String normalizedType = type.trim();
+  if (normalizedName.isEmpty) {
+    return false;
+  }
+  switch (targetKind.trim()) {
+    case '动作':
+      return normalizedType.contains('动作') ||
+          normalizedType.contains('帮助') ||
+          _looksLikeActionMand(normalizedName);
+    case '活动':
+      return normalizedType.contains('活动') ||
+          normalizedType.contains('社交游戏') ||
+          _looksLikeActivityMand(normalizedName);
+    case '物品':
+    default:
+      return !_looksLikeActionMand(normalizedName) &&
+          !_looksLikeActivityMand(normalizedName);
+  }
+}
+
+bool _looksLikeActionMand(String value) {
+  return RegExp(r'(打开|出去|帮我|给我|推|倒|拿|开门|关门|再来|快点|该我了)').hasMatch(value.trim());
+}
+
+bool _looksLikeActivityMand(String value) {
+  return RegExp(r'(音乐|秋千|泡泡|转圈|一起玩|游戏|出去)').hasMatch(value.trim());
 }
 
 Map<String, dynamic> _dynamicMap(Object? raw) {
