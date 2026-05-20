@@ -3661,6 +3661,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    expect(find.text('VB-MAPP语言行为评估 测评工作台'), findsOneWidget);
     expect(find.text('1 / 212'), findsWidgets);
     expect(find.text('0/170'), findsOneWidget);
     expect(find.text('0/24'), findsOneWidget);
