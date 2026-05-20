@@ -124,6 +124,9 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, err
 	}
+	milestoneSchemas = enrichVBMAPPMilestonePreparationFlags(milestoneSchemas)
+	barrierSchemas = enrichVBMAPPBarrierPreparationFlags(barrierSchemas)
+	transitionSchemas = enrichVBMAPPTransitionPreparationFlags(transitionSchemas)
 	summary, err := loadVBMAPPResponseSchemaSummary(filepath.Join(dataDir, vbmappSchemaSummaryFile))
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, err
@@ -148,6 +151,51 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 		ResponseMaterialProfiles:  materialProfiles,
 		ResponseSchemaSummary:     summary,
 	}, nil
+}
+
+func enrichVBMAPPMilestonePreparationFlags(
+	schemas []vbmappscore.MilestoneResponseSchema,
+) []vbmappscore.MilestoneResponseSchema {
+	const materialDrivenProfiles = "|" +
+		"mand_1m_request_starter_set|" +
+		"mand_2m_visible_request_set|" +
+		"potential_reinforcer_set|" +
+		"tact_object_picture_book_set|" +
+		"listener_shared_material_set|" +
+		"matching_visual_set|" +
+		"imitation_action_set|" +
+		"eesa_form|" +
+		"lrffc_shared_set|" +
+		"reading_material_set|" +
+		"writing_artifact_set|" +
+		"math_material_set|"
+	for index := range schemas {
+		profileID := strings.TrimSpace(schemas[index].MaterialProfileID)
+		if profileID != "" && strings.Contains(materialDrivenProfiles, "|"+profileID+"|") {
+			schemas[index].ShowPreparationEntry = true
+			continue
+		}
+		schemas[index].ShowPreparationEntry = strings.TrimSpace(schemas[index].UIPattern) == "mand_event_recorder"
+	}
+	return schemas
+}
+
+func enrichVBMAPPBarrierPreparationFlags(
+	schemas []vbmappscore.BarrierResponseSchema,
+) []vbmappscore.BarrierResponseSchema {
+	for index := range schemas {
+		schemas[index].ShowPreparationEntry = false
+	}
+	return schemas
+}
+
+func enrichVBMAPPTransitionPreparationFlags(
+	schemas []vbmappscore.TransitionResponseSchema,
+) []vbmappscore.TransitionResponseSchema {
+	for index := range schemas {
+		schemas[index].ShowPreparationEntry = false
+	}
+	return schemas
 }
 
 func (svc *Service) loadMergedVBMAPPMaterialProfiles(

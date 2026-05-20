@@ -1824,16 +1824,11 @@ class _VbmappWorkspace extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  _VbmappQuestionHeader(item: item),
-                  if (_hasPreparationContent(
-                      responseSchema, materialProfile)) ...<Widget>[
-                    const SizedBox(height: 10),
-                    _VbmappPreparationPanel(
-                      item: item,
-                      schema: responseSchema,
-                      materialProfile: materialProfile,
-                    ),
-                  ],
+                  _VbmappQuestionHeader(
+                    item: item,
+                    schema: responseSchema,
+                    materialProfile: materialProfile,
+                  ),
                   const SizedBox(height: 12),
                   _VbmappSmartEvidencePanel(
                     item: item,
@@ -1864,7 +1859,7 @@ class _VbmappWorkspace extends StatelessWidget {
   }
 }
 
-bool _hasPreparationContent(
+bool _hasPreparationData(
   VbmappItemResponseSchema? schema,
   VbmappMaterialProfile? materialProfile,
 ) {
@@ -1875,8 +1870,16 @@ bool _hasPreparationContent(
       (schema != null && schema.qualityChecks.isNotEmpty);
 }
 
-class _VbmappPreparationPanel extends StatefulWidget {
-  const _VbmappPreparationPanel({
+bool _shouldShowPreparationEntry(
+  VbmappItemResponseSchema? schema,
+  VbmappMaterialProfile? materialProfile,
+) {
+  return schema?.showPreparationEntry == true &&
+      _hasPreparationData(schema, materialProfile);
+}
+
+class _VbmappPreparationDialog extends StatelessWidget {
+  const _VbmappPreparationDialog({
     required this.item,
     required this.schema,
     required this.materialProfile,
@@ -1887,164 +1890,178 @@ class _VbmappPreparationPanel extends StatefulWidget {
   final VbmappMaterialProfile? materialProfile;
 
   @override
-  State<_VbmappPreparationPanel> createState() =>
-      _VbmappPreparationPanelState();
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 860,
+          padding: const EdgeInsets.fromLTRB(20, 18, 20, 18),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(18),
+            border: Border.all(color: _VbmappColors.line),
+            boxShadow: _vbmappShadow(blur: 24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(
+                    Icons.inventory_2_outlined,
+                    color: item.color,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  const Expanded(
+                    child: Text(
+                      '题前准备',
+                      style: TextStyle(
+                        color: _VbmappColors.ink,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  _VbmappIconButtonBox(
+                    icon: Icons.close_rounded,
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Flexible(
+                fit: FlexFit.loose,
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxHeight: 560),
+                  child: SingleChildScrollView(
+                    padding: EdgeInsets.zero,
+                    child: _VbmappPreparationContent(
+                      item: item,
+                      schema: schema,
+                      materialProfile: materialProfile,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 }
 
-class _VbmappPreparationPanelState extends State<_VbmappPreparationPanel> {
-  bool _expanded = false;
+class _VbmappPreparationContent extends StatelessWidget {
+  const _VbmappPreparationContent({
+    required this.item,
+    required this.schema,
+    required this.materialProfile,
+  });
+
+  final _VbmappItem item;
+  final VbmappItemResponseSchema? schema;
+  final VbmappMaterialProfile? materialProfile;
 
   @override
   Widget build(BuildContext context) {
-    final VbmappMaterialProfile? profile = widget.materialProfile;
+    final VbmappMaterialProfile? profile = materialProfile;
     final List<String> quickPicks =
         profile?.quickPickLabels ?? const <String>[];
-    final List<String> checks = <String>[
+    final List<String> checks = _deduplicatedTexts(<String>[
       ...?profile?.preparationChecks,
-      ...?widget.schema?.qualityChecks,
-    ];
+      ...?schema?.qualityChecks,
+    ]);
     final Map<String, List<String>> fieldQuickPicks =
         _normalizedMaterialQuickPicks(
       profile?.quickPicksByField ?? const <String, Object?>{},
     );
     final List<MapEntry<String, List<String>>> visibleFieldQuickPicks =
-        fieldQuickPicks.entries.take(3).toList(growable: false);
-    final Color accent = widget.item.color;
-
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 180),
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        fieldQuickPicks.entries.take(6).toList(growable: false);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFCF8),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: _VbmappColors.lineSoft),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: () => setState(() => _expanded = !_expanded),
-              borderRadius: BorderRadius.circular(10),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 2),
-                child: Row(
-                  children: <Widget>[
-                    Icon(Icons.inventory_2_outlined, color: accent, size: 18),
-                    const SizedBox(width: 8),
-                    const Expanded(
-                      child: Text(
-                        '题前准备',
-                        style: TextStyle(
-                          color: _VbmappColors.ink,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-                    ),
-                    if (quickPicks.isNotEmpty)
-                      _VbmappPreparationPill(
-                        label: '素材',
-                        value: '${quickPicks.length}',
-                        accent: accent,
-                      ),
-                    if (checks.isNotEmpty) ...<Widget>[
-                      const SizedBox(width: 6),
-                      _VbmappPreparationPill(
-                        label: '检查',
-                        value: '${checks.length}',
-                        accent: accent,
-                      ),
-                    ],
-                    const SizedBox(width: 6),
-                    Icon(
-                      _expanded
-                          ? Icons.keyboard_arrow_up_rounded
-                          : Icons.keyboard_arrow_down_rounded,
-                      color: _VbmappColors.body,
-                      size: 20,
-                    ),
-                  ],
-                ),
+          if (profile != null && profile.label.trim().isNotEmpty) ...<Widget>[
+            Text(
+              profile.label.trim(),
+              style: const TextStyle(
+                color: _VbmappColors.ink,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
               ),
             ),
-          ),
-          if (_expanded) ...<Widget>[
             const SizedBox(height: 10),
-            if (profile != null && profile.label.trim().isNotEmpty)
-              Text(
-                profile.label.trim(),
-                style: const TextStyle(
-                  color: _VbmappColors.body,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
-                ),
+          ],
+          if (quickPicks.isNotEmpty) ...<Widget>[
+            _VbmappPreparationSection(
+              title: '推荐素材',
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: <Widget>[
+                  for (final String label in quickPicks.take(16))
+                    _VbmappPreparationChip(label: label),
+                ],
               ),
-            if (quickPicks.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
-              _VbmappPreparationSection(
-                title: '推荐素材',
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: <Widget>[
-                    for (final String label in quickPicks.take(12))
-                      _VbmappPreparationChip(label: label),
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (fieldQuickPicks.isNotEmpty) ...<Widget>[
+            _VbmappPreparationSection(
+              title: '快捷词',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (int index = 0;
+                      index < visibleFieldQuickPicks.length;
+                      index++) ...<Widget>[
+                    if (index > 0) const SizedBox(height: 6),
+                    Text(
+                      '${_materialFieldLabel(visibleFieldQuickPicks[index].key)}：${visibleFieldQuickPicks[index].value.join('、')}',
+                      style: const TextStyle(
+                        color: _VbmappColors.body,
+                        fontSize: 12.5,
+                        height: 1.4,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
                   ],
-                ),
+                ],
               ),
-            ],
-            if (fieldQuickPicks.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
-              _VbmappPreparationSection(
-                title: '快捷词',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    for (int index = 0;
-                        index < visibleFieldQuickPicks.length;
-                        index++) ...<Widget>[
-                      if (index > 0) const SizedBox(height: 4),
-                      Text(
-                        '${_materialFieldLabel(visibleFieldQuickPicks[index].key)}：${visibleFieldQuickPicks[index].value.take(4).join('、')}',
+            ),
+            const SizedBox(height: 12),
+          ],
+          if (checks.isNotEmpty)
+            _VbmappPreparationSection(
+              title: '准备检查',
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  for (final String check in checks)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 6),
+                      child: Text(
+                        '- $check',
                         style: const TextStyle(
                           color: _VbmappColors.body,
-                          fontSize: 12,
-                          height: 1.35,
+                          fontSize: 12.5,
+                          height: 1.4,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                    ],
-                  ],
-                ),
+                    ),
+                ],
               ),
-            ],
-            if (checks.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
-              _VbmappPreparationSection(
-                title: '准备检查',
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    for (final String check in _deduplicatedTexts(checks))
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 4),
-                        child: Text(
-                          '- $check',
-                          style: const TextStyle(
-                            color: _VbmappColors.body,
-                            fontSize: 12,
-                            height: 1.35,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ],
-          ],
+            ),
         ],
       ),
     );
@@ -2080,38 +2097,6 @@ class _VbmappPreparationSection extends StatelessWidget {
   }
 }
 
-class _VbmappPreparationPill extends StatelessWidget {
-  const _VbmappPreparationPill({
-    required this.label,
-    required this.value,
-    required this.accent,
-  });
-
-  final String label;
-  final String value;
-  final Color accent;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-      decoration: BoxDecoration(
-        color: accent.withOpacity(.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: accent.withOpacity(.16)),
-      ),
-      child: Text(
-        '$label $value',
-        style: TextStyle(
-          color: accent,
-          fontSize: 11.5,
-          fontWeight: FontWeight.w900,
-        ),
-      ),
-    );
-  }
-}
-
 class _VbmappPreparationChip extends StatelessWidget {
   const _VbmappPreparationChip({required this.label});
 
@@ -2139,9 +2124,15 @@ class _VbmappPreparationChip extends StatelessWidget {
 }
 
 class _VbmappQuestionHeader extends StatelessWidget {
-  const _VbmappQuestionHeader({required this.item});
+  const _VbmappQuestionHeader({
+    required this.item,
+    required this.schema,
+    required this.materialProfile,
+  });
 
   final _VbmappItem item;
+  final VbmappItemResponseSchema? schema;
+  final VbmappMaterialProfile? materialProfile;
 
   @override
   Widget build(BuildContext context) {
@@ -2257,6 +2248,25 @@ class _VbmappQuestionHeader extends StatelessWidget {
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
+        final bool hasPreparationContent =
+            _shouldShowPreparationEntry(schema, materialProfile);
+        final Widget? preparationAction = hasPreparationContent
+            ? _VbmappPreparationEntryButton(
+                item: item,
+                schema: schema,
+                materialProfile: materialProfile,
+              )
+            : null;
+        final Widget badgeSlot = Expanded(
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const ClampingScrollPhysics(),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: badge,
+            ),
+          ),
+        );
         if (constraints.maxWidth < 760) {
           return Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -2264,7 +2274,11 @@ class _VbmappQuestionHeader extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: <Widget>[
-                  Flexible(child: badge),
+                  badgeSlot,
+                  if (preparationAction != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    preparationAction,
+                  ],
                 ],
               ),
               const SizedBox(height: 7),
@@ -2278,12 +2292,107 @@ class _VbmappQuestionHeader extends StatelessWidget {
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: <Widget>[
-                Flexible(child: badge),
+                badgeSlot,
+                if (preparationAction != null) ...<Widget>[
+                  const SizedBox(width: 10),
+                  preparationAction,
+                ],
               ],
             ),
             const SizedBox(height: 8),
             title,
           ],
+        );
+      },
+    );
+  }
+}
+
+class _VbmappPreparationEntryButton extends StatelessWidget {
+  const _VbmappPreparationEntryButton({
+    required this.item,
+    required this.schema,
+    required this.materialProfile,
+  });
+
+  final _VbmappItem item;
+  final VbmappItemResponseSchema? schema;
+  final VbmappMaterialProfile? materialProfile;
+
+  @override
+  Widget build(BuildContext context) {
+    final VbmappMaterialProfile? profile = materialProfile;
+    final List<String> quickPicks =
+        profile?.quickPickLabels ?? const <String>[];
+    final List<String> checks = _deduplicatedTexts(<String>[
+      ...?profile?.preparationChecks,
+      ...?schema?.qualityChecks,
+    ]);
+    final Color accent = item.color;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        key: const ValueKey<String>('vbmapp-preparation-entry'),
+        onTap: () => _openPreparationDialog(context),
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _VbmappColors.lineSoft),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(Icons.inventory_2_outlined, color: accent, size: 16),
+              const SizedBox(width: 6),
+              const Text(
+                '题前准备',
+                style: TextStyle(
+                  color: _VbmappColors.ink,
+                  fontSize: 12.5,
+                  height: 1,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              if (quickPicks.isNotEmpty || checks.isNotEmpty) ...<Widget>[
+                const SizedBox(width: 7),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: accent.withOpacity(.08),
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    '${quickPicks.length}/${checks.length}',
+                    style: TextStyle(
+                      color: accent,
+                      fontSize: 10.5,
+                      height: 1,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openPreparationDialog(BuildContext context) async {
+    await showDialog<void>(
+      context: context,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _VbmappPreparationDialog(
+            item: item,
+            schema: schema,
+            materialProfile: materialProfile,
+          ),
         );
       },
     );

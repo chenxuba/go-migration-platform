@@ -514,6 +514,7 @@ class VbmappItemResponseSchema {
     required this.itemCode,
     required this.uiPattern,
     required this.recordDepth,
+    this.showPreparationEntry = false,
     required this.materialProfileId,
     required this.whyRecord,
     required this.evidenceTargets,
@@ -534,6 +535,7 @@ class VbmappItemResponseSchema {
       ),
       uiPattern: _textFrom(json['uiPattern']),
       recordDepth: _textFrom(json['recordDepth']),
+      showPreparationEntry: json['showPreparationEntry'] == true,
       materialProfileId: _textFrom(json['materialProfileId']),
       whyRecord: _textFrom(json['whyRecord']),
       evidenceTargets: _stringListFrom(json['evidenceTargets']),
@@ -548,6 +550,7 @@ class VbmappItemResponseSchema {
   final String itemCode;
   final String uiPattern;
   final String recordDepth;
+  final bool showPreparationEntry;
   final String materialProfileId;
   final String whyRecord;
   final List<String> evidenceTargets;

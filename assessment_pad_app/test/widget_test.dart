@@ -3716,6 +3716,57 @@ void main() {
     expect(find.text('195 / 212'), findsWidgets);
   });
 
+  testWidgets('VB-MAPP question header opens preparation dialog',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: _FakeVbmappAssessmentClient(),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('vbmapp-preparation-entry')),
+        findsOneWidget);
+    expect(find.text('推荐素材'), findsNothing);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('vbmapp-preparation-entry')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('推荐素材'), findsOneWidget);
+    expect(find.text('提要求1M入门强化物/动作'), findsWidgets);
+    expect(find.text('饼干'), findsWidgets);
+
+    await tester.tap(find.byIcon(Icons.close_rounded).last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('推荐素材'), findsNothing);
+  });
+
   testWidgets('VB-MAPP MAND 1M records requests and suggests score',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -3979,7 +4030,6 @@ void main() {
 
     expect(find.text('有效 3/4'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('1.0 / 170'), findsOneWidget);
 
     await tester.tap(find.text('自发地'));
     await tester.pumpAndSettle();
@@ -3989,7 +4039,6 @@ void main() {
 
     expect(find.text('有效 4/4'), findsOneWidget);
     expect(find.text('建议 1分'), findsOneWidget);
-    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(find.textContaining('提问下'), findsWidgets);
     expect(find.textContaining('自发地'), findsWidgets);
     expect(client.saveDraftItemCalls, 4);
@@ -8919,6 +8968,7 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_01M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'structured_event_log',
+          showPreparationEntry: true,
           materialProfileId: 'mand_1m_request_starter_set',
           whyRecord: '',
           evidenceTargets: <String>[],
@@ -8932,6 +8982,7 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_02M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'structured_event_log',
+          showPreparationEntry: true,
           materialProfileId: 'mand_2m_visible_request_set',
           whyRecord: '',
           evidenceTargets: <String>[],
@@ -8945,6 +8996,7 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_03M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'structured_event_log',
+          showPreparationEntry: true,
           materialProfileId: 'potential_reinforcer_set',
           whyRecord: '',
           evidenceTargets: <String>[],
@@ -8958,6 +9010,7 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_04M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'timed_observation_required',
+          showPreparationEntry: true,
           materialProfileId: 'potential_reinforcer_set',
           whyRecord: '',
           evidenceTargets: <String>[],

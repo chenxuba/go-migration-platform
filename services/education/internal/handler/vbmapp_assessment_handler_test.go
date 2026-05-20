@@ -260,11 +260,14 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	var envelope struct {
 		Success bool `json:"success"`
 		Data    struct {
-			ScaleCode                 string `json:"scaleCode"`
-			MilestoneItems            []any  `json:"milestoneItems"`
-			MilestoneResponseSchemas  []any  `json:"milestoneResponseSchemas"`
-			BarrierResponseSchemas    []any  `json:"barrierResponseSchemas"`
-			TransitionResponseSchemas []any  `json:"transitionResponseSchemas"`
+			ScaleCode                string `json:"scaleCode"`
+			MilestoneItems           []any  `json:"milestoneItems"`
+			MilestoneResponseSchemas []struct {
+				MilestoneID          string `json:"milestoneId"`
+				ShowPreparationEntry bool   `json:"showPreparationEntry"`
+			} `json:"milestoneResponseSchemas"`
+			BarrierResponseSchemas    []any `json:"barrierResponseSchemas"`
+			TransitionResponseSchemas []any `json:"transitionResponseSchemas"`
 			ResponseSchemaSummary     struct {
 				ItemCount int `json:"itemCount"`
 			} `json:"responseSchemaSummary"`
@@ -281,6 +284,11 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 	if len(envelope.Data.BarrierResponseSchemas) != 24 || len(envelope.Data.TransitionResponseSchemas) != 18 {
 		t.Fatalf("unexpected module schema counts: %+v", envelope.Data)
+	}
+	if len(envelope.Data.MilestoneResponseSchemas) == 0 ||
+		envelope.Data.MilestoneResponseSchemas[0].MilestoneID != "MAND_01M" ||
+		!envelope.Data.MilestoneResponseSchemas[0].ShowPreparationEntry {
+		t.Fatalf("unexpected schema preparation flag: %+v", envelope.Data.MilestoneResponseSchemas)
 	}
 	if envelope.Data.ResponseSchemaSummary.ItemCount != 212 {
 		t.Fatalf("unexpected schema summary: %+v", envelope.Data.ResponseSchemaSummary)
