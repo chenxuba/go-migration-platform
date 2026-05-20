@@ -3662,9 +3662,9 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1 / 212'), findsWidgets);
-    expect(find.text('0 / 170 项'), findsOneWidget);
-    expect(find.text('0 / 24 项'), findsOneWidget);
-    expect(find.text('0 / 18 项'), findsOneWidget);
+    expect(find.text('0/170'), findsOneWidget);
+    expect(find.text('0/24'), findsOneWidget);
+    expect(find.text('0/18'), findsOneWidget);
     expect(find.text('当前得分'), findsOneWidget);
     expect(find.text('0.0 / 170'), findsOneWidget);
     expect(find.text('0 / 96'), findsOneWidget);
@@ -3675,7 +3675,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
 
     expect(find.text('1.0 / 170'), findsOneWidget);
-    expect(find.text('1 / 170 项'), findsOneWidget);
+    expect(find.text('1/170'), findsOneWidget);
 
     await tester.tap(find.text('障碍评估').first);
     await tester.pumpAndSettle();

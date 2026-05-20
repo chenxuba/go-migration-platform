@@ -967,7 +967,7 @@ class _VbmappModuleRail extends StatelessWidget {
             'VB-MAPP',
             style: TextStyle(
               color: _VbmappColors.ink,
-              fontSize: 21,
+              fontSize: 20,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -980,7 +980,7 @@ class _VbmappModuleRail extends StatelessWidget {
               fontWeight: FontWeight.w800,
             ),
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 10),
           for (final _VbmappModule module in modules) ...<Widget>[
             _VbmappModuleTile(
               module: module,
@@ -988,11 +988,11 @@ class _VbmappModuleRail extends StatelessWidget {
               answered: answeredCount[module.code] ?? 0,
               onTap: () => onSelectModule(module.code),
             ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 6),
           ],
-          const SizedBox(height: 4),
+          const SizedBox(height: 2),
           const Divider(height: 1, color: _VbmappColors.lineSoft),
-          const SizedBox(height: 10),
+          const SizedBox(height: 8),
           Expanded(
             child: ListView.builder(
               padding: EdgeInsets.zero,
@@ -1036,13 +1036,6 @@ class _VbmappModuleRail extends StatelessWidget {
               },
             ),
           ),
-          const SizedBox(height: 10),
-          _VbmappSummaryStrip(
-            label: '结构化项目',
-            value: '212',
-            subValue: '16个领域',
-            icon: Icons.dataset_outlined,
-          ),
         ],
       ),
     );
@@ -1069,46 +1062,54 @@ class _VbmappModuleTile extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(10),
         child: Ink(
-          padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: selected ? module.color.withOpacity(.12) : Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(10),
             border: Border.all(
               color:
                   selected ? module.color.withOpacity(.55) : _VbmappColors.line,
             ),
           ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Row(
             children: <Widget>[
-              Row(
-                children: <Widget>[
-                  Icon(module.icon, size: 21, color: accent),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      module.title,
-                      maxLines: 1,
-                      softWrap: false,
-                      style: TextStyle(
-                        color:
-                            selected ? _VbmappColors.ink : _VbmappColors.body,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                      ),
-                    ),
+              Icon(module.icon, size: 19, color: accent),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  module.title,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: selected ? _VbmappColors.ink : _VbmappColors.body,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
                   ),
-                ],
+                ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                '$answered / ${module.itemCount} 项',
-                style: const TextStyle(
-                  color: _VbmappColors.body,
-                  fontSize: 12,
-                  fontWeight: FontWeight.w800,
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? module.color.withOpacity(.14)
+                      : const Color(0xFFFFF6EF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(
+                    color: selected
+                        ? module.color.withOpacity(.3)
+                        : _VbmappColors.lineSoft,
+                  ),
+                ),
+                child: Text(
+                  '$answered/${module.itemCount}',
+                  style: TextStyle(
+                    color: selected ? module.color : _VbmappColors.body,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
               ),
             ],
