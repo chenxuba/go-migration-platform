@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"time"
 )
 
 var (
@@ -14,11 +15,18 @@ var (
 )
 
 type mandEventEvidence struct {
-	Utterance   string
-	Target      string
-	Environment string
-	PromptLevel string
-	Functional  bool
+	Utterance    string
+	Target       string
+	Environment  string
+	ResponseMode string
+	PromptLevel  string
+	RecordedAt   time.Time
+	Functional   bool
+}
+
+type mandObservationEvidence struct {
+	StartedAt      time.Time
+	PlannedMinutes int
 }
 
 func autoMilestoneScoreFromEvidence(item MilestoneItemDefinition, input AssessmentInput) (float64, bool) {
@@ -27,19 +35,38 @@ func autoMilestoneScoreFromEvidence(item MilestoneItemDefinition, input Assessme
 
 func AutoMilestoneScore(milestoneID string, input AssessmentInput) (float64, bool) {
 	switch strings.TrimSpace(strings.ToUpper(milestoneID)) {
+	case "MAND_04M":
+		return autoScoreMAND04M(input)
 	case "MAND_08M":
 		return autoScoreMAND08M(input)
+	case "MAND_09M":
+		return autoScoreMAND09M(input)
 	default:
 		return 0, false
 	}
 }
 
-func autoScoreMAND08M(input AssessmentInput) (float64, bool) {
-	events, ok := loadMandEventEvidence(input.ItemResponses, "MAND_08M")
+func autoScoreMAND04M(input AssessmentInput) (float64, bool) {
+	events, observation, ok := loadMandEvidence(input.ItemResponses, "MAND_04M")
 	if !ok || len(events) == 0 {
 		return 0, false
 	}
-	qualified := qualifiedUniqueMandEvents(events, nil)
+	qualified := qualifiedUniqueMandEvents(events, func(event mandEventEvidence) bool {
+		return mandEventCountsForWindowedItem(event, observation, 60) &&
+			event.Environment == "呈现物品" &&
+			event.initiationText() != "提问下"
+	})
+	return scoreByMandThresholds(len(qualified), 5, 2), true
+}
+
+func autoScoreMAND08M(input AssessmentInput) (float64, bool) {
+	events, observation, ok := loadMandEvidence(input.ItemResponses, "MAND_08M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	qualified := qualifiedUniqueMandEvents(events, func(event mandEventEvidence) bool {
+		return mandEventCountsForWindowedItem(event, observation, 60)
+	})
 	if len(qualified) >= 5 && countLikelyMultiWordMandEvents(qualified) >= 2 {
 		return 1, true
 	}
@@ -49,28 +76,40 @@ func autoScoreMAND08M(input AssessmentInput) (float64, bool) {
 	return 0, true
 }
 
-func loadMandEventEvidence(
+func autoScoreMAND09M(input AssessmentInput) (float64, bool) {
+	events, observation, ok := loadMandEvidence(input.ItemResponses, "MAND_09M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	qualified := qualifiedUniqueMandEvents(events, func(event mandEventEvidence) bool {
+		return mandEventCountsForWindowedItem(event, observation, 30) &&
+			event.initiationText() != "提问下"
+	})
+	return scoreByMandThresholds(len(qualified), 15, 8), true
+}
+
+func loadMandEvidence(
 	itemResponses map[string]map[string]map[string]any,
 	itemCode string,
-) ([]mandEventEvidence, bool) {
+) ([]mandEventEvidence, mandObservationEvidence, bool) {
 	if len(itemResponses) == 0 {
-		return nil, false
+		return nil, mandObservationEvidence{}, false
 	}
 	moduleResponses := itemResponses[ModuleMilestones]
 	if len(moduleResponses) == 0 {
-		return nil, false
+		return nil, mandObservationEvidence{}, false
 	}
 	itemResponse := moduleResponses[strings.TrimSpace(strings.ToUpper(itemCode))]
 	if len(itemResponse) == 0 {
-		return nil, false
+		return nil, mandObservationEvidence{}, false
 	}
 	evidence, ok := anyMap(itemResponse["evidence"])
 	if !ok {
-		return nil, false
+		return nil, mandObservationEvidence{}, false
 	}
 	rawEvents, ok := evidence["mandEvents"].([]any)
 	if !ok || len(rawEvents) == 0 {
-		return nil, false
+		return nil, mandObservationEvidence{}, false
 	}
 	events := make([]mandEventEvidence, 0, len(rawEvents))
 	for _, raw := range rawEvents {
@@ -79,17 +118,30 @@ func loadMandEventEvidence(
 			continue
 		}
 		event := mandEventEvidence{
-			Utterance:   normalizedText(eventMap["utterance"]),
-			Target:      normalizedText(eventMap["target"]),
-			Environment: normalizedText(eventMap["environment"]),
-			PromptLevel: normalizedText(eventMap["promptLevel"]),
-			Functional:  eventMap["functional"] != false,
+			Utterance:    normalizedText(eventMap["utterance"]),
+			Target:       normalizedText(eventMap["target"]),
+			Environment:  normalizedText(eventMap["environment"]),
+			ResponseMode: normalizedText(eventMap["responseMode"]),
+			PromptLevel:  normalizedText(eventMap["promptLevel"]),
+			RecordedAt:   normalizedTime(eventMap["recordedAtIso"], eventMap["recorded_at"]),
+			Functional:   eventMap["functional"] != false,
 		}
 		if event.Utterance != "" || event.Target != "" {
 			events = append(events, event)
 		}
 	}
-	return events, len(events) > 0
+	return events, loadMandObservationEvidence(evidence), len(events) > 0
+}
+
+func loadMandObservationEvidence(evidence map[string]any) mandObservationEvidence {
+	timerMap, ok := anyMap(evidence["timer"])
+	if !ok {
+		return mandObservationEvidence{}
+	}
+	return mandObservationEvidence{
+		StartedAt:      normalizedTime(timerMap["startedAtIso"], timerMap["startTime"], timerMap["start_time"]),
+		PlannedMinutes: normalizedInt(timerMap["plannedMinutes"], timerMap["planned_minutes"]),
+	}
 }
 
 func qualifiedUniqueMandEvents(
@@ -128,8 +180,29 @@ func countLikelyMultiWordMandEvents(events []mandEventEvidence) int {
 	return count
 }
 
+func scoreByMandThresholds(count, onePointThreshold, halfPointThreshold int) float64 {
+	if count >= onePointThreshold {
+		return 1
+	}
+	if count >= halfPointThreshold {
+		return 0.5
+	}
+	return 0
+}
+
 func (event mandEventEvidence) uniqueKey() string {
 	return strings.ToLower(strings.TrimSpace(firstNonEmpty(event.Target, event.Utterance)))
+}
+
+func (event mandEventEvidence) initiationText() string {
+	prompt := strings.TrimSpace(event.PromptLevel)
+	if prompt == "提问下" || prompt == "自发地" {
+		return prompt
+	}
+	if strings.Contains(strings.TrimSpace(event.ResponseMode), "自发") {
+		return "自发地"
+	}
+	return ""
 }
 
 func (event mandEventEvidence) isQualified() bool {
@@ -144,6 +217,34 @@ func (event mandEventEvidence) isQualified() bool {
 		return false
 	}
 	return true
+}
+
+func mandEventCountsForWindowedItem(
+	event mandEventEvidence,
+	observation mandObservationEvidence,
+	plannedMinutes int,
+) bool {
+	if !event.isQualified() {
+		return false
+	}
+	return event.withinWindow(observation, plannedMinutes)
+}
+
+func (event mandEventEvidence) withinWindow(
+	observation mandObservationEvidence,
+	plannedMinutes int,
+) bool {
+	if observation.StartedAt.IsZero() || event.RecordedAt.IsZero() {
+		return true
+	}
+	if event.RecordedAt.Before(observation.StartedAt) {
+		return false
+	}
+	limitMinutes := plannedMinutes
+	if observation.PlannedMinutes > 0 {
+		limitMinutes = observation.PlannedMinutes
+	}
+	return !event.RecordedAt.After(observation.StartedAt.Add(time.Duration(limitMinutes) * time.Minute))
 }
 
 func isLikelyMultiWordMandText(text string) bool {
@@ -192,6 +293,49 @@ func normalizedText(raw any) string {
 	default:
 		return strings.TrimSpace(fmt.Sprint(raw))
 	}
+}
+
+func normalizedTime(values ...any) time.Time {
+	for _, value := range values {
+		text := normalizedText(value)
+		if text == "" {
+			continue
+		}
+		if parsed, err := time.Parse(time.RFC3339, text); err == nil {
+			return parsed
+		}
+		if parsed, err := time.Parse(time.RFC3339Nano, text); err == nil {
+			return parsed
+		}
+	}
+	return time.Time{}
+}
+
+func normalizedInt(values ...any) int {
+	for _, value := range values {
+		switch typed := value.(type) {
+		case int:
+			return typed
+		case int32:
+			return int(typed)
+		case int64:
+			return int(typed)
+		case float32:
+			return int(typed)
+		case float64:
+			return int(typed)
+		default:
+			text := normalizedText(value)
+			if text == "" {
+				continue
+			}
+			var parsed int
+			if _, err := fmt.Sscanf(text, "%d", &parsed); err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
 
 func firstNonEmpty(values ...string) string {
