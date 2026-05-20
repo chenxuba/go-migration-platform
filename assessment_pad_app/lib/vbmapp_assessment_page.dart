@@ -891,13 +891,13 @@ class _VbmappTopBar extends StatelessWidget {
         autoSaveText.trim().isEmpty ? '等待作答' : autoSaveText.trim();
 
     return Container(
-      height: 50,
-      padding: const EdgeInsets.symmetric(horizontal: 10),
+      height: 58,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.98),
         border: Border.all(color: _VbmappColors.line),
-        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(10)),
-        boxShadow: _vbmappShadow(color: const Color(0x10B05F32), blur: 10),
+        borderRadius: const BorderRadius.vertical(bottom: Radius.circular(12)),
+        boxShadow: _vbmappShadow(color: const Color(0x14B05F32), blur: 14),
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
@@ -909,7 +909,7 @@ class _VbmappTopBar extends StatelessWidget {
               softWrap: false,
               style: const TextStyle(
                 color: _VbmappColors.ink,
-                fontSize: 22,
+                fontSize: 23,
                 height: 1,
                 fontWeight: FontWeight.w900,
               ),
@@ -933,7 +933,7 @@ class _VbmappTopBar extends StatelessWidget {
                 icon: Icons.chevron_left_rounded,
                 onTap: onBack,
               ),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               Expanded(
                 child: compact
                     ? SingleChildScrollView(
@@ -947,7 +947,7 @@ class _VbmappTopBar extends StatelessWidget {
                     : Row(children: headerChildren),
               ),
               _VbmappSaveStatusLabel(text: status, saving: saving),
-              const SizedBox(width: 7),
+              const SizedBox(width: 8),
               _VbmappTopActionButton(
                 label: saving ? '保存中' : '保存草稿',
                 icon: Icons.save_outlined,
@@ -1070,14 +1070,14 @@ class _VbmappIconButtonBox extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
         child: Ink(
-          width: 40,
-          height: 40,
+          width: 46,
+          height: 46,
           decoration: BoxDecoration(
             color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(14),
             border: Border.all(color: _VbmappColors.line),
           ),
-          child: Icon(icon, color: _VbmappColors.body, size: 30),
+          child: Icon(icon, color: _VbmappColors.body, size: 34),
         ),
       ),
     );
@@ -1111,8 +1111,8 @@ class _VbmappTopActionButton extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
-          height: 30,
-          padding: const EdgeInsets.symmetric(horizontal: 10),
+          height: 34,
+          padding: const EdgeInsets.symmetric(horizontal: 11),
           decoration: BoxDecoration(
             color: filled
                 ? enabled
@@ -1123,17 +1123,24 @@ class _VbmappTopActionButton extends StatelessWidget {
             border: Border.all(
               color: enabled ? _VbmappColors.orange : const Color(0xFFE2D6CE),
             ),
+            boxShadow: filled && enabled
+                ? _vbmappShadow(
+                    color: const Color(0x2AE96F43),
+                    blur: 12,
+                    offset: const Offset(0, 5),
+                  )
+                : null,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 17, color: foreground),
-              const SizedBox(width: 5),
+              Icon(icon, size: 18, color: foreground),
+              const SizedBox(width: 6),
               Text(
                 label,
                 style: TextStyle(
                   color: foreground,
-                  fontSize: 12.5,
+                  fontSize: 13,
                   fontWeight: FontWeight.w900,
                 ),
               ),
