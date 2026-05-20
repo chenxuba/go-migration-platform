@@ -1306,7 +1306,7 @@
     "ageBand": "18-30个月",
     "milestoneNo": 7,
     "title": "在EESA分测试中至少得到60分",
-    "assessmentMode": "",
+    "assessmentMode": "T",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
     "sourceTableIndex": 37
@@ -1322,7 +1322,7 @@
     "ageBand": "18-30个月",
     "milestoneNo": 8,
     "title": "在EESA分测试中至少得到70分",
-    "assessmentMode": "",
+    "assessmentMode": "T",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
     "sourceTableIndex": 38
@@ -1338,7 +1338,7 @@
     "ageBand": "18-30个月",
     "milestoneNo": 9,
     "title": "在EESA分测试中至少得到80分",
-    "assessmentMode": "",
+    "assessmentMode": "T",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
     "sourceTableIndex": 39
@@ -1354,7 +1354,7 @@
     "ageBand": "18-30个月",
     "milestoneNo": 10,
     "title": "在EESA分测试中至少得到90分",
-    "assessmentMode": "",
+    "assessmentMode": "T",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
     "sourceTableIndex": 40
@@ -2218,7 +2218,7 @@
     "ageBand": "30-48个月",
     "milestoneNo": 14,
     "title": "能读自己的名字",
-    "assessmentMode": "",
+    "assessmentMode": "T",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
     "sourceTableIndex": 34
@@ -2586,7 +2586,7 @@
     "ageBand": "30-48个月",
     "milestoneNo": 12,
     "title": "能够结合10个词根动词及其规则过去时后缀（如：played）和10个词根动词及其将来时后缀（如：will play）而发出动词之变形（注：可以使用“曾经”“过去”等词语描述过去发生的动作，使用“将”“即将”等描述将要发生的动作）",
-    "assessmentMode": "",
+    "assessmentMode": "E",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
     "sourceTableIndex": 57
@@ -2602,7 +2602,7 @@
     "ageBand": "30-48个月",
     "milestoneNo": 13,
     "title": "能够发出10个不同的其中包含至少3个单字和2个修饰字（如：形容词、介词、代词）的名词词组（如：他是我的小木偶、我要巧克力冰淇淋）",
-    "assessmentMode": "",
+    "assessmentMode": "E",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
     "sourceTableIndex": 58
@@ -2618,7 +2618,7 @@
     "ageBand": "30-48个月",
     "milestoneNo": 14,
     "title": "能够发出10个不同的包含至少3个字和2个修饰词（如：副词、介词、代词）的动词词组（如：更重一点的推我、从台阶往上走）",
-    "assessmentMode": "",
+    "assessmentMode": "E",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
     "sourceTableIndex": 59
@@ -2634,7 +2634,7 @@
     "ageBand": "30-48个月",
     "milestoneNo": 15,
     "title": "能够将名称词组和动词词组连接起来从而产生10个不同的句法正确而且其中包含至少5个字的从句或句子（如：这狗舔我脸）",
-    "assessmentMode": "",
+    "assessmentMode": "E",
     "scoreType": "milestone_0_0_5_1",
     "sourceFile": "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
     "sourceTableIndex": 60

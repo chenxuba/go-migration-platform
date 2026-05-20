@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "VBMAPP_SMART_RESPONSE_SCHEMA_DRAFT_2026_05_20",
+  "itemCount": 212,
+  "milestoneItemCount": 170,
+  "barrierItemCount": 24,
+  "transitionItemCount": 18,
+  "recordDepthCounts": {
+    "trial_or_event_log_required": 97,
+    "timed_observation_required": 56,
+    "observation_log_required": 10,
+    "artifact_required": 5,
+    "inventory_required": 2,
+    "rating_with_behavior_evidence_required": 24,
+    "computed_summary_with_teacher_override": 18
+  },
+  "uiPatternCounts": {
+    "mand_event_recorder": 15,
+    "tact_trial_recorder": 15,
+    "listener_response_recorder": 15,
+    "matching_trial_recorder": 15,
+    "play_observation_recorder": 15,
+    "peer_social_recorder": 15,
+    "imitation_trial_recorder": 10,
+    "eesa_subtest_recorder": 10,
+    "timed_vocal_observation_recorder": 5,
+    "lrffc_trial_recorder": 10,
+    "intraverbal_response_recorder": 10,
+    "group_routine_recorder": 10,
+    "language_sample_recorder": 10,
+    "reading_trial_recorder": 5,
+    "writing_artifact_recorder": 5,
+    "math_trial_recorder": 5,
+    "barrier_rubric_with_behavior_log": 24,
+    "transition_rating_with_auto_basis": 18
+  },
+  "fieldTemplateCount": 26,
+  "materialProfileCount": 15,
+  "sources": [
+    "docs/vbmapp/milestone-items.json",
+    "docs/vbmapp/milestone-scoring-rules.json",
+    "docs/vbmapp/barriers.json",
+    "docs/vbmapp/transition.json",
+    "里程碑评估材料提示手册2.0.pdf",
+    "各领域DOC任务分析表",
+    "VB-MAPP上册指南与下册概况"
+  ]
+}

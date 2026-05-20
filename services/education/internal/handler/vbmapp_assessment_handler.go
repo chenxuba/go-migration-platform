@@ -70,13 +70,20 @@ type vbmappAssessmentDraftSaveRequest struct {
 	PreviousBarrierScoreList    []vbmappBarrierScoreRequest    `json:"previousBarrierScoreList,omitempty"`
 	PreviousTransitionScores    map[string]int                 `json:"previousTransitionScores,omitempty"`
 	PreviousTransitionScoreList []vbmappTransitionScoreRequest `json:"previousTransitionScoreList,omitempty"`
+
+	ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
 }
 
 type vbmappAssessmentDraftItemSaveRequest struct {
-	DraftID    int64    `json:"draftId"`
-	ModuleCode string   `json:"moduleCode"`
-	ItemCode   string   `json:"itemCode"`
-	Score      *float64 `json:"score"`
+	DraftID          int64          `json:"draftId"`
+	ModuleCode       string         `json:"moduleCode"`
+	ItemCode         string         `json:"itemCode"`
+	Score            *float64       `json:"score,omitempty"`
+	SuggestedScore   *float64       `json:"suggestedScore,omitempty"`
+	TeacherConfirmed *bool          `json:"teacherConfirmed,omitempty"`
+	OverrideReason   string         `json:"overrideReason,omitempty"`
+	RecordStatus     string         `json:"recordStatus,omitempty"`
+	Evidence         map[string]any `json:"evidence,omitempty"`
 }
 
 type vbmappAssessmentDraftDeleteRequest struct {
@@ -106,6 +113,8 @@ type vbmappAssessmentRecordCreateRequest struct {
 	PreviousBarrierScoreList    []vbmappBarrierScoreRequest    `json:"previousBarrierScoreList,omitempty"`
 	PreviousTransitionScores    map[string]int                 `json:"previousTransitionScores,omitempty"`
 	PreviousTransitionScoreList []vbmappTransitionScoreRequest `json:"previousTransitionScoreList,omitempty"`
+
+	ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
 }
 
 func (handler *Handler) scoreVBMAPP(w http.ResponseWriter, r *http.Request) {
@@ -126,6 +135,20 @@ func (handler *Handler) scoreVBMAPP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result, err := handler.service.ScoreVBMAPP(input)
+	if err != nil {
+		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
+		return
+	}
+	httpx.WriteJSON(w, http.StatusOK, result, ctx.RequestID)
+}
+
+func (handler *Handler) vbmappAssessmentSchema(w http.ResponseWriter, r *http.Request) {
+	ctx := tenant.FromContext(r.Context())
+	if r.Method != http.MethodGet {
+		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
+		return
+	}
+	result, err := handler.service.VBMAPPAssessmentSchema()
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
@@ -190,16 +213,21 @@ func (handler *Handler) saveVBMAPPAssessmentDraftItem(w http.ResponseWriter, r *
 		httpx.WriteError(w, http.StatusBadRequest, "itemCode is required", ctx.RequestID)
 		return
 	}
-	if req.Score == nil {
-		httpx.WriteError(w, http.StatusBadRequest, "score is required", ctx.RequestID)
+	if req.Score == nil && req.SuggestedScore == nil && req.TeacherConfirmed == nil && strings.TrimSpace(req.OverrideReason) == "" && strings.TrimSpace(req.RecordStatus) == "" && len(req.Evidence) == 0 {
+		httpx.WriteError(w, http.StatusBadRequest, "score or evidence is required", ctx.RequestID)
 		return
 	}
 
 	result, err := handler.service.SaveVBMAPPAssessmentDraftItem(claims.UserID, service.VBMAPPAssessmentDraftItemSaveInput{
-		DraftID:    req.DraftID,
-		ModuleCode: strings.TrimSpace(req.ModuleCode),
-		ItemCode:   strings.TrimSpace(req.ItemCode),
-		Score:      req.Score,
+		DraftID:          req.DraftID,
+		ModuleCode:       strings.TrimSpace(req.ModuleCode),
+		ItemCode:         strings.TrimSpace(req.ItemCode),
+		Score:            req.Score,
+		SuggestedScore:   req.SuggestedScore,
+		TeacherConfirmed: req.TeacherConfirmed,
+		OverrideReason:   strings.TrimSpace(req.OverrideReason),
+		RecordStatus:     strings.TrimSpace(req.RecordStatus),
+		Evidence:         req.Evidence,
 	})
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
@@ -578,6 +606,8 @@ func (req vbmappAssessmentDraftSaveRequest) normalizedSnapshot(input vbmappscore
 		PreviousBarrierScoreList    []vbmappBarrierScoreRequest    `json:"previousBarrierScoreList,omitempty"`
 		PreviousTransitionScores    map[string]int                 `json:"previousTransitionScores,omitempty"`
 		PreviousTransitionScoreList []vbmappTransitionScoreRequest `json:"previousTransitionScoreList,omitempty"`
+
+		ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
 	}{
 		ID:                          req.ID,
 		StudentID:                   req.StudentID,
@@ -599,6 +629,7 @@ func (req vbmappAssessmentDraftSaveRequest) normalizedSnapshot(input vbmappscore
 		PreviousBarrierScoreList:    vbmappBarrierScoreListFromMap(input.PreviousBarrierScores),
 		PreviousTransitionScores:    input.PreviousTransitionScores,
 		PreviousTransitionScoreList: vbmappTransitionScoreListFromMap(input.PreviousTransitionScores),
+		ItemResponses:               normalizeVBMAPPItemResponses(req.ItemResponses),
 	}
 }
 
@@ -668,6 +699,7 @@ func (req vbmappAssessmentRecordCreateRequest) normalizedSnapshot(input vbmappsc
 		PreviousBarrierScoreList:    vbmappBarrierScoreListFromMap(input.PreviousBarrierScores),
 		PreviousTransitionScores:    input.PreviousTransitionScores,
 		PreviousTransitionScoreList: vbmappTransitionScoreListFromMap(input.PreviousTransitionScores),
+		ItemResponses:               normalizeVBMAPPItemResponses(req.ItemResponses),
 	}
 }
 
@@ -726,6 +758,52 @@ func normalizeVBMAPPTransitionScores(scores map[string]int, list []vbmappTransit
 		normalized[code] = item.Score
 	}
 	return normalized, nil
+}
+
+func normalizeVBMAPPItemResponses(input map[string]map[string]map[string]any) map[string]map[string]map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	normalized := make(map[string]map[string]map[string]any, len(input))
+	for moduleCode, moduleItems := range input {
+		module := normalizeVBMAPPModuleCode(moduleCode)
+		if module == "" || len(moduleItems) == 0 {
+			continue
+		}
+		for itemCode, response := range moduleItems {
+			code := normalizeVBMAPPCode(itemCode)
+			if code == "" || len(response) == 0 {
+				continue
+			}
+			if normalized[module] == nil {
+				normalized[module] = map[string]map[string]any{}
+			}
+			itemResponse := make(map[string]any, len(response)+2)
+			for key, value := range response {
+				itemResponse[key] = value
+			}
+			itemResponse["moduleCode"] = module
+			itemResponse["itemCode"] = code
+			normalized[module][code] = itemResponse
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
+}
+
+func normalizeVBMAPPModuleCode(moduleCode string) string {
+	switch strings.ToLower(strings.TrimSpace(moduleCode)) {
+	case "milestone", "milestones", "里程碑", "里程碑评估":
+		return vbmappscore.ModuleMilestones
+	case "barrier", "barriers", "障碍", "障碍评估":
+		return vbmappscore.ModuleBarriers
+	case "transition", "transitions", "转衔", "转衔评估", "转线", "转线评估", "转型", "转型评估":
+		return vbmappscore.ModuleTransition
+	default:
+		return strings.ToLower(strings.TrimSpace(moduleCode))
+	}
 }
 
 func normalizeVBMAPPCode(value string) string {

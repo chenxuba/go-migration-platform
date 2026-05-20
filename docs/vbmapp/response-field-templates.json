@@ -1,0 +1,345 @@
+{
+  "score": {
+    "label": "本题评分",
+    "control": "score_buttons",
+    "required": true,
+    "recordPurpose": "最终分数仍由老师确认，系统只根据证据给出建议。"
+  },
+  "materials": {
+    "label": "本次使用素材/情境",
+    "control": "material_picker",
+    "required": true,
+    "recordPurpose": "记录实物、图卡、绘本、视频、活动或自然情境，方便复核和下次复测。",
+    "columns": [
+      "material_id",
+      "material_name",
+      "material_type",
+      "prepared",
+      "used"
+    ]
+  },
+  "stimulus_set": {
+    "label": "刺激组合",
+    "control": "stimulus_set_builder",
+    "required": false,
+    "recordPurpose": "记录目标和干扰项数量，避免凭印象判断是否满足组合大小要求。",
+    "columns": [
+      "set_no",
+      "target",
+      "distractors",
+      "set_size",
+      "presentation"
+    ]
+  },
+  "timer": {
+    "label": "计时观察",
+    "control": "timer_with_event_counter",
+    "required": true,
+    "recordPurpose": "对TO或含持续时间要求的题记录观察时长、事件数和有效事件数。",
+    "columns": [
+      "start_time",
+      "planned_minutes",
+      "actual_minutes",
+      "event_count",
+      "qualified_event_count"
+    ]
+  },
+  "prompt_level": {
+    "label": "辅助水平",
+    "control": "prompt_selector",
+    "required": true,
+    "recordPurpose": "区分无辅助、口头辅助、手势辅助、示范/仿说辅助和肢体辅助。",
+    "options": [
+      "independent",
+      "allowed_verbal_cue",
+      "gesture",
+      "model_or_echoic",
+      "partial_physical",
+      "full_physical"
+    ]
+  },
+  "quality_checks": {
+    "label": "达标核查",
+    "control": "checklist",
+    "required": true,
+    "recordPurpose": "把题干中的关键限制条件变成可勾选项，例如无肢体辅助、目标物是否在眼前、是否自发。"
+  },
+  "teacher_note": {
+    "label": "教师备注",
+    "control": "multiline_text",
+    "required": false,
+    "recordPurpose": "记录无法结构化的临床判断、异常状态或家长补充。"
+  },
+  "mand_event_log": {
+    "label": "提要求事件记录",
+    "control": "event_table",
+    "required": true,
+    "recordPurpose": "保留孩子实际提出的词语/手语/图片交换、动机情境和辅助水平。",
+    "columns": [
+      "time",
+      "motivation_or_context",
+      "requested_item_or_action",
+      "child_exact_response",
+      "response_mode",
+      "communication_partner",
+      "environment",
+      "prompt_level",
+      "qualified"
+    ]
+  },
+  "generalization_matrix": {
+    "label": "泛化矩阵",
+    "control": "matrix_table",
+    "required": true,
+    "recordPurpose": "记录目标是否跨人物、环境、样本或形式泛化。",
+    "columns": [
+      "target",
+      "person",
+      "environment",
+      "example",
+      "child_response",
+      "qualified"
+    ]
+  },
+  "trial_log": {
+    "label": "试次记录",
+    "control": "trial_table",
+    "required": true,
+    "recordPurpose": "记录每个测试试次的指令、目标、孩子反应、正确性和辅助。",
+    "columns": [
+      "trial_no",
+      "instruction_or_stimulus",
+      "target",
+      "stimulus_set_size",
+      "child_response",
+      "correct",
+      "prompt_level"
+    ]
+  },
+  "language_sample_log": {
+    "label": "语言样本",
+    "control": "language_sample_table",
+    "required": true,
+    "recordPurpose": "记录孩子原话、语言成分、是否自发、是否功能性使用。",
+    "columns": [
+      "time",
+      "context",
+      "child_exact_utterance",
+      "language_parts",
+      "spontaneous",
+      "qualified"
+    ]
+  },
+  "vocabulary_inventory": {
+    "label": "词汇/技能清单",
+    "control": "inventory_counter",
+    "required": true,
+    "recordPurpose": "用于大量词汇、已知技能或积累清单类题目，支持批量导入和抽样复核。",
+    "columns": [
+      "category",
+      "known_count",
+      "sample_items",
+      "source",
+      "last_verified_at"
+    ]
+  },
+  "play_event_log": {
+    "label": "游戏/活动观察",
+    "control": "event_table",
+    "required": true,
+    "recordPurpose": "记录游戏材料、动作、独立持续时间、变化性和成人介入。",
+    "columns": [
+      "time",
+      "activity_or_object",
+      "action",
+      "duration_seconds",
+      "independent",
+      "qualified"
+    ]
+  },
+  "peer_interaction_log": {
+    "label": "同伴互动记录",
+    "control": "event_table",
+    "required": true,
+    "recordPurpose": "记录同伴、发起/回应类型、成人辅助和互动是否达标。",
+    "columns": [
+      "time",
+      "peer",
+      "interaction_type",
+      "child_response",
+      "adult_prompt",
+      "duration_seconds",
+      "qualified"
+    ]
+  },
+  "imitation_trial_log": {
+    "label": "模仿试次记录",
+    "control": "trial_table",
+    "required": true,
+    "recordPurpose": "记录示范动作、是否持物、动作步骤、孩子模仿质量和辅助。",
+    "columns": [
+      "trial_no",
+      "modeled_action",
+      "object_used",
+      "child_imitation",
+      "correct",
+      "prompt_level"
+    ]
+  },
+  "eesa_score_sheet": {
+    "label": "EESA分测试",
+    "control": "standard_subtest_score_sheet",
+    "required": true,
+    "recordPurpose": "仿说题按EESA得分映射里程碑分，需记录目标音/词和得分。",
+    "columns": [
+      "group",
+      "target",
+      "best_response_score",
+      "phoneme_note"
+    ]
+  },
+  "vocalization_log": {
+    "label": "自发语音记录",
+    "control": "event_counter",
+    "required": true,
+    "recordPurpose": "记录声音或词语样本、近似程度、语调和是否自发。",
+    "columns": [
+      "time",
+      "sound_or_word",
+      "approximation",
+      "intonation",
+      "spontaneous",
+      "qualified"
+    ]
+  },
+  "lrffc_trial_log": {
+    "label": "LRFFC试次记录",
+    "control": "trial_table",
+    "required": true,
+    "recordPurpose": "记录功能、特性、类别等语言条件，确认组合中目标唯一。",
+    "columns": [
+      "trial_no",
+      "question_or_instruction",
+      "target",
+      "condition_parts",
+      "stimulus_set_size",
+      "unique_target_confirmed",
+      "child_selection",
+      "child_spontaneous_tact",
+      "correct",
+      "prompt_level"
+    ]
+  },
+  "intraverbal_response_log": {
+    "label": "对话反应记录",
+    "control": "response_table",
+    "required": true,
+    "recordPurpose": "保留问题/话题和孩子原话，用于区分真正对话、背诵、仿说和猜测。",
+    "columns": [
+      "trial_no",
+      "question_or_topic",
+      "child_exact_response",
+      "response_type",
+      "correct",
+      "prompt_level"
+    ]
+  },
+  "group_routine_log": {
+    "label": "集体/常规观察",
+    "control": "routine_observation_table",
+    "required": true,
+    "recordPurpose": "记录集体人数、活动、持续时间、注意比例、指令反应和破坏行为。",
+    "columns": [
+      "activity",
+      "peer_count",
+      "duration_minutes",
+      "instruction_or_routine",
+      "child_response",
+      "attention_percent",
+      "prompt_level",
+      "disruption"
+    ]
+  },
+  "reading_trial_log": {
+    "label": "阅读试次/注意记录",
+    "control": "trial_table",
+    "required": true,
+    "recordPurpose": "记录书本注意、字母/词语试次、孩子选择或朗读结果。",
+    "columns": [
+      "trial_no",
+      "letter_word_or_book",
+      "instruction",
+      "child_response",
+      "correct",
+      "duration_seconds"
+    ]
+  },
+  "writing_artifact": {
+    "label": "书写作品",
+    "control": "artifact_upload_with_trial_table",
+    "required": true,
+    "recordPurpose": "保留书写作品或照片，并记录示范目标、描摹/仿写/独立完成情况。",
+    "columns": [
+      "trial_no",
+      "model_or_target",
+      "artifact",
+      "legible_or_within_tolerance",
+      "prompt_level"
+    ]
+  },
+  "math_trial_log": {
+    "label": "数学试次记录",
+    "control": "trial_table",
+    "required": true,
+    "recordPurpose": "记录数字、数量、比较、点数或配对试次和孩子反应。",
+    "columns": [
+      "trial_no",
+      "instruction",
+      "target_number_or_quantity",
+      "child_response",
+      "correct",
+      "prompt_level"
+    ]
+  },
+  "learning_history_log": {
+    "label": "学习历史/未训练确认",
+    "control": "history_checklist",
+    "required": false,
+    "recordPurpose": "用于新反应、未训练泛化或维持类题目，记录是否经过直接训练和最近教学情况。",
+    "columns": [
+      "target",
+      "trained_before",
+      "last_taught_at",
+      "source",
+      "note"
+    ]
+  },
+  "barrier_behavior_log": {
+    "label": "障碍行为证据",
+    "control": "behavior_rubric_evidence",
+    "required": true,
+    "recordPurpose": "障碍评分必须记录频率、强度、情境和例子，避免只凭主观印象打分。",
+    "columns": [
+      "setting",
+      "example",
+      "frequency",
+      "intensity",
+      "duration",
+      "impact",
+      "current_strategy"
+    ]
+  },
+  "transition_evidence_summary": {
+    "label": "转衔证据汇总",
+    "control": "computed_summary_with_override",
+    "required": true,
+    "recordPurpose": "转衔评分来自里程碑、障碍、学习速度、泛化、自发性和集体适应等证据汇总。",
+    "columns": [
+      "basis_type",
+      "computed_value",
+      "suggested_score",
+      "teacher_override",
+      "override_reason"
+    ]
+  }
+}

@@ -21,6 +21,14 @@ const String defaultVbmappDraftSubmitPath = String.fromEnvironment(
   'VBMAPP_DRAFT_SUBMIT_PATH',
   defaultValue: '/api/v1/assessments/vbmapp/drafts/submit',
 );
+const String defaultVbmappDraftItemSavePath = String.fromEnvironment(
+  'VBMAPP_DRAFT_ITEM_SAVE_PATH',
+  defaultValue: '/api/v1/assessments/vbmapp/drafts/item/save',
+);
+const String defaultVbmappSchemaPath = String.fromEnvironment(
+  'VBMAPP_SCHEMA_PATH',
+  defaultValue: '/api/v1/assessments/vbmapp/schema',
+);
 
 abstract class VbmappAssessmentClient {
   const VbmappAssessmentClient();
@@ -38,7 +46,14 @@ abstract class VbmappAssessmentClient {
     Map<String, dynamic> payload,
   );
 
+  Future<VbmappDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  );
+
   Future<VbmappDraftDetail> fetchDraftDetail(String token, int id);
+
+  Future<VbmappAssessmentSchema> fetchAssessmentSchema(String token);
 
   Future<VbmappDraftSubmitResult> submitDraft(String token, int id);
 }
@@ -50,6 +65,8 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     this.draftDetailPath = defaultVbmappDraftDetailPath,
     this.draftsPagePath = defaultVbmappDraftsPagePath,
     this.draftSubmitPath = defaultVbmappDraftSubmitPath,
+    this.draftItemSavePath = defaultVbmappDraftItemSavePath,
+    this.schemaPath = defaultVbmappSchemaPath,
     this.httpClient,
   });
 
@@ -58,6 +75,8 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
   final String draftDetailPath;
   final String draftsPagePath;
   final String draftSubmitPath;
+  final String draftItemSavePath;
+  final String schemaPath;
   final http.Client? httpClient;
 
   static final http.Client _sharedHttpClient = http.Client();
@@ -92,7 +111,7 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     if (data is! Map) {
       return AssessmentDraftPage.empty;
     }
-    return AssessmentDraftPage.fromJson(Map<String, dynamic>.from(data));
+    return AssessmentDraftPage.fromJson(_mapFrom(data));
   }
 
   @override
@@ -109,7 +128,24 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     if (data is! Map) {
       throw const AssessmentScaleApiException('VB-MAPP草稿保存返回格式不正确');
     }
-    return VbmappDraftSaveResult.fromJson(Map<String, dynamic>.from(data));
+    return VbmappDraftSaveResult.fromJson(_mapFrom(data));
+  }
+
+  @override
+  Future<VbmappDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    final Object? data = await _postJson(
+      _uri(educationBaseUrl, draftItemSavePath),
+      token,
+      payload,
+      fallbackMessage: 'VB-MAPP单题证据保存失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('VB-MAPP单题证据保存返回格式不正确');
+    }
+    return VbmappDraftDetail.fromJson(_mapFrom(data));
   }
 
   @override
@@ -124,7 +160,20 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     if (data is! Map) {
       throw const AssessmentScaleApiException('VB-MAPP草稿详情返回格式不正确');
     }
-    return VbmappDraftDetail.fromJson(Map<String, dynamic>.from(data));
+    return VbmappDraftDetail.fromJson(_mapFrom(data));
+  }
+
+  @override
+  Future<VbmappAssessmentSchema> fetchAssessmentSchema(String token) async {
+    final Object? data = await _getJson(
+      _uri(educationBaseUrl, schemaPath),
+      token,
+      fallbackMessage: 'VB-MAPP智能题库加载失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('VB-MAPP智能题库返回格式不正确');
+    }
+    return VbmappAssessmentSchema.fromJson(_mapFrom(data));
   }
 
   @override
@@ -138,7 +187,7 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     if (data is! Map) {
       throw const AssessmentScaleApiException('VB-MAPP提交返回格式不正确');
     }
-    return VbmappDraftSubmitResult.fromJson(Map<String, dynamic>.from(data));
+    return VbmappDraftSubmitResult.fromJson(_mapFrom(data));
   }
 
   Future<Object?> _getJson(
@@ -207,10 +256,10 @@ class VbmappDraftSaveResult {
     return VbmappDraftSaveResult(
       id: _intFrom(json['id']),
       studentId: _intFrom(json['studentId']),
-      studentName: '${json['studentName'] ?? ''}',
+      studentName: _textFrom(json['studentName']),
       assessmentDate: _dateTextFrom(json['assessmentDate']),
-      examinerName: '${json['examinerName'] ?? ''}',
-      status: '${json['status'] ?? ''}',
+      examinerName: _textFrom(json['examinerName']),
+      status: _textFrom(json['status']),
       answeredItemCount: _intFrom(json['answeredItemCount']),
       completionPercent: _doubleFrom(json['completionPercent']),
     );
@@ -237,6 +286,7 @@ class VbmappDraftDetail {
     required this.milestoneScores,
     required this.barrierScores,
     required this.transitionScores,
+    required this.itemResponses,
   });
 
   factory VbmappDraftDetail.fromJson(Map<String, dynamic> json) {
@@ -244,10 +294,10 @@ class VbmappDraftDetail {
     return VbmappDraftDetail(
       id: _intFrom(json['id']),
       studentId: _intFrom(json['studentId']),
-      studentName: '${json['studentName'] ?? ''}',
+      studentName: _textFrom(json['studentName']),
       birthDate: _dateTextFrom(json['birthDate']),
       assessmentDate: _dateTextFrom(json['assessmentDate']),
-      examinerName: '${json['examinerName'] ?? ''}',
+      examinerName: _textFrom(json['examinerName']),
       milestoneScores: _doubleScoreMapFrom(
         input['milestoneScores'],
         input['milestoneScoreList'],
@@ -263,6 +313,7 @@ class VbmappDraftDetail {
         input['transitionScoreList'],
         'transitionCode',
       ),
+      itemResponses: _itemResponsesFrom(input['itemResponses']),
     );
   }
 
@@ -275,6 +326,7 @@ class VbmappDraftDetail {
   final Map<String, double> milestoneScores;
   final Map<String, int> barrierScores;
   final Map<String, int> transitionScores;
+  final Map<String, Map<String, Map<String, dynamic>>> itemResponses;
 }
 
 class VbmappDraftSubmitResult {
@@ -288,13 +340,138 @@ class VbmappDraftSubmitResult {
     return VbmappDraftSubmitResult(
       draftId: _intFrom(json['draftId']),
       recordId: _intFrom(json['recordId']),
-      draftStatus: '${json['draftStatus'] ?? ''}',
+      draftStatus: _textFrom(json['draftStatus']),
     );
   }
 
   final int draftId;
   final int recordId;
   final String draftStatus;
+}
+
+class VbmappAssessmentSchema {
+  const VbmappAssessmentSchema({
+    required this.scaleVersion,
+    required this.itemSchemas,
+    required this.materialProfiles,
+  });
+
+  factory VbmappAssessmentSchema.fromJson(Map<String, dynamic> json) {
+    final Map<String, VbmappItemResponseSchema> itemSchemas =
+        <String, VbmappItemResponseSchema>{};
+    void collect(Object? raw) {
+      if (raw is! List) {
+        return;
+      }
+      for (final Object? itemRaw in raw) {
+        final VbmappItemResponseSchema schema =
+            VbmappItemResponseSchema.fromJson(_mapFrom(itemRaw));
+        if (schema.itemCode.isNotEmpty) {
+          itemSchemas[_schemaKey(schema.moduleCode, schema.itemCode)] = schema;
+        }
+      }
+    }
+
+    collect(json['milestoneResponseSchemas']);
+    collect(json['barrierResponseSchemas']);
+    collect(json['transitionResponseSchemas']);
+
+    final Map<String, VbmappMaterialProfile> materialProfiles =
+        <String, VbmappMaterialProfile>{};
+    final Object? profilesRaw = json['responseMaterialProfiles'];
+    if (profilesRaw is Map) {
+      profilesRaw.forEach((Object? key, Object? value) {
+        final String id = _textFrom(key);
+        if (id.isNotEmpty) {
+          materialProfiles[id] =
+              VbmappMaterialProfile.fromJson(_mapFrom(value));
+        }
+      });
+    }
+
+    return VbmappAssessmentSchema(
+      scaleVersion: _textFrom(json['scaleVersion']),
+      itemSchemas: itemSchemas,
+      materialProfiles: materialProfiles,
+    );
+  }
+
+  final String scaleVersion;
+  final Map<String, VbmappItemResponseSchema> itemSchemas;
+  final Map<String, VbmappMaterialProfile> materialProfiles;
+
+  VbmappItemResponseSchema? schemaFor(String moduleCode, String itemCode) {
+    return itemSchemas[_schemaKey(moduleCode, itemCode)];
+  }
+}
+
+class VbmappItemResponseSchema {
+  const VbmappItemResponseSchema({
+    required this.moduleCode,
+    required this.itemCode,
+    required this.uiPattern,
+    required this.recordDepth,
+    required this.materialProfileId,
+    required this.whyRecord,
+    required this.evidenceTargets,
+    required this.qualityChecks,
+    required this.scoreStrategy,
+    required this.onePointCriteria,
+    required this.halfPointCriteria,
+  });
+
+  factory VbmappItemResponseSchema.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> scoreEvidence = _mapFrom(json['scoreEvidence']);
+    final Map<String, dynamic> autoCompletion =
+        _mapFrom(json['autoCompletion']);
+    return VbmappItemResponseSchema(
+      moduleCode: _textFrom(json['moduleCode']),
+      itemCode: _scoreCodeFrom(
+        json['milestoneId'] ?? json['barrierCode'] ?? json['transitionCode'],
+      ),
+      uiPattern: _textFrom(json['uiPattern']),
+      recordDepth: _textFrom(json['recordDepth']),
+      materialProfileId: _textFrom(json['materialProfileId']),
+      whyRecord: _textFrom(json['whyRecord']),
+      evidenceTargets: _stringListFrom(json['evidenceTargets']),
+      qualityChecks: _stringListFrom(json['qualityChecks']),
+      scoreStrategy: _textFrom(autoCompletion['scoreStrategy']),
+      onePointCriteria: _textFrom(scoreEvidence['onePointCriteria']),
+      halfPointCriteria: _textFrom(scoreEvidence['halfPointCriteria']),
+    );
+  }
+
+  final String moduleCode;
+  final String itemCode;
+  final String uiPattern;
+  final String recordDepth;
+  final String materialProfileId;
+  final String whyRecord;
+  final List<String> evidenceTargets;
+  final List<String> qualityChecks;
+  final String scoreStrategy;
+  final String onePointCriteria;
+  final String halfPointCriteria;
+}
+
+class VbmappMaterialProfile {
+  const VbmappMaterialProfile({
+    required this.label,
+    required this.suggestedTypes,
+    required this.preparationChecks,
+  });
+
+  factory VbmappMaterialProfile.fromJson(Map<String, dynamic> json) {
+    return VbmappMaterialProfile(
+      label: _textFrom(json['label']),
+      suggestedTypes: _stringListFrom(json['suggestedTypes']),
+      preparationChecks: _stringListFrom(json['preparationChecks']),
+    );
+  }
+
+  final String label;
+  final List<String> suggestedTypes;
+  final List<String> preparationChecks;
 }
 
 Uri _uri(String baseUrl, String path) {
@@ -320,7 +497,7 @@ Object? _handleResponse(
     );
   }
   if (decoded is Map) {
-    final Map<String, dynamic> envelope = Map<String, dynamic>.from(decoded);
+    final Map<String, dynamic> envelope = _mapFrom(decoded);
     if (envelope['success'] == false) {
       throw AssessmentScaleApiException(
         _messageFromPayload(envelope) ?? fallbackMessage,
@@ -359,12 +536,19 @@ String? _messageFromPayload(Object? payload) {
 
 Map<String, dynamic> _mapFrom(Object? raw) {
   if (raw is Map) {
-    return Map<String, dynamic>.from(raw);
+    final Map<String, dynamic> out = <String, dynamic>{};
+    raw.forEach((Object? key, Object? value) {
+      final String normalizedKey = _textFrom(key);
+      if (normalizedKey.isNotEmpty) {
+        out[normalizedKey] = value;
+      }
+    });
+    return out;
   }
   if (raw is String && raw.trim().isNotEmpty) {
     final Object? decoded = _decodeResponse(raw);
     if (decoded is Map) {
-      return Map<String, dynamic>.from(decoded);
+      return _mapFrom(decoded);
     }
   }
   return <String, dynamic>{};
@@ -422,12 +606,65 @@ Map<String, int> _intScoreMapFrom(
   return out;
 }
 
+Map<String, Map<String, Map<String, dynamic>>> _itemResponsesFrom(
+  Object? raw,
+) {
+  final Map<String, Map<String, Map<String, dynamic>>> out =
+      <String, Map<String, Map<String, dynamic>>>{};
+  if (raw is! Map) {
+    return out;
+  }
+  raw.forEach((Object? moduleKey, Object? moduleRaw) {
+    final String moduleCode = _textFrom(moduleKey);
+    if (moduleCode.isEmpty || moduleRaw is! Map) {
+      return;
+    }
+    moduleRaw.forEach((Object? itemKey, Object? itemRaw) {
+      final String itemCode = _scoreCodeFrom(itemKey);
+      if (itemCode.isEmpty) {
+        return;
+      }
+      out.putIfAbsent(
+              moduleCode, () => <String, Map<String, dynamic>>{})[itemCode] =
+          _mapFrom(itemRaw);
+    });
+  });
+  return out;
+}
+
+List<String> _stringListFrom(Object? raw) {
+  if (raw is! List) {
+    return const <String>[];
+  }
+  return raw
+      .map(_textFrom)
+      .where((String value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
 String _scoreCodeFrom(Object? raw) {
-  return '${raw ?? ''}'.trim().toUpperCase();
+  return _textFrom(raw).toUpperCase();
+}
+
+String _textFrom(Object? raw) {
+  if (raw == null) {
+    return '';
+  }
+  if (raw is String) {
+    return raw.trim();
+  }
+  if (raw is num || raw is bool) {
+    return '$raw'.trim();
+  }
+  return '$raw'.trim();
+}
+
+String _schemaKey(String moduleCode, String itemCode) {
+  return '${_textFrom(moduleCode).toLowerCase()}::${_scoreCodeFrom(itemCode)}';
 }
 
 String _dateTextFrom(Object? raw) {
-  final String value = '${raw ?? ''}'.trim();
+  final String value = _textFrom(raw);
   if (value.length >= 10) {
     return value.substring(0, 10);
   }
@@ -441,12 +678,12 @@ int _intFrom(Object? raw) {
   if (raw is num) {
     return raw.toInt();
   }
-  return int.tryParse('${raw ?? ''}') ?? 0;
+  return int.tryParse(_textFrom(raw)) ?? 0;
 }
 
 double _doubleFrom(Object? raw) {
   if (raw is num) {
     return raw.toDouble();
   }
-  return double.tryParse('${raw ?? ''}') ?? 0;
+  return double.tryParse(_textFrom(raw)) ?? 0;
 }

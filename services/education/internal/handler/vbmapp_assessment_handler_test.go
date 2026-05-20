@@ -226,3 +226,49 @@ func TestScoreVBMAPPEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 		t.Fatalf("expected transition suggestions: %+v", envelope.Data.Result.Transition)
 	}
 }
+
+func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	dataDir := filepath.Join(root, "docs", "vbmapp")
+	if _, err := os.Stat(filepath.Join(dataDir, "milestone-response-schemas.json")); err != nil {
+		t.Skipf("generated VB-MAPP response schema data not present: %s", dataDir)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/assessments/vbmapp/schema", nil)
+	rec := httptest.NewRecorder()
+
+	h := New(&service.Service{})
+	tenant.Middleware(http.HandlerFunc(h.vbmappAssessmentSchema)).ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status %d: %s", rec.Code, rec.Body.String())
+	}
+	var envelope struct {
+		Success bool `json:"success"`
+		Data    struct {
+			ScaleCode                 string `json:"scaleCode"`
+			MilestoneItems            []any  `json:"milestoneItems"`
+			MilestoneResponseSchemas  []any  `json:"milestoneResponseSchemas"`
+			BarrierResponseSchemas    []any  `json:"barrierResponseSchemas"`
+			TransitionResponseSchemas []any  `json:"transitionResponseSchemas"`
+			ResponseSchemaSummary     struct {
+				ItemCount int `json:"itemCount"`
+			} `json:"responseSchemaSummary"`
+		} `json:"data"`
+	}
+	if err := json.NewDecoder(rec.Body).Decode(&envelope); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !envelope.Success || envelope.Data.ScaleCode != "VBMAPP" {
+		t.Fatalf("expected success response: %+v", envelope)
+	}
+	if len(envelope.Data.MilestoneItems) != 170 || len(envelope.Data.MilestoneResponseSchemas) != 170 {
+		t.Fatalf("unexpected milestone schema counts: %+v", envelope.Data)
+	}
+	if len(envelope.Data.BarrierResponseSchemas) != 24 || len(envelope.Data.TransitionResponseSchemas) != 18 {
+		t.Fatalf("unexpected module schema counts: %+v", envelope.Data)
+	}
+	if envelope.Data.ResponseSchemaSummary.ItemCount != 212 {
+		t.Fatalf("unexpected schema summary: %+v", envelope.Data.ResponseSchemaSummary)
+	}
+}

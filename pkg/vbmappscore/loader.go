@@ -91,3 +91,88 @@ func LoadTransitionDefinitionsFile(path string) ([]TransitionDefinition, error) 
 	defer file.Close()
 	return LoadTransitionDefinitions(file)
 }
+
+func LoadResponseFieldTemplates(r io.Reader) (map[string]ResponseFieldTemplate, error) {
+	var templates map[string]ResponseFieldTemplate
+	if err := json.NewDecoder(r).Decode(&templates); err != nil {
+		return nil, fmt.Errorf("decode vbmapp response field templates: %w", err)
+	}
+	return templates, nil
+}
+
+func LoadResponseFieldTemplatesFile(path string) (map[string]ResponseFieldTemplate, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return LoadResponseFieldTemplates(file)
+}
+
+func LoadResponseMaterialProfiles(r io.Reader) (map[string]ResponseMaterialProfile, error) {
+	var profiles map[string]ResponseMaterialProfile
+	if err := json.NewDecoder(r).Decode(&profiles); err != nil {
+		return nil, fmt.Errorf("decode vbmapp response material profiles: %w", err)
+	}
+	return profiles, nil
+}
+
+func LoadResponseMaterialProfilesFile(path string) (map[string]ResponseMaterialProfile, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return LoadResponseMaterialProfiles(file)
+}
+
+func LoadMilestoneResponseSchemas(r io.Reader) ([]MilestoneResponseSchema, error) {
+	var schemas []MilestoneResponseSchema
+	if err := json.NewDecoder(r).Decode(&schemas); err != nil {
+		return nil, fmt.Errorf("decode vbmapp milestone response schemas: %w", err)
+	}
+	return schemas, nil
+}
+
+func LoadMilestoneResponseSchemasFile(path string) ([]MilestoneResponseSchema, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return LoadMilestoneResponseSchemas(file)
+}
+
+func LoadBarrierResponseSchemas(r io.Reader) ([]BarrierResponseSchema, error) {
+	var schemas []BarrierResponseSchema
+	if err := json.NewDecoder(r).Decode(&schemas); err != nil {
+		return nil, fmt.Errorf("decode vbmapp barrier response schemas: %w", err)
+	}
+	return schemas, nil
+}
+
+func LoadBarrierResponseSchemasFile(path string) ([]BarrierResponseSchema, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return LoadBarrierResponseSchemas(file)
+}
+
+func LoadTransitionResponseSchemas(r io.Reader) ([]TransitionResponseSchema, error) {
+	var schemas []TransitionResponseSchema
+	if err := json.NewDecoder(r).Decode(&schemas); err != nil {
+		return nil, fmt.Errorf("decode vbmapp transition response schemas: %w", err)
+	}
+	return schemas, nil
+}
+
+func LoadTransitionResponseSchemasFile(path string) ([]TransitionResponseSchema, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer file.Close()
+	return LoadTransitionResponseSchemas(file)
+}

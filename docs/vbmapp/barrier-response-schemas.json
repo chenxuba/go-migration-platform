@@ -1,0 +1,1562 @@
+[
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B01",
+    "barrierName": "负面行为",
+    "barrierNo": 1,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子有一些较小的行为问题(如偶尔的哭诉或哭闹)，但它们很短和很快地恢复到普通的情 绪"
+        },
+        {
+          "score": 2,
+          "description": "孩子每天都发生种种小的负面行为(如哭闹、语言拒绝、躺到地上)"
+        },
+        {
+          "score": 3,
+          "description": "孩子发生更严重和更频繁的负面行为(如发脾气、丢东西、破坏物品)"
+        },
+        {
+          "score": 4,
+          "description": "负面行为每天发生多次且呈现出对自己和他人造成危险(如攻击、破坏物品或自伤行为)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B02",
+    "barrierName": "不听从指令",
+    "barrierNo": 2,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "某些要求会引起孩子小的固执行为，但孩子通常还是对大人的指令合作的，并且很快地恢 复到情境中"
+        },
+        {
+          "score": 2,
+          "description": "孩子一天中几次发生小脾气或其它固执的行为，当他得不到他想要的东西时，很难让他停 止这些行为"
+        },
+        {
+          "score": 3,
+          "description": "不服从的频率增加，引发不服从行为的情景范围扩大，试图逃避要求的行为的严重程度增 加"
+        },
+        {
+          "score": 4,
+          "description": "孩子的不服从行为成为每天的主要问题，如果大人有要求或者是大人的要求不停止，孩子 就会立刻发生强烈和严重的不服从行为，如攻击性或破坏东西的行为"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B03",
+    "barrierName": "提要求技能问题",
+    "barrierNo": 3,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "在 VB-MAPP 里程碑评估中孩子在听者技能和命名方面得分比他在提要求方面的得分高，这 表明该孩子提要求的能力落后于他在其他方面的语言技能"
+        },
+        {
+          "score": 2,
+          "description": "尽管孩子在命名、听者辨别技能和仿说技能方面都很强，他提出要求的数量很少并且局限 于小范围的或具体的强化物"
+        },
+        {
+          "score": 3,
+          "description": "孩子依赖辅助而提要求，并且表现出死记硬背或者猜测的方式，不恰当的要求或者很少自 发地提要求"
+        },
+        {
+          "score": 4,
+          "description": "孩子没有任何功能性的提要求或者以频繁的负面行为来提要求"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B04",
+    "barrierName": "命名技能问题",
+    "barrierNo": 4,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子能命名一些物品和有较好的仿说技能，但他的听觉辨别的词汇明显多于他命名的词汇"
+        },
+        {
+          "score": 2,
+          "description": "孩子命名时出现频繁的错误、猜测，或命名局限于某种方式的辅助(如大人唇形的辅助)和 需要频繁的维持训练"
+        },
+        {
+          "score": 3,
+          "description": "命名明显有缺陷，表现为不能泛化、缺乏自觉性、死记硬背，在训练中表现出逃避行为， 或无法超越单一字的命名"
+        },
+        {
+          "score": 4,
+          "description": "孩子的命名技能基本不存在或局限于几个命名"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B05",
+    "barrierName": "动作模仿方面问题",
+    "barrierNo": 5,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子能够模仿，但他在 VB-MAPP 中模仿得分低于里程碑的其他技能"
+        },
+        {
+          "score": 2,
+          "description": "孩子容易获得一些粗大动作模仿反应或模仿使用物品，但在精细动作模仿、两步模仿、功 能性模仿方面有很大困难"
+        },
+        {
+          "score": 3,
+          "description": "孩子的模仿局限于肢体或语言的辅助"
+        },
+        {
+          "score": 4,
+          "description": "孩子没有模仿技能，或者如果他能模仿，但从不自发地或是以功能性的方式去模仿"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B06",
+    "barrierName": "仿说问题",
+    "barrierNo": 6,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "如果孩子有仿说，但是他在 VB-MAPP 中仿说技能的得分低于里程碑其它技能"
+        },
+        {
+          "score": 2,
+          "description": "仿说辅助依赖，和因为依赖而从仿说转换到新的操作性语言出现困难(例如不能从仿说转 换为提要求)"
+        },
+        {
+          "score": 3,
+          "description": "孩子的仿说能力变得太强，表现为鹦鹉学舌式的语言或延迟性的仿说式语言"
+        },
+        {
+          "score": 4,
+          "description": "孩子不能获得任何仿说行为，试图教导仿说行为可能会引起一系列的负面行为"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B07",
+    "barrierName": "视觉配对问题",
+    "barrierNo": 7,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子表现出一些配对能力，但他在 VP-MTS 配对得分低于其它的里程碑技能，特别是听者 辨别技能"
+        },
+        {
+          "score": 2,
+          "description": "孩子在学习配对时的选择行为受到方位的影响(或其它的辅助)，或局限于小的系列"
+        },
+        {
+          "score": 3,
+          "description": "孩子已获得一些配对技能，但是它们没有与他的其它技能成比例地进步，在尝试进一步发 展样本配对的过程中还表现出了负面行为"
+        },
+        {
+          "score": 4,
+          "description": "孩子尽管有一些其它技能，但是不能获得任何有效的配对方面的发展或进步，或在他的日 常生活环境中从没表现出任何功能性的配对方式(如筷子和筷子放一起、勺子跟勺子放一 起，选择两双一样的鞋子，袜子匹配，美工或休闲活动)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B08",
+    "barrierName": "听者技能问题",
+    "barrierNo": 8,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子表现出某些听者技能，但他的听者技能得分低于其它的里程碑技能，特别是他的命名 得分"
+        },
+        {
+          "score": 2,
+          "description": "孩子表现出不能扫描组合或注意样本刺激，或者在样本呈现之前做出反应"
+        },
+        {
+          "score": 3,
+          "description": "孩子获得了一些听者技能，但是这些技能没有进步，与他的其它技能不成比例，或者无法 在自然环境中泛化样本配对辨别"
+        },
+        {
+          "score": 4,
+          "description": "孩子不能获得任何有效的听者技能，或者获得了这个技能，但他们都是死记硬背的，或者 在日常生活环境里从不表现出任何形式的功能性(如在一个功能性技能中遵循指令、倾听 同伴，或当被要求时从具体地方拿到具体的物品)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B09",
+    "barrierName": "对话技能问题",
+    "barrierNo": 9,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子能表现出一些对话反应，但他的对话得分明显低于里程碑第二阶段里的其它技能，特 别是命名、听者技能"
+        },
+        {
+          "score": 2,
+          "description": "孩子的对话错误发生频繁，或者他在某些方式上变得辅助依赖，如倾向于仿说辅助或命名 辅助"
+        },
+        {
+          "score": 3,
+          "description": "孩子死记硬背的反应频繁，变成一个明显的问题，或者孩子从不发起自发的对话行为或与 同伴发生对话行为"
+        },
+        {
+          "score": 4,
+          "description": "孩子尽管有很强的提要求、命名和 LRFFC 技能，但却不能发展出任何有效的或功能性的对 话行为"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B10",
+    "barrierName": "社交技能问题",
+    "barrierNo": 10,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子表现出社交行为，但他的社交技能得分落后于其它的里程碑得分"
+        },
+        {
+          "score": 2,
+          "description": "孩子很少模仿同伴的社交互动(然而，他可能模仿大人的社交互动)，或者他表现出社交上 的负面行为，如抢夺其他人的玩具、推人，或其他形式的攻击性行为"
+        },
+        {
+          "score": 3,
+          "description": "在游戏期间，孩子独自呆着，不与其他孩子轮流和分享，对于同伴的要求没有反应，或表 现不出与同伴语言互动的痕迹"
+        },
+        {
+          "score": 4,
+          "description": "孩子有语言能力，但主动回避其他孩子。在面对一个社交环境的时候，可能出现一些负面 行为或不恰当的行为。另外，在活动过程中，对同伴的要求他可能几乎从不回应"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B11",
+    "barrierName": "依赖辅助",
+    "barrierNo": 11,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子常常需要几个辅助训练和辅助消退才能学习新的技能"
+        },
+        {
+          "score": 2,
+          "description": "辅助撤退常常很困难，特别是伴随更难的技能(如对话或社交)"
+        },
+        {
+          "score": 3,
+          "description": "辅助撤退很难，他的语言能力也是有限的，辅助可能是不容易察觉的"
+        },
+        {
+          "score": 4,
+          "description": "辅助撤退非常困难，大多数技能通过仿说、模仿或语言辅助依赖。没有辅助时，孩子也可 能出现一些负面行为"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B12",
+    "barrierName": "猜想式反应",
+    "barrierNo": 12,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子在增加一些新词语时，，偶尔出现猜测，但在少许辨别训练之后，他停止了猜测反应。 常常表现出可靠地掌握和泛化这些词语"
+        },
+        {
+          "score": 2,
+          "description": "猜测是一个频繁的问题，在引进新词语时常常发生。它可能需要在新旧词汇之间有数个辨 别训练，但最终孩子能获得这些新词语，其后很少继续猜测这些词"
+        },
+        {
+          "score": 3,
+          "description": "猜测反复出现，这意味着孩子可能在开始就从没“理解”过这些词语(他可能是通过某种 方式得到了辅助)"
+        },
+        {
+          "score": 4,
+          "description": "猜测发生在每一个训练中，如果辅助没有及时提供，修正反复猜测的问题可能有很长一段 失败的历史，只有少数一些词语没有出现猜测"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B13",
+    "barrierName": "扫视技能问题",
+    "barrierNo": 13,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子在没有辅助观测的情况下能观测 6-8 个物品的组合，但在大于 10 个物品的组合中， 或在组合中有相似刺激物时开始有困难"
+        },
+        {
+          "score": 2,
+          "description": "孩子一定要借助频繁的辅助去注意所展示的组合，常常不能从大于 5 个物品的组合中，或 从书中的一个场景里或从一幅画里选择正确的目标"
+        },
+        {
+          "score": 3,
+          "description": "孩子局限于 2-3 个物品的组合，只能通过碰巧或某种方式的辅助选择正确的物品"
+        },
+        {
+          "score": 4,
+          "description": "孩子不能扫视，没有扫视之前就反应，或者在要求他扫视时表现出负面行为(逃避的行为)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B14",
+    "barrierName": "条件性辨别问题",
+    "barrierNo": 14,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子在条件性辨别(CD)方面需要更多的努力，孩子注意两个前因时有困难(如对“你以前 老师是谁”的问题不能答对)"
+        },
+        {
+          "score": 2,
+          "description": "孩子在刺激包含多重语言成分时(如“什么动物有一个尾巴”)有困难。他能对每一个独立 的刺激和在其它的语言操作条件里做出正确反应，但不在一个组合的语言有条件辨别里做 出正确反应"
+        },
+        {
+          "score": 3,
+          "description": "孩子不能通过大多数含有条件性辨别的任务"
+        },
+        {
+          "score": 4,
+          "description": "孩子不能做条件性辨别方面的任务"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B15",
+    "barrierName": "泛化技能问题",
+    "barrierNo": 15,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子对刺激物泛化的任何类型(如泛化到新材料相当慢)或任何一种技能(如仿说泛化落后) 表现出某种形式的困难"
+        },
+        {
+          "score": 2,
+          "description": "孩子在多数技能上需要正式的训练才能有泛化"
+        },
+        {
+          "score": 3,
+          "description": "对孩子进行泛化训练是费力的，常常非常不成功。孩子经常失去那些曾经被认为是通过泛 化了的技能"
+        },
+        {
+          "score": 4,
+          "description": "孩子对未经训练的刺激不能表现出任何泛化"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B16",
+    "barrierName": "薄弱或非典型动机",
+    "barrierNo": 16,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "其他的人开始注意到孩子的动机与普通发展儿童稍有不同(如孩子似乎对与其他儿童一起 游戏或活动不感兴趣)"
+        },
+        {
+          "score": 2,
+          "description": "孩子对古怪行为模式表现出动机，比如重复玩一个物体或古怪的身体、手臂、腿或手指的 姿势"
+        },
+        {
+          "score": 3,
+          "description": "孩子对先天性强化物，如睡觉、食物，或去除疼痛动机方面表现出反常动机，或者在与一 个“渴望”的物品短时接触后，动机会很快减弱(如，通常他看上去真的很想去玩一个物 品，但几秒钟就丢掉或走开)"
+        },
+        {
+          "score": 4,
+          "description": "孩子也可能表现出高频率的刻板行为和对社交性强化极少兴趣。如孩子的动机非常受局限， 也许只有 2-3 种，他们可能有奇怪的动机(如，一根细绳子、快速转圈圈、用嘴吸吮物品)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B17",
+    "barrierName": "动机易消问题",
+    "barrierNo": 17,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "如果对孩子的要求远远超于强化物，孩子可能对强化物失去兴趣；如果要求太高，孩子表 现出某些兴趣的不足"
+        },
+        {
+          "score": 2,
+          "description": "如果孩子对许多物品和活动有较强的兴趣，但在要求超过一点点或不在常规程序中时，他 很快离开这些物品或失去对这些物品的兴趣"
+        },
+        {
+          "score": 3,
+          "description": "如果孩子对要求反应几次以后很快表现出兴趣缺乏"
+        },
+        {
+          "score": 4,
+          "description": "如果对孩子哪怕只是一点点要求，他就将放弃那些被认为是他最喜欢的强化物(如食物、 托马斯火车等)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B18",
+    "barrierName": "依赖强化物",
+    "barrierNo": 18,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子更喜欢消耗性和有形的物品，但通过赞扬和关注也能得到强化(与其他孩子相似，被 社会性强化影响)。尽管他在没有得到这些首选的强化物时可能表现出一些勉强，但最后 还是这样做了，并持续学习新技能"
+        },
+        {
+          "score": 2,
+          "description": "如果没得到首选的强化物孩子就不愿意做，或者没有它们时学习很慢，但他愿意接受间歇 性强化(如代币)和表现出一致的技能增长"
+        },
+        {
+          "score": 3,
+          "description": "如果没有频繁地给予消耗性和有形的强化物(如每 3-4 个反应给予一次)，与孩子教学就很 困难，孩子可能很快出现负面行为或试图避免大人要求和教学任务"
+        },
+        {
+          "score": 4,
+          "description": "如果建立一个单一技能非得消耗大量消耗性和有形的强化物，并且必须得到这个强化物才 能维持这个技能"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B19",
+    "barrierName": "自我刺激问题",
+    "barrierNo": 19,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子从事了某种自我刺激，但这不是太严重的问题(如手指叩击)，并且似乎不对抗学习或 其它的活动"
+        },
+        {
+          "score": 2,
+          "description": "孩子自我刺激行为频率相当高，并且他可能发出一些不同类型的自我刺激行为(如在眼前 轻弹物品和凝视)"
+        },
+        {
+          "score": 3,
+          "description": "孩子进行高频率的自我刺激，与学习和社会活动竞争，用语言训斥时也不能停止，或仅暂 时地停止"
+        },
+        {
+          "score": 4,
+          "description": "孩子几乎不断地发出一些自我刺激的行为，并且其它强化物对他的影响很弱"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B20",
+    "barrierName": "表达清晰度问题",
+    "barrierNo": 20,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子发某些音有一些困难，但与他的已有词汇一般可以被理解，并且他的发音连续地好转"
+        },
+        {
+          "score": 2,
+          "description": "尽管孩子表现出大多数第二阶段里程碑的许多能力，但陌生人理解孩子的发音仍然有困难"
+        },
+        {
+          "score": 3,
+          "description": "孩子有非常有限的发音技能，表现出一个广泛的发音错误"
+        },
+        {
+          "score": 4,
+          "description": "尽管孩子在其它里程碑得分高，但他没有发音，或有完全不能理解的语言"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B21",
+    "barrierName": "强迫行为问题",
+    "barrierNo": 21,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "孩子表现出某些微小的执着，但它们容易被克服，并且不妨碍学习。执着可以被理解为“倔 强”，但这些问题行为常常在于其同一性(如坚持房间里必须关灯)"
+        },
+        {
+          "score": 2,
+          "description": "孩子有数个不同的执着，在得不到满足时常常发出一些轻微的负面行为，但他在执着受到 制止时也能参加到学习任务中，而没有进一步的破坏行为"
+        },
+        {
+          "score": 3,
+          "description": "孩子出现数个不同的执着行为，其程度非常强烈。如果它们被打断的话，他迅速和强烈地 发起的负面行为妨碍了学习，如果他没有完成痴迷的行为，就常常不愿意参加到任务或活 动中来"
+        },
+        {
+          "score": 4,
+          "description": "孩子的执着是一致的、强烈的，是每一天中的主要问题。如果这种执着得不到满足，他的 负面行为就可能是严重的(学习经常被破坏，消耗大量的时间)"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B22",
+    "barrierName": "多动问题",
+    "barrierNo": 22,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "偶尔出现多动行为或不能参加正在进行的活动或事件，但这些行为不破坏学习和日常生活。 孩子将容易平静下来，或伴随某些微小的辅助就能够致力于手边的任务"
+        },
+        {
+          "score": 2,
+          "description": "孩子在环境中频繁地来回走动(比他的同伴有明显更多的活动)，似乎坐立不安，致力于任 务有困难，尤其任务本身困难时"
+        },
+        {
+          "score": 3,
+          "description": "大人很难控制孩子的多动行为，他可能不能排队等候、平静地坐着、保持任务几分钟以上， 需要频繁的辅助才能专注地静坐，完成一个活动"
+        },
+        {
+          "score": 4,
+          "description": "孩子一致地“忙个不停”，并且多动行为是每天中的主要焦点"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B23",
+    "barrierName": "目光接触问题",
+    "barrierNo": 23,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "大人注意到孩子没有类似于普通发展孩子的眼神交流"
+        },
+        {
+          "score": 2,
+          "description": "孩子没有类似于普通发展孩子那样频繁的眼神交流，或注意面部和别人"
+        },
+        {
+          "score": 3,
+          "description": "孩子在提要求时没有眼神交流，在大多数情况下难以得到他的眼神交流"
+        },
+        {
+          "score": 4,
+          "description": "孩子几乎没有眼神交流，并且避免看别人的面部"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "barriers",
+    "barrierCode": "B24",
+    "barrierName": "感觉防御问题",
+    "barrierNo": 24,
+    "recordDepth": "rating_with_behavior_evidence_required",
+    "uiPattern": "barrier_rubric_with_behavior_log",
+    "fieldTemplateIds": [
+      "score",
+      "barrier_behavior_log",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "具体行为例子",
+      "发生频率",
+      "严重程度",
+      "持续时间",
+      "影响范围",
+      "当前应对策略"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        0,
+        4
+      ],
+      "scoreOptions": [
+        {
+          "score": 0,
+          "description": "未见明显相关障碍或不作为主要问题"
+        },
+        {
+          "score": 1,
+          "description": "大人开始注意到孩子对一些感觉刺激的过敏不同于其他的孩子(例如在某些声音发生时， 孩子可能有痛苦的表情)"
+        },
+        {
+          "score": 2,
+          "description": "某些感觉刺激常常影响到孩子(如长袖衬衫或他手上的胶水)，但防御性刺激不常常妨碍学 习活动"
+        },
+        {
+          "score": 3,
+          "description": "孩子常常对特定的感觉刺激做出逃避行为的反应(如用手捂住耳朵，在特定的情况下用手 遮住他的眼睛，他也可能变得焦虑)，特别是在厌恶刺激不消除的情况下可能很难与孩子 做沟通"
+        },
+        {
+          "score": 4,
+          "description": "孩子对特定的感觉刺激一贯地以更严重的负面行为做出反应，如发脾气和攻击性行为"
+        }
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_barrier_from_structured_behavior_evidence",
+      "computedIndicators": [
+        "frequency_summary",
+        "intensity_summary",
+        "high_risk_flag"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第二部分------障碍评估.pdf"
+    ]
+  }
+]

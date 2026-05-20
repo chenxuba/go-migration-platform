@@ -1,0 +1,1281 @@
+[
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T01",
+    "transitionName": "VB-MAPP 里程碑评估总分",
+    "transitionNo": 1,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "里程碑评估得分为 0-25 分"
+        },
+        {
+          "score": 2,
+          "description": "里程碑评估得分为 26-50 分"
+        },
+        {
+          "score": 3,
+          "description": "里程碑评估得分为 51-100 分"
+        },
+        {
+          "score": 4,
+          "description": "里程碑评估得分为 101-135 分"
+        },
+        {
+          "score": 5,
+          "description": "里程碑评估得分为 136-170 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-第一阶段(1-2 分)----需要强化和特殊的干预项目",
+        "-第二阶段(3 分)----开始受益于集体教学、自然环境，但仍需要大量的具体的语言和社交技能的强化训练",
+        "-第三阶段(4-5 分)----具备在较少限制的环境中参与更高级的学业和社交项目所需要的语言基础"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": true,
+      "scoreStrategy": "derive_from_milestone_barrier_and_context_summary",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T02",
+    "transitionName": "VB-MAPP 障碍评估总分",
+    "transitionNo": 2,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "障碍评估得分为 56-96 分"
+        },
+        {
+          "score": 2,
+          "description": "障碍评估得分为 31-55 分"
+        },
+        {
+          "score": 3,
+          "description": "障碍评估得分为 21-30 分"
+        },
+        {
+          "score": 4,
+          "description": "障碍评估得分为 11-20 分"
+        },
+        {
+          "score": 5,
+          "description": "障碍评估得分为 0-10 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-障碍评估中得高分(31-96)，转衔评估中得分低，需要一个针对性的干预项目",
+        "-障碍评估中得低分(30 或以下)，转衔评估中得分高，说明较少限制的教育环境可能有效，但取决于具体的",
+        "障碍"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": true,
+      "scoreStrategy": "derive_from_milestone_barrier_and_context_summary",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T03",
+    "transitionName": "VB-MAPP 障碍评估中负面行为和教学控制方面的得分",
+    "transitionNo": 3,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "障碍评估中不良行为和教育控制的总分为 6-7 分"
+        },
+        {
+          "score": 2,
+          "description": "障碍评估中不良行为和教育控制的总分为 5 分"
+        },
+        {
+          "score": 3,
+          "description": "障碍评估中不良行为和教育控制的总分为 3 分或 4 分"
+        },
+        {
+          "score": 4,
+          "description": "障碍评估中不良行为和教育控制的总分为 2 分"
+        },
+        {
+          "score": 5,
+          "description": "儿童没有行为问题，在障碍评估中的得分为 0 分或 1 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-这两项在障碍评估中得分高，在转衔评估中得分低，安置在较少限制的教育环境中较困难、不安全、效果",
+        "不好",
+        "-这两项在障碍评估中得分低，在转衔评估中得分高，不应该成为决定安置过程中的问题"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": true,
+      "scoreStrategy": "derive_from_milestone_barrier_and_context_summary",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T04",
+    "transitionName": "VB-MAPP 里程碑评估中教室规则和集体技能方面的得分",
+    "transitionNo": 4,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "里程碑评估中教室规则和集体技能的得分为 2 分"
+        },
+        {
+          "score": 2,
+          "description": "里程碑评估中教室规则和集体技能的得分为 3-4 分"
+        },
+        {
+          "score": 3,
+          "description": "里程碑评估中教室规则和集体技能的得分为 5-7 分"
+        },
+        {
+          "score": 4,
+          "description": "里程碑评估中教室规则和集体技能的得分为 8-9 分"
+        },
+        {
+          "score": 5,
+          "description": "里程碑评估中教室规则和集体技能的得分为 10 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-转衔评估中教室规则和集体技能得 1-2 分，适宜用强化教学",
+        "-转衔评估中教室规则和集体技能得 4-5 分，是过渡到较少限制环境中的一个主要成分"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": true,
+      "scoreStrategy": "derive_from_milestone_barrier_and_context_summary",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T05",
+    "transitionName": "VB-MAPP 里程碑评估中社会行为和社交游戏方面的得分",
+    "transitionNo": 5,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "里程碑评估中社交行为和社交游戏的得分为 2-3 分"
+        },
+        {
+          "score": 2,
+          "description": "里程碑评估中社交行为和社交游戏的得分为 4-5 分"
+        },
+        {
+          "score": 3,
+          "description": "里程碑评估中社交行为和社交游戏的得分为 6-9 分"
+        },
+        {
+          "score": 4,
+          "description": "里程碑评估中社交行为和社交游戏的得分为 10-12 分"
+        },
+        {
+          "score": 5,
+          "description": "里程碑评估中社交行为和社交游戏的得分为 13-15 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-转衔评估中社交技能得 1-2 分且语言技能贫乏(里程碑在第一阶段)，强化教学形式",
+        "-转衔评估中社交技能得 3 分且里程碑主要在第二阶段，部分融合",
+        "-转衔评估中社交技能得 4-5 分且里程碑主要在第三阶段，较多地安排在较少限制的教育环境"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": true,
+      "canSuggestScore": true,
+      "scoreStrategy": "derive_from_milestone_barrier_and_context_summary",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T06",
+    "transitionName": "在学业任务方面的工作独立性",
+    "transitionNo": 6,
+    "category": "第一类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "能独立地完成学业任务至少 30 秒并不超过 1 个成人的提示"
+        },
+        {
+          "score": 2,
+          "description": "能独立地完成学业任务至少 1 分钟并不超过 1 个成人的提示"
+        },
+        {
+          "score": 3,
+          "description": "能独立地完成学业任务至少 2 分钟并不需要成人的提示"
+        },
+        {
+          "score": 4,
+          "description": "能独立地完成学业任务至少 5 分钟并不需要成人的提示"
+        },
+        {
+          "score": 5,
+          "description": "能独立地完成学业任务至少 10 分钟并不需要成人的提示"
+        }
+      ],
+      "placementRecommendations": [
+        "-在工作独立性评估中得 1 分，仍需要独立的训练",
+        "-在工作独立性评估中得 4-5 分，可以在包含有独立学业活动的教室里学习"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T07",
+    "transitionName": "技能泛化于时间、环境、行为、材料和人物",
+    "transitionNo": 7,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "能泛化一些新的技能于不同的人物和时间，但是不容易在材料中泛化"
+        },
+        {
+          "score": 2,
+          "description": "能泛化到一些新的材料，但仅仅是在密集的泛化(多个范例)训练之后"
+        },
+        {
+          "score": 3,
+          "description": "在自然环境中的 10 个场景能表现出独立的刺激泛化"
+        },
+        {
+          "score": 4,
+          "description": "在自然环境中的 10 个场景能表现出独立的反应泛化"
+        },
+        {
+          "score": 5,
+          "description": "在第一或第二次训练时能持续地表现出刺激和反应的泛化"
+        }
+      ],
+      "placementRecommendations": [
+        "-泛化评估中得 5 分，可能转衔到较少限制的教育环境中"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T08",
+    "transitionName": "起强化作用的物品和事件的范围",
+    "transitionNo": 8,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "频繁地需要强化物并且主要是食物、饮料和肢体接触(未习得的动机)"
+        },
+        {
+          "score": 2,
+          "description": "强化物是有形的、感觉或操纵性的。像玩具、因果关系的物品、音乐、娃娃"
+        },
+        {
+          "score": 3,
+          "description": "强化物是社交性的(如注意力)、同伴介入(如游戏)、社交的有关场所(如公园、商场)，并且频率较低； 主要用于教学的就是习得的强化物"
+        },
+        {
+          "score": 4,
+          "description": "强化物是间断的、社交性的、自动的，并包含广泛的物品和活动"
+        },
+        {
+          "score": 5,
+          "description": "强化物是间断的、社交性的、适龄的、各种各样的，并且包含语言信息，转换也很频繁"
+        }
+      ],
+      "placementRecommendations": [
+        "-依赖食物或有形强化物，或需要频繁的强化时间表，难于安置在限制较少的教育环境中",
+        "-能为广泛的社会性和与年龄相符的结果所强化，部分是自动的间歇性强化，是安置在限制较少的教育环境",
+        "中的一个主要成分"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T09",
+    "transitionName": "获得新技能的速度",
+    "transitionNo": 9,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "通常需要两周或以上的训练以及成百上千次的练习才能获得一个新技能"
+        },
+        {
+          "score": 2,
+          "description": "需要至少 1 周的训练和百次或以上的练习才能获得一个新的目标技能"
+        },
+        {
+          "score": 3,
+          "description": "一周平均少于 50 次的回合练习就能获得几个新的目标技能"
+        },
+        {
+          "score": 4,
+          "description": "一周平均少于 25 次的练习就能获得几个新的目标技能"
+        },
+        {
+          "score": 5,
+          "description": "每天平均少于 5 次的练习就能一致地获得一些新的目标技能"
+        }
+      ],
+      "placementRecommendations": [
+        "-2-4 分表示获得新技能的速度加快",
+        "-技能的复杂程度增加",
+        "-其它支持融合教育的技能也得到发展"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T10",
+    "transitionName": "新学技能的维持",
+    "transitionNo": 10,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "新技能在教导环节中正确之后能维持至少 10 分钟"
+        },
+        {
+          "score": 2,
+          "description": "新技能在教导环节中正确之后能维持至少 1 小时"
+        },
+        {
+          "score": 3,
+          "description": "在教导中已经以正确得分后的新技能可以至少维持 24 小时，伴随 5 次或更少的维持性回合训练"
+        },
+        {
+          "score": 4,
+          "description": "24 小时后仍能维持一项新的技能而不需要维持的练习"
+        },
+        {
+          "score": 5,
+          "description": "通常能维持所获得的技能至少一周而不需要维持的练习"
+        }
+      ],
+      "placementRecommendations": [
+        "-在转衔评估中新技能维持得 5 分(在较长时间之后不需要维持训练)，在较少限制的教育环境中学习有效"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T11",
+    "transitionName": "在自然环境中学习",
+    "transitionNo": 11,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "无需密集的教导就能在自然环境中获得 2 个新的动作技能"
+        },
+        {
+          "score": 2,
+          "description": "无需密集的教导就能在自然环境中获得 5 个新的提要求或命名"
+        },
+        {
+          "score": 3,
+          "description": "无需密集的教导就能在自然环境中获得 25 个新的提要求或命名"
+        },
+        {
+          "score": 4,
+          "description": "无需密集的教导就能在自然环境中获得 25 个新的对话"
+        },
+        {
+          "score": 5,
+          "description": "无需密集的教导每天都能在自然环境或集体环境中轻易并持续地学到新的技能"
+        }
+      ],
+      "placementRecommendations": [
+        "-一般来说，自然环境中大动作学习容易，语言学习较难",
+        "-根据自然环境中学习新技能的频率和复杂程度评分",
+        "-该项评分得 5 分，限制较少的教育环境有效"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T12",
+    "transitionName": "未经训练就能表现出语言操作元素之间的转换",
+    "transitionNo": 12,
+    "category": "第二类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "需要 2 个或更少的转换回合就能将 2 个语言行为从仿说转换为提要求或者命名"
+        },
+        {
+          "score": 2,
+          "description": "不需要转换回合就能将 5 个语言行为从仿说转换为提要求或者命名"
+        },
+        {
+          "score": 3,
+          "description": "不需要训练就能将 10 个语言行为从命名到提要求的转换"
+        },
+        {
+          "score": 4,
+          "description": "不需要训练就能将 10 个话题或者事件从命名转换为对话"
+        },
+        {
+          "score": 5,
+          "description": "每天都表现出转换技能，包括说话的高级方面和所有的讲者与听者技能"
+        }
+      ],
+      "placementRecommendations": [
+        "-语言技能之间开始并能比较一致地转换，孩子获得新技能所需的具体的教学时间开始减少",
+        "-孩子在较少限制的教育环境中学习的概率增加"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T13",
+    "transitionName": "对变化的适应性",
+    "transitionNo": 13,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "在语言提前的预告下能适应一些细微的变化，但可能会表现出一些不良行为"
+        },
+        {
+          "score": 2,
+          "description": "能接受细微的变化，会表现出一些忧虑，对于改变需要大量的预告"
+        },
+        {
+          "score": 3,
+          "description": "对变化会抱怨和生气，可能会有些固执，但最后能接受改变"
+        },
+        {
+          "score": 4,
+          "description": "能快速地适应变化并不会出现不良行为，但会表现出细微的焦虑的信号"
+        },
+        {
+          "score": 5,
+          "description": "儿童能很好地适应规则的改变，能忽视或处理其他的干扰和变化"
+        }
+      ],
+      "placementRecommendations": [
+        "-该项评估得 4-5 分，有潜力适应较少限制教育环境中发生的没有预告的事件"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T14",
+    "transitionName": "自发性行为",
+    "transitionNo": 14,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "会出现一些自发性的行为，但大多数语言和社交技能需要提示"
+        },
+        {
+          "score": 2,
+          "description": "会出现很多自发性的行为，但大部分都是非语言行为"
+        },
+        {
+          "score": 3,
+          "description": "每天都自发地(无语言提示)提要求和命名若干次"
+        },
+        {
+          "score": 4,
+          "description": "每天能自发地提要求、命名、对话和语言性社交性行为数次"
+        },
+        {
+          "score": 5,
+          "description": "在里程碑评估中 16 个领域的大多数中能出现恰当的自发性行为"
+        }
+      ],
+      "placementRecommendations": [
+        "-测量标准：辅助的减少，自发行为的增加",
+        "-该项评估得 4-5 分，孩子过渡到较少限制的教育环境的几率增加"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T15",
+    "transitionName": "自我玩耍和休闲技能",
+    "transitionNo": 15,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "里程碑评估中独立玩耍的得分为 3 分"
+        },
+        {
+          "score": 2,
+          "description": "里程碑评估中独立玩耍的得分为 5 分"
+        },
+        {
+          "score": 3,
+          "description": "里程碑评估中独立玩耍的得分为 8 分"
+        },
+        {
+          "score": 4,
+          "description": "里程碑评估中独立玩耍的得分为 11 分"
+        },
+        {
+          "score": 5,
+          "description": "里程碑评估中独立玩耍的得分为 14 分"
+        }
+      ],
+      "placementRecommendations": [
+        "-VB-MAPP 里程碑中的独立游戏可用来测量该项目",
+        "-该项得 4-5 分，支持在限制较少的教育环境中成功学习"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T16",
+    "transitionName": "一般的自理能力",
+    "transitionNo": 16,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "不能独立自理，但当成人提供个人照料时不会出现不良行为"
+        },
+        {
+          "score": 2,
+          "description": "需要语言或身体提示来完成自我服务任务"
+        },
+        {
+          "score": 3,
+          "description": "需要大量的语言提示，但是会尝试大概的自我服务任务"
+        },
+        {
+          "score": 4,
+          "description": "能主动地完成自我服务任务并且通常会主动做好，但仍然需要语言提示"
+        },
+        {
+          "score": 5,
+          "description": "有动力，能主动做好大多数技能，能泛化，但可能需要语言提示"
+        }
+      ],
+      "placementRecommendations": [
+        "-该项得 4-5 分，在较少限制的环境中学习"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T17",
+    "transitionName": "如厕技能",
+    "transitionNo": 17,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "仍然要穿纸尿裤，但能表现出如厕训练的准备(如干燥时间，能坐持续 2 分钟)"
+        },
+        {
+          "score": 2,
+          "description": "如厕训练已经开始，坐在马桶上偶尔会小便，但仍然要穿纸尿裤"
+        },
+        {
+          "score": 3,
+          "description": "白天的膀胱训练，使用引体向上，偶尔会出现小问题，需要提示和协助才能完成入厕的规则"
+        },
+        {
+          "score": 4,
+          "description": "膀胱和肠道的训练，但需要提示和协助才能完成入厕的规则"
+        },
+        {
+          "score": 5,
+          "description": "能自发地或要求使用洗手间，并能独立完成入厕规则"
+        }
+      ],
+      "placementRecommendations": [
+        "-得 4-5 分表明孩子的如厕技能已经建立，并且这一问题不会影响在较少限制的环境中学习"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  },
+  {
+    "moduleCode": "transition",
+    "transitionCode": "T18",
+    "transitionName": "进餐技能",
+    "transitionNo": 18,
+    "category": "第三类",
+    "recordDepth": "computed_summary_with_teacher_override",
+    "uiPattern": "transition_rating_with_auto_basis",
+    "fieldTemplateIds": [
+      "score",
+      "transition_evidence_summary",
+      "teacher_note"
+    ],
+    "evidenceTargets": [
+      "系统计算依据",
+      "老师补充证据",
+      "安置建议",
+      "历史变化",
+      "人工覆盖原因"
+    ],
+    "scoreEvidence": {
+      "scoreRange": [
+        1,
+        5
+      ],
+      "scoreOptions": [
+        {
+          "score": 1,
+          "description": "能表现出部分独立的进餐，需要很多身体的提示才能吃饭，通常会撒饭"
+        },
+        {
+          "score": 2,
+          "description": "能独立吃小点心，但需要成人来安排食物、语言提示并清理"
+        },
+        {
+          "score": 3,
+          "description": "能独立地从午餐盒中拿出食物、吃小点心，但需要成人语言提示才会进餐"
+        },
+        {
+          "score": 4,
+          "description": "会独立地使用勺子，不需要提示就能进餐，会撒一些食物，需要提示来进行清理"
+        },
+        {
+          "score": 5,
+          "description": "能独立地拿取食物、进餐，并能使用餐具，能独立地清理，或仅需一个语言提示"
+        }
+      ],
+      "placementRecommendations": [
+        "-得 4-5 分表明孩子的进餐技能已经建立，并且这一问题不影响在新的环境中学习"
+      ],
+      "requiresTeacherConfirmation": true
+    },
+    "autoCompletion": {
+      "canAutoCompleteDraft": false,
+      "canSuggestScore": false,
+      "scoreStrategy": "teacher_rates_transition_with_evidence",
+      "computedIndicators": [
+        "milestone_total",
+        "barrier_total",
+        "domain_scores",
+        "history_delta",
+        "teacher_override_reason"
+      ],
+      "requiresTeacherConfirmation": true,
+      "teacherCanOverride": true
+    },
+    "sourceFiles": [
+      "VB-MAPP第三部分------转衔评估.pdf"
+    ]
+  }
+]

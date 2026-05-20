@@ -48,6 +48,37 @@ func TestScoreVBMAPPWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 }
 
+func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	dataDir := filepath.Join(root, "docs", "vbmapp")
+	if _, err := os.Stat(filepath.Join(dataDir, "milestone-response-schemas.json")); err != nil {
+		t.Skipf("generated VB-MAPP response schema data not present: %s", dataDir)
+	}
+
+	schema, err := (&Service{}).VBMAPPAssessmentSchema()
+	if err != nil {
+		t.Fatalf("VBMAPPAssessmentSchema returned error: %v", err)
+	}
+	if schema.ScaleCode != vbmappScaleCode || schema.ScaleVersion != vbmappScaleVersion {
+		t.Fatalf("unexpected schema data info: %+v", schema.VBMAPPScoreDataInfo)
+	}
+	if len(schema.MilestoneItems) != 170 || len(schema.MilestoneResponseSchemas) != 170 {
+		t.Fatalf("unexpected milestone schema counts: items=%d schemas=%d", len(schema.MilestoneItems), len(schema.MilestoneResponseSchemas))
+	}
+	if len(schema.Barriers) != 24 || len(schema.BarrierResponseSchemas) != 24 {
+		t.Fatalf("unexpected barrier schema counts: items=%d schemas=%d", len(schema.Barriers), len(schema.BarrierResponseSchemas))
+	}
+	if len(schema.Transitions) != 18 || len(schema.TransitionResponseSchemas) != 18 {
+		t.Fatalf("unexpected transition schema counts: items=%d schemas=%d", len(schema.Transitions), len(schema.TransitionResponseSchemas))
+	}
+	if schema.MilestoneResponseSchemas[0].MilestoneID != "MAND_01M" || schema.MilestoneResponseSchemas[0].UIPattern == "" {
+		t.Fatalf("unexpected first milestone schema: %+v", schema.MilestoneResponseSchemas[0])
+	}
+	if len(schema.ResponseFieldTemplates) == 0 || len(schema.ResponseMaterialProfiles) == 0 || len(schema.ResponseSchemaSummary) == 0 {
+		t.Fatalf("expected schema support dictionaries: %+v", schema)
+	}
+}
+
 func TestBuildVBMAPPAssessmentDraftProgressWithPartialScoresWhenPresent(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	dataDir := filepath.Join(root, "docs", "vbmapp")
@@ -144,6 +175,48 @@ func TestApplyVBMAPPItemScoreValidatesModuleScoreShape(t *testing.T) {
 	}
 	if input.TransitionScores["T01"] != 4 {
 		t.Fatalf("unexpected transition scores: %+v", input.TransitionScores)
+	}
+}
+
+func TestMergeVBMAPPDraftInputSnapshotStoresItemEvidence(t *testing.T) {
+	score := 1.0
+	suggestedScore := 0.5
+	confirmed := true
+	snapshot, err := mergeVBMAPPDraftInputSnapshot(nil, vbmappscore.AssessmentInput{
+		MilestoneScores: map[string]float64{"MAND_01M": 1},
+	}, vbmappItemResponsePatch{
+		ModuleCode:       "里程碑评估",
+		ItemCode:         "mand_01m",
+		Score:            &score,
+		SuggestedScore:   &suggestedScore,
+		TeacherConfirmed: &confirmed,
+		RecordStatus:     "confirmed",
+		Evidence: map[string]any{
+			"spokenWords": []any{"饼干", "球"},
+			"promptLevel": "无肢体辅助",
+		},
+	})
+	if err != nil {
+		t.Fatalf("mergeVBMAPPDraftInputSnapshot returned error: %v", err)
+	}
+	raw, err := json.Marshal(snapshot)
+	if err != nil {
+		t.Fatalf("marshal snapshot: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatalf("decode snapshot: %v", err)
+	}
+	itemResponses := decoded["itemResponses"].(map[string]any)
+	milestones := itemResponses["milestones"].(map[string]any)
+	response := milestones["MAND_01M"].(map[string]any)
+	if response["recordStatus"] != "confirmed" || response["teacherConfirmed"] != true {
+		t.Fatalf("unexpected item response status: %+v", response)
+	}
+	evidence := response["evidence"].(map[string]any)
+	words := evidence["spokenWords"].([]any)
+	if len(words) != 2 || words[0] != "饼干" {
+		t.Fatalf("unexpected evidence: %+v", evidence)
 	}
 }
 

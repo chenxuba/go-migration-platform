@@ -3670,6 +3670,7 @@ void main() {
     expect(find.text('0.0 / 170'), findsOneWidget);
     expect(find.text('0 / 96'), findsOneWidget);
     expect(find.text('0 / 90'), findsOneWidget);
+    expect(tester.widget<Switch>(find.byType(Switch)).value, isFalse);
 
     await tester.tap(find.text('1分：2 个'));
     await tester.pump();
@@ -3685,6 +3686,163 @@ void main() {
     await tester.tap(find.text('转衔评估').first);
     await tester.pumpAndSettle();
     expect(find.text('195 / 212'), findsWidgets);
+  });
+
+  testWidgets('VB-MAPP MAND 1M records requests and suggests score',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('提要求1M现场记录'), findsOneWidget);
+    expect(find.text('有效 0/2'), findsOneWidget);
+    expect(find.text('建议 0分'), findsOneWidget);
+    expect(find.text('动机情境'), findsNothing);
+    expect(find.text('形式'), findsNothing);
+
+    final Finder requestField = find.byType(TextField).first;
+    await tester.enterText(requestField, '饼干');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('有效 1/2'), findsOneWidget);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(find.text('饼干 -> 饼干'), findsNothing);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('vbmapp-mand-record-0')))
+          .height,
+      tester
+          .getSize(find.byKey(const ValueKey<String>('vbmapp-mand-record-1')))
+          .height,
+    );
+
+    await tester.enterText(requestField, '书');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('有效 2/2'), findsOneWidget);
+    expect(find.text('建议 1分'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
+    expect(find.text('书 -> 书'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-0')),
+        findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-1')),
+        findsOneWidget);
+    expect(
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-0')))
+          .dy,
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-1')))
+          .dy,
+    );
+
+    await tester.enterText(requestField, '苹果');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('补充记录'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-2')),
+        findsOneWidget);
+    expect(find.text('苹果'), findsOneWidget);
+    expect(find.text('呈现物品 · 物品 · 无肢体辅助'), findsWidgets);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('vbmapp-mand-record-2')))
+          .width,
+      greaterThan(tester
+              .getSize(
+                  find.byKey(const ValueKey<String>('vbmapp-mand-record-0')))
+              .width *
+          1.8),
+    );
+
+    await tester.tap(find.text('是'));
+    await tester.pumpAndSettle();
+    await tester.enterText(requestField, '秋千');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-3')),
+        findsOneWidget);
+    expect(find.text('不计'), findsOneWidget);
+    expect(find.text('呈现物品 · 物品 · 肢体辅助'), findsOneWidget);
+    expect(
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-2')))
+          .dy,
+      tester
+          .getTopLeft(
+              find.byKey(const ValueKey<String>('vbmapp-mand-record-3')))
+          .dy,
+    );
+    expect(find.text('删除'), findsNothing);
+
+    final double recordHeightBeforeDelete = tester
+        .getSize(find.byKey(const ValueKey<String>('vbmapp-mand-record-2')))
+        .height;
+    await tester
+        .tap(find.byKey(const ValueKey<String>('vbmapp-mand-record-2')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('删除'), findsOneWidget);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey<String>('vbmapp-mand-record-2')))
+          .height,
+      recordHeightBeforeDelete,
+    );
+
+    await tester
+        .tap(find.byKey(const ValueKey<String>('vbmapp-mand-delete-record')));
+    await tester.pumpAndSettle();
+
+    expect(find.text('苹果'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand-record-3')),
+        findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const ValueKey<String>('vbmapp-mand-record-2')),
+        matching: find.text('秋千'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('有效 2/2'), findsOneWidget);
+    expect(find.text('建议 1分'), findsOneWidget);
+    expect(find.text('删除'), findsNothing);
+    expect(client.saveDraftItemCalls, 5);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',
@@ -8147,6 +8305,8 @@ const AssessmentScaleItem _vbmappScaleItem = AssessmentScaleItem(
 );
 
 class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
+  int saveDraftItemCalls = 0;
+
   @override
   Future<AssessmentDraftPage> fetchDraftsPage(
     String token, {
@@ -8164,6 +8324,15 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
   }
 
   @override
+  Future<VbmappAssessmentSchema> fetchAssessmentSchema(String token) async {
+    return const VbmappAssessmentSchema(
+      scaleVersion: 'VBMAPP_CN_2ND_DRAFT_2026_05',
+      itemSchemas: <String, VbmappItemResponseSchema>{},
+      materialProfiles: <String, VbmappMaterialProfile>{},
+    );
+  }
+
+  @override
   Future<VbmappDraftSaveResult> saveDraft(
     String token,
     Map<String, dynamic> payload,
@@ -8177,6 +8346,26 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
       status: 'draft',
       answeredItemCount: 1,
       completionPercent: 0.01,
+    );
+  }
+
+  @override
+  Future<VbmappDraftDetail> saveDraftItem(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    saveDraftItemCalls += 1;
+    return VbmappDraftDetail(
+      id: (payload['draftId'] as num?)?.toInt() ?? 17,
+      studentId: 0,
+      studentName: '',
+      birthDate: '',
+      assessmentDate: '',
+      examinerName: '',
+      milestoneScores: const <String, double>{},
+      barrierScores: const <String, int>{},
+      transitionScores: const <String, int>{},
+      itemResponses: const <String, Map<String, Map<String, dynamic>>>{},
     );
   }
 

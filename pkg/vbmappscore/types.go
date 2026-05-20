@@ -229,3 +229,105 @@ type TransitionSuggestion struct {
 	Score          int    `json:"score"`
 	Basis          string `json:"basis"`
 }
+
+type ResponseFieldTemplate struct {
+	Label         string   `json:"label"`
+	Control       string   `json:"control"`
+	Required      bool     `json:"required"`
+	RecordPurpose string   `json:"recordPurpose,omitempty"`
+	Columns       []string `json:"columns,omitempty"`
+	Options       []string `json:"options,omitempty"`
+}
+
+type ResponseMaterialProfile struct {
+	Label             string   `json:"label"`
+	SourceLogic       string   `json:"sourceLogic,omitempty"`
+	SuggestedTypes    []string `json:"suggestedTypes,omitempty"`
+	PreparationChecks []string `json:"preparationChecks,omitempty"`
+}
+
+type ResponseSchemaScoreEvidence struct {
+	PrimaryMetric            string            `json:"primaryMetric,omitempty"`
+	OnePointCriteria         string            `json:"onePointCriteria,omitempty"`
+	HalfPointCriteria        string            `json:"halfPointCriteria,omitempty"`
+	RawCriteria              map[string]string `json:"rawCriteria,omitempty"`
+	ScoreRange               []int             `json:"scoreRange,omitempty"`
+	ScoreOptions             []ScoreOption     `json:"scoreOptions,omitempty"`
+	PlacementRecommendations []string          `json:"placementRecommendations,omitempty"`
+	RequiresTeacherConfirm   bool              `json:"requiresTeacherConfirmation"`
+}
+
+type ResponseSchemaAutoCompletion struct {
+	CanAutoCompleteDraft   bool     `json:"canAutoCompleteDraft"`
+	CanSuggestScore        bool     `json:"canSuggestScore"`
+	ScoreStrategy          string   `json:"scoreStrategy"`
+	PrimaryMetric          string   `json:"primaryMetric,omitempty"`
+	ComputedIndicators     []string `json:"computedIndicators,omitempty"`
+	RequiresTeacherConfirm bool     `json:"requiresTeacherConfirmation"`
+	TeacherCanOverride     bool     `json:"teacherCanOverride"`
+}
+
+type ResponseSchemaRelatedItem struct {
+	Relation    string `json:"relation"`
+	MilestoneID string `json:"milestoneId"`
+	Reason      string `json:"reason,omitempty"`
+}
+
+type ResponseSchemaItemDesign struct {
+	RecordingInstructions []string `json:"recordingInstructions,omitempty"`
+	UIEmphasis            []string `json:"uiEmphasis,omitempty"`
+}
+
+type MilestoneResponseSchema struct {
+	ModuleCode        string                       `json:"moduleCode"`
+	MilestoneID       string                       `json:"milestoneId"`
+	Label             string                       `json:"label,omitempty"`
+	DomainCode        string                       `json:"domainCode"`
+	DomainName        string                       `json:"domainName,omitempty"`
+	Level             int                          `json:"level"`
+	AgeBand           string                       `json:"ageBand,omitempty"`
+	MilestoneNo       int                          `json:"milestoneNo"`
+	AssessmentMode    string                       `json:"assessmentMode,omitempty"`
+	RecordDepth       string                       `json:"recordDepth"`
+	RecordType        string                       `json:"recordType"`
+	UIPattern         string                       `json:"uiPattern"`
+	MaterialProfileID string                       `json:"materialProfileId,omitempty"`
+	WhyRecord         string                       `json:"whyRecord,omitempty"`
+	EvidenceTargets   []string                     `json:"evidenceTargets,omitempty"`
+	FieldTemplateIDs  []string                     `json:"fieldTemplateIds,omitempty"`
+	QualityChecks     []string                     `json:"qualityChecks,omitempty"`
+	ScoreEvidence     ResponseSchemaScoreEvidence  `json:"scoreEvidence"`
+	AutoCompletion    ResponseSchemaAutoCompletion `json:"autoCompletion"`
+	RelatedItems      []ResponseSchemaRelatedItem  `json:"relatedItems,omitempty"`
+	ItemDesign        ResponseSchemaItemDesign     `json:"itemDesign,omitempty"`
+	SourceFiles       []string                     `json:"sourceFiles,omitempty"`
+}
+
+type BarrierResponseSchema struct {
+	ModuleCode       string                       `json:"moduleCode"`
+	BarrierCode      string                       `json:"barrierCode"`
+	BarrierName      string                       `json:"barrierName"`
+	BarrierNo        int                          `json:"barrierNo"`
+	RecordDepth      string                       `json:"recordDepth"`
+	UIPattern        string                       `json:"uiPattern"`
+	FieldTemplateIDs []string                     `json:"fieldTemplateIds,omitempty"`
+	EvidenceTargets  []string                     `json:"evidenceTargets,omitempty"`
+	ScoreEvidence    ResponseSchemaScoreEvidence  `json:"scoreEvidence"`
+	AutoCompletion   ResponseSchemaAutoCompletion `json:"autoCompletion"`
+	SourceFiles      []string                     `json:"sourceFiles,omitempty"`
+}
+
+type TransitionResponseSchema struct {
+	ModuleCode       string                       `json:"moduleCode"`
+	TransitionCode   string                       `json:"transitionCode"`
+	TransitionName   string                       `json:"transitionName"`
+	TransitionNo     int                          `json:"transitionNo"`
+	Category         string                       `json:"category,omitempty"`
+	RecordDepth      string                       `json:"recordDepth"`
+	UIPattern        string                       `json:"uiPattern"`
+	FieldTemplateIDs []string                     `json:"fieldTemplateIds,omitempty"`
+	EvidenceTargets  []string                     `json:"evidenceTargets,omitempty"`
+	ScoreEvidence    ResponseSchemaScoreEvidence  `json:"scoreEvidence"`
+	AutoCompletion   ResponseSchemaAutoCompletion `json:"autoCompletion"`
+	SourceFiles      []string                     `json:"sourceFiles,omitempty"`
+}

@@ -29,10 +29,15 @@ type VBMAPPAssessmentDraftSaveInput struct {
 }
 
 type VBMAPPAssessmentDraftItemSaveInput struct {
-	DraftID    int64
-	ModuleCode string
-	ItemCode   string
-	Score      *float64
+	DraftID          int64
+	ModuleCode       string
+	ItemCode         string
+	Score            *float64
+	SuggestedScore   *float64
+	TeacherConfirmed *bool
+	OverrideReason   string
+	RecordStatus     string
+	Evidence         map[string]any
 }
 
 type vbmappSavedInputSnapshot struct {
@@ -64,6 +69,17 @@ type vbmappSavedScoreInt struct {
 	TransitionCode string `json:"transitionCode,omitempty"`
 	Code           string `json:"code,omitempty"`
 	Score          int    `json:"score"`
+}
+
+type vbmappItemResponsePatch struct {
+	ModuleCode       string
+	ItemCode         string
+	Score            *float64
+	SuggestedScore   *float64
+	TeacherConfirmed *bool
+	OverrideReason   string
+	RecordStatus     string
+	Evidence         map[string]any
 }
 
 func (svc *Service) SaveVBMAPPAssessmentDraft(userID int64, input VBMAPPAssessmentDraftSaveInput) (model.AssessmentDraftDetailVO, error) {
@@ -125,8 +141,8 @@ func (svc *Service) SaveVBMAPPAssessmentDraftItem(userID int64, input VBMAPPAsse
 	if strings.TrimSpace(input.ItemCode) == "" {
 		return model.AssessmentDraftDetailVO{}, errors.New("itemCode is required")
 	}
-	if input.Score == nil {
-		return model.AssessmentDraftDetailVO{}, errors.New("score is required")
+	if input.Score == nil && input.SuggestedScore == nil && input.TeacherConfirmed == nil && strings.TrimSpace(input.OverrideReason) == "" && strings.TrimSpace(input.RecordStatus) == "" && len(input.Evidence) == 0 {
+		return model.AssessmentDraftDetailVO{}, errors.New("score or evidence is required")
 	}
 
 	instID, examinerID, _, err := svc.pep3AssessmentActor(userID, "")
@@ -148,14 +164,25 @@ func (svc *Service) SaveVBMAPPAssessmentDraftItem(userID int64, input VBMAPPAsse
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	if err := applyVBMAPPItemScore(&scoreInput, input.ModuleCode, input.ItemCode, *input.Score); err != nil {
-		return model.AssessmentDraftDetailVO{}, err
+	if input.Score != nil {
+		if err := applyVBMAPPItemScore(&scoreInput, input.ModuleCode, input.ItemCode, *input.Score); err != nil {
+			return model.AssessmentDraftDetailVO{}, err
+		}
 	}
 	progress, err := buildVBMAPPAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, scoreInput)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	inputSnapshot, err := mergeVBMAPPDraftInputSnapshot(draft.InputJSON, scoreInput)
+	inputSnapshot, err := mergeVBMAPPDraftInputSnapshot(draft.InputJSON, scoreInput, vbmappItemResponsePatch{
+		ModuleCode:       input.ModuleCode,
+		ItemCode:         input.ItemCode,
+		Score:            input.Score,
+		SuggestedScore:   input.SuggestedScore,
+		TeacherConfirmed: input.TeacherConfirmed,
+		OverrideReason:   input.OverrideReason,
+		RecordStatus:     input.RecordStatus,
+		Evidence:         input.Evidence,
+	})
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -393,7 +420,7 @@ func applyVBMAPPItemScore(input *vbmappscore.AssessmentInput, moduleCode, itemCo
 	return nil
 }
 
-func mergeVBMAPPDraftInputSnapshot(raw json.RawMessage, input vbmappscore.AssessmentInput) (any, error) {
+func mergeVBMAPPDraftInputSnapshot(raw json.RawMessage, input vbmappscore.AssessmentInput, itemPatches ...vbmappItemResponsePatch) (any, error) {
 	var snapshot map[string]any
 	if len(raw) > 0 {
 		_ = json.Unmarshal(raw, &snapshot)
@@ -412,7 +439,54 @@ func mergeVBMAPPDraftInputSnapshot(raw json.RawMessage, input vbmappscore.Assess
 	setVBMAPPFloatScoresOnSnapshot(snapshot, "previousMilestoneScores", "previousMilestoneScoreList", input.PreviousMilestoneScores, "milestoneId")
 	setVBMAPPIntScoresOnSnapshot(snapshot, "previousBarrierScores", "previousBarrierScoreList", input.PreviousBarrierScores, "barrierCode")
 	setVBMAPPIntScoresOnSnapshot(snapshot, "previousTransitionScores", "previousTransitionScoreList", input.PreviousTransitionScores, "transitionCode")
+	for _, patch := range itemPatches {
+		applyVBMAPPItemResponsePatch(snapshot, patch)
+	}
 	return snapshot, nil
+}
+
+func applyVBMAPPItemResponsePatch(snapshot map[string]any, patch vbmappItemResponsePatch) {
+	moduleCode := normalizeVBMAPPModuleCode(patch.ModuleCode)
+	itemCode := normalizeVBMAPPScoreCode(patch.ItemCode)
+	if moduleCode == "" || itemCode == "" {
+		return
+	}
+	itemResponses := ensureVBMAPPStringAnyMap(snapshot, "itemResponses")
+	moduleResponses := ensureVBMAPPStringAnyMap(itemResponses, moduleCode)
+	itemResponse := ensureVBMAPPStringAnyMap(moduleResponses, itemCode)
+	itemResponse["moduleCode"] = moduleCode
+	itemResponse["itemCode"] = itemCode
+	if patch.Score != nil {
+		itemResponse["score"] = *patch.Score
+	}
+	if patch.SuggestedScore != nil {
+		itemResponse["suggestedScore"] = *patch.SuggestedScore
+	}
+	if patch.TeacherConfirmed != nil {
+		itemResponse["teacherConfirmed"] = *patch.TeacherConfirmed
+	}
+	if trimmed := strings.TrimSpace(patch.OverrideReason); trimmed != "" {
+		itemResponse["overrideReason"] = trimmed
+	}
+	if trimmed := strings.TrimSpace(patch.RecordStatus); trimmed != "" {
+		itemResponse["recordStatus"] = trimmed
+	}
+	if len(patch.Evidence) > 0 {
+		itemResponse["evidence"] = patch.Evidence
+	}
+	itemResponse["updatedAt"] = time.Now().UTC().Format(time.RFC3339)
+}
+
+func ensureVBMAPPStringAnyMap(parent map[string]any, key string) map[string]any {
+	if existing, ok := parent[key].(map[string]any); ok {
+		return existing
+	}
+	if existing, ok := parent[key].(map[string]interface{}); ok {
+		return map[string]any(existing)
+	}
+	next := map[string]any{}
+	parent[key] = next
+	return next
 }
 
 func setVBMAPPFloatScoresOnSnapshot(snapshot map[string]any, mapKey, listKey string, scores map[string]float64, codeField string) {

@@ -1,6 +1,7 @@
 package service
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -18,7 +19,13 @@ const (
 	vbmappMilestoneRuleFile     = "milestone-scoring-rules.json"
 	vbmappBarrierFile           = "barriers.json"
 	vbmappTransitionFile        = "transition.json"
-	vbmappStaticRevision        = "draft-2026-05-19"
+	vbmappMilestoneSchemaFile   = "milestone-response-schemas.json"
+	vbmappBarrierSchemaFile     = "barrier-response-schemas.json"
+	vbmappTransitionSchemaFile  = "transition-response-schemas.json"
+	vbmappFieldTemplateFile     = "response-field-templates.json"
+	vbmappMaterialProfileFile   = "response-material-profiles.json"
+	vbmappSchemaSummaryFile     = "response-schema-summary.json"
+	vbmappStaticRevision        = "draft-2026-05-20"
 	vbmappDraftDataStatus       = "draft"
 	vbmappDefaultDataSubdirName = "vbmapp"
 )
@@ -34,6 +41,20 @@ type VBMAPPScoreDataInfo struct {
 type VBMAPPScoreResponse struct {
 	VBMAPPScoreDataInfo
 	Result vbmappscore.AssessmentResult `json:"result"`
+}
+
+type VBMAPPAssessmentSchemaResponse struct {
+	VBMAPPScoreDataInfo
+	Domains                   []vbmappscore.DomainDefinition                 `json:"domains"`
+	MilestoneItems            []vbmappscore.MilestoneItemDefinition          `json:"milestoneItems"`
+	Barriers                  []vbmappscore.BarrierDefinition                `json:"barriers"`
+	Transitions               []vbmappscore.TransitionDefinition             `json:"transitions"`
+	MilestoneResponseSchemas  []vbmappscore.MilestoneResponseSchema          `json:"milestoneResponseSchemas"`
+	BarrierResponseSchemas    []vbmappscore.BarrierResponseSchema            `json:"barrierResponseSchemas"`
+	TransitionResponseSchemas []vbmappscore.TransitionResponseSchema         `json:"transitionResponseSchemas"`
+	ResponseFieldTemplates    map[string]vbmappscore.ResponseFieldTemplate   `json:"responseFieldTemplates"`
+	ResponseMaterialProfiles  map[string]vbmappscore.ResponseMaterialProfile `json:"responseMaterialProfiles"`
+	ResponseSchemaSummary     map[string]any                                 `json:"responseSchemaSummary,omitempty"`
 }
 
 type vbmappStaticData struct {
@@ -65,6 +86,64 @@ func (svc *Service) ScoreVBMAPP(input vbmappscore.AssessmentInput) (VBMAPPScoreR
 	return VBMAPPScoreResponse{
 		VBMAPPScoreDataInfo: info,
 		Result:              result,
+	}, nil
+}
+
+func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, error) {
+	data, err := loadVBMAPPStaticData()
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, err
+	}
+	dataDir, err := resolveVBMAPPDataDir()
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, err
+	}
+	if err := requireVBMAPPResponseSchemaFiles(dataDir); err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, err
+	}
+	milestoneSchemas, err := vbmappscore.LoadMilestoneResponseSchemasFile(filepath.Join(dataDir, vbmappMilestoneSchemaFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP milestone response schemas: %w", err)
+	}
+	barrierSchemas, err := vbmappscore.LoadBarrierResponseSchemasFile(filepath.Join(dataDir, vbmappBarrierSchemaFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP barrier response schemas: %w", err)
+	}
+	transitionSchemas, err := vbmappscore.LoadTransitionResponseSchemasFile(filepath.Join(dataDir, vbmappTransitionSchemaFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP transition response schemas: %w", err)
+	}
+	fieldTemplates, err := vbmappscore.LoadResponseFieldTemplatesFile(filepath.Join(dataDir, vbmappFieldTemplateFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP response field templates: %w", err)
+	}
+	materialProfiles, err := vbmappscore.LoadResponseMaterialProfilesFile(filepath.Join(dataDir, vbmappMaterialProfileFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP response material profiles: %w", err)
+	}
+	summary, err := loadVBMAPPResponseSchemaSummary(filepath.Join(dataDir, vbmappSchemaSummaryFile))
+	if err != nil {
+		return VBMAPPAssessmentSchemaResponse{}, err
+	}
+	sources, dataStatus := vbmappSchemaDataSources()
+	return VBMAPPAssessmentSchemaResponse{
+		VBMAPPScoreDataInfo: VBMAPPScoreDataInfo{
+			ScaleCode:      vbmappScaleCode,
+			ScaleVersion:   vbmappScaleVersion,
+			AssessmentName: vbmappAssessmentName,
+			DataStatus:     dataStatus,
+			Sources:        sources,
+		},
+		Domains:                   data.domains,
+		MilestoneItems:            data.milestones,
+		Barriers:                  data.barriers,
+		Transitions:               data.transitions,
+		MilestoneResponseSchemas:  milestoneSchemas,
+		BarrierResponseSchemas:    barrierSchemas,
+		TransitionResponseSchemas: transitionSchemas,
+		ResponseFieldTemplates:    fieldTemplates,
+		ResponseMaterialProfiles:  materialProfiles,
+		ResponseSchemaSummary:     summary,
 	}, nil
 }
 
@@ -157,6 +236,19 @@ func resolveVBMAPPDataDir() (string, error) {
 	return "", fmt.Errorf("VB-MAPP data files not found; set VBMAPP_DATA_DIR to the directory containing %s", vbmappMilestoneItemFile)
 }
 
+func loadVBMAPPResponseSchemaSummary(path string) (map[string]any, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP response schema summary: %w", err)
+	}
+	defer file.Close()
+	var summary map[string]any
+	if err := json.NewDecoder(file).Decode(&summary); err != nil {
+		return nil, fmt.Errorf("decode VB-MAPP response schema summary: %w", err)
+	}
+	return summary, nil
+}
+
 func requireVBMAPPDataFiles(dir string) error {
 	for _, name := range []string{
 		vbmappDomainFile,
@@ -172,6 +264,22 @@ func requireVBMAPPDataFiles(dir string) error {
 	return nil
 }
 
+func requireVBMAPPResponseSchemaFiles(dir string) error {
+	for _, name := range []string{
+		vbmappMilestoneSchemaFile,
+		vbmappBarrierSchemaFile,
+		vbmappTransitionSchemaFile,
+		vbmappFieldTemplateFile,
+		vbmappMaterialProfileFile,
+		vbmappSchemaSummaryFile,
+	} {
+		if !fileExists(filepath.Join(dir, name)) {
+			return fmt.Errorf("VB-MAPP response schema file %s not found in %s", name, dir)
+		}
+	}
+	return nil
+}
+
 func vbmappDataSources() ([]string, string) {
 	return []string{
 		vbmappDefaultDataSubdirName + "/" + vbmappDomainFile,
@@ -181,4 +289,16 @@ func vbmappDataSources() ([]string, string) {
 		vbmappDefaultDataSubdirName + "/" + vbmappTransitionFile,
 		"revision:" + vbmappStaticRevision,
 	}, vbmappDraftDataStatus
+}
+
+func vbmappSchemaDataSources() ([]string, string) {
+	sources, dataStatus := vbmappDataSources()
+	return append(sources,
+		vbmappDefaultDataSubdirName+"/"+vbmappMilestoneSchemaFile,
+		vbmappDefaultDataSubdirName+"/"+vbmappBarrierSchemaFile,
+		vbmappDefaultDataSubdirName+"/"+vbmappTransitionSchemaFile,
+		vbmappDefaultDataSubdirName+"/"+vbmappFieldTemplateFile,
+		vbmappDefaultDataSubdirName+"/"+vbmappMaterialProfileFile,
+		vbmappDefaultDataSubdirName+"/"+vbmappSchemaSummaryFile,
+	), dataStatus
 }
