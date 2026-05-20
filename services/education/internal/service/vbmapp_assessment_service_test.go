@@ -229,6 +229,68 @@ func TestMergeVBMAPPDraftInputSnapshotStoresItemEvidence(t *testing.T) {
 	}
 }
 
+func TestDecodeSavedVBMAPPAssessmentInputRestoresItemResponses(t *testing.T) {
+	raw := json.RawMessage(`{
+		"scaleVersion":"VBMAPP_CN_2ND_DRAFT_2026_05",
+		"itemResponses":{
+			"里程碑评估":{
+				" mand_08m ":{
+					"evidence":{
+						"mandEvents":[
+							{"utterance":"跑快点","promptLevel":"无辅助","functional":true}
+						]
+					}
+				}
+			}
+		}
+	}`)
+
+	input, err := decodeSavedVBMAPPAssessmentInput(raw)
+	if err != nil {
+		t.Fatalf("decodeSavedVBMAPPAssessmentInput returned error: %v", err)
+	}
+	if input.ItemResponses["milestones"]["MAND_08M"]["itemCode"] != "MAND_08M" {
+		t.Fatalf("unexpected normalized item responses: %+v", input.ItemResponses)
+	}
+}
+
+func TestResolvedVBMAPPDraftItemScorePrefersBackendAutoScoreForMAND08M(t *testing.T) {
+	input := vbmappscore.AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			vbmappscore.ModuleMilestones: {
+				"MAND_08M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "跑快点", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "该我了", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "泡泡", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "饼干", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "倒果汁", "promptLevel": "无辅助", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	}
+	clientSuggestedScore := 0.5
+	autoSuggestedScore := 0.5
+	score := resolvedVBMAPPDraftItemScore(input, vbmappItemResponsePatch{
+		ModuleCode:       "milestones",
+		ItemCode:         "MAND_08M",
+		Score:            &clientSuggestedScore,
+		SuggestedScore:   &autoSuggestedScore,
+		TeacherConfirmed: boolPtr(false),
+		RecordStatus:     "auto_suggested",
+	})
+	if score == nil || *score != 1 {
+		t.Fatalf("expected backend auto score 1, got %+v", score)
+	}
+}
+
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 func TestBuildVBMAPPAssessmentHistoryCalculatesRecordChanges(t *testing.T) {
 	firstResult := VBMAPPScoreResponse{
 		VBMAPPScoreDataInfo: VBMAPPScoreDataInfo{

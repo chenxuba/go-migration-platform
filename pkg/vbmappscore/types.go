@@ -88,6 +88,8 @@ type AssessmentInput struct {
 	BarrierScores    map[string]int     `json:"barrierScores,omitempty"`
 	TransitionScores map[string]int     `json:"transitionScores,omitempty"`
 
+	ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
+
 	PreviousMilestoneScores  map[string]float64 `json:"previousMilestoneScores,omitempty"`
 	PreviousBarrierScores    map[string]int     `json:"previousBarrierScores,omitempty"`
 	PreviousTransitionScores map[string]int     `json:"previousTransitionScores,omitempty"`

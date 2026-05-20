@@ -151,6 +151,105 @@ func TestScoreRejectsInvalidValues(t *testing.T) {
 	}
 }
 
+func TestScoreAutoCalculatesMAND08MFromEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_08M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "跑快点", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "该我了", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "泡泡", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "饼干", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "倒果汁", "promptLevel": "无辅助", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_08M")
+	if item.Score == nil || *item.Score != 1 {
+		t.Fatalf("expected MAND_08M score 1 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND08MHalfPointWhenOnlyTwoQualified(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_08M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "泡泡", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "饼干", "promptLevel": "无辅助", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_08M")
+	if item.Score == nil || *item.Score != 0.5 {
+		t.Fatalf("expected MAND_08M score 0.5 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND08MDoesNotCountWoXiangYaoAsMultiWord(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_08M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "跑快点", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "泡泡", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "饼干", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "车车", "promptLevel": "无辅助", "functional": true},
+							map[string]any{"utterance": "我想要书", "promptLevel": "无辅助", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_08M")
+	if item.Score == nil || *item.Score != 0.5 {
+		t.Fatalf("expected MAND_08M score 0.5 when only one true multi-word request exists, got %+v", item)
+	}
+}
+
 func loadGeneratedDrafts(t *testing.T) (
 	[]DomainDefinition,
 	[]MilestoneItemDefinition,
@@ -205,6 +304,17 @@ func findDomain(t *testing.T, result MilestoneModuleResult, code string) DomainS
 	}
 	t.Fatalf("domain %s not found", code)
 	return DomainScoreResult{}
+}
+
+func findMilestone(t *testing.T, result MilestoneModuleResult, milestoneID string) MilestoneScoreResult {
+	t.Helper()
+	for _, item := range result.Items {
+		if item.MilestoneID == milestoneID {
+			return item
+		}
+	}
+	t.Fatalf("milestone %s not found", milestoneID)
+	return MilestoneScoreResult{}
 }
 
 func suggestionsByCode(suggestions []TransitionSuggestion) map[string]TransitionSuggestion {

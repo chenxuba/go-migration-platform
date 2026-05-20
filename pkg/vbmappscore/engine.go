@@ -340,15 +340,9 @@ func (e *Engine) scoreMilestoneItem(item MilestoneItemDefinition, input Assessme
 		HalfPointCriteria: rule.HalfPointCriteria,
 	}
 	if score, ok := input.MilestoneScores[item.MilestoneID]; ok {
-		result.Score = floatPtr(score)
-		switch score {
-		case 1:
-			result.Status = "passed"
-		case 0.5:
-			result.Status = "partial"
-		default:
-			result.Status = "not_passed"
-		}
+		applyMilestoneScoreResult(&result, score)
+	} else if score, ok := autoMilestoneScoreFromEvidence(item, input); ok {
+		applyMilestoneScoreResult(&result, score)
 	}
 	if previous, ok := input.PreviousMilestoneScores[item.MilestoneID]; ok {
 		result.PreviousScore = floatPtr(previous)
@@ -357,6 +351,18 @@ func (e *Engine) scoreMilestoneItem(item MilestoneItemDefinition, input Assessme
 		}
 	}
 	return result
+}
+
+func applyMilestoneScoreResult(result *MilestoneScoreResult, score float64) {
+	result.Score = floatPtr(score)
+	switch score {
+	case 1:
+		result.Status = "passed"
+	case 0.5:
+		result.Status = "partial"
+	default:
+		result.Status = "not_passed"
+	}
 }
 
 func (e *Engine) scoreBarriers(input AssessmentInput) BarrierModuleResult {

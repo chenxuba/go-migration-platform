@@ -30,6 +30,17 @@ func TestVBMAPPScoreRequestToAssessmentInputNormalizesLists(t *testing.T) {
 		PreviousMilestoneScoreList: []vbmappMilestoneScoreRequest{
 			{MilestoneID: "mand_02m", Score: 0.5},
 		},
+		ItemResponses: map[string]map[string]map[string]any{
+			"里程碑评估": {
+				" mand_08m ": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "跑快点"},
+						},
+					},
+				},
+			},
+		},
 	}
 
 	input, err := req.toAssessmentInput()
@@ -47,6 +58,9 @@ func TestVBMAPPScoreRequestToAssessmentInputNormalizesLists(t *testing.T) {
 	}
 	if input.PreviousMilestoneScores["MAND_02M"] != 0.5 {
 		t.Fatalf("unexpected previous milestone scores: %+v", input.PreviousMilestoneScores)
+	}
+	if input.ItemResponses["milestones"]["MAND_08M"]["itemCode"] != "MAND_08M" {
+		t.Fatalf("unexpected normalized item responses: %+v", input.ItemResponses)
 	}
 }
 

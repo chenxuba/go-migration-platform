@@ -56,6 +56,8 @@ type vbmappSavedInputSnapshot struct {
 	PreviousBarrierScoreList    []vbmappSavedScoreInt     `json:"previousBarrierScoreList,omitempty"`
 	PreviousTransitionScores    map[string]int            `json:"previousTransitionScores,omitempty"`
 	PreviousTransitionScoreList []vbmappSavedScoreInt     `json:"previousTransitionScoreList,omitempty"`
+
+	ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
 }
 
 type vbmappSavedScoreFloat64 struct {
@@ -164,16 +166,7 @@ func (svc *Service) SaveVBMAPPAssessmentDraftItem(userID int64, input VBMAPPAsse
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	if input.Score != nil {
-		if err := applyVBMAPPItemScore(&scoreInput, input.ModuleCode, input.ItemCode, *input.Score); err != nil {
-			return model.AssessmentDraftDetailVO{}, err
-		}
-	}
-	progress, err := buildVBMAPPAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, scoreInput)
-	if err != nil {
-		return model.AssessmentDraftDetailVO{}, err
-	}
-	inputSnapshot, err := mergeVBMAPPDraftInputSnapshot(draft.InputJSON, scoreInput, vbmappItemResponsePatch{
+	patch := vbmappItemResponsePatch{
 		ModuleCode:       input.ModuleCode,
 		ItemCode:         input.ItemCode,
 		Score:            input.Score,
@@ -182,6 +175,30 @@ func (svc *Service) SaveVBMAPPAssessmentDraftItem(userID int64, input VBMAPPAsse
 		OverrideReason:   input.OverrideReason,
 		RecordStatus:     input.RecordStatus,
 		Evidence:         input.Evidence,
+	}
+	applyVBMAPPItemResponseToAssessmentInput(&scoreInput, patch)
+	if score := resolvedVBMAPPDraftItemScore(scoreInput, patch); score != nil {
+		patch.Score = score
+		if shouldRefreshVBMAPPSuggestedScore(patch) {
+			patch.SuggestedScore = score
+		}
+		if err := applyVBMAPPItemScore(&scoreInput, patch.ModuleCode, patch.ItemCode, *score); err != nil {
+			return model.AssessmentDraftDetailVO{}, err
+		}
+	}
+	progress, err := buildVBMAPPAssessmentDraftProgress(draft.BirthDate, draft.AssessmentDate, scoreInput)
+	if err != nil {
+		return model.AssessmentDraftDetailVO{}, err
+	}
+	inputSnapshot, err := mergeVBMAPPDraftInputSnapshot(draft.InputJSON, scoreInput, vbmappItemResponsePatch{
+		ModuleCode:       patch.ModuleCode,
+		ItemCode:         patch.ItemCode,
+		Score:            patch.Score,
+		SuggestedScore:   patch.SuggestedScore,
+		TeacherConfirmed: patch.TeacherConfirmed,
+		OverrideReason:   patch.OverrideReason,
+		RecordStatus:     patch.RecordStatus,
+		Evidence:         patch.Evidence,
 	})
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
@@ -347,10 +364,44 @@ func decodeSavedVBMAPPAssessmentInput(raw json.RawMessage) (vbmappscore.Assessme
 		MilestoneScores:          normalizeSavedVBMAPPFloatScores(snapshot.MilestoneScores, snapshot.MilestoneScoreList),
 		BarrierScores:            normalizeSavedVBMAPPIntScores(snapshot.BarrierScores, snapshot.BarrierScoreList),
 		TransitionScores:         normalizeSavedVBMAPPIntScores(snapshot.TransitionScores, snapshot.TransitionScoreList),
+		ItemResponses:            normalizeSavedVBMAPPItemResponses(snapshot.ItemResponses),
 		PreviousMilestoneScores:  normalizeSavedVBMAPPFloatScores(snapshot.PreviousMilestoneScores, snapshot.PreviousMilestoneScoreList),
 		PreviousBarrierScores:    normalizeSavedVBMAPPIntScores(snapshot.PreviousBarrierScores, snapshot.PreviousBarrierScoreList),
 		PreviousTransitionScores: normalizeSavedVBMAPPIntScores(snapshot.PreviousTransitionScores, snapshot.PreviousTransitionScoreList),
 	}, nil
+}
+
+func normalizeSavedVBMAPPItemResponses(input map[string]map[string]map[string]any) map[string]map[string]map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	normalized := make(map[string]map[string]map[string]any, len(input))
+	for moduleCode, moduleItems := range input {
+		module := normalizeVBMAPPModuleCode(moduleCode)
+		if module == "" || len(moduleItems) == 0 {
+			continue
+		}
+		for itemCode, response := range moduleItems {
+			code := normalizeVBMAPPScoreCode(itemCode)
+			if code == "" || len(response) == 0 {
+				continue
+			}
+			if normalized[module] == nil {
+				normalized[module] = map[string]map[string]any{}
+			}
+			itemResponse := make(map[string]any, len(response)+2)
+			for key, value := range response {
+				itemResponse[key] = value
+			}
+			itemResponse["moduleCode"] = module
+			itemResponse["itemCode"] = code
+			normalized[module][code] = itemResponse
+		}
+	}
+	if len(normalized) == 0 {
+		return nil
+	}
+	return normalized
 }
 
 func normalizeSavedVBMAPPFloatScores(scores map[string]float64, list []vbmappSavedScoreFloat64) map[string]float64 {
@@ -418,6 +469,71 @@ func applyVBMAPPItemScore(input *vbmappscore.AssessmentInput, moduleCode, itemCo
 		return errors.New("moduleCode must be milestones, barriers, or transition")
 	}
 	return nil
+}
+
+func resolvedVBMAPPDraftItemScore(input vbmappscore.AssessmentInput, patch vbmappItemResponsePatch) *float64 {
+	if !shouldPreferAutoVBMAPPScore(patch) {
+		return patch.Score
+	}
+	score, ok := vbmappscore.AutoMilestoneScore(patch.ItemCode, input)
+	if !ok {
+		return patch.Score
+	}
+	return &score
+}
+
+func shouldPreferAutoVBMAPPScore(patch vbmappItemResponsePatch) bool {
+	if normalizeVBMAPPModuleCode(patch.ModuleCode) != vbmappscore.ModuleMilestones {
+		return false
+	}
+	if patch.TeacherConfirmed != nil && *patch.TeacherConfirmed {
+		return false
+	}
+	return strings.TrimSpace(patch.RecordStatus) == "auto_suggested"
+}
+
+func shouldRefreshVBMAPPSuggestedScore(patch vbmappItemResponsePatch) bool {
+	return patch.SuggestedScore != nil || shouldPreferAutoVBMAPPScore(patch)
+}
+
+func applyVBMAPPItemResponseToAssessmentInput(input *vbmappscore.AssessmentInput, patch vbmappItemResponsePatch) {
+	moduleCode := normalizeVBMAPPModuleCode(patch.ModuleCode)
+	itemCode := normalizeVBMAPPScoreCode(patch.ItemCode)
+	if moduleCode == "" || itemCode == "" {
+		return
+	}
+	if input.ItemResponses == nil {
+		input.ItemResponses = map[string]map[string]map[string]any{}
+	}
+	if input.ItemResponses[moduleCode] == nil {
+		input.ItemResponses[moduleCode] = map[string]map[string]any{}
+	}
+	itemResponse := input.ItemResponses[moduleCode][itemCode]
+	if itemResponse == nil {
+		itemResponse = map[string]any{}
+		input.ItemResponses[moduleCode][itemCode] = itemResponse
+	}
+	itemResponse["moduleCode"] = moduleCode
+	itemResponse["itemCode"] = itemCode
+	if patch.Score != nil {
+		itemResponse["score"] = *patch.Score
+	}
+	if patch.SuggestedScore != nil {
+		itemResponse["suggestedScore"] = *patch.SuggestedScore
+	}
+	if patch.TeacherConfirmed != nil {
+		itemResponse["teacherConfirmed"] = *patch.TeacherConfirmed
+	}
+	if trimmed := strings.TrimSpace(patch.OverrideReason); trimmed != "" {
+		itemResponse["overrideReason"] = trimmed
+	}
+	if trimmed := strings.TrimSpace(patch.RecordStatus); trimmed != "" {
+		itemResponse["recordStatus"] = trimmed
+	}
+	if len(patch.Evidence) > 0 {
+		itemResponse["evidence"] = patch.Evidence
+	}
+	itemResponse["updatedAt"] = time.Now().UTC().Format(time.RFC3339)
 }
 
 func mergeVBMAPPDraftInputSnapshot(raw json.RawMessage, input vbmappscore.AssessmentInput, itemPatches ...vbmappItemResponsePatch) (any, error) {

@@ -30,6 +30,8 @@ type vbmappScoreRequest struct {
 	PreviousBarrierScoreList    []vbmappBarrierScoreRequest    `json:"previousBarrierScoreList,omitempty"`
 	PreviousTransitionScores    map[string]int                 `json:"previousTransitionScores,omitempty"`
 	PreviousTransitionScoreList []vbmappTransitionScoreRequest `json:"previousTransitionScoreList,omitempty"`
+
+	ItemResponses map[string]map[string]map[string]any `json:"itemResponses,omitempty"`
 }
 
 type vbmappMilestoneScoreRequest struct {
@@ -531,6 +533,7 @@ func (req vbmappScoreRequest) toAssessmentInput() (vbmappscore.AssessmentInput, 
 		MilestoneScores:          milestoneScores,
 		BarrierScores:            barrierScores,
 		TransitionScores:         transitionScores,
+		ItemResponses:            normalizeVBMAPPItemResponses(req.ItemResponses),
 		PreviousMilestoneScores:  previousMilestoneScores,
 		PreviousBarrierScores:    previousBarrierScores,
 		PreviousTransitionScores: previousTransitionScores,
@@ -579,6 +582,7 @@ func (req vbmappAssessmentDraftSaveRequest) toScoreRequest() vbmappScoreRequest 
 		PreviousBarrierScoreList:    req.PreviousBarrierScoreList,
 		PreviousTransitionScores:    req.PreviousTransitionScores,
 		PreviousTransitionScoreList: req.PreviousTransitionScoreList,
+		ItemResponses:               req.ItemResponses,
 	}
 }
 
@@ -674,6 +678,7 @@ func (req vbmappAssessmentRecordCreateRequest) toScoreRequest() vbmappScoreReque
 		PreviousBarrierScoreList:    req.PreviousBarrierScoreList,
 		PreviousTransitionScores:    req.PreviousTransitionScores,
 		PreviousTransitionScoreList: req.PreviousTransitionScoreList,
+		ItemResponses:               req.ItemResponses,
 	}
 }
 

@@ -1921,8 +1921,6 @@ class _VbmappQuestionHeader extends StatelessWidget {
           if (index > 0) const SizedBox(height: 3),
           Text(
             headerCopy.lines[index],
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _VbmappColors.ink,
               fontSize: 20,
@@ -2009,8 +2007,7 @@ _VbmappQuestionHeaderCopy _vbmappQuestionHeaderCopy(_VbmappItem item) {
     case 'MAND_08M':
       return const _VbmappQuestionHeaderCopy(
         lines: <String>[
-          '能提出5个不同的要求，其中至少要包含2个或2个以上的单词',
-          '（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）',
+          '能提出5个不同的要求，其中至少要包含2个或2个以上的单词（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）',
         ],
       );
     case 'MAND_04M':
@@ -2022,8 +2019,7 @@ _VbmappQuestionHeaderCopy _vbmappQuestionHeaderCopy(_VbmappItem item) {
     case 'MAND_09M':
       return const _VbmappQuestionHeaderCopy(
         lines: <String>[
-          '自发性地提出15个不同的要求，',
-          '（如我们一起玩、打开、我想要书）（TO：30分钟）',
+          '自发性地提出15个不同的要求，（如我们一起玩、打开、我想要书）（TO：30分钟）',
         ],
       );
   }
