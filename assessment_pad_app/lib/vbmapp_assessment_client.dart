@@ -460,6 +460,7 @@ class VbmappMaterialProfile {
     required this.suggestedTypes,
     this.recommendedMaterials = const <VbmappMaterialSuggestion>[],
     this.quickPicks = const <String>[],
+    this.quickPicksByField = const <String, List<String>>{},
     required this.preparationChecks,
   });
 
@@ -472,6 +473,7 @@ class VbmappMaterialProfile {
       quickPicks: _stringListFrom(
         json['quickPicks'] ?? json['recommendedWords'],
       ),
+      quickPicksByField: _stringListMapFrom(json['quickPicksByField']),
       preparationChecks: _stringListFrom(json['preparationChecks']),
     );
   }
@@ -480,6 +482,7 @@ class VbmappMaterialProfile {
   final List<String> suggestedTypes;
   final List<VbmappMaterialSuggestion> recommendedMaterials;
   final List<String> quickPicks;
+  final Map<String, List<String>> quickPicksByField;
   final List<String> preparationChecks;
 
   List<String> get quickPickLabels {
@@ -488,6 +491,19 @@ class VbmappMaterialProfile {
         material.name,
       ...quickPicks,
     ];
+    final Set<String> seen = <String>{};
+    return values.where((String value) {
+      final String normalized = value.trim();
+      if (normalized.isEmpty || seen.contains(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    }).toList(growable: false);
+  }
+
+  List<String> quickPicksFor(String fieldKey) {
+    final List<String> values = quickPicksByField[fieldKey] ?? const <String>[];
     final Set<String> seen = <String>{};
     return values.where((String value) {
       final String normalized = value.trim();
@@ -686,6 +702,20 @@ List<String> _stringListFrom(Object? raw) {
       .map(_textFrom)
       .where((String value) => value.isNotEmpty)
       .toList(growable: false);
+}
+
+Map<String, List<String>> _stringListMapFrom(Object? raw) {
+  if (raw is! Map) {
+    return const <String, List<String>>{};
+  }
+  final Map<String, List<String>> out = <String, List<String>>{};
+  raw.forEach((Object? key, Object? value) {
+    final String normalizedKey = _textFrom(key);
+    if (normalizedKey.isNotEmpty) {
+      out[normalizedKey] = _stringListFrom(value);
+    }
+  });
+  return out;
 }
 
 List<VbmappMaterialSuggestion> _materialSuggestionsFrom(Object? raw) {

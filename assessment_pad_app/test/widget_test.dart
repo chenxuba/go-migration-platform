@@ -3955,6 +3955,134 @@ void main() {
     expect(client.saveDraftItemCalls, 4);
   });
 
+  testWidgets(
+      'VB-MAPP MAND 3M records generalization coverage and suggests score',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('提要求3M泛化记录'), findsOneWidget);
+    expect(find.text('人物 0/2'), findsWidgets);
+    expect(find.text('环境 0/2'), findsWidgets);
+    expect(find.text('例子 0/2'), findsWidgets);
+    expect(find.text('本次记录'), findsOneWidget);
+    expect(find.text('达标进度'), findsOneWidget);
+    expect(find.text('提问下'), findsOneWidget);
+    expect(find.text('自发地'), findsOneWidget);
+    expect(find.text('爸爸'), findsOneWidget);
+    expect(find.text('妈妈'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('vbmapp-mand3-record-5')),
+        findsOneWidget);
+
+    final Finder requestField = find.byType(TextField).at(1);
+
+    await tester.tap(find.text('爸爸'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(requestField).controller?.text, isEmpty);
+
+    await tester.tap(find.text('环境'));
+    await tester.pumpAndSettle();
+    expect(find.text('屋里'), findsOneWidget);
+    expect(find.text('屋外'), findsOneWidget);
+    await tester.tap(find.text('屋里'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('例子'));
+    await tester.pumpAndSettle();
+    expect(find.text('红瓶泡泡'), findsOneWidget);
+    expect(find.text('蓝瓶泡泡'), findsOneWidget);
+    await tester.tap(find.text('红瓶泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('人物 1/2'), findsWidgets);
+    expect(find.text('环境 1/2'), findsWidgets);
+    expect(find.text('例子 1/2'), findsWidgets);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+    expect(find.text('0.5 / 170'), findsOneWidget);
+
+    await tester.tap(find.text('人物'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('妈妈'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('环境'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('屋外'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('例子'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('蓝瓶泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('泡泡'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('人物 2/2'), findsWidgets);
+    expect(find.text('环境 2/2'), findsWidgets);
+    expect(find.text('例子 2/2'), findsWidgets);
+    expect(find.text('建议 1分'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
+    expect(find.textContaining('人物 爸爸'), findsOneWidget);
+    expect(find.textContaining('环境 屋外'), findsOneWidget);
+    expect(find.textContaining('例子 蓝瓶泡泡'), findsOneWidget);
+    expect(client.saveDraftItemCalls, 6);
+  });
+
   testWidgets('ERXin workbench shows structured loading shell while loading',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -8464,6 +8592,19 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           onePointCriteria: '',
           halfPointCriteria: '',
         ),
+        'milestones::MAND_03M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'MAND_03M',
+          uiPattern: 'mand_event_recorder',
+          recordDepth: 'structured_event_log',
+          materialProfileId: 'potential_reinforcer_set',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>[],
+          scoreStrategy: 'count_qualified_unique_mand_events',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
       },
       materialProfiles: <String, VbmappMaterialProfile>{
         'mand_1m_request_starter_set': VbmappMaterialProfile(
@@ -8489,6 +8630,25 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
             VbmappMaterialSuggestion(
                 id: 'test-bubbles', name: '泡泡', type: '社交游戏'),
           ],
+          preparationChecks: <String>[],
+        ),
+        'potential_reinforcer_set': VbmappMaterialProfile(
+          label: '潜在强化物/活动',
+          suggestedTypes: <String>['实物玩具', '活动', '社交游戏'],
+          recommendedMaterials: <VbmappMaterialSuggestion>[
+            VbmappMaterialSuggestion(
+                id: 'test-bubbles-general', name: '泡泡', type: '社交游戏'),
+            VbmappMaterialSuggestion(
+                id: 'test-music-general', name: '音乐', type: '活动'),
+            VbmappMaterialSuggestion(
+                id: 'test-ball-general', name: '球', type: '实物玩具'),
+          ],
+          quickPicksByField: <String, List<String>>{
+            'mand3_people': <String>['爸爸', '妈妈', '老师', '治疗师'],
+            'mand3_settings': <String>['屋里', '屋外', '教室', '游戏区'],
+            'mand3_examples_default': <String>['红瓶泡泡', '蓝瓶泡泡'],
+            'mand3_examples_bubbles': <String>['红瓶泡泡', '蓝瓶泡泡'],
+          },
           preparationChecks: <String>[],
         ),
       },

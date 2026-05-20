@@ -68,6 +68,15 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	if !containsMaterialSuggestion(profiles["mand_2m_visible_request_set"].RecommendedMaterials, "彩虹弹簧") {
 		t.Fatalf("expected MAND 2M material quick picks: %+v", profiles["mand_2m_visible_request_set"].RecommendedMaterials)
 	}
+	if !contains(profiles["potential_reinforcer_set"].QuickPicksByField["mand3_people"], "爸爸") {
+		t.Fatalf("expected MAND 3M people quick picks: %+v", profiles["potential_reinforcer_set"].QuickPicksByField)
+	}
+	if !contains(profiles["potential_reinforcer_set"].QuickPicksByField["mand3_settings"], "屋里") {
+		t.Fatalf("expected MAND 3M setting quick picks: %+v", profiles["potential_reinforcer_set"].QuickPicksByField)
+	}
+	if !contains(profiles["potential_reinforcer_set"].QuickPicksByField["mand3_examples_bubbles"], "红瓶泡泡") {
+		t.Fatalf("expected MAND 3M example quick picks: %+v", profiles["potential_reinforcer_set"].QuickPicksByField)
+	}
 
 	mand1 := findMilestoneResponseSchema(t, milestones, "MAND_01M")
 	if mand1.UIPattern != "mand_event_recorder" {

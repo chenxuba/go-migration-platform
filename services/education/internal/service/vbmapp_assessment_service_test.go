@@ -83,6 +83,9 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	if _, ok := schema.ResponseMaterialProfiles["mand_2m_visible_request_set"]; !ok {
 		t.Fatalf("expected MAND_02M material profile in schema response")
 	}
+	if !containsString(schema.ResponseMaterialProfiles["potential_reinforcer_set"].QuickPicksByField["mand3_people"], "爸爸") {
+		t.Fatalf("expected MAND_03M people quick picks in schema response: %+v", schema.ResponseMaterialProfiles["potential_reinforcer_set"].QuickPicksByField)
+	}
 }
 
 func TestBuildVBMAPPAssessmentDraftProgressWithPartialScoresWhenPresent(t *testing.T) {

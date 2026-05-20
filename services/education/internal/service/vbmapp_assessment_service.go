@@ -128,7 +128,7 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 		dbProfiles, dbErr := svc.repo.ListVBMAPPResponseMaterialProfiles(context.Background(), vbmappScaleVersion)
 		if dbErr == nil && len(dbProfiles) > 0 {
 			for profileID, profile := range dbProfiles {
-				materialProfiles[profileID] = profile
+				materialProfiles[profileID] = mergeVBMAPPResponseMaterialProfile(materialProfiles[profileID], profile)
 			}
 		} else if dbErr != nil && !isVBMAPPMaterialLibraryFallbackError(dbErr) {
 			return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP DB material profiles: %w", dbErr)
@@ -158,6 +158,29 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 		ResponseMaterialProfiles:  materialProfiles,
 		ResponseSchemaSummary:     summary,
 	}, nil
+}
+
+func mergeVBMAPPResponseMaterialProfile(fileProfile, dbProfile vbmappscore.ResponseMaterialProfile) vbmappscore.ResponseMaterialProfile {
+	merged := fileProfile
+	if strings.TrimSpace(dbProfile.Label) != "" {
+		merged.Label = dbProfile.Label
+	}
+	if strings.TrimSpace(dbProfile.SourceLogic) != "" {
+		merged.SourceLogic = dbProfile.SourceLogic
+	}
+	if len(dbProfile.SuggestedTypes) > 0 {
+		merged.SuggestedTypes = dbProfile.SuggestedTypes
+	}
+	if len(dbProfile.RecommendedMaterials) > 0 {
+		merged.RecommendedMaterials = dbProfile.RecommendedMaterials
+	}
+	if len(dbProfile.QuickPicksByField) > 0 {
+		merged.QuickPicksByField = dbProfile.QuickPicksByField
+	}
+	if len(dbProfile.PreparationChecks) > 0 {
+		merged.PreparationChecks = dbProfile.PreparationChecks
+	}
+	return merged
 }
 
 func (svc *Service) EnsureVBMAPPScaleData(ctx context.Context) error {

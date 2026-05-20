@@ -244,6 +244,7 @@ type ResponseMaterialProfile struct {
 	SourceLogic          string                       `json:"sourceLogic,omitempty"`
 	SuggestedTypes       []string                     `json:"suggestedTypes,omitempty"`
 	RecommendedMaterials []ResponseMaterialSuggestion `json:"recommendedMaterials,omitempty"`
+	QuickPicksByField    map[string][]string          `json:"quickPicksByField,omitempty"`
 	PreparationChecks    []string                     `json:"preparationChecks,omitempty"`
 }
 
