@@ -3766,7 +3766,7 @@ void main() {
 
     expect(find.text('有效 1/2'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(find.text('饼干 -> 饼干'), findsNothing);
     expect(
       tester
@@ -3963,7 +3963,7 @@ void main() {
 
     expect(find.text('有效 3/4'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
 
     await tester.tap(find.text('自发地'));
     await tester.pumpAndSettle();
@@ -4067,7 +4067,7 @@ void main() {
     expect(find.text('环境 1/2'), findsWidgets);
     expect(find.text('例子 1/2'), findsWidgets);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
 
     await tester.tap(find.text('人物'));
     await tester.pumpAndSettle();
@@ -4153,7 +4153,7 @@ void main() {
     expect(find.text('呈现物品'), findsOneWidget);
     expect(find.text('未呈现物品'), findsOneWidget);
     expect(find.text('口头辅助'), findsNothing);
-    expect(find.text('有效 0/5'), findsOneWidget);
+    expect(find.text('不同 0/5'), findsOneWidget);
     expect(find.text('建议 0分'), findsOneWidget);
 
     await tester.tap(
@@ -4180,9 +4180,9 @@ void main() {
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
 
-    expect(find.text('有效 2/5'), findsOneWidget);
+    expect(find.text('不同 2/5'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
-    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(find.text('1.0 / 170'), findsOneWidget);
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
@@ -4247,7 +4247,7 @@ void main() {
 
     expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
         findsOneWidget);
-    expect(find.text('4M观察中'), findsOneWidget);
+    expect(find.text('提要求观察中'), findsOneWidget);
 
     await tester.tap(
       find.byKey(
@@ -4256,15 +4256,15 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('补记一条 4M 观察记录'), findsOneWidget);
+    expect(find.text('补记一条提要求观察记录'), findsOneWidget);
     await tester.enterText(find.byType(TextField).last, '出去');
     await tester.tap(
       find.byKey(const ValueKey<String>('vbmapp-global-mand4-submit')),
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('4M观察中'), findsOneWidget);
-    expect(find.textContaining('2/5'), findsWidgets);
+    expect(find.text('提要求观察中'), findsOneWidget);
+    expect(find.textContaining('已记录 2 条'), findsWidgets);
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
@@ -4272,6 +4272,130 @@ void main() {
     final Map<String, dynamic> evidence =
         payload['evidence'] as Map<String, dynamic>? ?? <String, dynamic>{};
     expect(evidence['qualifiedCount'], 2);
+  });
+
+  testWidgets('VB-MAPP MAND 8M tracks phrase level in timed observation',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 47; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(
+      find.text('能提出5个不同的要求，其中至少要包含2个或2个以上的单词'),
+      findsOneWidget,
+    );
+    expect(find.text('（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）'), findsOneWidget);
+    expect(find.text('提要求8M观察记录'), findsOneWidget);
+    expect(find.text('诱发'), findsOneWidget);
+    expect(find.text('语言'), findsNothing);
+    expect(find.text('观察窗 60分钟'), findsOneWidget);
+    expect(find.text('双词+ 0/2'), findsNothing);
+
+    final Finder requestField = find.byType(TextField).first;
+    await tester.enterText(requestField, '打开');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(requestField, '该我了');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('不同 2/5'), findsOneWidget);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+
+    final Map<String, dynamic> payload =
+        client.lastSaveDraftItemPayload ?? <String, dynamic>{};
+    final Map<String, dynamic> evidence =
+        payload['evidence'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    expect(evidence['qualifiedCount'], 2);
+    expect(evidence['multiWordQualifiedCount'], 1);
+  });
+
+  testWidgets('VB-MAPP timed mand observation is shared with MAND 9M',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 47; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+    await tester.enterText(find.byType(TextField).first, '打开');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('自发性地提出15个不同的要求，'), findsOneWidget);
+    expect(find.text('（如我们一起玩、打开、我想要书）（TO：30分钟）'), findsOneWidget);
+    expect(find.text('提要求9M观察记录'), findsOneWidget);
+    expect(find.text('观察窗 30分钟'), findsOneWidget);
+    expect(find.text('语言'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
+        findsNothing);
+    expect(find.text('不同 1/15'), findsOneWidget);
+    expect(find.textContaining('打开'), findsWidgets);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',

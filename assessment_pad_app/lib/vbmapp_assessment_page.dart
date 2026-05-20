@@ -58,6 +58,12 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   static const String _authTokenStorageKey = 'auth_token';
   static const String _scaleVersion = 'VBMAPP_CN_2ND_DRAFT_2026_05';
   static const int _totalItemCount = 212;
+  static const String _sharedTimedMandStorageKey = '__MAND_TIMED_SHARED__';
+  static const Set<String> _sharedTimedMandItemCodes = <String>{
+    'MAND_04M',
+    'MAND_08M',
+    'MAND_09M',
+  };
 
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
@@ -216,6 +222,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       ..addAll(detail.transitionScores);
     _restoreMandEvents(detail.itemResponses);
     _restoreMandObservations(detail.itemResponses);
+    _syncSharedTimedMandScores();
     final _VbmappItem? firstMissing = _firstMissingItem();
     if (firstMissing != null) {
       _selectedModuleCode = firstMissing.moduleCode;
@@ -358,44 +365,65 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   }
 
   Future<void> _addMandEvent(_VbmappItem item, _VbmappMandEvent event) async {
+    final DateTime now = DateTime.now();
     final List<_VbmappMandEvent> events =
-        List<_VbmappMandEvent>.from(_mandEventsFor(item))..add(event);
-    final double suggestedScore = _suggestMandScore(item, events);
+        List<_VbmappMandEvent>.from(_mandStoredEventsFor(item))
+          ..add(
+            event.recordedAtIso.trim().isEmpty
+                ? event.copyWith(
+                    recordedAtIso: now.toIso8601String(),
+                    sourceItemCode: item.itemCode,
+                  )
+                : event,
+          );
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
     setState(() {
-      _mandEventsByItem[item.itemCode] = events;
+      _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       _milestoneScores[item.itemCode] = suggestedScore;
+      _syncSharedTimedMandScores();
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
       item,
       events,
       suggestedScore,
-      observation: _mandObservationFor(item),
+      observation: observation,
     );
   }
 
   Future<void> _deleteMandEvent(_VbmappItem item, int index) async {
     final List<_VbmappMandEvent> events =
-        List<_VbmappMandEvent>.from(_mandEventsFor(item));
+        List<_VbmappMandEvent>.from(_mandStoredEventsFor(item));
     if (index < 0 || index >= events.length) {
       return;
     }
     events.removeAt(index);
-    final double suggestedScore = _suggestMandScore(item, events);
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
     setState(() {
       if (events.isEmpty) {
-        _mandEventsByItem.remove(item.itemCode);
+        _mandEventsByItem.remove(_mandStorageKeyFor(item.itemCode));
       } else {
-        _mandEventsByItem[item.itemCode] = events;
+        _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       }
       _milestoneScores[item.itemCode] = suggestedScore;
+      _syncSharedTimedMandScores();
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
       item,
       events,
       suggestedScore,
-      observation: _mandObservationFor(item),
+      observation: observation,
     );
   }
 
@@ -403,11 +431,16 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     _VbmappItem item,
     _VbmappObservationTimerState observation,
   ) async {
-    final List<_VbmappMandEvent> events = _mandEventsFor(item);
-    final double suggestedScore = _suggestMandScore(item, events);
+    final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
     setState(() {
-      _mandObservationByItem[item.itemCode] = observation;
+      _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
       _milestoneScores[item.itemCode] = suggestedScore;
+      _syncSharedTimedMandScores();
       _autoSaveText = '保存中...';
     });
     _syncObservationTicker();
@@ -433,10 +466,25 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     if (draftId <= 0) {
       return;
     }
-    final int qualifiedCount = _qualifiedMandCount(events);
+    final int qualifiedCount = _qualifiedMandCountForItem(
+      item,
+      events,
+      observation: observation,
+    );
     final _VbmappObservationTimerState? timerState = observation;
     final int actualObservationSeconds =
         timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
+    final int effectiveObservationSeconds = _effectiveObservationSecondsForItem(
+      item,
+      timerState,
+    );
+    final int multiWordCount = item.itemCode == 'MAND_08M'
+        ? _mandPhraseQualifiedCountForItem(
+            item,
+            events,
+            observation: observation,
+          )
+        : 0;
     try {
       final VbmappDraftDetail detail = await widget.client.saveDraftItem(
         _token,
@@ -460,12 +508,25 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                   actualObservationSeconds / Duration.secondsPerMinute,
             if (timerState != null)
               'actualObservationSeconds': actualObservationSeconds,
+            if (timerState != null)
+              'effectiveObservationSeconds': effectiveObservationSeconds,
+            if (timerState != null)
+              'effectiveObservationMinutes':
+                  effectiveObservationSeconds / Duration.secondsPerMinute,
+            if (item.itemCode == 'MAND_08M')
+              'multiWordQualifiedCount': multiWordCount,
             if (item.itemCode == 'MAND_03M')
               'generalizationCounts': _mandGeneralizationCounts(events),
             'scoreBasis': item.itemCode == 'MAND_03M'
                 ? '系统按互动对象、环境、不同例子的泛化记录建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。'
-                : item.itemCode == 'MAND_04M'
-                    ? '系统按60分钟观察窗内的有效自发要求数量建议${_formatScore(suggestedScore)}分，当前已观察${_vbmappDurationText(actualObservationSeconds)}，老师可在下方评分区覆盖。'
+                : _sharedTimedMandItemCodes.contains(item.itemCode)
+                    ? _mandTimedScoreBasisText(
+                        item,
+                        suggestedScore,
+                        qualifiedCount,
+                        actualObservationSeconds,
+                        multiWordCount,
+                      )
                     : '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
           },
         },
@@ -506,7 +567,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
           .where((_VbmappMandEvent event) => event.isNotEmpty)
           .toList(growable: false);
       if (events.isNotEmpty) {
-        _mandEventsByItem[itemCode] = events;
+        _mandEventsByItem[_mandStorageKeyFor(itemCode)] = events;
       }
     });
   }
@@ -529,7 +590,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       final _VbmappObservationTimerState observation =
           _VbmappObservationTimerState.fromJson(_dynamicMap(timerRaw));
       if (!observation.isEmpty) {
-        _mandObservationByItem[itemCode] = observation;
+        _mandObservationByItem[_mandStorageKeyFor(itemCode)] = observation;
       }
     });
   }
@@ -560,14 +621,24 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   }
 
   List<_VbmappMandEvent> _mandEventsFor(_VbmappItem item) {
-    return _mandEventsByItem[item.itemCode] ?? const <_VbmappMandEvent>[];
+    return _mandStoredEventsFor(item);
   }
 
   _VbmappObservationTimerState? _mandObservationFor(_VbmappItem item) {
-    return _mandObservationByItem[item.itemCode];
+    return _mandObservationByItem[_mandStorageKeyFor(item.itemCode)];
   }
 
   _VbmappItem? _activeMandObservationItem() {
+    final _VbmappObservationTimerState? sharedObservation =
+        _mandObservationByItem[_sharedTimedMandStorageKey];
+    if (sharedObservation != null &&
+        sharedObservation.hasStarted &&
+        !sharedObservation.ended) {
+      return _milestoneItems.firstWhere(
+        (_VbmappItem item) => item.itemCode == 'MAND_04M',
+        orElse: () => _selectedItem,
+      );
+    }
     for (final _VbmappItem item in _milestoneItems) {
       final _VbmappObservationTimerState? observation =
           _mandObservationByItem[item.itemCode];
@@ -579,7 +650,38 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   }
 
   int _activeMandObservationQualifiedCount(_VbmappItem item) {
-    return _qualifiedMandCount(_mandEventsFor(item));
+    return _qualifiedMandCountForItem(
+      item,
+      _mandStoredEventsFor(item),
+      observation: _mandObservationFor(item),
+    );
+  }
+
+  List<_VbmappMandEvent> _mandStoredEventsFor(_VbmappItem item) {
+    return _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] ??
+        const <_VbmappMandEvent>[];
+  }
+
+  String _mandStorageKeyFor(String itemCode) {
+    return _sharedTimedMandItemCodes.contains(itemCode)
+        ? _sharedTimedMandStorageKey
+        : itemCode;
+  }
+
+  void _syncSharedTimedMandScores() {
+    for (final _VbmappItem item in _milestoneItems) {
+      if (!_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        continue;
+      }
+      final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+      final _VbmappObservationTimerState? observation =
+          _mandObservationFor(item);
+      _milestoneScores[item.itemCode] = _suggestMandScore(
+        item,
+        events,
+        observation: observation,
+      );
+    }
   }
 
   void _syncObservationTicker() {
@@ -879,8 +981,13 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
         activeObservationItem == null
             ? null
             : _mandObservationFor(activeObservationItem);
+    final bool activeTimedMandShared = activeObservationItem != null &&
+        _mandStorageKeyFor(activeObservationItem.itemCode) ==
+            _sharedTimedMandStorageKey;
     final bool showActiveObservationBar = activeObservationItem != null &&
         activeObservation != null &&
+        !(activeTimedMandShared &&
+            _sharedTimedMandItemCodes.contains(item.itemCode)) &&
         activeObservationItem.itemCode != item.itemCode;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -906,11 +1013,21 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
               Padding(
                 padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                 child: _VbmappActiveObservationBar(
-                  item: activeObservationItem,
+                  tone: activeObservationItem.color,
                   observation: activeObservation,
-                  qualifiedCount: _activeMandObservationQualifiedCount(
-                      activeObservationItem),
-                  onJump: () => _selectItem(activeObservationItem),
+                  statusLabel: activeTimedMandShared
+                      ? '提要求观察中'
+                      : '${activeObservationItem.navCode}观察中',
+                  summaryText: activeTimedMandShared
+                      ? '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · 已记录 ${_mandStoredEventsFor(activeObservationItem).length} 条'
+                      : '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · ${_activeMandObservationQualifiedCount(activeObservationItem)}/${_scoreCountThreshold(activeObservationItem, 1) ?? 5}',
+                  onJump: () => _selectItem(
+                    _milestoneItems.firstWhere(
+                      (_VbmappItem candidate) =>
+                          candidate.itemCode == 'MAND_04M',
+                      orElse: () => activeObservationItem,
+                    ),
+                  ),
                   onQuickRecord: () => unawaited(_openActiveMandQuickRecord()),
                   onPrimaryAction: () {
                     final DateTime now = DateTime.now();
@@ -1706,6 +1823,8 @@ class _VbmappQuestionHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final Color accent = item.color;
+    final _VbmappQuestionHeaderCopy headerCopy =
+        _vbmappQuestionHeaderCopy(item);
     final Widget badge = Container(
       padding: const EdgeInsets.fromLTRB(9, 6, 10, 6),
       decoration: BoxDecoration(
@@ -1793,14 +1912,26 @@ class _VbmappQuestionHeader extends StatelessWidget {
       ),
     );
 
-    final Widget title = Text(
-      item.title,
-      style: const TextStyle(
-        color: _VbmappColors.ink,
-        fontSize: 20,
-        height: 1.24,
-        fontWeight: FontWeight.w900,
-      ),
+    final Widget title = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: <Widget>[
+        for (int index = 0;
+            index < headerCopy.lines.length;
+            index++) ...<Widget>[
+          if (index > 0) const SizedBox(height: 3),
+          Text(
+            headerCopy.lines[index],
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(
+              color: _VbmappColors.ink,
+              fontSize: 20,
+              height: 1.2,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ],
     );
 
     return LayoutBuilder(
@@ -1838,6 +1969,14 @@ class _VbmappQuestionHeader extends StatelessWidget {
   }
 }
 
+class _VbmappQuestionHeaderCopy {
+  const _VbmappQuestionHeaderCopy({
+    required this.lines,
+  });
+
+  final List<String> lines;
+}
+
 String _vbmappQuestionDomainLabel(_VbmappItem item) {
   final String domain = item.domainName.trim();
   if (domain.isNotEmpty) {
@@ -1863,6 +2002,49 @@ String _vbmappQuestionStepLabel(_VbmappItem item) {
     return item.navCode;
   }
   return item.itemCode;
+}
+
+_VbmappQuestionHeaderCopy _vbmappQuestionHeaderCopy(_VbmappItem item) {
+  switch (item.itemCode) {
+    case 'MAND_08M':
+      return const _VbmappQuestionHeaderCopy(
+        lines: <String>[
+          '能提出5个不同的要求，其中至少要包含2个或2个以上的单词',
+          '（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）',
+        ],
+      );
+    case 'MAND_04M':
+      return const _VbmappQuestionHeaderCopy(
+        lines: <String>[
+          '自发性地提出（没有口头辅助）5项要求，所要的物件可在眼前（TO：60分钟）',
+        ],
+      );
+    case 'MAND_09M':
+      return const _VbmappQuestionHeaderCopy(
+        lines: <String>[
+          '自发性地提出15个不同的要求，',
+          '（如我们一起玩、打开、我想要书）（TO：30分钟）',
+        ],
+      );
+  }
+  return _VbmappQuestionHeaderCopy(
+    lines: <String>[_vbmappQuestionTitleWithoutMode(item)],
+  );
+}
+
+String _vbmappQuestionTitleWithoutMode(_VbmappItem item) {
+  final String title = item.title.trim();
+  if (title.isEmpty) {
+    return '';
+  }
+  final String assessmentMode = item.assessmentMode.trim();
+  if (assessmentMode.isEmpty) {
+    return title;
+  }
+  return title
+      .replaceFirst('（$assessmentMode）', '')
+      .replaceFirst('($assessmentMode)', '')
+      .trim();
 }
 
 String _vbmappQuestionStageLabel(_VbmappItem item) {
@@ -1933,8 +2115,8 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         onDeleteEvent: onDeleteMandEvent,
       );
     }
-    if (item.itemCode == 'MAND_04M') {
-      return _VbmappMand4InlinePanel(
+    if (_isTimedMandItemCode(item.itemCode)) {
+      return _VbmappTimedMandInlinePanel(
         item: item,
         materialProfile: materialProfile,
         events: mandEvents,
@@ -2309,8 +2491,8 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
   }
 }
 
-class _VbmappMand4InlinePanel extends StatefulWidget {
-  const _VbmappMand4InlinePanel({
+class _VbmappTimedMandInlinePanel extends StatefulWidget {
+  const _VbmappTimedMandInlinePanel({
     required this.item,
     required this.materialProfile,
     required this.events,
@@ -2329,11 +2511,12 @@ class _VbmappMand4InlinePanel extends StatefulWidget {
   final ValueChanged<_VbmappObservationTimerState> onChangeObservation;
 
   @override
-  State<_VbmappMand4InlinePanel> createState() =>
-      _VbmappMand4InlinePanelState();
+  State<_VbmappTimedMandInlinePanel> createState() =>
+      _VbmappTimedMandInlinePanelState();
 }
 
-class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
+class _VbmappTimedMandInlinePanelState
+    extends State<_VbmappTimedMandInlinePanel> {
   static const List<String> _fallbackMaterials = <String>[
     '泡泡',
     '球',
@@ -2350,16 +2533,24 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
   Timer? _clockTimer;
   String _presentation = '呈现物品';
   String _targetKind = '物品';
+  String _promptMode = '自发地';
   int? _selectedRecordIndex;
 
   _VbmappObservationTimerState get _observation =>
-      widget.observation ?? const _VbmappObservationTimerState();
+      (widget.observation ?? const _VbmappObservationTimerState())
+          .withPlannedMinutes(60);
+
+  bool get _isMand8 => widget.item.itemCode == 'MAND_08M';
+
+  bool get _isMand9 => widget.item.itemCode == 'MAND_09M';
 
   int get _onePointRequestCount => _scoreCountThreshold(widget.item, 1) ?? 5;
 
   int get _halfPointRequestCount => _scoreCountThreshold(widget.item, .5) ?? 2;
 
-  int get _plannedSeconds => _observation.plannedSeconds;
+  int get _plannedMinutes => _plannedMinutesForMandItem(widget.item);
+
+  int get _plannedSeconds => _plannedMinutes * Duration.secondsPerMinute;
 
   int get _elapsedSeconds => _observation.elapsedSecondsAt(DateTime.now());
 
@@ -2370,24 +2561,48 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
 
   bool get _observationMet => _elapsedSeconds >= _plannedSeconds;
 
-  String get _recordTitle => '提要求4M观察记录';
+  int get _displayMinSlots => _isMand9 ? 6 : _onePointRequestCount;
 
-  String get _scoreReference => '参考：60分钟观察窗内，$_halfPointRequestCount个计0.5分，'
-      '$_onePointRequestCount个计1分；仅统计呈现物品条件下的自发要求。';
+  String get _recordTitle => '提要求${widget.item.navCode}观察记录';
+
+  String get _scoreReference {
+    if (_isMand8) {
+      return '参考：60分钟观察窗内，$_halfPointRequestCount个不同要求计0.5分，'
+          '$_onePointRequestCount个不同要求且系统判定至少2条为双词+计1分。';
+    }
+    if (_isMand9) {
+      return '参考：30分钟观察窗内，$_halfPointRequestCount个自发不同要求计0.5分，'
+          '$_onePointRequestCount个自发不同要求计1分。';
+    }
+    return '参考：60分钟观察窗内，$_halfPointRequestCount个计0.5分，'
+        '$_onePointRequestCount个计1分；仅统计呈现物品条件下的自发要求。';
+  }
 
   String get _observationHint {
-    final int qualifiedCount = _qualifiedMandCount(widget.events);
+    final int qualifiedCount = _qualifiedMandCountForItem(
+      widget.item,
+      widget.events,
+      observation: widget.observation,
+    );
     if (!_observation.hasStarted) {
-      return '先开启60分钟观察窗，再连续记录孩子的自发要求。';
+      return '先开启${_plannedMinutes}分钟观察窗，再连续记录孩子的自然要求。';
     }
     if (!_observationMet && qualifiedCount >= _onePointRequestCount) {
-      return '已达到1分数量条件，但观察未满60分钟，可继续观察或由老师确认结束。';
+      return _isMand8
+          ? '已达到数量条件，但观察未满${_plannedMinutes}分钟；双词结构由系统根据原话自动判定。'
+          : '已达到1分数量条件，但观察未满${_plannedMinutes}分钟，可继续观察或由老师确认结束。';
     }
     if (!_observationMet && qualifiedCount >= _halfPointRequestCount) {
-      return '已达到0.5分数量条件，但观察未满60分钟，建议继续观察。';
+      return '已达到0.5分数量条件，但观察未满${_plannedMinutes}分钟，建议继续观察。';
     }
     if (_observationMet) {
-      return '60分钟观察窗已完成，系统会继续保留新增记录供老师判断。';
+      return '${_plannedMinutes}分钟观察窗已完成，系统会继续保留新增记录供老师判断。';
+    }
+    if (_isMand8) {
+      return '记录自然情境下的不同要求；双词结构由系统根据原话自动判定。';
+    }
+    if (_isMand9) {
+      return '记录30分钟内的自发不同要求，系统自动去重统计。';
     }
     return '记录自然情境下的自发要求，系统自动统计不同要求数量。';
   }
@@ -2399,7 +2614,7 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
   }
 
   @override
-  void didUpdateWidget(covariant _VbmappMand4InlinePanel oldWidget) {
+  void didUpdateWidget(covariant _VbmappTimedMandInlinePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
     final int? selectedIndex = _selectedRecordIndex;
     if (selectedIndex != null && selectedIndex >= widget.events.length) {
@@ -2419,8 +2634,16 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
 
   @override
   Widget build(BuildContext context) {
-    final int qualifiedCount = _qualifiedMandCount(widget.events);
-    final double suggestedScore = _suggestMandScore(widget.item, widget.events);
+    final int qualifiedCount = _qualifiedMandCountForItem(
+      widget.item,
+      widget.events,
+      observation: widget.observation,
+    );
+    final double suggestedScore = _suggestMandScore(
+      widget.item,
+      widget.events,
+      observation: widget.observation,
+    );
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
       decoration: BoxDecoration(
@@ -2458,7 +2681,7 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
                   ),
                   const SizedBox(width: 8),
                   _VbmappEvidenceMetric(
-                    label: '有效',
+                    label: '不同',
                     value: '$qualifiedCount/$_onePointRequestCount',
                     color: widget.item.color,
                   ),
@@ -2534,7 +2757,7 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
                   children: <Widget>[
                     _VbmappMand4TimerMetricChip(
                       label: '观察窗',
-                      value: '60分钟',
+                      value: '${_plannedMinutes}分钟',
                       tone: widget.item.color,
                     ),
                     _VbmappMand4TimerMetricChip(
@@ -2603,8 +2826,8 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
             Expanded(
               child: _VbmappMandInlineTextField(
                 controller: _requestController,
-                label: '孩子要求内容',
-                hintText: '如：泡泡、出去、打开',
+                label: _isMand8 ? '孩子要求原话' : '孩子要求内容',
+                hintText: _isMand8 ? '如：跑快点、该我了、倒果汁' : '如：泡泡、出去、打开',
               ),
             ),
             const SizedBox(width: 10),
@@ -2633,31 +2856,48 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
   }
 
   Widget _buildChoiceRow() {
+    final Widget presentationChoice = _VbmappMandInlineChoiceGroup(
+      label: '目标呈现',
+      value: _presentation,
+      values: const <String>['呈现物品', '未呈现物品'],
+      onChanged: (String value) => setState(() {
+        _presentation = value;
+      }),
+    );
+    final Widget targetChoice = _VbmappMandInlineChoiceGroup(
+      label: '目标',
+      value: _targetKind,
+      values: const <String>['物品', '动作', '活动'],
+      onChanged: (String value) => setState(() {
+        _targetKind = value;
+      }),
+    );
+    if (_isMand8) {
+      return Row(
+        children: <Widget>[
+          Expanded(
+            flex: 4,
+            child: _VbmappMandInlineChoiceGroup(
+              label: '诱发',
+              value: _promptMode,
+              values: const <String>['自发地', '提问下'],
+              onChanged: (String value) => setState(() {
+                _promptMode = value;
+              }),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(flex: 6, child: presentationChoice),
+          const SizedBox(width: 10),
+          Expanded(flex: 5, child: targetChoice),
+        ],
+      );
+    }
     return Row(
       children: <Widget>[
-        Expanded(
-          flex: 5,
-          child: _VbmappMandInlineChoiceGroup(
-            label: '目标呈现',
-            value: _presentation,
-            values: const <String>['呈现物品', '未呈现物品'],
-            onChanged: (String value) => setState(() {
-              _presentation = value;
-            }),
-          ),
-        ),
+        Expanded(flex: 5, child: presentationChoice),
         const SizedBox(width: 10),
-        Expanded(
-          flex: 5,
-          child: _VbmappMandInlineChoiceGroup(
-            label: '目标',
-            value: _targetKind,
-            values: const <String>['物品', '动作', '活动'],
-            onChanged: (String value) => setState(() {
-              _targetKind = value;
-            }),
-          ),
-        ),
+        Expanded(flex: 5, child: targetChoice),
       ],
     );
   }
@@ -2692,10 +2932,17 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
         const SizedBox(height: 8),
         _VbmappMand1RecordGrid(
           events: widget.events,
-          minSlots: _onePointRequestCount,
+          minSlots: _displayMinSlots,
           selectedIndex: _selectedRecordIndex,
           onSelectIndex: _selectRecord,
           onDeleteIndex: _deleteRecord,
+          isQualified: (_VbmappMandEvent event) => _mandEventCountsForItem(
+            widget.item,
+            event,
+            observation: widget.observation,
+          ),
+          metaTextBuilder: (_VbmappMandEvent event) =>
+              _mandRecordMetaText(event, item: widget.item),
         ),
         const SizedBox(height: 10),
         Text(
@@ -2782,14 +3029,19 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
         person: '',
         setting: '',
         example: '',
-        responseMode: '自发要求',
-        promptLevel: '',
-        functional: _presentation == '呈现物品',
+        responseMode:
+            _isMand8 ? (_promptMode == '提问下' ? '提问下要求' : '自发要求') : '自发要求',
+        promptLevel: _isMand8 ? _promptMode : '',
+        phraseLevel: '',
+        functional: true,
       ),
     );
     _requestController.clear();
     setState(() {
       _selectedRecordIndex = null;
+      if (_isMand8) {
+        _promptMode = '自发地';
+      }
     });
   }
 
@@ -3861,6 +4113,8 @@ class _VbmappMand1RecordGrid extends StatelessWidget {
     required this.selectedIndex,
     required this.onSelectIndex,
     required this.onDeleteIndex,
+    this.isQualified,
+    this.metaTextBuilder,
   });
 
   final List<_VbmappMandEvent> events;
@@ -3868,6 +4122,8 @@ class _VbmappMand1RecordGrid extends StatelessWidget {
   final int? selectedIndex;
   final ValueChanged<int> onSelectIndex;
   final ValueChanged<int> onDeleteIndex;
+  final bool Function(_VbmappMandEvent event)? isQualified;
+  final String Function(_VbmappMandEvent event)? metaTextBuilder;
 
   @override
   Widget build(BuildContext context) {
@@ -3920,6 +4176,8 @@ class _VbmappMand1RecordGrid extends StatelessWidget {
       selected: selectedIndex == index,
       onTap: () => onSelectIndex(index),
       onDelete: () => onDeleteIndex(index),
+      qualificationResolver: isQualified,
+      metaTextBuilder: metaTextBuilder,
     );
   }
 }
@@ -3931,6 +4189,8 @@ class _VbmappMand1RecordSlot extends StatelessWidget {
     required this.selected,
     required this.onTap,
     required this.onDelete,
+    this.qualificationResolver,
+    this.metaTextBuilder,
   });
 
   final int index;
@@ -3938,12 +4198,16 @@ class _VbmappMand1RecordSlot extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final VoidCallback onDelete;
+  final bool Function(_VbmappMandEvent event)? qualificationResolver;
+  final String Function(_VbmappMandEvent event)? metaTextBuilder;
 
   @override
   Widget build(BuildContext context) {
     final _VbmappMandEvent? row = event;
     final bool filled = row != null;
-    final bool qualified = row?.isQualified ?? false;
+    final bool qualified = row == null
+        ? false
+        : (qualificationResolver?.call(row) ?? row.isQualified);
     final Color accent = qualified ? _VbmappColors.green : _VbmappColors.muted;
     final String requestText = row == null ? '' : _mandRequestText(row);
     final BorderRadius radius = BorderRadius.circular(10);
@@ -4006,7 +4270,8 @@ class _VbmappMand1RecordSlot extends StatelessWidget {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              _mandRecordMetaText(row),
+                              metaTextBuilder?.call(row) ??
+                                  _mandRecordMetaText(row),
                               maxLines: 2,
                               style: const TextStyle(
                                 color: _VbmappColors.body,
@@ -4535,6 +4800,7 @@ class _VbmappMand4QuickRecordDialogState
   ];
 
   final TextEditingController _requestController = TextEditingController();
+  String _promptMode = '自发地';
   String _presentation = '呈现物品';
   String _targetKind = '物品';
 
@@ -4554,7 +4820,7 @@ class _VbmappMand4QuickRecordDialogState
       child: Material(
         color: Colors.transparent,
         child: Container(
-          width: 640,
+          width: 760,
           padding: const EdgeInsets.all(20),
           decoration: BoxDecoration(
             color: Colors.white,
@@ -4567,7 +4833,7 @@ class _VbmappMand4QuickRecordDialogState
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
               const Text(
-                '补记一条 4M 观察记录',
+                '补记一条提要求观察记录',
                 style: TextStyle(
                   color: _VbmappColors.ink,
                   fontSize: 18,
@@ -4578,6 +4844,19 @@ class _VbmappMand4QuickRecordDialogState
               Row(
                 children: <Widget>[
                   Expanded(
+                    flex: 4,
+                    child: _VbmappMandInlineChoiceGroup(
+                      label: '诱发',
+                      value: _promptMode,
+                      values: const <String>['自发地', '提问下'],
+                      onChanged: (String value) => setState(() {
+                        _promptMode = value;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    flex: 6,
                     child: _VbmappMandInlineChoiceGroup(
                       label: '目标呈现',
                       value: _presentation,
@@ -4589,6 +4868,7 @@ class _VbmappMand4QuickRecordDialogState
                   ),
                   const SizedBox(width: 12),
                   Expanded(
+                    flex: 5,
                     child: _VbmappMandInlineChoiceGroup(
                       label: '目标',
                       value: _targetKind,
@@ -4603,8 +4883,8 @@ class _VbmappMand4QuickRecordDialogState
               const SizedBox(height: 12),
               _VbmappMandInlineTextField(
                 controller: _requestController,
-                label: '孩子要求内容',
-                hintText: '如：泡泡、出去、打开',
+                label: '孩子要求原话',
+                hintText: '如：泡泡、出去、该我了',
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -4662,9 +4942,10 @@ class _VbmappMand4QuickRecordDialogState
         person: '',
         setting: '',
         example: '',
-        responseMode: '自发要求',
-        promptLevel: '',
-        functional: _presentation == '呈现物品',
+        responseMode: _promptMode == '提问下' ? '提问下要求' : '自发要求',
+        promptLevel: _promptMode,
+        phraseLevel: '',
+        functional: true,
       ),
     );
   }
@@ -5802,18 +6083,20 @@ class _VbmappFooterButton extends StatelessWidget {
 
 class _VbmappActiveObservationBar extends StatefulWidget {
   const _VbmappActiveObservationBar({
-    required this.item,
+    required this.tone,
     required this.observation,
-    required this.qualifiedCount,
+    required this.statusLabel,
+    required this.summaryText,
     required this.onJump,
     required this.onQuickRecord,
     required this.onPrimaryAction,
     required this.onFinish,
   });
 
-  final _VbmappItem item;
+  final Color tone;
   final _VbmappObservationTimerState observation;
-  final int qualifiedCount;
+  final String statusLabel;
+  final String summaryText;
   final VoidCallback onJump;
   final VoidCallback onQuickRecord;
   final VoidCallback onPrimaryAction;
@@ -5866,10 +6149,9 @@ class _VbmappActiveObservationBarState
   @override
   Widget build(BuildContext context) {
     final bool running = widget.observation.isRunning;
-    final String statusLabel =
-        running ? '${widget.item.navCode}观察中' : '${widget.item.navCode}观察暂停';
-    final String summaryText =
-        '${_vbmappDurationText(widget.observation.elapsedSecondsAt(DateTime.now()))} · ${widget.qualifiedCount}/5';
+    final String statusLabel = running
+        ? widget.statusLabel
+        : widget.statusLabel.replaceFirst('观察中', '观察暂停');
     return Container(
       key: const ValueKey<String>('vbmapp-active-observation-bar'),
       height: 40,
@@ -5888,13 +6170,13 @@ class _VbmappActiveObservationBarState
             child: Ink(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
-                color: widget.item.color.withOpacity(.1),
+                color: widget.tone.withOpacity(.1),
                 borderRadius: BorderRadius.circular(999),
               ),
               child: Text(
                 statusLabel,
                 style: TextStyle(
-                  color: widget.item.color,
+                  color: widget.tone,
                   fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
@@ -5903,7 +6185,7 @@ class _VbmappActiveObservationBarState
           ),
           const SizedBox(width: 7),
           Text(
-            summaryText,
+            widget.summaryText,
             style: const TextStyle(
               color: _VbmappColors.ink,
               fontSize: 11.5,
@@ -6143,6 +6425,9 @@ class _VbmappMandEvent {
     required this.example,
     required this.responseMode,
     required this.promptLevel,
+    this.phraseLevel = '',
+    this.recordedAtIso = '',
+    this.sourceItemCode = '',
     required this.functional,
   });
 
@@ -6158,6 +6443,15 @@ class _VbmappMandEvent {
       example: _safeText(json['example']),
       responseMode: _safeText(json['responseMode']),
       promptLevel: _safeText(json['promptLevel']),
+      phraseLevel: _safeText(
+        json['phraseLevel'] ?? json['languageLevel'] ?? json['phrase_level'],
+      ),
+      recordedAtIso: _safeText(
+        json['recordedAtIso'] ?? json['recorded_at'] ?? '',
+      ),
+      sourceItemCode: _safeText(
+        json['sourceItemCode'] ?? json['source_item_code'] ?? '',
+      ),
       functional: json['functional'] != false,
     );
   }
@@ -6172,9 +6466,14 @@ class _VbmappMandEvent {
   final String example;
   final String responseMode;
   final String promptLevel;
+  final String phraseLevel;
+  final String recordedAtIso;
+  final String sourceItemCode;
   final bool functional;
 
   bool get isNotEmpty => utterance.isNotEmpty || target.isNotEmpty;
+
+  DateTime? get recordedAt => _safeDateTimeParse(recordedAtIso);
 
   bool get hasPhysicalPrompt => promptLevel == '肢体辅助';
 
@@ -6202,10 +6501,45 @@ class _VbmappMandEvent {
       if (example.trim().isNotEmpty) example.trim(),
       if (environment.trim().isNotEmpty) environment.trim(),
       if (targetKind.trim().isNotEmpty) targetKind.trim(),
+      if (phraseLevel.trim().isNotEmpty) phraseLevel.trim(),
     ];
     final String dimensionText =
         dimensions.isEmpty ? '' : ' · ${dimensions.join('/')}';
     return '$spoken -> $targetText · $responseMode$dimensionText';
+  }
+
+  _VbmappMandEvent copyWith({
+    String? utterance,
+    String? target,
+    String? motivationContext,
+    String? environment,
+    String? targetKind,
+    String? person,
+    String? setting,
+    String? example,
+    String? responseMode,
+    String? promptLevel,
+    String? phraseLevel,
+    String? recordedAtIso,
+    String? sourceItemCode,
+    bool? functional,
+  }) {
+    return _VbmappMandEvent(
+      utterance: utterance ?? this.utterance,
+      target: target ?? this.target,
+      motivationContext: motivationContext ?? this.motivationContext,
+      environment: environment ?? this.environment,
+      targetKind: targetKind ?? this.targetKind,
+      person: person ?? this.person,
+      setting: setting ?? this.setting,
+      example: example ?? this.example,
+      responseMode: responseMode ?? this.responseMode,
+      promptLevel: promptLevel ?? this.promptLevel,
+      phraseLevel: phraseLevel ?? this.phraseLevel,
+      recordedAtIso: recordedAtIso ?? this.recordedAtIso,
+      sourceItemCode: sourceItemCode ?? this.sourceItemCode,
+      functional: functional ?? this.functional,
+    );
   }
 
   Map<String, dynamic> toJson() {
@@ -6220,6 +6554,9 @@ class _VbmappMandEvent {
       'example': example,
       'responseMode': responseMode,
       'promptLevel': promptLevel,
+      'phraseLevel': phraseLevel,
+      'recordedAtIso': recordedAtIso,
+      'sourceItemCode': sourceItemCode,
       'functional': functional,
     };
   }
@@ -6279,6 +6616,8 @@ class _VbmappObservationTimerState {
 
   DateTime? get runningSince => _safeDateTimeParse(runningSinceIso);
 
+  DateTime? get startedAt => _safeDateTimeParse(startedAtIso);
+
   int elapsedSecondsAt(DateTime now) {
     if (!isRunning) {
       return accumulatedSeconds;
@@ -6337,6 +6676,19 @@ class _VbmappObservationTimerState {
       runningSinceIso: iso,
       startedAtIso: iso,
       ended: false,
+    );
+  }
+
+  _VbmappObservationTimerState withPlannedMinutes(int value) {
+    if (value <= 0 || value == plannedMinutes) {
+      return this;
+    }
+    return _VbmappObservationTimerState(
+      plannedMinutes: value,
+      accumulatedSeconds: accumulatedSeconds,
+      runningSinceIso: runningSinceIso,
+      startedAtIso: startedAtIso,
+      ended: ended,
     );
   }
 
@@ -6417,6 +6769,81 @@ bool _isSimpleMandRecorder(
       item.itemCode == 'MAND_05M';
 }
 
+bool _isTimedMandItemCode(String itemCode) {
+  return itemCode == 'MAND_04M' ||
+      itemCode == 'MAND_08M' ||
+      itemCode == 'MAND_09M';
+}
+
+int _plannedMinutesForMandItem(_VbmappItem item) {
+  switch (item.itemCode) {
+    case 'MAND_09M':
+      return 30;
+    case 'MAND_04M':
+    case 'MAND_08M':
+    default:
+      return 60;
+  }
+}
+
+String _mandInitiationText(_VbmappMandEvent event) {
+  final String prompt = event.promptLevel.trim();
+  if (prompt == '提问下' || prompt == '自发地') {
+    return prompt;
+  }
+  if (event.responseMode.contains('自发')) {
+    return '自发地';
+  }
+  return '';
+}
+
+bool _mandEventWithinWindow(
+  _VbmappMandEvent event,
+  _VbmappObservationTimerState? observation, {
+  required int plannedMinutes,
+}) {
+  final DateTime? startedAt = observation?.startedAt;
+  final DateTime? recordedAt = event.recordedAt;
+  if (startedAt == null || recordedAt == null) {
+    return true;
+  }
+  if (recordedAt.isBefore(startedAt)) {
+    return false;
+  }
+  return !recordedAt.isAfter(
+    startedAt.add(Duration(minutes: plannedMinutes)),
+  );
+}
+
+bool _mandEventCountsForItem(
+  _VbmappItem item,
+  _VbmappMandEvent event, {
+  _VbmappObservationTimerState? observation,
+}) {
+  if (!event.isQualified) {
+    return false;
+  }
+  if (_isTimedMandItemCode(item.itemCode) &&
+      !_mandEventWithinWindow(
+        event,
+        observation,
+        plannedMinutes: _plannedMinutesForMandItem(item),
+      )) {
+    return false;
+  }
+  switch (item.itemCode) {
+    case 'MAND_04M':
+      return event.environment.trim() == '呈现物品' &&
+          _mandInitiationText(event) != '提问下';
+    case 'MAND_08M':
+      return true;
+    case 'MAND_09M':
+      return _mandInitiationText(event) != '提问下';
+    default:
+      return event.isQualified;
+  }
+}
+
 int _qualifiedMandCount(List<_VbmappMandEvent> events) {
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
@@ -6425,6 +6852,88 @@ int _qualifiedMandCount(List<_VbmappMandEvent> events) {
     }
   }
   return uniqueTargets.length;
+}
+
+int _qualifiedMandCountForItem(
+  _VbmappItem item,
+  List<_VbmappMandEvent> events, {
+  _VbmappObservationTimerState? observation,
+}) {
+  final Set<String> uniqueTargets = <String>{};
+  for (final _VbmappMandEvent event in events) {
+    if (_mandEventCountsForItem(item, event, observation: observation) &&
+        event.uniqueKey.isNotEmpty) {
+      uniqueTargets.add(event.uniqueKey);
+    }
+  }
+  return uniqueTargets.length;
+}
+
+int _mandPhraseQualifiedCountForItem(
+  _VbmappItem item,
+  List<_VbmappMandEvent> events, {
+  _VbmappObservationTimerState? observation,
+}) {
+  final Set<String> uniqueTargets = <String>{};
+  for (final _VbmappMandEvent event in events) {
+    if (!_mandEventCountsForItem(item, event, observation: observation)) {
+      continue;
+    }
+    if (!_isLikelyMultiWordMand(event)) {
+      continue;
+    }
+    if (event.uniqueKey.isNotEmpty) {
+      uniqueTargets.add(event.uniqueKey);
+    }
+  }
+  return uniqueTargets.length;
+}
+
+bool _isLikelyMultiWordMand(_VbmappMandEvent event) {
+  final String explicitLevel = event.phraseLevel.trim();
+  if (explicitLevel == '双词+') {
+    return true;
+  }
+  if (explicitLevel == '单词') {
+    return false;
+  }
+
+  String text = _mandRequestText(event)
+      .replaceAll(RegExp(r'[，。！？、,.!?;；:/\\]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
+  if (text.isEmpty) {
+    return false;
+  }
+
+  final List<String> spacedTokens = text
+      .split(' ')
+      .map((String part) => part.trim())
+      .where((String part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (spacedTokens.length >= 2) {
+    return true;
+  }
+
+  text = text.replaceFirst(RegExp(r'^我想要'), '').trim();
+  if (text.isEmpty) {
+    return false;
+  }
+
+  if (RegExp(r'(我|你|他|她|它|我们|我要|给我|帮我)').hasMatch(text) &&
+      text.runes.length >= 3) {
+    return true;
+  }
+  if (RegExp(r'(快点|一下|一会|给我|帮我|让我|一起|该我了|不要|好了|开门)$').hasMatch(text)) {
+    return true;
+  }
+  if (text.runes.length >= 3 &&
+      RegExp(r'^(打开|帮我|给我|让我|带我|一起|还要|再来|我要|我们|该我|跑|倒|推|拿|去|来|开)')
+          .hasMatch(text)) {
+    return true;
+  }
+
+  return false;
 }
 
 String _mandRequestText(_VbmappMandEvent event) {
@@ -6439,16 +6948,69 @@ String _mandRequestText(_VbmappMandEvent event) {
   return '未记录要求';
 }
 
-String _mandRecordMetaText(_VbmappMandEvent event) {
+String _mandRecordMetaText(
+  _VbmappMandEvent event, {
+  _VbmappItem? item,
+}) {
   final List<String> values = <String>[
+    if (_mandInitiationText(event).isNotEmpty) _mandInitiationText(event),
     if (event.environment.trim().isNotEmpty) event.environment.trim(),
     if (event.targetKind.trim().isNotEmpty) event.targetKind.trim(),
+    if (event.phraseLevel.trim().isNotEmpty) event.phraseLevel.trim(),
     if (event.promptLevel.trim().isNotEmpty) event.promptLevel.trim(),
   ];
+  if (item != null && _isTimedMandItemCode(item.itemCode)) {
+    final DateTime? recordedAt = event.recordedAt;
+    if (recordedAt != null) {
+      values.add(_formatClock(recordedAt));
+    }
+  }
   return values.isEmpty ? '未记录条件' : values.join(' · ');
 }
 
-double _suggestMandScore(_VbmappItem item, List<_VbmappMandEvent> events) {
+int _effectiveObservationSecondsForItem(
+  _VbmappItem item,
+  _VbmappObservationTimerState? observation,
+) {
+  if (observation == null) {
+    return 0;
+  }
+  final int elapsed = observation.elapsedSecondsAt(DateTime.now());
+  final int maxSeconds =
+      _plannedMinutesForMandItem(item) * Duration.secondsPerMinute;
+  return elapsed > maxSeconds ? maxSeconds : elapsed;
+}
+
+String _mandTimedScoreBasisText(
+  _VbmappItem item,
+  double suggestedScore,
+  int qualifiedCount,
+  int actualObservationSeconds,
+  int multiWordCount,
+) {
+  final String baseDuration = '${_plannedMinutesForMandItem(item)}分钟观察窗';
+  switch (item.itemCode) {
+    case 'MAND_08M':
+      return '系统按$baseDuration内的不同要求数量建议${_formatScore(suggestedScore)}分，'
+          '当前计入$qualifiedCount条，其中双词+$multiWordCount条，'
+          '已观察${_vbmappDurationText(actualObservationSeconds)}，老师可在下方评分区覆盖。';
+    case 'MAND_09M':
+      return '系统按$baseDuration内的自发不同要求数量建议${_formatScore(suggestedScore)}分，'
+          '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
+          '老师可在下方评分区覆盖。';
+    case 'MAND_04M':
+    default:
+      return '系统按$baseDuration内的有效自发要求数量建议${_formatScore(suggestedScore)}分，'
+          '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
+          '老师可在下方评分区覆盖。';
+  }
+}
+
+double _suggestMandScore(
+  _VbmappItem item,
+  List<_VbmappMandEvent> events, {
+  _VbmappObservationTimerState? observation,
+}) {
   if (item.itemCode == 'MAND_03M') {
     final Map<String, int> counts = _mandGeneralizationCounts(events);
     final bool onePoint = (counts['people'] ?? 0) >= 2 &&
@@ -6462,7 +7024,25 @@ double _suggestMandScore(_VbmappItem item, List<_VbmappMandEvent> events) {
         (counts['examples'] ?? 0) >= 1;
     return halfPoint ? .5 : 0;
   }
-  final int count = _qualifiedMandCount(events);
+  final int count = _qualifiedMandCountForItem(
+    item,
+    events,
+    observation: observation,
+  );
+  if (item.itemCode == 'MAND_08M') {
+    final int multiWordCount = _mandPhraseQualifiedCountForItem(
+      item,
+      events,
+      observation: observation,
+    );
+    if (count >= 5 && multiWordCount >= 2) {
+      return 1;
+    }
+    if (count >= 2) {
+      return .5;
+    }
+    return 0;
+  }
   final int onePointCount = _scoreCountThreshold(item, 1) ?? 1;
   final int halfPointCount = _scoreCountThreshold(item, .5) ?? onePointCount;
   if (count >= onePointCount) {
