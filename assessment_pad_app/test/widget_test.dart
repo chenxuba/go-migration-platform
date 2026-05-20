@@ -16,6 +16,7 @@ import 'package:assessment_pad_app/pep3_assessment_page.dart';
 import 'package:assessment_pad_app/shuangxi_assessment_page.dart';
 import 'package:assessment_pad_app/smart_timetable_page.dart';
 import 'package:assessment_pad_app/timetable_client.dart';
+import 'package:assessment_pad_app/vbmapp_assessment_client.dart';
 import 'package:assessment_pad_app/vbmapp_assessment_page.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -3626,6 +3627,63 @@ void main() {
     expect(openedArgs?.studentId, 51);
     expect(openedArgs?.scaleName, _vbmappScaleItem.name);
     expect(find.text('VB-MAPP测评已打开'), findsOneWidget);
+  });
+
+  testWidgets('VB-MAPP assessment page exposes all three modules',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: _FakeVbmappAssessmentClient(),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('1 / 212'), findsWidgets);
+    expect(find.text('0 / 170 项'), findsOneWidget);
+    expect(find.text('0 / 24 项'), findsOneWidget);
+    expect(find.text('0 / 18 项'), findsOneWidget);
+    expect(find.text('当前得分'), findsOneWidget);
+    expect(find.text('0.0 / 170'), findsOneWidget);
+    expect(find.text('0 / 96'), findsOneWidget);
+    expect(find.text('0 / 90'), findsOneWidget);
+
+    await tester.tap(find.text('1分：2 个'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.text('1.0 / 170'), findsOneWidget);
+    expect(find.text('1 / 170 项'), findsOneWidget);
+
+    await tester.tap(find.text('障碍评估').first);
+    await tester.pumpAndSettle();
+    expect(find.text('171 / 212'), findsWidgets);
+
+    await tester.tap(find.text('转衔评估').first);
+    await tester.pumpAndSettle();
+    expect(find.text('195 / 212'), findsWidgets);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',
@@ -8086,6 +8144,50 @@ const AssessmentScaleItem _vbmappScaleItem = AssessmentScaleItem(
   executionEntry: 'Pad /vbmapp-assessment',
   apiPackage: '/api/v1/assessments/vbmapp/*',
 );
+
+class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
+  @override
+  Future<AssessmentDraftPage> fetchDraftsPage(
+    String token, {
+    int pageIndex = 1,
+    int pageSize = 1,
+    int studentId = 0,
+    bool latestOnly = true,
+  }) async {
+    return AssessmentDraftPage.empty;
+  }
+
+  @override
+  Future<VbmappDraftDetail> fetchDraftDetail(String token, int id) {
+    throw UnimplementedError();
+  }
+
+  @override
+  Future<VbmappDraftSaveResult> saveDraft(
+    String token,
+    Map<String, dynamic> payload,
+  ) async {
+    return VbmappDraftSaveResult(
+      id: 17,
+      studentId: (payload['studentId'] as num?)?.toInt() ?? 0,
+      studentName: '${payload['studentName'] ?? ''}',
+      assessmentDate: '${payload['assessmentDate'] ?? ''}',
+      examinerName: '${payload['examinerName'] ?? ''}',
+      status: 'draft',
+      answeredItemCount: 1,
+      completionPercent: 0.01,
+    );
+  }
+
+  @override
+  Future<VbmappDraftSubmitResult> submitDraft(String token, int id) async {
+    return VbmappDraftSubmitResult(
+      draftId: id,
+      recordId: 27,
+      draftStatus: 'submitted',
+    );
+  }
+}
 
 class _FakeErxinAssessmentClient implements ErxinAssessmentClient {
   _FakeErxinAssessmentClient({

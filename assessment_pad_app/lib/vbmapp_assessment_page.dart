@@ -9,6 +9,8 @@ import 'home_client.dart';
 import 'pad_top_message.dart';
 import 'vbmapp_assessment_client.dart';
 
+part 'vbmapp_assessment_data.dart';
+
 class VbmappAssessmentLaunchArgs {
   const VbmappAssessmentLaunchArgs({
     this.draftId = 0,
@@ -61,11 +63,15 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
   final Map<String, int> _transitionScores = <String, int>{};
 
   String _token = '';
+  String _studentName = '';
+  String _studentAge = '';
+  String _birthDate = '';
   String _examinerName = '';
   String _assessmentDate = '';
   String _selectedModuleCode = _vbmappModules.first.code;
   String _autoSaveText = '等待作答';
   int _draftId = 0;
+  int _studentId = 0;
   int _selectedItemIndex = 0;
   bool _loading = true;
   bool _saving = false;
@@ -76,6 +82,10 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
   void initState() {
     super.initState();
     _draftId = widget.args.draftId;
+    _studentId = widget.args.studentId;
+    _studentName = widget.args.studentName.trim();
+    _studentAge = widget.args.studentAge.trim();
+    _birthDate = _dateOnlyText(widget.args.birthDate);
     _assessmentDate = _dateOnlyText(widget.args.assessmentDate).isEmpty
         ? _todayIsoDate()
         : _dateOnlyText(widget.args.assessmentDate);
@@ -109,17 +119,64 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
     } on Object {
       session = HomeSession.fallback;
     }
+    VbmappDraftDetail? launchDraft;
+    if (_draftId > 0) {
+      try {
+        launchDraft = await widget.client.fetchDraftDetail(token, _draftId);
+      } on Object catch (error) {
+        if (mounted) {
+          _showMessage('VB-MAPP草稿载入失败：$error', tone: PadMessageTone.error);
+        }
+      }
+    }
     if (!mounted) {
       return;
     }
     setState(() {
       _token = token;
+      if (launchDraft != null) {
+        _applyDraftDetail(launchDraft);
+      }
       if (_examinerName.isEmpty) {
         _examinerName = _sessionExaminerName(session);
       }
       _autoSaveText = _draftId > 0 ? '草稿已载入' : '等待作答';
       _loading = false;
     });
+  }
+
+  void _applyDraftDetail(VbmappDraftDetail detail) {
+    _draftId = detail.id > 0 ? detail.id : _draftId;
+    _studentId = detail.studentId > 0 ? detail.studentId : _studentId;
+    if (detail.studentName.trim().isNotEmpty) {
+      _studentName = detail.studentName.trim();
+    }
+    if (detail.birthDate.trim().isNotEmpty) {
+      _birthDate = _dateOnlyText(detail.birthDate);
+    }
+    if (detail.assessmentDate.trim().isNotEmpty) {
+      _assessmentDate = _dateOnlyText(detail.assessmentDate);
+    }
+    if (detail.examinerName.trim().isNotEmpty) {
+      _examinerName = detail.examinerName.trim();
+    }
+    _milestoneScores
+      ..clear()
+      ..addAll(detail.milestoneScores);
+    _barrierScores
+      ..clear()
+      ..addAll(detail.barrierScores);
+    _transitionScores
+      ..clear()
+      ..addAll(detail.transitionScores);
+    final _VbmappItem? firstMissing = _firstMissingItem();
+    if (firstMissing != null) {
+      _selectedModuleCode = firstMissing.moduleCode;
+      final int missingIndex = _itemsForModule(firstMissing.moduleCode)
+          .indexWhere(
+              (_VbmappItem item) => item.itemCode == firstMissing.itemCode);
+      _selectedItemIndex = missingIndex < 0 ? 0 : missingIndex;
+    }
   }
 
   List<_VbmappItem> get _selectedItems {
@@ -141,11 +198,61 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
     return _answeredCount / _totalItemCount;
   }
 
+  _VbmappScoreSnapshot get _scoreSnapshot {
+    return _VbmappScoreSnapshot(
+      milestoneTotal: _milestoneScores.values.fold<double>(
+        0,
+        (double total, double score) => total + score,
+      ),
+      milestoneMax: _milestoneItems.length,
+      barrierTotal: _barrierScores.values.fold<int>(
+        0,
+        (int total, int score) => total + score,
+      ),
+      barrierMax: _barrierItems.length * 4,
+      transitionTotal: _transitionScores.values.fold<int>(
+        0,
+        (int total, int score) => total + score,
+      ),
+      transitionMax: _transitionItems.length * 5,
+      milestoneDomains: _milestoneDomainSummaries,
+    );
+  }
+
+  List<_VbmappDomainScoreSummary> get _milestoneDomainSummaries {
+    final Map<String, List<_VbmappItem>> groupedItems =
+        <String, List<_VbmappItem>>{};
+    for (final _VbmappItem item in _milestoneItems) {
+      groupedItems
+          .putIfAbsent(item.domainName, () => <_VbmappItem>[])
+          .add(item);
+    }
+    return groupedItems.entries
+        .map((MapEntry<String, List<_VbmappItem>> entry) {
+      final List<_VbmappItem> items = entry.value;
+      final int answered = items
+          .where(
+              (_VbmappItem item) => _milestoneScores.containsKey(item.itemCode))
+          .length;
+      final double score = items.fold<double>(
+        0,
+        (double total, _VbmappItem item) =>
+            total + (_milestoneScores[item.itemCode] ?? 0),
+      );
+      return _VbmappDomainScoreSummary(
+        name: entry.key,
+        score: score,
+        maxScore: items.length,
+        answered: answered,
+        total: items.length,
+      );
+    }).toList(growable: false);
+  }
+
   String get _studentAgeText {
-    final String fallback =
-        widget.args.studentAge.trim().isEmpty ? '未知' : widget.args.studentAge;
+    final String fallback = _studentAge.trim().isEmpty ? '未知' : _studentAge;
     return formatAssessmentAgeText(
-      birthDate: _dateOnlyText(widget.args.birthDate),
+      birthDate: _birthDate,
       assessmentDate: _assessmentDate,
       fallback: fallback,
     );
@@ -235,31 +342,54 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
   }
 
   void _jumpFirstMissing() {
+    final _VbmappItem? missing = _firstMissingItem();
+    if (missing == null) {
+      return;
+    }
+    setState(() {
+      _selectedModuleCode = missing.moduleCode;
+      _selectedItemIndex = _itemsForModule(missing.moduleCode)
+          .indexWhere((_VbmappItem item) => item.itemCode == missing.itemCode);
+    });
+  }
+
+  _VbmappItem? _firstMissingItem() {
     for (final _VbmappModule module in _vbmappModules) {
       final List<_VbmappItem> items = _itemsForModule(module.code);
       final int index =
           items.indexWhere((_VbmappItem item) => _scoreFor(item) == null);
       if (index >= 0) {
-        setState(() {
-          _selectedModuleCode = module.code;
-          _selectedItemIndex = index;
-        });
-        return;
+        return items[index];
       }
     }
+    return null;
   }
 
-  Future<void> _saveDraft() async {
-    if (_saving) {
+  void _selectItem(_VbmappItem item) {
+    final List<_VbmappItem> items = _itemsForModule(item.moduleCode);
+    final int index = items.indexWhere(
+      (_VbmappItem candidate) => candidate.itemCode == item.itemCode,
+    );
+    if (index < 0) {
       return;
+    }
+    setState(() {
+      _selectedModuleCode = item.moduleCode;
+      _selectedItemIndex = index;
+    });
+  }
+
+  Future<int> _saveDraft({bool silent = false}) async {
+    if (_saving) {
+      return _draftId;
     }
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再保存草稿', tone: PadMessageTone.error);
-      return;
+      return 0;
     }
-    if (widget.args.studentId <= 0) {
+    if (_studentId <= 0) {
       _showMessage('请先从开始测评页选择学员', tone: PadMessageTone.error);
-      return;
+      return 0;
     }
     setState(() {
       _saving = true;
@@ -270,10 +400,10 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
         _token,
         <String, dynamic>{
           if (_draftId > 0) 'id': _draftId,
-          'studentId': widget.args.studentId,
-          'studentName': widget.args.studentName,
+          'studentId': _studentId,
+          'studentName': _studentName,
           'examinerName': _examinerName,
-          'birthDate': _dateOnlyText(widget.args.birthDate),
+          'birthDate': _birthDate,
           'assessmentDate': _assessmentDate,
           'scaleVersion': _scaleVersion,
           'milestoneScores': _milestoneScores,
@@ -282,32 +412,37 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
         },
       );
       if (!mounted) {
-        return;
+        return 0;
       }
       setState(() {
         _draftId = result.id > 0 ? result.id : _draftId;
         _autoSaveText = '草稿已保存';
         _saving = false;
       });
-      _showMessage('VB-MAPP草稿已保存', tone: PadMessageTone.success);
+      if (!silent) {
+        _showMessage('VB-MAPP草稿已保存', tone: PadMessageTone.success);
+      }
+      return _draftId;
     } on AssessmentScaleApiException catch (error) {
       if (!mounted) {
-        return;
+        return 0;
       }
       setState(() {
         _autoSaveText = '保存失败';
         _saving = false;
       });
       _showMessage(error.message, tone: PadMessageTone.error);
+      return 0;
     } on Object catch (error) {
       if (!mounted) {
-        return;
+        return 0;
       }
       setState(() {
         _autoSaveText = '保存失败';
         _saving = false;
       });
       _showMessage('VB-MAPP草稿保存失败：$error', tone: PadMessageTone.error);
+      return 0;
     }
   }
 
@@ -315,11 +450,58 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
     if (_submitting) {
       return;
     }
-    setState(() => _submitting = true);
-    _showMessage('VB-MAPP正式提交将在完整题库作答页接入后开放');
-    await Future<void>.delayed(const Duration(milliseconds: 240));
-    if (mounted) {
-      setState(() => _submitting = false);
+    final int missingCount = _totalItemCount - _answeredCount;
+    if (missingCount > 0) {
+      _showMessage(
+        'VB-MAPP还有 $missingCount 个项目未评分，完成后才能提交正式记录',
+        tone: PadMessageTone.error,
+      );
+      _jumpFirstMissing();
+      return;
+    }
+    if (_token.trim().isEmpty) {
+      _showMessage('请先登录后再提交记录', tone: PadMessageTone.error);
+      return;
+    }
+    setState(() {
+      _submitting = true;
+      _autoSaveText = '提交中';
+    });
+    try {
+      final int draftId = await _saveDraft(silent: true);
+      if (draftId <= 0) {
+        if (mounted) {
+          setState(() => _submitting = false);
+        }
+        return;
+      }
+      await widget.client.submitDraft(_token, draftId);
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _autoSaveText = '已提交';
+        _submitting = false;
+      });
+      _showMessage('VB-MAPP正式记录已提交', tone: PadMessageTone.success);
+    } on AssessmentScaleApiException catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _autoSaveText = '提交失败';
+        _submitting = false;
+      });
+      _showMessage(error.message, tone: PadMessageTone.error);
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _autoSaveText = '提交失败';
+        _submitting = false;
+      });
+      _showMessage('VB-MAPP记录提交失败：$error', tone: PadMessageTone.error);
     }
   }
 
@@ -342,13 +524,14 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
   @override
   Widget build(BuildContext context) {
     final _VbmappItem item = _selectedItem;
+    final _VbmappScoreSnapshot scoreSnapshot = _scoreSnapshot;
     return ColoredBox(
       color: _VbmappColors.page,
       child: Column(
         children: <Widget>[
           _VbmappTopBar(
             scaleName: widget.args.scaleName,
-            studentName: widget.args.studentName,
+            studentName: _studentName,
             studentAge: _studentAgeText,
             assessmentDate: _assessmentDate,
             examinerName: _examinerName,
@@ -373,8 +556,13 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
                       child: _VbmappModuleRail(
                         modules: _vbmappModules,
                         selectedCode: _selectedModuleCode,
+                        selectedItemCode: item.itemCode,
+                        items: _selectedItems,
                         answeredCount: _answeredCountByModule,
+                        isAnswered: (_VbmappItem item) =>
+                            _scoreFor(item) != null,
                         onSelectModule: _selectModule,
+                        onSelectItem: _selectItem,
                       ),
                     ),
                     const SizedBox(width: 10),
@@ -393,6 +581,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
                         answered: _answeredCount,
                         total: _totalItemCount,
                         selectedModule: _moduleByCode(_selectedModuleCode),
+                        scoreSnapshot: scoreSnapshot,
                         draftId: _draftId,
                       ),
                     ),
@@ -501,7 +690,7 @@ class _VbmappTopBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1280;
+          final bool compact = constraints.maxWidth < 1500;
           final List<Widget> headerChildren = <Widget>[
             Text(
               '$title 测评工作台',
@@ -749,14 +938,22 @@ class _VbmappModuleRail extends StatelessWidget {
   const _VbmappModuleRail({
     required this.modules,
     required this.selectedCode,
+    required this.selectedItemCode,
+    required this.items,
     required this.answeredCount,
+    required this.isAnswered,
     required this.onSelectModule,
+    required this.onSelectItem,
   });
 
   final List<_VbmappModule> modules;
   final String selectedCode;
+  final String selectedItemCode;
+  final List<_VbmappItem> items;
   final Map<String, int> answeredCount;
+  final bool Function(_VbmappItem item) isAnswered;
   final ValueChanged<String> onSelectModule;
+  final ValueChanged<_VbmappItem> onSelectItem;
 
   @override
   Widget build(BuildContext context) {
@@ -791,9 +988,55 @@ class _VbmappModuleRail extends StatelessWidget {
               answered: answeredCount[module.code] ?? 0,
               onTap: () => onSelectModule(module.code),
             ),
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
           ],
-          const Spacer(),
+          const SizedBox(height: 4),
+          const Divider(height: 1, color: _VbmappColors.lineSoft),
+          const SizedBox(height: 10),
+          Expanded(
+            child: ListView.builder(
+              padding: EdgeInsets.zero,
+              itemCount: items.length,
+              itemBuilder: (BuildContext context, int index) {
+                final _VbmappItem item = items[index];
+                final _VbmappItem? previous =
+                    index > 0 ? items[index - 1] : null;
+                final bool showHeader = previous == null ||
+                    previous.domainName != item.domainName ||
+                    previous.ageBand != item.ageBand;
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    if (showHeader)
+                      Padding(
+                        padding: EdgeInsets.only(
+                          top: index == 0 ? 0 : 10,
+                          bottom: 6,
+                        ),
+                        child: Text(
+                          '${item.domainName} · ${item.ageBand}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _VbmappColors.muted,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    _VbmappItemNavTile(
+                      item: item,
+                      selected: item.itemCode == selectedItemCode,
+                      answered: isAnswered(item),
+                      onTap: () => onSelectItem(item),
+                    ),
+                    const SizedBox(height: 6),
+                  ],
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 10),
           _VbmappSummaryStrip(
             label: '结构化项目',
             value: '212',
@@ -876,6 +1119,84 @@ class _VbmappModuleTile extends StatelessWidget {
   }
 }
 
+class _VbmappItemNavTile extends StatelessWidget {
+  const _VbmappItemNavTile({
+    required this.item,
+    required this.selected,
+    required this.answered,
+    required this.onTap,
+  });
+
+  final _VbmappItem item;
+  final bool selected;
+  final bool answered;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent = item.color;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          decoration: BoxDecoration(
+            color: selected ? accent.withOpacity(.12) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color:
+                  selected ? accent.withOpacity(.55) : _VbmappColors.lineSoft,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Container(
+                width: 22,
+                height: 22,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: answered ? accent : const Color(0xFFFFF6EF),
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: answered ? accent : _VbmappColors.line,
+                  ),
+                ),
+                child: answered
+                    ? const Icon(Icons.check_rounded,
+                        color: Colors.white, size: 15)
+                    : Text(
+                        '${item.localNo}',
+                        style: const TextStyle(
+                          color: _VbmappColors.body,
+                          fontSize: 10,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  item.shortTitle,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: selected ? _VbmappColors.ink : _VbmappColors.body,
+                    fontSize: 12,
+                    height: 1.18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VbmappWorkspace extends StatelessWidget {
   const _VbmappWorkspace({
     required this.item,
@@ -914,51 +1235,61 @@ class _VbmappWorkspace extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 18),
-          Text(
-            item.label,
-            style: const TextStyle(
-              color: _VbmappColors.ink,
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  Text(
+                    item.label,
+                    style: const TextStyle(
+                      color: _VbmappColors.ink,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    item.title,
+                    style: const TextStyle(
+                      color: _VbmappColors.ink,
+                      fontSize: 24,
+                      height: 1.38,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  const Divider(height: 1, color: _VbmappColors.lineSoft),
+                  const SizedBox(height: 18),
+                  Text(
+                    item.scoreTitle,
+                    style: const TextStyle(
+                      color: _VbmappColors.body,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 10,
+                    children: <Widget>[
+                      for (final _VbmappScoreOption option in item.scoreOptions)
+                        _VbmappScoreOptionButton(
+                          option: option,
+                          selected: score == option.score,
+                          accent: item.color,
+                          onTap: () => onSelectScore(option.score),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 18),
+                  _VbmappMaterialHint(item: item),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 10),
-          Text(
-            item.title,
-            style: const TextStyle(
-              color: _VbmappColors.ink,
-              fontSize: 24,
-              height: 1.38,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 20),
-          const Divider(height: 1, color: _VbmappColors.lineSoft),
-          const SizedBox(height: 18),
-          Text(
-            item.scoreTitle,
-            style: const TextStyle(
-              color: _VbmappColors.body,
-              fontSize: 15,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 10,
-            runSpacing: 10,
-            children: <Widget>[
-              for (final _VbmappScoreOption option in item.scoreOptions)
-                _VbmappScoreOptionButton(
-                  option: option,
-                  selected: score == option.score,
-                  accent: item.color,
-                  onTap: () => onSelectScore(option.score),
-                ),
-            ],
-          ),
-          const Spacer(),
-          _VbmappMaterialHint(item: item),
         ],
       ),
     );
@@ -987,7 +1318,7 @@ class _VbmappScoreOptionButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Ink(
           width: 174,
-          height: 78,
+          height: 90,
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
             color: selected ? accent : Colors.white,
@@ -1070,6 +1401,7 @@ class _VbmappRightRail extends StatelessWidget {
     required this.answered,
     required this.total,
     required this.selectedModule,
+    required this.scoreSnapshot,
     required this.draftId,
   });
 
@@ -1077,6 +1409,7 @@ class _VbmappRightRail extends StatelessWidget {
   final int answered;
   final int total;
   final _VbmappModule selectedModule;
+  final _VbmappScoreSnapshot scoreSnapshot;
   final int draftId;
 
   @override
@@ -1129,18 +1462,23 @@ class _VbmappRightRail extends StatelessWidget {
             subValue: 'VBMAPP',
             icon: Icons.save_outlined,
           ),
-          const SizedBox(height: 18),
-          const Text(
-            '历史对比',
-            style: TextStyle(
-              color: _VbmappColors.ink,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
+          const SizedBox(height: 12),
+          Expanded(
+            child: SingleChildScrollView(
+              padding: EdgeInsets.zero,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: <Widget>[
+                  _VbmappCurrentScoreCard(snapshot: scoreSnapshot),
+                  const SizedBox(height: 12),
+                  _VbmappMilestoneDomainScoreCard(
+                    domains: scoreSnapshot.milestoneDomains,
+                  ),
+                ],
+              ),
             ),
           ),
-          const SizedBox(height: 10),
-          const _VbmappHistoryPreview(),
-          const Spacer(),
+          const SizedBox(height: 12),
           const _VbmappLegend(),
         ],
       ),
@@ -1218,8 +1556,10 @@ class _VbmappSummaryStrip extends StatelessWidget {
   }
 }
 
-class _VbmappHistoryPreview extends StatelessWidget {
-  const _VbmappHistoryPreview();
+class _VbmappCurrentScoreCard extends StatelessWidget {
+  const _VbmappCurrentScoreCard({required this.snapshot});
+
+  final _VbmappScoreSnapshot snapshot;
 
   @override
   Widget build(BuildContext context) {
@@ -1230,18 +1570,141 @@ class _VbmappHistoryPreview extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: _VbmappColors.lineSoft),
       ),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
+          const Row(
+            children: <Widget>[
+              Icon(
+                Icons.insights_rounded,
+                color: _VbmappColors.orange,
+                size: 20,
+              ),
+              SizedBox(width: 8),
+              Text(
+                '当前得分',
+                style: TextStyle(
+                  color: _VbmappColors.ink,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
           _VbmappTinyMetric(
-              label: '里程碑', value: '0.0', color: _VbmappColors.orange),
-          SizedBox(height: 8),
-          _VbmappTinyMetric(label: '障碍', value: '0', color: _VbmappColors.blue),
-          SizedBox(height: 8),
+            label: '里程碑',
+            value: '${snapshot.milestoneScoreText} / ${snapshot.milestoneMax}',
+            color: _VbmappColors.orange,
+          ),
+          const SizedBox(height: 8),
           _VbmappTinyMetric(
-              label: '转衔', value: '0', color: _VbmappColors.green),
+            label: '障碍',
+            value: '${snapshot.barrierTotal} / ${snapshot.barrierMax}',
+            color: _VbmappColors.blue,
+          ),
+          const SizedBox(height: 8),
+          _VbmappTinyMetric(
+            label: '转衔',
+            value: '${snapshot.transitionTotal} / ${snapshot.transitionMax}',
+            color: _VbmappColors.green,
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _VbmappMilestoneDomainScoreCard extends StatelessWidget {
+  const _VbmappMilestoneDomainScoreCard({required this.domains});
+
+  final List<_VbmappDomainScoreSummary> domains;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _VbmappColors.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          const Text(
+            '里程碑领域',
+            style: TextStyle(
+              color: _VbmappColors.ink,
+              fontSize: 15,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(height: 10),
+          for (final _VbmappDomainScoreSummary domain in domains) ...<Widget>[
+            _VbmappDomainScoreRow(domain: domain),
+            if (domain != domains.last) const SizedBox(height: 10),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _VbmappDomainScoreRow extends StatelessWidget {
+  const _VbmappDomainScoreRow({required this.domain});
+
+  final _VbmappDomainScoreSummary domain;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            Expanded(
+              child: Text(
+                domain.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  color: _VbmappColors.body,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+            Text(
+              '${domain.scoreText}/${domain.maxScore}',
+              style: const TextStyle(
+                color: _VbmappColors.ink,
+                fontSize: 12,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+            const SizedBox(width: 6),
+            Text(
+              '${domain.answered}/${domain.total}项',
+              style: const TextStyle(
+                color: _VbmappColors.muted,
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: domain.percent,
+            minHeight: 7,
+            color: _VbmappColors.orange,
+            backgroundColor: _VbmappColors.lineSoft,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1564,6 +2027,57 @@ BoxDecoration _vbmappCardDecoration() {
   );
 }
 
+class _VbmappScoreSnapshot {
+  const _VbmappScoreSnapshot({
+    required this.milestoneTotal,
+    required this.milestoneMax,
+    required this.barrierTotal,
+    required this.barrierMax,
+    required this.transitionTotal,
+    required this.transitionMax,
+    required this.milestoneDomains,
+  });
+
+  final double milestoneTotal;
+  final int milestoneMax;
+  final int barrierTotal;
+  final int barrierMax;
+  final int transitionTotal;
+  final int transitionMax;
+  final List<_VbmappDomainScoreSummary> milestoneDomains;
+
+  String get milestoneScoreText {
+    return milestoneTotal.toStringAsFixed(1);
+  }
+}
+
+class _VbmappDomainScoreSummary {
+  const _VbmappDomainScoreSummary({
+    required this.name,
+    required this.score,
+    required this.maxScore,
+    required this.answered,
+    required this.total,
+  });
+
+  final String name;
+  final double score;
+  final int maxScore;
+  final int answered;
+  final int total;
+
+  double get percent {
+    if (maxScore <= 0) {
+      return 0;
+    }
+    return (score / maxScore).clamp(0, 1).toDouble();
+  }
+
+  String get scoreText {
+    return score.toStringAsFixed(1);
+  }
+}
+
 class _VbmappModule {
   const _VbmappModule({
     required this.code,
@@ -1610,6 +2124,29 @@ class _VbmappItem {
   final List<_VbmappScoreOption> scoreOptions;
   final String materialHint;
   final Color color;
+
+  int get localNo {
+    switch (moduleCode) {
+      case 'barriers':
+        return sequenceNo - 170;
+      case 'transition':
+        return sequenceNo - 194;
+      case 'milestones':
+      default:
+        return sequenceNo;
+    }
+  }
+
+  String get shortTitle {
+    final String compact = title
+        .replaceAll(RegExp(r'[（(].*?[）)]'), '')
+        .replaceAll(RegExp(r'\\s+'), ' ')
+        .trim();
+    if (compact.isEmpty) {
+      return label;
+    }
+    return compact;
+  }
 }
 
 class _VbmappScoreOption {
@@ -1627,181 +2164,6 @@ class _VbmappScoreOption {
     }
     return score.toString();
   }
-}
-
-const List<_VbmappModule> _vbmappModules = <_VbmappModule>[
-  _VbmappModule(
-    code: 'milestones',
-    title: '里程碑评估',
-    subtitle: '170项 / 16领域',
-    itemCount: 170,
-    icon: Icons.flag_outlined,
-    color: _VbmappColors.orange,
-  ),
-  _VbmappModule(
-    code: 'barriers',
-    title: '障碍评估',
-    subtitle: '24项 / 0-4分',
-    itemCount: 24,
-    icon: Icons.report_problem_outlined,
-    color: _VbmappColors.blue,
-  ),
-  _VbmappModule(
-    code: 'transition',
-    title: '转衔评估',
-    subtitle: '18项 / 1-5分',
-    itemCount: 18,
-    icon: Icons.alt_route_rounded,
-    color: _VbmappColors.green,
-  ),
-];
-
-const List<_VbmappScoreOption> _milestoneScoreOptions = <_VbmappScoreOption>[
-  _VbmappScoreOption(score: 0, label: '未通过'),
-  _VbmappScoreOption(score: .5, label: '部分通过'),
-  _VbmappScoreOption(score: 1, label: '通过'),
-];
-
-const List<_VbmappScoreOption> _barrierScoreOptions = <_VbmappScoreOption>[
-  _VbmappScoreOption(score: 0, label: '无明显障碍'),
-  _VbmappScoreOption(score: 1, label: '轻微'),
-  _VbmappScoreOption(score: 2, label: '中等'),
-  _VbmappScoreOption(score: 3, label: '明显'),
-  _VbmappScoreOption(score: 4, label: '严重'),
-];
-
-const List<_VbmappScoreOption> _transitionScoreOptions = <_VbmappScoreOption>[
-  _VbmappScoreOption(score: 1, label: '高度支持'),
-  _VbmappScoreOption(score: 2, label: '较多支持'),
-  _VbmappScoreOption(score: 3, label: '过渡支持'),
-  _VbmappScoreOption(score: 4, label: '较少支持'),
-  _VbmappScoreOption(score: 5, label: '较少限制'),
-];
-
-const List<_VbmappItem> _milestoneItems = <_VbmappItem>[
-  _VbmappItem(
-    sequenceNo: 1,
-    moduleCode: 'milestones',
-    itemCode: 'MAND_01M',
-    label: '提要求 1-M',
-    domainName: '提要求',
-    ageBand: '0-18个月',
-    assessmentMode: 'E',
-    title: '发出2个话语、手语，或图片交换沟通系统，但可能需要仿说、模仿，或其他辅助，但不需要肢体辅助。',
-    scoreTitle: '里程碑评分',
-    scoreOptions: _milestoneScoreOptions,
-    materialHint: '可准备饼干、书、泡泡等强化物，记录儿童是否能用功能性沟通提出要求。',
-    color: _VbmappColors.orange,
-  ),
-  _VbmappItem(
-    sequenceNo: 2,
-    moduleCode: 'milestones',
-    itemCode: 'MAND_02M',
-    label: '提要求 2-M',
-    domainName: '提要求',
-    ageBand: '0-18个月',
-    assessmentMode: 'E',
-    title: '在无辅助下提出4个不同的要求，所要的物件可在眼前。',
-    scoreTitle: '里程碑评分',
-    scoreOptions: _milestoneScoreOptions,
-    materialHint: '可用音乐、彩虹弹簧、球等常用强化物，观察儿童是否需要额外辅助。',
-    color: _VbmappColors.orange,
-  ),
-  _VbmappItem(
-    sequenceNo: 6,
-    moduleCode: 'milestones',
-    itemCode: 'TACT_01M',
-    label: '命名 1-M',
-    domainName: '命名',
-    ageBand: '0-18个月',
-    assessmentMode: 'T',
-    title: '能对2个强化物进行命名。',
-    scoreTitle: '里程碑评分',
-    scoreOptions: _milestoneScoreOptions,
-    materialHint: '选择儿童熟悉且有动机的物件或角色，记录自发或在测试条件下的命名表现。',
-    color: _VbmappColors.orange,
-  ),
-];
-
-const List<_VbmappItem> _barrierItems = <_VbmappItem>[
-  _VbmappItem(
-    sequenceNo: 171,
-    moduleCode: 'barriers',
-    itemCode: 'B01',
-    label: 'B01 负面行为',
-    domainName: '障碍评估',
-    ageBand: '全阶段',
-    assessmentMode: '观察',
-    title: '评估负面行为的频率、强度，以及是否影响学习和安全。',
-    scoreTitle: '障碍评分',
-    scoreOptions: _barrierScoreOptions,
-    materialHint: '结合课堂观察、家长访谈和既往记录评分；分值越高表示障碍越明显。',
-    color: _VbmappColors.blue,
-  ),
-  _VbmappItem(
-    sequenceNo: 172,
-    moduleCode: 'barriers',
-    itemCode: 'B02',
-    label: 'B02 不听从指令',
-    domainName: '障碍评估',
-    ageBand: '全阶段',
-    assessmentMode: '观察',
-    title: '评估儿童在成人提出要求时的不服从、逃避和恢复情况。',
-    scoreTitle: '障碍评分',
-    scoreOptions: _barrierScoreOptions,
-    materialHint: '记录不同指令难度、不同人员和不同环境下的一致性表现。',
-    color: _VbmappColors.blue,
-  ),
-];
-
-const List<_VbmappItem> _transitionItems = <_VbmappItem>[
-  _VbmappItem(
-    sequenceNo: 195,
-    moduleCode: 'transition',
-    itemCode: 'T01',
-    label: 'T01 里程碑总分',
-    domainName: '转衔评估',
-    ageBand: '安置计划',
-    assessmentMode: '汇总',
-    title: '根据VB-MAPP里程碑评估总分判断当前转衔准备程度。',
-    scoreTitle: '转衔评分',
-    scoreOptions: _transitionScoreOptions,
-    materialHint: '系统后续会依据里程碑总分自动建议该项分值，并允许评估者确认。',
-    color: _VbmappColors.green,
-  ),
-  _VbmappItem(
-    sequenceNo: 196,
-    moduleCode: 'transition',
-    itemCode: 'T02',
-    label: 'T02 障碍评估总分',
-    domainName: '转衔评估',
-    ageBand: '安置计划',
-    assessmentMode: '汇总',
-    title: '根据障碍评估总分判断进入较少限制教育环境的风险。',
-    scoreTitle: '转衔评分',
-    scoreOptions: _transitionScoreOptions,
-    materialHint: '障碍总分越高，通常需要更密集的支持和更谨慎的转衔安排。',
-    color: _VbmappColors.green,
-  ),
-];
-
-List<_VbmappItem> _itemsForModule(String code) {
-  switch (code) {
-    case 'barriers':
-      return _barrierItems;
-    case 'transition':
-      return _transitionItems;
-    case 'milestones':
-    default:
-      return _milestoneItems;
-  }
-}
-
-_VbmappModule _moduleByCode(String code) {
-  return _vbmappModules.firstWhere(
-    (_VbmappModule module) => module.code == code,
-    orElse: () => _vbmappModules.first,
-  );
 }
 
 String _sessionExaminerName(HomeSession session) {
