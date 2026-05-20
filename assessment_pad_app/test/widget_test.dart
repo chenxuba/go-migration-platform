@@ -4313,10 +4313,11 @@ void main() {
     }
 
     expect(
-      find.text('能提出5个不同的要求，其中至少要包含2个或2个以上的单词'),
+      find.text(
+        '能提出5个不同的要求，其中至少要包含2个或2个以上的单词（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）',
+      ),
       findsOneWidget,
     );
-    expect(find.text('（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）'), findsOneWidget);
     expect(find.text('提要求8M观察记录'), findsOneWidget);
     expect(find.text('诱发'), findsOneWidget);
     expect(find.text('语言'), findsNothing);
@@ -8981,6 +8982,92 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           preparationChecks: <String>[],
         ),
       },
+    );
+  }
+
+  @override
+  Future<VbmappMaterialCatalog> fetchMaterialCatalog(
+    String token, {
+    String moduleCode = '',
+    String itemCode = '',
+  }) async {
+    final List<VbmappMaterialCatalogItem> items = <VbmappMaterialCatalogItem>[
+      VbmappMaterialCatalogItem(
+        moduleCode: 'milestones',
+        itemCode: 'MAND_01M',
+        materialProfileId: 'mand_1m_request_starter_set',
+        materialProfileLabel: '提要求1M入门强化物/动作',
+        suggestedTypes: const <String>['食物/饮料', '实物/活动', '动作/帮助'],
+        recommendedMaterials: const <VbmappMaterialSuggestion>[
+          VbmappMaterialSuggestion(
+              id: 'test-cookie', name: '饼干', type: '食物/饮料'),
+          VbmappMaterialSuggestion(id: 'test-book', name: '书', type: '实物/活动'),
+        ],
+        quickPicksByField: const <String, Object?>{},
+        preparationChecks: const <String>[],
+      ),
+      VbmappMaterialCatalogItem(
+        moduleCode: 'milestones',
+        itemCode: 'MAND_02M',
+        materialProfileId: 'mand_2m_visible_request_set',
+        materialProfileLabel: '提要求2M可见强化物/活动',
+        suggestedTypes: const <String>['活动', '实物玩具', '社交游戏'],
+        recommendedMaterials: const <VbmappMaterialSuggestion>[
+          VbmappMaterialSuggestion(id: 'test-music', name: '音乐', type: '活动'),
+          VbmappMaterialSuggestion(
+              id: 'test-slinky', name: '彩虹弹簧', type: '实物玩具'),
+        ],
+        quickPicksByField: const <String, Object?>{},
+        preparationChecks: const <String>[],
+      ),
+      VbmappMaterialCatalogItem(
+        moduleCode: 'milestones',
+        itemCode: 'MAND_03M',
+        materialProfileId: 'potential_reinforcer_set',
+        materialProfileLabel: '潜在强化物/活动',
+        suggestedTypes: const <String>['实物玩具', '活动', '社交游戏'],
+        recommendedMaterials: const <VbmappMaterialSuggestion>[
+          VbmappMaterialSuggestion(
+              id: 'test-bubbles-general', name: '泡泡', type: '社交游戏'),
+        ],
+        quickPicksByField: const <String, Object?>{
+          'mand3_people': <String>['爸爸', '妈妈', '老师', '治疗师'],
+          'mand3_settings': <String>['屋里', '屋外', '教室', '游戏区'],
+          'mand3_examples_default': <String>['红瓶泡泡', '蓝瓶泡泡'],
+          'mand3_examples_bubbles': <String>['红瓶泡泡', '蓝瓶泡泡'],
+        },
+        preparationChecks: const <String>[],
+      ),
+      VbmappMaterialCatalogItem(
+        moduleCode: 'milestones',
+        itemCode: 'MAND_04M',
+        materialProfileId: 'potential_reinforcer_set',
+        materialProfileLabel: '潜在强化物/活动',
+        suggestedTypes: const <String>['实物玩具', '活动', '社交游戏'],
+        recommendedMaterials: const <VbmappMaterialSuggestion>[
+          VbmappMaterialSuggestion(
+              id: 'test-ball-general', name: '球', type: '实物玩具'),
+        ],
+        quickPicksByField: const <String, Object?>{},
+        preparationChecks: const <String>[],
+      ),
+    ];
+    final String normalizedModule = moduleCode.trim().toLowerCase();
+    final String normalizedItem = itemCode.trim().toUpperCase();
+    final List<VbmappMaterialCatalogItem> filtered = items.where((
+      VbmappMaterialCatalogItem item,
+    ) {
+      if (normalizedModule.isNotEmpty && item.moduleCode != normalizedModule) {
+        return false;
+      }
+      if (normalizedItem.isNotEmpty && item.itemCode != normalizedItem) {
+        return false;
+      }
+      return true;
+    }).toList(growable: false);
+    return VbmappMaterialCatalog(
+      scaleVersion: 'VBMAPP_CN_2ND_DRAFT_2026_05',
+      items: filtered,
     );
   }
 

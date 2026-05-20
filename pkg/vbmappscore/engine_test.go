@@ -260,6 +260,69 @@ func TestScoreAutoCalculatesMAND03MFromGeneralizationEvidence(t *testing.T) {
 	}
 }
 
+func TestScoreAutoCalculatesMAND01MFromEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_01M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "饼干", "promptLevel": "无肢体辅助", "functional": true},
+							map[string]any{"utterance": "打开", "promptLevel": "无肢体辅助", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_01M")
+	if item.Score == nil || *item.Score != 1 {
+		t.Fatalf("expected MAND_01M score 1 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND02MHalfPointFromEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_02M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "音乐", "promptLevel": "提问下", "functional": true},
+							map[string]any{"utterance": "球", "promptLevel": "自发地", "functional": true},
+							map[string]any{"utterance": "泡泡", "promptLevel": "自发地", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_02M")
+	if item.Score == nil || *item.Score != 0.5 {
+		t.Fatalf("expected MAND_02M score 0.5 from evidence, got %+v", item)
+	}
+}
+
 func TestScoreAutoCalculatesMAND03MHalfPointFromGeneralizationEvidence(t *testing.T) {
 	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
 	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
@@ -289,6 +352,42 @@ func TestScoreAutoCalculatesMAND03MHalfPointFromGeneralizationEvidence(t *testin
 	item := findMilestone(t, result.Milestones, "MAND_03M")
 	if item.Score == nil || *item.Score != 0.5 {
 		t.Fatalf("expected MAND_03M score 0.5 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND05MFromEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	events := make([]any, 0, 10)
+	for _, utterance := range []string{"苹果", "秋千", "车", "果汁", "饼干", "泡泡", "音乐", "积木", "球", "打开"} {
+		events = append(events, map[string]any{
+			"utterance":   utterance,
+			"promptLevel": "自发地",
+			"functional":  true,
+		})
+	}
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_05M": {
+					"evidence": map[string]any{
+						"mandEvents": events,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_05M")
+	if item.Score == nil || *item.Score != 1 {
+		t.Fatalf("expected MAND_05M score 1 from evidence, got %+v", item)
 	}
 }
 

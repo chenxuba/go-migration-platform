@@ -69,6 +69,7 @@ func (handler *Handler) Register(mux *http.ServeMux) {
 	mux.HandleFunc("/api/v1/assessments/vbmapp/score", handler.scoreVBMAPP)
 	mux.HandleFunc("/api/v1/assessments/vbmapp/schema", handler.vbmappAssessmentSchema)
 	mux.HandleFunc("/api/v1/assessments/vbmapp/material/profiles", handler.vbmappMaterialProfiles)
+	mux.HandleFunc("/api/v1/assessments/vbmapp/material/catalog", handler.vbmappMaterialCatalog)
 	mux.HandleFunc("/api/v1/assessments/vbmapp/material/items/save", handler.vbmappMaterialItemSave)
 	mux.HandleFunc("/api/v1/assessments/vbmapp/material/items/delete", handler.vbmappMaterialItemDelete)
 	mux.HandleFunc("/api/v1/assessments/vbmapp/drafts/save", handler.saveVBMAPPAssessmentDraft)

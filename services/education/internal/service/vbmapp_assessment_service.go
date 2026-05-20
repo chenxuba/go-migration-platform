@@ -120,19 +120,9 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP response field templates: %w", err)
 	}
-	materialProfiles, err := vbmappscore.LoadResponseMaterialProfilesFile(filepath.Join(dataDir, vbmappMaterialProfileFile))
+	materialProfiles, err := svc.loadMergedVBMAPPMaterialProfiles(context.Background(), dataDir)
 	if err != nil {
-		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP response material profiles: %w", err)
-	}
-	if svc != nil && svc.repo != nil {
-		dbProfiles, dbErr := svc.repo.ListVBMAPPResponseMaterialProfiles(context.Background(), vbmappScaleVersion)
-		if dbErr == nil && len(dbProfiles) > 0 {
-			for profileID, profile := range dbProfiles {
-				materialProfiles[profileID] = mergeVBMAPPResponseMaterialProfile(materialProfiles[profileID], profile)
-			}
-		} else if dbErr != nil && !isVBMAPPMaterialLibraryFallbackError(dbErr) {
-			return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP DB material profiles: %w", dbErr)
-		}
+		return VBMAPPAssessmentSchemaResponse{}, err
 	}
 	summary, err := loadVBMAPPResponseSchemaSummary(filepath.Join(dataDir, vbmappSchemaSummaryFile))
 	if err != nil {
@@ -158,6 +148,27 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 		ResponseMaterialProfiles:  materialProfiles,
 		ResponseSchemaSummary:     summary,
 	}, nil
+}
+
+func (svc *Service) loadMergedVBMAPPMaterialProfiles(
+	ctx context.Context,
+	dataDir string,
+) (map[string]vbmappscore.ResponseMaterialProfile, error) {
+	materialProfiles, err := vbmappscore.LoadResponseMaterialProfilesFile(filepath.Join(dataDir, vbmappMaterialProfileFile))
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP response material profiles: %w", err)
+	}
+	if svc != nil && svc.repo != nil {
+		dbProfiles, dbErr := svc.repo.ListVBMAPPResponseMaterialProfiles(ctx, vbmappScaleVersion)
+		if dbErr == nil && len(dbProfiles) > 0 {
+			for profileID, profile := range dbProfiles {
+				materialProfiles[profileID] = mergeVBMAPPResponseMaterialProfile(materialProfiles[profileID], profile)
+			}
+		} else if dbErr != nil && !isVBMAPPMaterialLibraryFallbackError(dbErr) {
+			return nil, fmt.Errorf("load VB-MAPP DB material profiles: %w", dbErr)
+		}
+	}
+	return materialProfiles, nil
 }
 
 func mergeVBMAPPResponseMaterialProfile(fileProfile, dbProfile vbmappscore.ResponseMaterialProfile) vbmappscore.ResponseMaterialProfile {

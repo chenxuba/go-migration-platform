@@ -38,10 +38,16 @@ func autoMilestoneScoreFromEvidence(item MilestoneItemDefinition, input Assessme
 
 func AutoMilestoneScore(milestoneID string, input AssessmentInput) (float64, bool) {
 	switch strings.TrimSpace(strings.ToUpper(milestoneID)) {
+	case "MAND_01M":
+		return autoScoreMAND01M(input)
+	case "MAND_02M":
+		return autoScoreMAND02M(input)
 	case "MAND_03M":
 		return autoScoreMAND03M(input)
 	case "MAND_04M":
 		return autoScoreMAND04M(input)
+	case "MAND_05M":
+		return autoScoreMAND05M(input)
 	case "MAND_08M":
 		return autoScoreMAND08M(input)
 	case "MAND_09M":
@@ -49,6 +55,24 @@ func AutoMilestoneScore(milestoneID string, input AssessmentInput) (float64, boo
 	default:
 		return 0, false
 	}
+}
+
+func autoScoreMAND01M(input AssessmentInput) (float64, bool) {
+	events, _, ok := loadMandEvidence(input.ItemResponses, "MAND_01M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	qualified := qualifiedUniqueMandEvents(events, nil)
+	return scoreByMandThresholds(len(qualified), 2, 1), true
+}
+
+func autoScoreMAND02M(input AssessmentInput) (float64, bool) {
+	events, _, ok := loadMandEvidence(input.ItemResponses, "MAND_02M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	qualified := qualifiedUniqueMandEvents(events, nil)
+	return scoreByMandThresholds(len(qualified), 4, 3), true
 }
 
 func autoScoreMAND03M(input AssessmentInput) (float64, bool) {
@@ -77,6 +101,15 @@ func autoScoreMAND04M(input AssessmentInput) (float64, bool) {
 			event.initiationText() != "提问下"
 	})
 	return scoreByMandThresholds(len(qualified), 5, 2), true
+}
+
+func autoScoreMAND05M(input AssessmentInput) (float64, bool) {
+	events, _, ok := loadMandEvidence(input.ItemResponses, "MAND_05M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	qualified := qualifiedUniqueMandEvents(events, nil)
+	return scoreByMandThresholds(len(qualified), 10, 8), true
 }
 
 func autoScoreMAND08M(input AssessmentInput) (float64, bool) {

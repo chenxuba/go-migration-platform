@@ -4,8 +4,11 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 
+	"go-migration-platform/pkg/vbmappscore"
 	"go-migration-platform/services/education/internal/model"
 )
 
@@ -65,6 +68,84 @@ func (svc *Service) DeleteVBMAPPMaterialItem(userID, id int64) error {
 	return nil
 }
 
+func (svc *Service) GetVBMAPPMaterialCatalog(
+	userID int64,
+	moduleCode string,
+	itemCode string,
+) (model.VBMAPPMaterialCatalog, error) {
+	if svc == nil {
+		return model.VBMAPPMaterialCatalog{}, errors.New("service is not configured")
+	}
+	if userID <= 0 {
+		return model.VBMAPPMaterialCatalog{}, errors.New("用户未登录")
+	}
+	data, err := loadVBMAPPStaticData()
+	if err != nil {
+		return model.VBMAPPMaterialCatalog{}, err
+	}
+	dataDir, err := resolveVBMAPPDataDir()
+	if err != nil {
+		return model.VBMAPPMaterialCatalog{}, err
+	}
+	milestoneSchemas, err := vbmappscore.LoadMilestoneResponseSchemasFile(filepath.Join(dataDir, vbmappMilestoneSchemaFile))
+	if err != nil {
+		return model.VBMAPPMaterialCatalog{}, fmt.Errorf("load VB-MAPP milestone response schemas: %w", err)
+	}
+	materialProfiles, err := svc.loadMergedVBMAPPMaterialProfiles(context.Background(), dataDir)
+	if err != nil {
+		return model.VBMAPPMaterialCatalog{}, err
+	}
+
+	moduleCode = strings.ToLower(strings.TrimSpace(moduleCode))
+	itemCode = strings.ToUpper(strings.TrimSpace(itemCode))
+	itemByCode := make(map[string]vbmappscore.MilestoneItemDefinition, len(data.milestones))
+	for _, item := range data.milestones {
+		itemByCode[strings.ToUpper(strings.TrimSpace(item.MilestoneID))] = item
+	}
+	items := make([]model.VBMAPPMaterialCatalogItem, 0, len(milestoneSchemas))
+	for _, schema := range milestoneSchemas {
+		if strings.TrimSpace(schema.MaterialProfileID) == "" {
+			continue
+		}
+		if moduleCode != "" && strings.ToLower(strings.TrimSpace(schema.ModuleCode)) != moduleCode {
+			continue
+		}
+		code := strings.ToUpper(strings.TrimSpace(schema.MilestoneID))
+		if itemCode != "" && code != itemCode {
+			continue
+		}
+		definition := itemByCode[code]
+		profile := materialProfiles[strings.TrimSpace(schema.MaterialProfileID)]
+		items = append(items, model.VBMAPPMaterialCatalogItem{
+			ModuleCode:           schema.ModuleCode,
+			ItemCode:             code,
+			Label:                firstNonEmptyVBMAPPString(definition.Label, schema.Label),
+			Title:                strings.TrimSpace(definition.Title),
+			DomainCode:           firstNonEmptyVBMAPPString(definition.DomainCode, schema.DomainCode),
+			DomainName:           firstNonEmptyVBMAPPString(definition.DomainName, schema.DomainName),
+			Level:                definition.Level,
+			AgeBand:              definition.AgeBand,
+			AssessmentMode:       definition.AssessmentMode,
+			MaterialProfileID:    strings.TrimSpace(schema.MaterialProfileID),
+			MaterialProfileLabel: strings.TrimSpace(profile.Label),
+			WhyRecord:            strings.TrimSpace(schema.WhyRecord),
+			QualityChecks:        append([]string(nil), schema.QualityChecks...),
+			PreparationChecks:    append([]string(nil), profile.PreparationChecks...),
+			SuggestedTypes:       append([]string(nil), profile.SuggestedTypes...),
+			RecommendedMaterials: vbmappMaterialSuggestionsFromProfile(profile),
+			QuickPicksByField:    cloneVBMAPPMaterialQuickPicks(profile.QuickPicksByField),
+		})
+	}
+	return model.VBMAPPMaterialCatalog{
+		ScaleCode:      vbmappScaleCode,
+		ScaleVersion:   vbmappScaleVersion,
+		AssessmentName: vbmappAssessmentName,
+		DataStatus:     data.dataStatus,
+		Sources:        data.sources,
+		Items:          items,
+	}, nil
+}
+
 func vbmappMaterialProfileExists(profiles []model.VBMAPPMaterialProfile, profileID string) bool {
 	for _, profile := range profiles {
 		if profile.ProfileID == profileID {
@@ -72,4 +153,49 @@ func vbmappMaterialProfileExists(profiles []model.VBMAPPMaterialProfile, profile
 		}
 	}
 	return false
+}
+
+func vbmappMaterialSuggestionsFromProfile(profile vbmappscore.ResponseMaterialProfile) []model.VBMAPPMaterialSuggestion {
+	if len(profile.RecommendedMaterials) == 0 {
+		return nil
+	}
+	out := make([]model.VBMAPPMaterialSuggestion, 0, len(profile.RecommendedMaterials))
+	for _, material := range profile.RecommendedMaterials {
+		if strings.TrimSpace(material.Name) == "" {
+			continue
+		}
+		out = append(out, model.VBMAPPMaterialSuggestion{
+			MaterialCode: strings.TrimSpace(material.ID),
+			MaterialName: strings.TrimSpace(material.Name),
+			MaterialType: strings.TrimSpace(material.Type),
+		})
+	}
+	return out
+}
+
+func cloneVBMAPPMaterialQuickPicks(input map[string][]string) map[string][]string {
+	if len(input) == 0 {
+		return nil
+	}
+	out := make(map[string][]string, len(input))
+	for key, values := range input {
+		normalizedKey := strings.TrimSpace(key)
+		if normalizedKey == "" || len(values) == 0 {
+			continue
+		}
+		out[normalizedKey] = append([]string(nil), values...)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func firstNonEmptyVBMAPPString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
 }

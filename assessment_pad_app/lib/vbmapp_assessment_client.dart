@@ -29,6 +29,10 @@ const String defaultVbmappSchemaPath = String.fromEnvironment(
   'VBMAPP_SCHEMA_PATH',
   defaultValue: '/api/v1/assessments/vbmapp/schema',
 );
+const String defaultVbmappMaterialCatalogPath = String.fromEnvironment(
+  'VBMAPP_MATERIAL_CATALOG_PATH',
+  defaultValue: '/api/v1/assessments/vbmapp/material/catalog',
+);
 
 abstract class VbmappAssessmentClient {
   const VbmappAssessmentClient();
@@ -55,6 +59,12 @@ abstract class VbmappAssessmentClient {
 
   Future<VbmappAssessmentSchema> fetchAssessmentSchema(String token);
 
+  Future<VbmappMaterialCatalog> fetchMaterialCatalog(
+    String token, {
+    String moduleCode = '',
+    String itemCode = '',
+  });
+
   Future<VbmappDraftSubmitResult> submitDraft(String token, int id);
 }
 
@@ -67,6 +77,7 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
     this.draftSubmitPath = defaultVbmappDraftSubmitPath,
     this.draftItemSavePath = defaultVbmappDraftItemSavePath,
     this.schemaPath = defaultVbmappSchemaPath,
+    this.materialCatalogPath = defaultVbmappMaterialCatalogPath,
     this.httpClient,
   });
 
@@ -77,6 +88,7 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
   final String draftSubmitPath;
   final String draftItemSavePath;
   final String schemaPath;
+  final String materialCatalogPath;
   final http.Client? httpClient;
 
   static final http.Client _sharedHttpClient = http.Client();
@@ -174,6 +186,32 @@ class ApiVbmappAssessmentClient extends VbmappAssessmentClient {
       throw const AssessmentScaleApiException('VB-MAPP智能题库返回格式不正确');
     }
     return VbmappAssessmentSchema.fromJson(_mapFrom(data));
+  }
+
+  @override
+  Future<VbmappMaterialCatalog> fetchMaterialCatalog(
+    String token, {
+    String moduleCode = '',
+    String itemCode = '',
+  }) async {
+    final Map<String, String> queryParameters = <String, String>{};
+    if (moduleCode.trim().isNotEmpty) {
+      queryParameters['moduleCode'] = moduleCode.trim();
+    }
+    if (itemCode.trim().isNotEmpty) {
+      queryParameters['itemCode'] = itemCode.trim();
+    }
+    final Object? data = await _getJson(
+      _uri(educationBaseUrl, materialCatalogPath).replace(
+        queryParameters: queryParameters.isEmpty ? null : queryParameters,
+      ),
+      token,
+      fallbackMessage: 'VB-MAPP素材目录加载失败',
+    );
+    if (data is! Map) {
+      throw const AssessmentScaleApiException('VB-MAPP素材目录返回格式不正确');
+    }
+    return VbmappMaterialCatalog.fromJson(_mapFrom(data));
   }
 
   @override
@@ -402,6 +440,71 @@ class VbmappAssessmentSchema {
 
   VbmappItemResponseSchema? schemaFor(String moduleCode, String itemCode) {
     return itemSchemas[_schemaKey(moduleCode, itemCode)];
+  }
+}
+
+class VbmappMaterialCatalog {
+  const VbmappMaterialCatalog({
+    required this.scaleVersion,
+    required this.items,
+  });
+
+  factory VbmappMaterialCatalog.fromJson(Map<String, dynamic> json) {
+    return VbmappMaterialCatalog(
+      scaleVersion: _textFrom(json['scaleVersion']),
+      items: _materialCatalogItemsFrom(json['items']),
+    );
+  }
+
+  final String scaleVersion;
+  final List<VbmappMaterialCatalogItem> items;
+}
+
+class VbmappMaterialCatalogItem {
+  const VbmappMaterialCatalogItem({
+    required this.moduleCode,
+    required this.itemCode,
+    required this.materialProfileId,
+    required this.materialProfileLabel,
+    required this.suggestedTypes,
+    required this.recommendedMaterials,
+    required this.quickPicksByField,
+    required this.preparationChecks,
+  });
+
+  factory VbmappMaterialCatalogItem.fromJson(Map<String, dynamic> json) {
+    return VbmappMaterialCatalogItem(
+      moduleCode: _textFrom(json['moduleCode']),
+      itemCode: _scoreCodeFrom(json['itemCode']),
+      materialProfileId: _textFrom(json['materialProfileId']),
+      materialProfileLabel: _textFrom(
+        json['materialProfileLabel'] ?? json['label'],
+      ),
+      suggestedTypes: _stringListFrom(json['suggestedTypes']),
+      recommendedMaterials:
+          _materialSuggestionsFrom(json['recommendedMaterials']),
+      quickPicksByField: _stringListMapFrom(json['quickPicksByField']),
+      preparationChecks: _stringListFrom(json['preparationChecks']),
+    );
+  }
+
+  final String moduleCode;
+  final String itemCode;
+  final String materialProfileId;
+  final String materialProfileLabel;
+  final List<String> suggestedTypes;
+  final List<VbmappMaterialSuggestion> recommendedMaterials;
+  final Map<String, Object?> quickPicksByField;
+  final List<String> preparationChecks;
+
+  VbmappMaterialProfile toMaterialProfile() {
+    return VbmappMaterialProfile(
+      label: materialProfileLabel,
+      suggestedTypes: suggestedTypes,
+      recommendedMaterials: recommendedMaterials,
+      quickPicksByField: quickPicksByField,
+      preparationChecks: preparationChecks,
+    );
   }
 }
 
@@ -731,6 +834,17 @@ List<VbmappMaterialSuggestion> _materialSuggestionsFrom(Object? raw) {
         return VbmappMaterialSuggestion(id: '', name: name, type: '');
       })
       .where((VbmappMaterialSuggestion value) => value.name.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<VbmappMaterialCatalogItem> _materialCatalogItemsFrom(Object? raw) {
+  if (raw is! List) {
+    return const <VbmappMaterialCatalogItem>[];
+  }
+  return raw
+      .map((Object? value) =>
+          VbmappMaterialCatalogItem.fromJson(_mapFrom(value)))
+      .where((VbmappMaterialCatalogItem value) => value.itemCode.isNotEmpty)
       .toList(growable: false);
 }
 

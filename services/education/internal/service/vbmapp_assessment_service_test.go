@@ -88,6 +88,35 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 }
 
+func TestGetVBMAPPMaterialCatalogWithGeneratedDraftsWhenPresent(t *testing.T) {
+	root := filepath.Join("..", "..", "..", "..")
+	dataDir := filepath.Join(root, "docs", "vbmapp")
+	if _, err := os.Stat(filepath.Join(dataDir, "milestone-response-schemas.json")); err != nil {
+		t.Skipf("generated VB-MAPP response schema data not present: %s", dataDir)
+	}
+
+	result, err := (&Service{}).GetVBMAPPMaterialCatalog(1, "milestones", "MAND_03M")
+	if err != nil {
+		t.Fatalf("GetVBMAPPMaterialCatalog returned error: %v", err)
+	}
+	if result.ScaleCode != vbmappScaleCode || result.ScaleVersion != vbmappScaleVersion {
+		t.Fatalf("unexpected material catalog scale info: %+v", result)
+	}
+	if len(result.Items) != 1 {
+		t.Fatalf("expected one catalog item, got %+v", result.Items)
+	}
+	item := result.Items[0]
+	if item.ItemCode != "MAND_03M" || item.MaterialProfileID != "potential_reinforcer_set" {
+		t.Fatalf("unexpected material catalog item: %+v", item)
+	}
+	if !containsString(item.QuickPicksByField["mand3_people"], "爸爸") {
+		t.Fatalf("expected people quick picks on MAND_03M: %+v", item.QuickPicksByField)
+	}
+	if len(item.RecommendedMaterials) == 0 {
+		t.Fatalf("expected recommended materials on MAND_03M: %+v", item)
+	}
+}
+
 func TestBuildVBMAPPAssessmentDraftProgressWithPartialScoresWhenPresent(t *testing.T) {
 	root := filepath.Join("..", "..", "..", "..")
 	dataDir := filepath.Join(root, "docs", "vbmapp")

@@ -74,6 +74,8 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       <String, VbmappItemResponseSchema>{};
   final Map<String, VbmappMaterialProfile> _materialProfiles =
       <String, VbmappMaterialProfile>{};
+  final Map<String, VbmappMaterialProfile> _itemMaterialProfiles =
+      <String, VbmappMaterialProfile>{};
   final Map<String, List<_VbmappMandEvent>> _mandEventsByItem =
       <String, List<_VbmappMandEvent>>{};
   final Map<String, _VbmappObservationTimerState> _mandObservationByItem =
@@ -154,11 +156,22 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       session = HomeSession.fallback;
     }
     VbmappAssessmentSchema? smartSchema;
+    VbmappMaterialCatalog? materialCatalog;
     try {
       smartSchema = await widget.client.fetchAssessmentSchema(token);
     } on Object catch (error) {
       if (mounted) {
         _showMessage('VB-MAPP智能题库载入失败，先使用基础题库：$error');
+      }
+    }
+    try {
+      materialCatalog = await widget.client.fetchMaterialCatalog(
+        token,
+        moduleCode: 'milestones',
+      );
+    } on Object catch (error) {
+      if (mounted) {
+        _showMessage('VB-MAPP素材目录载入失败，先使用基础素材：$error');
       }
     }
     VbmappDraftDetail? launchDraft;
@@ -184,6 +197,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
           ..clear()
           ..addAll(smartSchema.materialProfiles);
       }
+      _itemMaterialProfiles
+        ..clear()
+        ..addAll(_itemMaterialProfileMapFromCatalog(materialCatalog));
       if (launchDraft != null) {
         _applyDraftDetail(launchDraft);
       }
@@ -612,8 +628,14 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   }
 
   VbmappMaterialProfile? _materialProfileFor(
+    _VbmappItem item,
     VbmappItemResponseSchema? schema,
   ) {
+    final VbmappMaterialProfile? itemProfile =
+        _itemMaterialProfiles[item.itemCode];
+    if (itemProfile != null) {
+      return itemProfile;
+    }
     if (schema == null || schema.materialProfileId.isEmpty) {
       return null;
     }
@@ -710,7 +732,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       return;
     }
     final VbmappMaterialProfile? profile =
-        _materialProfileFor(_schemaFor(item));
+        _materialProfileFor(item, _schemaFor(item));
     final _VbmappMandEvent? event = await showDialog<_VbmappMandEvent>(
       context: context,
       builder: (BuildContext context) {
@@ -1081,6 +1103,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                           score: _scoreFor(item),
                           responseSchema: _schemaFor(item),
                           materialProfile: _materialProfileFor(
+                            item,
                             _schemaFor(item),
                           ),
                           mandEvents: _mandEventsFor(item),
@@ -1142,6 +1165,23 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       'transition': _transitionScores.length,
     };
   }
+}
+
+Map<String, VbmappMaterialProfile> _itemMaterialProfileMapFromCatalog(
+  VbmappMaterialCatalog? catalog,
+) {
+  if (catalog == null || catalog.items.isEmpty) {
+    return const <String, VbmappMaterialProfile>{};
+  }
+  final Map<String, VbmappMaterialProfile> out =
+      <String, VbmappMaterialProfile>{};
+  for (final VbmappMaterialCatalogItem item in catalog.items) {
+    if (item.itemCode.isEmpty) {
+      continue;
+    }
+    out[item.itemCode] = item.toMaterialProfile();
+  }
+  return out;
 }
 
 class _VbmappColors {
