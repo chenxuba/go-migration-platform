@@ -95,7 +95,21 @@ func (svc *Service) SaveVBMAPPAssessmentDraft(userID int64, input VBMAPPAssessme
 	if err := svc.validatePEP3AssessmentStudent(instID, input.StudentID, input.StudentName); err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
-	progress, err := buildVBMAPPAssessmentDraftProgress(input.BirthDate, input.AssessmentDate, input.ScoreInput)
+	scoreInput := input.ScoreInput
+	inputSnapshot := input.InputSnapshot
+	if input.ID > 0 {
+		if existingDraft, err := svc.repo.GetAssessmentDraft(context.Background(), instID, input.ID); err == nil {
+			if strings.TrimSpace(existingDraft.AssessmentCode) == vbmappScaleCode {
+				if existingInput, decodeErr := decodeSavedVBMAPPAssessmentInput(existingDraft.InputJSON); decodeErr == nil {
+					scoreInput = mergeVBMAPPAssessmentInputs(existingInput, scoreInput)
+					if mergedSnapshot, mergeErr := mergeVBMAPPDraftInputSnapshot(existingDraft.InputJSON, scoreInput); mergeErr == nil {
+						inputSnapshot = mergedSnapshot
+					}
+				}
+			}
+		}
+	}
+	progress, err := buildVBMAPPAssessmentDraftProgress(input.BirthDate, input.AssessmentDate, scoreInput)
 	if err != nil {
 		return model.AssessmentDraftDetailVO{}, err
 	}
@@ -106,12 +120,12 @@ func (svc *Service) SaveVBMAPPAssessmentDraft(userID int64, input VBMAPPAssessme
 		StudentName:       strings.TrimSpace(input.StudentName),
 		AssessmentCode:    vbmappScaleCode,
 		AssessmentName:    vbmappAssessmentName,
-		ScaleVersion:      nonEmptyString(input.ScoreInput.ScaleVersion, vbmappScaleVersion),
+		ScaleVersion:      nonEmptyString(scoreInput.ScaleVersion, vbmappScaleVersion),
 		BirthDate:         input.BirthDate,
 		AssessmentDate:    input.AssessmentDate,
 		ExaminerID:        examinerID,
 		ExaminerName:      examinerName,
-		Input:             input.InputSnapshot,
+		Input:             inputSnapshot,
 		Progress:          progress,
 		AnsweredItemCount: progress.AnsweredItemCount,
 		RawScoreCount:     0,
@@ -128,6 +142,55 @@ func (svc *Service) SaveVBMAPPAssessmentDraft(userID int64, input VBMAPPAssessme
 		return model.AssessmentDraftDetailVO{}, err
 	}
 	return svc.repo.GetAssessmentDraft(context.Background(), instID, draftID)
+}
+
+func mergeVBMAPPAssessmentInputs(existing, incoming vbmappscore.AssessmentInput) vbmappscore.AssessmentInput {
+	if len(existing.ItemResponses) == 0 {
+		return incoming
+	}
+	if len(incoming.ItemResponses) == 0 {
+		incoming.ItemResponses = cloneVBMAPPItemResponses(existing.ItemResponses)
+		return incoming
+	}
+	merged := cloneVBMAPPItemResponses(existing.ItemResponses)
+	for moduleCode, moduleItems := range incoming.ItemResponses {
+		if merged[moduleCode] == nil {
+			merged[moduleCode] = map[string]map[string]any{}
+		}
+		for itemCode, response := range moduleItems {
+			itemResponse := make(map[string]any, len(response))
+			for key, value := range response {
+				itemResponse[key] = value
+			}
+			merged[moduleCode][itemCode] = itemResponse
+		}
+	}
+	incoming.ItemResponses = merged
+	return incoming
+}
+
+func cloneVBMAPPItemResponses(input map[string]map[string]map[string]any) map[string]map[string]map[string]any {
+	if len(input) == 0 {
+		return nil
+	}
+	cloned := make(map[string]map[string]map[string]any, len(input))
+	for moduleCode, moduleItems := range input {
+		if len(moduleItems) == 0 {
+			continue
+		}
+		cloned[moduleCode] = make(map[string]map[string]any, len(moduleItems))
+		for itemCode, response := range moduleItems {
+			itemResponse := make(map[string]any, len(response))
+			for key, value := range response {
+				itemResponse[key] = value
+			}
+			cloned[moduleCode][itemCode] = itemResponse
+		}
+	}
+	if len(cloned) == 0 {
+		return nil
+	}
+	return cloned
 }
 
 func (svc *Service) SaveVBMAPPAssessmentDraftItem(userID int64, input VBMAPPAssessmentDraftItemSaveInput) (model.AssessmentDraftDetailVO, error) {

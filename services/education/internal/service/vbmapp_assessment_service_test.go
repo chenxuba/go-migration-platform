@@ -279,7 +279,7 @@ func TestResolvedVBMAPPDraftItemScorePrefersBackendAutoScoreForMAND08M(t *testin
 		ItemCode:         "MAND_08M",
 		Score:            &clientSuggestedScore,
 		SuggestedScore:   &autoSuggestedScore,
-		TeacherConfirmed: boolPtr(false),
+		TeacherConfirmed: testBoolPtr(false),
 		RecordStatus:     "auto_suggested",
 	})
 	if score == nil || *score != 1 {
@@ -287,7 +287,30 @@ func TestResolvedVBMAPPDraftItemScorePrefersBackendAutoScoreForMAND08M(t *testin
 	}
 }
 
-func boolPtr(value bool) *bool {
+func TestMergeVBMAPPAssessmentInputsPreservesExistingItemResponses(t *testing.T) {
+	existing := vbmappscore.AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			vbmappscore.ModuleMilestones: {
+				"MAND_08M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "跑快点"},
+						},
+					},
+				},
+			},
+		},
+	}
+	incoming := vbmappscore.AssessmentInput{
+		MilestoneScores: map[string]float64{"MAND_08M": 0.5},
+	}
+	merged := mergeVBMAPPAssessmentInputs(existing, incoming)
+	if merged.ItemResponses["milestones"]["MAND_08M"] == nil {
+		t.Fatalf("expected existing itemResponses to be preserved: %+v", merged.ItemResponses)
+	}
+}
+
+func testBoolPtr(value bool) *bool {
 	return &value
 }
 
