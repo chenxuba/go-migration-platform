@@ -582,7 +582,6 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage> {
                         total: _totalItemCount,
                         selectedModule: _moduleByCode(_selectedModuleCode),
                         scoreSnapshot: scoreSnapshot,
-                        draftId: _draftId,
                       ),
                     ),
                   ],
@@ -1239,39 +1238,66 @@ class _VbmappWorkspace extends StatelessWidget {
                       fontWeight: FontWeight.w900,
                     ),
                   ),
-                  const SizedBox(height: 20),
-                  const Divider(height: 1, color: _VbmappColors.lineSoft),
-                  const SizedBox(height: 18),
-                  Text(
-                    item.scoreTitle,
-                    style: const TextStyle(
-                      color: _VbmappColors.body,
-                      fontSize: 15,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: <Widget>[
-                      for (final _VbmappScoreOption option in item.scoreOptions)
-                        _VbmappScoreOptionButton(
-                          option: option,
-                          selected: score == option.score,
-                          accent: item.color,
-                          onTap: () => onSelectScore(option.score),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 18),
-                  _VbmappMaterialHint(item: item),
                 ],
               ),
             ),
           ),
+          const SizedBox(height: 16),
+          const Divider(height: 1, color: _VbmappColors.lineSoft),
+          const SizedBox(height: 14),
+          _VbmappScoreDock(
+            item: item,
+            score: score,
+            onSelectScore: onSelectScore,
+          ),
         ],
       ),
+    );
+  }
+}
+
+class _VbmappScoreDock extends StatelessWidget {
+  const _VbmappScoreDock({
+    required this.item,
+    required this.score,
+    required this.onSelectScore,
+  });
+
+  final _VbmappItem item;
+  final num? score;
+  final ValueChanged<num> onSelectScore;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(
+          item.scoreTitle,
+          style: const TextStyle(
+            color: _VbmappColors.body,
+            fontSize: 15,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 10,
+          runSpacing: 10,
+          children: <Widget>[
+            for (final _VbmappScoreOption option in item.scoreOptions)
+              _VbmappScoreOptionButton(
+                option: option,
+                selected: score == option.score,
+                accent: item.color,
+                onTap: () => onSelectScore(option.score),
+              ),
+          ],
+        ),
+        const SizedBox(height: 12),
+        _VbmappMaterialHint(item: item),
+      ],
     );
   }
 }
@@ -1347,6 +1373,7 @@ class _VbmappMaterialHint extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
+      constraints: const BoxConstraints(maxHeight: 90),
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: const Color(0xFFFFFAF5),
@@ -1359,13 +1386,17 @@ class _VbmappMaterialHint extends StatelessWidget {
           Icon(Icons.inventory_2_outlined, color: item.color, size: 21),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(
-              item.materialHint,
-              style: const TextStyle(
-                color: _VbmappColors.body,
-                fontSize: 13,
-                height: 1.38,
-                fontWeight: FontWeight.w800,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.zero,
+              physics: const ClampingScrollPhysics(),
+              child: Text(
+                item.materialHint,
+                style: const TextStyle(
+                  color: _VbmappColors.body,
+                  fontSize: 13,
+                  height: 1.38,
+                  fontWeight: FontWeight.w800,
+                ),
               ),
             ),
           ),
@@ -1382,7 +1413,6 @@ class _VbmappRightRail extends StatelessWidget {
     required this.total,
     required this.selectedModule,
     required this.scoreSnapshot,
-    required this.draftId,
   });
 
   final double progressPercent;
@@ -1390,7 +1420,6 @@ class _VbmappRightRail extends StatelessWidget {
   final int total;
   final _VbmappModule selectedModule;
   final _VbmappScoreSnapshot scoreSnapshot;
-  final int draftId;
 
   @override
   Widget build(BuildContext context) {
@@ -1434,13 +1463,6 @@ class _VbmappRightRail extends StatelessWidget {
             subValue: selectedModule.subtitle,
             icon: selectedModule.icon,
             color: selectedModule.color,
-          ),
-          const SizedBox(height: 12),
-          _VbmappSummaryStrip(
-            label: '草稿',
-            value: draftId > 0 ? '#$draftId' : '未保存',
-            subValue: 'VBMAPP',
-            icon: Icons.save_outlined,
           ),
           const SizedBox(height: 12),
           Expanded(
