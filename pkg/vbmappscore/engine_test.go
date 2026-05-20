@@ -225,6 +225,73 @@ func TestScoreAutoCalculatesMAND04MFromEvidence(t *testing.T) {
 	}
 }
 
+func TestScoreAutoCalculatesMAND03MFromGeneralizationEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_03M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "泡泡", "person": "妈妈", "functional": true},
+							map[string]any{"utterance": "泡泡", "person": "老师", "functional": true},
+							map[string]any{"utterance": "泡泡", "setting": "客厅", "functional": true},
+							map[string]any{"utterance": "泡泡", "setting": "教室", "functional": true},
+							map[string]any{"utterance": "泡泡", "example": "红瓶泡泡", "functional": true},
+							map[string]any{"utterance": "泡泡", "example": "蓝瓶泡泡", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_03M")
+	if item.Score == nil || *item.Score != 1 {
+		t.Fatalf("expected MAND_03M score 1 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND03MHalfPointFromGeneralizationEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_03M": {
+					"evidence": map[string]any{
+						"mandEvents": []any{
+							map[string]any{"utterance": "球", "person": "妈妈", "functional": true},
+							map[string]any{"utterance": "球", "setting": "客厅", "functional": true},
+							map[string]any{"utterance": "球", "example": "大龙球", "functional": true},
+						},
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_03M")
+	if item.Score == nil || *item.Score != 0.5 {
+		t.Fatalf("expected MAND_03M score 0.5 from evidence, got %+v", item)
+	}
+}
+
 func TestScoreAutoCalculatesMAND08MHalfPointWhenOnlyTwoQualified(t *testing.T) {
 	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
 	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)

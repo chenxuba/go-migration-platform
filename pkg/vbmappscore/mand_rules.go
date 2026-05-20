@@ -18,6 +18,9 @@ type mandEventEvidence struct {
 	Utterance    string
 	Target       string
 	Environment  string
+	Person       string
+	Setting      string
+	Example      string
 	ResponseMode string
 	PromptLevel  string
 	RecordedAt   time.Time
@@ -35,6 +38,8 @@ func autoMilestoneScoreFromEvidence(item MilestoneItemDefinition, input Assessme
 
 func AutoMilestoneScore(milestoneID string, input AssessmentInput) (float64, bool) {
 	switch strings.TrimSpace(strings.ToUpper(milestoneID)) {
+	case "MAND_03M":
+		return autoScoreMAND03M(input)
 	case "MAND_04M":
 		return autoScoreMAND04M(input)
 	case "MAND_08M":
@@ -44,6 +49,21 @@ func AutoMilestoneScore(milestoneID string, input AssessmentInput) (float64, boo
 	default:
 		return 0, false
 	}
+}
+
+func autoScoreMAND03M(input AssessmentInput) (float64, bool) {
+	events, _, ok := loadMandEvidence(input.ItemResponses, "MAND_03M")
+	if !ok || len(events) == 0 {
+		return 0, false
+	}
+	counts := mandGeneralizationCounts(events)
+	if counts["people"] >= 2 && counts["settings"] >= 2 && counts["examples"] >= 2 {
+		return 1, true
+	}
+	if counts["people"] >= 1 && counts["settings"] >= 1 && counts["examples"] >= 1 {
+		return 0.5, true
+	}
+	return 0, true
 }
 
 func autoScoreMAND04M(input AssessmentInput) (float64, bool) {
@@ -121,6 +141,9 @@ func loadMandEvidence(
 			Utterance:    normalizedText(eventMap["utterance"]),
 			Target:       normalizedText(eventMap["target"]),
 			Environment:  normalizedText(eventMap["environment"]),
+			Person:       normalizedText(eventMap["person"]),
+			Setting:      normalizedText(eventMap["setting"]),
+			Example:      normalizedText(eventMap["example"]),
 			ResponseMode: normalizedText(eventMap["responseMode"]),
 			PromptLevel:  normalizedText(eventMap["promptLevel"]),
 			RecordedAt:   normalizedTime(eventMap["recordedAtIso"], eventMap["recorded_at"]),
@@ -188,6 +211,38 @@ func scoreByMandThresholds(count, onePointThreshold, halfPointThreshold int) flo
 		return 0.5
 	}
 	return 0
+}
+
+func mandGeneralizationCounts(events []mandEventEvidence) map[string]int {
+	return map[string]int{
+		"people":   len(uniqueNonEmptyMandValues(events, func(event mandEventEvidence) string { return event.Person })),
+		"settings": len(uniqueNonEmptyMandValues(events, func(event mandEventEvidence) string { return event.Setting })),
+		"examples": len(uniqueNonEmptyMandValues(events, func(event mandEventEvidence) string { return event.Example })),
+	}
+}
+
+func uniqueNonEmptyMandValues(
+	events []mandEventEvidence,
+	pick func(mandEventEvidence) string,
+) []string {
+	seen := make(map[string]struct{}, len(events))
+	values := make([]string, 0, len(events))
+	for _, event := range events {
+		if !event.isQualified() {
+			continue
+		}
+		value := strings.TrimSpace(pick(event))
+		if value == "" {
+			continue
+		}
+		normalized := strings.ToLower(value)
+		if _, ok := seen[normalized]; ok {
+			continue
+		}
+		seen[normalized] = struct{}{}
+		values = append(values, value)
+	}
+	return values
 }
 
 func (event mandEventEvidence) uniqueKey() string {
