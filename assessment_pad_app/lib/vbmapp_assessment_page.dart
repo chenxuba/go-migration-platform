@@ -1590,7 +1590,7 @@ class _VbmappQuestionHeader extends StatelessWidget {
       item.title,
       style: const TextStyle(
         color: _VbmappColors.ink,
-        fontSize: 21,
+        fontSize: 20,
         height: 1.24,
         fontWeight: FontWeight.w900,
       ),
