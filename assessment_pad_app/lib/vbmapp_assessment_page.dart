@@ -667,7 +667,9 @@ class _VbmappTopBar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final String title =
-        scaleName.trim().isEmpty ? 'VB-MAPP语言行为里程碑评估及安置计划' : scaleName;
+        scaleName.trim().isEmpty || scaleName.contains('VB-MAPP')
+            ? 'VB-MAPP语言行为评估'
+            : scaleName.trim();
     final String student =
         studentName.trim().isEmpty ? '-' : studentName.trim();
     final String age = studentAge.trim().isEmpty ? '未知' : studentAge.trim();
