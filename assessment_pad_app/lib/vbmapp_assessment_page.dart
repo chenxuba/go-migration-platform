@@ -1425,29 +1425,8 @@ class _VbmappWorkspace extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: <Widget>[
-                  Text.rich(
-                    TextSpan(
-                      children: <InlineSpan>[
-                        TextSpan(
-                          text: item.label,
-                          style: const TextStyle(
-                            color: _VbmappColors.body,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w900,
-                          ),
-                        ),
-                        const TextSpan(text: '  '),
-                        TextSpan(text: item.title),
-                      ],
-                    ),
-                    style: const TextStyle(
-                      color: _VbmappColors.ink,
-                      fontSize: 21,
-                      height: 1.24,
-                      fontWeight: FontWeight.w900,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
+                  _VbmappQuestionHeader(item: item),
+                  const SizedBox(height: 12),
                   _VbmappSmartEvidencePanel(
                     item: item,
                     schema: responseSchema,
@@ -1472,6 +1451,212 @@ class _VbmappWorkspace extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+class _VbmappQuestionHeader extends StatelessWidget {
+  const _VbmappQuestionHeader({required this.item});
+
+  final _VbmappItem item;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color accent = item.color;
+    final Widget badge = Container(
+      padding: const EdgeInsets.fromLTRB(9, 6, 10, 6),
+      decoration: BoxDecoration(
+        color: accent.withOpacity(.08),
+        borderRadius: BorderRadius.circular(9),
+        border: Border.all(color: accent.withOpacity(.22)),
+      ),
+      child: Wrap(
+        spacing: 7,
+        runSpacing: 5,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          Container(
+            width: 3,
+            height: 18,
+            decoration: BoxDecoration(
+              color: accent,
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          Text(
+            _vbmappQuestionDomainLabel(item),
+            style: TextStyle(
+              color: accent,
+              fontSize: 14,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Text(
+            _vbmappQuestionStepLabel(item),
+            style: TextStyle(
+              color: accent,
+              fontSize: 16,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          Container(
+            width: 1,
+            height: 14,
+            color: accent.withOpacity(.28),
+          ),
+          Text(
+            '${_vbmappQuestionStageLabel(item)} ${item.ageBand}',
+            style: TextStyle(
+              color: _VbmappColors.body,
+              fontSize: 12,
+              height: 1,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+
+    final Widget title = Text(
+      item.title,
+      style: const TextStyle(
+        color: _VbmappColors.ink,
+        fontSize: 21,
+        height: 1.24,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+
+    final Widget meta = Wrap(
+      spacing: 6,
+      runSpacing: 5,
+      children: <Widget>[
+        _VbmappQuestionMetaPill(
+          text: _vbmappQuestionModuleLabel(item.moduleCode),
+          color: accent,
+        ),
+        _VbmappQuestionMetaPill(text: item.assessmentMode, color: accent),
+      ],
+    );
+
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        if (constraints.maxWidth < 760) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: <Widget>[
+              badge,
+              const SizedBox(height: 7),
+              title,
+              const SizedBox(height: 6),
+              meta,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Padding(
+                  padding: const EdgeInsets.only(top: 1),
+                  child: badge,
+                ),
+                const SizedBox(width: 10),
+                Expanded(child: title),
+              ],
+            ),
+            const SizedBox(height: 7),
+            meta,
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _VbmappQuestionMetaPill extends StatelessWidget {
+  const _VbmappQuestionMetaPill({
+    required this.text,
+    required this.color,
+  });
+
+  final String text;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+      decoration: BoxDecoration(
+        color: color.withOpacity(.07),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(.14)),
+      ),
+      child: Text(
+        text,
+        style: TextStyle(
+          color: _VbmappColors.body,
+          fontSize: 11.5,
+          height: 1,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+String _vbmappQuestionDomainLabel(_VbmappItem item) {
+  final String domain = item.domainName.trim();
+  if (domain.isNotEmpty) {
+    return domain;
+  }
+  return _vbmappQuestionModuleLabel(item.moduleCode);
+}
+
+String _vbmappQuestionStepLabel(_VbmappItem item) {
+  final String label = item.label.trim();
+  final String domain = item.domainName.trim();
+  if (domain.isNotEmpty && label.startsWith(domain)) {
+    final String step = label.substring(domain.length).trim();
+    if (step.isNotEmpty) {
+      return step;
+    }
+  }
+  if (item.moduleCode == 'milestones') {
+    final RegExpMatch? match = RegExp(r'^(\d+)M$').firstMatch(item.navCode);
+    if (match != null) {
+      return '${match.group(1)}-M';
+    }
+    return item.navCode;
+  }
+  return item.itemCode;
+}
+
+String _vbmappQuestionStageLabel(_VbmappItem item) {
+  switch (item.ageBand.trim()) {
+    case '0-18个月':
+      return '第一阶段';
+    case '18-30个月':
+      return '第二阶段';
+    case '30-48个月':
+      return '第三阶段';
+    default:
+      return '阶段';
+  }
+}
+
+String _vbmappQuestionModuleLabel(String moduleCode) {
+  switch (moduleCode) {
+    case 'barriers':
+      return '障碍评估';
+    case 'transition':
+      return '转衔评估';
+    case 'milestones':
+    default:
+      return '里程碑评估';
   }
 }
 
@@ -1538,7 +1723,7 @@ class _VbmappMand1InlinePanel extends StatefulWidget {
 }
 
 class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
-  static const List<String> _materials = <String>[
+  static const List<String> _fallbackMaterials = <String>[
     '饼干',
     '书',
     '球',
@@ -1645,6 +1830,9 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
   }
 
   Widget _buildRecordForm() {
+    final List<String> materials = _mandMaterialQuickPicks(
+      widget.materialProfile,
+    );
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -1711,7 +1899,7 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
           spacing: 8,
           runSpacing: 6,
           children: <Widget>[
-            for (final String material in _materials)
+            for (final String material in materials)
               _VbmappMandMaterialChip(
                 label: material,
                 selected: _requestController.text.trim() == material,
@@ -1721,6 +1909,12 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
         ),
       ],
     );
+  }
+
+  List<String> _mandMaterialQuickPicks(VbmappMaterialProfile? profile) {
+    final List<String> configured =
+        profile?.quickPickLabels ?? const <String>[];
+    return configured.isEmpty ? _fallbackMaterials : configured;
   }
 
   Widget _buildRecordSummary() {

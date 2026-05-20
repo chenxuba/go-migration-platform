@@ -458,6 +458,8 @@ class VbmappMaterialProfile {
   const VbmappMaterialProfile({
     required this.label,
     required this.suggestedTypes,
+    this.recommendedMaterials = const <VbmappMaterialSuggestion>[],
+    this.quickPicks = const <String>[],
     required this.preparationChecks,
   });
 
@@ -465,13 +467,57 @@ class VbmappMaterialProfile {
     return VbmappMaterialProfile(
       label: _textFrom(json['label']),
       suggestedTypes: _stringListFrom(json['suggestedTypes']),
+      recommendedMaterials:
+          _materialSuggestionsFrom(json['recommendedMaterials']),
+      quickPicks: _stringListFrom(
+        json['quickPicks'] ?? json['recommendedWords'],
+      ),
       preparationChecks: _stringListFrom(json['preparationChecks']),
     );
   }
 
   final String label;
   final List<String> suggestedTypes;
+  final List<VbmappMaterialSuggestion> recommendedMaterials;
+  final List<String> quickPicks;
   final List<String> preparationChecks;
+
+  List<String> get quickPickLabels {
+    final List<String> values = <String>[
+      for (final VbmappMaterialSuggestion material in recommendedMaterials)
+        material.name,
+      ...quickPicks,
+    ];
+    final Set<String> seen = <String>{};
+    return values.where((String value) {
+      final String normalized = value.trim();
+      if (normalized.isEmpty || seen.contains(normalized)) {
+        return false;
+      }
+      seen.add(normalized);
+      return true;
+    }).toList(growable: false);
+  }
+}
+
+class VbmappMaterialSuggestion {
+  const VbmappMaterialSuggestion({
+    required this.id,
+    required this.name,
+    required this.type,
+  });
+
+  factory VbmappMaterialSuggestion.fromJson(Map<String, dynamic> json) {
+    return VbmappMaterialSuggestion(
+      id: _textFrom(json['id']),
+      name: _textFrom(json['name'] ?? json['label'] ?? json['materialName']),
+      type: _textFrom(json['type'] ?? json['materialType']),
+    );
+  }
+
+  final String id;
+  final String name;
+  final String type;
 }
 
 Uri _uri(String baseUrl, String path) {
@@ -639,6 +685,22 @@ List<String> _stringListFrom(Object? raw) {
   return raw
       .map(_textFrom)
       .where((String value) => value.isNotEmpty)
+      .toList(growable: false);
+}
+
+List<VbmappMaterialSuggestion> _materialSuggestionsFrom(Object? raw) {
+  if (raw is! List) {
+    return const <VbmappMaterialSuggestion>[];
+  }
+  return raw
+      .map((Object? value) {
+        if (value is Map) {
+          return VbmappMaterialSuggestion.fromJson(_mapFrom(value));
+        }
+        final String name = _textFrom(value);
+        return VbmappMaterialSuggestion(id: '', name: name, type: '');
+      })
+      .where((VbmappMaterialSuggestion value) => value.name.isNotEmpty)
       .toList(growable: false);
 }
 

@@ -240,10 +240,17 @@ type ResponseFieldTemplate struct {
 }
 
 type ResponseMaterialProfile struct {
-	Label             string   `json:"label"`
-	SourceLogic       string   `json:"sourceLogic,omitempty"`
-	SuggestedTypes    []string `json:"suggestedTypes,omitempty"`
-	PreparationChecks []string `json:"preparationChecks,omitempty"`
+	Label                string                       `json:"label"`
+	SourceLogic          string                       `json:"sourceLogic,omitempty"`
+	SuggestedTypes       []string                     `json:"suggestedTypes,omitempty"`
+	RecommendedMaterials []ResponseMaterialSuggestion `json:"recommendedMaterials,omitempty"`
+	PreparationChecks    []string                     `json:"preparationChecks,omitempty"`
+}
+
+type ResponseMaterialSuggestion struct {
+	ID   string `json:"id,omitempty"`
+	Name string `json:"name"`
+	Type string `json:"type,omitempty"`
 }
 
 type ResponseSchemaScoreEvidence struct {

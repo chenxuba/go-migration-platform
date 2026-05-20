@@ -3726,6 +3726,9 @@ void main() {
     expect(find.text('建议 0分'), findsOneWidget);
     expect(find.text('动机情境'), findsNothing);
     expect(find.text('形式'), findsNothing);
+    expect(find.text('海苔'), findsOneWidget);
+    expect(find.text('转圈'), findsOneWidget);
+    expect(find.text('积木'), findsNothing);
 
     final Finder requestField = find.byType(TextField).first;
     await tester.enterText(requestField, '饼干');
@@ -8327,8 +8330,33 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
   Future<VbmappAssessmentSchema> fetchAssessmentSchema(String token) async {
     return const VbmappAssessmentSchema(
       scaleVersion: 'VBMAPP_CN_2ND_DRAFT_2026_05',
-      itemSchemas: <String, VbmappItemResponseSchema>{},
-      materialProfiles: <String, VbmappMaterialProfile>{},
+      itemSchemas: <String, VbmappItemResponseSchema>{
+        'milestones::MAND_01M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'MAND_01M',
+          uiPattern: 'mand_event_recorder',
+          recordDepth: 'structured_event_log',
+          materialProfileId: 'potential_reinforcer_set',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>[],
+          scoreStrategy: 'count_qualified_unique_mand_events',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
+      },
+      materialProfiles: <String, VbmappMaterialProfile>{
+        'potential_reinforcer_set': VbmappMaterialProfile(
+          label: '潜在强化物/活动',
+          suggestedTypes: <String>['食物/饮料', '活动'],
+          recommendedMaterials: <VbmappMaterialSuggestion>[
+            VbmappMaterialSuggestion(
+                id: 'test-nori', name: '海苔', type: '食物/饮料'),
+            VbmappMaterialSuggestion(id: 'test-spin', name: '转圈', type: '活动'),
+          ],
+          preparationChecks: <String>[],
+        ),
+      },
     );
   }
 

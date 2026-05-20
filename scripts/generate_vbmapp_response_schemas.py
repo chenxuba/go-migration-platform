@@ -258,6 +258,18 @@ MATERIAL_PROFILES: dict[str, dict[str, Any]] = {
         "label": "潜在强化物/活动",
         "sourceLogic": "提要求评估优先准备孩子想要的实物或活动，让孩子看得到但不能直接取得。",
         "suggestedTypes": ["实物玩具", "食物/饮料", "活动", "社交游戏", "缺失物品"],
+        "recommendedMaterials": [
+            {"id": "mand_food_cookie", "name": "饼干", "type": "食物/饮料"},
+            {"id": "mand_book", "name": "书", "type": "实物/活动"},
+            {"id": "mand_ball", "name": "球", "type": "实物玩具"},
+            {"id": "mand_bubbles", "name": "泡泡", "type": "社交游戏"},
+            {"id": "mand_music", "name": "音乐", "type": "活动"},
+            {"id": "mand_car", "name": "车", "type": "实物玩具"},
+            {"id": "mand_swing", "name": "秋千", "type": "活动"},
+            {"id": "mand_blocks", "name": "积木", "type": "实物玩具"},
+            {"id": "mand_slinky", "name": "彩虹弹簧", "type": "实物玩具"},
+            {"id": "mand_open", "name": "打开", "type": "动作/帮助"},
+        ],
         "preparationChecks": ["确认动机存在", "避免孩子直接拿到", "准备多个年龄段偏好材料", "记录是否允许目标物在眼前"],
     },
     "tact_object_picture_book_set": {

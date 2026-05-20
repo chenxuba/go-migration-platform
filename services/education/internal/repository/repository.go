@@ -55,6 +55,7 @@ func New(db *sql.DB) *Repository {
 	_ = repo.ensureInstUserSupervisorColumn(context.Background())
 	_ = repo.ensureScaleLibrarySchema(context.Background())
 	_ = ensurePEP3IEPMaterialTables(context.Background(), db)
+	_ = ensureVBMAPPMaterialLibraryTables(context.Background(), db)
 	return repo
 }
 

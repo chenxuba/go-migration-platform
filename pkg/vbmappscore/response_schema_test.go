@@ -56,6 +56,9 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	if _, ok := profiles["potential_reinforcer_set"]; !ok {
 		t.Fatal("expected potential_reinforcer_set material profile")
 	}
+	if !containsMaterialSuggestion(profiles["potential_reinforcer_set"].RecommendedMaterials, "饼干") {
+		t.Fatalf("expected MAND material quick picks in potential_reinforcer_set: %+v", profiles["potential_reinforcer_set"].RecommendedMaterials)
+	}
 
 	mand1 := findMilestoneResponseSchema(t, milestones, "MAND_01M")
 	if mand1.UIPattern != "mand_event_recorder" {
@@ -101,6 +104,15 @@ func findMilestoneResponseSchema(t *testing.T, schemas []MilestoneResponseSchema
 func contains(values []string, value string) bool {
 	for _, candidate := range values {
 		if candidate == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsMaterialSuggestion(values []ResponseMaterialSuggestion, value string) bool {
+	for _, candidate := range values {
+		if candidate.Name == value {
 			return true
 		}
 	}

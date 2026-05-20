@@ -1,10 +1,13 @@
 package service
 
 import (
+	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"go-migration-platform/pkg/vbmappscore"
@@ -121,6 +124,14 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP response material profiles: %w", err)
 	}
+	if svc != nil && svc.repo != nil {
+		dbProfiles, dbErr := svc.repo.ListVBMAPPResponseMaterialProfiles(context.Background(), vbmappScaleVersion)
+		if dbErr == nil && len(dbProfiles) > 0 {
+			materialProfiles = dbProfiles
+		} else if dbErr != nil && !isVBMAPPMaterialLibraryFallbackError(dbErr) {
+			return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP DB material profiles: %w", dbErr)
+		}
+	}
 	summary, err := loadVBMAPPResponseSchemaSummary(filepath.Join(dataDir, vbmappSchemaSummaryFile))
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, err
@@ -145,6 +156,49 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 		ResponseMaterialProfiles:  materialProfiles,
 		ResponseSchemaSummary:     summary,
 	}, nil
+}
+
+func (svc *Service) EnsureVBMAPPScaleData(ctx context.Context) error {
+	if svc == nil || svc.repo == nil {
+		return nil
+	}
+	forceReseed := os.Getenv("VBMAPP_MATERIAL_LIBRARY_RESEED") == "1"
+	if !forceReseed {
+		hasProfiles, err := svc.repo.HasVBMAPPResponseMaterialProfiles(ctx, vbmappScaleVersion)
+		if err != nil {
+			return err
+		}
+		if hasProfiles {
+			return nil
+		}
+	}
+	profiles, err := loadVBMAPPResponseMaterialProfilesFromFiles()
+	if err != nil {
+		return err
+	}
+	return svc.repo.ReplaceVBMAPPResponseMaterialProfiles(ctx, vbmappScaleVersion, profiles, 0)
+}
+
+func loadVBMAPPResponseMaterialProfilesFromFiles() (map[string]vbmappscore.ResponseMaterialProfile, error) {
+	dataDir, err := resolveVBMAPPDataDir()
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := vbmappscore.LoadResponseMaterialProfilesFile(filepath.Join(dataDir, vbmappMaterialProfileFile))
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP response material profiles: %w", err)
+	}
+	return profiles, nil
+}
+
+func isVBMAPPMaterialLibraryFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err == sql.ErrNoRows ||
+		strings.Contains(err.Error(), "vbmapp_material_profile") ||
+		strings.Contains(err.Error(), "vbmapp_material_item") ||
+		strings.Contains(err.Error(), "database is closed")
 }
 
 func loadVBMAPPEngine() (*vbmappscore.Engine, VBMAPPScoreDataInfo, error) {
