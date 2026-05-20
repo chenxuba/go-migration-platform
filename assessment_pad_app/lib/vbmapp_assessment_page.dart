@@ -963,24 +963,6 @@ class _VbmappModuleRail extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          const Text(
-            'VB-MAPP',
-            style: TextStyle(
-              color: _VbmappColors.ink,
-              fontSize: 20,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(height: 4),
-          const Text(
-            '里程碑 · 障碍 · 转衔',
-            style: TextStyle(
-              color: _VbmappColors.body,
-              fontSize: 13,
-              fontWeight: FontWeight.w800,
-            ),
-          ),
-          const SizedBox(height: 10),
           for (final _VbmappModule module in modules) ...<Widget>[
             _VbmappModuleTile(
               module: module,
@@ -1142,7 +1124,7 @@ class _VbmappItemNavTile extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: selected ? accent.withOpacity(.12) : Colors.white,
             borderRadius: BorderRadius.circular(10),
@@ -1153,43 +1135,40 @@ class _VbmappItemNavTile extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              Container(
-                width: 22,
-                height: 22,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: answered ? accent : const Color(0xFFFFF6EF),
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: answered ? accent : _VbmappColors.line,
-                  ),
-                ),
-                child: answered
-                    ? const Icon(Icons.check_rounded,
-                        color: Colors.white, size: 15)
-                    : Text(
-                        '${item.localNo}',
-                        style: const TextStyle(
-                          color: _VbmappColors.body,
-                          fontSize: 10,
-                          fontWeight: FontWeight.w900,
-                        ),
-                      ),
-              ),
-              const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  item.shortTitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
+                  item.navCode,
+                  maxLines: 1,
+                  softWrap: false,
                   style: TextStyle(
                     color: selected ? _VbmappColors.ink : _VbmappColors.body,
-                    fontSize: 12,
-                    height: 1.18,
+                    fontSize: 15,
                     fontWeight: FontWeight.w900,
                   ),
                 ),
               ),
+              if (answered)
+                Container(
+                  width: 20,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: accent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.check, color: Colors.white, size: 14),
+                )
+              else
+                Container(
+                  width: 20,
+                  height: 20,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFF6EF),
+                    shape: BoxShape.circle,
+                    border: Border.all(color: _VbmappColors.line),
+                  ),
+                ),
             ],
           ),
         ),
@@ -2138,15 +2117,20 @@ class _VbmappItem {
     }
   }
 
-  String get shortTitle {
-    final String compact = title
-        .replaceAll(RegExp(r'[（(].*?[）)]'), '')
-        .replaceAll(RegExp(r'\\s+'), ' ')
-        .trim();
-    if (compact.isEmpty) {
-      return label;
+  String get navCode {
+    if (moduleCode == 'milestones') {
+      final RegExpMatch? labelMatch =
+          RegExp(r'(\d+)\s*-\s*M').firstMatch(label);
+      if (labelMatch != null) {
+        return '${labelMatch.group(1)}M';
+      }
+      final RegExpMatch? codeMatch = RegExp(r'_(\d+)M$').firstMatch(itemCode);
+      if (codeMatch != null) {
+        return '${int.parse(codeMatch.group(1)!)}M';
+      }
+      return '${localNo}M';
     }
-    return compact;
+    return itemCode;
   }
 }
 
