@@ -460,7 +460,7 @@ class VbmappMaterialProfile {
     required this.suggestedTypes,
     this.recommendedMaterials = const <VbmappMaterialSuggestion>[],
     this.quickPicks = const <String>[],
-    this.quickPicksByField = const <String, List<String>>{},
+    this.quickPicksByField = const <String, Object?>{},
     required this.preparationChecks,
   });
 
@@ -482,7 +482,7 @@ class VbmappMaterialProfile {
   final List<String> suggestedTypes;
   final List<VbmappMaterialSuggestion> recommendedMaterials;
   final List<String> quickPicks;
-  final Map<String, List<String>> quickPicksByField;
+  final Map<String, Object?> quickPicksByField;
   final List<String> preparationChecks;
 
   List<String> get quickPickLabels {
@@ -503,7 +503,7 @@ class VbmappMaterialProfile {
   }
 
   List<String> quickPicksFor(String fieldKey) {
-    final List<String> values = quickPicksByField[fieldKey] ?? const <String>[];
+    final List<String> values = _stringListFrom(quickPicksByField[fieldKey]);
     final Set<String> seen = <String>{};
     return values.where((String value) {
       final String normalized = value.trim();
@@ -704,11 +704,11 @@ List<String> _stringListFrom(Object? raw) {
       .toList(growable: false);
 }
 
-Map<String, List<String>> _stringListMapFrom(Object? raw) {
+Map<String, Object?> _stringListMapFrom(Object? raw) {
   if (raw is! Map) {
-    return const <String, List<String>>{};
+    return const <String, Object?>{};
   }
-  final Map<String, List<String>> out = <String, List<String>>{};
+  final Map<String, Object?> out = <String, Object?>{};
   raw.forEach((Object? key, Object? value) {
     final String normalizedKey = _textFrom(key);
     if (normalizedKey.isNotEmpty) {

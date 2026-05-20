@@ -26,6 +26,30 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
+  test('VB-MAPP material profile tolerates dynamic quick pick maps', () {
+    final VbmappMaterialProfile profile = VbmappMaterialProfile.fromJson(
+      jsonDecode(
+        '''
+        {
+          "label": "潜在强化物/活动",
+          "suggestedTypes": [],
+          "recommendedMaterials": [],
+          "quickPicksByField": {
+            "mand3_people": ["爸爸", "妈妈"],
+            "mand3_settings": null,
+            "mand3_examples_default": "红瓶泡泡"
+          },
+          "preparationChecks": []
+        }
+        ''',
+      ) as Map<String, dynamic>,
+    );
+
+    expect(profile.quickPicksFor('mand3_people'), <String>['爸爸', '妈妈']);
+    expect(profile.quickPicksFor('mand3_settings'), isEmpty);
+    expect(profile.quickPicksFor('mand3_examples_default'), isEmpty);
+  });
+
   testWidgets('login page opens the home dashboard after real login callback',
       (WidgetTester tester) async {
     final _FakeHomeClient homeClient = _FakeHomeClient();
