@@ -70,6 +70,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       <String, VbmappMaterialProfile>{};
   final Map<String, List<_VbmappMandEvent>> _mandEventsByItem =
       <String, List<_VbmappMandEvent>>{};
+  final Map<String, _VbmappObservationTimerState> _mandObservationByItem =
+      <String, _VbmappObservationTimerState>{};
+  Timer? _observationTicker;
 
   String _token = '';
   String _studentName = '';
@@ -107,6 +110,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _observationTicker?.cancel();
     _messageController.dispose();
     super.dispose();
   }
@@ -183,6 +187,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       _autoSaveText = _draftId > 0 ? '草稿已载入' : '等待作答';
       _loading = false;
     });
+    _syncObservationTicker();
   }
 
   void _applyDraftDetail(VbmappDraftDetail detail) {
@@ -210,6 +215,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       ..clear()
       ..addAll(detail.transitionScores);
     _restoreMandEvents(detail.itemResponses);
+    _restoreMandObservations(detail.itemResponses);
     final _VbmappItem? firstMissing = _firstMissingItem();
     if (firstMissing != null) {
       _selectedModuleCode = firstMissing.moduleCode;
@@ -360,7 +366,12 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       _milestoneScores[item.itemCode] = suggestedScore;
       _autoSaveText = '保存中...';
     });
-    await _saveMandEvidence(item, events, suggestedScore);
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: _mandObservationFor(item),
+    );
   }
 
   Future<void> _deleteMandEvent(_VbmappItem item, int index) async {
@@ -380,14 +391,40 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       _milestoneScores[item.itemCode] = suggestedScore;
       _autoSaveText = '保存中...';
     });
-    await _saveMandEvidence(item, events, suggestedScore);
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: _mandObservationFor(item),
+    );
+  }
+
+  Future<void> _updateMandObservation(
+    _VbmappItem item,
+    _VbmappObservationTimerState observation,
+  ) async {
+    final List<_VbmappMandEvent> events = _mandEventsFor(item);
+    final double suggestedScore = _suggestMandScore(item, events);
+    setState(() {
+      _mandObservationByItem[item.itemCode] = observation;
+      _milestoneScores[item.itemCode] = suggestedScore;
+      _autoSaveText = '保存中...';
+    });
+    _syncObservationTicker();
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: observation,
+    );
   }
 
   Future<void> _saveMandEvidence(
     _VbmappItem item,
     List<_VbmappMandEvent> events,
-    double suggestedScore,
-  ) async {
+    double suggestedScore, {
+    _VbmappObservationTimerState? observation,
+  }) async {
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再保存证据', tone: PadMessageTone.error);
       return;
@@ -397,6 +434,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       return;
     }
     final int qualifiedCount = _qualifiedMandCount(events);
+    final _VbmappObservationTimerState? timerState = observation;
+    final int actualObservationSeconds =
+        timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
     try {
       final VbmappDraftDetail detail = await widget.client.saveDraftItem(
         _token,
@@ -414,11 +454,19 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                 .toList(growable: false),
             'qualifiedCount': qualifiedCount,
             'uniqueTargetCount': qualifiedCount,
+            if (timerState != null) 'timer': timerState.toJson(),
+            if (timerState != null)
+              'actualObservationMinutes':
+                  actualObservationSeconds / Duration.secondsPerMinute,
+            if (timerState != null)
+              'actualObservationSeconds': actualObservationSeconds,
             if (item.itemCode == 'MAND_03M')
               'generalizationCounts': _mandGeneralizationCounts(events),
             'scoreBasis': item.itemCode == 'MAND_03M'
                 ? '系统按互动对象、环境、不同例子的泛化记录建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。'
-                : '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
+                : item.itemCode == 'MAND_04M'
+                    ? '系统按60分钟观察窗内的有效自发要求数量建议${_formatScore(suggestedScore)}分，当前已观察${_vbmappDurationText(actualObservationSeconds)}，老师可在下方评分区覆盖。'
+                    : '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
           },
         },
       );
@@ -463,6 +511,29 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     });
   }
 
+  void _restoreMandObservations(
+    Map<String, Map<String, Map<String, dynamic>>> itemResponses,
+  ) {
+    _mandObservationByItem.clear();
+    final Map<String, Map<String, dynamic>> milestoneResponses =
+        itemResponses['milestones'] ?? const <String, Map<String, dynamic>>{};
+    milestoneResponses.forEach((String itemCode, Map<String, dynamic> value) {
+      final Object? evidenceRaw = value['evidence'];
+      if (evidenceRaw is! Map) {
+        return;
+      }
+      final Object? timerRaw = evidenceRaw['timer'];
+      if (timerRaw is! Map) {
+        return;
+      }
+      final _VbmappObservationTimerState observation =
+          _VbmappObservationTimerState.fromJson(_dynamicMap(timerRaw));
+      if (!observation.isEmpty) {
+        _mandObservationByItem[itemCode] = observation;
+      }
+    });
+  }
+
   num? _scoreFor(_VbmappItem item) {
     switch (item.moduleCode) {
       case 'milestones':
@@ -490,6 +561,66 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
 
   List<_VbmappMandEvent> _mandEventsFor(_VbmappItem item) {
     return _mandEventsByItem[item.itemCode] ?? const <_VbmappMandEvent>[];
+  }
+
+  _VbmappObservationTimerState? _mandObservationFor(_VbmappItem item) {
+    return _mandObservationByItem[item.itemCode];
+  }
+
+  _VbmappItem? _activeMandObservationItem() {
+    for (final _VbmappItem item in _milestoneItems) {
+      final _VbmappObservationTimerState? observation =
+          _mandObservationByItem[item.itemCode];
+      if (observation != null && observation.hasStarted && !observation.ended) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  int _activeMandObservationQualifiedCount(_VbmappItem item) {
+    return _qualifiedMandCount(_mandEventsFor(item));
+  }
+
+  void _syncObservationTicker() {
+    _observationTicker?.cancel();
+    _observationTicker = null;
+    final _VbmappItem? activeItem = _activeMandObservationItem();
+    final _VbmappObservationTimerState? observation =
+        activeItem == null ? null : _mandObservationFor(activeItem);
+    if (observation == null || !observation.isRunning) {
+      return;
+    }
+    _observationTicker = Timer.periodic(const Duration(seconds: 1), (
+      Timer timer,
+    ) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  Future<void> _openActiveMandQuickRecord() async {
+    final _VbmappItem? item = _activeMandObservationItem();
+    if (item == null) {
+      return;
+    }
+    final VbmappMaterialProfile? profile =
+        _materialProfileFor(_schemaFor(item));
+    final _VbmappMandEvent? event = await showDialog<_VbmappMandEvent>(
+      context: context,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _VbmappMand4QuickRecordDialog(materialProfile: profile),
+        );
+      },
+    );
+    if (event == null) {
+      return;
+    }
+    await _addMandEvent(item, event);
   }
 
   void _goPrevious() {
@@ -719,6 +850,15 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   Widget build(BuildContext context) {
     final _VbmappItem item = _selectedItem;
     final _VbmappScoreSnapshot scoreSnapshot = _scoreSnapshot;
+    final _VbmappItem? activeObservationItem =
+        _loading ? null : _activeMandObservationItem();
+    final _VbmappObservationTimerState? activeObservation =
+        activeObservationItem == null
+            ? null
+            : _mandObservationFor(activeObservationItem);
+    final bool showActiveObservationBar = activeObservationItem != null &&
+        activeObservation != null &&
+        activeObservationItem.itemCode != item.itemCode;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: _dismissEditingFocus,
@@ -739,6 +879,42 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
               onSave: () => unawaited(_saveDraft()),
               onSubmit: () => unawaited(_submitDraft()),
             ),
+            if (showActiveObservationBar)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: _VbmappActiveObservationBar(
+                  item: activeObservationItem,
+                  observation: activeObservation,
+                  qualifiedCount: _activeMandObservationQualifiedCount(
+                      activeObservationItem),
+                  onJump: () => _selectItem(activeObservationItem),
+                  onQuickRecord: () => unawaited(_openActiveMandQuickRecord()),
+                  onPrimaryAction: () {
+                    final DateTime now = DateTime.now();
+                    if (activeObservation.isRunning) {
+                      unawaited(
+                        _updateMandObservation(
+                          activeObservationItem,
+                          activeObservation.pause(now),
+                        ),
+                      );
+                      return;
+                    }
+                    unawaited(
+                      _updateMandObservation(
+                        activeObservationItem,
+                        activeObservation.resume(now),
+                      ),
+                    );
+                  },
+                  onFinish: () => unawaited(
+                    _updateMandObservation(
+                      activeObservationItem,
+                      activeObservation.finish(DateTime.now()),
+                    ),
+                  ),
+                ),
+              ),
             if (_loading)
               const Expanded(child: _VbmappLoadingState())
             else ...<Widget>[
@@ -772,6 +948,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                             _schemaFor(item),
                           ),
                           mandEvents: _mandEventsFor(item),
+                          mandObservation: _mandObservationFor(item),
                           onAddMandEvent: () => unawaited(
                             _openMandEventDialog(item),
                           ),
@@ -779,6 +956,11 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                               unawaited(_addMandEvent(item, event)),
                           onDeleteMandEvent: (int index) =>
                               unawaited(_deleteMandEvent(item, index)),
+                          onChangeMandObservation:
+                              (_VbmappObservationTimerState observation) =>
+                                  unawaited(
+                            _updateMandObservation(item, observation),
+                          ),
                           onSelectScore: _selectScore,
                         ),
                       ),
@@ -1432,9 +1614,11 @@ class _VbmappWorkspace extends StatelessWidget {
     required this.responseSchema,
     required this.materialProfile,
     required this.mandEvents,
+    required this.mandObservation,
     required this.onAddMandEvent,
     required this.onSubmitMandEvent,
     required this.onDeleteMandEvent,
+    required this.onChangeMandObservation,
     required this.onSelectScore,
   });
 
@@ -1443,9 +1627,11 @@ class _VbmappWorkspace extends StatelessWidget {
   final VbmappItemResponseSchema? responseSchema;
   final VbmappMaterialProfile? materialProfile;
   final List<_VbmappMandEvent> mandEvents;
+  final _VbmappObservationTimerState? mandObservation;
   final VoidCallback onAddMandEvent;
   final ValueChanged<_VbmappMandEvent> onSubmitMandEvent;
   final ValueChanged<int> onDeleteMandEvent;
+  final ValueChanged<_VbmappObservationTimerState> onChangeMandObservation;
   final ValueChanged<num> onSelectScore;
 
   @override
@@ -1469,9 +1655,11 @@ class _VbmappWorkspace extends StatelessWidget {
                     schema: responseSchema,
                     materialProfile: materialProfile,
                     mandEvents: mandEvents,
+                    mandObservation: mandObservation,
                     onAddMandEvent: onAddMandEvent,
                     onSubmitMandEvent: onSubmitMandEvent,
                     onDeleteMandEvent: onDeleteMandEvent,
+                    onChangeMandObservation: onChangeMandObservation,
                   ),
                 ],
               ),
@@ -1689,18 +1877,22 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
     required this.schema,
     required this.materialProfile,
     required this.mandEvents,
+    required this.mandObservation,
     required this.onAddMandEvent,
     required this.onSubmitMandEvent,
     required this.onDeleteMandEvent,
+    required this.onChangeMandObservation,
   });
 
   final _VbmappItem item;
   final VbmappItemResponseSchema? schema;
   final VbmappMaterialProfile? materialProfile;
   final List<_VbmappMandEvent> mandEvents;
+  final _VbmappObservationTimerState? mandObservation;
   final VoidCallback onAddMandEvent;
   final ValueChanged<_VbmappMandEvent> onSubmitMandEvent;
   final ValueChanged<int> onDeleteMandEvent;
+  final ValueChanged<_VbmappObservationTimerState> onChangeMandObservation;
 
   @override
   Widget build(BuildContext context) {
@@ -1720,6 +1912,17 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         events: mandEvents,
         onSubmitEvent: onSubmitMandEvent,
         onDeleteEvent: onDeleteMandEvent,
+      );
+    }
+    if (item.itemCode == 'MAND_04M') {
+      return _VbmappMand4InlinePanel(
+        item: item,
+        materialProfile: materialProfile,
+        events: mandEvents,
+        observation: mandObservation,
+        onSubmitEvent: onSubmitMandEvent,
+        onDeleteEvent: onDeleteMandEvent,
+        onChangeObservation: onChangeMandObservation,
       );
     }
     if (_isSimpleMandRecorder(item, schema)) {
@@ -2069,6 +2272,489 @@ class _VbmappMand1InlinePanelState extends State<_VbmappMand1InlinePanel> {
     _requestController.clear();
     setState(() {
       _promptChoice = _promptValues.first;
+      _selectedRecordIndex = null;
+    });
+  }
+
+  void _selectRecord(int index) {
+    setState(() {
+      _selectedRecordIndex = _selectedRecordIndex == index ? null : index;
+    });
+  }
+
+  void _deleteRecord(int index) {
+    setState(() {
+      _selectedRecordIndex = null;
+    });
+    widget.onDeleteEvent(index);
+  }
+}
+
+class _VbmappMand4InlinePanel extends StatefulWidget {
+  const _VbmappMand4InlinePanel({
+    required this.item,
+    required this.materialProfile,
+    required this.events,
+    required this.observation,
+    required this.onSubmitEvent,
+    required this.onDeleteEvent,
+    required this.onChangeObservation,
+  });
+
+  final _VbmappItem item;
+  final VbmappMaterialProfile? materialProfile;
+  final List<_VbmappMandEvent> events;
+  final _VbmappObservationTimerState? observation;
+  final ValueChanged<_VbmappMandEvent> onSubmitEvent;
+  final ValueChanged<int> onDeleteEvent;
+  final ValueChanged<_VbmappObservationTimerState> onChangeObservation;
+
+  @override
+  State<_VbmappMand4InlinePanel> createState() =>
+      _VbmappMand4InlinePanelState();
+}
+
+class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
+  static const List<String> _fallbackMaterials = <String>[
+    '泡泡',
+    '球',
+    '音乐',
+    '彩虹弹簧',
+    '出去',
+    '打开',
+    '秋千',
+    '车',
+  ];
+
+  final TextEditingController _requestController = TextEditingController();
+
+  Timer? _clockTimer;
+  String _presentation = '呈现物品';
+  String _targetKind = '物品';
+  int? _selectedRecordIndex;
+
+  _VbmappObservationTimerState get _observation =>
+      widget.observation ?? const _VbmappObservationTimerState();
+
+  int get _onePointRequestCount => _scoreCountThreshold(widget.item, 1) ?? 5;
+
+  int get _halfPointRequestCount => _scoreCountThreshold(widget.item, .5) ?? 2;
+
+  int get _plannedSeconds => _observation.plannedSeconds;
+
+  int get _elapsedSeconds => _observation.elapsedSecondsAt(DateTime.now());
+
+  int get _remainingSeconds {
+    final int remaining = _plannedSeconds - _elapsedSeconds;
+    return remaining > 0 ? remaining : 0;
+  }
+
+  bool get _observationMet => _elapsedSeconds >= _plannedSeconds;
+
+  String get _recordTitle => '提要求4M观察记录';
+
+  String get _scoreReference => '参考：60分钟观察窗内，$_halfPointRequestCount个计0.5分，'
+      '$_onePointRequestCount个计1分；仅统计呈现物品条件下的自发要求。';
+
+  String get _observationHint {
+    final int qualifiedCount = _qualifiedMandCount(widget.events);
+    if (!_observation.hasStarted) {
+      return '先开启60分钟观察窗，再连续记录孩子的自发要求。';
+    }
+    if (!_observationMet && qualifiedCount >= _onePointRequestCount) {
+      return '已达到1分数量条件，但观察未满60分钟，可继续观察或由老师确认结束。';
+    }
+    if (!_observationMet && qualifiedCount >= _halfPointRequestCount) {
+      return '已达到0.5分数量条件，但观察未满60分钟，建议继续观察。';
+    }
+    if (_observationMet) {
+      return '60分钟观察窗已完成，系统会继续保留新增记录供老师判断。';
+    }
+    return '记录自然情境下的自发要求，系统自动统计不同要求数量。';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncClockTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VbmappMand4InlinePanel oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final int? selectedIndex = _selectedRecordIndex;
+    if (selectedIndex != null && selectedIndex >= widget.events.length) {
+      _selectedRecordIndex = null;
+    }
+    if (oldWidget.observation != widget.observation) {
+      _syncClockTicker();
+    }
+  }
+
+  @override
+  void dispose() {
+    _clockTimer?.cancel();
+    _requestController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final int qualifiedCount = _qualifiedMandCount(widget.events);
+    final double suggestedScore = _suggestMandScore(widget.item, widget.events);
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFFFAF5),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _VbmappColors.lineSoft),
+      ),
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final bool narrow = constraints.maxWidth < 860;
+          final Widget form = _buildRecordForm();
+          final Widget summary = _buildRecordSummary();
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Row(
+                children: <Widget>[
+                  Icon(Icons.timer_outlined,
+                      color: widget.item.color, size: 19),
+                  const SizedBox(width: 7),
+                  Expanded(
+                    child: Text(
+                      _recordTitle,
+                      style: const TextStyle(
+                        color: _VbmappColors.ink,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                  ),
+                  _VbmappEvidenceMetric(
+                    label: '观察',
+                    value: _vbmappDurationText(_elapsedSeconds),
+                    color: widget.item.color,
+                  ),
+                  const SizedBox(width: 8),
+                  _VbmappEvidenceMetric(
+                    label: '有效',
+                    value: '$qualifiedCount/$_onePointRequestCount',
+                    color: widget.item.color,
+                  ),
+                  const SizedBox(width: 8),
+                  _VbmappEvidenceMetric(
+                    label: '建议',
+                    value: '${_formatScore(suggestedScore)}分',
+                    color: widget.item.color,
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              _buildObservationBar(),
+              const SizedBox(height: 10),
+              if (narrow)
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    form,
+                    const SizedBox(height: 10),
+                    summary,
+                  ],
+                )
+              else
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Expanded(flex: 5, child: form),
+                    const SizedBox(width: 12),
+                    Expanded(flex: 4, child: summary),
+                  ],
+                ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildObservationBar() {
+    final bool running = _observation.isRunning;
+    final bool ended = _observation.ended;
+    final String primaryActionLabel = !_observation.hasStarted
+        ? '开始观察'
+        : ended
+            ? '重新观察'
+            : running
+                ? '暂停'
+                : '继续观察';
+    final IconData primaryActionIcon = !_observation.hasStarted
+        ? Icons.play_arrow_rounded
+        : ended
+            ? Icons.replay_rounded
+            : running
+                ? Icons.pause_rounded
+                : Icons.play_arrow_rounded;
+    return Container(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(11),
+        border: Border.all(color: _VbmappColors.lineSoft),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _VbmappMand4TimerMetricChip(
+                      label: '观察窗',
+                      value: '60分钟',
+                      tone: widget.item.color,
+                    ),
+                    _VbmappMand4TimerMetricChip(
+                      label: '已观察',
+                      value: _vbmappDurationText(_elapsedSeconds),
+                      tone: widget.item.color,
+                    ),
+                    _VbmappMand4TimerMetricChip(
+                      label: '剩余',
+                      value: _vbmappDurationText(_remainingSeconds),
+                      tone: _remainingSeconds == 0
+                          ? _VbmappColors.green
+                          : _VbmappColors.orangeDeep,
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 10),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  _VbmappMand4TimerButton(
+                    key: const ValueKey<String>('vbmapp-mand4-primary-timer'),
+                    icon: primaryActionIcon,
+                    label: primaryActionLabel,
+                    filled: true,
+                    onTap: _handlePrimaryTimerAction,
+                  ),
+                  const SizedBox(width: 8),
+                  _VbmappMand4TimerButton(
+                    key: const ValueKey<String>('vbmapp-mand4-stop-timer'),
+                    icon: Icons.stop_rounded,
+                    label: '结束',
+                    onTap: _observation.hasStarted ? _finishObservation : null,
+                  ),
+                ],
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            _observationHint,
+            style: const TextStyle(
+              color: _VbmappColors.body,
+              fontSize: 12,
+              height: 1.35,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildRecordForm() {
+    final List<String> materials =
+        _mandMaterialQuickPicks(widget.materialProfile);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _buildChoiceRow(),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: <Widget>[
+            Expanded(
+              child: _VbmappMandInlineTextField(
+                controller: _requestController,
+                label: '孩子要求内容',
+                hintText: '如：泡泡、出去、打开',
+              ),
+            ),
+            const SizedBox(width: 10),
+            _VbmappSmallActionButton(
+              icon: Icons.add_rounded,
+              label: '记录本次要求',
+              onTap: _submit,
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 6,
+          children: <Widget>[
+            for (final String material in materials)
+              _VbmappMandMaterialChip(
+                label: material,
+                selected: _requestController.text.trim() == material,
+                onTap: () => _selectMaterial(material),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _buildChoiceRow() {
+    return Row(
+      children: <Widget>[
+        Expanded(
+          flex: 5,
+          child: _VbmappMandInlineChoiceGroup(
+            label: '目标呈现',
+            value: _presentation,
+            values: const <String>['呈现物品', '未呈现物品'],
+            onChanged: (String value) => setState(() {
+              _presentation = value;
+            }),
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          flex: 5,
+          child: _VbmappMandInlineChoiceGroup(
+            label: '目标',
+            value: _targetKind,
+            values: const <String>['物品', '动作', '活动'],
+            onChanged: (String value) => setState(() {
+              _targetKind = value;
+            }),
+          ),
+        ),
+      ],
+    );
+  }
+
+  List<String> _mandMaterialQuickPicks(VbmappMaterialProfile? profile) {
+    final List<String> configured =
+        profile?.quickPickLabels ?? const <String>[];
+    return configured.isEmpty
+        ? _fallbackMaterials
+        : configured.take(8).toList();
+  }
+
+  Widget _buildRecordSummary() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (widget.materialProfile != null) ...<Widget>[
+          _VbmappInlineInfo(
+            icon: Icons.inventory_2_outlined,
+            text: widget.materialProfile!.label,
+          ),
+          const SizedBox(height: 10),
+        ],
+        const Text(
+          '观察记录',
+          style: TextStyle(
+            color: _VbmappColors.ink,
+            fontSize: 14,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(height: 8),
+        _VbmappMand1RecordGrid(
+          events: widget.events,
+          minSlots: _onePointRequestCount,
+          selectedIndex: _selectedRecordIndex,
+          onSelectIndex: _selectRecord,
+          onDeleteIndex: _deleteRecord,
+        ),
+        const SizedBox(height: 10),
+        Text(
+          _scoreReference,
+          style: const TextStyle(
+            color: _VbmappColors.body,
+            fontSize: 12,
+            height: 1.35,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ],
+    );
+  }
+
+  void _syncClockTicker() {
+    _clockTimer?.cancel();
+    _clockTimer = null;
+    if (!_observation.isRunning) {
+      return;
+    }
+    _clockTimer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  void _handlePrimaryTimerAction() {
+    final DateTime now = DateTime.now();
+    if (!_observation.hasStarted || _observation.ended) {
+      widget.onChangeObservation(_observation.restart(now));
+      return;
+    }
+    if (_observation.isRunning) {
+      widget.onChangeObservation(_observation.pause(now));
+      return;
+    }
+    widget.onChangeObservation(_observation.resume(now));
+  }
+
+  void _finishObservation() {
+    widget.onChangeObservation(_observation.finish(DateTime.now()));
+  }
+
+  void _selectMaterial(String material) {
+    setState(() {
+      _requestController.text = material;
+    });
+  }
+
+  void _submit() {
+    final String request = _requestController.text.trim();
+    if (request.isEmpty) {
+      return;
+    }
+    if (!_observation.hasStarted) {
+      widget.onChangeObservation(_observation.start(DateTime.now()));
+    }
+    widget.onSubmitEvent(
+      _VbmappMandEvent(
+        utterance: request,
+        target: request,
+        motivationContext: '',
+        environment: _presentation,
+        targetKind: _targetKind,
+        person: '',
+        setting: '',
+        example: '',
+        responseMode: '自发要求',
+        promptLevel: '',
+        functional: _presentation == '呈现物品',
+      ),
+    );
+    _requestController.clear();
+    setState(() {
       _selectedRecordIndex = null;
     });
   }
@@ -3691,6 +4377,261 @@ class _VbmappSmallActionButton extends StatelessWidget {
   }
 }
 
+class _VbmappMand4TimerButton extends StatelessWidget {
+  const _VbmappMand4TimerButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.filled = false,
+    this.compact = false,
+    super.key,
+  });
+
+  final IconData icon;
+  final String label;
+  final VoidCallback? onTap;
+  final bool filled;
+  final bool compact;
+
+  @override
+  Widget build(BuildContext context) {
+    final bool enabled = onTap != null;
+    final Color textColor = enabled
+        ? filled
+            ? Colors.white
+            : _VbmappColors.orangeDeep
+        : _VbmappColors.muted;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(9),
+        child: Ink(
+          height: compact ? 28 : 32,
+          padding: EdgeInsets.symmetric(horizontal: compact ? 8 : 10),
+          decoration: BoxDecoration(
+            color: filled && enabled
+                ? _VbmappColors.orange
+                : enabled
+                    ? const Color(0xFFFFFCFA)
+                    : const Color(0xFFF7F1ED),
+            borderRadius: BorderRadius.circular(9),
+            border: Border.all(
+              color: enabled ? _VbmappColors.orange : const Color(0xFFE2D6CE),
+            ),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Icon(icon, size: compact ? 14 : 16, color: textColor),
+              SizedBox(width: compact ? 4 : 5),
+              Text(
+                label,
+                style: TextStyle(
+                  color: textColor,
+                  fontSize: compact ? 11.5 : 12.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _VbmappMand4TimerMetricChip extends StatelessWidget {
+  const _VbmappMand4TimerMetricChip({
+    required this.label,
+    required this.value,
+    required this.tone,
+  });
+
+  final String label;
+  final String value;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: tone.withOpacity(.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: tone.withOpacity(.18)),
+      ),
+      child: Text(
+        '$label $value',
+        style: TextStyle(
+          color: tone,
+          fontSize: 12,
+          fontWeight: FontWeight.w900,
+        ),
+      ),
+    );
+  }
+}
+
+class _VbmappMand4QuickRecordDialog extends StatefulWidget {
+  const _VbmappMand4QuickRecordDialog({required this.materialProfile});
+
+  final VbmappMaterialProfile? materialProfile;
+
+  @override
+  State<_VbmappMand4QuickRecordDialog> createState() =>
+      _VbmappMand4QuickRecordDialogState();
+}
+
+class _VbmappMand4QuickRecordDialogState
+    extends State<_VbmappMand4QuickRecordDialog> {
+  static const List<String> _fallbackMaterials = <String>[
+    '泡泡',
+    '球',
+    '音乐',
+    '彩虹弹簧',
+    '出去',
+    '打开',
+    '秋千',
+    '车',
+  ];
+
+  final TextEditingController _requestController = TextEditingController();
+  String _presentation = '呈现物品';
+  String _targetKind = '物品';
+
+  @override
+  void dispose() {
+    _requestController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final List<String> configured =
+        widget.materialProfile?.quickPickLabels ?? const <String>[];
+    final List<String> materials =
+        configured.isEmpty ? _fallbackMaterials : configured.take(8).toList();
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 640,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _VbmappColors.line),
+            boxShadow: _vbmappShadow(blur: 24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text(
+                '补记一条 4M 观察记录',
+                style: TextStyle(
+                  color: _VbmappColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Row(
+                children: <Widget>[
+                  Expanded(
+                    child: _VbmappMandInlineChoiceGroup(
+                      label: '目标呈现',
+                      value: _presentation,
+                      values: const <String>['呈现物品', '未呈现物品'],
+                      onChanged: (String value) => setState(() {
+                        _presentation = value;
+                      }),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: _VbmappMandInlineChoiceGroup(
+                      label: '目标',
+                      value: _targetKind,
+                      values: const <String>['物品', '动作', '活动'],
+                      onChanged: (String value) => setState(() {
+                        _targetKind = value;
+                      }),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
+              _VbmappMandInlineTextField(
+                controller: _requestController,
+                label: '孩子要求内容',
+                hintText: '如：泡泡、出去、打开',
+              ),
+              const SizedBox(height: 10),
+              Wrap(
+                spacing: 8,
+                runSpacing: 6,
+                children: <Widget>[
+                  for (final String material in materials)
+                    _VbmappMandMaterialChip(
+                      label: material,
+                      selected: _requestController.text.trim() == material,
+                      onTap: () => setState(() {
+                        _requestController.text = material;
+                      }),
+                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  _VbmappMand4TimerButton(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    onTap: () => Navigator.of(context).pop(),
+                  ),
+                  const SizedBox(width: 8),
+                  _VbmappMand4TimerButton(
+                    key: const ValueKey<String>('vbmapp-global-mand4-submit'),
+                    icon: Icons.check_rounded,
+                    label: '保存记录',
+                    filled: true,
+                    onTap: _submit,
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _submit() {
+    final String request = _requestController.text.trim();
+    if (request.isEmpty) {
+      return;
+    }
+    Navigator.of(context).pop(
+      _VbmappMandEvent(
+        utterance: request,
+        target: request,
+        motivationContext: '',
+        environment: _presentation,
+        targetKind: _targetKind,
+        person: '',
+        setting: '',
+        example: '',
+        responseMode: '自发要求',
+        promptLevel: '',
+        functional: _presentation == '呈现物品',
+      ),
+    );
+  }
+}
+
 class _VbmappMandEventDialog extends StatefulWidget {
   const _VbmappMandEventDialog({required this.generalizationMode});
 
@@ -4754,6 +5695,155 @@ class _VbmappFooterButton extends StatelessWidget {
   }
 }
 
+class _VbmappActiveObservationBar extends StatefulWidget {
+  const _VbmappActiveObservationBar({
+    required this.item,
+    required this.observation,
+    required this.qualifiedCount,
+    required this.onJump,
+    required this.onQuickRecord,
+    required this.onPrimaryAction,
+    required this.onFinish,
+  });
+
+  final _VbmappItem item;
+  final _VbmappObservationTimerState observation;
+  final int qualifiedCount;
+  final VoidCallback onJump;
+  final VoidCallback onQuickRecord;
+  final VoidCallback onPrimaryAction;
+  final VoidCallback onFinish;
+
+  @override
+  State<_VbmappActiveObservationBar> createState() =>
+      _VbmappActiveObservationBarState();
+}
+
+class _VbmappActiveObservationBarState
+    extends State<_VbmappActiveObservationBar> {
+  Timer? _ticker;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncTicker();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VbmappActiveObservationBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.observation != widget.observation) {
+      _syncTicker();
+    }
+  }
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    super.dispose();
+  }
+
+  void _syncTicker() {
+    _ticker?.cancel();
+    _ticker = null;
+    if (!widget.observation.isRunning) {
+      return;
+    }
+    _ticker = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool running = widget.observation.isRunning;
+    final String statusLabel =
+        running ? '${widget.item.navCode}观察中' : '${widget.item.navCode}观察暂停';
+    return Container(
+      key: const ValueKey<String>('vbmapp-active-observation-bar'),
+      height: 46,
+      padding: const EdgeInsets.symmetric(horizontal: 12),
+      decoration: BoxDecoration(
+        color: Colors.white.withOpacity(.97),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _VbmappColors.lineSoft),
+        boxShadow: _vbmappShadow(color: const Color(0x14B05F32), blur: 12),
+      ),
+      child: Row(
+        children: <Widget>[
+          InkWell(
+            onTap: widget.onJump,
+            borderRadius: BorderRadius.circular(999),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              decoration: BoxDecoration(
+                color: widget.item.color.withOpacity(.1),
+                borderRadius: BorderRadius.circular(999),
+              ),
+              child: Text(
+                statusLabel,
+                style: TextStyle(
+                  color: widget.item.color,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            '已观察 ${_vbmappDurationText(widget.observation.elapsedSecondsAt(DateTime.now()))}',
+            style: const TextStyle(
+              color: _VbmappColors.ink,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Text(
+            '有效 ${widget.qualifiedCount}/5',
+            style: const TextStyle(
+              color: _VbmappColors.body,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const Spacer(),
+          _VbmappMand4TimerButton(
+            key: const ValueKey<String>(
+                'vbmapp-active-observation-quick-record'),
+            icon: Icons.add_rounded,
+            label: '记一条',
+            filled: true,
+            compact: true,
+            onTap: widget.onQuickRecord,
+          ),
+          const SizedBox(width: 6),
+          _VbmappMand4TimerButton(
+            key: const ValueKey<String>('vbmapp-active-observation-primary'),
+            icon: running ? Icons.pause_rounded : Icons.play_arrow_rounded,
+            label: running ? '暂停' : '继续',
+            compact: true,
+            onTap: widget.onPrimaryAction,
+          ),
+          const SizedBox(width: 6),
+          _VbmappMand4TimerButton(
+            key: const ValueKey<String>('vbmapp-active-observation-finish'),
+            icon: Icons.stop_rounded,
+            label: '结束',
+            compact: true,
+            onTap: widget.onFinish,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _VbmappLoadingState extends StatelessWidget {
   const _VbmappLoadingState();
 
@@ -4957,6 +6047,8 @@ class _VbmappMandEvent {
 
   bool get hasDisallowedPrompt =>
       hasPhysicalPrompt ||
+      promptLevel == '口头辅助' ||
+      promptLevel == '有口头辅助' ||
       promptLevel == '有额外辅助' ||
       promptLevel == '额外辅助' ||
       promptLevel == '其他辅助';
@@ -5000,6 +6092,140 @@ class _VbmappMandEvent {
   }
 }
 
+class _VbmappObservationTimerState {
+  const _VbmappObservationTimerState({
+    this.plannedMinutes = 60,
+    this.accumulatedSeconds = 0,
+    this.runningSinceIso = '',
+    this.startedAtIso = '',
+    this.ended = false,
+  });
+
+  factory _VbmappObservationTimerState.fromJson(Map<String, dynamic> json) {
+    int intFrom(Object? value) {
+      if (value is num) {
+        return value.toInt();
+      }
+      return int.tryParse(_safeText(value)) ?? 0;
+    }
+
+    final int plannedMinutes =
+        intFrom(json['plannedMinutes'] ?? json['planned_minutes']);
+    final int accumulatedSeconds = intFrom(
+      json['accumulatedSeconds'] ??
+          json['accumulated_seconds'] ??
+          json['actualObservationSeconds'],
+    );
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes <= 0 ? 60 : plannedMinutes,
+      accumulatedSeconds: accumulatedSeconds < 0 ? 0 : accumulatedSeconds,
+      runningSinceIso: _safeText(
+        json['runningSinceIso'] ?? json['running_since'] ?? '',
+      ),
+      startedAtIso: _safeText(
+        json['startedAtIso'] ?? json['startTime'] ?? json['start_time'] ?? '',
+      ),
+      ended: json['ended'] == true || _safeText(json['status']) == 'ended',
+    );
+  }
+
+  final int plannedMinutes;
+  final int accumulatedSeconds;
+  final String runningSinceIso;
+  final String startedAtIso;
+  final bool ended;
+
+  bool get isRunning => runningSinceIso.trim().isNotEmpty;
+
+  bool get hasStarted =>
+      startedAtIso.trim().isNotEmpty || accumulatedSeconds > 0 || isRunning;
+
+  bool get isEmpty => !hasStarted && !ended;
+
+  int get plannedSeconds => plannedMinutes * Duration.secondsPerMinute;
+
+  DateTime? get runningSince => _safeDateTimeParse(runningSinceIso);
+
+  int elapsedSecondsAt(DateTime now) {
+    if (!isRunning) {
+      return accumulatedSeconds;
+    }
+    final DateTime? since = runningSince;
+    if (since == null) {
+      return accumulatedSeconds;
+    }
+    final int delta = now.difference(since).inSeconds;
+    return accumulatedSeconds + (delta > 0 ? delta : 0);
+  }
+
+  _VbmappObservationTimerState start(DateTime now) {
+    if (isRunning) {
+      return this;
+    }
+    final String iso = now.toIso8601String();
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes,
+      accumulatedSeconds: accumulatedSeconds,
+      runningSinceIso: iso,
+      startedAtIso: startedAtIso.trim().isEmpty ? iso : startedAtIso,
+      ended: false,
+    );
+  }
+
+  _VbmappObservationTimerState resume(DateTime now) {
+    return start(now);
+  }
+
+  _VbmappObservationTimerState pause(DateTime now) {
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes,
+      accumulatedSeconds: elapsedSecondsAt(now),
+      runningSinceIso: '',
+      startedAtIso: startedAtIso,
+      ended: false,
+    );
+  }
+
+  _VbmappObservationTimerState finish(DateTime now) {
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes,
+      accumulatedSeconds: elapsedSecondsAt(now),
+      runningSinceIso: '',
+      startedAtIso: startedAtIso,
+      ended: true,
+    );
+  }
+
+  _VbmappObservationTimerState restart(DateTime now) {
+    final String iso = now.toIso8601String();
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes,
+      accumulatedSeconds: 0,
+      runningSinceIso: iso,
+      startedAtIso: iso,
+      ended: false,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return <String, dynamic>{
+      'plannedMinutes': plannedMinutes,
+      'planned_seconds': plannedSeconds,
+      'accumulatedSeconds': accumulatedSeconds,
+      'runningSinceIso': runningSinceIso,
+      'startTime': startedAtIso,
+      'status': ended
+          ? 'ended'
+          : isRunning
+              ? 'running'
+              : hasStarted
+                  ? 'paused'
+                  : 'idle',
+      'ended': ended,
+    };
+  }
+}
+
 class _VbmappScoreOption {
   const _VbmappScoreOption({
     required this.score,
@@ -5034,6 +6260,14 @@ String _todayIsoDate() {
 String _formatClock(DateTime value) {
   return '${value.hour.toString().padLeft(2, '0')}:'
       '${value.minute.toString().padLeft(2, '0')}';
+}
+
+String _vbmappDurationText(int totalSeconds) {
+  final int seconds = totalSeconds < 0 ? 0 : totalSeconds;
+  final int minutesPart = seconds ~/ Duration.secondsPerMinute;
+  final int secondsPart = seconds % Duration.secondsPerMinute;
+  return '${minutesPart.toString().padLeft(2, '0')}:'
+      '${secondsPart.toString().padLeft(2, '0')}';
 }
 
 bool _isSimpleMandRecorder(
@@ -5208,6 +6442,14 @@ Map<String, dynamic> _dynamicMap(Object? raw) {
     return out;
   }
   return <String, dynamic>{};
+}
+
+DateTime? _safeDateTimeParse(Object? value) {
+  final String text = _safeText(value);
+  if (text.isEmpty) {
+    return null;
+  }
+  return DateTime.tryParse(text);
 }
 
 String _dateOnlyText(Object? value) {

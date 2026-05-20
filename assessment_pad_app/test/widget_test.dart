@@ -4107,6 +4107,165 @@ void main() {
     expect(client.saveDraftItemCalls, 6);
   });
 
+  testWidgets('VB-MAPP MAND 4M uses timed observation recorder',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 3; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('提要求4M观察记录'), findsOneWidget);
+    expect(find.text('观察窗 60分钟'), findsOneWidget);
+    expect(find.text('剩余 60:00'), findsOneWidget);
+    expect(find.text('开始观察'), findsOneWidget);
+    expect(find.text('目标呈现'), findsOneWidget);
+    expect(find.text('呈现物品'), findsOneWidget);
+    expect(find.text('未呈现物品'), findsOneWidget);
+    expect(find.text('口头辅助'), findsNothing);
+    expect(find.text('有效 0/5'), findsOneWidget);
+    expect(find.text('建议 0分'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('vbmapp-mand4-primary-timer')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('暂停'), findsOneWidget);
+
+    final Finder requestField = find.byType(TextField).first;
+    await tester.enterText(requestField, '泡泡');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.enterText(requestField, '出去');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('有效 2/5'), findsOneWidget);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+    expect(find.text('0.5 / 170'), findsOneWidget);
+    expect(client.saveDraftItemCalls, 3);
+
+    final Map<String, dynamic> payload =
+        client.lastSaveDraftItemPayload ?? <String, dynamic>{};
+    final Map<String, dynamic> evidence =
+        payload['evidence'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    final Map<String, dynamic> timer =
+        evidence['timer'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    expect(timer['plannedMinutes'], 60);
+    expect(evidence['qualifiedCount'], 2);
+    expect(evidence.containsKey('actualObservationSeconds'), isTrue);
+  });
+
+  testWidgets('VB-MAPP MAND 4M observation bar records across questions',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 3; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('vbmapp-mand4-primary-timer')),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).first, '泡泡');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+
+    expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
+        findsOneWidget);
+    expect(find.text('4M观察中'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('vbmapp-active-observation-quick-record'),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('补记一条 4M 观察记录'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).last, '出去');
+    await tester.tap(
+      find.byKey(const ValueKey<String>('vbmapp-global-mand4-submit')),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.text('4M观察中'), findsOneWidget);
+    expect(find.text('有效 2/5'), findsWidgets);
+    expect(client.saveDraftItemCalls, 3);
+
+    final Map<String, dynamic> payload =
+        client.lastSaveDraftItemPayload ?? <String, dynamic>{};
+    final Map<String, dynamic> evidence =
+        payload['evidence'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    expect(evidence['qualifiedCount'], 2);
+  });
+
   testWidgets('ERXin workbench shows structured loading shell while loading',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 768);
@@ -8568,6 +8727,7 @@ const AssessmentScaleItem _vbmappScaleItem = AssessmentScaleItem(
 
 class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
   int saveDraftItemCalls = 0;
+  Map<String, dynamic>? lastSaveDraftItemPayload;
 
   @override
   Future<AssessmentDraftPage> fetchDraftsPage(
@@ -8621,6 +8781,19 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           itemCode: 'MAND_03M',
           uiPattern: 'mand_event_recorder',
           recordDepth: 'structured_event_log',
+          materialProfileId: 'potential_reinforcer_set',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>[],
+          scoreStrategy: 'count_qualified_unique_mand_events',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
+        'milestones::MAND_04M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'MAND_04M',
+          uiPattern: 'mand_event_recorder',
+          recordDepth: 'timed_observation_required',
           materialProfileId: 'potential_reinforcer_set',
           whyRecord: '',
           evidenceTargets: <String>[],
@@ -8702,6 +8875,7 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
     Map<String, dynamic> payload,
   ) async {
     saveDraftItemCalls += 1;
+    lastSaveDraftItemPayload = payload;
     return VbmappDraftDetail(
       id: (payload['draftId'] as num?)?.toInt() ?? 17,
       studentId: 0,
