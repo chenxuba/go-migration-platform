@@ -358,7 +358,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     setState(() {
       _mandEventsByItem[item.itemCode] = events;
       _milestoneScores[item.itemCode] = suggestedScore;
-      _autoSaveText = '已根据证据建议${_formatScore(suggestedScore)}分';
+      _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(item, events, suggestedScore);
   }
@@ -378,7 +378,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
         _mandEventsByItem[item.itemCode] = events;
       }
       _milestoneScores[item.itemCode] = suggestedScore;
-      _autoSaveText = '已删除记录，建议${_formatScore(suggestedScore)}分';
+      _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(item, events, suggestedScore);
   }
@@ -427,13 +427,13 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       }
       setState(() {
         _draftId = detail.id > 0 ? detail.id : _draftId;
-        _autoSaveText = '证据已保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
       });
     } on Object catch (error) {
       if (!mounted) {
         return;
       }
-      setState(() => _autoSaveText = '证据保存失败');
+      setState(() => _autoSaveText = '保存失败');
       _showMessage('VB-MAPP单题证据保存失败：$error', tone: PadMessageTone.error);
     }
   }
@@ -580,7 +580,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     }
     setState(() {
       _saving = true;
-      _autoSaveText = '保存中';
+      _autoSaveText = '保存中...';
     });
     try {
       final VbmappDraftSaveResult result = await widget.client.saveDraft(
@@ -603,7 +603,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       }
       setState(() {
         _draftId = result.id > 0 ? result.id : _draftId;
-        _autoSaveText = '草稿已保存';
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
         _saving = false;
       });
       if (!silent) {
@@ -652,7 +652,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     }
     setState(() {
       _submitting = true;
-      _autoSaveText = '提交中';
+      _autoSaveText = '提交中...';
     });
     try {
       final int draftId = await _saveDraft(silent: true);
@@ -836,6 +836,7 @@ class _VbmappColors {
   static const Color orange = Color(0xFFE96F43);
   static const Color orangeDeep = Color(0xFFC95D37);
   static const Color green = Color(0xFF7FA874);
+  static const Color red = Color(0xFFD85F4A);
   static const Color blue = Color(0xFF5D7F9F);
 }
 
@@ -892,7 +893,7 @@ class _VbmappTopBar extends StatelessWidget {
 
     return Container(
       height: 58,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 18),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.98),
         border: Border.all(color: _VbmappColors.line),
@@ -901,7 +902,7 @@ class _VbmappTopBar extends StatelessWidget {
       ),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints constraints) {
-          final bool compact = constraints.maxWidth < 1500;
+          final bool compact = constraints.maxWidth < 1280;
           final List<Widget> headerChildren = <Widget>[
             Text(
               '$title 测评工作台',
@@ -933,33 +934,33 @@ class _VbmappTopBar extends StatelessWidget {
                 icon: Icons.chevron_left_rounded,
                 onTap: onBack,
               ),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               Expanded(
-                child: compact
-                    ? SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        physics: const ClampingScrollPhysics(),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: headerChildren,
-                        ),
-                      )
-                    : Row(children: headerChildren),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  physics: const ClampingScrollPhysics(),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: headerChildren,
+                  ),
+                ),
               ),
               _VbmappSaveStatusLabel(text: status, saving: saving),
-              const SizedBox(width: 8),
+              const SizedBox(width: 10),
               _VbmappTopActionButton(
-                label: saving ? '保存中' : '保存草稿',
+                label: '保存草稿',
                 icon: Icons.save_outlined,
+                loading: saving,
                 filled: false,
-                onTap: saving ? null : onSave,
+                onTap: onSave,
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 9),
               _VbmappTopActionButton(
-                label: submitting ? '提交中' : '提交记录',
+                label: '提交记录',
                 icon: Icons.fact_check_outlined,
+                loading: submitting,
                 filled: true,
-                onTap: submitting ? null : onSubmit,
+                onTap: onSubmit,
               ),
             ],
           );
@@ -1018,23 +1019,36 @@ class _VbmappSaveStatusLabel extends StatelessWidget {
   final bool saving;
 
   bool get _activeSaving {
-    return saving || text.contains('保存中');
+    return saving ||
+        text.contains('保存中') ||
+        text.contains('提交中') ||
+        text.contains('草稿保存中') ||
+        text.startsWith('正在');
+  }
+
+  bool get _failed {
+    return text.contains('失败');
   }
 
   @override
   Widget build(BuildContext context) {
     return ConstrainedBox(
-      constraints: const BoxConstraints(minWidth: 112),
+      constraints: const BoxConstraints(minWidth: 116),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: <Widget>[
           Icon(
-            _activeSaving
-                ? Icons.sync_rounded
-                : Icons.check_circle_outline_rounded,
-            color:
-                _activeSaving ? _VbmappColors.orangeDeep : _VbmappColors.green,
+            _failed
+                ? Icons.error_outline_rounded
+                : (_activeSaving
+                    ? Icons.sync_rounded
+                    : Icons.check_circle_outline_rounded),
+            color: _failed
+                ? _VbmappColors.red
+                : (_activeSaving
+                    ? _VbmappColors.orangeDeep
+                    : _VbmappColors.green),
             size: _activeSaving ? 17 : 18,
           ),
           const SizedBox(width: 5),
@@ -1044,8 +1058,11 @@ class _VbmappSaveStatusLabel extends StatelessWidget {
             softWrap: false,
             textAlign: TextAlign.right,
             style: TextStyle(
-              color:
-                  _activeSaving ? _VbmappColors.orangeDeep : _VbmappColors.body,
+              color: _failed
+                  ? _VbmappColors.red
+                  : (_activeSaving
+                      ? _VbmappColors.orangeDeep
+                      : _VbmappColors.body),
               fontSize: 12,
               fontWeight: FontWeight.w800,
             ),
@@ -1088,18 +1105,21 @@ class _VbmappTopActionButton extends StatelessWidget {
   const _VbmappTopActionButton({
     required this.label,
     required this.icon,
+    required this.loading,
     required this.filled,
     required this.onTap,
   });
 
   final String label;
   final IconData icon;
+  final bool loading;
   final bool filled;
   final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
     final bool enabled = onTap != null;
+    final bool interactive = enabled && !loading;
     final Color foreground = filled
         ? Colors.white
         : enabled
@@ -1108,11 +1128,11 @@ class _VbmappTopActionButton extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: onTap,
+        onTap: interactive ? onTap : null,
         borderRadius: BorderRadius.circular(10),
         child: Ink(
-          height: 34,
-          padding: const EdgeInsets.symmetric(horizontal: 11),
+          height: 36,
+          padding: const EdgeInsets.symmetric(horizontal: 13),
           decoration: BoxDecoration(
             color: filled
                 ? enabled
@@ -1134,13 +1154,23 @@ class _VbmappTopActionButton extends StatelessWidget {
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
-              Icon(icon, size: 18, color: foreground),
-              const SizedBox(width: 6),
+              if (loading)
+                SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: filled ? Colors.white : _VbmappColors.orange,
+                  ),
+                )
+              else
+                Icon(icon, size: 17, color: foreground),
+              const SizedBox(width: 7),
               Text(
                 label,
                 style: TextStyle(
                   color: foreground,
-                  fontSize: 13,
+                  fontSize: 14,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -2303,46 +2333,64 @@ class _VbmappMand3InlinePanelState extends State<_VbmappMand3InlinePanel> {
           ],
         ),
         const SizedBox(height: 8),
-        if (dimensionQuickPicks.isNotEmpty) ...<Widget>[
-          _buildQuickPickWrap(
-            values: dimensionQuickPicks,
-            selectedValue: _dimensionController.text.trim(),
-            onTap: _selectDimensionValue,
-          ),
-          const SizedBox(height: 6),
-        ],
-        Wrap(
-          spacing: 8,
-          runSpacing: 6,
-          children: <Widget>[
-            for (final String material in materials)
-              _VbmappMandMaterialChip(
-                label: material,
-                selected: _requestController.text.trim() == material,
-                onTap: () => _selectMaterial(material),
-              ),
-          ],
+        _buildQuickPickBar(
+          dimensionValues: dimensionQuickPicks,
+          materialValues: materials,
         ),
       ],
     );
   }
 
-  Widget _buildQuickPickWrap({
-    required List<String> values,
-    required String selectedValue,
-    required ValueChanged<String> onTap,
+  Widget _buildQuickPickBar({
+    required List<String> dimensionValues,
+    required List<String> materialValues,
   }) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 6,
-      children: <Widget>[
-        for (final String value in values)
-          _VbmappMandMaterialChip(
-            label: value,
-            selected: selectedValue == value,
-            onTap: () => onTap(value),
-          ),
-      ],
+    if (dimensionValues.isEmpty && materialValues.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    return SizedBox(
+      height: 30,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: <Widget>[
+            if (dimensionValues.isNotEmpty) ...<Widget>[
+              _VbmappMandQuickPickLabel(label: _dimension),
+              const SizedBox(width: 5),
+              for (final String value in dimensionValues) ...<Widget>[
+                _VbmappMandCompactChip(
+                  label: value,
+                  selected: _dimensionController.text.trim() == value,
+                  onTap: () => _selectDimensionValue(value),
+                ),
+                const SizedBox(width: 5),
+              ],
+            ],
+            if (dimensionValues.isNotEmpty &&
+                materialValues.isNotEmpty) ...<Widget>[
+              Container(
+                width: 1,
+                height: 18,
+                margin: const EdgeInsets.symmetric(horizontal: 4),
+                color: _VbmappColors.lineSoft,
+              ),
+              const SizedBox(width: 2),
+            ],
+            if (materialValues.isNotEmpty) ...<Widget>[
+              const _VbmappMandQuickPickLabel(label: '要求'),
+              const SizedBox(width: 5),
+              for (final String material in materialValues) ...<Widget>[
+                _VbmappMandCompactChip(
+                  label: material,
+                  selected: _requestController.text.trim() == material,
+                  onTap: () => _selectMaterial(material),
+                ),
+                const SizedBox(width: 5),
+              ],
+            ],
+          ],
+        ),
+      ),
     );
   }
 
@@ -2561,6 +2609,70 @@ class _VbmappMand3InlinePanelState extends State<_VbmappMand3InlinePanel> {
   }
 }
 
+class _VbmappMandQuickPickLabel extends StatelessWidget {
+  const _VbmappMandQuickPickLabel({required this.label});
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      label,
+      style: const TextStyle(
+        color: _VbmappColors.muted,
+        fontSize: 11,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+}
+
+class _VbmappMandCompactChip extends StatelessWidget {
+  const _VbmappMandCompactChip({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Ink(
+          height: 28,
+          padding: const EdgeInsets.symmetric(horizontal: 9),
+          decoration: BoxDecoration(
+            color: selected ? const Color(0xFFFFE6D9) : const Color(0xFFFFFCFA),
+            borderRadius: BorderRadius.circular(999),
+            border: Border.all(
+              color: selected ? _VbmappColors.orange : _VbmappColors.lineSoft,
+            ),
+          ),
+          child: Center(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                color: selected ? _VbmappColors.orangeDeep : _VbmappColors.body,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VbmappMand3CoverageColumn extends StatelessWidget {
   const _VbmappMand3CoverageColumn({
     required this.label,
@@ -2765,15 +2877,39 @@ class _VbmappMand3RecordSlot extends StatelessWidget {
               ),
               Expanded(
                 child: filled
-                    ? Text(
-                        '${_mandRequestText(row)} · $dimensionText',
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          color: _VbmappColors.ink,
-                          fontSize: 12.5,
-                          fontWeight: FontWeight.w900,
-                        ),
+                    ? Row(
+                        children: <Widget>[
+                          Flexible(
+                            child: Text(
+                              _mandRequestText(row),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _VbmappColors.ink,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                          Container(
+                            width: 1,
+                            height: 14,
+                            margin: const EdgeInsets.symmetric(horizontal: 7),
+                            color: _VbmappColors.lineSoft,
+                          ),
+                          Flexible(
+                            child: Text(
+                              dimensionText,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: _VbmappColors.ink,
+                                fontSize: 12.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                          ),
+                        ],
                       )
                     : const Text(
                         '等待记录',
@@ -4895,6 +5031,11 @@ String _todayIsoDate() {
   return _dateOnlyText(DateTime.now());
 }
 
+String _formatClock(DateTime value) {
+  return '${value.hour.toString().padLeft(2, '0')}:'
+      '${value.minute.toString().padLeft(2, '0')}';
+}
+
 bool _isSimpleMandRecorder(
   _VbmappItem item,
   VbmappItemResponseSchema? schema,
@@ -5019,13 +5160,13 @@ Map<String, List<String>> _mandGeneralizationValues(
 
 String _mand3DimensionText(_VbmappMandEvent event) {
   if (event.person.trim().isNotEmpty) {
-    return '人物 ${event.person.trim()}';
+    return '人物：${event.person.trim()}';
   }
   if (event.setting.trim().isNotEmpty) {
-    return '环境 ${event.setting.trim()}';
+    return '环境：${event.setting.trim()}';
   }
   if (event.example.trim().isNotEmpty) {
-    return '例子 ${event.example.trim()}';
+    return '例子：${event.example.trim()}';
   }
   return '未记录';
 }

@@ -4035,7 +4035,7 @@ void main() {
 
     await tester.tap(find.text('爸爸'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4047,7 +4047,7 @@ void main() {
     expect(find.text('屋外'), findsOneWidget);
     await tester.tap(find.text('屋里'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4058,7 +4058,7 @@ void main() {
     expect(find.text('蓝瓶泡泡'), findsOneWidget);
     await tester.tap(find.text('红瓶泡泡'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4073,7 +4073,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('妈妈'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4082,7 +4082,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('屋外'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4091,7 +4091,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('蓝瓶泡泡'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('泡泡'));
+    await tester.tap(find.text('泡泡').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4101,9 +4101,9 @@ void main() {
     expect(find.text('例子 2/2'), findsWidgets);
     expect(find.text('建议 1分'), findsOneWidget);
     expect(find.text('1.0 / 170'), findsOneWidget);
-    expect(find.textContaining('人物 爸爸'), findsOneWidget);
-    expect(find.textContaining('环境 屋外'), findsOneWidget);
-    expect(find.textContaining('例子 蓝瓶泡泡'), findsOneWidget);
+    expect(find.textContaining('人物：爸爸'), findsOneWidget);
+    expect(find.textContaining('环境：屋外'), findsOneWidget);
+    expect(find.textContaining('例子：蓝瓶泡泡'), findsOneWidget);
     expect(client.saveDraftItemCalls, 6);
   });
 
