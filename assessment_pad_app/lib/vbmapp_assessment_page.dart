@@ -623,6 +623,29 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     await _addMandEvent(item, event);
   }
 
+  Future<void> _confirmFinishActiveMandObservation() async {
+    final _VbmappItem? item = _activeMandObservationItem();
+    if (item == null) {
+      return;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return const PadDialogViewport(
+          child: _VbmappObservationFinishConfirmDialog(),
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    if (observation == null) {
+      return;
+    }
+    await _updateMandObservation(item, observation.finish(DateTime.now()));
+  }
+
   void _goPrevious() {
     if (_selectedItemIndex > 0) {
       setState(() => _selectedItemIndex -= 1);
@@ -907,12 +930,8 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                       ),
                     );
                   },
-                  onFinish: () => unawaited(
-                    _updateMandObservation(
-                      activeObservationItem,
-                      activeObservation.finish(DateTime.now()),
-                    ),
-                  ),
+                  onFinish: () =>
+                      unawaited(_confirmFinishActiveMandObservation()),
                 ),
               ),
             if (_loading)
@@ -2721,6 +2740,21 @@ class _VbmappMand4InlinePanelState extends State<_VbmappMand4InlinePanel> {
   }
 
   void _finishObservation() {
+    _confirmFinishObservation();
+  }
+
+  Future<void> _confirmFinishObservation() async {
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return const PadDialogViewport(
+          child: _VbmappObservationFinishConfirmDialog(),
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
     widget.onChangeObservation(_observation.finish(DateTime.now()));
   }
 
@@ -4420,20 +4454,24 @@ class _VbmappMand4TimerButton extends StatelessWidget {
               color: enabled ? _VbmappColors.orange : const Color(0xFFE2D6CE),
             ),
           ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              Icon(icon, size: compact ? 14 : 16, color: textColor),
-              SizedBox(width: compact ? 4 : 5),
-              Text(
-                label,
-                style: TextStyle(
-                  color: textColor,
-                  fontSize: compact ? 11.5 : 12.5,
-                  fontWeight: FontWeight.w900,
+          child: Center(
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: <Widget>[
+                Icon(icon, size: compact ? 14 : 16, color: textColor),
+                SizedBox(width: compact ? 4 : 5),
+                Text(
+                  label,
+                  style: TextStyle(
+                    color: textColor,
+                    fontSize: compact ? 11.5 : 12.5,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -4627,6 +4665,73 @@ class _VbmappMand4QuickRecordDialogState
         responseMode: '自发要求',
         promptLevel: '',
         functional: _presentation == '呈现物品',
+      ),
+    );
+  }
+}
+
+class _VbmappObservationFinishConfirmDialog extends StatelessWidget {
+  const _VbmappObservationFinishConfirmDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: Container(
+          width: 480,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: _VbmappColors.line),
+            boxShadow: _vbmappShadow(blur: 24),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              const Text(
+                '确认结束观察？',
+                style: TextStyle(
+                  color: _VbmappColors.ink,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                '结束后会保留当前计时和记录。如只是暂时离开，建议点暂停。',
+                style: TextStyle(
+                  color: _VbmappColors.body,
+                  fontSize: 13,
+                  height: 1.45,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 16),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: <Widget>[
+                  _VbmappMand4TimerButton(
+                    icon: Icons.close_rounded,
+                    label: '取消',
+                    onTap: () => Navigator.of(context).pop(false),
+                  ),
+                  const SizedBox(width: 8),
+                  _VbmappMand4TimerButton(
+                    key: const ValueKey<String>(
+                        'vbmapp-confirm-finish-observation'),
+                    icon: Icons.stop_rounded,
+                    label: '确认结束',
+                    filled: true,
+                    onTap: () => Navigator.of(context).pop(true),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -5763,10 +5868,12 @@ class _VbmappActiveObservationBarState
     final bool running = widget.observation.isRunning;
     final String statusLabel =
         running ? '${widget.item.navCode}观察中' : '${widget.item.navCode}观察暂停';
+    final String summaryText =
+        '${_vbmappDurationText(widget.observation.elapsedSecondsAt(DateTime.now()))} · ${widget.qualifiedCount}/5';
     return Container(
       key: const ValueKey<String>('vbmapp-active-observation-bar'),
-      height: 46,
-      padding: const EdgeInsets.symmetric(horizontal: 12),
+      height: 40,
+      padding: const EdgeInsets.symmetric(horizontal: 10),
       decoration: BoxDecoration(
         color: Colors.white.withOpacity(.97),
         borderRadius: BorderRadius.circular(12),
@@ -5779,7 +5886,7 @@ class _VbmappActiveObservationBarState
             onTap: widget.onJump,
             borderRadius: BorderRadius.circular(999),
             child: Ink(
-              padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: widget.item.color.withOpacity(.1),
                 borderRadius: BorderRadius.circular(999),
@@ -5788,27 +5895,18 @@ class _VbmappActiveObservationBarState
                 statusLabel,
                 style: TextStyle(
                   color: widget.item.color,
-                  fontSize: 11.5,
+                  fontSize: 11,
                   fontWeight: FontWeight.w900,
                 ),
               ),
             ),
           ),
-          const SizedBox(width: 8),
+          const SizedBox(width: 7),
           Text(
-            '已观察 ${_vbmappDurationText(widget.observation.elapsedSecondsAt(DateTime.now()))}',
+            summaryText,
             style: const TextStyle(
               color: _VbmappColors.ink,
-              fontSize: 12,
-              fontWeight: FontWeight.w900,
-            ),
-          ),
-          const SizedBox(width: 10),
-          Text(
-            '有效 ${widget.qualifiedCount}/5',
-            style: const TextStyle(
-              color: _VbmappColors.body,
-              fontSize: 12,
+              fontSize: 11.5,
               fontWeight: FontWeight.w900,
             ),
           ),
@@ -5822,23 +5920,58 @@ class _VbmappActiveObservationBarState
             compact: true,
             onTap: widget.onQuickRecord,
           ),
-          const SizedBox(width: 6),
-          _VbmappMand4TimerButton(
+          const SizedBox(width: 5),
+          _VbmappObservationMiniIconButton(
             key: const ValueKey<String>('vbmapp-active-observation-primary'),
             icon: running ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            label: running ? '暂停' : '继续',
-            compact: true,
+            tooltip: running ? '暂停观察' : '继续观察',
             onTap: widget.onPrimaryAction,
           ),
-          const SizedBox(width: 6),
-          _VbmappMand4TimerButton(
+          const SizedBox(width: 5),
+          _VbmappObservationMiniIconButton(
             key: const ValueKey<String>('vbmapp-active-observation-finish'),
             icon: Icons.stop_rounded,
-            label: '结束',
-            compact: true,
+            tooltip: '结束观察',
             onTap: widget.onFinish,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _VbmappObservationMiniIconButton extends StatelessWidget {
+  const _VbmappObservationMiniIconButton({
+    required this.icon,
+    required this.tooltip,
+    required this.onTap,
+    super.key,
+  });
+
+  final IconData icon;
+  final String tooltip;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Tooltip(
+      message: tooltip,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          borderRadius: BorderRadius.circular(8),
+          child: Ink(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFFCFA),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: _VbmappColors.lineSoft),
+            ),
+            child: Icon(icon, size: 16, color: _VbmappColors.orangeDeep),
+          ),
+        ),
       ),
     );
   }

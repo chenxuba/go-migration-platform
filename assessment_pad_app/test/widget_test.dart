@@ -4163,6 +4163,14 @@ void main() {
 
     expect(find.text('暂停'), findsOneWidget);
 
+    await tester
+        .tap(find.byKey(const ValueKey<String>('vbmapp-mand4-stop-timer')));
+    await tester.pumpAndSettle();
+    expect(find.text('确认结束观察？'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(find.text('确认结束观察？'), findsNothing);
+
     final Finder requestField = find.byType(TextField).first;
     await tester.enterText(requestField, '泡泡');
     await tester.tap(find.text('记录本次要求'));
@@ -4256,7 +4264,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('4M观察中'), findsOneWidget);
-    expect(find.text('有效 2/5'), findsWidgets);
+    expect(find.textContaining('2/5'), findsWidgets);
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
