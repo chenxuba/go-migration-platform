@@ -76,10 +76,33 @@ is_local_host() {
   [[ "$1" == "127.0.0.1" || "$1" == "localhost" || "$1" == "::1" ]]
 }
 
+path_prepend_if_dir() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 0
+  case ":$PATH:" in
+    *":$dir:"*) ;;
+    *) PATH="$dir:$PATH" ;;
+  esac
+}
+
 ensure_command() {
   local command_name="$1" brew_formula="$2"
   if command -v "$command_name" >/dev/null 2>&1; then
     return 0
+  fi
+  if command -v brew >/dev/null 2>&1; then
+    local brew_prefix=""
+    local formula_prefix=""
+    brew_prefix="$(brew --prefix 2>/dev/null || true)"
+    formula_prefix="$(brew --prefix "$brew_formula" 2>/dev/null || true)"
+    path_prepend_if_dir "${brew_prefix}/bin"
+    path_prepend_if_dir "${brew_prefix}/sbin"
+    path_prepend_if_dir "${formula_prefix}/bin"
+    path_prepend_if_dir "${formula_prefix}/sbin"
+    hash -r 2>/dev/null || true
+    if command -v "$command_name" >/dev/null 2>&1; then
+      return 0
+    fi
   fi
   if [[ -n "$ENSURE_INFRA_AUTO_INSTALL" && -n "$brew_formula" && -x "$(command -v brew)" ]]; then
     echo "  [ensure-dev-infra] 未找到 $command_name，尝试 brew install $brew_formula …"
