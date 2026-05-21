@@ -7679,13 +7679,21 @@ String _mandRecordMetaText(
   _VbmappMandEvent event, {
   _VbmappItem? item,
 }) {
-  final List<String> values = <String>[
-    if (_mandInitiationText(event).isNotEmpty) _mandInitiationText(event),
-    if (event.environment.trim().isNotEmpty) event.environment.trim(),
-    if (event.targetKind.trim().isNotEmpty) event.targetKind.trim(),
-    if (event.phraseLevel.trim().isNotEmpty) event.phraseLevel.trim(),
-    if (event.promptLevel.trim().isNotEmpty) event.promptLevel.trim(),
-  ];
+  final List<String> values = <String>[];
+
+  void addMeta(String raw) {
+    final String value = raw.trim();
+    if (value.isEmpty || values.contains(value)) {
+      return;
+    }
+    values.add(value);
+  }
+
+  addMeta(_mandInitiationText(event));
+  addMeta(event.environment);
+  addMeta(event.targetKind);
+  addMeta(event.phraseLevel);
+  addMeta(event.promptLevel);
   if (item != null && _isTimedMandItemCode(item.itemCode)) {
     final DateTime? recordedAt = event.recordedAt;
     if (recordedAt != null) {
