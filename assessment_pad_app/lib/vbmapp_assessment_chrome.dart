@@ -340,14 +340,14 @@ class _VbmappRightRail extends StatelessWidget {
     required this.answered,
     required this.total,
     required this.selectedModule,
-    required this.scoreSnapshot,
+    required this.scoreDetails,
   });
 
   final double progressPercent;
   final int answered;
   final int total;
   final _VbmappModule selectedModule;
-  final _VbmappScoreSnapshot scoreSnapshot;
+  final Widget scoreDetails;
 
   @override
   Widget build(BuildContext context) {
@@ -396,22 +396,33 @@ class _VbmappRightRail extends StatelessWidget {
           Expanded(
             child: SingleChildScrollView(
               padding: EdgeInsets.zero,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: <Widget>[
-                  _VbmappCurrentScoreCard(snapshot: scoreSnapshot),
-                  const SizedBox(height: 12),
-                  _VbmappMilestoneDomainScoreCard(
-                    domains: scoreSnapshot.milestoneDomains,
-                  ),
-                ],
-              ),
+              child: scoreDetails,
             ),
           ),
           const SizedBox(height: 12),
           const _VbmappLegend(),
         ],
       ),
+    );
+  }
+}
+
+class _VbmappRightRailScoreDetails extends StatelessWidget {
+  const _VbmappRightRailScoreDetails({required this.snapshot});
+
+  final _VbmappScoreSnapshot snapshot;
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        _VbmappCurrentScoreCard(snapshot: snapshot),
+        const SizedBox(height: 12),
+        _VbmappMilestoneDomainScoreCard(
+          domains: snapshot.milestoneDomains,
+        ),
+      ],
     );
   }
 }

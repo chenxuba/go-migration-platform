@@ -71,7 +71,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
         oldWidget.items.length != widget.items.length) {
       _lastSelectedItemCode = _selectedItemCode;
       _lastSelectedDomainName = _selectedDomainName;
-      _keepSelectedVisible();
+      _keepSelectedVisible(ensureGroupHeader: false, animated: false);
     }
   }
 
@@ -116,6 +116,10 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       return;
     }
     _lastSelectedItemCode = _selectedItemCode;
+    if (!_hasSelectedItemInCurrentModule) {
+      _lastSelectedDomainName = '';
+      return;
+    }
     final String nextDomainName = _selectedDomainName;
     final bool domainChanged = nextDomainName != _lastSelectedDomainName;
     _lastSelectedDomainName = nextDomainName;
@@ -151,6 +155,15 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
     return '';
   }
 
+  bool get _hasSelectedItemInCurrentModule {
+    for (final _VbmappItem item in widget.items) {
+      if (item.itemCode == _selectedItemCode) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   GlobalKey _groupKeyFor(String domainName) {
     return _groupKeys.putIfAbsent(domainName, () => GlobalKey());
   }
@@ -159,14 +172,17 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
     return _itemKeys.putIfAbsent(itemCode, () => GlobalKey());
   }
 
-  void _keepSelectedVisible({bool ensureGroupHeader = true}) {
+  void _keepSelectedVisible({
+    bool ensureGroupHeader = true,
+    bool animated = true,
+  }) {
     if (ensureGroupHeader) {
-      _keepGroupHeaderVisible(_selectedDomainName);
+      _keepGroupHeaderVisible(_selectedDomainName, animated: animated);
     }
-    _keepActiveItemVisible();
+    _keepActiveItemVisible(animated: animated);
   }
 
-  void _keepGroupHeaderVisible(String domainName) {
+  void _keepGroupHeaderVisible(String domainName, {required bool animated}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           !_scrollController.hasClients ||
@@ -179,7 +195,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       }
       Scrollable.ensureVisible(
         groupContext,
-        duration: const Duration(milliseconds: 90),
+        duration: animated ? const Duration(milliseconds: 90) : Duration.zero,
         curve: Curves.easeOut,
         alignment: .02,
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
@@ -187,7 +203,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
     });
   }
 
-  void _keepActiveItemVisible() {
+  void _keepActiveItemVisible({required bool animated}) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           !_scrollController.hasClients ||
@@ -201,7 +217,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       }
       Scrollable.ensureVisible(
         itemContext,
-        duration: const Duration(milliseconds: 90),
+        duration: animated ? const Duration(milliseconds: 90) : Duration.zero,
         curve: Curves.easeOut,
         alignment: .34,
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,

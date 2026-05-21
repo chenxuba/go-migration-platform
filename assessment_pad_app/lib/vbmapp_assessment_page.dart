@@ -377,10 +377,13 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                                   width: 278,
                                   child: ValueListenableBuilder<int>(
                                     valueListenable: _moduleRevision,
+                                    child: _VbmappRightRailScoreDetails(
+                                      snapshot: _scoreSnapshot,
+                                    ),
                                     builder: (
                                       BuildContext context,
                                       int _,
-                                      Widget? child,
+                                      Widget? scoreDetails,
                                     ) {
                                       return _VbmappRightRail(
                                         progressPercent: _progressPercent,
@@ -388,7 +391,10 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                                         total: _vbmappTotalItemCount,
                                         selectedModule:
                                             _moduleByCode(_selectedModuleCode),
-                                        scoreSnapshot: _scoreSnapshot,
+                                        scoreDetails: scoreDetails ??
+                                            _VbmappRightRailScoreDetails(
+                                              snapshot: _scoreSnapshot,
+                                            ),
                                       );
                                     },
                                   ),
