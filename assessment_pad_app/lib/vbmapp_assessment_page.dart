@@ -1540,7 +1540,7 @@ class _VbmappTopActionButton extends StatelessWidget {
   }
 }
 
-class _VbmappModuleRail extends StatelessWidget {
+class _VbmappModuleRail extends StatefulWidget {
   const _VbmappModuleRail({
     required this.modules,
     required this.selectedCode,
@@ -1562,19 +1562,188 @@ class _VbmappModuleRail extends StatelessWidget {
   final ValueChanged<_VbmappItem> onSelectItem;
 
   @override
+  State<_VbmappModuleRail> createState() => _VbmappModuleRailState();
+}
+
+class _VbmappModuleRailState extends State<_VbmappModuleRail> {
+  final Map<String, Set<String>> _expandedDomainsByModule =
+      <String, Set<String>>{};
+  final GlobalKey _activeItemKey = GlobalKey();
+  final Map<String, GlobalKey> _groupKeys = <String, GlobalKey>{};
+  final ScrollController _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _ensureExpandedForSelection();
+    _keepSelectedVisible();
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _VbmappModuleRail oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _pruneExpandedDomains();
+    _ensureExpandedForSelection();
+    if (oldWidget.selectedCode != widget.selectedCode ||
+        oldWidget.selectedItemCode != widget.selectedItemCode ||
+        oldWidget.items.length != widget.items.length) {
+      _keepSelectedVisible();
+    }
+  }
+
+  Set<String> _expandedDomainsFor(String moduleCode) {
+    return _expandedDomainsByModule.putIfAbsent(
+      moduleCode,
+      () => <String>{},
+    );
+  }
+
+  void _pruneExpandedDomains() {
+    final Set<String> validDomains = widget.items
+        .map(((_VbmappItem item) => item.domainName.trim()))
+        .where((String value) => value.isNotEmpty)
+        .toSet();
+    _expandedDomainsFor(widget.selectedCode)
+        .removeWhere((String name) => !validDomains.contains(name));
+  }
+
+  void _ensureExpandedForSelection() {
+    final Set<String> expanded = _expandedDomainsFor(widget.selectedCode);
+    _VbmappItem? selectedItem;
+    for (final _VbmappItem item in widget.items) {
+      if (item.itemCode == widget.selectedItemCode) {
+        selectedItem = item;
+        break;
+      }
+    }
+    if (selectedItem != null && selectedItem.domainName.trim().isNotEmpty) {
+      expanded.add(selectedItem.domainName.trim());
+      return;
+    }
+    if (expanded.isEmpty && widget.items.isNotEmpty) {
+      expanded.add(widget.items.first.domainName.trim());
+    }
+  }
+
+  void _toggleDomain(String domainName) {
+    final String normalized = domainName.trim();
+    if (normalized.isEmpty) {
+      return;
+    }
+    setState(() {
+      final Set<String> expanded = _expandedDomainsFor(widget.selectedCode);
+      if (!expanded.add(normalized)) {
+        expanded.remove(normalized);
+      }
+    });
+    if (normalized == _selectedDomainName) {
+      _keepSelectedVisible();
+    }
+  }
+
+  String get _selectedDomainName {
+    for (final _VbmappItem item in widget.items) {
+      if (item.itemCode == widget.selectedItemCode) {
+        return item.domainName.trim();
+      }
+    }
+    return '';
+  }
+
+  GlobalKey _groupKeyFor(String domainName) {
+    return _groupKeys.putIfAbsent(domainName, () => GlobalKey());
+  }
+
+  void _keepSelectedVisible() {
+    _keepGroupHeaderVisible(_selectedDomainName);
+    _keepActiveItemVisible();
+  }
+
+  void _keepGroupHeaderVisible(String domainName) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          domainName.trim().isEmpty) {
+        return;
+      }
+      final BuildContext? groupContext = _groupKeys[domainName]?.currentContext;
+      if (groupContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        groupContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: .02,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
+  void _keepActiveItemVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted ||
+          !_scrollController.hasClients ||
+          widget.selectedItemCode.trim().isEmpty) {
+        return;
+      }
+      final BuildContext? itemContext = _activeItemKey.currentContext;
+      if (itemContext == null) {
+        return;
+      }
+      Scrollable.ensureVisible(
+        itemContext,
+        duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
+        alignment: .34,
+        alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
+      );
+    });
+  }
+
+  List<_VbmappRailGroup> get _groups {
+    final Map<String, List<_VbmappItem>> grouped =
+        <String, List<_VbmappItem>>{};
+    for (final _VbmappItem item in widget.items) {
+      grouped.putIfAbsent(item.domainName, () => <_VbmappItem>[]).add(item);
+    }
+    return grouped.entries.map((MapEntry<String, List<_VbmappItem>> entry) {
+      final List<_VbmappItem> groupItems = List<_VbmappItem>.from(entry.value);
+      if (widget.selectedCode == 'milestones') {
+        groupItems.sort((_VbmappItem a, _VbmappItem b) {
+          final int stageCompare = _vbmappMilestoneNavOrder(a)
+              .compareTo(_vbmappMilestoneNavOrder(b));
+          if (stageCompare != 0) {
+            return stageCompare;
+          }
+          return a.sequenceNo.compareTo(b.sequenceNo);
+        });
+      }
+      return _VbmappRailGroup(title: entry.key, items: groupItems);
+    }).toList(growable: false);
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final Set<String> expanded = _expandedDomainsFor(widget.selectedCode);
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: _vbmappCardDecoration(),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          for (final _VbmappModule module in modules) ...<Widget>[
+          for (final _VbmappModule module in widget.modules) ...<Widget>[
             _VbmappModuleTile(
               module: module,
-              selected: module.code == selectedCode,
-              answered: answeredCount[module.code] ?? 0,
-              onTap: () => onSelectModule(module.code),
+              selected: module.code == widget.selectedCode,
+              answered: widget.answeredCount[module.code] ?? 0,
+              onTap: () => widget.onSelectModule(module.code),
             ),
             const SizedBox(height: 6),
           ],
@@ -1582,52 +1751,71 @@ class _VbmappModuleRail extends StatelessWidget {
           const Divider(height: 1, color: _VbmappColors.lineSoft),
           const SizedBox(height: 8),
           Expanded(
-            child: ListView.builder(
-              padding: EdgeInsets.zero,
-              itemCount: items.length,
-              itemBuilder: (BuildContext context, int index) {
-                final _VbmappItem item = items[index];
-                final _VbmappItem? previous =
-                    index > 0 ? items[index - 1] : null;
-                final bool showHeader = previous == null ||
-                    previous.domainName != item.domainName ||
-                    previous.ageBand != item.ageBand;
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    if (showHeader)
+            child: SingleChildScrollView(
+              controller: _scrollController,
+              child: Column(
+                children: <Widget>[
+                  for (int index = 0;
+                      index < _groups.length;
+                      index++) ...<Widget>[
+                    _VbmappDomainGroupTile(
+                      key: _groupKeyFor(_groups[index].title),
+                      title: _groups[index].title,
+                      subtitle: _vbmappRailGroupSubtitle(
+                        widget.selectedCode,
+                        _groups[index].items,
+                      ),
+                      answered: _groups[index]
+                          .items
+                          .where((_VbmappItem item) => widget.isAnswered(item))
+                          .length,
+                      total: _groups[index].items.length,
+                      expanded: expanded.contains(_groups[index].title),
+                      onTap: () => _toggleDomain(_groups[index].title),
+                    ),
+                    if (expanded.contains(_groups[index].title)) ...<Widget>[
+                      const SizedBox(height: 6),
                       Padding(
-                        padding: EdgeInsets.only(
-                          top: index == 0 ? 0 : 10,
-                          bottom: 6,
-                        ),
-                        child: Text(
-                          '${item.domainName} · ${item.ageBand}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            color: _VbmappColors.muted,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w900,
-                          ),
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Column(
+                          children: <Widget>[
+                            for (final _VbmappItem item
+                                in _groups[index].items) ...<Widget>[
+                              _VbmappItemNavTile(
+                                key: item.itemCode == widget.selectedItemCode
+                                    ? _activeItemKey
+                                    : ValueKey<String>(
+                                        'vbmapp-nav-${item.itemCode}',
+                                      ),
+                                item: item,
+                                selected:
+                                    item.itemCode == widget.selectedItemCode,
+                                answered: widget.isAnswered(item),
+                                onTap: () => widget.onSelectItem(item),
+                              ),
+                              const SizedBox(height: 6),
+                            ],
+                          ],
                         ),
                       ),
-                    _VbmappItemNavTile(
-                      item: item,
-                      selected: item.itemCode == selectedItemCode,
-                      answered: isAnswered(item),
-                      onTap: () => onSelectItem(item),
-                    ),
-                    const SizedBox(height: 6),
+                    ] else
+                      const SizedBox(height: 6),
                   ],
-                );
-              },
+                ],
+              ),
             ),
           ),
         ],
       ),
     );
   }
+}
+
+class _VbmappRailGroup {
+  const _VbmappRailGroup({required this.title, required this.items});
+
+  final String title;
+  final List<_VbmappItem> items;
 }
 
 class _VbmappModuleTile extends StatelessWidget {
@@ -1708,8 +1896,106 @@ class _VbmappModuleTile extends StatelessWidget {
   }
 }
 
+class _VbmappDomainGroupTile extends StatelessWidget {
+  const _VbmappDomainGroupTile({
+    super.key,
+    required this.title,
+    required this.subtitle,
+    required this.answered,
+    required this.total,
+    required this.expanded,
+    required this.onTap,
+  });
+
+  final String title;
+  final String subtitle;
+  final int answered;
+  final int total;
+  final bool expanded;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          decoration: BoxDecoration(
+            color: expanded ? const Color(0xFFFFF3E8) : Colors.white,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: _VbmappColors.lineSoft),
+          ),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: <Widget>[
+                    Text(
+                      title,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: const TextStyle(
+                        color: _VbmappColors.ink,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
+                    if (subtitle.trim().isNotEmpty) ...<Widget>[
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        maxLines: 1,
+                        softWrap: false,
+                        style: const TextStyle(
+                          color: _VbmappColors.muted,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFFF6EF),
+                  borderRadius: BorderRadius.circular(999),
+                  border: Border.all(color: _VbmappColors.lineSoft),
+                ),
+                child: Text(
+                  '$answered/$total',
+                  style: const TextStyle(
+                    color: _VbmappColors.body,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Icon(
+                expanded
+                    ? Icons.expand_less_rounded
+                    : Icons.expand_more_rounded,
+                size: 20,
+                color: _VbmappColors.body,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _VbmappItemNavTile extends StatelessWidget {
   const _VbmappItemNavTile({
+    super.key,
     required this.item,
     required this.selected,
     required this.answered,
@@ -1781,6 +2067,29 @@ class _VbmappItemNavTile extends StatelessWidget {
       ),
     );
   }
+}
+
+String _vbmappRailGroupSubtitle(
+  String moduleCode,
+  List<_VbmappItem> items,
+) {
+  if (items.isEmpty) {
+    return '';
+  }
+  if (moduleCode == 'milestones') {
+    final String first = items.first.navCode;
+    final String last = items.last.navCode;
+    return first == last ? first : '$first - $last';
+  }
+  return '${items.length}项';
+}
+
+int _vbmappMilestoneNavOrder(_VbmappItem item) {
+  final RegExpMatch? match = RegExp(r'^(\d+)M$').firstMatch(item.navCode);
+  if (match == null) {
+    return item.sequenceNo;
+  }
+  return int.tryParse(match.group(1) ?? '') ?? item.sequenceNo;
 }
 
 class _VbmappWorkspace extends StatelessWidget {
