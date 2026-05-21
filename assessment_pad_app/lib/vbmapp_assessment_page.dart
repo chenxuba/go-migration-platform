@@ -33,11 +33,33 @@ const String _vbmappAuthTokenStorageKey = 'auth_token';
 const String _vbmappScaleVersion = 'VBMAPP_CN_2ND_DRAFT_2026_05';
 const int _vbmappTotalItemCount = 212;
 const String _vbmappSharedTimedMandStorageKey = '__MAND_TIMED_SHARED__';
-const Set<String> _vbmappSharedTimedMandItemCodes = <String>{
+const String _vbmappMandLevel2TimedGroupId = 'mand_timed_shared_v1';
+const String _vbmappMandLevel3TimedGroupId = 'mand_level3_timed_shared_v1';
+const Set<String> _vbmappMandLevel2TimedItemCodes = <String>{
   'MAND_04M',
   'MAND_08M',
   'MAND_09M',
 };
+const Set<String> _vbmappMandLevel3TimedItemCodes = <String>{
+  'MAND_11M',
+  'MAND_13M',
+};
+
+List<double> _activeObservationBarWidths(double available, int count) {
+  if (count <= 0) {
+    return const <double>[];
+  }
+  if (count == 1) {
+    return <double>[available];
+  }
+  const double gap = 8;
+  final double usable = available - gap * (count - 1);
+  if (count == 2 && usable >= 1120) {
+    return <double>[usable * .58, usable * .42];
+  }
+  final double evenWidth = (usable / count).clamp(560, 960);
+  return List<double>.filled(count, evenWidth);
+}
 
 class VbmappAssessmentLaunchArgs {
   const VbmappAssessmentLaunchArgs({
@@ -204,118 +226,164 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                           builder:
                               (BuildContext context, int _, Widget? child) {
                             final _VbmappItem item = _selectedItem;
-                            final _VbmappItem? activeObservationItem =
-                                _activeMandObservationItem();
-                            final _VbmappObservationTimerState?
-                                activeObservation =
-                                activeObservationItem == null
-                                    ? null
-                                    : _mandObservationFor(
-                                        activeObservationItem);
-                            final String? activeSharedGroupId =
-                                activeObservationItem == null
-                                    ? null
-                                    : _sharedTimedMandGroupIdFor(
-                                        activeObservationItem,
-                                      );
+                            final List<Widget> activeBars = <Widget>[];
                             final String? currentSharedGroupId =
                                 _sharedTimedMandGroupIdFor(item);
-                            final bool activeTimedMandShared =
-                                activeSharedGroupId != null;
-                            final bool showActiveObservationBar =
-                                activeObservationItem != null &&
-                                    activeObservation != null &&
-                                    !(activeTimedMandShared &&
-                                        activeSharedGroupId ==
-                                            currentSharedGroupId) &&
-                                    activeObservationItem.itemCode !=
-                                        item.itemCode;
-                            if (!showActiveObservationBar) {
+                            for (final _VbmappItem activeObservationItem
+                                in _activeMandObservationItems()) {
+                              final _VbmappObservationTimerState?
+                                  activeObservation = _mandObservationFor(
+                                activeObservationItem,
+                              );
+                              final String? activeSharedGroupId =
+                                  _sharedTimedMandGroupIdFor(
+                                activeObservationItem,
+                              );
+                              final bool activeTimedMandShared =
+                                  activeSharedGroupId != null;
+                              final bool showActiveObservationBar =
+                                  activeObservation != null &&
+                                      !(activeTimedMandShared &&
+                                          activeSharedGroupId ==
+                                              currentSharedGroupId) &&
+                                      activeObservationItem.itemCode !=
+                                          item.itemCode;
+                              if (!showActiveObservationBar) {
+                                continue;
+                              }
+                              final _VbmappObservationTimerState
+                                  activeBarObservation = activeTimedMandShared
+                                      ? activeObservation.withPlannedMinutes(
+                                          _sharedTimedMandMaxPlannedMinutesForGroup(
+                                            activeSharedGroupId,
+                                          ),
+                                        )
+                                      : activeObservation;
+                              activeBars.add(
+                                Padding(
+                                  padding:
+                                      const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                                  child: _VbmappActiveObservationBar(
+                                    tone: activeObservationItem.color,
+                                    observation: activeBarObservation,
+                                    statusLabel: activeTimedMandShared
+                                        ? _sharedTimedMandStatusLabelForGroup(
+                                            activeSharedGroupId,
+                                          )
+                                        : '${activeObservationItem.navCode}观察中',
+                                    sharedSummaryMode: activeTimedMandShared,
+                                    summaries: activeTimedMandShared
+                                        ? _sharedTimedMandSummariesForGroup(
+                                            activeSharedGroupId,
+                                          )
+                                        : const <_VbmappActiveObservationSummary>[],
+                                    recordCount: activeTimedMandShared
+                                        ? _sharedTimedMandRecordCountForGroup(
+                                            activeSharedGroupId,
+                                          )
+                                        : _mandStoredEventsFor(
+                                                activeObservationItem)
+                                            .length,
+                                    qualifiedCount:
+                                        _activeMandObservationQualifiedCount(
+                                      activeObservationItem,
+                                    ),
+                                    onePointTarget: _scoreCountThreshold(
+                                            activeObservationItem, 1) ??
+                                        5,
+                                    onJump: () {
+                                      final String targetCode =
+                                          _sharedTimedMandPrimaryItemCodeFor(
+                                                activeObservationItem,
+                                              ) ??
+                                              activeObservationItem.itemCode;
+                                      _selectItem(
+                                        _milestoneItems.firstWhere(
+                                          (_VbmappItem candidate) =>
+                                              candidate.itemCode == targetCode,
+                                          orElse: () => activeObservationItem,
+                                        ),
+                                      );
+                                    },
+                                    onQuickRecord: () => unawaited(
+                                      _openActiveMandQuickRecord(
+                                        activeObservationItem,
+                                      ),
+                                    ),
+                                    onPrimaryAction: () {
+                                      final DateTime now = DateTime.now();
+                                      if (activeBarObservation.isRunning) {
+                                        unawaited(
+                                          _updateMandObservation(
+                                            activeObservationItem,
+                                            activeBarObservation.pause(now),
+                                          ),
+                                        );
+                                        return;
+                                      }
+                                      unawaited(
+                                        _updateMandObservation(
+                                          activeObservationItem,
+                                          activeBarObservation.resume(now),
+                                        ),
+                                      );
+                                    },
+                                    onFinish: () => unawaited(
+                                      _confirmFinishActiveMandObservation(
+                                        activeObservationItem,
+                                      ),
+                                    ),
+                                    onAutoFinish: () {
+                                      unawaited(
+                                        _updateMandObservation(
+                                          activeObservationItem,
+                                          activeBarObservation
+                                              .finishAtPlannedEnd(
+                                            DateTime.now(),
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              );
+                            }
+                            if (activeBars.isEmpty) {
                               return const SizedBox.shrink();
                             }
-                            final _VbmappObservationTimerState
-                                activeBarObservation = activeTimedMandShared
-                                    ? activeObservation.withPlannedMinutes(
-                                        _sharedTimedMandMaxPlannedMinutesForGroup(
-                                          activeSharedGroupId,
+                            return LayoutBuilder(
+                              builder: (
+                                BuildContext context,
+                                BoxConstraints constraints,
+                              ) {
+                                final double available =
+                                    constraints.maxWidth.clamp(
+                                  0,
+                                  double.infinity,
+                                );
+                                final List<double> barWidths =
+                                    _activeObservationBarWidths(
+                                  available,
+                                  activeBars.length,
+                                );
+                                return SingleChildScrollView(
+                                  scrollDirection: Axis.horizontal,
+                                  physics: const ClampingScrollPhysics(),
+                                  child: Row(
+                                    children: <Widget>[
+                                      for (int index = 0;
+                                          index < activeBars.length;
+                                          index++) ...<Widget>[
+                                        if (index > 0) const SizedBox(width: 8),
+                                        SizedBox(
+                                          width: barWidths[index],
+                                          child: activeBars[index],
                                         ),
-                                      )
-                                    : activeObservation;
-                            return Padding(
-                              padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                              child: _VbmappActiveObservationBar(
-                                tone: activeObservationItem.color,
-                                observation: activeBarObservation,
-                                statusLabel: activeTimedMandShared
-                                    ? '提要求观察中'
-                                    : '${activeObservationItem.navCode}观察中',
-                                sharedSummaryMode: activeTimedMandShared,
-                                summaries: activeTimedMandShared
-                                    ? _sharedTimedMandSummariesForGroup(
-                                        activeSharedGroupId,
-                                      )
-                                    : const <_VbmappActiveObservationSummary>[],
-                                recordCount: activeTimedMandShared
-                                    ? _sharedTimedMandRecordCountForGroup(
-                                        activeSharedGroupId,
-                                      )
-                                    : _mandStoredEventsFor(
-                                            activeObservationItem)
-                                        .length,
-                                qualifiedCount:
-                                    _activeMandObservationQualifiedCount(
-                                  activeObservationItem,
-                                ),
-                                onePointTarget: _scoreCountThreshold(
-                                        activeObservationItem, 1) ??
-                                    5,
-                                onJump: () {
-                                  final String targetCode =
-                                      _sharedTimedMandPrimaryItemCodeFor(
-                                              activeObservationItem) ??
-                                          activeObservationItem.itemCode;
-                                  _selectItem(
-                                    _milestoneItems.firstWhere(
-                                      (_VbmappItem candidate) =>
-                                          candidate.itemCode == targetCode,
-                                      orElse: () => activeObservationItem,
-                                    ),
-                                  );
-                                },
-                                onQuickRecord: () =>
-                                    unawaited(_openActiveMandQuickRecord()),
-                                onPrimaryAction: () {
-                                  final DateTime now = DateTime.now();
-                                  if (activeBarObservation.isRunning) {
-                                    unawaited(
-                                      _updateMandObservation(
-                                        activeObservationItem,
-                                        activeBarObservation.pause(now),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  unawaited(
-                                    _updateMandObservation(
-                                      activeObservationItem,
-                                      activeBarObservation.resume(now),
-                                    ),
-                                  );
-                                },
-                                onFinish: () => unawaited(
-                                  _confirmFinishActiveMandObservation(),
-                                ),
-                                onAutoFinish: () {
-                                  unawaited(
-                                    _updateMandObservation(
-                                      activeObservationItem,
-                                      activeBarObservation.finishAtPlannedEnd(
-                                        DateTime.now(),
-                                      ),
-                                    ),
-                                  );
-                                },
-                              ),
+                                      ],
+                                    ],
+                                  ),
+                                );
+                              },
                             );
                           },
                         ),

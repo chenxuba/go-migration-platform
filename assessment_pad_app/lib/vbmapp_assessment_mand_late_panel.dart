@@ -23,6 +23,7 @@ class _VbmappLateMandInlinePanel extends StatefulWidget {
 class _VbmappLateMandInlinePanelState
     extends State<_VbmappLateMandInlinePanel> {
   final TextEditingController _requestController = TextEditingController();
+  final TextEditingController _environmentController = TextEditingController();
 
   late _VbmappLateMandConfig _config;
   String _promptChoice = '';
@@ -52,6 +53,7 @@ class _VbmappLateMandInlinePanelState
   @override
   void dispose() {
     _requestController.dispose();
+    _environmentController.dispose();
     super.dispose();
   }
 
@@ -64,6 +66,7 @@ class _VbmappLateMandInlinePanelState
       _config.targetOptions,
       fallback: _config.defaultTargetKind,
     );
+    _environmentController.text = '';
     _selectedRecordIndex = null;
   }
 
@@ -167,6 +170,14 @@ class _VbmappLateMandInlinePanelState
             const SizedBox(height: 10),
           ],
           const SizedBox(height: 2),
+        ],
+        if (_config.freeTextEnvironment) ...<Widget>[
+          _VbmappMandInlineTextField(
+            controller: _environmentController,
+            label: '环境',
+            hintText: '输入本次发生的具体环境',
+          ),
+          const SizedBox(height: 10),
         ],
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
@@ -322,8 +333,8 @@ class _VbmappLateMandInlinePanelState
   }
 
   String get _scoreReference {
-    return '参考：0个计0分，$_halfPointCount${_config.unit}计0.5分，'
-        '$_onePointCount${_config.unit}计1分；系统按有效要求记录自动去重统计，'
+    return '参考：0${_config.unit}计0分，$_halfPointCount${_config.unit}计0.5分，'
+        '$_onePointCount${_config.unit}计1分；${_config.countReferenceText}'
         '老师可在下方评分区覆盖。';
   }
 
@@ -370,12 +381,15 @@ class _VbmappLateMandInlinePanelState
     if (request.isEmpty) {
       return;
     }
+    final String environment = _config.freeTextEnvironment
+        ? _environmentController.text.trim()
+        : _environment;
     widget.onSubmitEvent(
       _VbmappMandEvent(
         utterance: request,
         target: request,
         motivationContext: _config.motivationContext,
-        environment: _environment,
+        environment: environment,
         targetKind: _targetKind.trim().isEmpty
             ? _config.defaultTargetKind
             : _targetKind.trim(),
@@ -421,8 +435,10 @@ class _VbmappLateMandConfig {
     required this.quickPicks,
     required this.unit,
     required this.motivationContext,
+    this.countReferenceText = '系统按有效要求记录自动去重统计，',
     this.promptOptions = const <String>[],
     this.environmentOptions = const <String>[],
+    this.freeTextEnvironment = false,
     this.abilityOptions = const <String>[],
     this.targetOptions = const <String>[],
     this.defaultTargetKind = '',
@@ -438,8 +454,10 @@ class _VbmappLateMandConfig {
   final List<String> quickPicks;
   final String unit;
   final String motivationContext;
+  final String countReferenceText;
   final List<String> promptOptions;
   final List<String> environmentOptions;
+  final bool freeTextEnvironment;
   final List<String> abilityOptions;
   final List<String> targetOptions;
   final String defaultTargetKind;
@@ -498,20 +516,6 @@ const Map<String, _VbmappLateMandConfig> _lateMandConfigs =
     promptOptions: <String>['提问下', '自发地'],
     environmentOptions: <String>['呈现物品', '未呈现物品'],
     abilityOptions: <String>['新形式', '新内容'],
-    targetOptions: <String>['动作（终止或移除）', '活动'],
-  ),
-  'MAND_11M': _VbmappLateMandConfig(
-    itemCode: 'MAND_11M',
-    recordTitleSuffix: '信息要求记录',
-    recordListTitle: '关于信息的要求',
-    metricLabel: '有效',
-    inputLabel: '孩子提出的信息要求',
-    inputHint: '如：你叫什么名字？我应该到哪里去？',
-    quickPicks: <String>['你叫什么名字？', '我应该到哪里去？'],
-    unit: '个',
-    motivationContext: '关于信息的要求',
-    environmentOptions: <String>['呈现物品', '未呈现物品'],
-    defaultTargetKind: '信息',
   ),
   'MAND_12M': _VbmappLateMandConfig(
     itemCode: 'MAND_12M',
@@ -523,23 +527,9 @@ const Map<String, _VbmappLateMandConfig> _lateMandConfigs =
     quickPicks: <String>['请别再推我', '不了，谢谢你', '对不起', '你能让一下吗？'],
     unit: '个',
     motivationContext: '停止不喜欢活动或移除反感条件',
-    environmentOptions: <String>['呈现物品', '未呈现物品'],
+    countReferenceText: '系统按不同环境中的有效记录统计，',
+    freeTextEnvironment: true,
     defaultTargetKind: '动作（终止或移除）',
-  ),
-  'MAND_13M': _VbmappLateMandConfig(
-    itemCode: 'MAND_13M',
-    recordTitleSuffix: '修饰词要求记录',
-    recordListTitle: '形容词/介词/副词要求',
-    metricLabel: '有效',
-    inputLabel: '孩子使用修饰词的要求',
-    inputHint: '如：我的蜡笔断了、别把它拿出去、快走',
-    quickPicks: <String>['我的蜡笔断了', '别把它拿出去', '快走'],
-    unit: '个',
-    motivationContext: '使用形容词介词或副词提要求',
-    promptOptions: <String>['提问下', '自发地'],
-    environmentOptions: <String>['呈现物品', '未呈现物品'],
-    abilityOptions: <String>['形容词', '介词', '副词'],
-    targetOptions: <String>['物品', '动作', '动作（终止或移除）', '活动'],
   ),
   'MAND_14M': _VbmappLateMandConfig(
     itemCode: 'MAND_14M',
@@ -551,6 +541,7 @@ const Map<String, _VbmappLateMandConfig> _lateMandConfigs =
     quickPicks: <String>['你先涂胶水，再把它贴好', '你坐在这里，我去拿一本书'],
     unit: '次',
     motivationContext: '说明如何做事或参与活动',
+    countReferenceText: '系统按有效发生次数统计，',
     promptOptions: <String>['提问下', '自发地'],
     environmentOptions: <String>['呈现物品', '未呈现物品'],
     defaultTargetKind: '活动',
@@ -565,6 +556,7 @@ const Map<String, _VbmappLateMandConfig> _lateMandConfigs =
     quickPicks: <String>['听我说', '让我来告诉你', '当时发生的是', '我来说个故事'],
     unit: '次',
     motivationContext: '要求他人注意自己的对话行为',
+    countReferenceText: '系统按有效发生次数统计，',
     environmentOptions: <String>['呈现物品', '未呈现物品'],
     defaultTargetKind: '对话行为',
   ),

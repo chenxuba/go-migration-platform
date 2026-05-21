@@ -46,6 +46,7 @@ class _VbmappTimedMandInlinePanelState
   String _presentation = '呈现物品';
   String _targetKind = '物品';
   String _promptMode = '自发地';
+  String _ability = '';
   int? _selectedRecordIndex;
 
   _VbmappTimedMandStrategy get _strategy =>
@@ -102,6 +103,7 @@ class _VbmappTimedMandInlinePanelState
     _presentation = _strategy.defaultPresentation;
     _targetKind = _strategy.defaultTargetKind;
     _promptMode = _strategy.defaultPromptMode;
+    _ability = _strategy.defaultAbility;
     _syncClockTicker();
   }
 
@@ -116,6 +118,7 @@ class _VbmappTimedMandInlinePanelState
       _presentation = _strategy.defaultPresentation;
       _targetKind = _strategy.defaultTargetKind;
       _promptMode = _strategy.defaultPromptMode;
+      _ability = _strategy.defaultAbility;
     }
     if (oldWidget.observation != widget.observation) {
       _autoFinishRequested = false;
@@ -356,49 +359,81 @@ class _VbmappTimedMandInlinePanelState
   }
 
   Widget _buildChoiceRow() {
-    final Widget presentationChoice = _VbmappMandInlineChoiceGroup(
-      label: '目标呈现',
-      value: _presentation,
-      values: const <String>['呈现物品', '未呈现物品'],
-      onChanged: (String value) => setState(() {
-        _presentation = value;
-      }),
-    );
-    final Widget targetChoice = _VbmappMandInlineChoiceGroup(
-      label: '目标',
-      value: _targetKind,
-      values: _strategy.targetOptions,
-      onChanged: (String value) => setState(() {
-        _targetKind = value;
-      }),
-    );
-    if (_strategy.showPromptSelector) {
-      return Row(
-        children: <Widget>[
-          Expanded(
-            flex: 4,
-            child: _VbmappMandInlineChoiceGroup(
-              label: _strategy.promptSelectorLabel,
-              value: _currentPromptMode,
-              values: _strategy.promptOptions,
-              onChanged: (String value) => setState(() {
-                _promptMode = value;
-              }),
-            ),
-          ),
-          const SizedBox(width: 10),
-          Expanded(flex: 6, child: presentationChoice),
-          const SizedBox(width: 10),
-          Expanded(flex: 5, child: targetChoice),
-        ],
+    final List<_VbmappTimedMandChoiceSpec> choices =
+        <_VbmappTimedMandChoiceSpec>[
+      if (_strategy.showPromptSelector)
+        _VbmappTimedMandChoiceSpec(
+          flex: 4,
+          label: _strategy.promptSelectorLabel,
+          value: _currentPromptMode,
+          values: _strategy.promptOptions,
+          onChanged: (String value) => setState(() {
+            _promptMode = value;
+          }),
+        ),
+      _VbmappTimedMandChoiceSpec(
+        flex: 5,
+        label: _strategy.presentationSelectorLabel,
+        value: _presentation,
+        values: const <String>['呈现物品', '未呈现物品'],
+        onChanged: (String value) => setState(() {
+          _presentation = value;
+        }),
+      ),
+      if (_strategy.targetOptions.isNotEmpty)
+        _VbmappTimedMandChoiceSpec(
+          flex: 5,
+          label: '目标',
+          value: _targetKind,
+          values: _strategy.targetOptions,
+          onChanged: (String value) => setState(() {
+            _targetKind = value;
+          }),
+        ),
+      if (_strategy.abilityOptions.isNotEmpty)
+        _VbmappTimedMandChoiceSpec(
+          flex: 5,
+          label: _strategy.abilitySelectorLabel,
+          value: _currentAbility,
+          values: _strategy.abilityOptions,
+          onChanged: (String value) => setState(() {
+            _ability = value;
+          }),
+        ),
+    ];
+    if (choices.length == 1) {
+      final _VbmappTimedMandChoiceSpec choice = choices.first;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(width: 300, child: _buildChoice(choice)),
       );
     }
     return Row(
       children: <Widget>[
-        Expanded(flex: 5, child: presentationChoice),
-        const SizedBox(width: 10),
-        Expanded(flex: 5, child: targetChoice),
+        for (int index = 0; index < choices.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 10),
+          Expanded(
+            flex: choices[index].flex,
+            child: _buildChoice(choices[index]),
+          ),
+        ],
       ],
+    );
+  }
+
+  String get _currentAbility {
+    if (_strategy.abilityOptions.contains(_ability)) {
+      return _ability;
+    }
+    return _strategy.defaultAbility;
+  }
+
+  Widget _buildChoice(_VbmappTimedMandChoiceSpec choice) {
+    return _VbmappMandInlineChoiceGroup(
+      label: choice.label,
+      value: choice.value,
+      values: choice.values,
+      onChanged: choice.onChanged,
     );
   }
 
@@ -406,7 +441,9 @@ class _VbmappTimedMandInlinePanelState
     return _smartMandQuickPicks(
       profile,
       targetKind: _targetKind,
-      fallback: _fallbackMaterials,
+      fallback: _strategy.quickPickFallback.isEmpty
+          ? _fallbackMaterials
+          : _strategy.quickPickFallback,
     );
   }
 
@@ -567,15 +604,19 @@ class _VbmappTimedMandInlinePanelState
         target: request,
         motivationContext: '',
         environment: _presentation,
-        targetKind: _targetKind,
+        targetKind: _strategy.targetOptions.isEmpty
+            ? _strategy.defaultTargetKind
+            : _targetKind,
         person: '',
         setting: '',
         example: '',
         responseMode: _strategy.responseModeForPrompt(_currentPromptMode),
         promptLevel: _strategy.promptLevelForPrompt(_currentPromptMode),
-        phraseLevel: _strategy.multiWordQualifiedMinCount > 0
-            ? phraseAssessment.label
-            : '',
+        phraseLevel: _strategy.abilityOptions.isNotEmpty
+            ? _currentAbility
+            : _strategy.multiWordQualifiedMinCount > 0
+                ? phraseAssessment.label
+                : '',
         functional: true,
       ),
     );
@@ -583,6 +624,7 @@ class _VbmappTimedMandInlinePanelState
     setState(() {
       _selectedRecordIndex = null;
       _promptMode = _strategy.defaultPromptMode;
+      _ability = _strategy.defaultAbility;
     });
   }
 
@@ -598,4 +640,20 @@ class _VbmappTimedMandInlinePanelState
     });
     widget.onDeleteEvent(index);
   }
+}
+
+class _VbmappTimedMandChoiceSpec {
+  const _VbmappTimedMandChoiceSpec({
+    required this.flex,
+    required this.label,
+    required this.value,
+    required this.values,
+    required this.onChanged,
+  });
+
+  final int flex;
+  final String label;
+  final String value;
+  final List<String> values;
+  final ValueChanged<String> onChanged;
 }

@@ -1029,6 +1029,42 @@ class _VbmappActiveObservationBarState
         ? '$elapsedText · 已记录 ${widget.recordCount} 条'
         : '$elapsedText · ${widget.qualifiedCount}/${widget.onePointTarget}';
     final List<_VbmappActiveObservationSummary> summaries = widget.summaries;
+    final Widget summaryContent =
+        widget.sharedSummaryMode && summaries.isNotEmpty
+            ? Row(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    elapsedText,
+                    style: const TextStyle(
+                      color: _VbmappColors.ink,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  for (int index = 0;
+                      index < summaries.length;
+                      index++) ...<Widget>[
+                    if (index > 0) const SizedBox(width: 5),
+                    _VbmappActiveObservationSummaryChip(
+                      summary: summaries[index],
+                      elapsedSeconds: elapsedSeconds,
+                      tone: widget.tone,
+                    ),
+                  ],
+                ],
+              )
+            : Text(
+                summaryText,
+                maxLines: 1,
+                softWrap: false,
+                style: const TextStyle(
+                  color: _VbmappColors.ink,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              );
     return Container(
       key: const ValueKey<String>('vbmapp-active-observation-bar'),
       height: 40,
@@ -1061,44 +1097,18 @@ class _VbmappActiveObservationBarState
             ),
           ),
           const SizedBox(width: 7),
-          if (widget.sharedSummaryMode && summaries.isNotEmpty)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(
-                  elapsedText,
-                  style: const TextStyle(
-                    color: _VbmappColors.ink,
-                    fontSize: 11.5,
-                    fontWeight: FontWeight.w900,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                for (int index = 0;
-                    index < summaries.length;
-                    index++) ...<Widget>[
-                  if (index > 0) const SizedBox(width: 5),
-                  _VbmappActiveObservationSummaryChip(
-                    summary: summaries[index],
-                    elapsedSeconds: elapsedSeconds,
-                    tone: widget.tone,
-                  ),
-                ],
-              ],
-            )
-          else
-            Text(
-              summaryText,
-              style: const TextStyle(
-                color: _VbmappColors.ink,
-                fontSize: 11.5,
-                fontWeight: FontWeight.w900,
-              ),
+          Expanded(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const ClampingScrollPhysics(),
+              child: summaryContent,
             ),
-          const Spacer(),
+          ),
+          const SizedBox(width: 7),
           _VbmappMand4TimerButton(
             key: const ValueKey<String>(
-                'vbmapp-active-observation-quick-record'),
+              'vbmapp-active-observation-quick-record',
+            ),
             icon: Icons.add_rounded,
             label: '记一条',
             filled: true,

@@ -144,9 +144,10 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     final int effectiveObservationSeconds = _effectiveObservationSecondsForItem(
       item,
       timerState,
+      responseSchema: responseSchema,
     );
     final _VbmappTimedMandStrategy? timedStrategy =
-        _timedMandStrategyForItem(item);
+        _timedMandStrategyForItem(item, responseSchema: responseSchema);
     final int multiWordCount =
         (timedStrategy?.multiWordQualifiedMinCount ?? 0) > 0
             ? _mandPhraseQualifiedCountForItem(
@@ -305,18 +306,15 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         resolvedSchema?.smartRules.sharedObservation;
     if (rule != null && rule.enabled) {
       return rule.groupId.trim().isEmpty
-          ? 'mand_timed_shared_v1'
+          ? _fallbackSharedTimedMandGroupIdFor(item.itemCode)
           : rule.groupId.trim();
     }
-    if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
-      return 'mand_timed_shared_v1';
-    }
-    return null;
+    return _fallbackSharedTimedMandGroupIdFor(item.itemCode);
   }
 
   String _sharedTimedMandStorageKeyForGroup(String groupId) {
     final String normalized = groupId.trim();
-    if (normalized.isEmpty || normalized == 'mand_timed_shared_v1') {
+    if (normalized.isEmpty || normalized == _vbmappMandLevel2TimedGroupId) {
       return _vbmappSharedTimedMandStorageKey;
     }
     return '$_vbmappSharedTimedMandStorageKey::$normalized';
@@ -333,7 +331,13 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     final VbmappItemResponseSchema? resolvedSchema = schema ?? _schemaFor(item);
     final String primaryCode =
         resolvedSchema?.smartRules.sharedObservation?.primaryMilestoneId ?? '';
-    return primaryCode.trim().isEmpty ? 'MAND_04M' : primaryCode.trim();
+    if (primaryCode.trim().isNotEmpty) {
+      return primaryCode.trim();
+    }
+    if (groupId == _vbmappMandLevel3TimedGroupId) {
+      return 'MAND_11M';
+    }
+    return 'MAND_04M';
   }
 
   VbmappMaterialProfile? _materialProfileFor(
@@ -360,33 +364,51 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
   }
 
   _VbmappItem? _activeMandObservationItem() {
+    final List<_VbmappItem> activeItems = _activeMandObservationItems();
+    return activeItems.isEmpty ? null : activeItems.first;
+  }
+
+  List<_VbmappItem> _activeMandObservationItems() {
+    final List<_VbmappItem> activeItems = <_VbmappItem>[];
     final Set<String> visitedSharedGroups = <String>{};
+    final Set<String> visitedStorageKeys = <String>{};
     for (final _VbmappItem item in _milestoneItems) {
       final String? groupId = _sharedTimedMandGroupIdFor(item);
       if (groupId == null || !visitedSharedGroups.add(groupId)) {
         continue;
       }
+      final String storageKey = _sharedTimedMandStorageKeyForGroup(groupId);
       final _VbmappObservationTimerState? sharedObservation =
-          _mandObservationByItem[_sharedTimedMandStorageKeyForGroup(groupId)];
+          _mandObservationByItem[storageKey];
       if (sharedObservation != null &&
           sharedObservation.hasStarted &&
           !sharedObservation.ended) {
+        visitedStorageKeys.add(storageKey);
         final String primaryCode =
             _sharedTimedMandPrimaryItemCodeFor(item) ?? 'MAND_04M';
-        return _milestoneItems.firstWhere(
-          (_VbmappItem candidate) => candidate.itemCode == primaryCode,
-          orElse: () => item,
+        activeItems.add(
+          _milestoneItems.firstWhere(
+            (_VbmappItem candidate) => candidate.itemCode == primaryCode,
+            orElse: () => item,
+          ),
         );
       }
     }
     for (final _VbmappItem item in _milestoneItems) {
+      if (_sharedTimedMandGroupIdFor(item) != null) {
+        continue;
+      }
+      final String storageKey = _mandObservationStorageKeyFor(item.itemCode);
+      if (!visitedStorageKeys.add(storageKey)) {
+        continue;
+      }
       final _VbmappObservationTimerState? observation =
-          _mandObservationByItem[_mandObservationStorageKeyFor(item.itemCode)];
+          _mandObservationByItem[storageKey];
       if (observation != null && observation.hasStarted && !observation.ended) {
-        return item;
+        activeItems.add(item);
       }
     }
-    return null;
+    return activeItems;
   }
 
   int _activeMandObservationQualifiedCount(_VbmappItem item) {
@@ -467,6 +489,10 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     return maxMinutes > 0 ? maxMinutes : 60;
   }
 
+  String _sharedTimedMandStatusLabelForGroup(String groupId) {
+    return '提要求观察中';
+  }
+
   String _mandEventStorageKeyFor(String itemCode) {
     return itemCode;
   }
@@ -499,16 +525,26 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     if (items.isNotEmpty) {
       return items;
     }
+    final Set<String> fallbackCodes = groupId == _vbmappMandLevel3TimedGroupId
+        ? _vbmappMandLevel3TimedItemCodes
+        : _vbmappMandLevel2TimedItemCodes;
     return _milestoneItems
-        .where(
-          (_VbmappItem item) =>
-              _vbmappSharedTimedMandItemCodes.contains(item.itemCode),
-        )
+        .where((_VbmappItem item) => fallbackCodes.contains(item.itemCode))
         .toList(growable: false);
   }
 
-  Future<void> _openActiveMandQuickRecord() async {
-    final _VbmappItem? item = _activeMandObservationItem();
+  String? _fallbackSharedTimedMandGroupIdFor(String itemCode) {
+    if (_vbmappMandLevel2TimedItemCodes.contains(itemCode)) {
+      return _vbmappMandLevel2TimedGroupId;
+    }
+    if (_vbmappMandLevel3TimedItemCodes.contains(itemCode)) {
+      return _vbmappMandLevel3TimedGroupId;
+    }
+    return null;
+  }
+
+  Future<void> _openActiveMandQuickRecord([_VbmappItem? sourceItem]) async {
+    final _VbmappItem? item = sourceItem ?? _activeMandObservationItem();
     if (item == null) {
       return;
     }
@@ -557,8 +593,10 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     await _addMandEvent(result.item, result.event);
   }
 
-  Future<void> _confirmFinishActiveMandObservation() async {
-    final _VbmappItem? item = _activeMandObservationItem();
+  Future<void> _confirmFinishActiveMandObservation([
+    _VbmappItem? sourceItem,
+  ]) async {
+    final _VbmappItem? item = sourceItem ?? _activeMandObservationItem();
     if (item == null) {
       return;
     }

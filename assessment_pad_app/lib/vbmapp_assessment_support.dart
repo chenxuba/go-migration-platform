@@ -526,6 +526,11 @@ class _VbmappTimedMandStrategy {
     this.showPromptSelector = false,
     this.promptSelectorLabel = '诱发',
     this.promptOptions = const <String>['自发地', '提问下'],
+    this.presentationSelectorLabel = '目标呈现',
+    this.abilitySelectorLabel = '能力',
+    this.abilityOptions = const <String>[],
+    this.defaultAbility = '',
+    this.quickPickFallback = const <String>[],
     this.requirePresentedEnvironment = false,
     this.excludePromptedEvents = false,
     this.multiWordQualifiedMinCount = 0,
@@ -581,6 +586,11 @@ class _VbmappTimedMandStrategy {
       promptOptions: config.promptOptions.isNotEmpty
           ? config.promptOptions
           : (fallback?.promptOptions ?? const <String>['自发地', '提问下']),
+      presentationSelectorLabel: fallback?.presentationSelectorLabel ?? '目标呈现',
+      abilitySelectorLabel: fallback?.abilitySelectorLabel ?? '能力',
+      abilityOptions: fallback?.abilityOptions ?? const <String>[],
+      defaultAbility: fallback?.defaultAbility ?? '',
+      quickPickFallback: fallback?.quickPickFallback ?? const <String>[],
       requirePresentedEnvironment: requirePresentedEnvironment,
       excludePromptedEvents: excludePromptedEvents,
       multiWordQualifiedMinCount: config.multiWordQualifiedMinCount > 0
@@ -605,6 +615,11 @@ class _VbmappTimedMandStrategy {
   final bool showPromptSelector;
   final String promptSelectorLabel;
   final List<String> promptOptions;
+  final String presentationSelectorLabel;
+  final String abilitySelectorLabel;
+  final List<String> abilityOptions;
+  final String defaultAbility;
+  final List<String> quickPickFallback;
   final bool requirePresentedEnvironment;
   final bool excludePromptedEvents;
   final int multiWordQualifiedMinCount;
@@ -870,7 +885,7 @@ class _VbmappTimedMandStrategy {
           '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
           '老师可在下方评分区覆盖。';
     }
-    return '系统按$baseDuration内的有效自发要求数量建议${_formatScore(suggestedScore)}分，'
+    return '系统按$baseDuration内的有效要求数量建议${_formatScore(suggestedScore)}分，'
         '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
         '老师可在下方评分区覆盖。';
   }
@@ -993,6 +1008,7 @@ const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
     inputLabel: '孩子要求内容',
     inputHint: '如：泡泡、出去、打开',
     targetOptions: <String>['物品', '动作', '活动'],
+    quickPickFallback: <String>['泡泡', '球', '音乐', '出去', '打开', '秋千', '车'],
     requirePresentedEnvironment: true,
     excludePromptedEvents: true,
     defaultObservationHint: '记录自然情境下的自发要求，系统自动统计不同要求数量。',
@@ -1004,6 +1020,7 @@ const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
     inputLabel: '孩子要求原话',
     inputHint: '如：跑快点、该我了、倒果汁',
     targetOptions: <String>['物品', '动作', '活动'],
+    quickPickFallback: <String>['跑快点', '该我了', '倒果汁', '打开门', '推一下', '一起玩'],
     showPromptSelector: true,
     multiWordQualifiedMinCount: 2,
     defaultObservationHint: '记录自然情境下的不同要求；双词结构由系统根据原话自动判定。',
@@ -1015,9 +1032,46 @@ const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
     inputLabel: '孩子要求内容',
     inputHint: '如：泡泡、出去、打开',
     targetOptions: <String>['物品', '动作', '活动'],
+    quickPickFallback: <String>['我们一起玩', '打开', '我想要书', '出去', '音乐', '秋千'],
     excludePromptedEvents: true,
     displayMinSlots: 6,
     defaultObservationHint: '记录30分钟内的自发不同要求，系统自动去重统计。',
+  ),
+  'MAND_11M': _VbmappTimedMandStrategy(
+    itemCode: 'MAND_11M',
+    plannedMinutes: 60,
+    countMetricLabel: '信息',
+    inputLabel: '孩子提出的信息要求',
+    inputHint: '如：你叫什么名字？我应该到哪里去？',
+    targetOptions: <String>[],
+    quickPickFallback: <String>[
+      '你叫什么名字？',
+      '我应该到哪里去？',
+      '这是什么？',
+      '谁来了？',
+      '什么时候开始？'
+    ],
+    defaultTargetKind: '信息',
+    presentationSelectorLabel: '环境',
+    defaultObservationHint: '记录60分钟观察窗内，孩子用特殊疑问句或疑问词自发提出的信息要求。',
+  ),
+  'MAND_13M': _VbmappTimedMandStrategy(
+    itemCode: 'MAND_13M',
+    plannedMinutes: 60,
+    countMetricLabel: '不同',
+    inputLabel: '孩子使用修饰词的要求',
+    inputHint: '如：我的蜡笔断了、别把它拿出去、快走',
+    targetOptions: <String>[],
+    quickPickFallback: <String>['我的蜡笔断了', '别把它拿出去', '快走', '大的那个', '放在里面'],
+    defaultTargetKind: '修饰词',
+    showPromptSelector: true,
+    promptSelectorLabel: '辅助',
+    promptOptions: <String>['提问下', '自发地'],
+    presentationSelectorLabel: '环境',
+    abilitySelectorLabel: '能力',
+    abilityOptions: <String>['形容词', '介词', '副词'],
+    defaultAbility: '形容词',
+    defaultObservationHint: '记录60分钟观察窗内，孩子用形容词、介词或副词提出的不同要求。',
   ),
 };
 
@@ -1541,19 +1595,54 @@ int _qualifiedMandCountForItem(
     );
   }
   final Set<String> uniqueTargets = <String>{};
+  int eventCount = 0;
   for (final _VbmappMandEvent event in events) {
-    final String uniqueKey = _defaultMandUniqueKey(event);
-    if (_mandEventCountsForItem(
-          item,
-          event,
-          observation: observation,
-          responseSchema: responseSchema,
-        ) &&
-        uniqueKey.isNotEmpty) {
+    if (!_mandEventCountsForItem(
+      item,
+      event,
+      observation: observation,
+      responseSchema: responseSchema,
+    )) {
+      continue;
+    }
+    eventCount++;
+    final String uniqueKey = _mandCountUniqueKeyForItem(item, event);
+    if (uniqueKey.isNotEmpty) {
       uniqueTargets.add(uniqueKey);
     }
   }
+  if (_mandCountModeForItem(item) == _VbmappMandCountMode.eventOccurrences) {
+    return eventCount;
+  }
   return uniqueTargets.length;
+}
+
+enum _VbmappMandCountMode {
+  uniqueRequest,
+  uniqueEnvironment,
+  eventOccurrences,
+}
+
+_VbmappMandCountMode _mandCountModeForItem(_VbmappItem item) {
+  switch (item.itemCode) {
+    case 'MAND_12M':
+      return _VbmappMandCountMode.uniqueEnvironment;
+    case 'MAND_14M':
+    case 'MAND_15M':
+      return _VbmappMandCountMode.eventOccurrences;
+    default:
+      return _VbmappMandCountMode.uniqueRequest;
+  }
+}
+
+String _mandCountUniqueKeyForItem(
+  _VbmappItem item,
+  _VbmappMandEvent event,
+) {
+  if (_mandCountModeForItem(item) == _VbmappMandCountMode.uniqueEnvironment) {
+    return event.environment.trim().toLowerCase();
+  }
+  return _defaultMandUniqueKey(event);
 }
 
 int _mandPhraseQualifiedCountForItem(
@@ -2076,11 +2165,12 @@ List<String> _smartMandQuickPicks(
   final List<String> typed = <String>[
     for (final VbmappMaterialSuggestion material
         in profile?.recommendedMaterials ?? const <VbmappMaterialSuggestion>[])
-      if (_materialMatchesMandTarget(
-        name: material.name,
-        type: material.type,
-        targetKind: targetKind,
-      ))
+      if (!_isKnownMandTargetKind(targetKind) ||
+          _materialMatchesMandTarget(
+            name: material.name,
+            type: material.type,
+            targetKind: targetKind,
+          ))
         material.name,
   ];
   final List<String> untyped = profile?.quickPicks ?? const <String>[];
@@ -2088,11 +2178,15 @@ List<String> _smartMandQuickPicks(
     targetKind,
   );
   final List<String> filteredFallback = fallback
-      .where((String value) => _materialMatchesMandTarget(
-            name: value,
-            type: '',
-            targetKind: targetKind,
-          ))
+      .where(
+        (String value) =>
+            !_isKnownMandTargetKind(targetKind) ||
+            _materialMatchesMandTarget(
+              name: value,
+              type: '',
+              targetKind: targetKind,
+            ),
+      )
       .toList(growable: false);
   final List<String> source = typed.isEmpty
       ? <String>[
@@ -2102,6 +2196,12 @@ List<String> _smartMandQuickPicks(
         ]
       : <String>[...typed, ...targetFallback, ...untyped, ...filteredFallback];
   return _deduplicatedTexts(source).take(limit).toList(growable: false);
+}
+
+bool _isKnownMandTargetKind(String targetKind) {
+  return targetKind.trim() == '物品' ||
+      targetKind.trim() == '动作' ||
+      targetKind.trim() == '活动';
 }
 
 List<String> _mandFallbackQuickPicksForTarget(String targetKind) {

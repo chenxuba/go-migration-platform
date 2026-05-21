@@ -57,6 +57,7 @@ class _VbmappMand4QuickRecordDialogState
   String _promptMode = '自发地';
   String _presentation = '呈现物品';
   String _targetKind = '物品';
+  String _ability = '';
   String _selectedItemCode = '';
 
   @override
@@ -97,6 +98,7 @@ class _VbmappMand4QuickRecordDialogState
     _promptMode = strategy.defaultPromptMode;
     _presentation = strategy.defaultPresentation;
     _targetKind = strategy.defaultTargetKind;
+    _ability = strategy.defaultAbility;
   }
 
   @override
@@ -115,7 +117,9 @@ class _VbmappMand4QuickRecordDialogState
     final List<String> materials = _smartMandQuickPicks(
       selectedTarget.materialProfile,
       targetKind: _targetKind,
-      fallback: _fallbackMaterials,
+      fallback: strategy.quickPickFallback.isEmpty
+          ? _fallbackMaterials
+          : strategy.quickPickFallback,
     );
     return Center(
       child: Material(
@@ -220,49 +224,86 @@ class _VbmappMand4QuickRecordDialogState
   }
 
   Widget _buildChoiceRow(_VbmappTimedMandStrategy strategy) {
-    final Widget presentationChoice = _VbmappMandInlineChoiceGroup(
-      label: '目标呈现',
-      value: _presentation,
-      values: const <String>['呈现物品', '未呈现物品'],
-      onChanged: (String value) => setState(() {
-        _presentation = value;
-      }),
-    );
-    final Widget targetChoice = _VbmappMandInlineChoiceGroup(
-      label: '目标',
-      value: _targetKind,
-      values: strategy.targetOptions,
-      onChanged: (String value) => setState(() {
-        _targetKind = value;
-      }),
-    );
-    if (strategy.showPromptSelector) {
-      return Row(
-        children: <Widget>[
-          Expanded(
-            flex: 4,
-            child: _VbmappMandInlineChoiceGroup(
-              label: strategy.promptSelectorLabel,
-              value: _promptMode,
-              values: strategy.promptOptions,
-              onChanged: (String value) => setState(() {
-                _promptMode = value;
-              }),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(flex: 6, child: presentationChoice),
-          const SizedBox(width: 12),
-          Expanded(flex: 5, child: targetChoice),
-        ],
+    final List<_VbmappQuickMandChoiceSpec> choices =
+        <_VbmappQuickMandChoiceSpec>[
+      if (strategy.showPromptSelector)
+        _VbmappQuickMandChoiceSpec(
+          flex: 4,
+          label: strategy.promptSelectorLabel,
+          value: _currentPromptMode(strategy),
+          values: strategy.promptOptions,
+          onChanged: (String value) => setState(() {
+            _promptMode = value;
+          }),
+        ),
+      _VbmappQuickMandChoiceSpec(
+        flex: 5,
+        label: strategy.presentationSelectorLabel,
+        value: _presentation,
+        values: const <String>['呈现物品', '未呈现物品'],
+        onChanged: (String value) => setState(() {
+          _presentation = value;
+        }),
+      ),
+      if (strategy.targetOptions.isNotEmpty)
+        _VbmappQuickMandChoiceSpec(
+          flex: 5,
+          label: '目标',
+          value: _targetKind,
+          values: strategy.targetOptions,
+          onChanged: (String value) => setState(() {
+            _targetKind = value;
+          }),
+        ),
+      if (strategy.abilityOptions.isNotEmpty)
+        _VbmappQuickMandChoiceSpec(
+          flex: 5,
+          label: strategy.abilitySelectorLabel,
+          value: _currentAbility(strategy),
+          values: strategy.abilityOptions,
+          onChanged: (String value) => setState(() {
+            _ability = value;
+          }),
+        ),
+    ];
+    if (choices.length == 1) {
+      final _VbmappQuickMandChoiceSpec choice = choices.first;
+      return Align(
+        alignment: Alignment.centerLeft,
+        child: SizedBox(width: 300, child: _buildChoice(choice)),
       );
     }
     return Row(
       children: <Widget>[
-        Expanded(flex: 6, child: presentationChoice),
-        const SizedBox(width: 12),
-        Expanded(flex: 5, child: targetChoice),
+        for (int index = 0; index < choices.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 12),
+          Expanded(
+              flex: choices[index].flex, child: _buildChoice(choices[index])),
+        ],
       ],
+    );
+  }
+
+  String _currentPromptMode(_VbmappTimedMandStrategy strategy) {
+    if (strategy.promptOptions.contains(_promptMode)) {
+      return _promptMode;
+    }
+    return strategy.defaultPromptMode;
+  }
+
+  String _currentAbility(_VbmappTimedMandStrategy strategy) {
+    if (strategy.abilityOptions.contains(_ability)) {
+      return _ability;
+    }
+    return strategy.defaultAbility;
+  }
+
+  Widget _buildChoice(_VbmappQuickMandChoiceSpec choice) {
+    return _VbmappMandInlineChoiceGroup(
+      label: choice.label,
+      value: choice.value,
+      values: choice.values,
+      onChanged: choice.onChanged,
     );
   }
 
@@ -288,8 +329,12 @@ class _VbmappMand4QuickRecordDialogState
         person: '',
         setting: '',
         example: '',
-        responseMode: strategy.responseModeForPrompt(_promptMode),
-        promptLevel: strategy.promptLevelForPrompt(_promptMode),
+        responseMode: strategy.responseModeForPrompt(
+          _currentPromptMode(strategy),
+        ),
+        promptLevel: strategy.promptLevelForPrompt(
+          _currentPromptMode(strategy),
+        ),
         functional: true,
       ),
     );
@@ -301,20 +346,44 @@ class _VbmappMand4QuickRecordDialogState
           target: request,
           motivationContext: '',
           environment: _presentation,
-          targetKind: _targetKind,
+          targetKind: strategy.targetOptions.isEmpty
+              ? strategy.defaultTargetKind
+              : _targetKind,
           person: '',
           setting: '',
           example: '',
-          responseMode: strategy.responseModeForPrompt(_promptMode),
-          promptLevel: strategy.promptLevelForPrompt(_promptMode),
-          phraseLevel: strategy.multiWordQualifiedMinCount > 0
-              ? phraseAssessment.label
-              : '',
+          responseMode: strategy.responseModeForPrompt(
+            _currentPromptMode(strategy),
+          ),
+          promptLevel: strategy.promptLevelForPrompt(
+            _currentPromptMode(strategy),
+          ),
+          phraseLevel: strategy.abilityOptions.isNotEmpty
+              ? _currentAbility(strategy)
+              : strategy.multiWordQualifiedMinCount > 0
+                  ? phraseAssessment.label
+                  : '',
           functional: true,
         ),
       ),
     );
   }
+}
+
+class _VbmappQuickMandChoiceSpec {
+  const _VbmappQuickMandChoiceSpec({
+    required this.flex,
+    required this.label,
+    required this.value,
+    required this.values,
+    required this.onChanged,
+  });
+
+  final int flex;
+  final String label;
+  final String value;
+  final List<String> values;
+  final ValueChanged<String> onChanged;
 }
 
 class _VbmappTimedMandTargetButton extends StatelessWidget {
@@ -391,6 +460,10 @@ class _VbmappTimedMandTargetButton extends StatelessWidget {
         return '双词不同要求';
       case 'MAND_09M':
         return '30分钟自发不同';
+      case 'MAND_11M':
+        return '信息要求';
+      case 'MAND_13M':
+        return '形容介副词要求';
       case 'MAND_04M':
       default:
         return '60分钟自发要求';

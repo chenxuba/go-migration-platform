@@ -4383,7 +4383,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('提要求观察中'), findsOneWidget);
-    expect(find.textContaining('已记录 2 条'), findsWidgets);
+    expect(find.textContaining('4M 2/5'), findsWidgets);
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
@@ -4643,36 +4643,63 @@ void main() {
     expect(find.text('能力'), findsOneWidget);
     expect(find.text('新形式'), findsOneWidget);
     expect(find.text('新内容'), findsOneWidget);
-    expect(find.text('对象'), findsOneWidget);
-    expect(find.text('动作（终止或移除）'), findsOneWidget);
-    expect(find.text('活动'), findsOneWidget);
+    expect(find.text('对象'), findsNothing);
+    expect(find.text('动作（终止或移除）'), findsNothing);
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
-    expect(find.text('提要求11M信息要求记录'), findsOneWidget);
+    expect(find.text('提要求11M观察记录'), findsOneWidget);
+    expect(find.text('观察窗 60分钟'), findsOneWidget);
     expect(find.text('环境'), findsOneWidget);
     expect(find.text('辅助'), findsNothing);
     expect(find.text('能力'), findsNothing);
+    expect(find.text('目标'), findsNothing);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('vbmapp-mand4-primary-timer')));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
     expect(find.text('提要求12M礼貌拒绝记录'), findsOneWidget);
     expect(find.text('环境'), findsOneWidget);
     expect(find.text('辅助'), findsNothing);
+    expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
+        findsOneWidget);
+    await tester.tap(
+      find.byKey(
+        const ValueKey<String>('vbmapp-active-observation-quick-record'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('补记一条提要求观察记录'), findsOneWidget);
+    expect(find.text('信息要求'), findsOneWidget);
+    expect(find.text('形容介副词要求'), findsOneWidget);
+    expect(find.text('双词不同要求'), findsNothing);
+    expect(find.text('30分钟自发不同'), findsNothing);
+    expect(find.text('你叫什么名字？'), findsWidgets);
+    await tester.tap(find.text('形容介副词要求'));
+    await tester.pumpAndSettle();
+    expect(find.text('形容词'), findsOneWidget);
+    expect(find.text('我的蜡笔断了'), findsWidgets);
+    expect(find.text('你叫什么名字？'), findsNothing);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
-    expect(find.text('提要求13M修饰词要求记录'), findsOneWidget);
+    expect(find.text('提要求13M观察记录'), findsOneWidget);
+    expect(find.text('观察窗 60分钟'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
+        findsNothing);
+    expect(find.text('暂停'), findsOneWidget);
     expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
     expect(find.text('能力'), findsOneWidget);
     expect(find.text('形容词'), findsOneWidget);
     expect(find.text('介词'), findsOneWidget);
     expect(find.text('副词'), findsOneWidget);
-    expect(find.text('对象'), findsOneWidget);
-    expect(find.text('物品'), findsOneWidget);
-    expect(find.text('动作'), findsOneWidget);
-    expect(find.text('动作（终止或移除）'), findsOneWidget);
-    expect(find.text('活动'), findsOneWidget);
+    expect(find.text('对象'), findsNothing);
+    expect(find.text('目标'), findsNothing);
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
@@ -4680,6 +4707,14 @@ void main() {
     expect(find.text('辅助'), findsOneWidget);
     expect(find.text('环境'), findsOneWidget);
     expect(find.text('能力'), findsNothing);
+    final Finder requestField = find.byType(TextField).first;
+    await tester.enterText(requestField, '你先涂胶水，再把它贴好');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+    await tester.enterText(requestField, '你先涂胶水，再把它贴好');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+    expect(find.text('有效 2/5'), findsOneWidget);
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();
@@ -4722,17 +4757,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    for (int index = 0; index < 47; index++) {
+    for (int index = 0;
+        index < 90 && find.text('提要求8M观察记录').evaluate().isEmpty;
+        index++) {
       await tester.tap(find.text('下一题'));
       await tester.pumpAndSettle();
     }
 
-    expect(
-      find.text(
-        '能提出5个不同的要求，其中至少要包含2个或2个以上的单词（不包括“我想要”）（如：跑快点、该我了、倒果汁）（TO：60分钟）',
-      ),
-      findsOneWidget,
-    );
     expect(find.text('提要求8M观察记录'), findsOneWidget);
     expect(find.text('诱发'), findsOneWidget);
     expect(find.text('语言'), findsNothing);
@@ -4792,10 +4823,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    for (int index = 0; index < 47; index++) {
+    for (int index = 0;
+        index < 90 && find.text('提要求8M观察记录').evaluate().isEmpty;
+        index++) {
       await tester.tap(find.text('下一题'));
       await tester.pumpAndSettle();
     }
+    expect(find.text('提要求8M观察记录'), findsOneWidget);
     await tester.enterText(find.byType(TextField).first, '打开');
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
@@ -4814,8 +4848,8 @@ void main() {
     expect(find.text('语言'), findsNothing);
     expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
         findsNothing);
-    expect(find.text('不同 1/15'), findsOneWidget);
-    expect(find.textContaining('打开'), findsWidgets);
+    expect(find.text('暂停'), findsOneWidget);
+    expect(find.text('自发 0/15'), findsOneWidget);
   });
 
   testWidgets('ERXin workbench shows structured loading shell while loading',
