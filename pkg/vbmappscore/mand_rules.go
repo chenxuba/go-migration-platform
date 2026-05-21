@@ -108,7 +108,10 @@ func autoScoreMAND05M(input AssessmentInput) (float64, bool) {
 	if !ok || len(events) == 0 {
 		return 0, false
 	}
-	qualified := qualifiedUniqueMandEvents(events, nil)
+	qualified := qualifiedUniqueMandEvents(events, func(event mandEventEvidence) bool {
+		return event.Environment == "呈现物品" &&
+			event.initiationText() != "提问下"
+	})
 	return scoreByMandThresholds(len(qualified), 10, 8), true
 }
 

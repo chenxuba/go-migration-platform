@@ -365,9 +365,11 @@ func TestScoreAutoCalculatesMAND05MFromEvidence(t *testing.T) {
 	events := make([]any, 0, 10)
 	for _, utterance := range []string{"苹果", "秋千", "车", "果汁", "饼干", "泡泡", "音乐", "积木", "球", "打开"} {
 		events = append(events, map[string]any{
-			"utterance":   utterance,
-			"promptLevel": "自发地",
-			"functional":  true,
+			"utterance":    utterance,
+			"environment":  "呈现物品",
+			"promptLevel":  "无辅助",
+			"responseMode": "自发要求",
+			"functional":   true,
 		})
 	}
 	result, err := engine.Score(AssessmentInput{
@@ -388,6 +390,60 @@ func TestScoreAutoCalculatesMAND05MFromEvidence(t *testing.T) {
 	item := findMilestone(t, result.Milestones, "MAND_05M")
 	if item.Score == nil || *item.Score != 1 {
 		t.Fatalf("expected MAND_05M score 1 from evidence, got %+v", item)
+	}
+}
+
+func TestScoreAutoCalculatesMAND05MFiltersInvisibleAndPromptedEvidence(t *testing.T) {
+	domains, milestones, rules, barriers, transitions := loadGeneratedDrafts(t)
+	engine, err := NewEngine(domains, milestones, rules, barriers, transitions)
+	if err != nil {
+		t.Fatalf("NewEngine: %v", err)
+	}
+
+	events := make([]any, 0, 10)
+	for _, utterance := range []string{"苹果", "秋千", "车", "果汁", "饼干", "泡泡", "音乐", "积木"} {
+		events = append(events, map[string]any{
+			"utterance":    utterance,
+			"environment":  "呈现物品",
+			"promptLevel":  "无辅助",
+			"responseMode": "自发要求",
+			"functional":   true,
+		})
+	}
+	events = append(events,
+		map[string]any{
+			"utterance":    "球",
+			"environment":  "未呈现物品",
+			"promptLevel":  "无辅助",
+			"responseMode": "自发要求",
+			"functional":   true,
+		},
+		map[string]any{
+			"utterance":    "打开",
+			"environment":  "呈现物品",
+			"promptLevel":  "提问下",
+			"responseMode": "提问下要求",
+			"functional":   true,
+		},
+	)
+	result, err := engine.Score(AssessmentInput{
+		ItemResponses: map[string]map[string]map[string]any{
+			ModuleMilestones: {
+				"MAND_05M": {
+					"evidence": map[string]any{
+						"mandEvents": events,
+					},
+				},
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("Score returned error: %v", err)
+	}
+
+	item := findMilestone(t, result.Milestones, "MAND_05M")
+	if item.Score == nil || *item.Score != 0.5 {
+		t.Fatalf("expected MAND_05M score 0.5 after filtering invisible/prompted evidence, got %+v", item)
 	}
 }
 
