@@ -17,7 +17,7 @@ extension _VbmappAssessmentSelectors on _VbmappAssessmentPageState {
   }
 
   double get _progressPercent {
-    return _answeredCount / _totalItemCount;
+    return _answeredCount / _vbmappTotalItemCount;
   }
 
   _VbmappScoreSnapshot get _scoreSnapshot {

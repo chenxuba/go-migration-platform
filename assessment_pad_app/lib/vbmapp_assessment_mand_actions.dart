@@ -39,7 +39,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     setState(() {
       _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -72,7 +72,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       }
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -98,7 +98,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     setState(() {
       _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -138,14 +138,57 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       item,
       timerState,
     );
-    final int multiWordCount = item.itemCode == 'MAND_08M'
-        ? _mandPhraseQualifiedCountForItem(
+    final _VbmappTimedMandStrategy? timedStrategy =
+        _timedMandStrategyForItem(item);
+    final int multiWordCount =
+        (timedStrategy?.multiWordQualifiedMinCount ?? 0) > 0
+            ? _mandPhraseQualifiedCountForItem(
+                item,
+                events,
+                observation: observation,
+              )
+            : 0;
+    try {
+      final Map<String, dynamic> evidence = <String, dynamic>{
+        'mandEvents': events
+            .map((_VbmappMandEvent event) => event.toJson())
+            .toList(growable: false),
+      };
+      if (timedStrategy != null) {
+        evidence.addAll(
+          timedStrategy.buildEvidenceFields(
             item,
             events,
+            suggestedScore,
             observation: observation,
-          )
-        : 0;
-    try {
+          ),
+        );
+      } else {
+        evidence.addAll(<String, dynamic>{
+          'qualifiedCount': qualifiedCount,
+          'uniqueTargetCount': qualifiedCount,
+          if (timerState != null) 'timer': timerState.toJson(),
+          if (timerState != null)
+            'actualObservationMinutes':
+                actualObservationSeconds / Duration.secondsPerMinute,
+          if (timerState != null)
+            'actualObservationSeconds': actualObservationSeconds,
+          if (timerState != null)
+            'effectiveObservationSeconds': effectiveObservationSeconds,
+          if (timerState != null)
+            'effectiveObservationMinutes':
+                effectiveObservationSeconds / Duration.secondsPerMinute,
+          if ((timedStrategy?.multiWordQualifiedMinCount ?? 0) > 0)
+            'multiWordQualifiedCount': multiWordCount,
+          'scoreBasis':
+              '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
+        });
+      }
+      if (item.itemCode == 'MAND_03M') {
+        evidence['generalizationCounts'] = _mandGeneralizationCounts(events);
+        evidence['scoreBasis'] =
+            '系统按互动对象、环境、不同例子的泛化记录建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。';
+      }
       final VbmappDraftDetail detail = await widget.client.saveDraftItem(
         _token,
         <String, dynamic>{
@@ -156,39 +199,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
           'suggestedScore': suggestedScore,
           'teacherConfirmed': false,
           'recordStatus': 'auto_suggested',
-          'evidence': <String, dynamic>{
-            'mandEvents': events
-                .map((_VbmappMandEvent event) => event.toJson())
-                .toList(growable: false),
-            'qualifiedCount': qualifiedCount,
-            'uniqueTargetCount': qualifiedCount,
-            if (timerState != null) 'timer': timerState.toJson(),
-            if (timerState != null)
-              'actualObservationMinutes':
-                  actualObservationSeconds / Duration.secondsPerMinute,
-            if (timerState != null)
-              'actualObservationSeconds': actualObservationSeconds,
-            if (timerState != null)
-              'effectiveObservationSeconds': effectiveObservationSeconds,
-            if (timerState != null)
-              'effectiveObservationMinutes':
-                  effectiveObservationSeconds / Duration.secondsPerMinute,
-            if (item.itemCode == 'MAND_08M')
-              'multiWordQualifiedCount': multiWordCount,
-            if (item.itemCode == 'MAND_03M')
-              'generalizationCounts': _mandGeneralizationCounts(events),
-            'scoreBasis': item.itemCode == 'MAND_03M'
-                ? '系统按互动对象、环境、不同例子的泛化记录建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。'
-                : _sharedTimedMandItemCodes.contains(item.itemCode)
-                    ? _mandTimedScoreBasisText(
-                        item,
-                        suggestedScore,
-                        qualifiedCount,
-                        actualObservationSeconds,
-                        multiWordCount,
-                      )
-                    : '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
-          },
+          'evidence': evidence,
         },
       );
       if (!mounted) {
@@ -296,7 +307,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
 
   _VbmappItem? _activeMandObservationItem() {
     final _VbmappObservationTimerState? sharedObservation =
-        _mandObservationByItem[_sharedTimedMandStorageKey];
+        _mandObservationByItem[_vbmappSharedTimedMandStorageKey];
     if (sharedObservation != null &&
         sharedObservation.hasStarted &&
         !sharedObservation.ended) {
@@ -330,13 +341,13 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
 
   bool _hasSharedTimedMandEvidence() {
     final List<_VbmappMandEvent> sharedEvents =
-        _mandEventsByItem[_sharedTimedMandStorageKey] ??
+        _mandEventsByItem[_vbmappSharedTimedMandStorageKey] ??
             const <_VbmappMandEvent>[];
     if (sharedEvents.isNotEmpty) {
       return true;
     }
     final _VbmappObservationTimerState? sharedObservation =
-        _mandObservationByItem[_sharedTimedMandStorageKey];
+        _mandObservationByItem[_vbmappSharedTimedMandStorageKey];
     if (sharedObservation == null) {
       return false;
     }
@@ -346,7 +357,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
   }
 
   void _clearBuggedSharedTimedMandScores() {
-    const Set<String> codes = _sharedTimedMandItemCodes;
+    const Set<String> codes = _vbmappSharedTimedMandItemCodes;
     final bool allZero = codes.every(
       (String code) => (_milestoneScores[code] ?? -1) == 0,
     );
@@ -359,8 +370,8 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
   }
 
   String _mandStorageKeyFor(String itemCode) {
-    return _sharedTimedMandItemCodes.contains(itemCode)
-        ? _sharedTimedMandStorageKey
+    return _vbmappSharedTimedMandItemCodes.contains(itemCode)
+        ? _vbmappSharedTimedMandStorageKey
         : itemCode;
   }
 
@@ -369,7 +380,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       return;
     }
     for (final _VbmappItem item in _milestoneItems) {
-      if (!_sharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (!_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
         continue;
       }
       final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);

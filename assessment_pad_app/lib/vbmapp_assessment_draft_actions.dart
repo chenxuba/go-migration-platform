@@ -3,7 +3,7 @@ part of 'vbmapp_assessment_page.dart';
 extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
   Future<void> _initialize() async {
     final SharedPreferences prefs = await SharedPreferences.getInstance();
-    final String token = prefs.getString(_authTokenStorageKey) ?? '';
+    final String token = prefs.getString(_vbmappAuthTokenStorageKey) ?? '';
     if (token.trim().isEmpty) {
       if (!mounted) {
         return;
@@ -145,7 +145,7 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
           'examinerName': _examinerName,
           'birthDate': _birthDate,
           'assessmentDate': _assessmentDate,
-          'scaleVersion': _scaleVersion,
+          'scaleVersion': _vbmappScaleVersion,
           'milestoneScores': _milestoneScores,
           'barrierScores': _barrierScores,
           'transitionScores': _transitionScores,
@@ -190,7 +190,7 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
     if (_submitting) {
       return;
     }
-    final int missingCount = _totalItemCount - _answeredCount;
+    final int missingCount = _vbmappTotalItemCount - _answeredCount;
     if (missingCount > 0) {
       _showMessage(
         'VB-MAPP还有 $missingCount 个项目未评分，完成后才能提交正式记录',

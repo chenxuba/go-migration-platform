@@ -486,6 +486,342 @@ String _vbmappDurationText(int totalSeconds) {
       '${secondsPart.toString().padLeft(2, '0')}';
 }
 
+class _VbmappTimedMandStrategy {
+  const _VbmappTimedMandStrategy({
+    required this.itemCode,
+    required this.plannedMinutes,
+    required this.countMetricLabel,
+    required this.inputLabel,
+    required this.inputHint,
+    required this.targetOptions,
+    required this.defaultObservationHint,
+    this.defaultPromptMode = '自发地',
+    this.defaultPresentation = '呈现物品',
+    this.defaultTargetKind = '物品',
+    this.showPromptSelector = false,
+    this.promptSelectorLabel = '诱发',
+    this.promptOptions = const <String>['自发地', '提问下'],
+    this.requirePresentedEnvironment = false,
+    this.excludePromptedEvents = false,
+    this.multiWordQualifiedMinCount = 0,
+    this.displayMinSlots,
+  });
+
+  final String itemCode;
+  final int plannedMinutes;
+  final String countMetricLabel;
+  final String inputLabel;
+  final String inputHint;
+  final List<String> targetOptions;
+  final String defaultObservationHint;
+  final String defaultPromptMode;
+  final String defaultPresentation;
+  final String defaultTargetKind;
+  final bool showPromptSelector;
+  final String promptSelectorLabel;
+  final List<String> promptOptions;
+  final bool requirePresentedEnvironment;
+  final bool excludePromptedEvents;
+  final int multiWordQualifiedMinCount;
+  final int? displayMinSlots;
+
+  int onePointCount(_VbmappItem item) => _scoreCountThreshold(item, 1) ?? 5;
+
+  int halfPointCount(_VbmappItem item) => _scoreCountThreshold(item, .5) ?? 2;
+
+  int resolvedDisplayMinSlots(_VbmappItem item) {
+    return displayMinSlots ?? onePointCount(item);
+  }
+
+  String responseModeForPrompt(String promptMode) {
+    if (showPromptSelector && promptMode == '提问下') {
+      return '提问下要求';
+    }
+    return '自发要求';
+  }
+
+  String promptLevelForPrompt(String promptMode) {
+    return showPromptSelector ? promptMode : '';
+  }
+
+  String uniqueKeyForEvent(_VbmappMandEvent event) {
+    return _defaultMandUniqueKey(event);
+  }
+
+  String scoreReference(_VbmappItem item) {
+    final int halfPoint = halfPointCount(item);
+    final int onePoint = onePointCount(item);
+    if (multiWordQualifiedMinCount > 0) {
+      return '参考：${plannedMinutes}分钟观察窗内，$halfPoint个不同要求计0.5分，'
+          '$onePoint个不同要求且系统判定至少$multiWordQualifiedMinCount条为双词+计1分。';
+    }
+    if (excludePromptedEvents) {
+      return '参考：${plannedMinutes}分钟观察窗内，$halfPoint个自发不同要求计0.5分，'
+          '$onePoint个自发不同要求计1分。';
+    }
+    if (requirePresentedEnvironment) {
+      return '参考：${plannedMinutes}分钟观察窗内，$halfPoint个计0.5分，'
+          '$onePoint个计1分；仅统计呈现物品条件下的自发要求。';
+    }
+    return '参考：${plannedMinutes}分钟观察窗内，$halfPoint个计0.5分，'
+        '$onePoint个计1分。';
+  }
+
+  String observationHint({
+    required _VbmappItem item,
+    required List<_VbmappMandEvent> events,
+    required _VbmappObservationTimerState? observation,
+  }) {
+    final _VbmappObservationTimerState timerState =
+        (observation ?? const _VbmappObservationTimerState())
+            .withPlannedMinutes(plannedMinutes);
+    final int qualifiedCount = _qualifiedMandCountForItem(
+      item,
+      events,
+      observation: observation,
+    );
+    final bool observationMet = timerState.elapsedSecondsAt(DateTime.now()) >=
+        plannedMinutes * Duration.secondsPerMinute;
+    if (!timerState.hasStarted) {
+      return '先开启${plannedMinutes}分钟观察窗，再连续记录孩子的自然要求。';
+    }
+    if (!observationMet && qualifiedCount >= onePointCount(item)) {
+      if (multiWordQualifiedMinCount > 0) {
+        return '已达到数量条件，但观察未满${plannedMinutes}分钟；双词结构由系统根据原话自动判定。';
+      }
+      return '已达到1分数量条件，但观察未满${plannedMinutes}分钟，可继续观察或由老师确认结束。';
+    }
+    if (!observationMet && qualifiedCount >= halfPointCount(item)) {
+      return '已达到0.5分数量条件，但观察未满${plannedMinutes}分钟，建议继续观察。';
+    }
+    if (observationMet) {
+      return '${plannedMinutes}分钟观察窗已完成，系统会继续保留新增记录供老师判断。';
+    }
+    return defaultObservationHint;
+  }
+
+  int qualifiedCount(
+    _VbmappItem item,
+    List<_VbmappMandEvent> events, {
+    _VbmappObservationTimerState? observation,
+  }) {
+    final Set<String> uniqueTargets = <String>{};
+    for (final _VbmappMandEvent event in events) {
+      if (!countsEvent(item, event, observation: observation)) {
+        continue;
+      }
+      final String uniqueKey = uniqueKeyForEvent(event);
+      if (uniqueKey.isNotEmpty) {
+        uniqueTargets.add(uniqueKey);
+      }
+    }
+    return uniqueTargets.length;
+  }
+
+  int qualifiedMultiWordCount(
+    _VbmappItem item,
+    List<_VbmappMandEvent> events, {
+    _VbmappObservationTimerState? observation,
+  }) {
+    final Set<String> uniqueTargets = <String>{};
+    for (final _VbmappMandEvent event in events) {
+      if (!countsEvent(item, event, observation: observation) ||
+          !_isLikelyMultiWordMand(event)) {
+        continue;
+      }
+      final String uniqueKey = uniqueKeyForEvent(event);
+      if (uniqueKey.isNotEmpty) {
+        uniqueTargets.add(uniqueKey);
+      }
+    }
+    return uniqueTargets.length;
+  }
+
+  bool countsEvent(
+    _VbmappItem item,
+    _VbmappMandEvent event, {
+    _VbmappObservationTimerState? observation,
+  }) {
+    if (!event.isQualified) {
+      return false;
+    }
+    if (!_mandEventWithinWindow(
+      event,
+      observation,
+      plannedMinutes: plannedMinutes,
+    )) {
+      return false;
+    }
+    if (requirePresentedEnvironment && event.environment.trim() != '呈现物品') {
+      return false;
+    }
+    if (excludePromptedEvents && _mandInitiationText(event) == '提问下') {
+      return false;
+    }
+    return true;
+  }
+
+  String recordMetaText(
+    _VbmappMandEvent event, {
+    _VbmappItem? item,
+  }) {
+    final List<String> values = <String>[];
+
+    void addMeta(String raw) {
+      final String value = raw.trim();
+      if (value.isEmpty || values.contains(value)) {
+        return;
+      }
+      values.add(value);
+    }
+
+    addMeta(_mandInitiationText(event));
+    addMeta(event.environment);
+    addMeta(event.targetKind);
+    addMeta(event.phraseLevel);
+    addMeta(event.promptLevel);
+    final DateTime? recordedAt = event.recordedAt;
+    if (recordedAt != null) {
+      values.add(_formatClock(recordedAt));
+    }
+    return values.isEmpty ? '未记录条件' : values.join(' · ');
+  }
+
+  double suggestScore(
+    _VbmappItem item,
+    List<_VbmappMandEvent> events, {
+    _VbmappObservationTimerState? observation,
+  }) {
+    final int qualifiedCountValue =
+        qualifiedCount(item, events, observation: observation);
+    if (multiWordQualifiedMinCount > 0) {
+      final int multiWordCount =
+          qualifiedMultiWordCount(item, events, observation: observation);
+      if (qualifiedCountValue >= onePointCount(item) &&
+          multiWordCount >= multiWordQualifiedMinCount) {
+        return 1;
+      }
+      if (qualifiedCountValue >= halfPointCount(item)) {
+        return .5;
+      }
+      return 0;
+    }
+    if (qualifiedCountValue >= onePointCount(item)) {
+      return 1;
+    }
+    if (qualifiedCountValue >= halfPointCount(item)) {
+      return .5;
+    }
+    return 0;
+  }
+
+  String scoreBasisText(
+    _VbmappItem item,
+    double suggestedScore,
+    int qualifiedCount,
+    int actualObservationSeconds,
+    int multiWordCount,
+  ) {
+    final String baseDuration = '${plannedMinutes}分钟观察窗';
+    if (multiWordQualifiedMinCount > 0) {
+      return '系统按$baseDuration内的不同要求数量建议${_formatScore(suggestedScore)}分，'
+          '当前计入$qualifiedCount条，其中双词+$multiWordCount条，'
+          '已观察${_vbmappDurationText(actualObservationSeconds)}，老师可在下方评分区覆盖。';
+    }
+    if (excludePromptedEvents) {
+      return '系统按$baseDuration内的自发不同要求数量建议${_formatScore(suggestedScore)}分，'
+          '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
+          '老师可在下方评分区覆盖。';
+    }
+    return '系统按$baseDuration内的有效自发要求数量建议${_formatScore(suggestedScore)}分，'
+        '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
+        '老师可在下方评分区覆盖。';
+  }
+
+  Map<String, dynamic> buildEvidenceFields(
+    _VbmappItem item,
+    List<_VbmappMandEvent> events,
+    double suggestedScore, {
+    _VbmappObservationTimerState? observation,
+  }) {
+    final _VbmappObservationTimerState? timerState = observation;
+    final int qualifiedCountValue =
+        qualifiedCount(item, events, observation: observation);
+    final int actualObservationSeconds =
+        timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
+    final int effectiveObservationSeconds =
+        _effectiveObservationSecondsForItem(item, timerState);
+    final int multiWordCount = multiWordQualifiedMinCount > 0
+        ? qualifiedMultiWordCount(item, events, observation: observation)
+        : 0;
+    return <String, dynamic>{
+      'qualifiedCount': qualifiedCountValue,
+      'uniqueTargetCount': qualifiedCountValue,
+      if (timerState != null) 'timer': timerState.toJson(),
+      if (timerState != null)
+        'actualObservationMinutes':
+            actualObservationSeconds / Duration.secondsPerMinute,
+      if (timerState != null)
+        'actualObservationSeconds': actualObservationSeconds,
+      if (timerState != null)
+        'effectiveObservationSeconds': effectiveObservationSeconds,
+      if (timerState != null)
+        'effectiveObservationMinutes':
+            effectiveObservationSeconds / Duration.secondsPerMinute,
+      if (multiWordQualifiedMinCount > 0)
+        'multiWordQualifiedCount': multiWordCount,
+      'scoreBasis': scoreBasisText(
+        item,
+        suggestedScore,
+        qualifiedCountValue,
+        actualObservationSeconds,
+        multiWordCount,
+      ),
+    };
+  }
+}
+
+const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
+    <String, _VbmappTimedMandStrategy>{
+  'MAND_04M': _VbmappTimedMandStrategy(
+    itemCode: 'MAND_04M',
+    plannedMinutes: 60,
+    countMetricLabel: '有效',
+    inputLabel: '孩子要求内容',
+    inputHint: '如：泡泡、出去、打开',
+    targetOptions: <String>['物品', '动作', '活动'],
+    requirePresentedEnvironment: true,
+    excludePromptedEvents: true,
+    defaultObservationHint: '记录自然情境下的自发要求，系统自动统计不同要求数量。',
+  ),
+  'MAND_08M': _VbmappTimedMandStrategy(
+    itemCode: 'MAND_08M',
+    plannedMinutes: 60,
+    countMetricLabel: '不同',
+    inputLabel: '孩子要求原话',
+    inputHint: '如：跑快点、该我了、倒果汁',
+    targetOptions: <String>['物品', '动作', '活动'],
+    showPromptSelector: true,
+    multiWordQualifiedMinCount: 2,
+    defaultObservationHint: '记录自然情境下的不同要求；双词结构由系统根据原话自动判定。',
+  ),
+  'MAND_09M': _VbmappTimedMandStrategy(
+    itemCode: 'MAND_09M',
+    plannedMinutes: 30,
+    countMetricLabel: '自发',
+    inputLabel: '孩子要求内容',
+    inputHint: '如：泡泡、出去、打开',
+    targetOptions: <String>['物品', '动作', '活动'],
+    excludePromptedEvents: true,
+    displayMinSlots: 6,
+    defaultObservationHint: '记录30分钟内的自发不同要求，系统自动去重统计。',
+  ),
+};
+
+_VbmappTimedMandStrategy? _timedMandStrategyForItem(_VbmappItem item) {
+  return _vbmappTimedMandStrategies[item.itemCode];
+}
+
 bool _isSimpleMandRecorder(
   _VbmappItem item,
   VbmappItemResponseSchema? schema,
@@ -500,20 +836,11 @@ bool _isSimpleMandRecorder(
 }
 
 bool _isTimedMandItemCode(String itemCode) {
-  return itemCode == 'MAND_04M' ||
-      itemCode == 'MAND_08M' ||
-      itemCode == 'MAND_09M';
+  return _vbmappTimedMandStrategies.containsKey(itemCode);
 }
 
 int _plannedMinutesForMandItem(_VbmappItem item) {
-  switch (item.itemCode) {
-    case 'MAND_09M':
-      return 30;
-    case 'MAND_04M':
-    case 'MAND_08M':
-    default:
-      return 60;
-  }
+  return _timedMandStrategyForItem(item)?.plannedMinutes ?? 60;
 }
 
 String _mandInitiationText(_VbmappMandEvent event) {
@@ -550,38 +877,40 @@ bool _mandEventCountsForItem(
   _VbmappMandEvent event, {
   _VbmappObservationTimerState? observation,
 }) {
-  if (!event.isQualified) {
-    return false;
+  final _VbmappTimedMandStrategy? timedStrategy =
+      _timedMandStrategyForItem(item);
+  if (timedStrategy != null) {
+    return timedStrategy.countsEvent(
+      item,
+      event,
+      observation: observation,
+    );
   }
-  if (_isTimedMandItemCode(item.itemCode) &&
-      !_mandEventWithinWindow(
-        event,
-        observation,
-        plannedMinutes: _plannedMinutesForMandItem(item),
-      )) {
+  if (!event.isQualified) {
     return false;
   }
   switch (item.itemCode) {
     case 'MAND_05M':
       return event.environment.trim() == '呈现物品' &&
           _mandInitiationText(event) != '提问下';
-    case 'MAND_04M':
-      return event.environment.trim() == '呈现物品' &&
-          _mandInitiationText(event) != '提问下';
-    case 'MAND_08M':
-      return true;
-    case 'MAND_09M':
-      return _mandInitiationText(event) != '提问下';
     default:
       return event.isQualified;
   }
 }
 
+String _defaultMandUniqueKey(_VbmappMandEvent event) {
+  final String text = event.target.trim().isNotEmpty
+      ? event.target.trim()
+      : event.utterance.trim();
+  return text.toLowerCase();
+}
+
 int _qualifiedMandCount(List<_VbmappMandEvent> events) {
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
-    if (event.isQualified && event.uniqueKey.isNotEmpty) {
-      uniqueTargets.add(event.uniqueKey);
+    final String uniqueKey = _defaultMandUniqueKey(event);
+    if (event.isQualified && uniqueKey.isNotEmpty) {
+      uniqueTargets.add(uniqueKey);
     }
   }
   return uniqueTargets.length;
@@ -592,11 +921,21 @@ int _qualifiedMandCountForItem(
   List<_VbmappMandEvent> events, {
   _VbmappObservationTimerState? observation,
 }) {
+  final _VbmappTimedMandStrategy? timedStrategy =
+      _timedMandStrategyForItem(item);
+  if (timedStrategy != null) {
+    return timedStrategy.qualifiedCount(
+      item,
+      events,
+      observation: observation,
+    );
+  }
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
+    final String uniqueKey = _defaultMandUniqueKey(event);
     if (_mandEventCountsForItem(item, event, observation: observation) &&
-        event.uniqueKey.isNotEmpty) {
-      uniqueTargets.add(event.uniqueKey);
+        uniqueKey.isNotEmpty) {
+      uniqueTargets.add(uniqueKey);
     }
   }
   return uniqueTargets.length;
@@ -607,6 +946,15 @@ int _mandPhraseQualifiedCountForItem(
   List<_VbmappMandEvent> events, {
   _VbmappObservationTimerState? observation,
 }) {
+  final _VbmappTimedMandStrategy? timedStrategy =
+      _timedMandStrategyForItem(item);
+  if (timedStrategy != null) {
+    return timedStrategy.qualifiedMultiWordCount(
+      item,
+      events,
+      observation: observation,
+    );
+  }
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
     if (!_mandEventCountsForItem(item, event, observation: observation)) {
@@ -615,8 +963,9 @@ int _mandPhraseQualifiedCountForItem(
     if (!_isLikelyMultiWordMand(event)) {
       continue;
     }
-    if (event.uniqueKey.isNotEmpty) {
-      uniqueTargets.add(event.uniqueKey);
+    final String uniqueKey = _defaultMandUniqueKey(event);
+    if (uniqueKey.isNotEmpty) {
+      uniqueTargets.add(uniqueKey);
     }
   }
   return uniqueTargets.length;
@@ -685,6 +1034,13 @@ String _mandRecordMetaText(
   _VbmappMandEvent event, {
   _VbmappItem? item,
 }) {
+  if (item != null) {
+    final _VbmappTimedMandStrategy? timedStrategy =
+        _timedMandStrategyForItem(item);
+    if (timedStrategy != null) {
+      return timedStrategy.recordMetaText(event, item: item);
+    }
+  }
   final List<String> values = <String>[];
 
   void addMeta(String raw) {
@@ -729,22 +1085,17 @@ String _mandTimedScoreBasisText(
   int actualObservationSeconds,
   int multiWordCount,
 ) {
-  final String baseDuration = '${_plannedMinutesForMandItem(item)}分钟观察窗';
-  switch (item.itemCode) {
-    case 'MAND_08M':
-      return '系统按$baseDuration内的不同要求数量建议${_formatScore(suggestedScore)}分，'
-          '当前计入$qualifiedCount条，其中双词+$multiWordCount条，'
-          '已观察${_vbmappDurationText(actualObservationSeconds)}，老师可在下方评分区覆盖。';
-    case 'MAND_09M':
-      return '系统按$baseDuration内的自发不同要求数量建议${_formatScore(suggestedScore)}分，'
-          '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
-          '老师可在下方评分区覆盖。';
-    case 'MAND_04M':
-    default:
-      return '系统按$baseDuration内的有效自发要求数量建议${_formatScore(suggestedScore)}分，'
-          '当前计入$qualifiedCount条，已观察${_vbmappDurationText(actualObservationSeconds)}，'
-          '老师可在下方评分区覆盖。';
+  final _VbmappTimedMandStrategy? strategy = _timedMandStrategyForItem(item);
+  if (strategy == null) {
+    return '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。';
   }
+  return strategy.scoreBasisText(
+    item,
+    suggestedScore,
+    qualifiedCount,
+    actualObservationSeconds,
+    multiWordCount,
+  );
 }
 
 double _suggestMandScore(
@@ -765,25 +1116,20 @@ double _suggestMandScore(
         (counts['examples'] ?? 0) >= 1;
     return halfPoint ? .5 : 0;
   }
+  final _VbmappTimedMandStrategy? timedStrategy =
+      _timedMandStrategyForItem(item);
+  if (timedStrategy != null) {
+    return timedStrategy.suggestScore(
+      item,
+      events,
+      observation: observation,
+    );
+  }
   final int count = _qualifiedMandCountForItem(
     item,
     events,
     observation: observation,
   );
-  if (item.itemCode == 'MAND_08M') {
-    final int multiWordCount = _mandPhraseQualifiedCountForItem(
-      item,
-      events,
-      observation: observation,
-    );
-    if (count >= 5 && multiWordCount >= 2) {
-      return 1;
-    }
-    if (count >= 2) {
-      return .5;
-    }
-    return 0;
-  }
   final int onePointCount = _scoreCountThreshold(item, 1) ?? 1;
   final int halfPointCount = _scoreCountThreshold(item, .5) ?? onePointCount;
   if (count >= onePointCount) {

@@ -27,6 +27,16 @@ part 'vbmapp_assessment_draft_actions.dart';
 part 'vbmapp_assessment_mand_actions.dart';
 part 'vbmapp_assessment_navigation_actions.dart';
 
+const String _vbmappAuthTokenStorageKey = 'auth_token';
+const String _vbmappScaleVersion = 'VBMAPP_CN_2ND_DRAFT_2026_05';
+const int _vbmappTotalItemCount = 212;
+const String _vbmappSharedTimedMandStorageKey = '__MAND_TIMED_SHARED__';
+const Set<String> _vbmappSharedTimedMandItemCodes = <String>{
+  'MAND_04M',
+  'MAND_08M',
+  'MAND_09M',
+};
+
 class VbmappAssessmentLaunchArgs {
   const VbmappAssessmentLaunchArgs({
     this.draftId = 0,
@@ -69,16 +79,6 @@ class VbmappAssessmentPage extends StatefulWidget {
 
 class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     with WidgetsBindingObserver {
-  static const String _authTokenStorageKey = 'auth_token';
-  static const String _scaleVersion = 'VBMAPP_CN_2ND_DRAFT_2026_05';
-  static const int _totalItemCount = 212;
-  static const String _sharedTimedMandStorageKey = '__MAND_TIMED_SHARED__';
-  static const Set<String> _sharedTimedMandItemCodes = <String>{
-    'MAND_04M',
-    'MAND_08M',
-    'MAND_09M',
-  };
-
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
   final Map<String, double> _milestoneScores = <String, double>{};
@@ -161,11 +161,11 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
             : _mandObservationFor(activeObservationItem);
     final bool activeTimedMandShared = activeObservationItem != null &&
         _mandStorageKeyFor(activeObservationItem.itemCode) ==
-            _sharedTimedMandStorageKey;
+            _vbmappSharedTimedMandStorageKey;
     final bool showActiveObservationBar = activeObservationItem != null &&
         activeObservation != null &&
         !(activeTimedMandShared &&
-            _sharedTimedMandItemCodes.contains(item.itemCode)) &&
+            _vbmappSharedTimedMandItemCodes.contains(item.itemCode)) &&
         activeObservationItem.itemCode != item.itemCode;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -285,7 +285,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                         child: _VbmappRightRail(
                           progressPercent: _progressPercent,
                           answered: _answeredCount,
-                          total: _totalItemCount,
+                          total: _vbmappTotalItemCount,
                           selectedModule: _moduleByCode(_selectedModuleCode),
                           scoreSnapshot: scoreSnapshot,
                         ),
@@ -296,10 +296,10 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
               ),
               _VbmappFooterDock(
                 current: item.sequenceNo,
-                total: _totalItemCount,
+                total: _vbmappTotalItemCount,
                 hasPrevious: item.sequenceNo > 1,
-                hasNext: item.sequenceNo < _totalItemCount,
-                hasMissing: _answeredCount < _totalItemCount,
+                hasNext: item.sequenceNo < _vbmappTotalItemCount,
+                hasMissing: _answeredCount < _vbmappTotalItemCount,
                 autoNext: _autoNext,
                 onPrevious: _goPrevious,
                 onNext: _goNext,

@@ -45,19 +45,19 @@ class _VbmappTimedMandInlinePanelState
   String _promptMode = '自发地';
   int? _selectedRecordIndex;
 
+  _VbmappTimedMandStrategy get _strategy =>
+      _timedMandStrategyForItem(widget.item) ??
+      _vbmappTimedMandStrategies['MAND_04M']!;
+
   _VbmappObservationTimerState get _observation =>
       (widget.observation ?? const _VbmappObservationTimerState())
-          .withPlannedMinutes(60);
+          .withPlannedMinutes(_strategy.plannedMinutes);
 
-  bool get _isMand8 => widget.item.itemCode == 'MAND_08M';
+  int get _onePointRequestCount => _strategy.onePointCount(widget.item);
 
-  bool get _isMand9 => widget.item.itemCode == 'MAND_09M';
+  int get _halfPointRequestCount => _strategy.halfPointCount(widget.item);
 
-  int get _onePointRequestCount => _scoreCountThreshold(widget.item, 1) ?? 5;
-
-  int get _halfPointRequestCount => _scoreCountThreshold(widget.item, .5) ?? 2;
-
-  int get _plannedMinutes => _plannedMinutesForMandItem(widget.item);
+  int get _plannedMinutes => _strategy.plannedMinutes;
 
   int get _plannedSeconds => _plannedMinutes * Duration.secondsPerMinute;
 
@@ -70,55 +70,31 @@ class _VbmappTimedMandInlinePanelState
 
   bool get _observationMet => _elapsedSeconds >= _plannedSeconds;
 
-  int get _displayMinSlots => _isMand9 ? 6 : _onePointRequestCount;
+  int get _displayMinSlots => _strategy.resolvedDisplayMinSlots(widget.item);
+
+  String get _currentPromptMode {
+    if (_strategy.promptOptions.contains(_promptMode)) {
+      return _promptMode;
+    }
+    return _strategy.defaultPromptMode;
+  }
 
   String get _recordTitle => '提要求${widget.item.navCode}观察记录';
 
-  String get _scoreReference {
-    if (_isMand8) {
-      return '参考：60分钟观察窗内，$_halfPointRequestCount个不同要求计0.5分，'
-          '$_onePointRequestCount个不同要求且系统判定至少2条为双词+计1分。';
-    }
-    if (_isMand9) {
-      return '参考：30分钟观察窗内，$_halfPointRequestCount个自发不同要求计0.5分，'
-          '$_onePointRequestCount个自发不同要求计1分。';
-    }
-    return '参考：60分钟观察窗内，$_halfPointRequestCount个计0.5分，'
-        '$_onePointRequestCount个计1分；仅统计呈现物品条件下的自发要求。';
-  }
+  String get _scoreReference => _strategy.scoreReference(widget.item);
 
-  String get _observationHint {
-    final int qualifiedCount = _qualifiedMandCountForItem(
-      widget.item,
-      widget.events,
-      observation: widget.observation,
-    );
-    if (!_observation.hasStarted) {
-      return '先开启${_plannedMinutes}分钟观察窗，再连续记录孩子的自然要求。';
-    }
-    if (!_observationMet && qualifiedCount >= _onePointRequestCount) {
-      return _isMand8
-          ? '已达到数量条件，但观察未满${_plannedMinutes}分钟；双词结构由系统根据原话自动判定。'
-          : '已达到1分数量条件，但观察未满${_plannedMinutes}分钟，可继续观察或由老师确认结束。';
-    }
-    if (!_observationMet && qualifiedCount >= _halfPointRequestCount) {
-      return '已达到0.5分数量条件，但观察未满${_plannedMinutes}分钟，建议继续观察。';
-    }
-    if (_observationMet) {
-      return '${_plannedMinutes}分钟观察窗已完成，系统会继续保留新增记录供老师判断。';
-    }
-    if (_isMand8) {
-      return '记录自然情境下的不同要求；双词结构由系统根据原话自动判定。';
-    }
-    if (_isMand9) {
-      return '记录30分钟内的自发不同要求，系统自动去重统计。';
-    }
-    return '记录自然情境下的自发要求，系统自动统计不同要求数量。';
-  }
+  String get _observationHint => _strategy.observationHint(
+        item: widget.item,
+        events: widget.events,
+        observation: widget.observation,
+      );
 
   @override
   void initState() {
     super.initState();
+    _presentation = _strategy.defaultPresentation;
+    _targetKind = _strategy.defaultTargetKind;
+    _promptMode = _strategy.defaultPromptMode;
     _syncClockTicker();
   }
 
@@ -128,6 +104,11 @@ class _VbmappTimedMandInlinePanelState
     final int? selectedIndex = _selectedRecordIndex;
     if (selectedIndex != null && selectedIndex >= widget.events.length) {
       _selectedRecordIndex = null;
+    }
+    if (oldWidget.item.itemCode != widget.item.itemCode) {
+      _presentation = _strategy.defaultPresentation;
+      _targetKind = _strategy.defaultTargetKind;
+      _promptMode = _strategy.defaultPromptMode;
     }
     if (oldWidget.observation != widget.observation) {
       _syncClockTicker();
@@ -190,7 +171,7 @@ class _VbmappTimedMandInlinePanelState
                   ),
                   const SizedBox(width: 8),
                   _VbmappEvidenceMetric(
-                    label: '不同',
+                    label: _strategy.countMetricLabel,
                     value: '$qualifiedCount/$_onePointRequestCount',
                     color: widget.item.color,
                   ),
@@ -335,8 +316,8 @@ class _VbmappTimedMandInlinePanelState
             Expanded(
               child: _VbmappMandInlineTextField(
                 controller: _requestController,
-                label: _isMand8 ? '孩子要求原话' : '孩子要求内容',
-                hintText: _isMand8 ? '如：跑快点、该我了、倒果汁' : '如：泡泡、出去、打开',
+                label: _strategy.inputLabel,
+                hintText: _strategy.inputHint,
               ),
             ),
             const SizedBox(width: 10),
@@ -376,20 +357,20 @@ class _VbmappTimedMandInlinePanelState
     final Widget targetChoice = _VbmappMandInlineChoiceGroup(
       label: '目标',
       value: _targetKind,
-      values: const <String>['物品', '动作', '活动'],
+      values: _strategy.targetOptions,
       onChanged: (String value) => setState(() {
         _targetKind = value;
       }),
     );
-    if (_isMand8) {
+    if (_strategy.showPromptSelector) {
       return Row(
         children: <Widget>[
           Expanded(
             flex: 4,
             child: _VbmappMandInlineChoiceGroup(
-              label: '诱发',
-              value: _promptMode,
-              values: const <String>['自发地', '提问下'],
+              label: _strategy.promptSelectorLabel,
+              value: _currentPromptMode,
+              values: _strategy.promptOptions,
               onChanged: (String value) => setState(() {
                 _promptMode = value;
               }),
@@ -538,9 +519,8 @@ class _VbmappTimedMandInlinePanelState
         person: '',
         setting: '',
         example: '',
-        responseMode:
-            _isMand8 ? (_promptMode == '提问下' ? '提问下要求' : '自发要求') : '自发要求',
-        promptLevel: _isMand8 ? _promptMode : '',
+        responseMode: _strategy.responseModeForPrompt(_currentPromptMode),
+        promptLevel: _strategy.promptLevelForPrompt(_currentPromptMode),
         phraseLevel: '',
         functional: true,
       ),
@@ -548,9 +528,7 @@ class _VbmappTimedMandInlinePanelState
     _requestController.clear();
     setState(() {
       _selectedRecordIndex = null;
-      if (_isMand8) {
-        _promptMode = '自发地';
-      }
+      _promptMode = _strategy.defaultPromptMode;
     });
   }
 
