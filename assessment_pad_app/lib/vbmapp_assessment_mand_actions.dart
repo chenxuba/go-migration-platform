@@ -1,0 +1,449 @@
+part of 'vbmapp_assessment_page.dart';
+
+extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
+  Future<void> _openMandEventDialog(_VbmappItem item) async {
+    final _VbmappMandEvent? event = await showDialog<_VbmappMandEvent>(
+      context: context,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _VbmappMandEventDialog(
+            generalizationMode: item.itemCode == 'MAND_03M',
+          ),
+        );
+      },
+    );
+    if (event == null) {
+      return;
+    }
+    await _addMandEvent(item, event);
+  }
+
+  Future<void> _addMandEvent(_VbmappItem item, _VbmappMandEvent event) async {
+    final DateTime now = DateTime.now();
+    final List<_VbmappMandEvent> events =
+        List<_VbmappMandEvent>.from(_mandStoredEventsFor(item))
+          ..add(
+            event.recordedAtIso.trim().isEmpty
+                ? event.copyWith(
+                    recordedAtIso: now.toIso8601String(),
+                    sourceItemCode: item.itemCode,
+                  )
+                : event,
+          );
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
+    setState(() {
+      _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
+      _milestoneScores[item.itemCode] = suggestedScore;
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
+      _autoSaveText = '保存中...';
+    });
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: observation,
+    );
+  }
+
+  Future<void> _deleteMandEvent(_VbmappItem item, int index) async {
+    final List<_VbmappMandEvent> events =
+        List<_VbmappMandEvent>.from(_mandStoredEventsFor(item));
+    if (index < 0 || index >= events.length) {
+      return;
+    }
+    events.removeAt(index);
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
+    setState(() {
+      if (events.isEmpty) {
+        _mandEventsByItem.remove(_mandStorageKeyFor(item.itemCode));
+      } else {
+        _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
+      }
+      _milestoneScores[item.itemCode] = suggestedScore;
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
+      _autoSaveText = '保存中...';
+    });
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: observation,
+    );
+  }
+
+  Future<void> _updateMandObservation(
+    _VbmappItem item,
+    _VbmappObservationTimerState observation,
+  ) async {
+    final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+    final double suggestedScore = _suggestMandScore(
+      item,
+      events,
+      observation: observation,
+    );
+    setState(() {
+      _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
+      _milestoneScores[item.itemCode] = suggestedScore;
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
+      _autoSaveText = '保存中...';
+    });
+    _syncObservationTicker();
+    await _saveMandEvidence(
+      item,
+      events,
+      suggestedScore,
+      observation: observation,
+    );
+  }
+
+  Future<void> _saveMandEvidence(
+    _VbmappItem item,
+    List<_VbmappMandEvent> events,
+    double suggestedScore, {
+    _VbmappObservationTimerState? observation,
+  }) async {
+    if (_token.trim().isEmpty) {
+      _showMessage('请先登录后再保存证据', tone: PadMessageTone.error);
+      return;
+    }
+    final int draftId = await _saveDraft(silent: true);
+    if (draftId <= 0) {
+      return;
+    }
+    final int qualifiedCount = _qualifiedMandCountForItem(
+      item,
+      events,
+      observation: observation,
+    );
+    final _VbmappObservationTimerState? timerState = observation;
+    final int actualObservationSeconds =
+        timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
+    final int effectiveObservationSeconds = _effectiveObservationSecondsForItem(
+      item,
+      timerState,
+    );
+    final int multiWordCount = item.itemCode == 'MAND_08M'
+        ? _mandPhraseQualifiedCountForItem(
+            item,
+            events,
+            observation: observation,
+          )
+        : 0;
+    try {
+      final VbmappDraftDetail detail = await widget.client.saveDraftItem(
+        _token,
+        <String, dynamic>{
+          'draftId': draftId,
+          'moduleCode': item.moduleCode,
+          'itemCode': item.itemCode,
+          'score': suggestedScore,
+          'suggestedScore': suggestedScore,
+          'teacherConfirmed': false,
+          'recordStatus': 'auto_suggested',
+          'evidence': <String, dynamic>{
+            'mandEvents': events
+                .map((_VbmappMandEvent event) => event.toJson())
+                .toList(growable: false),
+            'qualifiedCount': qualifiedCount,
+            'uniqueTargetCount': qualifiedCount,
+            if (timerState != null) 'timer': timerState.toJson(),
+            if (timerState != null)
+              'actualObservationMinutes':
+                  actualObservationSeconds / Duration.secondsPerMinute,
+            if (timerState != null)
+              'actualObservationSeconds': actualObservationSeconds,
+            if (timerState != null)
+              'effectiveObservationSeconds': effectiveObservationSeconds,
+            if (timerState != null)
+              'effectiveObservationMinutes':
+                  effectiveObservationSeconds / Duration.secondsPerMinute,
+            if (item.itemCode == 'MAND_08M')
+              'multiWordQualifiedCount': multiWordCount,
+            if (item.itemCode == 'MAND_03M')
+              'generalizationCounts': _mandGeneralizationCounts(events),
+            'scoreBasis': item.itemCode == 'MAND_03M'
+                ? '系统按互动对象、环境、不同例子的泛化记录建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。'
+                : _sharedTimedMandItemCodes.contains(item.itemCode)
+                    ? _mandTimedScoreBasisText(
+                        item,
+                        suggestedScore,
+                        qualifiedCount,
+                        actualObservationSeconds,
+                        multiWordCount,
+                      )
+                    : '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。',
+          },
+        },
+      );
+      if (!mounted) {
+        return;
+      }
+      setState(() {
+        _draftId = detail.id > 0 ? detail.id : _draftId;
+        _autoSaveText = '已保存 ${_formatClock(DateTime.now())}';
+      });
+    } on Object catch (error) {
+      if (!mounted) {
+        return;
+      }
+      setState(() => _autoSaveText = '保存失败');
+      _showMessage('VB-MAPP单题证据保存失败：$error', tone: PadMessageTone.error);
+    }
+  }
+
+  void _restoreMandEvents(
+    Map<String, Map<String, Map<String, dynamic>>> itemResponses,
+  ) {
+    _mandEventsByItem.clear();
+    final Map<String, Map<String, dynamic>> milestoneResponses =
+        itemResponses['milestones'] ?? const <String, Map<String, dynamic>>{};
+    milestoneResponses.forEach((String itemCode, Map<String, dynamic> value) {
+      final Object? evidenceRaw = value['evidence'];
+      if (evidenceRaw is! Map) {
+        return;
+      }
+      final Object? eventsRaw = evidenceRaw['mandEvents'];
+      if (eventsRaw is! List) {
+        return;
+      }
+      final List<_VbmappMandEvent> events = eventsRaw
+          .map((Object? raw) => _VbmappMandEvent.fromJson(_dynamicMap(raw)))
+          .where((_VbmappMandEvent event) => event.isNotEmpty)
+          .toList(growable: false);
+      if (events.isNotEmpty) {
+        _mandEventsByItem[_mandStorageKeyFor(itemCode)] = events;
+      }
+    });
+  }
+
+  void _restoreMandObservations(
+    Map<String, Map<String, Map<String, dynamic>>> itemResponses,
+  ) {
+    _mandObservationByItem.clear();
+    final Map<String, Map<String, dynamic>> milestoneResponses =
+        itemResponses['milestones'] ?? const <String, Map<String, dynamic>>{};
+    milestoneResponses.forEach((String itemCode, Map<String, dynamic> value) {
+      final Object? evidenceRaw = value['evidence'];
+      if (evidenceRaw is! Map) {
+        return;
+      }
+      final Object? timerRaw = evidenceRaw['timer'];
+      if (timerRaw is! Map) {
+        return;
+      }
+      final _VbmappObservationTimerState observation =
+          _VbmappObservationTimerState.fromJson(_dynamicMap(timerRaw));
+      if (!observation.isEmpty) {
+        _mandObservationByItem[_mandStorageKeyFor(itemCode)] = observation;
+      }
+    });
+  }
+
+  num? _scoreFor(_VbmappItem item) {
+    switch (item.moduleCode) {
+      case 'milestones':
+        return _milestoneScores[item.itemCode];
+      case 'barriers':
+        return _barrierScores[item.itemCode];
+      case 'transition':
+        return _transitionScores[item.itemCode];
+    }
+    return null;
+  }
+
+  VbmappItemResponseSchema? _schemaFor(_VbmappItem item) {
+    return _itemSchemas[_schemaKey(item.moduleCode, item.itemCode)];
+  }
+
+  VbmappMaterialProfile? _materialProfileFor(
+    _VbmappItem item,
+    VbmappItemResponseSchema? schema,
+  ) {
+    final VbmappMaterialProfile? itemProfile =
+        _itemMaterialProfiles[item.itemCode];
+    if (itemProfile != null) {
+      return itemProfile;
+    }
+    if (schema == null || schema.materialProfileId.isEmpty) {
+      return null;
+    }
+    return _materialProfiles[schema.materialProfileId];
+  }
+
+  List<_VbmappMandEvent> _mandEventsFor(_VbmappItem item) {
+    return _mandStoredEventsFor(item);
+  }
+
+  _VbmappObservationTimerState? _mandObservationFor(_VbmappItem item) {
+    return _mandObservationByItem[_mandStorageKeyFor(item.itemCode)];
+  }
+
+  _VbmappItem? _activeMandObservationItem() {
+    final _VbmappObservationTimerState? sharedObservation =
+        _mandObservationByItem[_sharedTimedMandStorageKey];
+    if (sharedObservation != null &&
+        sharedObservation.hasStarted &&
+        !sharedObservation.ended) {
+      return _milestoneItems.firstWhere(
+        (_VbmappItem item) => item.itemCode == 'MAND_04M',
+        orElse: () => _selectedItem,
+      );
+    }
+    for (final _VbmappItem item in _milestoneItems) {
+      final _VbmappObservationTimerState? observation =
+          _mandObservationByItem[item.itemCode];
+      if (observation != null && observation.hasStarted && !observation.ended) {
+        return item;
+      }
+    }
+    return null;
+  }
+
+  int _activeMandObservationQualifiedCount(_VbmappItem item) {
+    return _qualifiedMandCountForItem(
+      item,
+      _mandStoredEventsFor(item),
+      observation: _mandObservationFor(item),
+    );
+  }
+
+  List<_VbmappMandEvent> _mandStoredEventsFor(_VbmappItem item) {
+    return _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] ??
+        const <_VbmappMandEvent>[];
+  }
+
+  bool _hasSharedTimedMandEvidence() {
+    final List<_VbmappMandEvent> sharedEvents =
+        _mandEventsByItem[_sharedTimedMandStorageKey] ??
+            const <_VbmappMandEvent>[];
+    if (sharedEvents.isNotEmpty) {
+      return true;
+    }
+    final _VbmappObservationTimerState? sharedObservation =
+        _mandObservationByItem[_sharedTimedMandStorageKey];
+    if (sharedObservation == null) {
+      return false;
+    }
+    return sharedObservation.hasStarted ||
+        sharedObservation.accumulatedSeconds > 0 ||
+        sharedObservation.ended;
+  }
+
+  void _clearBuggedSharedTimedMandScores() {
+    const Set<String> codes = _sharedTimedMandItemCodes;
+    final bool allZero = codes.every(
+      (String code) => (_milestoneScores[code] ?? -1) == 0,
+    );
+    if (!allZero) {
+      return;
+    }
+    for (final String code in codes) {
+      _milestoneScores.remove(code);
+    }
+  }
+
+  String _mandStorageKeyFor(String itemCode) {
+    return _sharedTimedMandItemCodes.contains(itemCode)
+        ? _sharedTimedMandStorageKey
+        : itemCode;
+  }
+
+  void _syncSharedTimedMandScores() {
+    if (!_hasSharedTimedMandEvidence()) {
+      return;
+    }
+    for (final _VbmappItem item in _milestoneItems) {
+      if (!_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        continue;
+      }
+      final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+      final _VbmappObservationTimerState? observation =
+          _mandObservationFor(item);
+      _milestoneScores[item.itemCode] = _suggestMandScore(
+        item,
+        events,
+        observation: observation,
+      );
+    }
+  }
+
+  void _syncObservationTicker() {
+    _observationTicker?.cancel();
+    _observationTicker = null;
+    final _VbmappItem? activeItem = _activeMandObservationItem();
+    final _VbmappObservationTimerState? observation =
+        activeItem == null ? null : _mandObservationFor(activeItem);
+    if (observation == null || !observation.isRunning) {
+      return;
+    }
+    _observationTicker = Timer.periodic(const Duration(seconds: 1), (
+      Timer timer,
+    ) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      setState(() {});
+    });
+  }
+
+  Future<void> _openActiveMandQuickRecord() async {
+    final _VbmappItem? item = _activeMandObservationItem();
+    if (item == null) {
+      return;
+    }
+    final VbmappMaterialProfile? profile =
+        _materialProfileFor(item, _schemaFor(item));
+    final _VbmappMandEvent? event = await showDialog<_VbmappMandEvent>(
+      context: context,
+      builder: (BuildContext context) {
+        return PadDialogViewport(
+          child: _VbmappMand4QuickRecordDialog(materialProfile: profile),
+        );
+      },
+    );
+    if (event == null) {
+      return;
+    }
+    await _addMandEvent(item, event);
+  }
+
+  Future<void> _confirmFinishActiveMandObservation() async {
+    final _VbmappItem? item = _activeMandObservationItem();
+    if (item == null) {
+      return;
+    }
+    final bool? confirmed = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return const PadDialogViewport(
+          child: _VbmappObservationFinishConfirmDialog(),
+        );
+      },
+    );
+    if (confirmed != true) {
+      return;
+    }
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    if (observation == null) {
+      return;
+    }
+    await _updateMandObservation(item, observation.finish(DateTime.now()));
+  }
+}
