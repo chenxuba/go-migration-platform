@@ -302,14 +302,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     VbmappItemResponseSchema? schema,
   }) {
     final VbmappItemResponseSchema? resolvedSchema = schema ?? _schemaFor(item);
-    final VbmappSharedObservationRule? rule =
-        resolvedSchema?.smartRules.sharedObservation;
-    if (rule != null && rule.enabled) {
-      return rule.groupId.trim().isEmpty
-          ? _fallbackSharedTimedMandGroupIdFor(item.itemCode)
-          : rule.groupId.trim();
-    }
-    return _fallbackSharedTimedMandGroupIdFor(item.itemCode);
+    return _timedMandSharedGroupIdFor(item, responseSchema: resolvedSchema);
   }
 
   String _sharedTimedMandStorageKeyForGroup(String groupId) {
@@ -545,16 +538,6 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         .toList(growable: false);
   }
 
-  String? _fallbackSharedTimedMandGroupIdFor(String itemCode) {
-    if (_vbmappMandLevel2TimedItemCodes.contains(itemCode)) {
-      return _vbmappMandLevel2TimedGroupId;
-    }
-    if (_vbmappMandLevel3TimedItemCodes.contains(itemCode)) {
-      return _vbmappMandLevel3TimedGroupId;
-    }
-    return null;
-  }
-
   Future<void> _openActiveMandQuickRecord([_VbmappItem? sourceItem]) async {
     final _VbmappItem? item = sourceItem ?? _activeMandObservationItem();
     if (item == null) {
@@ -612,11 +595,15 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     if (item == null) {
       return;
     }
+    final String? groupId = _sharedTimedMandGroupIdFor(item);
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
-        return const PadDialogViewport(
-          child: _VbmappObservationFinishConfirmDialog(),
+        return PadDialogViewport(
+          child: _VbmappObservationFinishConfirmDialog(
+            title: _mandObservationFinishTitleForGroup(groupId),
+            message: _mandObservationFinishMessageForGroup(groupId),
+          ),
         );
       },
     );

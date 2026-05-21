@@ -4261,7 +4261,7 @@ void main() {
     expect(find.text('呈现物品'), findsOneWidget);
     expect(find.text('未呈现物品'), findsOneWidget);
     expect(find.text('口头辅助'), findsNothing);
-    expect(find.text('不同 0/5'), findsOneWidget);
+    expect(find.text('有效 0/5'), findsOneWidget);
     expect(find.text('建议 0分'), findsOneWidget);
     expect(find.text('球'), findsOneWidget);
     expect(find.text('音乐'), findsNothing);
@@ -4286,10 +4286,11 @@ void main() {
     await tester
         .tap(find.byKey(const ValueKey<String>('vbmapp-mand4-stop-timer')));
     await tester.pumpAndSettle();
-    expect(find.text('确认结束观察？'), findsOneWidget);
+    expect(find.text('结束本组观察？'), findsOneWidget);
+    expect(find.textContaining('4M、8M、9M'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    expect(find.text('确认结束观察？'), findsNothing);
+    expect(find.text('结束本组观察？'), findsNothing);
 
     final Finder requestField = find.byType(TextField).first;
     await tester.enterText(requestField, '泡泡');
@@ -4300,7 +4301,7 @@ void main() {
     await tester.tap(find.text('记录本次要求'));
     await tester.pumpAndSettle();
 
-    expect(find.text('不同 2/5'), findsOneWidget);
+    expect(find.text('有效 2/5'), findsOneWidget);
     expect(find.text('建议 0.5分'), findsOneWidget);
     expect(client.saveDraftItemCalls, 3);
 
@@ -4384,6 +4385,14 @@ void main() {
 
     expect(find.text('提要求观察中'), findsOneWidget);
     expect(find.textContaining('4M 2/5'), findsWidgets);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('vbmapp-active-observation-finish')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('结束本组观察？'), findsOneWidget);
+    expect(find.textContaining('4M、8M、9M'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
     expect(client.saveDraftItemCalls, 3);
 
     final Map<String, dynamic> payload =
@@ -4700,6 +4709,13 @@ void main() {
     expect(find.text('副词'), findsOneWidget);
     expect(find.text('对象'), findsNothing);
     expect(find.text('目标'), findsNothing);
+    await tester
+        .tap(find.byKey(const ValueKey<String>('vbmapp-mand4-stop-timer')));
+    await tester.pumpAndSettle();
+    expect(find.text('结束本组观察？'), findsOneWidget);
+    expect(find.textContaining('11M、13M'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
 
     await tester.tap(find.text('下一题'));
     await tester.pumpAndSettle();

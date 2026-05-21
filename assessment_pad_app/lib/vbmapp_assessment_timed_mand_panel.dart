@@ -557,11 +557,18 @@ class _VbmappTimedMandInlinePanelState
   }
 
   Future<void> _confirmFinishObservation() async {
+    final String? groupId = _timedMandSharedGroupIdFor(
+      widget.item,
+      responseSchema: widget.responseSchema,
+    );
     final bool? confirmed = await showDialog<bool>(
       context: context,
       builder: (BuildContext context) {
-        return const PadDialogViewport(
-          child: _VbmappObservationFinishConfirmDialog(),
+        return PadDialogViewport(
+          child: _VbmappObservationFinishConfirmDialog(
+            title: _mandObservationFinishTitleForGroup(groupId),
+            message: _mandObservationFinishMessageForGroup(groupId),
+          ),
         );
       },
     );
@@ -654,4 +661,37 @@ class _VbmappTimedMandChoiceSpec {
   final String value;
   final List<String> values;
   final ValueChanged<String> onChanged;
+}
+
+String? _timedMandSharedGroupIdFor(
+  _VbmappItem item, {
+  VbmappItemResponseSchema? responseSchema,
+}) {
+  final VbmappSharedObservationRule? rule =
+      responseSchema?.smartRules.sharedObservation;
+  if (rule != null && rule.enabled && rule.groupId.trim().isNotEmpty) {
+    return rule.groupId.trim();
+  }
+  if (_vbmappMandLevel2TimedItemCodes.contains(item.itemCode)) {
+    return _vbmappMandLevel2TimedGroupId;
+  }
+  if (_vbmappMandLevel3TimedItemCodes.contains(item.itemCode)) {
+    return _vbmappMandLevel3TimedGroupId;
+  }
+  return null;
+}
+
+String _mandObservationFinishTitleForGroup(String? groupId) {
+  return groupId == null ? '确认结束观察？' : '结束本组观察？';
+}
+
+String _mandObservationFinishMessageForGroup(String? groupId) {
+  switch (groupId) {
+    case _vbmappMandLevel2TimedGroupId:
+      return '将同时结束 4M、8M、9M 的观察窗。结束后会保留当前计时和记录；如只是暂时离开，建议点暂停。';
+    case _vbmappMandLevel3TimedGroupId:
+      return '将同时结束 11M、13M 的观察窗。结束后会保留当前计时和记录；如只是暂时离开，建议点暂停。';
+    default:
+      return '结束后会保留当前计时和记录。如只是暂时离开，建议点暂停。';
+  }
 }

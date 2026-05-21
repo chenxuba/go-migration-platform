@@ -470,7 +470,13 @@ class _VbmappTimedMandTargetButton extends StatelessWidget {
 }
 
 class _VbmappObservationFinishConfirmDialog extends StatelessWidget {
-  const _VbmappObservationFinishConfirmDialog();
+  const _VbmappObservationFinishConfirmDialog({
+    this.title = '确认结束观察？',
+    this.message = '结束后会保留当前计时和记录。如只是暂时离开，建议点暂停。',
+  });
+
+  final String title;
+  final String message;
 
   @override
   Widget build(BuildContext context) {
@@ -490,18 +496,18 @@ class _VbmappObservationFinishConfirmDialog extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: <Widget>[
-              const Text(
-                '确认结束观察？',
-                style: TextStyle(
+              Text(
+                title,
+                style: const TextStyle(
                   color: _VbmappColors.ink,
                   fontSize: 18,
                   fontWeight: FontWeight.w900,
                 ),
               ),
               const SizedBox(height: 10),
-              const Text(
-                '结束后会保留当前计时和记录。如只是暂时离开，建议点暂停。',
-                style: TextStyle(
+              Text(
+                message,
+                style: const TextStyle(
                   color: _VbmappColors.body,
                   fontSize: 13,
                   height: 1.45,
