@@ -3,6 +3,7 @@ part of 'vbmapp_assessment_page.dart';
 class _VbmappTimedMandInlinePanel extends StatefulWidget {
   const _VbmappTimedMandInlinePanel({
     required this.item,
+    required this.responseSchema,
     required this.materialProfile,
     required this.events,
     required this.observation,
@@ -12,6 +13,7 @@ class _VbmappTimedMandInlinePanel extends StatefulWidget {
   });
 
   final _VbmappItem item;
+  final VbmappItemResponseSchema? responseSchema;
   final VbmappMaterialProfile? materialProfile;
   final List<_VbmappMandEvent> events;
   final _VbmappObservationTimerState? observation;
@@ -87,6 +89,7 @@ class _VbmappTimedMandInlinePanelState
         item: widget.item,
         events: widget.events,
         observation: widget.observation,
+        responseSchema: widget.responseSchema,
       );
 
   @override
@@ -128,11 +131,13 @@ class _VbmappTimedMandInlinePanelState
       widget.item,
       widget.events,
       observation: widget.observation,
+      responseSchema: widget.responseSchema,
     );
     final double suggestedScore = _suggestMandScore(
       widget.item,
       widget.events,
       observation: widget.observation,
+      responseSchema: widget.responseSchema,
     );
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
@@ -431,8 +436,11 @@ class _VbmappTimedMandInlinePanelState
             event,
             observation: widget.observation,
           ),
-          metaTextBuilder: (_VbmappMandEvent event) =>
-              _mandRecordMetaText(event, item: widget.item),
+          metaTextBuilder: (_VbmappMandEvent event) => _mandRecordMetaText(
+            event,
+            item: widget.item,
+            responseSchema: widget.responseSchema,
+          ),
         ),
         const SizedBox(height: 10),
         Text(

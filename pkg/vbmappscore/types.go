@@ -288,6 +288,33 @@ type ResponseSchemaItemDesign struct {
 	UIEmphasis            []string `json:"uiEmphasis,omitempty"`
 }
 
+type ResponseSchemaSmartRules struct {
+	MandDistinct *ResponseSchemaMandDistinctRule `json:"mandDistinct,omitempty"`
+	MandPhrase   *ResponseSchemaMandPhraseRule   `json:"mandPhrase,omitempty"`
+}
+
+type ResponseSchemaMandDistinctRule struct {
+	Strategy             string                                  `json:"strategy,omitempty"`
+	KindAware            bool                                    `json:"kindAware"`
+	PreferExplicitTarget bool                                    `json:"preferExplicitTarget"`
+	WeakValues           []string                                `json:"weakValues,omitempty"`
+	PhraseGroups         []ResponseSchemaMandDistinctPhraseGroup `json:"phraseGroups,omitempty"`
+}
+
+type ResponseSchemaMandDistinctPhraseGroup struct {
+	Kind      string   `json:"kind,omitempty"`
+	Canonical string   `json:"canonical"`
+	Variants  []string `json:"variants,omitempty"`
+}
+
+type ResponseSchemaMandPhraseRule struct {
+	Strategy          string   `json:"strategy,omitempty"`
+	IgnoredPrefixes   []string `json:"ignoredPrefixes,omitempty"`
+	MultiWordPrefixes []string `json:"multiWordPrefixes,omitempty"`
+	MultiWordSuffixes []string `json:"multiWordSuffixes,omitempty"`
+	MultiWordExact    []string `json:"multiWordExact,omitempty"`
+}
+
 type MilestoneResponseSchema struct {
 	ModuleCode           string                       `json:"moduleCode"`
 	MilestoneID          string                       `json:"milestoneId"`
@@ -311,6 +338,7 @@ type MilestoneResponseSchema struct {
 	AutoCompletion       ResponseSchemaAutoCompletion `json:"autoCompletion"`
 	RelatedItems         []ResponseSchemaRelatedItem  `json:"relatedItems,omitempty"`
 	ItemDesign           ResponseSchemaItemDesign     `json:"itemDesign,omitempty"`
+	SmartRules           ResponseSchemaSmartRules     `json:"smartRules,omitempty"`
 	SourceFiles          []string                     `json:"sourceFiles,omitempty"`
 }
 

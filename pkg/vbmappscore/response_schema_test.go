@@ -105,6 +105,34 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 		t.Fatalf("MAND_03M should compute generalization indicators: %+v", mand3.AutoCompletion.ComputedIndicators)
 	}
 
+	mand9 := findMilestoneResponseSchema(t, milestones, "MAND_09M")
+	if mand9.SmartRules.MandDistinct == nil {
+		t.Fatalf("MAND_09M should expose mand distinct smart rules: %+v", mand9.SmartRules)
+	}
+	if mand9.SmartRules.MandDistinct.Strategy != "semantic_core_v1" {
+		t.Fatalf("unexpected MAND_09M distinct strategy: %+v", mand9.SmartRules.MandDistinct)
+	}
+	if !contains(mand9.SmartRules.MandDistinct.WeakValues, "这个") {
+		t.Fatalf("expected weak values on MAND_09M smart rules: %+v", mand9.SmartRules.MandDistinct)
+	}
+	if !containsPhraseGroup(mand9.SmartRules.MandDistinct.PhraseGroups, "activity", "一起玩") {
+		t.Fatalf("expected activity phrase group on MAND_09M smart rules: %+v", mand9.SmartRules.MandDistinct.PhraseGroups)
+	}
+
+	mand8 := findMilestoneResponseSchema(t, milestones, "MAND_08M")
+	if mand8.SmartRules.MandPhrase == nil {
+		t.Fatalf("MAND_08M should expose mand phrase smart rules: %+v", mand8.SmartRules)
+	}
+	if mand8.SmartRules.MandPhrase.Strategy != "semantic_phrase_v1" {
+		t.Fatalf("unexpected MAND_08M phrase strategy: %+v", mand8.SmartRules.MandPhrase)
+	}
+	if !contains(mand8.SmartRules.MandPhrase.IgnoredPrefixes, "我想要") {
+		t.Fatalf("expected ignored prefix on MAND_08M smart rules: %+v", mand8.SmartRules.MandPhrase)
+	}
+	if !contains(mand8.AutoCompletion.ComputedIndicators, "multi_word_qualified_count") {
+		t.Fatalf("MAND_08M should compute multi-word indicator: %+v", mand8.AutoCompletion.ComputedIndicators)
+	}
+
 	if barriers[0].UIPattern != "barrier_rubric_with_behavior_log" {
 		t.Fatalf("unexpected barrier ui pattern: %s", barriers[0].UIPattern)
 	}
@@ -136,6 +164,15 @@ func contains(values []string, value string) bool {
 func containsMaterialSuggestion(values []ResponseMaterialSuggestion, value string) bool {
 	for _, candidate := range values {
 		if candidate.Name == value {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPhraseGroup(values []ResponseSchemaMandDistinctPhraseGroup, kind, canonical string) bool {
+	for _, candidate := range values {
+		if candidate.Kind == kind && candidate.Canonical == canonical {
 			return true
 		}
 	}

@@ -318,7 +318,8 @@
       "computedIndicators": [
         "unique_mand_count",
         "prompt_filtered_count",
-        "actual_observation_minutes"
+        "actual_observation_minutes",
+        "multi_word_qualified_count"
       ],
       "requiresTeacherConfirmation": true,
       "teacherCanOverride": true
@@ -3575,7 +3576,8 @@
       "computedIndicators": [
         "unique_mand_count",
         "prompt_filtered_count",
-        "actual_observation_minutes"
+        "actual_observation_minutes",
+        "multi_word_qualified_count"
       ],
       "requiresTeacherConfirmation": true,
       "teacherCanOverride": true
@@ -3601,6 +3603,52 @@
         "自发事件一键记录",
         "自动统计不同要求"
       ]
+    },
+    "smartRules": {
+      "mandPhrase": {
+        "strategy": "semantic_phrase_v1",
+        "ignoredPrefixes": [
+          "我想要"
+        ],
+        "multiWordPrefixes": [
+          "打开",
+          "帮我",
+          "给我",
+          "让我",
+          "带我",
+          "一起",
+          "还要",
+          "再来",
+          "我要",
+          "我们",
+          "该我",
+          "跑",
+          "倒",
+          "推",
+          "拿",
+          "去",
+          "来",
+          "开"
+        ],
+        "multiWordSuffixes": [
+          "快点",
+          "一下",
+          "一会",
+          "给我",
+          "帮我",
+          "让我",
+          "一起",
+          "该我了",
+          "不要",
+          "好了",
+          "开门"
+        ],
+        "multiWordExact": [
+          "该我了",
+          "跑快点",
+          "倒果汁"
+        ]
+      }
     },
     "sourceFiles": [
       "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
@@ -3688,6 +3736,107 @@
         "自发事件一键记录",
         "自动统计不同要求"
       ]
+    },
+    "smartRules": {
+      "mandDistinct": {
+        "strategy": "semantic_core_v1",
+        "kindAware": true,
+        "preferExplicitTarget": true,
+        "weakValues": [
+          "这个",
+          "那个",
+          "它",
+          "再来",
+          "还要",
+          "更多"
+        ],
+        "phraseGroups": [
+          {
+            "kind": "action",
+            "canonical": "出去",
+            "variants": [
+              "出去一下",
+              "去外面",
+              "去外面一下",
+              "到外面去"
+            ]
+          },
+          {
+            "kind": "action",
+            "canonical": "该我了",
+            "variants": [
+              "轮到我了"
+            ]
+          },
+          {
+            "kind": "action",
+            "canonical": "过来",
+            "variants": [
+              "过来一下"
+            ]
+          },
+          {
+            "kind": "action",
+            "canonical": "再来",
+            "variants": [
+              "再来一次",
+              "来一次"
+            ]
+          },
+          {
+            "kind": "action",
+            "canonical": "推",
+            "variants": [
+              "推我",
+              "推一下",
+              "推快点",
+              "推高点"
+            ]
+          },
+          {
+            "kind": "activity",
+            "canonical": "一起玩",
+            "variants": [
+              "我们一起玩",
+              "一起玩一下",
+              "一起玩会"
+            ]
+          },
+          {
+            "kind": "activity",
+            "canonical": "秋千",
+            "variants": [
+              "玩秋千",
+              "荡秋千"
+            ]
+          },
+          {
+            "kind": "activity",
+            "canonical": "音乐",
+            "variants": [
+              "听音乐",
+              "放音乐"
+            ]
+          },
+          {
+            "kind": "activity",
+            "canonical": "泡泡",
+            "variants": [
+              "吹泡泡",
+              "玩泡泡"
+            ]
+          },
+          {
+            "kind": "activity",
+            "canonical": "转圈",
+            "variants": [
+              "转圈圈",
+              "转一圈",
+              "转一下"
+            ]
+          }
+        ]
+      }
     },
     "sourceFiles": [
       "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",

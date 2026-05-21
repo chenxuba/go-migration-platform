@@ -20,6 +20,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
 
   Future<void> _addMandEvent(_VbmappItem item, _VbmappMandEvent event) async {
     final DateTime now = DateTime.now();
+    final VbmappItemResponseSchema? schema = _schemaFor(item);
     final List<_VbmappMandEvent> events =
         List<_VbmappMandEvent>.from(_mandStoredEventsFor(item))
           ..add(
@@ -35,6 +36,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       item,
       events,
       observation: observation,
+      responseSchema: schema,
     );
     setState(() {
       _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
@@ -49,6 +51,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       events,
       suggestedScore,
       observation: observation,
+      responseSchema: schema,
     );
   }
 
@@ -58,12 +61,14 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     if (index < 0 || index >= events.length) {
       return;
     }
+    final VbmappItemResponseSchema? schema = _schemaFor(item);
     events.removeAt(index);
     final _VbmappObservationTimerState? observation = _mandObservationFor(item);
     final double suggestedScore = _suggestMandScore(
       item,
       events,
       observation: observation,
+      responseSchema: schema,
     );
     setState(() {
       if (events.isEmpty) {
@@ -82,6 +87,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       events,
       suggestedScore,
       observation: observation,
+      responseSchema: schema,
     );
   }
 
@@ -90,10 +96,12 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     _VbmappObservationTimerState observation,
   ) async {
     final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+    final VbmappItemResponseSchema? schema = _schemaFor(item);
     final double suggestedScore = _suggestMandScore(
       item,
       events,
       observation: observation,
+      responseSchema: schema,
     );
     setState(() {
       _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
@@ -109,6 +117,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       events,
       suggestedScore,
       observation: observation,
+      responseSchema: schema,
     );
   }
 
@@ -117,6 +126,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     List<_VbmappMandEvent> events,
     double suggestedScore, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) async {
     if (_token.trim().isEmpty) {
       _showMessage('请先登录后再保存证据', tone: PadMessageTone.error);
@@ -130,6 +140,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       item,
       events,
       observation: observation,
+      responseSchema: responseSchema,
     );
     final _VbmappObservationTimerState? timerState = observation;
     final int actualObservationSeconds =
@@ -146,6 +157,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
                 item,
                 events,
                 observation: observation,
+                responseSchema: responseSchema,
               )
             : 0;
     try {
@@ -161,6 +173,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
             events,
             suggestedScore,
             observation: observation,
+            responseSchema: responseSchema,
           ),
         );
       } else {
@@ -331,6 +344,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       item,
       _mandStoredEventsFor(item),
       observation: _mandObservationFor(item),
+      responseSchema: _schemaFor(item),
     );
   }
 
@@ -390,6 +404,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         item,
         events,
         observation: observation,
+        responseSchema: _schemaFor(item),
       );
     }
   }

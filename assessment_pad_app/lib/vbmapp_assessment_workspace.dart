@@ -794,6 +794,7 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
     if (_isTimedMandItemCode(item.itemCode)) {
       return _VbmappTimedMandInlinePanel(
         item: item,
+        responseSchema: schema,
         materialProfile: materialProfile,
         events: mandEvents,
         observation: mandObservation,

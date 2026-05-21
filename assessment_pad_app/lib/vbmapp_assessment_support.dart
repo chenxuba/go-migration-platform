@@ -558,9 +558,16 @@ class _VbmappTimedMandStrategy {
     return showPromptSelector ? promptMode : '';
   }
 
-  String uniqueKeyForEvent(_VbmappMandEvent event) {
-    if (itemCode == 'MAND_09M') {
-      return _normalizeMandDistinctKey(event);
+  String uniqueKeyForEvent(
+    _VbmappMandEvent event, {
+    VbmappItemResponseSchema? responseSchema,
+  }) {
+    if (itemCode == 'MAND_09M' ||
+        responseSchema?.smartRules.mandDistinct != null) {
+      return _normalizeMandDistinctKey(
+        event,
+        distinctRule: responseSchema?.smartRules.mandDistinct,
+      );
     }
     return _defaultMandUniqueKey(event);
   }
@@ -588,6 +595,7 @@ class _VbmappTimedMandStrategy {
     required _VbmappItem item,
     required List<_VbmappMandEvent> events,
     required _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     final _VbmappObservationTimerState timerState =
         (observation ?? const _VbmappObservationTimerState())
@@ -596,6 +604,7 @@ class _VbmappTimedMandStrategy {
       item,
       events,
       observation: observation,
+      responseSchema: responseSchema,
     );
     final bool observationMet = timerState.elapsedSecondsAt(DateTime.now()) >=
         plannedMinutes * Duration.secondsPerMinute;
@@ -621,13 +630,17 @@ class _VbmappTimedMandStrategy {
     _VbmappItem item,
     List<_VbmappMandEvent> events, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     final Set<String> uniqueTargets = <String>{};
     for (final _VbmappMandEvent event in events) {
       if (!countsEvent(item, event, observation: observation)) {
         continue;
       }
-      final String uniqueKey = uniqueKeyForEvent(event);
+      final String uniqueKey = uniqueKeyForEvent(
+        event,
+        responseSchema: responseSchema,
+      );
       if (uniqueKey.isNotEmpty) {
         uniqueTargets.add(uniqueKey);
       }
@@ -639,14 +652,21 @@ class _VbmappTimedMandStrategy {
     _VbmappItem item,
     List<_VbmappMandEvent> events, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     final Set<String> uniqueTargets = <String>{};
     for (final _VbmappMandEvent event in events) {
       if (!countsEvent(item, event, observation: observation) ||
-          !_isLikelyMultiWordMand(event)) {
+          !_isLikelyMultiWordMand(
+            event,
+            phraseRule: responseSchema?.smartRules.mandPhrase,
+          )) {
         continue;
       }
-      final String uniqueKey = uniqueKeyForEvent(event);
+      final String uniqueKey = uniqueKeyForEvent(
+        event,
+        responseSchema: responseSchema,
+      );
       if (uniqueKey.isNotEmpty) {
         uniqueTargets.add(uniqueKey);
       }
@@ -681,6 +701,7 @@ class _VbmappTimedMandStrategy {
   String recordMetaText(
     _VbmappMandEvent event, {
     _VbmappItem? item,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     final List<String> values = <String>[];
 
@@ -696,12 +717,20 @@ class _VbmappTimedMandStrategy {
     addMeta(event.environment);
     addMeta(event.targetKind);
     if (multiWordQualifiedMinCount > 0) {
-      addMeta(_assessMandPhrase(event).label);
+      addMeta(
+        _assessMandPhrase(
+          event,
+          phraseRule: responseSchema?.smartRules.mandPhrase,
+        ).label,
+      );
     } else {
       addMeta(event.phraseLevel);
     }
     if (item?.itemCode == 'MAND_09M') {
-      final String uniqueKey = uniqueKeyForEvent(event);
+      final String uniqueKey = uniqueKeyForEvent(
+        event,
+        responseSchema: responseSchema,
+      );
       if (uniqueKey.isNotEmpty && uniqueKey != _mandRequestText(event).trim()) {
         addMeta('归一:$uniqueKey');
       }
@@ -718,12 +747,21 @@ class _VbmappTimedMandStrategy {
     _VbmappItem item,
     List<_VbmappMandEvent> events, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
-    final int qualifiedCountValue =
-        qualifiedCount(item, events, observation: observation);
+    final int qualifiedCountValue = qualifiedCount(
+      item,
+      events,
+      observation: observation,
+      responseSchema: responseSchema,
+    );
     if (multiWordQualifiedMinCount > 0) {
-      final int multiWordCount =
-          qualifiedMultiWordCount(item, events, observation: observation);
+      final int multiWordCount = qualifiedMultiWordCount(
+        item,
+        events,
+        observation: observation,
+        responseSchema: responseSchema,
+      );
       if (qualifiedCountValue >= onePointCount(item) &&
           multiWordCount >= multiWordQualifiedMinCount) {
         return 1;
@@ -770,22 +808,35 @@ class _VbmappTimedMandStrategy {
     List<_VbmappMandEvent> events,
     double suggestedScore, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     final _VbmappObservationTimerState? timerState = observation;
-    final int qualifiedCountValue =
-        qualifiedCount(item, events, observation: observation);
+    final int qualifiedCountValue = qualifiedCount(
+      item,
+      events,
+      observation: observation,
+      responseSchema: responseSchema,
+    );
     final int actualObservationSeconds =
         timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
     final int effectiveObservationSeconds =
         _effectiveObservationSecondsForItem(item, timerState);
     final int multiWordCount = multiWordQualifiedMinCount > 0
-        ? qualifiedMultiWordCount(item, events, observation: observation)
+        ? qualifiedMultiWordCount(
+            item,
+            events,
+            observation: observation,
+            responseSchema: responseSchema,
+          )
         : 0;
     final List<Map<String, dynamic>> phraseEvaluations =
         multiWordQualifiedMinCount > 0
             ? events.map(((_VbmappMandEvent event) {
                 final _VbmappMandPhraseAssessment assessment =
-                    _assessMandPhrase(event);
+                    _assessMandPhrase(
+                  event,
+                  phraseRule: responseSchema?.smartRules.mandPhrase,
+                );
                 return <String, dynamic>{
                   'utterance': _mandRequestText(event),
                   'label': assessment.label,
@@ -798,15 +849,24 @@ class _VbmappTimedMandStrategy {
     final List<Map<String, dynamic>> eventUniqueKeys = events
         .map(((_VbmappMandEvent event) => <String, dynamic>{
               'utterance': _mandRequestText(event),
-              'uniqueKey': uniqueKeyForEvent(event),
+              'uniqueKey': uniqueKeyForEvent(
+                event,
+                responseSchema: responseSchema,
+              ),
               'counts': countsEvent(item, event, observation: observation),
             }))
         .toList(growable: false);
     final List<String> uniqueTargetKeys = <String>{
       for (final _VbmappMandEvent event in events)
         if (countsEvent(item, event, observation: observation) &&
-            uniqueKeyForEvent(event).isNotEmpty)
-          uniqueKeyForEvent(event),
+            uniqueKeyForEvent(
+              event,
+              responseSchema: responseSchema,
+            ).isNotEmpty)
+          uniqueKeyForEvent(
+            event,
+            responseSchema: responseSchema,
+          ),
     }.toList(growable: false);
     return <String, dynamic>{
       'qualifiedCount': qualifiedCountValue,
@@ -963,27 +1023,353 @@ String _defaultMandUniqueKey(_VbmappMandEvent event) {
   return text.toLowerCase();
 }
 
-String _normalizeMandDistinctKey(_VbmappMandEvent event) {
-  String text = _normalizeMandPhraseText(_mandRequestText(event)).toLowerCase();
+String _normalizeMandDistinctKey(
+  _VbmappMandEvent event, {
+  VbmappMandDistinctRule? distinctRule,
+}) {
+  final String requestKey = _normalizeMandSemanticCore(
+    _mandRequestText(event),
+    targetKind: event.targetKind,
+    distinctRule: distinctRule,
+  );
+  final String targetKey = _normalizeMandSemanticCore(
+    event.target,
+    targetKind: event.targetKind,
+    distinctRule: distinctRule,
+  );
+  String text = requestKey;
+  final bool preferExplicitTarget = distinctRule?.preferExplicitTarget ?? true;
+  if (preferExplicitTarget &&
+      (text.isEmpty || _isWeakMandSemanticValue(text, distinctRule)) &&
+      targetKey.isNotEmpty) {
+    text = targetKey;
+  }
+  if (text.isEmpty) {
+    return '';
+  }
+  final String kind = _normalizedMandKindKey(event.targetKind);
+  final bool kindAware = distinctRule?.kindAware ?? true;
+  return kind.isEmpty || !kindAware ? text : '$kind:$text';
+}
+
+String _normalizeMandSemanticCore(
+  String rawText, {
+  String targetKind = '',
+  VbmappMandDistinctRule? distinctRule,
+}) {
+  String text = _normalizeMandPhraseText(rawText).toLowerCase();
   if (text.isEmpty) {
     return '';
   }
 
-  text = text
-      .replaceFirst(RegExp(r'^(我想要|我要|我还要|我再要|给我|帮我|让我|替我)\s*'), '')
-      .replaceFirst(RegExp(r'^(我们一起|一起)\s*'), '')
-      .replaceFirst(RegExp(r'^(请|麻烦|想要)\s*'), '')
-      .replaceFirst(RegExp(r'^(我要个|我要吃|我要喝)\s*'), '')
-      .replaceFirst(RegExp(r'^(我想吃|我想喝)\s*'), '')
+  text = _stripMandSentenceParticles(text);
+  text = _stripMandLeadIns(text, targetKind: targetKind);
+  text = _stripMandSentenceParticles(text);
+  switch (_normalizedMandKindKey(targetKind)) {
+    case 'item':
+      text = _normalizeMandItemSemantic(text);
+      break;
+    case 'action':
+      text = _normalizeMandActionSemantic(text);
+      break;
+    case 'activity':
+      text = _normalizeMandActivitySemantic(text);
+      break;
+    default:
+      text = _normalizeMandGeneralSemantic(text);
+      break;
+  }
+  text = _applyMandDistinctPhraseGroups(
+    text,
+    kind: _normalizedMandKindKey(targetKind),
+    distinctRule: distinctRule,
+  );
+  text = _stripMandSentenceParticles(text);
+  text = text.replaceAll(RegExp(r'\s+'), '');
+  return text.trim();
+}
+
+String _stripMandLeadIns(
+  String text, {
+  String targetKind = '',
+}) {
+  String value = text.trim();
+  String previous = '';
+  while (value.isNotEmpty && value != previous) {
+    previous = value;
+    value = value
+        .replaceFirst(RegExp(r'^(请你|请|麻烦你|麻烦)\s*'), '')
+        .replaceFirst(RegExp(r'^(我想要|我还要|我再要|我要|我想|想要)\s*'), '')
+        .replaceFirst(RegExp(r'^(我要个|我要吃|我要喝|我想吃|我想喝)\s*'), '')
+        .replaceFirst(RegExp(r'^(给我|帮我|让我|替我|带我|陪我)\s*'), '')
+        .replaceFirst(RegExp(r'^(能不能|可不可以|可以|要不要)\s*'), '')
+        .replaceFirst(RegExp(r'^我们\s*(?=一起)'), '')
+        .trim();
+  }
+  if (_normalizedMandKindKey(targetKind) == 'item') {
+    value = value
+        .replaceFirst(RegExp(r'^(来点|来个|来瓶|来份|来一[个份瓶杯碗张本只串盒包])\s*'), '')
+        .trim();
+  }
+  return value;
+}
+
+String _stripMandSentenceParticles(String text) {
+  return text
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .replaceFirst(RegExp(r'(吧|呀|啊|呢|啦|嘛|哦|喔|呗|哇)+$'), '')
       .trim();
+}
 
-  text = text.replaceAll(RegExp(r'(吧|呀|啊|呢|啦|嘛|哦|喔)$'), '').trim();
+String _normalizeMandGeneralSemantic(String text) {
+  String value = text.trim();
+  if (value.isEmpty) {
+    return '';
+  }
+  value = value
+      .replaceAll(RegExp(r'\s+'), '')
+      .replaceAll('一会儿', '一会')
+      .replaceAll('快一点', '快点')
+      .replaceAll('慢一点', '慢点')
+      .replaceAll('一下下', '一下')
+      .replaceAll('一下儿', '一下');
+  if (RegExp(r'^(.)(一)\1$').hasMatch(value)) {
+    value = value.substring(0, 1);
+  }
+  return value.trim();
+}
 
-  if (text.isEmpty) {
-    text = _normalizeMandPhraseText(_mandRequestText(event)).toLowerCase();
+String _normalizeMandItemSemantic(String text) {
+  String value = _normalizeMandGeneralSemantic(text);
+  if (value.isEmpty) {
+    return '';
+  }
+  value = value
+      .replaceFirst(RegExp(r'^(这个|那个)'), '')
+      .replaceFirst(
+        RegExp(r'^(一(个|本|辆|块|包|盒|只|张|杯|碗|串|瓶|袋|支|根|双))'),
+        '',
+      )
+      .trim();
+  final RegExpMatch? transferMatch =
+      RegExp(r'^(拿|给|来|递|取|上)(.+)$').firstMatch(value);
+  if (transferMatch != null) {
+    value = transferMatch.group(2)!.trim();
+  }
+  final RegExpMatch? consumeMatch = RegExp(r'^(吃|喝)(.+)$').firstMatch(value);
+  if (consumeMatch != null) {
+    value = consumeMatch.group(2)!.trim();
+  }
+  return value.trim();
+}
+
+String _normalizeMandActionSemantic(String text) {
+  String value = _normalizeMandGeneralSemantic(text);
+  if (value.isEmpty) {
+    return '';
+  }
+  if (RegExp(r'^(该我了|轮到我了)$').hasMatch(value)) {
+    return '该我了';
+  }
+  if (RegExp(r'^(过来|过来一下)$').hasMatch(value)) {
+    return '过来';
+  }
+  if (RegExp(r'^(再来|再来一次|来一次)$').hasMatch(value)) {
+    return '再来';
+  }
+  if (RegExp(r'^(出去|出去一下|去外面|到外面去)$').hasMatch(value)) {
+    return '出去';
+  }
+  if (RegExp(r'^(推我|推一下|推高点|推快点)$').hasMatch(value)) {
+    return '推';
   }
 
-  return text;
+  final RegExpMatch? openByObject =
+      RegExp(r'^把(.+?)(打开|开开|开一下|开)$').firstMatch(value);
+  if (openByObject != null) {
+    return '开${openByObject.group(1)!.trim()}';
+  }
+  final RegExpMatch? openByVerb =
+      RegExp(r'^(打开|开开|开一下|开)(.+)$').firstMatch(value);
+  if (openByVerb != null) {
+    final String object = openByVerb.group(2)!.trim();
+    return object.isEmpty ? '打开' : '开$object';
+  }
+
+  final RegExpMatch? closeByObject =
+      RegExp(r'^把(.+?)(关上|关闭|关一下|关)$').firstMatch(value);
+  if (closeByObject != null) {
+    return '关${closeByObject.group(1)!.trim()}';
+  }
+  final RegExpMatch? closeByVerb =
+      RegExp(r'^(关上|关闭|关一下|关)(.+)$').firstMatch(value);
+  if (closeByVerb != null) {
+    final String object = closeByVerb.group(2)!.trim();
+    return object.isEmpty ? '关' : '关$object';
+  }
+
+  final RegExpMatch? takeMatch =
+      RegExp(r'^(拿|取)(.+?)(来|给我)?$').firstMatch(value);
+  if (takeMatch != null) {
+    return '拿${takeMatch.group(2)!.trim()}';
+  }
+  final RegExpMatch? pourMatch = RegExp(r'^倒(.+?)(出来|一下)?$').firstMatch(value);
+  if (pourMatch != null) {
+    return '倒${pourMatch.group(1)!.trim()}';
+  }
+  final RegExpMatch? pushMatch =
+      RegExp(r'^推(.+?)(一下|快点|高点)?$').firstMatch(value);
+  if (pushMatch != null) {
+    final String object = pushMatch.group(1)!.trim();
+    return object.isEmpty || object == '我' ? '推' : '推$object';
+  }
+  return value.trim();
+}
+
+String _normalizeMandActivitySemantic(String text) {
+  String value = _normalizeMandGeneralSemantic(text);
+  if (value.isEmpty) {
+    return '';
+  }
+  if (RegExp(r'^(一起玩|一起玩一下|一起玩会|我们一起玩)$').hasMatch(value)) {
+    return '一起玩';
+  }
+  if (RegExp(r'^(出去玩|出去一下|去外面玩|到外面玩)$').hasMatch(value)) {
+    return '出去';
+  }
+  if (RegExp(r'^(玩秋千|荡秋千)$').hasMatch(value)) {
+    return '秋千';
+  }
+  if (RegExp(r'^(听音乐|放音乐)$').hasMatch(value)) {
+    return '音乐';
+  }
+  if (RegExp(r'^(吹泡泡|玩泡泡)$').hasMatch(value)) {
+    return '泡泡';
+  }
+  if (RegExp(r'^(转圈圈|转一圈|转一下)$').hasMatch(value)) {
+    return '转圈';
+  }
+  return value.trim();
+}
+
+String _applyMandDistinctPhraseGroups(
+  String value, {
+  required String kind,
+  VbmappMandDistinctRule? distinctRule,
+}) {
+  final List<VbmappMandDistinctPhraseGroup> groups =
+      distinctRule?.phraseGroups ?? const <VbmappMandDistinctPhraseGroup>[];
+  if (value.trim().isEmpty || groups.isEmpty) {
+    return value.trim();
+  }
+  for (final VbmappMandDistinctPhraseGroup group in groups) {
+    final String groupKind = group.kind.trim().toLowerCase();
+    if ((distinctRule?.kindAware ?? true) &&
+        groupKind.isNotEmpty &&
+        kind.isNotEmpty &&
+        groupKind != kind) {
+      continue;
+    }
+    final String canonical = _normalizeConfiguredMandPhrase(
+      group.canonical,
+      kind: groupKind.isEmpty ? kind : groupKind,
+    );
+    if (canonical.isEmpty) {
+      continue;
+    }
+    if (value == canonical) {
+      return canonical;
+    }
+    for (final String variant in group.variants) {
+      final String normalizedVariant = _normalizeConfiguredMandPhrase(
+        variant,
+        kind: groupKind.isEmpty ? kind : groupKind,
+      );
+      if (normalizedVariant.isNotEmpty && value == normalizedVariant) {
+        return canonical;
+      }
+    }
+  }
+  return value.trim();
+}
+
+String _normalizeConfiguredMandPhrase(
+  String rawText, {
+  required String kind,
+}) {
+  String text = _normalizeMandPhraseText(rawText).toLowerCase();
+  if (text.isEmpty) {
+    return '';
+  }
+  text = _stripMandSentenceParticles(text);
+  text = _stripMandLeadIns(
+    text,
+    targetKind: _mandTargetKindLabelFromKey(kind),
+  );
+  text = _stripMandSentenceParticles(text);
+  switch (kind) {
+    case 'item':
+      text = _normalizeMandItemSemantic(text);
+      break;
+    case 'action':
+      text = _normalizeMandActionSemantic(text);
+      break;
+    case 'activity':
+      text = _normalizeMandActivitySemantic(text);
+      break;
+    default:
+      text = _normalizeMandGeneralSemantic(text);
+      break;
+  }
+  text = _stripMandSentenceParticles(text);
+  text = text.replaceAll(RegExp(r'\s+'), '');
+  return text.trim();
+}
+
+String _mandTargetKindLabelFromKey(String kind) {
+  switch (kind.trim().toLowerCase()) {
+    case 'item':
+      return '物品';
+    case 'action':
+      return '动作';
+    case 'activity':
+      return '活动';
+    default:
+      return '';
+  }
+}
+
+String _normalizedMandKindKey(String targetKind) {
+  switch (targetKind.trim()) {
+    case '物品':
+      return 'item';
+    case '动作':
+      return 'action';
+    case '活动':
+      return 'activity';
+    default:
+      return '';
+  }
+}
+
+bool _isWeakMandSemanticValue(
+  String value, [
+  VbmappMandDistinctRule? distinctRule,
+]) {
+  const Set<String> defaultWeakValues = <String>{
+    '这个',
+    '那个',
+    '这个那个',
+    '它',
+    '再来',
+    '还要',
+    '更多',
+  };
+  final Set<String> weakValues = <String>{
+    ...defaultWeakValues,
+    ...?distinctRule?.weakValues,
+  };
+  return weakValues.contains(value.trim());
 }
 
 int _qualifiedMandCount(List<_VbmappMandEvent> events) {
@@ -1001,6 +1387,7 @@ int _qualifiedMandCountForItem(
   _VbmappItem item,
   List<_VbmappMandEvent> events, {
   _VbmappObservationTimerState? observation,
+  VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
       _timedMandStrategyForItem(item);
@@ -1009,6 +1396,7 @@ int _qualifiedMandCountForItem(
       item,
       events,
       observation: observation,
+      responseSchema: responseSchema,
     );
   }
   final Set<String> uniqueTargets = <String>{};
@@ -1026,6 +1414,7 @@ int _mandPhraseQualifiedCountForItem(
   _VbmappItem item,
   List<_VbmappMandEvent> events, {
   _VbmappObservationTimerState? observation,
+  VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
       _timedMandStrategyForItem(item);
@@ -1034,6 +1423,7 @@ int _mandPhraseQualifiedCountForItem(
       item,
       events,
       observation: observation,
+      responseSchema: responseSchema,
     );
   }
   final Set<String> uniqueTargets = <String>{};
@@ -1041,7 +1431,10 @@ int _mandPhraseQualifiedCountForItem(
     if (!_mandEventCountsForItem(item, event, observation: observation)) {
       continue;
     }
-    if (!_assessMandPhrase(event).isMultiWord) {
+    if (!_assessMandPhrase(
+      event,
+      phraseRule: responseSchema?.smartRules.mandPhrase,
+    ).isMultiWord) {
       continue;
     }
     final String uniqueKey = _defaultMandUniqueKey(event);
@@ -1052,11 +1445,17 @@ int _mandPhraseQualifiedCountForItem(
   return uniqueTargets.length;
 }
 
-bool _isLikelyMultiWordMand(_VbmappMandEvent event) {
-  return _assessMandPhrase(event).isMultiWord;
+bool _isLikelyMultiWordMand(
+  _VbmappMandEvent event, {
+  VbmappMandPhraseRule? phraseRule,
+}) {
+  return _assessMandPhrase(event, phraseRule: phraseRule).isMultiWord;
 }
 
-_VbmappMandPhraseAssessment _assessMandPhrase(_VbmappMandEvent event) {
+_VbmappMandPhraseAssessment _assessMandPhrase(
+  _VbmappMandEvent event, {
+  VbmappMandPhraseRule? phraseRule,
+}) {
   final String explicitLevel = event.phraseLevel.trim();
   if (explicitLevel == '双词+') {
     return const _VbmappMandPhraseAssessment(
@@ -1084,6 +1483,10 @@ _VbmappMandPhraseAssessment _assessMandPhrase(_VbmappMandEvent event) {
       normalizedText: '',
       reason: 'empty_text',
     );
+  }
+
+  if (phraseRule != null) {
+    return _assessMandPhraseByRule(text, phraseRule);
   }
 
   final List<String> spacedTokens = text
@@ -1148,6 +1551,85 @@ _VbmappMandPhraseAssessment _assessMandPhrase(_VbmappMandEvent event) {
   );
 }
 
+_VbmappMandPhraseAssessment _assessMandPhraseByRule(
+  String normalizedText,
+  VbmappMandPhraseRule phraseRule,
+) {
+  final List<String> spacedTokens = normalizedText
+      .split(' ')
+      .map((String part) => part.trim())
+      .where((String part) => part.isNotEmpty)
+      .toList(growable: false);
+  if (spacedTokens.length >= 2) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: normalizedText,
+      reason: 'schema_space_token_count',
+    );
+  }
+
+  String text = normalizedText;
+  for (final String prefix in phraseRule.ignoredPrefixes) {
+    final String normalizedPrefix = _normalizeMandPhraseText(prefix);
+    if (normalizedPrefix.isEmpty) {
+      continue;
+    }
+    text = text.replaceFirst(RegExp('^${RegExp.escape(normalizedPrefix)}'), '');
+    text = text.trim();
+  }
+  if (text.isEmpty) {
+    return _VbmappMandPhraseAssessment(
+      label: '单词',
+      isMultiWord: false,
+      normalizedText: normalizedText,
+      reason: 'schema_prefix_only',
+    );
+  }
+  final String compact = text.replaceAll(' ', '');
+  if (phraseRule.multiWordExact.any(
+    (String value) =>
+        compact == _normalizeMandPhraseText(value).replaceAll(' ', ''),
+  )) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: compact,
+      reason: 'schema_exact_match',
+    );
+  }
+  if (phraseRule.multiWordSuffixes.any(
+    (String value) =>
+        compact.endsWith(_normalizeMandPhraseText(value).replaceAll(' ', '')),
+  )) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: compact,
+      reason: 'schema_suffix_match',
+    );
+  }
+  if (compact.runes.length >= 3 &&
+      phraseRule.multiWordPrefixes.any(
+        (String value) => compact.startsWith(
+          _normalizeMandPhraseText(value).replaceAll(' ', ''),
+        ),
+      )) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: compact,
+      reason: 'schema_prefix_match',
+    );
+  }
+  return _VbmappMandPhraseAssessment(
+    label: '单词',
+    isMultiWord: false,
+    normalizedText: compact,
+    reason: 'schema_default_single_word',
+  );
+}
+
 String _normalizeMandPhraseText(String rawText) {
   return rawText
       .replaceAll(RegExp(r'[，。！？、,.!?;；:/\\]+'), ' ')
@@ -1170,12 +1652,17 @@ String _mandRequestText(_VbmappMandEvent event) {
 String _mandRecordMetaText(
   _VbmappMandEvent event, {
   _VbmappItem? item,
+  VbmappItemResponseSchema? responseSchema,
 }) {
   if (item != null) {
     final _VbmappTimedMandStrategy? timedStrategy =
         _timedMandStrategyForItem(item);
     if (timedStrategy != null) {
-      return timedStrategy.recordMetaText(event, item: item);
+      return timedStrategy.recordMetaText(
+        event,
+        item: item,
+        responseSchema: responseSchema,
+      );
     }
   }
   final List<String> values = <String>[];
@@ -1239,6 +1726,7 @@ double _suggestMandScore(
   _VbmappItem item,
   List<_VbmappMandEvent> events, {
   _VbmappObservationTimerState? observation,
+  VbmappItemResponseSchema? responseSchema,
 }) {
   if (item.itemCode == 'MAND_03M') {
     final Map<String, int> counts = _mandGeneralizationCounts(events);
@@ -1260,12 +1748,14 @@ double _suggestMandScore(
       item,
       events,
       observation: observation,
+      responseSchema: responseSchema,
     );
   }
   final int count = _qualifiedMandCountForItem(
     item,
     events,
     observation: observation,
+    responseSchema: responseSchema,
   );
   final int onePointCount = _scoreCountThreshold(item, 1) ?? 1;
   final int halfPointCount = _scoreCountThreshold(item, .5) ?? onePointCount;
@@ -1496,11 +1986,17 @@ bool _materialMatchesMandTarget({
 }
 
 bool _looksLikeActionMand(String value) {
-  return RegExp(r'(打开|出去|帮我|给我|推|倒|拿|开门|关门|再来|快点|该我了)').hasMatch(value.trim());
+  final String normalized = _normalizeMandActionSemantic(value);
+  return RegExp(
+    r'(打开|开门|关门|出去|推|倒|拿|再来|快点|该我了|过来)',
+  ).hasMatch(normalized.trim());
 }
 
 bool _looksLikeActivityMand(String value) {
-  return RegExp(r'(音乐|秋千|泡泡|转圈|一起玩|游戏|出去)').hasMatch(value.trim());
+  final String normalized = _normalizeMandActivitySemantic(value);
+  return RegExp(r'(音乐|秋千|泡泡|转圈|一起玩|游戏|出去)').hasMatch(
+    normalized.trim(),
+  );
 }
 
 Map<String, dynamic> _dynamicMap(Object? raw) {

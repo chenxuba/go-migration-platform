@@ -265,6 +265,14 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 			MilestoneResponseSchemas []struct {
 				MilestoneID          string `json:"milestoneId"`
 				ShowPreparationEntry bool   `json:"showPreparationEntry"`
+				SmartRules           struct {
+					MandPhrase struct {
+						Strategy string `json:"strategy"`
+					} `json:"mandPhrase"`
+					MandDistinct struct {
+						Strategy string `json:"strategy"`
+					} `json:"mandDistinct"`
+				} `json:"smartRules"`
 			} `json:"milestoneResponseSchemas"`
 			BarrierResponseSchemas    []any `json:"barrierResponseSchemas"`
 			TransitionResponseSchemas []any `json:"transitionResponseSchemas"`
@@ -291,17 +299,36 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 		t.Fatalf("unexpected schema preparation flag: %+v", envelope.Data.MilestoneResponseSchemas)
 	}
 	foundSocial := false
+	foundMand8 := false
+	foundMand9 := false
 	for _, row := range envelope.Data.MilestoneResponseSchemas {
 		if row.MilestoneID == "SOCIAL_01M" {
 			foundSocial = true
 			if row.ShowPreparationEntry {
 				t.Fatalf("expected SOCIAL_01M showPreparationEntry=false: %+v", row)
 			}
-			break
+		}
+		if row.MilestoneID == "MAND_08M" {
+			foundMand8 = true
+			if row.SmartRules.MandPhrase.Strategy != "semantic_phrase_v1" {
+				t.Fatalf("expected MAND_08M phrase rules on schema endpoint: %+v", row)
+			}
+		}
+		if row.MilestoneID == "MAND_09M" {
+			foundMand9 = true
+			if row.SmartRules.MandDistinct.Strategy != "semantic_core_v1" {
+				t.Fatalf("expected MAND_09M smart rules on schema endpoint: %+v", row)
+			}
 		}
 	}
 	if !foundSocial {
 		t.Fatalf("expected SOCIAL_01M in milestone schema response")
+	}
+	if !foundMand8 {
+		t.Fatalf("expected MAND_08M in milestone schema response")
+	}
+	if !foundMand9 {
+		t.Fatalf("expected MAND_09M in milestone schema response")
 	}
 	if envelope.Data.ResponseSchemaSummary.ItemCount != 212 {
 		t.Fatalf("unexpected schema summary: %+v", envelope.Data.ResponseSchemaSummary)

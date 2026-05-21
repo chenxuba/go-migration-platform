@@ -522,6 +522,7 @@ class VbmappItemResponseSchema {
     required this.scoreStrategy,
     required this.onePointCriteria,
     required this.halfPointCriteria,
+    this.smartRules = const VbmappSchemaSmartRules(),
   });
 
   factory VbmappItemResponseSchema.fromJson(Map<String, dynamic> json) {
@@ -543,6 +544,7 @@ class VbmappItemResponseSchema {
       scoreStrategy: _textFrom(autoCompletion['scoreStrategy']),
       onePointCriteria: _textFrom(scoreEvidence['onePointCriteria']),
       halfPointCriteria: _textFrom(scoreEvidence['halfPointCriteria']),
+      smartRules: VbmappSchemaSmartRules.fromJson(_mapFrom(json['smartRules'])),
     );
   }
 
@@ -558,6 +560,101 @@ class VbmappItemResponseSchema {
   final String scoreStrategy;
   final String onePointCriteria;
   final String halfPointCriteria;
+  final VbmappSchemaSmartRules smartRules;
+}
+
+class VbmappSchemaSmartRules {
+  const VbmappSchemaSmartRules({
+    this.mandPhrase,
+    this.mandDistinct,
+  });
+
+  factory VbmappSchemaSmartRules.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> mandPhrase = _mapFrom(json['mandPhrase']);
+    final Map<String, dynamic> mandDistinct = _mapFrom(json['mandDistinct']);
+    return VbmappSchemaSmartRules(
+      mandPhrase:
+          mandPhrase.isEmpty ? null : VbmappMandPhraseRule.fromJson(mandPhrase),
+      mandDistinct: mandDistinct.isEmpty
+          ? null
+          : VbmappMandDistinctRule.fromJson(mandDistinct),
+    );
+  }
+
+  final VbmappMandPhraseRule? mandPhrase;
+  final VbmappMandDistinctRule? mandDistinct;
+}
+
+class VbmappMandPhraseRule {
+  const VbmappMandPhraseRule({
+    required this.strategy,
+    required this.ignoredPrefixes,
+    required this.multiWordPrefixes,
+    required this.multiWordSuffixes,
+    required this.multiWordExact,
+  });
+
+  factory VbmappMandPhraseRule.fromJson(Map<String, dynamic> json) {
+    return VbmappMandPhraseRule(
+      strategy: _textFrom(json['strategy']),
+      ignoredPrefixes: _stringListFrom(json['ignoredPrefixes']),
+      multiWordPrefixes: _stringListFrom(json['multiWordPrefixes']),
+      multiWordSuffixes: _stringListFrom(json['multiWordSuffixes']),
+      multiWordExact: _stringListFrom(json['multiWordExact']),
+    );
+  }
+
+  final String strategy;
+  final List<String> ignoredPrefixes;
+  final List<String> multiWordPrefixes;
+  final List<String> multiWordSuffixes;
+  final List<String> multiWordExact;
+}
+
+class VbmappMandDistinctRule {
+  const VbmappMandDistinctRule({
+    required this.strategy,
+    required this.kindAware,
+    required this.preferExplicitTarget,
+    required this.weakValues,
+    required this.phraseGroups,
+  });
+
+  factory VbmappMandDistinctRule.fromJson(Map<String, dynamic> json) {
+    return VbmappMandDistinctRule(
+      strategy: _textFrom(json['strategy']),
+      kindAware: json['kindAware'] == true,
+      preferExplicitTarget: json['preferExplicitTarget'] == true,
+      weakValues: _stringListFrom(json['weakValues']),
+      phraseGroups: _mandDistinctPhraseGroupsFrom(json['phraseGroups']),
+    );
+  }
+
+  final String strategy;
+  final bool kindAware;
+  final bool preferExplicitTarget;
+  final List<String> weakValues;
+  final List<VbmappMandDistinctPhraseGroup> phraseGroups;
+}
+
+class VbmappMandDistinctPhraseGroup {
+  const VbmappMandDistinctPhraseGroup({
+    required this.kind,
+    required this.canonical,
+    required this.variants,
+  });
+
+  factory VbmappMandDistinctPhraseGroup.fromJson(Map<String, dynamic> json) {
+    return VbmappMandDistinctPhraseGroup(
+      kind: _textFrom(json['kind']),
+      canonical: _textFrom(json['canonical']),
+      variants: _stringListFrom(json['variants']),
+    );
+  }
+
+  final String kind;
+  final String canonical;
+  final List<String> variants;
 }
 
 class VbmappMaterialProfile {
@@ -822,6 +919,18 @@ Map<String, Object?> _stringListMapFrom(Object? raw) {
     }
   });
   return out;
+}
+
+List<VbmappMandDistinctPhraseGroup> _mandDistinctPhraseGroupsFrom(Object? raw) {
+  if (raw is! List) {
+    return const <VbmappMandDistinctPhraseGroup>[];
+  }
+  return raw
+      .map((Object? value) =>
+          VbmappMandDistinctPhraseGroup.fromJson(_mapFrom(value)))
+      .where((VbmappMandDistinctPhraseGroup value) =>
+          value.canonical.trim().isNotEmpty)
+      .toList(growable: false);
 }
 
 List<VbmappMaterialSuggestion> _materialSuggestionsFrom(Object? raw) {
