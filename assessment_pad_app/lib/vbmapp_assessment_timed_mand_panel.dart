@@ -506,6 +506,19 @@ class _VbmappTimedMandInlinePanelState
     if (request.isEmpty) {
       return;
     }
+    final _VbmappMandPhraseAssessment phraseAssessment = _assessMandPhrase(
+      _VbmappMandEvent(
+        utterance: request,
+        target: request,
+        motivationContext: '',
+        person: '',
+        setting: '',
+        example: '',
+        responseMode: _strategy.responseModeForPrompt(_currentPromptMode),
+        promptLevel: _strategy.promptLevelForPrompt(_currentPromptMode),
+        functional: true,
+      ),
+    );
     if (!_observation.hasStarted) {
       widget.onChangeObservation(_observation.start(DateTime.now()));
     }
@@ -521,7 +534,9 @@ class _VbmappTimedMandInlinePanelState
         example: '',
         responseMode: _strategy.responseModeForPrompt(_currentPromptMode),
         promptLevel: _strategy.promptLevelForPrompt(_currentPromptMode),
-        phraseLevel: '',
+        phraseLevel: _strategy.multiWordQualifiedMinCount > 0
+            ? phraseAssessment.label
+            : '',
         functional: true,
       ),
     );

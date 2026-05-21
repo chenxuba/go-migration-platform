@@ -442,6 +442,20 @@ class _VbmappObservationTimerState {
   }
 }
 
+class _VbmappMandPhraseAssessment {
+  const _VbmappMandPhraseAssessment({
+    required this.label,
+    required this.isMultiWord,
+    required this.normalizedText,
+    required this.reason,
+  });
+
+  final String label;
+  final bool isMultiWord;
+  final String normalizedText;
+  final String reason;
+}
+
 class _VbmappScoreOption {
   const _VbmappScoreOption({
     required this.score,
@@ -545,6 +559,9 @@ class _VbmappTimedMandStrategy {
   }
 
   String uniqueKeyForEvent(_VbmappMandEvent event) {
+    if (itemCode == 'MAND_09M') {
+      return _normalizeMandDistinctKey(event);
+    }
     return _defaultMandUniqueKey(event);
   }
 
@@ -678,7 +695,17 @@ class _VbmappTimedMandStrategy {
     addMeta(_mandInitiationText(event));
     addMeta(event.environment);
     addMeta(event.targetKind);
-    addMeta(event.phraseLevel);
+    if (multiWordQualifiedMinCount > 0) {
+      addMeta(_assessMandPhrase(event).label);
+    } else {
+      addMeta(event.phraseLevel);
+    }
+    if (item?.itemCode == 'MAND_09M') {
+      final String uniqueKey = uniqueKeyForEvent(event);
+      if (uniqueKey.isNotEmpty && uniqueKey != _mandRequestText(event).trim()) {
+        addMeta('归一:$uniqueKey');
+      }
+    }
     addMeta(event.promptLevel);
     final DateTime? recordedAt = event.recordedAt;
     if (recordedAt != null) {
@@ -754,9 +781,38 @@ class _VbmappTimedMandStrategy {
     final int multiWordCount = multiWordQualifiedMinCount > 0
         ? qualifiedMultiWordCount(item, events, observation: observation)
         : 0;
+    final List<Map<String, dynamic>> phraseEvaluations =
+        multiWordQualifiedMinCount > 0
+            ? events.map(((_VbmappMandEvent event) {
+                final _VbmappMandPhraseAssessment assessment =
+                    _assessMandPhrase(event);
+                return <String, dynamic>{
+                  'utterance': _mandRequestText(event),
+                  'label': assessment.label,
+                  'isMultiWord': assessment.isMultiWord,
+                  'normalizedText': assessment.normalizedText,
+                  'reason': assessment.reason,
+                };
+              })).toList(growable: false)
+            : const <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> eventUniqueKeys = events
+        .map(((_VbmappMandEvent event) => <String, dynamic>{
+              'utterance': _mandRequestText(event),
+              'uniqueKey': uniqueKeyForEvent(event),
+              'counts': countsEvent(item, event, observation: observation),
+            }))
+        .toList(growable: false);
+    final List<String> uniqueTargetKeys = <String>{
+      for (final _VbmappMandEvent event in events)
+        if (countsEvent(item, event, observation: observation) &&
+            uniqueKeyForEvent(event).isNotEmpty)
+          uniqueKeyForEvent(event),
+    }.toList(growable: false);
     return <String, dynamic>{
       'qualifiedCount': qualifiedCountValue,
       'uniqueTargetCount': qualifiedCountValue,
+      'uniqueTargetKeys': uniqueTargetKeys,
+      'eventUniqueKeys': eventUniqueKeys,
       if (timerState != null) 'timer': timerState.toJson(),
       if (timerState != null)
         'actualObservationMinutes':
@@ -770,6 +826,8 @@ class _VbmappTimedMandStrategy {
             effectiveObservationSeconds / Duration.secondsPerMinute,
       if (multiWordQualifiedMinCount > 0)
         'multiWordQualifiedCount': multiWordCount,
+      if (multiWordQualifiedMinCount > 0)
+        'phraseAssessments': phraseEvaluations,
       'scoreBasis': scoreBasisText(
         item,
         suggestedScore,
@@ -905,6 +963,29 @@ String _defaultMandUniqueKey(_VbmappMandEvent event) {
   return text.toLowerCase();
 }
 
+String _normalizeMandDistinctKey(_VbmappMandEvent event) {
+  String text = _normalizeMandPhraseText(_mandRequestText(event)).toLowerCase();
+  if (text.isEmpty) {
+    return '';
+  }
+
+  text = text
+      .replaceFirst(RegExp(r'^(我想要|我要|我还要|我再要|给我|帮我|让我|替我)\s*'), '')
+      .replaceFirst(RegExp(r'^(我们一起|一起)\s*'), '')
+      .replaceFirst(RegExp(r'^(请|麻烦|想要)\s*'), '')
+      .replaceFirst(RegExp(r'^(我要个|我要吃|我要喝)\s*'), '')
+      .replaceFirst(RegExp(r'^(我想吃|我想喝)\s*'), '')
+      .trim();
+
+  text = text.replaceAll(RegExp(r'(吧|呀|啊|呢|啦|嘛|哦|喔)$'), '').trim();
+
+  if (text.isEmpty) {
+    text = _normalizeMandPhraseText(_mandRequestText(event)).toLowerCase();
+  }
+
+  return text;
+}
+
 int _qualifiedMandCount(List<_VbmappMandEvent> events) {
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
@@ -960,7 +1041,7 @@ int _mandPhraseQualifiedCountForItem(
     if (!_mandEventCountsForItem(item, event, observation: observation)) {
       continue;
     }
-    if (!_isLikelyMultiWordMand(event)) {
+    if (!_assessMandPhrase(event).isMultiWord) {
       continue;
     }
     final String uniqueKey = _defaultMandUniqueKey(event);
@@ -972,20 +1053,37 @@ int _mandPhraseQualifiedCountForItem(
 }
 
 bool _isLikelyMultiWordMand(_VbmappMandEvent event) {
+  return _assessMandPhrase(event).isMultiWord;
+}
+
+_VbmappMandPhraseAssessment _assessMandPhrase(_VbmappMandEvent event) {
   final String explicitLevel = event.phraseLevel.trim();
   if (explicitLevel == '双词+') {
-    return true;
+    return const _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: '',
+      reason: 'explicit_multi_word',
+    );
   }
   if (explicitLevel == '单词') {
-    return false;
+    return const _VbmappMandPhraseAssessment(
+      label: '单词',
+      isMultiWord: false,
+      normalizedText: '',
+      reason: 'explicit_single_word',
+    );
   }
 
-  String text = _mandRequestText(event)
-      .replaceAll(RegExp(r'[，。！？、,.!?;；:/\\]+'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
+  final String rawText = _mandRequestText(event);
+  String text = _normalizeMandPhraseText(rawText);
   if (text.isEmpty) {
-    return false;
+    return const _VbmappMandPhraseAssessment(
+      label: '未判定',
+      isMultiWord: false,
+      normalizedText: '',
+      reason: 'empty_text',
+    );
   }
 
   final List<String> spacedTokens = text
@@ -994,28 +1092,67 @@ bool _isLikelyMultiWordMand(_VbmappMandEvent event) {
       .where((String part) => part.isNotEmpty)
       .toList(growable: false);
   if (spacedTokens.length >= 2) {
-    return true;
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: text,
+      reason: 'space_token_count',
+    );
   }
 
-  text = text.replaceFirst(RegExp(r'^我想要'), '').trim();
-  if (text.isEmpty) {
-    return false;
+  final String withoutPrefix = text.replaceFirst(RegExp(r'^我想要'), '').trim();
+  if (withoutPrefix.isEmpty) {
+    return _VbmappMandPhraseAssessment(
+      label: '单词',
+      isMultiWord: false,
+      normalizedText: text,
+      reason: 'prefix_only',
+    );
   }
 
-  if (RegExp(r'(我|你|他|她|它|我们|我要|给我|帮我)').hasMatch(text) &&
-      text.runes.length >= 3) {
-    return true;
+  if (RegExp(r'(我|你|他|她|它|我们|我要|给我|帮我)').hasMatch(withoutPrefix) &&
+      withoutPrefix.runes.length >= 3) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: withoutPrefix,
+      reason: 'pronoun_plus_content',
+    );
   }
-  if (RegExp(r'(快点|一下|一会|给我|帮我|让我|一起|该我了|不要|好了|开门)$').hasMatch(text)) {
-    return true;
+  if (RegExp(
+    r'(快点|一下|一会|给我|帮我|让我|一起|该我了|不要|好了|开门)$',
+  ).hasMatch(withoutPrefix)) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: withoutPrefix,
+      reason: 'suffix_phrase_pattern',
+    );
   }
-  if (text.runes.length >= 3 &&
+  if (withoutPrefix.runes.length >= 3 &&
       RegExp(r'^(打开|帮我|给我|让我|带我|一起|还要|再来|我要|我们|该我|跑|倒|推|拿|去|来|开)')
-          .hasMatch(text)) {
-    return true;
+          .hasMatch(withoutPrefix)) {
+    return _VbmappMandPhraseAssessment(
+      label: '双词+',
+      isMultiWord: true,
+      normalizedText: withoutPrefix,
+      reason: 'verb_phrase_pattern',
+    );
   }
 
-  return false;
+  return _VbmappMandPhraseAssessment(
+    label: '单词',
+    isMultiWord: false,
+    normalizedText: withoutPrefix,
+    reason: 'default_single_word',
+  );
+}
+
+String _normalizeMandPhraseText(String rawText) {
+  return rawText
+      .replaceAll(RegExp(r'[，。！？、,.!?;；:/\\]+'), ' ')
+      .replaceAll(RegExp(r'\s+'), ' ')
+      .trim();
 }
 
 String _mandRequestText(_VbmappMandEvent event) {
