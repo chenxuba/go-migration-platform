@@ -567,6 +567,7 @@ class VbmappSchemaSmartRules {
   const VbmappSchemaSmartRules({
     this.sharedObservation,
     this.mandQualification,
+    this.mandTimedConfig,
     this.mandPhrase,
     this.mandDistinct,
   });
@@ -576,6 +577,8 @@ class VbmappSchemaSmartRules {
         _mapFrom(json['sharedObservation']);
     final Map<String, dynamic> mandQualification =
         _mapFrom(json['mandQualification']);
+    final Map<String, dynamic> mandTimedConfig =
+        _mapFrom(json['mandTimedConfig']);
     final Map<String, dynamic> mandPhrase = _mapFrom(json['mandPhrase']);
     final Map<String, dynamic> mandDistinct = _mapFrom(json['mandDistinct']);
     return VbmappSchemaSmartRules(
@@ -585,6 +588,9 @@ class VbmappSchemaSmartRules {
       mandQualification: mandQualification.isEmpty
           ? null
           : VbmappMandQualificationRule.fromJson(mandQualification),
+      mandTimedConfig: mandTimedConfig.isEmpty
+          ? null
+          : VbmappMandTimedConfigRule.fromJson(mandTimedConfig),
       mandPhrase:
           mandPhrase.isEmpty ? null : VbmappMandPhraseRule.fromJson(mandPhrase),
       mandDistinct: mandDistinct.isEmpty
@@ -595,6 +601,7 @@ class VbmappSchemaSmartRules {
 
   final VbmappSharedObservationRule? sharedObservation;
   final VbmappMandQualificationRule? mandQualification;
+  final VbmappMandTimedConfigRule? mandTimedConfig;
   final VbmappMandPhraseRule? mandPhrase;
   final VbmappMandDistinctRule? mandDistinct;
 }
@@ -634,6 +641,64 @@ class VbmappMandQualificationRule {
 
   final String requiredEnvironment;
   final List<String> excludedInitiations;
+}
+
+class VbmappMandTimedConfigRule {
+  const VbmappMandTimedConfigRule({
+    required this.plannedMinutes,
+    required this.countMetricLabel,
+    required this.inputLabel,
+    required this.inputHint,
+    required this.targetOptions,
+    required this.defaultObservationHint,
+    required this.defaultPromptMode,
+    required this.defaultPresentation,
+    required this.defaultTargetKind,
+    required this.showPromptSelector,
+    required this.promptSelectorLabel,
+    required this.promptOptions,
+    required this.multiWordQualifiedMinCount,
+    required this.displayMinSlots,
+  });
+
+  factory VbmappMandTimedConfigRule.fromJson(Map<String, dynamic> json) {
+    final int plannedMinutes = _intFrom(json['plannedMinutes']);
+    final int multiWordQualifiedMinCount =
+        _intFrom(json['multiWordQualifiedMinCount']);
+    final int displayMinSlots = _intFrom(json['displayMinSlots']);
+    return VbmappMandTimedConfigRule(
+      plannedMinutes: plannedMinutes <= 0 ? 60 : plannedMinutes,
+      countMetricLabel: _textFrom(json['countMetricLabel']),
+      inputLabel: _textFrom(json['inputLabel']),
+      inputHint: _textFrom(json['inputHint']),
+      targetOptions: _stringListFrom(json['targetOptions']),
+      defaultObservationHint: _textFrom(json['defaultObservationHint']),
+      defaultPromptMode: _textFrom(json['defaultPromptMode']),
+      defaultPresentation: _textFrom(json['defaultPresentation']),
+      defaultTargetKind: _textFrom(json['defaultTargetKind']),
+      showPromptSelector: json['showPromptSelector'] == true,
+      promptSelectorLabel: _textFrom(json['promptSelectorLabel']),
+      promptOptions: _stringListFrom(json['promptOptions']),
+      multiWordQualifiedMinCount:
+          multiWordQualifiedMinCount < 0 ? 0 : multiWordQualifiedMinCount,
+      displayMinSlots: displayMinSlots < 0 ? 0 : displayMinSlots,
+    );
+  }
+
+  final int plannedMinutes;
+  final String countMetricLabel;
+  final String inputLabel;
+  final String inputHint;
+  final List<String> targetOptions;
+  final String defaultObservationHint;
+  final String defaultPromptMode;
+  final String defaultPresentation;
+  final String defaultTargetKind;
+  final bool showPromptSelector;
+  final String promptSelectorLabel;
+  final List<String> promptOptions;
+  final int multiWordQualifiedMinCount;
+  final int displayMinSlots;
 }
 
 class VbmappMandPhraseRule {

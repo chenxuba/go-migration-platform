@@ -346,6 +346,21 @@
       ]
     },
     "smartRules": {
+      "mandTimedConfig": {
+        "plannedMinutes": 60,
+        "countMetricLabel": "有效",
+        "inputLabel": "孩子要求内容",
+        "inputHint": "如：泡泡、出去、打开",
+        "targetOptions": [
+          "物品",
+          "动作",
+          "活动"
+        ],
+        "defaultObservationHint": "记录自然情境下的自发要求，系统自动统计不同要求数量。",
+        "defaultPromptMode": "自发地",
+        "defaultPresentation": "呈现物品",
+        "defaultTargetKind": "物品"
+      },
       "mandQualification": {
         "requiredEnvironment": "呈现物品",
         "excludedInitiations": [
@@ -3625,6 +3640,28 @@
       ]
     },
     "smartRules": {
+      "mandTimedConfig": {
+        "plannedMinutes": 60,
+        "countMetricLabel": "不同",
+        "inputLabel": "孩子要求原话",
+        "inputHint": "如：跑快点、该我了、倒果汁",
+        "targetOptions": [
+          "物品",
+          "动作",
+          "活动"
+        ],
+        "defaultObservationHint": "记录自然情境下的不同要求；双词结构由系统根据原话自动判定。",
+        "defaultPromptMode": "自发地",
+        "defaultPresentation": "呈现物品",
+        "defaultTargetKind": "物品",
+        "showPromptSelector": true,
+        "promptSelectorLabel": "辅助",
+        "promptOptions": [
+          "自发地",
+          "提问下"
+        ],
+        "multiWordQualifiedMinCount": 2
+      },
       "sharedObservation": {
         "enabled": true,
         "groupId": "mand_timed_shared_v1",
@@ -3768,6 +3805,22 @@
       ]
     },
     "smartRules": {
+      "mandTimedConfig": {
+        "plannedMinutes": 30,
+        "countMetricLabel": "自发",
+        "inputLabel": "孩子要求内容",
+        "inputHint": "如：泡泡、出去、打开",
+        "targetOptions": [
+          "物品",
+          "动作",
+          "活动"
+        ],
+        "defaultObservationHint": "记录30分钟内的自发不同要求，系统自动去重统计。",
+        "defaultPromptMode": "自发地",
+        "defaultPresentation": "呈现物品",
+        "defaultTargetKind": "物品",
+        "displayMinSlots": 6
+      },
       "sharedObservation": {
         "enabled": true,
         "groupId": "mand_timed_shared_v1",

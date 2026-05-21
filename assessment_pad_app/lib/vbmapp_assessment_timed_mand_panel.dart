@@ -48,7 +48,10 @@ class _VbmappTimedMandInlinePanelState
   int? _selectedRecordIndex;
 
   _VbmappTimedMandStrategy get _strategy =>
-      _timedMandStrategyForItem(widget.item) ??
+      _timedMandStrategyForItem(
+        widget.item,
+        responseSchema: widget.responseSchema,
+      ) ??
       _vbmappTimedMandStrategies['MAND_04M']!;
 
   _VbmappObservationTimerState get _observation =>

@@ -521,6 +521,66 @@ class _VbmappTimedMandStrategy {
     this.displayMinSlots,
   });
 
+  factory _VbmappTimedMandStrategy.fromSchema(
+    String itemCode,
+    VbmappMandTimedConfigRule config, {
+    VbmappMandQualificationRule? qualificationRule,
+    _VbmappTimedMandStrategy? fallback,
+  }) {
+    final bool requirePresentedEnvironment =
+        qualificationRule?.requiredEnvironment.trim() == '呈现物品' ||
+            fallback?.requirePresentedEnvironment == true;
+    final bool excludePromptedEvents =
+        (qualificationRule?.excludedInitiations.contains('提问下') ?? false) ||
+            fallback?.excludePromptedEvents == true;
+    return _VbmappTimedMandStrategy(
+      itemCode: itemCode,
+      plannedMinutes: config.plannedMinutes > 0
+          ? config.plannedMinutes
+          : (fallback?.plannedMinutes ?? 60),
+      countMetricLabel: config.countMetricLabel.trim().isNotEmpty
+          ? config.countMetricLabel.trim()
+          : (fallback?.countMetricLabel ?? '有效'),
+      inputLabel: config.inputLabel.trim().isNotEmpty
+          ? config.inputLabel.trim()
+          : (fallback?.inputLabel ?? '孩子要求内容'),
+      inputHint: config.inputHint.trim().isNotEmpty
+          ? config.inputHint.trim()
+          : (fallback?.inputHint ?? ''),
+      targetOptions: config.targetOptions.isNotEmpty
+          ? config.targetOptions
+          : (fallback?.targetOptions ?? const <String>['物品', '动作', '活动']),
+      defaultObservationHint: config.defaultObservationHint.trim().isNotEmpty
+          ? config.defaultObservationHint.trim()
+          : (fallback?.defaultObservationHint ?? ''),
+      defaultPromptMode: config.defaultPromptMode.trim().isNotEmpty
+          ? config.defaultPromptMode.trim()
+          : (fallback?.defaultPromptMode ?? '自发地'),
+      defaultPresentation: config.defaultPresentation.trim().isNotEmpty
+          ? config.defaultPresentation.trim()
+          : (fallback?.defaultPresentation ?? '呈现物品'),
+      defaultTargetKind: config.defaultTargetKind.trim().isNotEmpty
+          ? config.defaultTargetKind.trim()
+          : (fallback?.defaultTargetKind ?? '物品'),
+      showPromptSelector:
+          config.showPromptSelector || fallback?.showPromptSelector == true,
+      promptSelectorLabel: config.promptSelectorLabel.trim().isNotEmpty
+          ? config.promptSelectorLabel.trim()
+          : (fallback?.promptSelectorLabel ?? '诱发'),
+      promptOptions: config.promptOptions.isNotEmpty
+          ? config.promptOptions
+          : (fallback?.promptOptions ?? const <String>['自发地', '提问下']),
+      requirePresentedEnvironment: requirePresentedEnvironment,
+      excludePromptedEvents: excludePromptedEvents,
+      multiWordQualifiedMinCount: config.multiWordQualifiedMinCount > 0
+          ? config.multiWordQualifiedMinCount
+          : (fallback?.multiWordQualifiedMinCount ?? 0),
+      displayMinSlots: config.displayMinSlots > 0
+          ? config.displayMinSlots
+          : fallback?.displayMinSlots,
+    );
+  }
+
   final String itemCode;
   final int plannedMinutes;
   final String countMetricLabel;
@@ -829,8 +889,11 @@ class _VbmappTimedMandStrategy {
     );
     final int actualObservationSeconds =
         timerState?.elapsedSecondsAt(DateTime.now()) ?? 0;
-    final int effectiveObservationSeconds =
-        _effectiveObservationSecondsForItem(item, timerState);
+    final int effectiveObservationSeconds = _effectiveObservationSecondsForItem(
+      item,
+      timerState,
+      responseSchema: responseSchema,
+    );
     final int multiWordCount = multiWordQualifiedMinCount > 0
         ? qualifiedMultiWordCount(
             item,
@@ -956,8 +1019,23 @@ const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
   ),
 };
 
-_VbmappTimedMandStrategy? _timedMandStrategyForItem(_VbmappItem item) {
-  return _vbmappTimedMandStrategies[item.itemCode];
+_VbmappTimedMandStrategy? _timedMandStrategyForItem(
+  _VbmappItem item, {
+  VbmappItemResponseSchema? responseSchema,
+}) {
+  final _VbmappTimedMandStrategy? fallback =
+      _vbmappTimedMandStrategies[item.itemCode];
+  final VbmappMandTimedConfigRule? config =
+      responseSchema?.smartRules.mandTimedConfig;
+  if (config == null) {
+    return fallback;
+  }
+  return _VbmappTimedMandStrategy.fromSchema(
+    item.itemCode,
+    config,
+    qualificationRule: responseSchema?.smartRules.mandQualification,
+    fallback: fallback,
+  );
 }
 
 bool _isSimpleMandRecorder(
@@ -973,12 +1051,23 @@ bool _isSimpleMandRecorder(
       item.itemCode == 'MAND_04M';
 }
 
-bool _isTimedMandItemCode(String itemCode) {
-  return _vbmappTimedMandStrategies.containsKey(itemCode);
+bool _isTimedMandItem(
+  _VbmappItem item,
+  VbmappItemResponseSchema? responseSchema,
+) {
+  return responseSchema?.smartRules.mandTimedConfig != null ||
+      _vbmappTimedMandStrategies.containsKey(item.itemCode);
 }
 
-int _plannedMinutesForMandItem(_VbmappItem item) {
-  return _timedMandStrategyForItem(item)?.plannedMinutes ?? 60;
+int _plannedMinutesForMandItem(
+  _VbmappItem item, {
+  VbmappItemResponseSchema? responseSchema,
+}) {
+  return _timedMandStrategyForItem(
+        item,
+        responseSchema: responseSchema,
+      )?.plannedMinutes ??
+      60;
 }
 
 String _mandInitiationText(_VbmappMandEvent event) {
@@ -1017,7 +1106,7 @@ bool _mandEventCountsForItem(
   VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
-      _timedMandStrategyForItem(item);
+      _timedMandStrategyForItem(item, responseSchema: responseSchema);
   if (timedStrategy != null) {
     return timedStrategy.countsEvent(
       item,
@@ -1440,7 +1529,7 @@ int _qualifiedMandCountForItem(
   VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
-      _timedMandStrategyForItem(item);
+      _timedMandStrategyForItem(item, responseSchema: responseSchema);
   if (timedStrategy != null) {
     return timedStrategy.qualifiedCount(
       item,
@@ -1472,7 +1561,7 @@ int _mandPhraseQualifiedCountForItem(
   VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
-      _timedMandStrategyForItem(item);
+      _timedMandStrategyForItem(item, responseSchema: responseSchema);
   if (timedStrategy != null) {
     return timedStrategy.qualifiedMultiWordCount(
       item,
@@ -1716,7 +1805,7 @@ String _mandRecordMetaText(
 }) {
   if (item != null) {
     final _VbmappTimedMandStrategy? timedStrategy =
-        _timedMandStrategyForItem(item);
+        _timedMandStrategyForItem(item, responseSchema: responseSchema);
     if (timedStrategy != null) {
       return timedStrategy.recordMetaText(
         event,
@@ -1740,7 +1829,7 @@ String _mandRecordMetaText(
   addMeta(event.targetKind);
   addMeta(event.phraseLevel);
   addMeta(event.promptLevel);
-  if (item != null && _isTimedMandItemCode(item.itemCode)) {
+  if (item != null && _isTimedMandItem(item, responseSchema)) {
     final DateTime? recordedAt = event.recordedAt;
     if (recordedAt != null) {
       values.add(_formatClock(recordedAt));
@@ -1751,14 +1840,18 @@ String _mandRecordMetaText(
 
 int _effectiveObservationSecondsForItem(
   _VbmappItem item,
-  _VbmappObservationTimerState? observation,
-) {
+  _VbmappObservationTimerState? observation, {
+  VbmappItemResponseSchema? responseSchema,
+}) {
   if (observation == null) {
     return 0;
   }
   final int elapsed = observation.elapsedSecondsAt(DateTime.now());
-  final int maxSeconds =
-      _plannedMinutesForMandItem(item) * Duration.secondsPerMinute;
+  final int maxSeconds = _plannedMinutesForMandItem(
+        item,
+        responseSchema: responseSchema,
+      ) *
+      Duration.secondsPerMinute;
   return elapsed > maxSeconds ? maxSeconds : elapsed;
 }
 
@@ -1767,9 +1860,11 @@ String _mandTimedScoreBasisText(
   double suggestedScore,
   int qualifiedCount,
   int actualObservationSeconds,
-  int multiWordCount,
-) {
-  final _VbmappTimedMandStrategy? strategy = _timedMandStrategyForItem(item);
+  int multiWordCount, {
+  VbmappItemResponseSchema? responseSchema,
+}) {
+  final _VbmappTimedMandStrategy? strategy =
+      _timedMandStrategyForItem(item, responseSchema: responseSchema);
   if (strategy == null) {
     return '系统按有效要求数量建议${_formatScore(suggestedScore)}分，老师可在下方评分区覆盖。';
   }
@@ -1802,7 +1897,7 @@ double _suggestMandScore(
     return halfPoint ? .5 : 0;
   }
   final _VbmappTimedMandStrategy? timedStrategy =
-      _timedMandStrategyForItem(item);
+      _timedMandStrategyForItem(item, responseSchema: responseSchema);
   if (timedStrategy != null) {
     return timedStrategy.suggestScore(
       item,

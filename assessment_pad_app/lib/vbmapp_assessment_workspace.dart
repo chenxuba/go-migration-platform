@@ -791,7 +791,7 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         onDeleteEvent: onDeleteMandEvent,
       );
     }
-    if (_isTimedMandItemCode(item.itemCode)) {
+    if (_isTimedMandItem(item, schema)) {
       return _VbmappTimedMandInlinePanel(
         item: item,
         responseSchema: schema,

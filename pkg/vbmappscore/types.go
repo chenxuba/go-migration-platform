@@ -291,6 +291,7 @@ type ResponseSchemaItemDesign struct {
 type ResponseSchemaSmartRules struct {
 	SharedObservation *ResponseSchemaSharedObservationRule `json:"sharedObservation,omitempty"`
 	MandQualification *ResponseSchemaMandQualificationRule `json:"mandQualification,omitempty"`
+	MandTimedConfig   *ResponseSchemaMandTimedConfigRule   `json:"mandTimedConfig,omitempty"`
 	MandDistinct      *ResponseSchemaMandDistinctRule      `json:"mandDistinct,omitempty"`
 	MandPhrase        *ResponseSchemaMandPhraseRule        `json:"mandPhrase,omitempty"`
 }
@@ -304,6 +305,23 @@ type ResponseSchemaSharedObservationRule struct {
 type ResponseSchemaMandQualificationRule struct {
 	RequiredEnvironment string   `json:"requiredEnvironment,omitempty"`
 	ExcludedInitiations []string `json:"excludedInitiations,omitempty"`
+}
+
+type ResponseSchemaMandTimedConfigRule struct {
+	PlannedMinutes             int      `json:"plannedMinutes,omitempty"`
+	CountMetricLabel           string   `json:"countMetricLabel,omitempty"`
+	InputLabel                 string   `json:"inputLabel,omitempty"`
+	InputHint                  string   `json:"inputHint,omitempty"`
+	TargetOptions              []string `json:"targetOptions,omitempty"`
+	DefaultObservationHint     string   `json:"defaultObservationHint,omitempty"`
+	DefaultPromptMode          string   `json:"defaultPromptMode,omitempty"`
+	DefaultPresentation        string   `json:"defaultPresentation,omitempty"`
+	DefaultTargetKind          string   `json:"defaultTargetKind,omitempty"`
+	ShowPromptSelector         bool     `json:"showPromptSelector"`
+	PromptSelectorLabel        string   `json:"promptSelectorLabel,omitempty"`
+	PromptOptions              []string `json:"promptOptions,omitempty"`
+	MultiWordQualifiedMinCount int      `json:"multiWordQualifiedMinCount,omitempty"`
+	DisplayMinSlots            int      `json:"displayMinSlots,omitempty"`
 }
 
 type ResponseSchemaMandDistinctRule struct {

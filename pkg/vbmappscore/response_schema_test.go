@@ -109,6 +109,11 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 		!contains(mand4.SmartRules.MandQualification.ExcludedInitiations, "提问下") {
 		t.Fatalf("unexpected MAND_04M qualification rule: %+v", mand4.SmartRules.MandQualification)
 	}
+	if mand4.SmartRules.MandTimedConfig == nil ||
+		mand4.SmartRules.MandTimedConfig.PlannedMinutes != 60 ||
+		mand4.SmartRules.MandTimedConfig.CountMetricLabel != "有效" {
+		t.Fatalf("unexpected MAND_04M timed config: %+v", mand4.SmartRules.MandTimedConfig)
+	}
 
 	mand5 := findMilestoneResponseSchema(t, milestones, "MAND_05M")
 	if mand5.SmartRules.MandQualification == nil ||
@@ -153,6 +158,11 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	if mand8.SmartRules.MandPhrase == nil {
 		t.Fatalf("MAND_08M should expose mand phrase smart rules: %+v", mand8.SmartRules)
 	}
+	if mand8.SmartRules.MandTimedConfig == nil ||
+		!mand8.SmartRules.MandTimedConfig.ShowPromptSelector ||
+		mand8.SmartRules.MandTimedConfig.MultiWordQualifiedMinCount != 2 {
+		t.Fatalf("unexpected MAND_08M timed config: %+v", mand8.SmartRules.MandTimedConfig)
+	}
 	if mand8.SmartRules.MandPhrase.Strategy != "semantic_phrase_v1" {
 		t.Fatalf("unexpected MAND_08M phrase strategy: %+v", mand8.SmartRules.MandPhrase)
 	}
@@ -161,6 +171,11 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	}
 	if !contains(mand8.AutoCompletion.ComputedIndicators, "multi_word_qualified_count") {
 		t.Fatalf("MAND_08M should compute multi-word indicator: %+v", mand8.AutoCompletion.ComputedIndicators)
+	}
+	if mand9.SmartRules.MandTimedConfig == nil ||
+		mand9.SmartRules.MandTimedConfig.PlannedMinutes != 30 ||
+		mand9.SmartRules.MandTimedConfig.DisplayMinSlots != 6 {
+		t.Fatalf("unexpected MAND_09M timed config: %+v", mand9.SmartRules.MandTimedConfig)
 	}
 
 	if barriers[0].UIPattern != "barrier_rubric_with_behavior_log" {
