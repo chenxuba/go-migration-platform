@@ -3476,7 +3476,40 @@
       "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "缺失物品记录",
+        "recordListTitle": "不同缺失物品",
+        "metricLabel": "有效",
+        "inputLabel": "孩子要求的缺失物",
+        "inputHint": "如：纸张、勺子、拼图块、车轮",
+        "quickPicks": [
+          "纸张",
+          "蜡笔",
+          "勺子",
+          "碗",
+          "吸管",
+          "拼图块",
+          "车轮",
+          "钥匙",
+          "盖子",
+          "泡泡棒",
+          "积木",
+          "胶水"
+        ],
+        "unit": "个",
+        "motivationContext": "缺失物品",
+        "countReferenceText": "仅提供“你想要什么？”提问或等待自发要求，系统按不同缺失物品自动去重。",
+        "promptOptions": [
+          "提问下",
+          "自发地"
+        ],
+        "defaultEnvironment": "缺失物品",
+        "defaultTargetKind": "缺失物",
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -3554,7 +3587,32 @@
       "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "行动要求记录",
+        "recordListTitle": "不同行动要求",
+        "metricLabel": "有效",
+        "inputLabel": "孩子要求的行动",
+        "inputHint": "如：开门、推",
+        "quickPicks": [
+          "开门",
+          "推"
+        ],
+        "unit": "个",
+        "motivationContext": "要求他人行动",
+        "countReferenceText": "系统按不同行动要求自动去重统计，",
+        "promptOptions": [
+          "提问下",
+          "自发地"
+        ],
+        "environmentOptions": [
+          "呈现物品",
+          "未呈现物品"
+        ],
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -4015,7 +4073,35 @@
       "VB-MAPP第二阶段(1)孤独症儿童测评量表社会行为和社会性游戏-6bce59e30a4c2e3f5727a5e9856a561253d321f6.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "新要求记录",
+        "recordListTitle": "新的要求",
+        "metricLabel": "有效",
+        "inputLabel": "孩子提出的新要求",
+        "inputHint": "如：小猫在哪里？",
+        "quickPicks": [
+          "小猫在哪里？"
+        ],
+        "unit": "个",
+        "motivationContext": "新的要求",
+        "countReferenceText": "系统按不同新要求自动去重统计，",
+        "promptOptions": [
+          "提问下",
+          "自发地"
+        ],
+        "environmentOptions": [
+          "呈现物品",
+          "未呈现物品"
+        ],
+        "abilityOptions": [
+          "新形式",
+          "新内容"
+        ],
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -8449,7 +8535,33 @@
       "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandTimedConfig": {
+        "plannedMinutes": 60,
+        "countMetricLabel": "信息",
+        "inputLabel": "孩子提出的信息要求",
+        "inputHint": "如：你叫什么名字？我应该到哪里去？",
+        "targetOptions": [],
+        "quickPickFallback": [
+          "你叫什么名字？",
+          "我应该到哪里去？",
+          "这是什么？",
+          "谁来了？",
+          "什么时候开始？"
+        ],
+        "defaultObservationHint": "记录60分钟观察窗内，孩子用特殊疑问句或疑问词自发提出的信息要求。",
+        "defaultPromptMode": "自发地",
+        "defaultPresentation": "呈现物品",
+        "defaultTargetKind": "信息",
+        "presentationSelectorLabel": "环境"
+      },
+      "sharedObservation": {
+        "enabled": true,
+        "groupId": "mand_level3_timed_shared_v1",
+        "primaryMilestoneId": "MAND_11M"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -8498,10 +8610,10 @@
     "autoCompletion": {
       "canAutoCompleteDraft": true,
       "canSuggestScore": true,
-      "scoreStrategy": "count_qualified_unique_mand_events",
+      "scoreStrategy": "count_qualified_unique_environment_mand_events",
       "primaryMetric": "qualified_count",
       "computedIndicators": [
-        "unique_mand_count",
+        "unique_environment_count",
         "prompt_filtered_count"
       ],
       "requiresTeacherConfirmation": true,
@@ -8527,7 +8639,27 @@
       "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "礼貌拒绝记录",
+        "recordListTitle": "礼貌停止或移除要求",
+        "metricLabel": "有效",
+        "inputLabel": "孩子的礼貌要求",
+        "inputHint": "如：请别再推我、不了，谢谢你",
+        "quickPicks": [
+          "请别再推我",
+          "不了，谢谢你",
+          "对不起",
+          "你能让一下吗？"
+        ],
+        "unit": "个",
+        "motivationContext": "停止不喜欢活动或移除反感条件",
+        "countReferenceText": "系统按不同环境中的有效记录统计，",
+        "freeTextEnvironment": true,
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -8615,7 +8747,45 @@
       "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandTimedConfig": {
+        "plannedMinutes": 60,
+        "countMetricLabel": "不同",
+        "inputLabel": "孩子提出的要求",
+        "inputHint": "如：我的蜡笔断了、别把它拿出去、快走",
+        "targetOptions": [],
+        "quickPickFallback": [
+          "我的蜡笔断了",
+          "别把它拿出去",
+          "快走",
+          "大的那个",
+          "放在里面"
+        ],
+        "defaultObservationHint": "记录60分钟观察窗内，孩子用形容词、介词或副词提出的不同要求。",
+        "defaultPromptMode": "自发地",
+        "defaultPresentation": "呈现物品",
+        "presentationSelectorLabel": "环境",
+        "showPromptSelector": true,
+        "promptSelectorLabel": "辅助",
+        "promptOptions": [
+          "提问下",
+          "自发地"
+        ],
+        "abilitySelectorLabel": "能力",
+        "abilityOptions": [
+          "形容词",
+          "介词",
+          "副词"
+        ],
+        "defaultAbility": "形容词"
+      },
+      "sharedObservation": {
+        "enabled": true,
+        "groupId": "mand_level3_timed_shared_v1",
+        "primaryMilestoneId": "MAND_11M"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -8667,10 +8837,10 @@
     "autoCompletion": {
       "canAutoCompleteDraft": true,
       "canSuggestScore": true,
-      "scoreStrategy": "count_qualified_unique_mand_events",
+      "scoreStrategy": "count_qualified_mand_event_occurrences",
       "primaryMetric": "qualified_count",
       "computedIndicators": [
-        "unique_mand_count",
+        "qualified_event_count",
         "prompt_filtered_count"
       ],
       "requiresTeacherConfirmation": true,
@@ -8696,7 +8866,32 @@
       "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "说明要求记录",
+        "recordListTitle": "指出/说明/解释记录",
+        "metricLabel": "有效",
+        "inputLabel": "孩子指出或说明的内容",
+        "inputHint": "如：你先涂胶水，再把它贴好",
+        "quickPicks": [
+          "你先涂胶水，再把它贴好",
+          "你坐在这里，我去拿一本书"
+        ],
+        "unit": "次",
+        "motivationContext": "说明如何做事或参与活动",
+        "countReferenceText": "系统按有效发生次数统计，",
+        "promptOptions": [
+          "提问下",
+          "自发地"
+        ],
+        "environmentOptions": [
+          "呈现物品",
+          "未呈现物品"
+        ],
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",
@@ -8748,10 +8943,10 @@
     "autoCompletion": {
       "canAutoCompleteDraft": true,
       "canSuggestScore": true,
-      "scoreStrategy": "count_qualified_unique_mand_events",
+      "scoreStrategy": "count_qualified_mand_event_occurrences",
       "primaryMetric": "qualified_count",
       "computedIndicators": [
-        "unique_mand_count",
+        "qualified_event_count",
         "prompt_filtered_count"
       ],
       "requiresTeacherConfirmation": true,
@@ -8777,7 +8972,30 @@
       "VB-MAPP第三阶段孤独症儿童测评量表社会行为和社会性游戏-adba7191fe00bed5b9f3f90f76c66137ee064fbd.docx",
       "VB-MAPP第一部分------里程碑评估.pdf"
     ],
-    "showPreparationEntry": true
+    "showPreparationEntry": true,
+    "smartRules": {
+      "mandEventConfig": {
+        "recordTitleSuffix": "对话注意记录",
+        "recordListTitle": "要求他人注意对话",
+        "metricLabel": "有效",
+        "inputLabel": "孩子发起注意的对话",
+        "inputHint": "如：听我说、让我来告诉你",
+        "quickPicks": [
+          "听我说",
+          "让我来告诉你",
+          "当时发生的是",
+          "我来说个故事"
+        ],
+        "unit": "次",
+        "motivationContext": "要求他人注意自己的对话行为",
+        "countReferenceText": "系统按有效发生次数统计，",
+        "environmentOptions": [
+          "呈现物品",
+          "未呈现物品"
+        ],
+        "defaultResponseMode": "自发要求"
+      }
+    }
   },
   {
     "moduleCode": "milestones",

@@ -568,6 +568,7 @@ class VbmappSchemaSmartRules {
     this.sharedObservation,
     this.mandQualification,
     this.mandTimedConfig,
+    this.mandEventConfig,
     this.mandPhrase,
     this.mandDistinct,
   });
@@ -579,6 +580,8 @@ class VbmappSchemaSmartRules {
         _mapFrom(json['mandQualification']);
     final Map<String, dynamic> mandTimedConfig =
         _mapFrom(json['mandTimedConfig']);
+    final Map<String, dynamic> mandEventConfig =
+        _mapFrom(json['mandEventConfig']);
     final Map<String, dynamic> mandPhrase = _mapFrom(json['mandPhrase']);
     final Map<String, dynamic> mandDistinct = _mapFrom(json['mandDistinct']);
     return VbmappSchemaSmartRules(
@@ -591,6 +594,9 @@ class VbmappSchemaSmartRules {
       mandTimedConfig: mandTimedConfig.isEmpty
           ? null
           : VbmappMandTimedConfigRule.fromJson(mandTimedConfig),
+      mandEventConfig: mandEventConfig.isEmpty
+          ? null
+          : VbmappMandEventConfigRule.fromJson(mandEventConfig),
       mandPhrase:
           mandPhrase.isEmpty ? null : VbmappMandPhraseRule.fromJson(mandPhrase),
       mandDistinct: mandDistinct.isEmpty
@@ -602,6 +608,7 @@ class VbmappSchemaSmartRules {
   final VbmappSharedObservationRule? sharedObservation;
   final VbmappMandQualificationRule? mandQualification;
   final VbmappMandTimedConfigRule? mandTimedConfig;
+  final VbmappMandEventConfigRule? mandEventConfig;
   final VbmappMandPhraseRule? mandPhrase;
   final VbmappMandDistinctRule? mandDistinct;
 }
@@ -654,6 +661,11 @@ class VbmappMandTimedConfigRule {
     required this.defaultPromptMode,
     required this.defaultPresentation,
     required this.defaultTargetKind,
+    required this.presentationSelectorLabel,
+    required this.abilitySelectorLabel,
+    required this.abilityOptions,
+    required this.defaultAbility,
+    required this.quickPickFallback,
     required this.showPromptSelector,
     required this.promptSelectorLabel,
     required this.promptOptions,
@@ -676,6 +688,11 @@ class VbmappMandTimedConfigRule {
       defaultPromptMode: _textFrom(json['defaultPromptMode']),
       defaultPresentation: _textFrom(json['defaultPresentation']),
       defaultTargetKind: _textFrom(json['defaultTargetKind']),
+      presentationSelectorLabel: _textFrom(json['presentationSelectorLabel']),
+      abilitySelectorLabel: _textFrom(json['abilitySelectorLabel']),
+      abilityOptions: _stringListFrom(json['abilityOptions']),
+      defaultAbility: _textFrom(json['defaultAbility']),
+      quickPickFallback: _stringListFrom(json['quickPickFallback']),
       showPromptSelector: json['showPromptSelector'] == true,
       promptSelectorLabel: _textFrom(json['promptSelectorLabel']),
       promptOptions: _stringListFrom(json['promptOptions']),
@@ -694,11 +711,78 @@ class VbmappMandTimedConfigRule {
   final String defaultPromptMode;
   final String defaultPresentation;
   final String defaultTargetKind;
+  final String presentationSelectorLabel;
+  final String abilitySelectorLabel;
+  final List<String> abilityOptions;
+  final String defaultAbility;
+  final List<String> quickPickFallback;
   final bool showPromptSelector;
   final String promptSelectorLabel;
   final List<String> promptOptions;
   final int multiWordQualifiedMinCount;
   final int displayMinSlots;
+}
+
+class VbmappMandEventConfigRule {
+  const VbmappMandEventConfigRule({
+    required this.recordTitleSuffix,
+    required this.recordListTitle,
+    required this.metricLabel,
+    required this.inputLabel,
+    required this.inputHint,
+    required this.quickPicks,
+    required this.unit,
+    required this.motivationContext,
+    required this.countReferenceText,
+    required this.promptOptions,
+    required this.environmentOptions,
+    required this.freeTextEnvironment,
+    required this.abilityOptions,
+    required this.targetOptions,
+    required this.defaultTargetKind,
+    required this.defaultEnvironment,
+    required this.defaultResponseMode,
+  });
+
+  factory VbmappMandEventConfigRule.fromJson(Map<String, dynamic> json) {
+    return VbmappMandEventConfigRule(
+      recordTitleSuffix: _textFrom(json['recordTitleSuffix']),
+      recordListTitle: _textFrom(json['recordListTitle']),
+      metricLabel: _textFrom(json['metricLabel']),
+      inputLabel: _textFrom(json['inputLabel']),
+      inputHint: _textFrom(json['inputHint']),
+      quickPicks: _stringListFrom(json['quickPicks']),
+      unit: _textFrom(json['unit']),
+      motivationContext: _textFrom(json['motivationContext']),
+      countReferenceText: _textFrom(json['countReferenceText']),
+      promptOptions: _stringListFrom(json['promptOptions']),
+      environmentOptions: _stringListFrom(json['environmentOptions']),
+      freeTextEnvironment: json['freeTextEnvironment'] == true,
+      abilityOptions: _stringListFrom(json['abilityOptions']),
+      targetOptions: _stringListFrom(json['targetOptions']),
+      defaultTargetKind: _textFrom(json['defaultTargetKind']),
+      defaultEnvironment: _textFrom(json['defaultEnvironment']),
+      defaultResponseMode: _textFrom(json['defaultResponseMode']),
+    );
+  }
+
+  final String recordTitleSuffix;
+  final String recordListTitle;
+  final String metricLabel;
+  final String inputLabel;
+  final String inputHint;
+  final List<String> quickPicks;
+  final String unit;
+  final String motivationContext;
+  final String countReferenceText;
+  final List<String> promptOptions;
+  final List<String> environmentOptions;
+  final bool freeTextEnvironment;
+  final List<String> abilityOptions;
+  final List<String> targetOptions;
+  final String defaultTargetKind;
+  final String defaultEnvironment;
+  final String defaultResponseMode;
 }
 
 class VbmappMandPhraseRule {

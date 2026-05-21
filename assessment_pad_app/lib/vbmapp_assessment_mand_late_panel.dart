@@ -3,6 +3,7 @@ part of 'vbmapp_assessment_page.dart';
 class _VbmappLateMandInlinePanel extends StatefulWidget {
   const _VbmappLateMandInlinePanel({
     required this.item,
+    required this.responseSchema,
     required this.materialProfile,
     required this.events,
     required this.onSubmitEvent,
@@ -10,6 +11,7 @@ class _VbmappLateMandInlinePanel extends StatefulWidget {
   });
 
   final _VbmappItem item;
+  final VbmappItemResponseSchema? responseSchema;
   final VbmappMaterialProfile? materialProfile;
   final List<_VbmappMandEvent> events;
   final ValueChanged<_VbmappMandEvent> onSubmitEvent;
@@ -58,7 +60,7 @@ class _VbmappLateMandInlinePanelState
   }
 
   void _syncConfig() {
-    _config = _lateMandConfigFor(widget.item);
+    _config = _lateMandConfigFor(widget.item, widget.responseSchema);
     _promptChoice = _firstLateMandOption(_config.promptOptions);
     _environment = _firstLateMandOption(_config.environmentOptions);
     _ability = _firstLateMandOption(_config.abilityOptions);
@@ -449,6 +451,46 @@ class _VbmappLateMandConfig {
     this.defaultResponseMode = '自发要求',
   });
 
+  factory _VbmappLateMandConfig.fromSchema(
+    _VbmappLateMandConfig fallback,
+    VbmappMandEventConfigRule config,
+  ) {
+    String text(String value, String fallbackValue) {
+      return value.trim().isNotEmpty ? value.trim() : fallbackValue;
+    }
+
+    List<String> list(List<String> value, List<String> fallbackValue) {
+      return value.isNotEmpty ? value : fallbackValue;
+    }
+
+    return _VbmappLateMandConfig(
+      itemCode: fallback.itemCode,
+      recordTitleSuffix:
+          text(config.recordTitleSuffix, fallback.recordTitleSuffix),
+      recordListTitle: text(config.recordListTitle, fallback.recordListTitle),
+      metricLabel: text(config.metricLabel, fallback.metricLabel),
+      inputLabel: text(config.inputLabel, fallback.inputLabel),
+      inputHint: text(config.inputHint, fallback.inputHint),
+      quickPicks: list(config.quickPicks, fallback.quickPicks),
+      unit: text(config.unit, fallback.unit),
+      motivationContext:
+          text(config.motivationContext, fallback.motivationContext),
+      countReferenceText:
+          text(config.countReferenceText, fallback.countReferenceText),
+      promptOptions: list(config.promptOptions, fallback.promptOptions),
+      environmentOptions:
+          list(config.environmentOptions, fallback.environmentOptions),
+      freeTextEnvironment:
+          config.freeTextEnvironment || fallback.freeTextEnvironment,
+      abilityOptions: list(config.abilityOptions, fallback.abilityOptions),
+      targetOptions: list(config.targetOptions, fallback.targetOptions),
+      defaultTargetKind:
+          text(config.defaultTargetKind, fallback.defaultTargetKind),
+      defaultResponseMode:
+          text(config.defaultResponseMode, fallback.defaultResponseMode),
+    );
+  }
+
   final String itemCode;
   final String recordTitleSuffix;
   final String recordListTitle;
@@ -468,16 +510,24 @@ class _VbmappLateMandConfig {
   final String defaultResponseMode;
 }
 
-bool _isLateMandRecorderItem(_VbmappItem item) {
-  return _lateMandConfigs.containsKey(item.itemCode);
+bool _isLateMandRecorderItem(
+  _VbmappItem item,
+  VbmappItemResponseSchema? responseSchema,
+) {
+  return _lateMandConfigs.containsKey(item.itemCode) ||
+      (item.itemCode != 'MAND_06M' &&
+          responseSchema?.smartRules.mandEventConfig != null);
 }
 
 String _firstLateMandOption(List<String> options, {String fallback = ''}) {
   return options.isEmpty ? fallback : options.first;
 }
 
-_VbmappLateMandConfig _lateMandConfigFor(_VbmappItem item) {
-  return _lateMandConfigs[item.itemCode] ??
+_VbmappLateMandConfig _lateMandConfigFor(
+  _VbmappItem item,
+  VbmappItemResponseSchema? responseSchema,
+) {
+  final _VbmappLateMandConfig fallback = _lateMandConfigs[item.itemCode] ??
       _VbmappLateMandConfig(
         itemCode: item.itemCode,
         recordTitleSuffix: '现场记录',
@@ -489,6 +539,11 @@ _VbmappLateMandConfig _lateMandConfigFor(_VbmappItem item) {
         unit: '个',
         motivationContext: '提要求',
       );
+  final VbmappMandEventConfigRule? config =
+      responseSchema?.smartRules.mandEventConfig;
+  return config == null
+      ? fallback
+      : _VbmappLateMandConfig.fromSchema(fallback, config);
 }
 
 const Map<String, _VbmappLateMandConfig> _lateMandConfigs =

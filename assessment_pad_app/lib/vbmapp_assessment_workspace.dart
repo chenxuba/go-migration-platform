@@ -794,6 +794,7 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
     if (item.itemCode == 'MAND_06M') {
       return _VbmappMand6InlinePanel(
         item: item,
+        responseSchema: schema,
         materialProfile: materialProfile,
         events: mandEvents,
         onSubmitEvent: onSubmitMandEvent,
@@ -812,9 +813,10 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         onChangeObservation: onChangeMandObservation,
       );
     }
-    if (_isLateMandRecorderItem(item)) {
+    if (_isLateMandRecorderItem(item, schema)) {
       return _VbmappLateMandInlinePanel(
         item: item,
+        responseSchema: schema,
         materialProfile: materialProfile,
         events: mandEvents,
         onSubmitEvent: onSubmitMandEvent,

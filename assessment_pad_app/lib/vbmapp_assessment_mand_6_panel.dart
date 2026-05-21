@@ -3,6 +3,7 @@ part of 'vbmapp_assessment_page.dart';
 class _VbmappMand6InlinePanel extends StatefulWidget {
   const _VbmappMand6InlinePanel({
     required this.item,
+    required this.responseSchema,
     required this.materialProfile,
     required this.events,
     required this.onSubmitEvent,
@@ -10,6 +11,7 @@ class _VbmappMand6InlinePanel extends StatefulWidget {
   });
 
   final _VbmappItem item;
+  final VbmappItemResponseSchema? responseSchema;
   final VbmappMaterialProfile? materialProfile;
   final List<_VbmappMandEvent> events;
   final ValueChanged<_VbmappMandEvent> onSubmitEvent;
@@ -41,26 +43,58 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
   String _promptChoice = '提问下';
   int? _selectedRecordIndex;
 
+  VbmappMandEventConfigRule? get _config =>
+      widget.responseSchema?.smartRules.mandEventConfig;
+
+  List<String> get _promptOptions => _config?.promptOptions.isNotEmpty == true
+      ? _config!.promptOptions
+      : const <String>['提问下', '自发地'];
+
+  String _configuredText(String? value, String fallback) {
+    final String normalized = value?.trim() ?? '';
+    return normalized.isNotEmpty ? normalized : fallback;
+  }
+
   int get _onePointRequestCount => _scoreCountThreshold(widget.item, 1) ?? 20;
 
   int get _halfPointRequestCount => _scoreCountThreshold(widget.item, .5) ?? 10;
 
-  String get _recordTitle =>
-      '${_vbmappQuestionDomainLabel(widget.item)}${widget.item.navCode}缺失物品记录';
+  String get _recordTitle {
+    final String suffix = _configuredText(_config?.recordTitleSuffix, '缺失物品记录');
+    return '${_vbmappQuestionDomainLabel(widget.item)}'
+        '${widget.item.navCode}$suffix';
+  }
 
   String get _scoreReference {
-    return '参考：0个计0分，$_halfPointRequestCount个计0.5分，'
-        '$_onePointRequestCount个计1分；仅提供“你想要什么？”提问或等待自发要求，'
-        '系统按不同缺失物品自动去重。';
+    final String unit = _configuredText(_config?.unit, '个');
+    final String countReferenceText = _configuredText(
+      _config?.countReferenceText,
+      '仅提供“你想要什么？”提问或等待自发要求，系统按不同缺失物品自动去重。',
+    );
+    return '参考：0$unit计0分，$_halfPointRequestCount$unit计0.5分，'
+        '$_onePointRequestCount$unit计1分；$countReferenceText';
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _syncPromptChoice();
   }
 
   @override
   void didUpdateWidget(covariant _VbmappMand6InlinePanel oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.responseSchema != widget.responseSchema) {
+      _syncPromptChoice();
+    }
     final int? selectedIndex = _selectedRecordIndex;
     if (selectedIndex != null && selectedIndex >= widget.events.length) {
       _selectedRecordIndex = null;
     }
+  }
+
+  void _syncPromptChoice() {
+    _promptChoice = _promptOptions.isEmpty ? '提问下' : _promptOptions.first;
   }
 
   @override
@@ -113,7 +147,7 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
                     ),
                   ),
                   _VbmappEvidenceMetric(
-                    label: '有效',
+                    label: _configuredText(_config?.metricLabel, '有效'),
                     value: '$qualifiedCount/$_onePointRequestCount',
                     color: widget.item.color,
                   ),
@@ -163,7 +197,7 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
             child: _VbmappMandInlineChoiceGroup(
               label: '辅助',
               value: _promptChoice,
-              values: const <String>['提问下', '自发地'],
+              values: _promptOptions,
               onChanged: (String value) => setState(() {
                 _promptChoice = value;
               }),
@@ -177,8 +211,8 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
             Expanded(
               child: _VbmappMandInlineTextField(
                 controller: _requestController,
-                label: '孩子要求的缺失物',
-                hintText: '如：纸张、勺子、拼图块、车轮',
+                label: _configuredText(_config?.inputLabel, '孩子要求的缺失物'),
+                hintText: _configuredText(_config?.inputHint, '如：纸张、勺子、拼图块、车轮'),
               ),
             ),
             const SizedBox(width: 10),
@@ -215,8 +249,8 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
           text: widget.materialProfile?.label ?? '潜在强化物/活动',
         ),
         const SizedBox(height: 10),
-        const Text(
-          '不同缺失物品',
+        Text(
+          _configuredText(_config?.recordListTitle, '不同缺失物品'),
           style: TextStyle(
             color: _VbmappColors.ink,
             fontSize: 14,
@@ -260,6 +294,7 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
     ];
     return _deduplicatedTexts(<String>[
       ...profiled,
+      if (_config?.quickPicks.isNotEmpty == true) ..._config!.quickPicks,
       ..._fallbackMissingItems,
     ]).take(12).toList(growable: false);
   }
@@ -279,13 +314,15 @@ class _VbmappMand6InlinePanelState extends State<_VbmappMand6InlinePanel> {
       _VbmappMandEvent(
         utterance: request,
         target: request,
-        motivationContext: '缺失物品',
-        environment: '缺失物品',
-        targetKind: '缺失物',
+        motivationContext: _configuredText(_config?.motivationContext, '缺失物品'),
+        environment: _configuredText(_config?.defaultEnvironment, '缺失物品'),
+        targetKind: _configuredText(_config?.defaultTargetKind, '缺失物'),
         person: '',
         setting: '',
         example: '',
-        responseMode: _promptChoice == '提问下' ? '提问下要求' : '自发要求',
+        responseMode: _promptChoice == '提问下'
+            ? '提问下要求'
+            : _configuredText(_config?.defaultResponseMode, '自发要求'),
         promptLevel: _promptChoice,
         functional: true,
       ),

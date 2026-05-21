@@ -578,6 +578,22 @@ class _VbmappTimedMandStrategy {
       defaultTargetKind: config.defaultTargetKind.trim().isNotEmpty
           ? config.defaultTargetKind.trim()
           : (fallback?.defaultTargetKind ?? '物品'),
+      presentationSelectorLabel:
+          config.presentationSelectorLabel.trim().isNotEmpty
+              ? config.presentationSelectorLabel.trim()
+              : (fallback?.presentationSelectorLabel ?? '目标呈现'),
+      abilitySelectorLabel: config.abilitySelectorLabel.trim().isNotEmpty
+          ? config.abilitySelectorLabel.trim()
+          : (fallback?.abilitySelectorLabel ?? '能力'),
+      abilityOptions: config.abilityOptions.isNotEmpty
+          ? config.abilityOptions
+          : (fallback?.abilityOptions ?? const <String>[]),
+      defaultAbility: config.defaultAbility.trim().isNotEmpty
+          ? config.defaultAbility.trim()
+          : (fallback?.defaultAbility ?? ''),
+      quickPickFallback: config.quickPickFallback.isNotEmpty
+          ? config.quickPickFallback
+          : (fallback?.quickPickFallback ?? const <String>[]),
       showPromptSelector:
           config.showPromptSelector || fallback?.showPromptSelector == true,
       promptSelectorLabel: config.promptSelectorLabel.trim().isNotEmpty
@@ -586,11 +602,6 @@ class _VbmappTimedMandStrategy {
       promptOptions: config.promptOptions.isNotEmpty
           ? config.promptOptions
           : (fallback?.promptOptions ?? const <String>['自发地', '提问下']),
-      presentationSelectorLabel: fallback?.presentationSelectorLabel ?? '目标呈现',
-      abilitySelectorLabel: fallback?.abilitySelectorLabel ?? '能力',
-      abilityOptions: fallback?.abilityOptions ?? const <String>[],
-      defaultAbility: fallback?.defaultAbility ?? '',
-      quickPickFallback: fallback?.quickPickFallback ?? const <String>[],
       requirePresentedEnvironment: requirePresentedEnvironment,
       excludePromptedEvents: excludePromptedEvents,
       multiWordQualifiedMinCount: config.multiWordQualifiedMinCount > 0
