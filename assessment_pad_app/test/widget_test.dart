@@ -3767,6 +3767,49 @@ void main() {
     expect(find.text('推荐素材'), findsNothing);
   });
 
+  testWidgets('VB-MAPP hides preparation entry for SOCIAL_01M',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: _FakeVbmappAssessmentClient(),
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 25; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('社会行为和社会游戏'), findsWidgets);
+    expect(find.text('能够至少5次用目光接触来表示一种要求'), findsOneWidget);
+    expect(find.byKey(const ValueKey<String>('vbmapp-preparation-entry')),
+        findsNothing);
+  });
+
   testWidgets('VB-MAPP MAND 1M records requests and suggests score',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -9019,6 +9062,20 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           onePointCriteria: '',
           halfPointCriteria: '',
         ),
+        'milestones::SOCIAL_01M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'SOCIAL_01M',
+          uiPattern: 'natural_observation',
+          recordDepth: 'timed_observation_required',
+          showPreparationEntry: false,
+          materialProfileId: 'peer_social_context',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>[],
+          scoreStrategy: '',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
       },
       materialProfiles: <String, VbmappMaterialProfile>{
         'mand_1m_request_starter_set': VbmappMaterialProfile(
@@ -9064,6 +9121,15 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
             'mand3_examples_bubbles': <String>['红瓶泡泡', '蓝瓶泡泡'],
           },
           preparationChecks: <String>[],
+        ),
+        'peer_social_context': VbmappMaterialProfile(
+          label: '同伴互动情境',
+          suggestedTypes: <String>['同伴游戏', '轮流活动'],
+          recommendedMaterials: <VbmappMaterialSuggestion>[
+            VbmappMaterialSuggestion(
+                id: 'test-peer-ball', name: '共享球', type: '同伴游戏'),
+          ],
+          preparationChecks: <String>['记录同伴人数'],
         ),
       },
     );

@@ -301,7 +301,7 @@ type MilestoneResponseSchema struct {
 	RecordDepth          string                       `json:"recordDepth"`
 	RecordType           string                       `json:"recordType"`
 	UIPattern            string                       `json:"uiPattern"`
-	ShowPreparationEntry bool                         `json:"showPreparationEntry,omitempty"`
+	ShowPreparationEntry bool                         `json:"showPreparationEntry"`
 	MaterialProfileID    string                       `json:"materialProfileId,omitempty"`
 	WhyRecord            string                       `json:"whyRecord,omitempty"`
 	EvidenceTargets      []string                     `json:"evidenceTargets,omitempty"`
@@ -321,7 +321,7 @@ type BarrierResponseSchema struct {
 	BarrierNo            int                          `json:"barrierNo"`
 	RecordDepth          string                       `json:"recordDepth"`
 	UIPattern            string                       `json:"uiPattern"`
-	ShowPreparationEntry bool                         `json:"showPreparationEntry,omitempty"`
+	ShowPreparationEntry bool                         `json:"showPreparationEntry"`
 	FieldTemplateIDs     []string                     `json:"fieldTemplateIds,omitempty"`
 	EvidenceTargets      []string                     `json:"evidenceTargets,omitempty"`
 	ScoreEvidence        ResponseSchemaScoreEvidence  `json:"scoreEvidence"`
@@ -337,7 +337,7 @@ type TransitionResponseSchema struct {
 	Category             string                       `json:"category,omitempty"`
 	RecordDepth          string                       `json:"recordDepth"`
 	UIPattern            string                       `json:"uiPattern"`
-	ShowPreparationEntry bool                         `json:"showPreparationEntry,omitempty"`
+	ShowPreparationEntry bool                         `json:"showPreparationEntry"`
 	FieldTemplateIDs     []string                     `json:"fieldTemplateIds,omitempty"`
 	EvidenceTargets      []string                     `json:"evidenceTargets,omitempty"`
 	ScoreEvidence        ResponseSchemaScoreEvidence  `json:"scoreEvidence"`

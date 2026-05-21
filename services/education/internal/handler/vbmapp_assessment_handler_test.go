@@ -290,6 +290,19 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 		!envelope.Data.MilestoneResponseSchemas[0].ShowPreparationEntry {
 		t.Fatalf("unexpected schema preparation flag: %+v", envelope.Data.MilestoneResponseSchemas)
 	}
+	foundSocial := false
+	for _, row := range envelope.Data.MilestoneResponseSchemas {
+		if row.MilestoneID == "SOCIAL_01M" {
+			foundSocial = true
+			if row.ShowPreparationEntry {
+				t.Fatalf("expected SOCIAL_01M showPreparationEntry=false: %+v", row)
+			}
+			break
+		}
+	}
+	if !foundSocial {
+		t.Fatalf("expected SOCIAL_01M in milestone schema response")
+	}
 	if envelope.Data.ResponseSchemaSummary.ItemCount != 212 {
 		t.Fatalf("unexpected schema summary: %+v", envelope.Data.ResponseSchemaSummary)
 	}

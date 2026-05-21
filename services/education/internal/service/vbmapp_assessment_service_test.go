@@ -80,6 +80,16 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	if !schema.MilestoneResponseSchemas[0].ShowPreparationEntry {
 		t.Fatalf("expected MAND_01M showPreparationEntry in schema response: %+v", schema.MilestoneResponseSchemas[0])
 	}
+	var socialSchema *vbmappscore.MilestoneResponseSchema
+	for index := range schema.MilestoneResponseSchemas {
+		if schema.MilestoneResponseSchemas[index].MilestoneID == "SOCIAL_01M" {
+			socialSchema = &schema.MilestoneResponseSchemas[index]
+			break
+		}
+	}
+	if socialSchema == nil || socialSchema.ShowPreparationEntry {
+		t.Fatalf("expected SOCIAL_01M showPreparationEntry=false in schema response: %+v", socialSchema)
+	}
 	if len(schema.ResponseFieldTemplates) == 0 || len(schema.ResponseMaterialProfiles) == 0 || len(schema.ResponseSchemaSummary) == 0 {
 		t.Fatalf("expected schema support dictionaries: %+v", schema)
 	}
