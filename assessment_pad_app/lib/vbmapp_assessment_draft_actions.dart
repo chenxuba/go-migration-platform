@@ -104,11 +104,6 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
       ..addAll(detail.transitionScores);
     _restoreMandEvents(detail.itemResponses);
     _restoreMandObservations(detail.itemResponses);
-    if (_hasSharedTimedMandEvidence()) {
-      _syncSharedTimedMandScores();
-    } else {
-      _clearBuggedSharedTimedMandScores();
-    }
     _rebuildScoreDerivedState();
     final _VbmappItem? firstMissing = _firstMissingItem();
     if (firstMissing != null) {

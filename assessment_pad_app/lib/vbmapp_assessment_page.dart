@@ -231,17 +231,34 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                             if (!showActiveObservationBar) {
                               return const SizedBox.shrink();
                             }
+                            final _VbmappObservationTimerState
+                                activeBarObservation = activeTimedMandShared
+                                    ? activeObservation.withPlannedMinutes(
+                                        _sharedTimedMandMaxPlannedMinutesForGroup(
+                                          activeSharedGroupId,
+                                        ),
+                                      )
+                                    : activeObservation;
                             return Padding(
                               padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
                               child: _VbmappActiveObservationBar(
                                 tone: activeObservationItem.color,
-                                observation: activeObservation,
+                                observation: activeBarObservation,
                                 statusLabel: activeTimedMandShared
                                     ? '提要求观察中'
                                     : '${activeObservationItem.navCode}观察中',
                                 sharedSummaryMode: activeTimedMandShared,
-                                recordCount:
-                                    _mandStoredEventsFor(activeObservationItem)
+                                summaries: activeTimedMandShared
+                                    ? _sharedTimedMandSummariesForGroup(
+                                        activeSharedGroupId,
+                                      )
+                                    : const <_VbmappActiveObservationSummary>[],
+                                recordCount: activeTimedMandShared
+                                    ? _sharedTimedMandRecordCountForGroup(
+                                        activeSharedGroupId,
+                                      )
+                                    : _mandStoredEventsFor(
+                                            activeObservationItem)
                                         .length,
                                 qualifiedCount:
                                     _activeMandObservationQualifiedCount(
@@ -267,11 +284,11 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                                     unawaited(_openActiveMandQuickRecord()),
                                 onPrimaryAction: () {
                                   final DateTime now = DateTime.now();
-                                  if (activeObservation.isRunning) {
+                                  if (activeBarObservation.isRunning) {
                                     unawaited(
                                       _updateMandObservation(
                                         activeObservationItem,
-                                        activeObservation.pause(now),
+                                        activeBarObservation.pause(now),
                                       ),
                                     );
                                     return;
@@ -279,13 +296,23 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                                   unawaited(
                                     _updateMandObservation(
                                       activeObservationItem,
-                                      activeObservation.resume(now),
+                                      activeBarObservation.resume(now),
                                     ),
                                   );
                                 },
                                 onFinish: () => unawaited(
                                   _confirmFinishActiveMandObservation(),
                                 ),
+                                onAutoFinish: () {
+                                  unawaited(
+                                    _updateMandObservation(
+                                      activeObservationItem,
+                                      activeBarObservation.finishAtPlannedEnd(
+                                        DateTime.now(),
+                                      ),
+                                    ),
+                                  );
+                                },
                               ),
                             );
                           },

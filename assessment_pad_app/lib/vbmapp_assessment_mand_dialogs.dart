@@ -1,9 +1,39 @@
 part of 'vbmapp_assessment_page.dart';
 
-class _VbmappMand4QuickRecordDialog extends StatefulWidget {
-  const _VbmappMand4QuickRecordDialog({required this.materialProfile});
+class _VbmappTimedMandQuickRecordTarget {
+  const _VbmappTimedMandQuickRecordTarget({
+    required this.item,
+    required this.responseSchema,
+    required this.materialProfile,
+    required this.recordCount,
+    required this.qualifiedCount,
+  });
 
+  final _VbmappItem item;
+  final VbmappItemResponseSchema? responseSchema;
   final VbmappMaterialProfile? materialProfile;
+  final int recordCount;
+  final int qualifiedCount;
+}
+
+class _VbmappTimedMandQuickRecordResult {
+  const _VbmappTimedMandQuickRecordResult({
+    required this.item,
+    required this.event,
+  });
+
+  final _VbmappItem item;
+  final _VbmappMandEvent event;
+}
+
+class _VbmappMand4QuickRecordDialog extends StatefulWidget {
+  const _VbmappMand4QuickRecordDialog({
+    required this.targets,
+    required this.initialItemCode,
+  });
+
+  final List<_VbmappTimedMandQuickRecordTarget> targets;
+  final String initialItemCode;
 
   @override
   State<_VbmappMand4QuickRecordDialog> createState() =>
@@ -27,6 +57,47 @@ class _VbmappMand4QuickRecordDialogState
   String _promptMode = '自发地';
   String _presentation = '呈现物品';
   String _targetKind = '物品';
+  String _selectedItemCode = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedItemCode = widget.targets.any(
+      (_VbmappTimedMandQuickRecordTarget target) =>
+          target.item.itemCode == widget.initialItemCode,
+    )
+        ? widget.initialItemCode
+        : (widget.targets.isEmpty ? '' : widget.targets.first.item.itemCode);
+    if (widget.targets.isNotEmpty) {
+      _resetChoicesForTarget(_selectedTarget);
+    }
+  }
+
+  _VbmappTimedMandQuickRecordTarget get _selectedTarget {
+    for (final _VbmappTimedMandQuickRecordTarget target in widget.targets) {
+      if (target.item.itemCode == _selectedItemCode) {
+        return target;
+      }
+    }
+    return widget.targets.first;
+  }
+
+  _VbmappTimedMandStrategy _strategyFor(
+    _VbmappTimedMandQuickRecordTarget target,
+  ) {
+    return _timedMandStrategyForItem(
+          target.item,
+          responseSchema: target.responseSchema,
+        ) ??
+        _vbmappTimedMandStrategies['MAND_04M']!;
+  }
+
+  void _resetChoicesForTarget(_VbmappTimedMandQuickRecordTarget target) {
+    final _VbmappTimedMandStrategy strategy = _strategyFor(target);
+    _promptMode = strategy.defaultPromptMode;
+    _presentation = strategy.defaultPresentation;
+    _targetKind = strategy.defaultTargetKind;
+  }
 
   @override
   void dispose() {
@@ -36,8 +107,13 @@ class _VbmappMand4QuickRecordDialogState
 
   @override
   Widget build(BuildContext context) {
+    if (widget.targets.isEmpty) {
+      return const SizedBox.shrink();
+    }
+    final _VbmappTimedMandQuickRecordTarget selectedTarget = _selectedTarget;
+    final _VbmappTimedMandStrategy strategy = _strategyFor(selectedTarget);
     final List<String> materials = _smartMandQuickPicks(
-      widget.materialProfile,
+      selectedTarget.materialProfile,
       targetKind: _targetKind,
       fallback: _fallbackMaterials,
     );
@@ -66,50 +142,14 @@ class _VbmappMand4QuickRecordDialogState
                 ),
               ),
               const SizedBox(height: 14),
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    flex: 4,
-                    child: _VbmappMandInlineChoiceGroup(
-                      label: '诱发',
-                      value: _promptMode,
-                      values: const <String>['自发地', '提问下'],
-                      onChanged: (String value) => setState(() {
-                        _promptMode = value;
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 6,
-                    child: _VbmappMandInlineChoiceGroup(
-                      label: '目标呈现',
-                      value: _presentation,
-                      values: const <String>['呈现物品', '未呈现物品'],
-                      onChanged: (String value) => setState(() {
-                        _presentation = value;
-                      }),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    flex: 5,
-                    child: _VbmappMandInlineChoiceGroup(
-                      label: '目标',
-                      value: _targetKind,
-                      values: const <String>['物品', '动作', '活动'],
-                      onChanged: (String value) => setState(() {
-                        _targetKind = value;
-                      }),
-                    ),
-                  ),
-                ],
-              ),
+              _buildTargetPicker(),
+              const SizedBox(height: 12),
+              _buildChoiceRow(strategy),
               const SizedBox(height: 12),
               _VbmappMandInlineTextField(
                 controller: _requestController,
-                label: '孩子要求原话',
-                hintText: '如：泡泡、出去、该我了',
+                label: strategy.inputLabel,
+                hintText: strategy.inputHint,
               ),
               const SizedBox(height: 10),
               Wrap(
@@ -152,27 +192,209 @@ class _VbmappMand4QuickRecordDialogState
     );
   }
 
+  Widget _buildTargetPicker() {
+    return Row(
+      children: <Widget>[
+        const Text(
+          '记录到',
+          style: TextStyle(
+            color: _VbmappColors.muted,
+            fontSize: 12,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+        const SizedBox(width: 10),
+        for (int index = 0; index < widget.targets.length; index++) ...<Widget>[
+          if (index > 0) const SizedBox(width: 8),
+          Expanded(
+            child: _VbmappTimedMandTargetButton(
+              target: widget.targets[index],
+              selected:
+                  widget.targets[index].item.itemCode == _selectedItemCode,
+              onTap: () => _selectTarget(widget.targets[index]),
+            ),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildChoiceRow(_VbmappTimedMandStrategy strategy) {
+    final Widget presentationChoice = _VbmappMandInlineChoiceGroup(
+      label: '目标呈现',
+      value: _presentation,
+      values: const <String>['呈现物品', '未呈现物品'],
+      onChanged: (String value) => setState(() {
+        _presentation = value;
+      }),
+    );
+    final Widget targetChoice = _VbmappMandInlineChoiceGroup(
+      label: '目标',
+      value: _targetKind,
+      values: strategy.targetOptions,
+      onChanged: (String value) => setState(() {
+        _targetKind = value;
+      }),
+    );
+    if (strategy.showPromptSelector) {
+      return Row(
+        children: <Widget>[
+          Expanded(
+            flex: 4,
+            child: _VbmappMandInlineChoiceGroup(
+              label: strategy.promptSelectorLabel,
+              value: _promptMode,
+              values: strategy.promptOptions,
+              onChanged: (String value) => setState(() {
+                _promptMode = value;
+              }),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(flex: 6, child: presentationChoice),
+          const SizedBox(width: 12),
+          Expanded(flex: 5, child: targetChoice),
+        ],
+      );
+    }
+    return Row(
+      children: <Widget>[
+        Expanded(flex: 6, child: presentationChoice),
+        const SizedBox(width: 12),
+        Expanded(flex: 5, child: targetChoice),
+      ],
+    );
+  }
+
+  void _selectTarget(_VbmappTimedMandQuickRecordTarget target) {
+    setState(() {
+      _selectedItemCode = target.item.itemCode;
+      _resetChoicesForTarget(target);
+    });
+  }
+
   void _submit() {
     final String request = _requestController.text.trim();
     if (request.isEmpty) {
       return;
     }
-    Navigator.of(context).pop(
+    final _VbmappTimedMandQuickRecordTarget target = _selectedTarget;
+    final _VbmappTimedMandStrategy strategy = _strategyFor(target);
+    final _VbmappMandPhraseAssessment phraseAssessment = _assessMandPhrase(
       _VbmappMandEvent(
         utterance: request,
         target: request,
         motivationContext: '',
-        environment: _presentation,
-        targetKind: _targetKind,
         person: '',
         setting: '',
         example: '',
-        responseMode: _promptMode == '提问下' ? '提问下要求' : '自发要求',
-        promptLevel: _promptMode,
-        phraseLevel: '',
+        responseMode: strategy.responseModeForPrompt(_promptMode),
+        promptLevel: strategy.promptLevelForPrompt(_promptMode),
         functional: true,
       ),
     );
+    Navigator.of(context).pop(
+      _VbmappTimedMandQuickRecordResult(
+        item: target.item,
+        event: _VbmappMandEvent(
+          utterance: request,
+          target: request,
+          motivationContext: '',
+          environment: _presentation,
+          targetKind: _targetKind,
+          person: '',
+          setting: '',
+          example: '',
+          responseMode: strategy.responseModeForPrompt(_promptMode),
+          promptLevel: strategy.promptLevelForPrompt(_promptMode),
+          phraseLevel: strategy.multiWordQualifiedMinCount > 0
+              ? phraseAssessment.label
+              : '',
+          functional: true,
+        ),
+      ),
+    );
+  }
+}
+
+class _VbmappTimedMandTargetButton extends StatelessWidget {
+  const _VbmappTimedMandTargetButton({
+    required this.target,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final _VbmappTimedMandQuickRecordTarget target;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = target.item.color;
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        child: Ink(
+          height: 48,
+          padding: const EdgeInsets.symmetric(horizontal: 10),
+          decoration: BoxDecoration(
+            color: selected ? color.withOpacity(.12) : const Color(0xFFFFFCFA),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: selected ? color.withOpacity(.55) : _VbmappColors.lineSoft,
+            ),
+          ),
+          child: Row(
+            children: <Widget>[
+              Text(
+                target.item.navCode,
+                style: TextStyle(
+                  color: selected ? _VbmappColors.ink : _VbmappColors.body,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  _quickTargetLabel(target.item.itemCode),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: _VbmappColors.body,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '${target.qualifiedCount}/${target.recordCount}',
+                style: TextStyle(
+                  color: selected ? color : _VbmappColors.muted,
+                  fontSize: 11.5,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  static String _quickTargetLabel(String itemCode) {
+    switch (itemCode) {
+      case 'MAND_08M':
+        return '双词不同要求';
+      case 'MAND_09M':
+        return '30分钟自发不同';
+      case 'MAND_04M':
+      default:
+        return '60分钟自发要求';
+    }
   }
 }
 

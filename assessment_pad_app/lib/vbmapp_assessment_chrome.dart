@@ -921,6 +921,7 @@ class _VbmappActiveObservationBar extends StatefulWidget {
     required this.observation,
     required this.statusLabel,
     required this.sharedSummaryMode,
+    required this.summaries,
     required this.recordCount,
     required this.qualifiedCount,
     required this.onePointTarget,
@@ -928,12 +929,14 @@ class _VbmappActiveObservationBar extends StatefulWidget {
     required this.onQuickRecord,
     required this.onPrimaryAction,
     required this.onFinish,
+    required this.onAutoFinish,
   });
 
   final Color tone;
   final _VbmappObservationTimerState observation;
   final String statusLabel;
   final bool sharedSummaryMode;
+  final List<_VbmappActiveObservationSummary> summaries;
   final int recordCount;
   final int qualifiedCount;
   final int onePointTarget;
@@ -941,6 +944,7 @@ class _VbmappActiveObservationBar extends StatefulWidget {
   final VoidCallback onQuickRecord;
   final VoidCallback onPrimaryAction;
   final VoidCallback onFinish;
+  final VoidCallback onAutoFinish;
 
   @override
   State<_VbmappActiveObservationBar> createState() =>
@@ -950,6 +954,7 @@ class _VbmappActiveObservationBar extends StatefulWidget {
 class _VbmappActiveObservationBarState
     extends State<_VbmappActiveObservationBar> {
   Timer? _ticker;
+  bool _autoFinishRequested = false;
 
   @override
   void initState() {
@@ -961,6 +966,7 @@ class _VbmappActiveObservationBarState
   void didUpdateWidget(covariant _VbmappActiveObservationBar oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.observation != widget.observation) {
+      _autoFinishRequested = false;
       _syncTicker();
     }
   }
@@ -977,8 +983,15 @@ class _VbmappActiveObservationBarState
     if (!widget.observation.isRunning) {
       return;
     }
+    if (_finishIfWindowElapsed()) {
+      return;
+    }
     _ticker = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
       if (!mounted) {
+        timer.cancel();
+        return;
+      }
+      if (_finishIfWindowElapsed()) {
         timer.cancel();
         return;
       }
@@ -986,18 +999,36 @@ class _VbmappActiveObservationBarState
     });
   }
 
+  bool _finishIfWindowElapsed() {
+    if (_autoFinishRequested || !widget.observation.isRunning) {
+      return false;
+    }
+    if (widget.observation.elapsedSecondsAt(DateTime.now()) <
+        widget.observation.plannedSeconds) {
+      return false;
+    }
+    _autoFinishRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onAutoFinish();
+      }
+    });
+    return true;
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool running = widget.observation.isRunning;
-    final String elapsedText = _vbmappDurationText(
-      widget.observation.elapsedSecondsAt(DateTime.now()),
-    );
+    final int elapsedSeconds =
+        widget.observation.elapsedSecondsAt(DateTime.now());
+    final String elapsedText = _vbmappDurationText(elapsedSeconds);
     final String statusLabel = running
         ? widget.statusLabel
         : widget.statusLabel.replaceFirst('观察中', '观察暂停');
     final String summaryText = widget.sharedSummaryMode
         ? '$elapsedText · 已记录 ${widget.recordCount} 条'
         : '$elapsedText · ${widget.qualifiedCount}/${widget.onePointTarget}';
+    final List<_VbmappActiveObservationSummary> summaries = widget.summaries;
     return Container(
       key: const ValueKey<String>('vbmapp-active-observation-bar'),
       height: 40,
@@ -1030,14 +1061,40 @@ class _VbmappActiveObservationBarState
             ),
           ),
           const SizedBox(width: 7),
-          Text(
-            summaryText,
-            style: const TextStyle(
-              color: _VbmappColors.ink,
-              fontSize: 11.5,
-              fontWeight: FontWeight.w900,
+          if (widget.sharedSummaryMode && summaries.isNotEmpty)
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                Text(
+                  elapsedText,
+                  style: const TextStyle(
+                    color: _VbmappColors.ink,
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                for (int index = 0;
+                    index < summaries.length;
+                    index++) ...<Widget>[
+                  if (index > 0) const SizedBox(width: 5),
+                  _VbmappActiveObservationSummaryChip(
+                    summary: summaries[index],
+                    elapsedSeconds: elapsedSeconds,
+                    tone: widget.tone,
+                  ),
+                ],
+              ],
+            )
+          else
+            Text(
+              summaryText,
+              style: const TextStyle(
+                color: _VbmappColors.ink,
+                fontSize: 11.5,
+                fontWeight: FontWeight.w900,
+              ),
             ),
-          ),
           const Spacer(),
           _VbmappMand4TimerButton(
             key: const ValueKey<String>(
@@ -1061,6 +1118,73 @@ class _VbmappActiveObservationBarState
             icon: Icons.stop_rounded,
             tooltip: '结束观察',
             onTap: widget.onFinish,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _VbmappActiveObservationSummary {
+  const _VbmappActiveObservationSummary({
+    required this.label,
+    required this.value,
+    required this.plannedSeconds,
+    this.complete = false,
+  });
+
+  final String label;
+  final String value;
+  final int plannedSeconds;
+  final bool complete;
+}
+
+class _VbmappActiveObservationSummaryChip extends StatelessWidget {
+  const _VbmappActiveObservationSummaryChip({
+    required this.summary,
+    required this.elapsedSeconds,
+    required this.tone,
+  });
+
+  final _VbmappActiveObservationSummary summary;
+  final int elapsedSeconds;
+  final Color tone;
+
+  @override
+  Widget build(BuildContext context) {
+    final Color color = summary.complete ? _VbmappColors.green : tone;
+    final int remainingSeconds = summary.plannedSeconds - elapsedSeconds;
+    final String remainingText = _vbmappDurationText(
+      remainingSeconds > 0 ? remainingSeconds : 0,
+    );
+    return Container(
+      height: 24,
+      padding: const EdgeInsets.symmetric(horizontal: 7),
+      decoration: BoxDecoration(
+        color: color.withOpacity(summary.complete ? .13 : .1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(.24)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Text(
+            '${summary.label} ${summary.value}',
+            style: TextStyle(
+              color: summary.complete ? _VbmappColors.green : _VbmappColors.ink,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Text(
+            '剩$remainingText',
+            style: TextStyle(
+              color:
+                  summary.complete ? _VbmappColors.green : _VbmappColors.body,
+              fontSize: 10.5,
+              fontWeight: FontWeight.w800,
+            ),
           ),
         ],
       ),

@@ -399,6 +399,17 @@ class _VbmappObservationTimerState {
     );
   }
 
+  _VbmappObservationTimerState finishAtPlannedEnd(DateTime now) {
+    final int elapsed = elapsedSecondsAt(now);
+    return _VbmappObservationTimerState(
+      plannedMinutes: plannedMinutes,
+      accumulatedSeconds: elapsed > plannedSeconds ? plannedSeconds : elapsed,
+      runningSinceIso: '',
+      startedAtIso: startedAtIso,
+      ended: true,
+    );
+  }
+
   _VbmappObservationTimerState restart(DateTime now) {
     final String iso = now.toIso8601String();
     return _VbmappObservationTimerState(
@@ -795,15 +806,6 @@ class _VbmappTimedMandStrategy {
       );
     } else {
       addMeta(event.phraseLevel);
-    }
-    if (item?.itemCode == 'MAND_09M') {
-      final String uniqueKey = uniqueKeyForEvent(
-        event,
-        responseSchema: responseSchema,
-      );
-      if (uniqueKey.isNotEmpty && uniqueKey != _mandRequestText(event).trim()) {
-        addMeta('归一:$uniqueKey');
-      }
     }
     addMeta(event.promptLevel);
     final DateTime? recordedAt = event.recordedAt;

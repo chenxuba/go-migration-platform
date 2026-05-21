@@ -168,47 +168,50 @@ func loadMandEvidence(
 	if len(moduleResponses) == 0 {
 		return nil, mandObservationEvidence{}, false
 	}
-	for _, candidateCode := range sharedObservationCandidateCodes(itemCode) {
-		itemResponse := moduleResponses[candidateCode]
-		if len(itemResponse) == 0 {
-			continue
-		}
-		evidence, ok := anyMap(itemResponse["evidence"])
+	itemCode = strings.TrimSpace(strings.ToUpper(itemCode))
+	itemResponse := moduleResponses[itemCode]
+	if len(itemResponse) == 0 {
+		return nil, mandObservationEvidence{}, false
+	}
+	evidence, ok := anyMap(itemResponse["evidence"])
+	if !ok {
+		return nil, mandObservationEvidence{}, false
+	}
+	rawEvents, ok := evidence["mandEvents"].([]any)
+	if !ok || len(rawEvents) == 0 {
+		return nil, mandObservationEvidence{}, false
+	}
+	events := make([]mandEventEvidence, 0, len(rawEvents))
+	for _, raw := range rawEvents {
+		eventMap, ok := anyMap(raw)
 		if !ok {
 			continue
 		}
-		rawEvents, ok := evidence["mandEvents"].([]any)
-		if !ok || len(rawEvents) == 0 {
-			continue
+		event := mandEventEvidence{
+			Utterance:    normalizedText(eventMap["utterance"]),
+			Target:       normalizedText(eventMap["target"]),
+			TargetKind:   normalizedText(eventMap["targetKind"]),
+			Environment:  normalizedText(eventMap["environment"]),
+			Person:       normalizedText(eventMap["person"]),
+			Setting:      normalizedText(eventMap["setting"]),
+			Example:      normalizedText(eventMap["example"]),
+			ResponseMode: normalizedText(eventMap["responseMode"]),
+			PromptLevel:  normalizedText(eventMap["promptLevel"]),
+			RecordedAt:   normalizedTime(eventMap["recordedAtIso"], eventMap["recorded_at"]),
+			Functional:   eventMap["functional"] != false,
 		}
-		events := make([]mandEventEvidence, 0, len(rawEvents))
-		for _, raw := range rawEvents {
-			eventMap, ok := anyMap(raw)
-			if !ok {
-				continue
-			}
-			event := mandEventEvidence{
-				Utterance:    normalizedText(eventMap["utterance"]),
-				Target:       normalizedText(eventMap["target"]),
-				TargetKind:   normalizedText(eventMap["targetKind"]),
-				Environment:  normalizedText(eventMap["environment"]),
-				Person:       normalizedText(eventMap["person"]),
-				Setting:      normalizedText(eventMap["setting"]),
-				Example:      normalizedText(eventMap["example"]),
-				ResponseMode: normalizedText(eventMap["responseMode"]),
-				PromptLevel:  normalizedText(eventMap["promptLevel"]),
-				RecordedAt:   normalizedTime(eventMap["recordedAtIso"], eventMap["recorded_at"]),
-				Functional:   eventMap["functional"] != false,
-			}
-			if event.Utterance != "" || event.Target != "" {
-				events = append(events, event)
-			}
-		}
-		if len(events) > 0 {
-			return events, loadMandObservationEvidence(evidence), true
+		if event.Utterance != "" || event.Target != "" {
+			events = append(events, event)
 		}
 	}
-	return nil, mandObservationEvidence{}, false
+	if len(events) == 0 {
+		return nil, mandObservationEvidence{}, false
+	}
+	observation := loadMandObservationEvidence(evidence)
+	if observation.StartedAt.IsZero() {
+		observation = loadSharedMandObservationEvidence(moduleResponses, itemCode)
+	}
+	return events, observation, true
 }
 
 func loadMandObservationEvidence(evidence map[string]any) mandObservationEvidence {
@@ -220,6 +223,30 @@ func loadMandObservationEvidence(evidence map[string]any) mandObservationEvidenc
 		StartedAt:      normalizedTime(timerMap["startedAtIso"], timerMap["startTime"], timerMap["start_time"]),
 		PlannedMinutes: normalizedInt(timerMap["plannedMinutes"], timerMap["planned_minutes"]),
 	}
+}
+
+func loadSharedMandObservationEvidence(
+	moduleResponses map[string]map[string]any,
+	itemCode string,
+) mandObservationEvidence {
+	for _, candidateCode := range sharedObservationCandidateCodes(itemCode) {
+		if candidateCode == itemCode {
+			continue
+		}
+		itemResponse := moduleResponses[candidateCode]
+		if len(itemResponse) == 0 {
+			continue
+		}
+		evidence, ok := anyMap(itemResponse["evidence"])
+		if !ok {
+			continue
+		}
+		observation := loadMandObservationEvidence(evidence)
+		if !observation.StartedAt.IsZero() {
+			return observation
+		}
+	}
+	return mandObservationEvidence{}
 }
 
 func qualifiedUniqueMandEvents(

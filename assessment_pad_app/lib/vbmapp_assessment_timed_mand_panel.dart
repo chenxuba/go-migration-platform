@@ -42,6 +42,7 @@ class _VbmappTimedMandInlinePanelState
   final TextEditingController _requestController = TextEditingController();
 
   Timer? _clockTimer;
+  bool _autoFinishRequested = false;
   String _presentation = '呈现物品';
   String _targetKind = '物品';
   String _promptMode = '自发地';
@@ -117,6 +118,7 @@ class _VbmappTimedMandInlinePanelState
       _promptMode = _strategy.defaultPromptMode;
     }
     if (oldWidget.observation != widget.observation) {
+      _autoFinishRequested = false;
       _syncClockTicker();
     }
   }
@@ -466,13 +468,38 @@ class _VbmappTimedMandInlinePanelState
     if (!_observation.isRunning) {
       return;
     }
+    if (_finishIfWindowElapsed()) {
+      return;
+    }
     _clockTimer = Timer.periodic(const Duration(seconds: 1), (Timer timer) {
       if (!mounted) {
         timer.cancel();
         return;
       }
+      if (_finishIfWindowElapsed()) {
+        timer.cancel();
+        return;
+      }
       setState(() {});
     });
+  }
+
+  bool _finishIfWindowElapsed() {
+    if (_autoFinishRequested || !_observation.isRunning) {
+      return false;
+    }
+    if (_elapsedSeconds < _plannedSeconds) {
+      return false;
+    }
+    _autoFinishRequested = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        widget.onChangeObservation(
+          _observation.finishAtPlannedEnd(DateTime.now()),
+        );
+      }
+    });
+    return true;
   }
 
   void _handlePrimaryTimerAction() {
