@@ -17,6 +17,33 @@ if [[ -f .runlogs/platform-ai.env ]]; then
   set +a
 fi
 
+has_local_soffice() {
+  local candidate
+  for candidate in \
+    "${SOFFICE_PATH:-}" \
+    "${LIBREOFFICE_PATH:-}" \
+    "soffice" \
+    "/Applications/LibreOffice.app/Contents/MacOS/soffice" \
+    "/opt/homebrew/bin/soffice" \
+    "/usr/local/bin/soffice"; do
+    [[ -n "$candidate" ]] || continue
+    if [[ "$candidate" == /* ]]; then
+      [[ -x "$candidate" ]] && return 0
+      continue
+    fi
+    command -v "$candidate" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+docker_docx_converter="${ROOT:A}/scripts/docker-docx-pdf-converter.sh"
+if [[ -z "${DOCX_PDF_CONVERTER_KIND:-}" && -z "${DOCX_PDF_CONVERTER_PATH:-}" ]]; then
+  if [[ -x "$docker_docx_converter" ]] && command -v docker >/dev/null 2>&1 && ! has_local_soffice; then
+    export DOCX_PDF_CONVERTER_KIND="script"
+    export DOCX_PDF_CONVERTER_PATH="$docker_docx_converter"
+  fi
+fi
+
 ensure_port_free() {
   local port="$1"
   local service="$2"

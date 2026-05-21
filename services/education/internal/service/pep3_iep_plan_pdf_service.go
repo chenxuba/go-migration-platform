@@ -48,5 +48,5 @@ func exportIEPPDFByDOCX(sourceFileName string, docxBytes []byte) (string, string
 }
 
 func buildDOCXToPDFNotConfiguredError() error {
-	return fmt.Errorf("DOCX转PDF转换器未配置，请安装LibreOffice并配置 `DOCX_PDF_CONVERTER_PATH`，或提供自定义脚本转换器")
+	return fmt.Errorf("DOCX转PDF转换器未配置，请安装LibreOffice并配置 `DOCX_PDF_CONVERTER_PATH`，或使用 `scripts/docker-docx-pdf-converter.sh`")
 }

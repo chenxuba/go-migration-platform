@@ -122,6 +122,11 @@ export SKIP_ENSURE_INFRA=1
 - NATS JetStream：`nats://127.0.0.1:4222`
 - Meilisearch：`http://127.0.0.1:7700`
 
+导出依赖：
+
+- 收据类 HTML 转 PDF：本机 `Google Chrome` 或 `Chromium`
+- IEP / 计划书类 DOCX 转 PDF：本机 `LibreOffice`，或项目内置的 Docker 转换脚本
+
 ### 中间件启动方式
 
 可以直接交给 `scripts/restart.sh` 拉起。首次本机未安装时，先安装一次：
@@ -142,6 +147,16 @@ MEILI_MASTER_KEY=go-migration-platform meilisearch \
 ```
 
 如果希望脚本发现本机缺少命令时自动通过 Homebrew 安装，可设置 `ENSURE_INFRA_AUTO_INSTALL=1`。
+
+### DOCX 转 PDF 方案
+
+如果本机没有安装 `LibreOffice`，开发启动脚本会优先回退到：
+
+```bash
+scripts/docker-docx-pdf-converter.sh
+```
+
+它会在首次使用时用 Docker 构建一个本地 LibreOffice 转换镜像，然后用该镜像执行 `DOCX -> PDF`。前提是本机 `docker` 可用。
 
 ### 常用环境变量
 
