@@ -47,6 +47,34 @@ run_step() {
   "$@"
 }
 
+filter_flutter_warnings() {
+  awk '
+    BEGIN {
+      spm_skip = 0
+      kgp_skip = 0
+    }
+    /^The following plugins do not support Swift Package Manager for (ios|macos):$/ {
+      spm_skip = 3
+      next
+    }
+    spm_skip > 0 {
+      spm_skip--
+      next
+    }
+    /^WARNING: Your app uses the following plugins that apply Kotlin Gradle Plugin \(KGP\):/ {
+      kgp_skip = 1
+      next
+    }
+    kgp_skip == 1 {
+      if ($0 ~ /for-plugin-authors$/) {
+        kgp_skip = 0
+      }
+      next
+    }
+    { print }
+  '
+}
+
 detect_host_ip() {
   local iface=""
   if command -v route >/dev/null 2>&1; then
@@ -184,7 +212,12 @@ run_step adb devices
 echo
 echo "==> flutter run -d $DEVICE_ID"
 cd "$APP_DIR"
-exec flutter run -d "$DEVICE_ID" \
+set +e
+flutter run -d "$DEVICE_ID" \
+  --android-skip-build-dependency-validation \
   --dart-define=LOGIN_API_BASE_URL="$LOGIN_API_BASE_URL" \
   --dart-define=EDUCATION_API_BASE_URL="$EDUCATION_API_BASE_URL" \
-  "$@"
+  "$@" 2>&1 | filter_flutter_warnings
+status=${PIPESTATUS[0]}
+set -e
+exit "$status"
