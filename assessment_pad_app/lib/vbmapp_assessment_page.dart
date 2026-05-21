@@ -242,7 +242,11 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
       ..addAll(detail.transitionScores);
     _restoreMandEvents(detail.itemResponses);
     _restoreMandObservations(detail.itemResponses);
-    _syncSharedTimedMandScores();
+    if (_hasSharedTimedMandEvidence()) {
+      _syncSharedTimedMandScores();
+    } else {
+      _clearBuggedSharedTimedMandScores();
+    }
     final _VbmappItem? firstMissing = _firstMissingItem();
     if (firstMissing != null) {
       _selectedModuleCode = firstMissing.moduleCode;
@@ -405,7 +409,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     setState(() {
       _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       _milestoneScores[item.itemCode] = suggestedScore;
-      _syncSharedTimedMandScores();
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
@@ -436,7 +442,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
         _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       }
       _milestoneScores[item.itemCode] = suggestedScore;
-      _syncSharedTimedMandScores();
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
@@ -460,7 +468,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     setState(() {
       _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
       _milestoneScores[item.itemCode] = suggestedScore;
-      _syncSharedTimedMandScores();
+      if (_sharedTimedMandItemCodes.contains(item.itemCode)) {
+        _syncSharedTimedMandScores();
+      }
       _autoSaveText = '保存中...';
     });
     _syncObservationTicker();
@@ -688,6 +698,36 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
         const <_VbmappMandEvent>[];
   }
 
+  bool _hasSharedTimedMandEvidence() {
+    final List<_VbmappMandEvent> sharedEvents =
+        _mandEventsByItem[_sharedTimedMandStorageKey] ??
+            const <_VbmappMandEvent>[];
+    if (sharedEvents.isNotEmpty) {
+      return true;
+    }
+    final _VbmappObservationTimerState? sharedObservation =
+        _mandObservationByItem[_sharedTimedMandStorageKey];
+    if (sharedObservation == null) {
+      return false;
+    }
+    return sharedObservation.hasStarted ||
+        sharedObservation.accumulatedSeconds > 0 ||
+        sharedObservation.ended;
+  }
+
+  void _clearBuggedSharedTimedMandScores() {
+    const Set<String> codes = _sharedTimedMandItemCodes;
+    final bool allZero = codes.every(
+      (String code) => (_milestoneScores[code] ?? -1) == 0,
+    );
+    if (!allZero) {
+      return;
+    }
+    for (final String code in codes) {
+      _milestoneScores.remove(code);
+    }
+  }
+
   String _mandStorageKeyFor(String itemCode) {
     return _sharedTimedMandItemCodes.contains(itemCode)
         ? _sharedTimedMandStorageKey
@@ -695,6 +735,9 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   }
 
   void _syncSharedTimedMandScores() {
+    if (!_hasSharedTimedMandEvidence()) {
+      return;
+    }
     for (final _VbmappItem item in _milestoneItems) {
       if (!_sharedTimedMandItemCodes.contains(item.itemCode)) {
         continue;
