@@ -290,6 +290,7 @@ type ResponseSchemaItemDesign struct {
 
 type ResponseSchemaSmartRules struct {
 	SharedObservation *ResponseSchemaSharedObservationRule `json:"sharedObservation,omitempty"`
+	MandQualification *ResponseSchemaMandQualificationRule `json:"mandQualification,omitempty"`
 	MandDistinct      *ResponseSchemaMandDistinctRule      `json:"mandDistinct,omitempty"`
 	MandPhrase        *ResponseSchemaMandPhraseRule        `json:"mandPhrase,omitempty"`
 }
@@ -298,6 +299,11 @@ type ResponseSchemaSharedObservationRule struct {
 	Enabled            bool   `json:"enabled"`
 	GroupID            string `json:"groupId,omitempty"`
 	PrimaryMilestoneID string `json:"primaryMilestoneId,omitempty"`
+}
+
+type ResponseSchemaMandQualificationRule struct {
+	RequiredEnvironment string   `json:"requiredEnvironment,omitempty"`
+	ExcludedInitiations []string `json:"excludedInitiations,omitempty"`
 }
 
 type ResponseSchemaMandDistinctRule struct {

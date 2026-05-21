@@ -634,7 +634,12 @@ class _VbmappTimedMandStrategy {
   }) {
     final Set<String> uniqueTargets = <String>{};
     for (final _VbmappMandEvent event in events) {
-      if (!countsEvent(item, event, observation: observation)) {
+      if (!countsEvent(
+        item,
+        event,
+        observation: observation,
+        responseSchema: responseSchema,
+      )) {
         continue;
       }
       final String uniqueKey = uniqueKeyForEvent(
@@ -656,7 +661,12 @@ class _VbmappTimedMandStrategy {
   }) {
     final Set<String> uniqueTargets = <String>{};
     for (final _VbmappMandEvent event in events) {
-      if (!countsEvent(item, event, observation: observation) ||
+      if (!countsEvent(
+            item,
+            event,
+            observation: observation,
+            responseSchema: responseSchema,
+          ) ||
           !_isLikelyMultiWordMand(
             event,
             phraseRule: responseSchema?.smartRules.mandPhrase,
@@ -678,6 +688,7 @@ class _VbmappTimedMandStrategy {
     _VbmappItem item,
     _VbmappMandEvent event, {
     _VbmappObservationTimerState? observation,
+    VbmappItemResponseSchema? responseSchema,
   }) {
     if (!event.isQualified) {
       return false;
@@ -689,13 +700,12 @@ class _VbmappTimedMandStrategy {
     )) {
       return false;
     }
-    if (requirePresentedEnvironment && event.environment.trim() != '呈现物品') {
-      return false;
-    }
-    if (excludePromptedEvents && _mandInitiationText(event) == '提问下') {
-      return false;
-    }
-    return true;
+    return _mandEventMatchesQualificationRule(
+      event,
+      responseSchema?.smartRules.mandQualification,
+      fallbackRequirePresentedEnvironment: requirePresentedEnvironment,
+      fallbackExcludePromptedEvents: excludePromptedEvents,
+    );
   }
 
   String recordMetaText(
@@ -853,12 +863,22 @@ class _VbmappTimedMandStrategy {
                 event,
                 responseSchema: responseSchema,
               ),
-              'counts': countsEvent(item, event, observation: observation),
+              'counts': countsEvent(
+                item,
+                event,
+                observation: observation,
+                responseSchema: responseSchema,
+              ),
             }))
         .toList(growable: false);
     final List<String> uniqueTargetKeys = <String>{
       for (final _VbmappMandEvent event in events)
-        if (countsEvent(item, event, observation: observation) &&
+        if (countsEvent(
+              item,
+              event,
+              observation: observation,
+              responseSchema: responseSchema,
+            ) &&
             uniqueKeyForEvent(
               event,
               responseSchema: responseSchema,
@@ -994,6 +1014,7 @@ bool _mandEventCountsForItem(
   _VbmappItem item,
   _VbmappMandEvent event, {
   _VbmappObservationTimerState? observation,
+  VbmappItemResponseSchema? responseSchema,
 }) {
   final _VbmappTimedMandStrategy? timedStrategy =
       _timedMandStrategyForItem(item);
@@ -1002,18 +1023,47 @@ bool _mandEventCountsForItem(
       item,
       event,
       observation: observation,
+      responseSchema: responseSchema,
     );
   }
   if (!event.isQualified) {
     return false;
   }
-  switch (item.itemCode) {
-    case 'MAND_05M':
-      return event.environment.trim() == '呈现物品' &&
-          _mandInitiationText(event) != '提问下';
-    default:
-      return event.isQualified;
+  return _mandEventMatchesQualificationRule(
+    event,
+    responseSchema?.smartRules.mandQualification,
+    fallbackRequirePresentedEnvironment: item.itemCode == 'MAND_05M',
+    fallbackExcludePromptedEvents: item.itemCode == 'MAND_05M',
+  );
+}
+
+bool _mandEventMatchesQualificationRule(
+  _VbmappMandEvent event,
+  VbmappMandQualificationRule? rule, {
+  bool fallbackRequirePresentedEnvironment = false,
+  bool fallbackExcludePromptedEvents = false,
+}) {
+  if (!event.isQualified) {
+    return false;
   }
+  final String requiredEnvironment =
+      rule?.requiredEnvironment.trim().isNotEmpty == true
+          ? rule!.requiredEnvironment.trim()
+          : (fallbackRequirePresentedEnvironment ? '呈现物品' : '');
+  if (requiredEnvironment.isNotEmpty &&
+      event.environment.trim() != requiredEnvironment) {
+    return false;
+  }
+  final Set<String> excludedInitiations = <String>{
+    ...?rule?.excludedInitiations
+        .map((String value) => value.trim())
+        .where((String value) => value.isNotEmpty),
+    if (fallbackExcludePromptedEvents) '提问下',
+  };
+  if (excludedInitiations.contains(_mandInitiationText(event))) {
+    return false;
+  }
+  return true;
 }
 
 String _defaultMandUniqueKey(_VbmappMandEvent event) {
@@ -1402,7 +1452,12 @@ int _qualifiedMandCountForItem(
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
     final String uniqueKey = _defaultMandUniqueKey(event);
-    if (_mandEventCountsForItem(item, event, observation: observation) &&
+    if (_mandEventCountsForItem(
+          item,
+          event,
+          observation: observation,
+          responseSchema: responseSchema,
+        ) &&
         uniqueKey.isNotEmpty) {
       uniqueTargets.add(uniqueKey);
     }
@@ -1428,7 +1483,12 @@ int _mandPhraseQualifiedCountForItem(
   }
   final Set<String> uniqueTargets = <String>{};
   for (final _VbmappMandEvent event in events) {
-    if (!_mandEventCountsForItem(item, event, observation: observation)) {
+    if (!_mandEventCountsForItem(
+      item,
+      event,
+      observation: observation,
+      responseSchema: responseSchema,
+    )) {
       continue;
     }
     if (!_assessMandPhrase(

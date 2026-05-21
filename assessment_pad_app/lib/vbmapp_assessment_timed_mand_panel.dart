@@ -435,6 +435,7 @@ class _VbmappTimedMandInlinePanelState
             widget.item,
             event,
             observation: widget.observation,
+            responseSchema: widget.responseSchema,
           ),
           metaTextBuilder: (_VbmappMandEvent event) => _mandRecordMetaText(
             event,

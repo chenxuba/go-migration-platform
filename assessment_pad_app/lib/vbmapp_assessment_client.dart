@@ -566,6 +566,7 @@ class VbmappItemResponseSchema {
 class VbmappSchemaSmartRules {
   const VbmappSchemaSmartRules({
     this.sharedObservation,
+    this.mandQualification,
     this.mandPhrase,
     this.mandDistinct,
   });
@@ -573,12 +574,17 @@ class VbmappSchemaSmartRules {
   factory VbmappSchemaSmartRules.fromJson(Map<String, dynamic> json) {
     final Map<String, dynamic> sharedObservation =
         _mapFrom(json['sharedObservation']);
+    final Map<String, dynamic> mandQualification =
+        _mapFrom(json['mandQualification']);
     final Map<String, dynamic> mandPhrase = _mapFrom(json['mandPhrase']);
     final Map<String, dynamic> mandDistinct = _mapFrom(json['mandDistinct']);
     return VbmappSchemaSmartRules(
       sharedObservation: sharedObservation.isEmpty
           ? null
           : VbmappSharedObservationRule.fromJson(sharedObservation),
+      mandQualification: mandQualification.isEmpty
+          ? null
+          : VbmappMandQualificationRule.fromJson(mandQualification),
       mandPhrase:
           mandPhrase.isEmpty ? null : VbmappMandPhraseRule.fromJson(mandPhrase),
       mandDistinct: mandDistinct.isEmpty
@@ -588,6 +594,7 @@ class VbmappSchemaSmartRules {
   }
 
   final VbmappSharedObservationRule? sharedObservation;
+  final VbmappMandQualificationRule? mandQualification;
   final VbmappMandPhraseRule? mandPhrase;
   final VbmappMandDistinctRule? mandDistinct;
 }
@@ -610,6 +617,23 @@ class VbmappSharedObservationRule {
   final bool enabled;
   final String groupId;
   final String primaryMilestoneId;
+}
+
+class VbmappMandQualificationRule {
+  const VbmappMandQualificationRule({
+    required this.requiredEnvironment,
+    required this.excludedInitiations,
+  });
+
+  factory VbmappMandQualificationRule.fromJson(Map<String, dynamic> json) {
+    return VbmappMandQualificationRule(
+      requiredEnvironment: _textFrom(json['requiredEnvironment']),
+      excludedInitiations: _stringListFrom(json['excludedInitiations']),
+    );
+  }
+
+  final String requiredEnvironment;
+  final List<String> excludedInitiations;
 }
 
 class VbmappMandPhraseRule {

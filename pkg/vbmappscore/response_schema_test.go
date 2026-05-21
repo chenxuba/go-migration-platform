@@ -104,6 +104,18 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	if mand4.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
 		t.Fatalf("unexpected MAND_04M shared observation group: %+v", mand4.SmartRules.SharedObservation)
 	}
+	if mand4.SmartRules.MandQualification == nil ||
+		mand4.SmartRules.MandQualification.RequiredEnvironment != "呈现物品" ||
+		!contains(mand4.SmartRules.MandQualification.ExcludedInitiations, "提问下") {
+		t.Fatalf("unexpected MAND_04M qualification rule: %+v", mand4.SmartRules.MandQualification)
+	}
+
+	mand5 := findMilestoneResponseSchema(t, milestones, "MAND_05M")
+	if mand5.SmartRules.MandQualification == nil ||
+		mand5.SmartRules.MandQualification.RequiredEnvironment != "呈现物品" ||
+		!contains(mand5.SmartRules.MandQualification.ExcludedInitiations, "提问下") {
+		t.Fatalf("unexpected MAND_05M qualification rule: %+v", mand5.SmartRules.MandQualification)
+	}
 
 	mand3 := findMilestoneResponseSchema(t, milestones, "MAND_03M")
 	if !contains(mand3.FieldTemplateIDs, "generalization_matrix") {
@@ -119,6 +131,10 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	}
 	if mand9.SmartRules.MandDistinct == nil {
 		t.Fatalf("MAND_09M should expose mand distinct smart rules: %+v", mand9.SmartRules)
+	}
+	if mand9.SmartRules.MandQualification == nil ||
+		!contains(mand9.SmartRules.MandQualification.ExcludedInitiations, "提问下") {
+		t.Fatalf("unexpected MAND_09M qualification rule: %+v", mand9.SmartRules.MandQualification)
 	}
 	if mand9.SmartRules.MandDistinct.Strategy != "semantic_core_v1" {
 		t.Fatalf("unexpected MAND_09M distinct strategy: %+v", mand9.SmartRules.MandDistinct)
