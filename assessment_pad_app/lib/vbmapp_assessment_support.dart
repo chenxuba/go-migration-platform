@@ -811,7 +811,9 @@ class _VbmappTimedMandStrategy {
 
     addMeta(_mandInitiationText(event));
     addMeta(event.environment);
-    addMeta(event.targetKind);
+    if (!_shouldHideTargetKindInMandMeta(item)) {
+      addMeta(event.targetKind);
+    }
     if (multiWordQualifiedMinCount > 0) {
       addMeta(
         _assessMandPhrase(
@@ -1059,11 +1061,10 @@ const Map<String, _VbmappTimedMandStrategy> _vbmappTimedMandStrategies =
     itemCode: 'MAND_13M',
     plannedMinutes: 60,
     countMetricLabel: '不同',
-    inputLabel: '孩子使用修饰词的要求',
+    inputLabel: '孩子提出的要求',
     inputHint: '如：我的蜡笔断了、别把它拿出去、快走',
     targetOptions: <String>[],
     quickPickFallback: <String>['我的蜡笔断了', '别把它拿出去', '快走', '大的那个', '放在里面'],
-    defaultTargetKind: '修饰词',
     showPromptSelector: true,
     promptSelectorLabel: '辅助',
     promptOptions: <String>['提问下', '自发地'],
@@ -1917,7 +1918,9 @@ String _mandRecordMetaText(
 
   addMeta(_mandInitiationText(event));
   addMeta(event.environment);
-  addMeta(event.targetKind);
+  if (!_shouldHideTargetKindInMandMeta(item)) {
+    addMeta(event.targetKind);
+  }
   addMeta(event.phraseLevel);
   addMeta(event.promptLevel);
   if (item != null && _isTimedMandItem(item, responseSchema)) {
@@ -1927,6 +1930,20 @@ String _mandRecordMetaText(
     }
   }
   return values.isEmpty ? '未记录条件' : values.join(' · ');
+}
+
+bool _shouldHideTargetKindInMandMeta(_VbmappItem? item) {
+  switch (item?.itemCode) {
+    case 'MAND_07M':
+    case 'MAND_10M':
+    case 'MAND_11M':
+    case 'MAND_12M':
+    case 'MAND_13M':
+    case 'MAND_14M':
+    case 'MAND_15M':
+      return true;
+  }
+  return false;
 }
 
 int _effectiveObservationSecondsForItem(

@@ -604,9 +604,7 @@ class _VbmappTimedMandInlinePanelState
         target: request,
         motivationContext: '',
         environment: _presentation,
-        targetKind: _strategy.targetOptions.isEmpty
-            ? _strategy.defaultTargetKind
-            : _targetKind,
+        targetKind: _strategy.targetOptions.isEmpty ? '' : _targetKind,
         person: '',
         setting: '',
         example: '',

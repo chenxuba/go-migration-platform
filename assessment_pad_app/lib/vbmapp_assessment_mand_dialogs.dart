@@ -346,9 +346,7 @@ class _VbmappMand4QuickRecordDialogState
           target: request,
           motivationContext: '',
           environment: _presentation,
-          targetKind: strategy.targetOptions.isEmpty
-              ? strategy.defaultTargetKind
-              : _targetKind,
+          targetKind: strategy.targetOptions.isEmpty ? '' : _targetKind,
           person: '',
           setting: '',
           example: '',

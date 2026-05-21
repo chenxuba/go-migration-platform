@@ -363,6 +363,11 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     return _mandObservationByItem[_mandObservationStorageKeyFor(item.itemCode)];
   }
 
+  bool _hasActiveMandObservation(_VbmappItem item) {
+    final _VbmappObservationTimerState? observation = _mandObservationFor(item);
+    return observation != null && observation.hasStarted && !observation.ended;
+  }
+
   _VbmappItem? _activeMandObservationItem() {
     final List<_VbmappItem> activeItems = _activeMandObservationItems();
     return activeItems.isEmpty ? null : activeItems.first;

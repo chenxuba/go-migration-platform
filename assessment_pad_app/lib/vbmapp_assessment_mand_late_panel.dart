@@ -366,7 +366,9 @@ class _VbmappLateMandInlinePanelState
     addMeta(_mandInitiationText(event));
     addMeta(event.environment);
     addMeta(event.phraseLevel);
-    addMeta(event.targetKind);
+    if (!_shouldHideTargetKindInMandMeta(widget.item)) {
+      addMeta(event.targetKind);
+    }
     return values.isEmpty ? '未记录条件' : values.join(' · ');
   }
 
@@ -390,9 +392,11 @@ class _VbmappLateMandInlinePanelState
         target: request,
         motivationContext: _config.motivationContext,
         environment: environment,
-        targetKind: _targetKind.trim().isEmpty
-            ? _config.defaultTargetKind
-            : _targetKind.trim(),
+        targetKind: _config.targetOptions.isEmpty
+            ? ''
+            : _targetKind.trim().isEmpty
+                ? _config.defaultTargetKind
+                : _targetKind.trim(),
         person: '',
         setting: '',
         example: '',
