@@ -55,7 +55,7 @@ List<double> _activeObservationBarWidths(double available, int count) {
   const double gap = 8;
   final double usable = available - gap * (count - 1);
   if (count == 2 && usable >= 1120) {
-    return <double>[usable * .58, usable * .42];
+    return <double>[usable * .53, usable * .47];
   }
   final double evenWidth = (usable / count).clamp(560, 960);
   return List<double>.filled(count, evenWidth);
