@@ -362,6 +362,7 @@ class _VbmappMandInlineChoiceGroup extends StatelessWidget {
               for (int index = 0; index < values.length; index++) ...<Widget>[
                 if (index > 0) const SizedBox(width: 5),
                 Expanded(
+                  flex: _vbmappMandChoiceFlex(values[index]),
                   child: _VbmappMandChoiceButton(
                     label: values[index],
                     selected: values[index] == value,
@@ -375,6 +376,20 @@ class _VbmappMandInlineChoiceGroup extends StatelessWidget {
       ],
     );
   }
+}
+
+int _vbmappMandChoiceFlex(String label) {
+  final int length = label.runes.length;
+  if (length <= 2) {
+    return 2;
+  }
+  if (length <= 4) {
+    return 3;
+  }
+  if (length <= 6) {
+    return 4;
+  }
+  return 6;
 }
 
 class _VbmappMandChoiceButton extends StatelessWidget {
@@ -414,7 +429,7 @@ class _VbmappMandChoiceButton extends StatelessWidget {
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: selected ? Colors.white : _VbmappColors.body,
-                fontSize: 12,
+                fontSize: label.runes.length > 6 ? 11 : 12,
                 fontWeight: FontWeight.w900,
               ),
             ),

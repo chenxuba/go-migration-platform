@@ -4589,6 +4589,106 @@ void main() {
     expect(evidence['uniqueTargetCount'], 11);
   });
 
+  testWidgets('VB-MAPP late MAND panels follow manual dimensions',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 6; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('提要求7M行动要求记录'), findsOneWidget);
+    expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
+    expect(find.text('提问下'), findsOneWidget);
+    expect(find.text('自发地'), findsOneWidget);
+    expect(find.text('呈现物品'), findsOneWidget);
+    expect(find.text('未呈现物品'), findsOneWidget);
+    expect(find.text('能力'), findsNothing);
+
+    for (int index = 0; index < 3; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+    expect(find.text('提要求10M新要求记录'), findsOneWidget);
+    expect(find.text('能力'), findsOneWidget);
+    expect(find.text('新形式'), findsOneWidget);
+    expect(find.text('新内容'), findsOneWidget);
+    expect(find.text('对象'), findsOneWidget);
+    expect(find.text('动作（终止或移除）'), findsOneWidget);
+    expect(find.text('活动'), findsOneWidget);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text('提要求11M信息要求记录'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
+    expect(find.text('辅助'), findsNothing);
+    expect(find.text('能力'), findsNothing);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text('提要求12M礼貌拒绝记录'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
+    expect(find.text('辅助'), findsNothing);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text('提要求13M修饰词要求记录'), findsOneWidget);
+    expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('能力'), findsOneWidget);
+    expect(find.text('形容词'), findsOneWidget);
+    expect(find.text('介词'), findsOneWidget);
+    expect(find.text('副词'), findsOneWidget);
+    expect(find.text('对象'), findsOneWidget);
+    expect(find.text('物品'), findsOneWidget);
+    expect(find.text('动作'), findsOneWidget);
+    expect(find.text('动作（终止或移除）'), findsOneWidget);
+    expect(find.text('活动'), findsOneWidget);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text('提要求14M说明要求记录'), findsOneWidget);
+    expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
+    expect(find.text('能力'), findsNothing);
+
+    await tester.tap(find.text('下一题'));
+    await tester.pumpAndSettle();
+    expect(find.text('提要求15M对话注意记录'), findsOneWidget);
+    expect(find.text('环境'), findsOneWidget);
+    expect(find.text('辅助'), findsNothing);
+    expect(find.text('能力'), findsNothing);
+  });
+
   testWidgets('VB-MAPP MAND 8M tracks phrase level in timed observation',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);

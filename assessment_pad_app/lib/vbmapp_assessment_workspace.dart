@@ -800,6 +800,15 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         onDeleteEvent: onDeleteMandEvent,
       );
     }
+    if (_isLateMandRecorderItem(item)) {
+      return _VbmappLateMandInlinePanel(
+        item: item,
+        materialProfile: materialProfile,
+        events: mandEvents,
+        onSubmitEvent: onSubmitMandEvent,
+        onDeleteEvent: onDeleteMandEvent,
+      );
+    }
     if (_isTimedMandItem(item, schema)) {
       return _VbmappTimedMandInlinePanel(
         item: item,
