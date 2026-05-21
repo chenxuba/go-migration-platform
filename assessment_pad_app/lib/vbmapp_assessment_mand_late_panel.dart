@@ -365,7 +365,9 @@ class _VbmappLateMandInlinePanelState
       values.add(normalized);
     }
 
-    addMeta(_mandInitiationText(event));
+    if (_config.promptOptions.isNotEmpty) {
+      addMeta(_mandInitiationText(event));
+    }
     addMeta(event.environment);
     addMeta(event.phraseLevel);
     if (!_shouldHideTargetKindInMandMeta(widget.item)) {
@@ -402,9 +404,12 @@ class _VbmappLateMandInlinePanelState
         person: '',
         setting: '',
         example: '',
-        responseMode:
-            _promptChoice == '提问下' ? '提问下要求' : _config.defaultResponseMode,
-        promptLevel: _promptChoice,
+        responseMode: _config.promptOptions.isEmpty
+            ? ''
+            : _promptChoice == '提问下'
+                ? '提问下要求'
+                : _config.defaultResponseMode,
+        promptLevel: _config.promptOptions.isEmpty ? '' : _promptChoice,
         phraseLevel: _ability,
         functional: true,
       ),
@@ -579,16 +584,15 @@ const Map<String, _VbmappLateMandConfig> _lateMandConfigs =
   'MAND_12M': _VbmappLateMandConfig(
     itemCode: 'MAND_12M',
     recordTitleSuffix: '礼貌拒绝记录',
-    recordListTitle: '礼貌停止或移除要求',
+    recordListTitle: '有效要求记录',
     metricLabel: '有效',
     inputLabel: '孩子的礼貌要求',
     inputHint: '如：请别再推我、不了，谢谢你',
     quickPicks: <String>['请别再推我', '不了，谢谢你', '对不起', '你能让一下吗？'],
     unit: '个',
     motivationContext: '停止不喜欢活动或移除反感条件',
-    countReferenceText: '系统按不同环境中的有效记录统计，',
-    freeTextEnvironment: true,
-    defaultTargetKind: '动作（终止或移除）',
+    countReferenceText: '系统按有效要求记录自动去重统计，',
+    environmentOptions: <String>['呈现物品', '未呈现物品'],
   ),
   'MAND_14M': _VbmappLateMandConfig(
     itemCode: 'MAND_14M',

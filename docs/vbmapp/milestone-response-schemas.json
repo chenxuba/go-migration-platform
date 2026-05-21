@@ -3609,8 +3609,7 @@
         "environmentOptions": [
           "呈现物品",
           "未呈现物品"
-        ],
-        "defaultResponseMode": "自发要求"
+        ]
       }
     }
   },
@@ -8610,10 +8609,10 @@
     "autoCompletion": {
       "canAutoCompleteDraft": true,
       "canSuggestScore": true,
-      "scoreStrategy": "count_qualified_unique_environment_mand_events",
+      "scoreStrategy": "count_qualified_unique_mand_events",
       "primaryMetric": "qualified_count",
       "computedIndicators": [
-        "unique_environment_count",
+        "unique_mand_count",
         "prompt_filtered_count"
       ],
       "requiresTeacherConfirmation": true,
@@ -8643,7 +8642,7 @@
     "smartRules": {
       "mandEventConfig": {
         "recordTitleSuffix": "礼貌拒绝记录",
-        "recordListTitle": "礼貌停止或移除要求",
+        "recordListTitle": "有效要求记录",
         "metricLabel": "有效",
         "inputLabel": "孩子的礼貌要求",
         "inputHint": "如：请别再推我、不了，谢谢你",
@@ -8655,9 +8654,11 @@
         ],
         "unit": "个",
         "motivationContext": "停止不喜欢活动或移除反感条件",
-        "countReferenceText": "系统按不同环境中的有效记录统计，",
-        "freeTextEnvironment": true,
-        "defaultResponseMode": "自发要求"
+        "countReferenceText": "系统按有效要求记录自动去重统计，",
+        "environmentOptions": [
+          "呈现物品",
+          "未呈现物品"
+        ]
       }
     }
   },

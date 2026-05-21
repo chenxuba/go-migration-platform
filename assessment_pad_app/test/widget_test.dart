@@ -4671,7 +4671,16 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('提要求12M礼貌拒绝记录'), findsOneWidget);
     expect(find.text('环境'), findsOneWidget);
+    expect(find.text('呈现物品'), findsOneWidget);
+    expect(find.text('未呈现物品'), findsOneWidget);
+    expect(find.text('有效要求记录'), findsOneWidget);
+    expect(find.text('输入本次发生的具体环境'), findsNothing);
     expect(find.text('辅助'), findsNothing);
+    final Finder mand12Field = find.byType(TextField).first;
+    await tester.enterText(mand12Field, '请别再推我');
+    await tester.tap(find.text('记录本次要求'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('自发地'), findsNothing);
     expect(find.byKey(const ValueKey<String>('vbmapp-active-observation-bar')),
         findsOneWidget);
     await tester.tap(

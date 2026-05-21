@@ -1637,8 +1637,6 @@ enum _VbmappMandCountMode {
 
 _VbmappMandCountMode _mandCountModeForItem(_VbmappItem item) {
   switch (item.itemCode) {
-    case 'MAND_12M':
-      return _VbmappMandCountMode.uniqueEnvironment;
     case 'MAND_14M':
     case 'MAND_15M':
       return _VbmappMandCountMode.eventOccurrences;
