@@ -4495,6 +4495,100 @@ void main() {
     expect(evidence['qualifiedCount'], 10);
   });
 
+  testWidgets('VB-MAPP MAND 6M records missing item requests',
+      (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1366, 1024);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      tester.view.resetPhysicalSize();
+      tester.view.resetDevicePixelRatio();
+    });
+    SharedPreferences.setMockInitialValues(<String, Object>{
+      'auth_token': 'existing-token',
+    });
+    final _FakeVbmappAssessmentClient client = _FakeVbmappAssessmentClient();
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: VbmappAssessmentPage(
+            args: const VbmappAssessmentLaunchArgs(
+              studentId: 51,
+              studentName: '王小语',
+              studentAge: '3岁',
+              birthDate: '2023-01-01',
+              assessmentDate: '2026-05-19',
+            ),
+            client: client,
+            homeClient: _FakeHomeClient(),
+            onBack: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    for (int index = 0; index < 5; index++) {
+      await tester.tap(find.text('下一题'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('提要求6M缺失物品记录'), findsOneWidget);
+    expect(find.text('有效 0/20'), findsOneWidget);
+    expect(find.text('建议 0分'), findsOneWidget);
+    expect(find.text('辅助'), findsOneWidget);
+    expect(find.text('提问下'), findsOneWidget);
+    expect(find.text('自发地'), findsOneWidget);
+    expect(find.text('缺失场景'), findsNothing);
+    expect(find.text('不同缺失物品'), findsOneWidget);
+    expect(find.text('其他辅助'), findsNothing);
+    expect(find.text('纸张'), findsWidgets);
+    expect(find.text('勺子'), findsOneWidget);
+
+    final Finder requestField = find.byType(TextField).first;
+    for (final String request in <String>[
+      '纸张',
+      '勺子',
+      '吸管',
+      '拼图块',
+      '车轮',
+      '盖子',
+      '钥匙',
+      '泡泡棒',
+      '杯子',
+      '蜡笔',
+    ]) {
+      await tester.enterText(requestField, request);
+      await tester.tap(find.text('记录缺失物要求'));
+      await tester.pumpAndSettle();
+    }
+
+    expect(find.text('有效 10/20'), findsOneWidget);
+    expect(find.text('建议 0.5分'), findsOneWidget);
+
+    await tester.enterText(requestField, '纸张');
+    await tester.tap(find.text('记录缺失物要求'));
+    await tester.pumpAndSettle();
+    expect(find.text('有效 10/20'), findsOneWidget);
+
+    await tester.tap(find.text('自发地'));
+    await tester.pumpAndSettle();
+    await tester.enterText(requestField, '胶水');
+    await tester.tap(find.text('记录缺失物要求'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('有效 11/20'), findsOneWidget);
+    expect(find.textContaining('自发地'), findsWidgets);
+    expect(client.saveDraftItemCalls, 12);
+
+    final Map<String, dynamic> payload =
+        client.lastSaveDraftItemPayload ?? <String, dynamic>{};
+    final Map<String, dynamic> evidence =
+        payload['evidence'] as Map<String, dynamic>? ?? <String, dynamic>{};
+    expect(evidence['qualifiedCount'], 11);
+    expect(evidence['uniqueTargetCount'], 11);
+  });
+
   testWidgets('VB-MAPP MAND 8M tracks phrase level in timed observation',
       (WidgetTester tester) async {
     tester.view.physicalSize = const Size(1366, 1024);
@@ -9178,6 +9272,20 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
           onePointCriteria: '',
           halfPointCriteria: '',
         ),
+        'milestones::MAND_06M': VbmappItemResponseSchema(
+          moduleCode: 'milestones',
+          itemCode: 'MAND_06M',
+          uiPattern: 'mand_event_recorder',
+          recordDepth: 'structured_event_log',
+          showPreparationEntry: true,
+          materialProfileId: 'potential_reinforcer_set',
+          whyRecord: '',
+          evidenceTargets: <String>[],
+          qualityChecks: <String>['确认未使用题干不允许的辅助'],
+          scoreStrategy: 'count_qualified_unique_mand_events',
+          onePointCriteria: '',
+          halfPointCriteria: '',
+        ),
         'milestones::SOCIAL_01M': VbmappItemResponseSchema(
           moduleCode: 'milestones',
           itemCode: 'SOCIAL_01M',
@@ -9316,6 +9424,19 @@ class _FakeVbmappAssessmentClient implements VbmappAssessmentClient {
         ],
         quickPicksByField: const <String, Object?>{},
         preparationChecks: const <String>[],
+      ),
+      VbmappMaterialCatalogItem(
+        moduleCode: 'milestones',
+        itemCode: 'MAND_06M',
+        materialProfileId: 'potential_reinforcer_set',
+        materialProfileLabel: '潜在强化物/活动',
+        suggestedTypes: const <String>['缺失物品', '实物玩具', '活动'],
+        recommendedMaterials: const <VbmappMaterialSuggestion>[
+          VbmappMaterialSuggestion(id: 'test-paper', name: '纸张', type: '缺失物品'),
+          VbmappMaterialSuggestion(id: 'test-spoon', name: '勺子', type: '缺失物品'),
+        ],
+        quickPicksByField: const <String, Object?>{},
+        preparationChecks: const <String>['只能使用“你想要什么？”提问'],
       ),
     ];
     final String normalizedModule = moduleCode.trim().toLowerCase();

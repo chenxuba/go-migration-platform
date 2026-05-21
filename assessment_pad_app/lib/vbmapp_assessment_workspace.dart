@@ -791,6 +791,15 @@ class _VbmappSmartEvidencePanel extends StatelessWidget {
         onDeleteEvent: onDeleteMandEvent,
       );
     }
+    if (item.itemCode == 'MAND_06M') {
+      return _VbmappMand6InlinePanel(
+        item: item,
+        materialProfile: materialProfile,
+        events: mandEvents,
+        onSubmitEvent: onSubmitMandEvent,
+        onDeleteEvent: onDeleteMandEvent,
+      );
+    }
     if (_isTimedMandItem(item, schema)) {
       return _VbmappTimedMandInlinePanel(
         item: item,

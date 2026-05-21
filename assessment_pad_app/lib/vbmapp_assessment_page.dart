@@ -19,6 +19,7 @@ part 'vbmapp_assessment_mand_12_panel.dart';
 part 'vbmapp_assessment_timed_mand_panel.dart';
 part 'vbmapp_assessment_mand_3_panel.dart';
 part 'vbmapp_assessment_mand_5_panel.dart';
+part 'vbmapp_assessment_mand_6_panel.dart';
 part 'vbmapp_assessment_mand_widgets.dart';
 part 'vbmapp_assessment_mand_dialogs.dart';
 part 'vbmapp_assessment_support.dart';
