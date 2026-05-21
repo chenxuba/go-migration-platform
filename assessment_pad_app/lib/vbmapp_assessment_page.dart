@@ -413,8 +413,8 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                                         answeredCount: _answeredCountByModule,
                                         isAnswered: (_VbmappItem item) =>
                                             _scoreFor(item) != null,
-                                        hasActiveObservation:
-                                            _hasActiveMandObservation,
+                                        observationStatus:
+                                            _mandObservationStatusForNav,
                                         onSelectModule: _selectModule,
                                         onSelectItem: _selectItem,
                                       );

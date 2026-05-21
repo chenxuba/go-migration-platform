@@ -1,5 +1,11 @@
 part of 'vbmapp_assessment_page.dart';
 
+enum _VbmappNavObservationStatus {
+  none,
+  running,
+  complete,
+}
+
 class _VbmappModuleRail extends StatefulWidget {
   const _VbmappModuleRail({
     required this.modules,
@@ -8,7 +14,7 @@ class _VbmappModuleRail extends StatefulWidget {
     required this.items,
     required this.answeredCount,
     required this.isAnswered,
-    required this.hasActiveObservation,
+    required this.observationStatus,
     required this.onSelectModule,
     required this.onSelectItem,
   });
@@ -19,7 +25,8 @@ class _VbmappModuleRail extends StatefulWidget {
   final List<_VbmappItem> items;
   final Map<String, int> answeredCount;
   final bool Function(_VbmappItem item) isAnswered;
-  final bool Function(_VbmappItem item) hasActiveObservation;
+  final _VbmappNavObservationStatus Function(_VbmappItem item)
+      observationStatus;
   final ValueChanged<String> onSelectModule;
   final ValueChanged<_VbmappItem> onSelectItem;
 
@@ -314,7 +321,8 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
                                 selectedItemCodeListenable:
                                     widget.selectedItemCodeListenable,
                                 answered: widget.isAnswered(item),
-                                timing: widget.hasActiveObservation(item),
+                                observationStatus:
+                                    widget.observationStatus(item),
                                 onTap: () => widget.onSelectItem(item),
                               ),
                               const SizedBox(height: 6),
@@ -523,14 +531,14 @@ class _VbmappItemNavTile extends StatelessWidget {
     required this.item,
     required this.selectedItemCodeListenable,
     required this.answered,
-    required this.timing,
+    required this.observationStatus,
     required this.onTap,
   });
 
   final _VbmappItem item;
   final ValueNotifier<String> selectedItemCodeListenable;
   final bool answered;
-  final bool timing;
+  final _VbmappNavObservationStatus observationStatus;
   final VoidCallback onTap;
 
   @override
@@ -571,22 +579,32 @@ class _VbmappItemNavTile extends StatelessWidget {
                       ),
                     ),
                   ),
-                  if (timing) ...<Widget>[
+                  if (observationStatus !=
+                      _VbmappNavObservationStatus.none) ...<Widget>[
                     const SizedBox(width: 6),
-                    Container(
-                      width: 20,
-                      height: 20,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: accent.withOpacity(.12),
-                        shape: BoxShape.circle,
-                        border: Border.all(color: accent.withOpacity(.28)),
-                      ),
-                      child: Icon(
-                        Icons.schedule_rounded,
-                        color: accent,
-                        size: 13,
-                      ),
+                    Builder(
+                      builder: (BuildContext context) {
+                        final Color statusColor = observationStatus ==
+                                _VbmappNavObservationStatus.complete
+                            ? _VbmappColors.green
+                            : accent;
+                        return Container(
+                          width: 20,
+                          height: 20,
+                          alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                            color: statusColor.withOpacity(.12),
+                            shape: BoxShape.circle,
+                            border:
+                                Border.all(color: statusColor.withOpacity(.28)),
+                          ),
+                          child: Icon(
+                            Icons.schedule_rounded,
+                            color: statusColor,
+                            size: 13,
+                          ),
+                        );
+                      },
                     ),
                   ],
                   const SizedBox(width: 6),
