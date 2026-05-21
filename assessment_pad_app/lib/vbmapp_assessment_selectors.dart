@@ -11,37 +11,39 @@ extension _VbmappAssessmentSelectors on _VbmappAssessmentPageState {
   }
 
   int get _answeredCount {
-    return _milestoneScores.length +
-        _barrierScores.length +
-        _transitionScores.length;
+    return _cachedAnsweredCount;
   }
 
   double get _progressPercent {
-    return _answeredCount / _vbmappTotalItemCount;
+    return _cachedProgressPercent;
   }
 
   _VbmappScoreSnapshot get _scoreSnapshot {
-    return _VbmappScoreSnapshot(
-      milestoneTotal: _milestoneScores.values.fold<double>(
-        0,
-        (double total, double score) => total + score,
-      ),
-      milestoneMax: _milestoneItems.length,
-      barrierTotal: _barrierScores.values.fold<int>(
-        0,
-        (int total, int score) => total + score,
-      ),
-      barrierMax: _barrierItems.length * 4,
-      transitionTotal: _transitionScores.values.fold<int>(
-        0,
-        (int total, int score) => total + score,
-      ),
-      transitionMax: _transitionItems.length * 5,
-      milestoneDomains: _milestoneDomainSummaries,
-    );
+    return _cachedScoreSnapshot;
   }
 
   List<_VbmappDomainScoreSummary> get _milestoneDomainSummaries {
+    return _cachedScoreSnapshot.milestoneDomains;
+  }
+
+  void _rebuildScoreDerivedState() {
+    final int milestoneAnswered = _milestoneScores.length;
+    final int barrierAnswered = _barrierScores.length;
+    final int transitionAnswered = _transitionScores.length;
+    final int answeredCount =
+        milestoneAnswered + barrierAnswered + transitionAnswered;
+    final double milestoneTotal = _milestoneScores.values.fold<double>(
+      0,
+      (double total, double score) => total + score,
+    );
+    final int barrierTotal = _barrierScores.values.fold<int>(
+      0,
+      (int total, int score) => total + score,
+    );
+    final int transitionTotal = _transitionScores.values.fold<int>(
+      0,
+      (int total, int score) => total + score,
+    );
     final Map<String, List<_VbmappItem>> groupedItems =
         <String, List<_VbmappItem>>{};
     for (final _VbmappItem item in _milestoneItems) {
@@ -49,8 +51,8 @@ extension _VbmappAssessmentSelectors on _VbmappAssessmentPageState {
           .putIfAbsent(item.domainName, () => <_VbmappItem>[])
           .add(item);
     }
-    return groupedItems.entries
-        .map((MapEntry<String, List<_VbmappItem>> entry) {
+    final List<_VbmappDomainScoreSummary> milestoneDomains =
+        groupedItems.entries.map((MapEntry<String, List<_VbmappItem>> entry) {
       final List<_VbmappItem> items = entry.value;
       final int answered = items
           .where(
@@ -69,6 +71,22 @@ extension _VbmappAssessmentSelectors on _VbmappAssessmentPageState {
         total: items.length,
       );
     }).toList(growable: false);
+    _cachedAnsweredCount = answeredCount;
+    _cachedAnsweredCountByModule = <String, int>{
+      'milestones': milestoneAnswered,
+      'barriers': barrierAnswered,
+      'transition': transitionAnswered,
+    };
+    _cachedProgressPercent = answeredCount / _vbmappTotalItemCount;
+    _cachedScoreSnapshot = _VbmappScoreSnapshot(
+      milestoneTotal: milestoneTotal,
+      milestoneMax: _milestoneItems.length,
+      barrierTotal: barrierTotal,
+      barrierMax: _barrierItems.length * 4,
+      transitionTotal: transitionTotal,
+      transitionMax: _transitionItems.length * 5,
+      milestoneDomains: milestoneDomains,
+    );
   }
 
   String get _studentAgeText {

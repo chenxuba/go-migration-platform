@@ -44,6 +44,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
+      _rebuildScoreDerivedState();
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
@@ -80,6 +81,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
+      _rebuildScoreDerivedState();
       _autoSaveText = '保存中...';
     });
     await _saveMandEvidence(
@@ -109,6 +111,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
+      _rebuildScoreDerivedState();
       _autoSaveText = '保存中...';
     });
     _syncObservationTicker();

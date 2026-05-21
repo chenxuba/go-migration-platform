@@ -112,6 +112,22 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   bool _submitting = false;
   bool _autoNext = false;
   bool _keyboardVisible = false;
+  int _cachedAnsweredCount = 0;
+  Map<String, int> _cachedAnsweredCountByModule = const <String, int>{
+    'milestones': 0,
+    'barriers': 0,
+    'transition': 0,
+  };
+  double _cachedProgressPercent = 0;
+  _VbmappScoreSnapshot _cachedScoreSnapshot = const _VbmappScoreSnapshot(
+    milestoneTotal: 0,
+    milestoneMax: 170,
+    barrierTotal: 0,
+    barrierMax: 96,
+    transitionTotal: 0,
+    transitionMax: 90,
+    milestoneDomains: <_VbmappDomainScoreSummary>[],
+  );
 
   @override
   void initState() {
@@ -151,7 +167,11 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
 
   @override
   Widget build(BuildContext context) {
+    final List<_VbmappItem> selectedItems = _selectedItems;
     final _VbmappItem item = _selectedItem;
+    final VbmappItemResponseSchema? itemSchema = _schemaFor(item);
+    final VbmappMaterialProfile? materialProfile =
+        _materialProfileFor(item, itemSchema);
     final _VbmappScoreSnapshot scoreSnapshot = _scoreSnapshot;
     final _VbmappItem? activeObservationItem =
         _loading ? null : _activeMandObservationItem();
@@ -252,7 +272,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                           modules: _vbmappModules,
                           selectedCode: _selectedModuleCode,
                           selectedItemCode: item.itemCode,
-                          items: _selectedItems,
+                          items: selectedItems,
                           answeredCount: _answeredCountByModule,
                           isAnswered: (_VbmappItem item) =>
                               _scoreFor(item) != null,
@@ -265,11 +285,8 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                         child: _VbmappWorkspace(
                           item: item,
                           score: _scoreFor(item),
-                          responseSchema: _schemaFor(item),
-                          materialProfile: _materialProfileFor(
-                            item,
-                            _schemaFor(item),
-                          ),
+                          responseSchema: itemSchema,
+                          materialProfile: materialProfile,
                           mandEvents: _mandEventsFor(item),
                           mandObservation: _mandObservationFor(item),
                           onAddMandEvent: () => unawaited(

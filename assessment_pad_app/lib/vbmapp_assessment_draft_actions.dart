@@ -69,6 +69,7 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
       if (launchDraft != null) {
         _applyDraftDetail(launchDraft);
       }
+      _rebuildScoreDerivedState();
       if (_examinerName.isEmpty) {
         _examinerName = _sessionExaminerName(session);
       }
@@ -109,6 +110,7 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
     } else {
       _clearBuggedSharedTimedMandScores();
     }
+    _rebuildScoreDerivedState();
     final _VbmappItem? firstMissing = _firstMissingItem();
     if (firstMissing != null) {
       _selectedModuleCode = firstMissing.moduleCode;
@@ -269,10 +271,6 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
   }
 
   Map<String, int> get _answeredCountByModule {
-    return <String, int>{
-      'milestones': _milestoneScores.length,
-      'barriers': _barrierScores.length,
-      'transition': _transitionScores.length,
-    };
+    return _cachedAnsweredCountByModule;
   }
 }

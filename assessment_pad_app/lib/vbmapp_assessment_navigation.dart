@@ -28,6 +28,8 @@ class _VbmappModuleRail extends StatefulWidget {
 class _VbmappModuleRailState extends State<_VbmappModuleRail> {
   final Map<String, Set<String>> _expandedDomainsByModule =
       <String, Set<String>>{};
+  final Map<String, List<_VbmappRailGroup>> _groupCache =
+      <String, List<_VbmappRailGroup>>{};
   final GlobalKey _activeItemKey = GlobalKey();
   final Map<String, GlobalKey> _groupKeys = <String, GlobalKey>{};
   final ScrollController _scrollController = ScrollController();
@@ -138,7 +140,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       }
       Scrollable.ensureVisible(
         groupContext,
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 90),
         curve: Curves.easeOut,
         alignment: .02,
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
@@ -159,7 +161,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       }
       Scrollable.ensureVisible(
         itemContext,
-        duration: const Duration(milliseconds: 180),
+        duration: const Duration(milliseconds: 90),
         curve: Curves.easeOut,
         alignment: .34,
         alignmentPolicy: ScrollPositionAlignmentPolicy.explicit,
@@ -168,25 +170,32 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
   }
 
   List<_VbmappRailGroup> get _groups {
+    return _groupCache.putIfAbsent(
+      widget.selectedCode,
+      () => _buildRailGroups(widget.items),
+    );
+  }
+
+  List<_VbmappRailGroup> _buildRailGroups(List<_VbmappItem> items) {
     final Map<String, List<_VbmappItem>> grouped =
         <String, List<_VbmappItem>>{};
-    for (final _VbmappItem item in widget.items) {
+    final List<String> domainOrder = <String>[];
+    for (final _VbmappItem item in items) {
+      if (!grouped.containsKey(item.domainName)) {
+        domainOrder.add(item.domainName);
+      }
       grouped.putIfAbsent(item.domainName, () => <_VbmappItem>[]).add(item);
     }
-    return grouped.entries.map((MapEntry<String, List<_VbmappItem>> entry) {
-      final List<_VbmappItem> groupItems = List<_VbmappItem>.from(entry.value);
-      if (widget.selectedCode == 'milestones') {
-        groupItems.sort((_VbmappItem a, _VbmappItem b) {
-          final int stageCompare = _vbmappMilestoneNavOrder(a)
-              .compareTo(_vbmappMilestoneNavOrder(b));
-          if (stageCompare != 0) {
-            return stageCompare;
-          }
-          return a.sequenceNo.compareTo(b.sequenceNo);
-        });
-      }
-      return _VbmappRailGroup(title: entry.key, items: groupItems);
-    }).toList(growable: false);
+    return List<_VbmappRailGroup>.unmodifiable(
+      domainOrder.map((String domainName) {
+        final List<_VbmappItem> groupItems =
+            grouped[domainName] ?? const <_VbmappItem>[];
+        return _VbmappRailGroup(
+          title: domainName,
+          items: List<_VbmappItem>.unmodifiable(groupItems),
+        );
+      }),
+    );
   }
 
   @override

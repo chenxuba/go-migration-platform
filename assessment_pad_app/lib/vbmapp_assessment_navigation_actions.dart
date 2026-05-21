@@ -25,6 +25,7 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
           _transitionScores[item.itemCode] = score.toInt();
           break;
       }
+      _rebuildScoreDerivedState();
       _autoSaveText = '已记录';
     });
     if (_autoNext) {

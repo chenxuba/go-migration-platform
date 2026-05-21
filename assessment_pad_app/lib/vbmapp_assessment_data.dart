@@ -4108,40 +4108,42 @@ const List<_VbmappItem> _transitionItems = <_VbmappItem>[
   ),
 ];
 
-List<_VbmappItem> _itemsForModule(String code) {
-  switch (code) {
-    case 'barriers':
-      return _barrierItems;
-    case 'transition':
-      return _transitionItems;
-    case 'milestones':
-      final Map<String, List<_VbmappItem>> grouped =
-          <String, List<_VbmappItem>>{};
-      final List<String> domainOrder = <String>[];
-      for (final _VbmappItem item in _milestoneItems) {
-        if (!grouped.containsKey(item.domainName)) {
-          domainOrder.add(item.domainName);
-        }
-        grouped.putIfAbsent(item.domainName, () => <_VbmappItem>[]).add(item);
-      }
-      final List<_VbmappItem> ordered = <_VbmappItem>[];
-      for (final String domainName in domainOrder) {
-        final List<_VbmappItem> items = List<_VbmappItem>.from(
-            grouped[domainName] ?? const <_VbmappItem>[]);
-        items.sort((_VbmappItem a, _VbmappItem b) {
-          final int stageCompare = _vbmappMilestoneNavOrder(a)
-              .compareTo(_vbmappMilestoneNavOrder(b));
-          if (stageCompare != 0) {
-            return stageCompare;
-          }
-          return a.sequenceNo.compareTo(b.sequenceNo);
-        });
-        ordered.addAll(items);
-      }
-      return ordered;
-    default:
-      return _milestoneItems;
+final List<_VbmappItem> _vbmappMilestoneNavItems = _buildMilestoneNavItems();
+final Map<String, List<_VbmappItem>> _vbmappItemsByModule =
+    <String, List<_VbmappItem>>{
+  'milestones': _vbmappMilestoneNavItems,
+  'barriers': _barrierItems,
+  'transition': _transitionItems,
+};
+
+List<_VbmappItem> _buildMilestoneNavItems() {
+  final Map<String, List<_VbmappItem>> grouped = <String, List<_VbmappItem>>{};
+  final List<String> domainOrder = <String>[];
+  for (final _VbmappItem item in _milestoneItems) {
+    if (!grouped.containsKey(item.domainName)) {
+      domainOrder.add(item.domainName);
+    }
+    grouped.putIfAbsent(item.domainName, () => <_VbmappItem>[]).add(item);
   }
+  final List<_VbmappItem> ordered = <_VbmappItem>[];
+  for (final String domainName in domainOrder) {
+    final List<_VbmappItem> items =
+        List<_VbmappItem>.from(grouped[domainName] ?? const <_VbmappItem>[]);
+    items.sort((_VbmappItem a, _VbmappItem b) {
+      final int stageCompare =
+          _vbmappMilestoneNavOrder(a).compareTo(_vbmappMilestoneNavOrder(b));
+      if (stageCompare != 0) {
+        return stageCompare;
+      }
+      return a.sequenceNo.compareTo(b.sequenceNo);
+    });
+    ordered.addAll(items);
+  }
+  return List<_VbmappItem>.unmodifiable(ordered);
+}
+
+List<_VbmappItem> _itemsForModule(String code) {
+  return _vbmappItemsByModule[code] ?? _vbmappMilestoneNavItems;
 }
 
 _VbmappModule _moduleByCode(String code) {
