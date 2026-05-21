@@ -41,7 +41,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     setState(() {
       _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -77,7 +77,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         _mandEventsByItem[_mandStorageKeyFor(item.itemCode)] = events;
       }
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -106,7 +106,7 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     setState(() {
       _mandObservationByItem[_mandStorageKeyFor(item.itemCode)] = observation;
       _milestoneScores[item.itemCode] = suggestedScore;
-      if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
+      if (_usesSharedTimedMandObservation(item, schema: schema)) {
         _syncSharedTimedMandScores();
       }
       _autoSaveText = '保存中...';
@@ -295,6 +295,57 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
     return _itemSchemas[_schemaKey(item.moduleCode, item.itemCode)];
   }
 
+  VbmappItemResponseSchema? _schemaForMilestoneCode(String itemCode) {
+    return _itemSchemas[_schemaKey('milestones', itemCode)];
+  }
+
+  String? _sharedTimedMandGroupIdFor(
+    _VbmappItem item, {
+    VbmappItemResponseSchema? schema,
+  }) {
+    final VbmappItemResponseSchema? resolvedSchema = schema ?? _schemaFor(item);
+    final VbmappSharedObservationRule? rule =
+        resolvedSchema?.smartRules.sharedObservation;
+    if (rule != null && rule.enabled) {
+      return rule.groupId.trim().isEmpty
+          ? 'mand_timed_shared_v1'
+          : rule.groupId.trim();
+    }
+    if (_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
+      return 'mand_timed_shared_v1';
+    }
+    return null;
+  }
+
+  String _sharedTimedMandStorageKeyForGroup(String groupId) {
+    final String normalized = groupId.trim();
+    if (normalized.isEmpty || normalized == 'mand_timed_shared_v1') {
+      return _vbmappSharedTimedMandStorageKey;
+    }
+    return '$_vbmappSharedTimedMandStorageKey::$normalized';
+  }
+
+  String? _sharedTimedMandPrimaryItemCodeFor(
+    _VbmappItem item, {
+    VbmappItemResponseSchema? schema,
+  }) {
+    final String? groupId = _sharedTimedMandGroupIdFor(item, schema: schema);
+    if (groupId == null) {
+      return null;
+    }
+    final VbmappItemResponseSchema? resolvedSchema = schema ?? _schemaFor(item);
+    final String primaryCode =
+        resolvedSchema?.smartRules.sharedObservation?.primaryMilestoneId ?? '';
+    return primaryCode.trim().isEmpty ? 'MAND_04M' : primaryCode.trim();
+  }
+
+  bool _usesSharedTimedMandObservation(
+    _VbmappItem item, {
+    VbmappItemResponseSchema? schema,
+  }) {
+    return _sharedTimedMandGroupIdFor(item, schema: schema) != null;
+  }
+
   VbmappMaterialProfile? _materialProfileFor(
     _VbmappItem item,
     VbmappItemResponseSchema? schema,
@@ -319,15 +370,24 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
   }
 
   _VbmappItem? _activeMandObservationItem() {
-    final _VbmappObservationTimerState? sharedObservation =
-        _mandObservationByItem[_vbmappSharedTimedMandStorageKey];
-    if (sharedObservation != null &&
-        sharedObservation.hasStarted &&
-        !sharedObservation.ended) {
-      return _milestoneItems.firstWhere(
-        (_VbmappItem item) => item.itemCode == 'MAND_04M',
-        orElse: () => _selectedItem,
-      );
+    final Set<String> visitedSharedGroups = <String>{};
+    for (final _VbmappItem item in _milestoneItems) {
+      final String? groupId = _sharedTimedMandGroupIdFor(item);
+      if (groupId == null || !visitedSharedGroups.add(groupId)) {
+        continue;
+      }
+      final _VbmappObservationTimerState? sharedObservation =
+          _mandObservationByItem[_sharedTimedMandStorageKeyForGroup(groupId)];
+      if (sharedObservation != null &&
+          sharedObservation.hasStarted &&
+          !sharedObservation.ended) {
+        final String primaryCode =
+            _sharedTimedMandPrimaryItemCodeFor(item) ?? 'MAND_04M';
+        return _milestoneItems.firstWhere(
+          (_VbmappItem candidate) => candidate.itemCode == primaryCode,
+          orElse: () => item,
+        );
+      }
     }
     for (final _VbmappItem item in _milestoneItems) {
       final _VbmappObservationTimerState? observation =
@@ -353,15 +413,15 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         const <_VbmappMandEvent>[];
   }
 
-  bool _hasSharedTimedMandEvidence() {
+  bool _hasSharedTimedMandEvidenceForGroup(String groupId) {
+    final String storageKey = _sharedTimedMandStorageKeyForGroup(groupId);
     final List<_VbmappMandEvent> sharedEvents =
-        _mandEventsByItem[_vbmappSharedTimedMandStorageKey] ??
-            const <_VbmappMandEvent>[];
+        _mandEventsByItem[storageKey] ?? const <_VbmappMandEvent>[];
     if (sharedEvents.isNotEmpty) {
       return true;
     }
     final _VbmappObservationTimerState? sharedObservation =
-        _mandObservationByItem[_vbmappSharedTimedMandStorageKey];
+        _mandObservationByItem[storageKey];
     if (sharedObservation == null) {
       return false;
     }
@@ -370,42 +430,89 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         sharedObservation.ended;
   }
 
+  bool _hasSharedTimedMandEvidence() {
+    final Set<String> groupIds = <String>{};
+    for (final _VbmappItem item in _milestoneItems) {
+      final String? groupId = _sharedTimedMandGroupIdFor(item);
+      if (groupId != null) {
+        groupIds.add(groupId);
+      }
+    }
+    for (final String groupId in groupIds) {
+      if (_hasSharedTimedMandEvidenceForGroup(groupId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   void _clearBuggedSharedTimedMandScores() {
-    const Set<String> codes = _vbmappSharedTimedMandItemCodes;
-    final bool allZero = codes.every(
-      (String code) => (_milestoneScores[code] ?? -1) == 0,
-    );
-    if (!allZero) {
+    final Map<String, List<String>> groupCodes = <String, List<String>>{};
+    for (final _VbmappItem item in _milestoneItems) {
+      final String? groupId = _sharedTimedMandGroupIdFor(item);
+      if (groupId == null) {
+        continue;
+      }
+      groupCodes.putIfAbsent(groupId, () => <String>[]).add(item.itemCode);
+    }
+    if (groupCodes.isEmpty) {
       return;
     }
-    for (final String code in codes) {
-      _milestoneScores.remove(code);
+    for (final List<String> codes in groupCodes.values) {
+      final bool allZero = codes.every(
+        (String code) => (_milestoneScores[code] ?? -1) == 0,
+      );
+      if (!allZero) {
+        continue;
+      }
+      for (final String code in codes) {
+        _milestoneScores.remove(code);
+      }
     }
   }
 
   String _mandStorageKeyFor(String itemCode) {
-    return _vbmappSharedTimedMandItemCodes.contains(itemCode)
-        ? _vbmappSharedTimedMandStorageKey
-        : itemCode;
+    final VbmappItemResponseSchema? schema = _schemaForMilestoneCode(itemCode);
+    _VbmappItem? item;
+    for (final _VbmappItem candidate in _milestoneItems) {
+      if (candidate.itemCode == itemCode) {
+        item = candidate;
+        break;
+      }
+    }
+    if (item != null) {
+      final String? groupId = _sharedTimedMandGroupIdFor(item, schema: schema);
+      if (groupId != null) {
+        return _sharedTimedMandStorageKeyForGroup(groupId);
+      }
+    }
+    return itemCode;
   }
 
   void _syncSharedTimedMandScores() {
-    if (!_hasSharedTimedMandEvidence()) {
-      return;
-    }
+    final Map<String, List<_VbmappItem>> groups = <String, List<_VbmappItem>>{};
     for (final _VbmappItem item in _milestoneItems) {
-      if (!_vbmappSharedTimedMandItemCodes.contains(item.itemCode)) {
+      final String? groupId = _sharedTimedMandGroupIdFor(item);
+      if (groupId == null) {
         continue;
       }
-      final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
-      final _VbmappObservationTimerState? observation =
-          _mandObservationFor(item);
-      _milestoneScores[item.itemCode] = _suggestMandScore(
-        item,
-        events,
-        observation: observation,
-        responseSchema: _schemaFor(item),
-      );
+      groups.putIfAbsent(groupId, () => <_VbmappItem>[]).add(item);
+    }
+    for (final MapEntry<String, List<_VbmappItem>> entry in groups.entries) {
+      if (!_hasSharedTimedMandEvidenceForGroup(entry.key)) {
+        continue;
+      }
+      for (final _VbmappItem item in entry.value) {
+        final List<_VbmappMandEvent> events = _mandStoredEventsFor(item);
+        final _VbmappObservationTimerState? observation =
+            _mandObservationFor(item);
+        _milestoneScores[item.itemCode] = _suggestMandScore(
+          item,
+          events,
+          observation: observation,
+          responseSchema: _schemaFor(item),
+        );
+      }
     }
   }
 

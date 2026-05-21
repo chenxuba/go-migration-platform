@@ -266,6 +266,9 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 				MilestoneID          string `json:"milestoneId"`
 				ShowPreparationEntry bool   `json:"showPreparationEntry"`
 				SmartRules           struct {
+					SharedObservation struct {
+						GroupID string `json:"groupId"`
+					} `json:"sharedObservation"`
 					MandPhrase struct {
 						Strategy string `json:"strategy"`
 					} `json:"mandPhrase"`
@@ -299,6 +302,7 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 		t.Fatalf("unexpected schema preparation flag: %+v", envelope.Data.MilestoneResponseSchemas)
 	}
 	foundSocial := false
+	foundMand4 := false
 	foundMand8 := false
 	foundMand9 := false
 	for _, row := range envelope.Data.MilestoneResponseSchemas {
@@ -308,14 +312,26 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 				t.Fatalf("expected SOCIAL_01M showPreparationEntry=false: %+v", row)
 			}
 		}
+		if row.MilestoneID == "MAND_04M" {
+			foundMand4 = true
+			if row.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+				t.Fatalf("expected MAND_04M shared observation on schema endpoint: %+v", row)
+			}
+		}
 		if row.MilestoneID == "MAND_08M" {
 			foundMand8 = true
+			if row.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+				t.Fatalf("expected MAND_08M shared observation on schema endpoint: %+v", row)
+			}
 			if row.SmartRules.MandPhrase.Strategy != "semantic_phrase_v1" {
 				t.Fatalf("expected MAND_08M phrase rules on schema endpoint: %+v", row)
 			}
 		}
 		if row.MilestoneID == "MAND_09M" {
 			foundMand9 = true
+			if row.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+				t.Fatalf("expected MAND_09M shared observation on schema endpoint: %+v", row)
+			}
 			if row.SmartRules.MandDistinct.Strategy != "semantic_core_v1" {
 				t.Fatalf("expected MAND_09M smart rules on schema endpoint: %+v", row)
 			}
@@ -323,6 +339,9 @@ func TestVBMAPPSchemaEndpointWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 	if !foundSocial {
 		t.Fatalf("expected SOCIAL_01M in milestone schema response")
+	}
+	if !foundMand4 {
+		t.Fatalf("expected MAND_04M in milestone schema response")
 	}
 	if !foundMand8 {
 		t.Fatalf("expected MAND_08M in milestone schema response")

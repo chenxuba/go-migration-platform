@@ -318,8 +318,7 @@
       "computedIndicators": [
         "unique_mand_count",
         "prompt_filtered_count",
-        "actual_observation_minutes",
-        "multi_word_qualified_count"
+        "actual_observation_minutes"
       ],
       "requiresTeacherConfirmation": true,
       "teacherCanOverride": true
@@ -345,6 +344,13 @@
         "自发事件一键记录",
         "自动统计不同要求"
       ]
+    },
+    "smartRules": {
+      "sharedObservation": {
+        "enabled": true,
+        "groupId": "mand_timed_shared_v1",
+        "primaryMilestoneId": "MAND_04M"
+      }
     },
     "sourceFiles": [
       "VB-MAPP第一阶段孤独症儿童测评量表社会行为和社会性游戏-922f359d0a4e767f5acfa1c7aa00b52acfc79cbc.docx",
@@ -3605,6 +3611,11 @@
       ]
     },
     "smartRules": {
+      "sharedObservation": {
+        "enabled": true,
+        "groupId": "mand_timed_shared_v1",
+        "primaryMilestoneId": "MAND_04M"
+      },
       "mandPhrase": {
         "strategy": "semantic_phrase_v1",
         "ignoredPrefixes": [
@@ -3738,6 +3749,11 @@
       ]
     },
     "smartRules": {
+      "sharedObservation": {
+        "enabled": true,
+        "groupId": "mand_timed_shared_v1",
+        "primaryMilestoneId": "MAND_04M"
+      },
       "mandDistinct": {
         "strategy": "semantic_core_v1",
         "kindAware": true,

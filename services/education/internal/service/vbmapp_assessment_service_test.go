@@ -81,11 +81,15 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 		t.Fatalf("expected MAND_01M showPreparationEntry in schema response: %+v", schema.MilestoneResponseSchemas[0])
 	}
 	var socialSchema *vbmappscore.MilestoneResponseSchema
+	var mand4Schema *vbmappscore.MilestoneResponseSchema
 	var mand8Schema *vbmappscore.MilestoneResponseSchema
 	var mand9Schema *vbmappscore.MilestoneResponseSchema
 	for index := range schema.MilestoneResponseSchemas {
 		if schema.MilestoneResponseSchemas[index].MilestoneID == "SOCIAL_01M" {
 			socialSchema = &schema.MilestoneResponseSchemas[index]
+		}
+		if schema.MilestoneResponseSchemas[index].MilestoneID == "MAND_04M" {
+			mand4Schema = &schema.MilestoneResponseSchemas[index]
 		}
 		if schema.MilestoneResponseSchemas[index].MilestoneID == "MAND_08M" {
 			mand8Schema = &schema.MilestoneResponseSchemas[index]
@@ -97,14 +101,23 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	if socialSchema == nil || socialSchema.ShowPreparationEntry {
 		t.Fatalf("expected SOCIAL_01M showPreparationEntry=false in schema response: %+v", socialSchema)
 	}
+	if mand4Schema == nil || mand4Schema.SmartRules.SharedObservation == nil {
+		t.Fatalf("expected MAND_04M shared observation smart rules in schema response: %+v", mand4Schema)
+	}
 	if mand8Schema == nil || mand8Schema.SmartRules.MandPhrase == nil {
 		t.Fatalf("expected MAND_08M phrase smart rules in schema response: %+v", mand8Schema)
+	}
+	if mand8Schema.SmartRules.SharedObservation == nil || mand8Schema.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_08M shared observation group in schema response: %+v", mand8Schema.SmartRules.SharedObservation)
 	}
 	if mand8Schema.SmartRules.MandPhrase.Strategy != "semantic_phrase_v1" {
 		t.Fatalf("unexpected MAND_08M phrase strategy in schema response: %+v", mand8Schema.SmartRules.MandPhrase)
 	}
 	if mand9Schema == nil || mand9Schema.SmartRules.MandDistinct == nil {
 		t.Fatalf("expected MAND_09M smart rules in schema response: %+v", mand9Schema)
+	}
+	if mand9Schema.SmartRules.SharedObservation == nil || mand9Schema.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_09M shared observation group in schema response: %+v", mand9Schema.SmartRules.SharedObservation)
 	}
 	if mand9Schema.SmartRules.MandDistinct.Strategy != "semantic_core_v1" {
 		t.Fatalf("unexpected MAND_09M distinct strategy in schema response: %+v", mand9Schema.SmartRules.MandDistinct)

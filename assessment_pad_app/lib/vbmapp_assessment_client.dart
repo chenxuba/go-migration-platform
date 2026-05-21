@@ -565,14 +565,20 @@ class VbmappItemResponseSchema {
 
 class VbmappSchemaSmartRules {
   const VbmappSchemaSmartRules({
+    this.sharedObservation,
     this.mandPhrase,
     this.mandDistinct,
   });
 
   factory VbmappSchemaSmartRules.fromJson(Map<String, dynamic> json) {
+    final Map<String, dynamic> sharedObservation =
+        _mapFrom(json['sharedObservation']);
     final Map<String, dynamic> mandPhrase = _mapFrom(json['mandPhrase']);
     final Map<String, dynamic> mandDistinct = _mapFrom(json['mandDistinct']);
     return VbmappSchemaSmartRules(
+      sharedObservation: sharedObservation.isEmpty
+          ? null
+          : VbmappSharedObservationRule.fromJson(sharedObservation),
       mandPhrase:
           mandPhrase.isEmpty ? null : VbmappMandPhraseRule.fromJson(mandPhrase),
       mandDistinct: mandDistinct.isEmpty
@@ -581,8 +587,29 @@ class VbmappSchemaSmartRules {
     );
   }
 
+  final VbmappSharedObservationRule? sharedObservation;
   final VbmappMandPhraseRule? mandPhrase;
   final VbmappMandDistinctRule? mandDistinct;
+}
+
+class VbmappSharedObservationRule {
+  const VbmappSharedObservationRule({
+    required this.enabled,
+    required this.groupId,
+    required this.primaryMilestoneId,
+  });
+
+  factory VbmappSharedObservationRule.fromJson(Map<String, dynamic> json) {
+    return VbmappSharedObservationRule(
+      enabled: json['enabled'] == true,
+      groupId: _textFrom(json['groupId']),
+      primaryMilestoneId: _scoreCodeFrom(json['primaryMilestoneId']),
+    );
+  }
+
+  final bool enabled;
+  final String groupId;
+  final String primaryMilestoneId;
 }
 
 class VbmappMandPhraseRule {

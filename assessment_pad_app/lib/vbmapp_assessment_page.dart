@@ -159,13 +159,15 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
         activeObservationItem == null
             ? null
             : _mandObservationFor(activeObservationItem);
-    final bool activeTimedMandShared = activeObservationItem != null &&
-        _mandStorageKeyFor(activeObservationItem.itemCode) ==
-            _vbmappSharedTimedMandStorageKey;
+    final String? activeSharedGroupId = activeObservationItem == null
+        ? null
+        : _sharedTimedMandGroupIdFor(activeObservationItem);
+    final String? currentSharedGroupId = _sharedTimedMandGroupIdFor(item);
+    final bool activeTimedMandShared = activeSharedGroupId != null;
     final bool showActiveObservationBar = activeObservationItem != null &&
         activeObservation != null &&
         !(activeTimedMandShared &&
-            _vbmappSharedTimedMandItemCodes.contains(item.itemCode)) &&
+            activeSharedGroupId == currentSharedGroupId) &&
         activeObservationItem.itemCode != item.itemCode;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
@@ -199,13 +201,19 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
                   summaryText: activeTimedMandShared
                       ? '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · 已记录 ${_mandStoredEventsFor(activeObservationItem).length} 条'
                       : '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · ${_activeMandObservationQualifiedCount(activeObservationItem)}/${_scoreCountThreshold(activeObservationItem, 1) ?? 5}',
-                  onJump: () => _selectItem(
-                    _milestoneItems.firstWhere(
-                      (_VbmappItem candidate) =>
-                          candidate.itemCode == 'MAND_04M',
-                      orElse: () => activeObservationItem,
-                    ),
-                  ),
+                  onJump: () {
+                    final String targetCode =
+                        _sharedTimedMandPrimaryItemCodeFor(
+                                activeObservationItem) ??
+                            activeObservationItem.itemCode;
+                    _selectItem(
+                      _milestoneItems.firstWhere(
+                        (_VbmappItem candidate) =>
+                            candidate.itemCode == targetCode,
+                        orElse: () => activeObservationItem,
+                      ),
+                    );
+                  },
                   onQuickRecord: () => unawaited(_openActiveMandQuickRecord()),
                   onPrimaryAction: () {
                     final DateTime now = DateTime.now();

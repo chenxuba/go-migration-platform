@@ -97,6 +97,14 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 		t.Fatalf("unexpected MAND_02M material profile: %s", mand2.MaterialProfileID)
 	}
 
+	mand4 := findMilestoneResponseSchema(t, milestones, "MAND_04M")
+	if mand4.SmartRules.SharedObservation == nil || !mand4.SmartRules.SharedObservation.Enabled {
+		t.Fatalf("MAND_04M should expose shared observation smart rules: %+v", mand4.SmartRules)
+	}
+	if mand4.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_04M shared observation group: %+v", mand4.SmartRules.SharedObservation)
+	}
+
 	mand3 := findMilestoneResponseSchema(t, milestones, "MAND_03M")
 	if !contains(mand3.FieldTemplateIDs, "generalization_matrix") {
 		t.Fatalf("MAND_03M should require generalization matrix: %+v", mand3.FieldTemplateIDs)
@@ -106,6 +114,9 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	}
 
 	mand9 := findMilestoneResponseSchema(t, milestones, "MAND_09M")
+	if mand9.SmartRules.SharedObservation == nil || mand9.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_09M shared observation rule: %+v", mand9.SmartRules.SharedObservation)
+	}
 	if mand9.SmartRules.MandDistinct == nil {
 		t.Fatalf("MAND_09M should expose mand distinct smart rules: %+v", mand9.SmartRules)
 	}
@@ -120,6 +131,9 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 	}
 
 	mand8 := findMilestoneResponseSchema(t, milestones, "MAND_08M")
+	if mand8.SmartRules.SharedObservation == nil || mand8.SmartRules.SharedObservation.GroupID != "mand_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_08M shared observation rule: %+v", mand8.SmartRules.SharedObservation)
+	}
 	if mand8.SmartRules.MandPhrase == nil {
 		t.Fatalf("MAND_08M should expose mand phrase smart rules: %+v", mand8.SmartRules)
 	}

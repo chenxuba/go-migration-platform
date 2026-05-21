@@ -289,8 +289,15 @@ type ResponseSchemaItemDesign struct {
 }
 
 type ResponseSchemaSmartRules struct {
-	MandDistinct *ResponseSchemaMandDistinctRule `json:"mandDistinct,omitempty"`
-	MandPhrase   *ResponseSchemaMandPhraseRule   `json:"mandPhrase,omitempty"`
+	SharedObservation *ResponseSchemaSharedObservationRule `json:"sharedObservation,omitempty"`
+	MandDistinct      *ResponseSchemaMandDistinctRule      `json:"mandDistinct,omitempty"`
+	MandPhrase        *ResponseSchemaMandPhraseRule        `json:"mandPhrase,omitempty"`
+}
+
+type ResponseSchemaSharedObservationRule struct {
+	Enabled            bool   `json:"enabled"`
+	GroupID            string `json:"groupId,omitempty"`
+	PrimaryMilestoneID string `json:"primaryMilestoneId,omitempty"`
 }
 
 type ResponseSchemaMandDistinctRule struct {
