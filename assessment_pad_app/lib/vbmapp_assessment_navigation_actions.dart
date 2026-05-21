@@ -1,14 +1,29 @@
 part of 'vbmapp_assessment_page.dart';
 
 extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
+  void _applySelection({
+    required String moduleCode,
+    required int itemIndex,
+  }) {
+    final List<_VbmappItem> items = _itemsForModule(moduleCode);
+    if (items.isEmpty) {
+      return;
+    }
+    final int normalizedIndex = itemIndex.clamp(0, items.length - 1);
+    final bool changed = _selectedModuleCode != moduleCode ||
+        _selectedItemIndex != normalizedIndex;
+    _selectedModuleCode = moduleCode;
+    _selectedItemIndex = normalizedIndex;
+    if (changed) {
+      _selectionRevision.value++;
+    }
+  }
+
   void _selectModule(String code) {
     if (_selectedModuleCode == code) {
       return;
     }
-    setState(() {
-      _selectedModuleCode = code;
-      _selectedItemIndex = 0;
-    });
+    _applySelection(moduleCode: code, itemIndex: 0);
   }
 
   void _selectScore(num score) {
@@ -39,7 +54,10 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
 
   void _goPrevious() {
     if (_selectedItemIndex > 0) {
-      setState(() => _selectedItemIndex -= 1);
+      _applySelection(
+        moduleCode: _selectedModuleCode,
+        itemIndex: _selectedItemIndex - 1,
+      );
       return;
     }
     final int moduleIndex = _vbmappModules.indexWhere(
@@ -49,16 +67,19 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
       return;
     }
     final String previousCode = _vbmappModules[moduleIndex - 1].code;
-    setState(() {
-      _selectedModuleCode = previousCode;
-      _selectedItemIndex = _itemsForModule(previousCode).length - 1;
-    });
+    _applySelection(
+      moduleCode: previousCode,
+      itemIndex: _itemsForModule(previousCode).length - 1,
+    );
   }
 
   void _goNext() {
     final List<_VbmappItem> items = _selectedItems;
     if (_selectedItemIndex < items.length - 1) {
-      setState(() => _selectedItemIndex += 1);
+      _applySelection(
+        moduleCode: _selectedModuleCode,
+        itemIndex: _selectedItemIndex + 1,
+      );
       return;
     }
     final int moduleIndex = _vbmappModules.indexWhere(
@@ -67,10 +88,10 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
     if (moduleIndex < 0 || moduleIndex >= _vbmappModules.length - 1) {
       return;
     }
-    setState(() {
-      _selectedModuleCode = _vbmappModules[moduleIndex + 1].code;
-      _selectedItemIndex = 0;
-    });
+    _applySelection(
+      moduleCode: _vbmappModules[moduleIndex + 1].code,
+      itemIndex: 0,
+    );
   }
 
   void _jumpFirstMissing() {
@@ -78,11 +99,11 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
     if (missing == null) {
       return;
     }
-    setState(() {
-      _selectedModuleCode = missing.moduleCode;
-      _selectedItemIndex = _itemsForModule(missing.moduleCode)
-          .indexWhere((_VbmappItem item) => item.itemCode == missing.itemCode);
-    });
+    _applySelection(
+      moduleCode: missing.moduleCode,
+      itemIndex: _itemsForModule(missing.moduleCode)
+          .indexWhere((_VbmappItem item) => item.itemCode == missing.itemCode),
+    );
   }
 
   _VbmappItem? _firstMissingItem() {
@@ -105,9 +126,6 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
     if (index < 0) {
       return;
     }
-    setState(() {
-      _selectedModuleCode = item.moduleCode;
-      _selectedItemIndex = index;
-    });
+    _applySelection(moduleCode: item.moduleCode, itemIndex: index);
   }
 }

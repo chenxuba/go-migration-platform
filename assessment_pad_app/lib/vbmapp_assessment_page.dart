@@ -81,6 +81,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
     with WidgetsBindingObserver {
   final PadMessageOverlayController _messageController =
       PadMessageOverlayController();
+  final ValueNotifier<int> _selectionRevision = ValueNotifier<int>(0);
   final Map<String, double> _milestoneScores = <String, double>{};
   final Map<String, int> _barrierScores = <String, int>{};
   final Map<String, int> _transitionScores = <String, int>{};
@@ -149,6 +150,7 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _observationTicker?.cancel();
+    _selectionRevision.dispose();
     _messageController.dispose();
     super.dispose();
   }
@@ -167,28 +169,6 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
 
   @override
   Widget build(BuildContext context) {
-    final List<_VbmappItem> selectedItems = _selectedItems;
-    final _VbmappItem item = _selectedItem;
-    final VbmappItemResponseSchema? itemSchema = _schemaFor(item);
-    final VbmappMaterialProfile? materialProfile =
-        _materialProfileFor(item, itemSchema);
-    final _VbmappScoreSnapshot scoreSnapshot = _scoreSnapshot;
-    final _VbmappItem? activeObservationItem =
-        _loading ? null : _activeMandObservationItem();
-    final _VbmappObservationTimerState? activeObservation =
-        activeObservationItem == null
-            ? null
-            : _mandObservationFor(activeObservationItem);
-    final String? activeSharedGroupId = activeObservationItem == null
-        ? null
-        : _sharedTimedMandGroupIdFor(activeObservationItem);
-    final String? currentSharedGroupId = _sharedTimedMandGroupIdFor(item);
-    final bool activeTimedMandShared = activeSharedGroupId != null;
-    final bool showActiveObservationBar = activeObservationItem != null &&
-        activeObservation != null &&
-        !(activeTimedMandShared &&
-            activeSharedGroupId == currentSharedGroupId) &&
-        activeObservationItem.itemCode != item.itemCode;
     return GestureDetector(
       behavior: HitTestBehavior.translucent,
       onTap: _dismissEditingFocus,
@@ -209,130 +189,170 @@ class _VbmappAssessmentPageState extends State<VbmappAssessmentPage>
               onSave: () => unawaited(_saveDraft()),
               onSubmit: () => unawaited(_submitDraft()),
             ),
-            if (showActiveObservationBar)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                child: _VbmappActiveObservationBar(
-                  tone: activeObservationItem.color,
-                  observation: activeObservation,
-                  statusLabel: activeTimedMandShared
-                      ? '提要求观察中'
-                      : '${activeObservationItem.navCode}观察中',
-                  summaryText: activeTimedMandShared
-                      ? '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · 已记录 ${_mandStoredEventsFor(activeObservationItem).length} 条'
-                      : '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · ${_activeMandObservationQualifiedCount(activeObservationItem)}/${_scoreCountThreshold(activeObservationItem, 1) ?? 5}',
-                  onJump: () {
-                    final String targetCode =
-                        _sharedTimedMandPrimaryItemCodeFor(
-                                activeObservationItem) ??
-                            activeObservationItem.itemCode;
-                    _selectItem(
-                      _milestoneItems.firstWhere(
-                        (_VbmappItem candidate) =>
-                            candidate.itemCode == targetCode,
-                        orElse: () => activeObservationItem,
-                      ),
-                    );
-                  },
-                  onQuickRecord: () => unawaited(_openActiveMandQuickRecord()),
-                  onPrimaryAction: () {
-                    final DateTime now = DateTime.now();
-                    if (activeObservation.isRunning) {
-                      unawaited(
-                        _updateMandObservation(
-                          activeObservationItem,
-                          activeObservation.pause(now),
-                        ),
-                      );
-                      return;
-                    }
-                    unawaited(
-                      _updateMandObservation(
-                        activeObservationItem,
-                        activeObservation.resume(now),
-                      ),
-                    );
-                  },
-                  onFinish: () =>
-                      unawaited(_confirmFinishActiveMandObservation()),
-                ),
-              ),
-            if (_loading)
-              const Expanded(child: _VbmappLoadingState())
-            else ...<Widget>[
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+            Expanded(
+              child: ValueListenableBuilder<int>(
+                valueListenable: _selectionRevision,
+                builder: (BuildContext context, int _, Widget? child) {
+                  final List<_VbmappItem> selectedItems = _selectedItems;
+                  final _VbmappItem item = _selectedItem;
+                  final VbmappItemResponseSchema? itemSchema = _schemaFor(item);
+                  final VbmappMaterialProfile? materialProfile =
+                      _materialProfileFor(item, itemSchema);
+                  final _VbmappScoreSnapshot scoreSnapshot = _scoreSnapshot;
+                  final _VbmappItem? activeObservationItem =
+                      _loading ? null : _activeMandObservationItem();
+                  final _VbmappObservationTimerState? activeObservation =
+                      activeObservationItem == null
+                          ? null
+                          : _mandObservationFor(activeObservationItem);
+                  final String? activeSharedGroupId =
+                      activeObservationItem == null
+                          ? null
+                          : _sharedTimedMandGroupIdFor(activeObservationItem);
+                  final String? currentSharedGroupId =
+                      _sharedTimedMandGroupIdFor(item);
+                  final bool activeTimedMandShared =
+                      activeSharedGroupId != null;
+                  final bool showActiveObservationBar =
+                      activeObservationItem != null &&
+                          activeObservation != null &&
+                          !(activeTimedMandShared &&
+                              activeSharedGroupId == currentSharedGroupId) &&
+                          activeObservationItem.itemCode != item.itemCode;
+                  if (_loading) {
+                    return const _VbmappLoadingState();
+                  }
+                  return Column(
                     children: <Widget>[
-                      SizedBox(
-                        width: 250,
-                        child: _VbmappModuleRail(
-                          modules: _vbmappModules,
-                          selectedCode: _selectedModuleCode,
-                          selectedItemCode: item.itemCode,
-                          items: selectedItems,
-                          answeredCount: _answeredCountByModule,
-                          isAnswered: (_VbmappItem item) =>
-                              _scoreFor(item) != null,
-                          onSelectModule: _selectModule,
-                          onSelectItem: _selectItem,
+                      if (showActiveObservationBar)
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                          child: _VbmappActiveObservationBar(
+                            tone: activeObservationItem.color,
+                            observation: activeObservation,
+                            statusLabel: activeTimedMandShared
+                                ? '提要求观察中'
+                                : '${activeObservationItem.navCode}观察中',
+                            summaryText: activeTimedMandShared
+                                ? '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · 已记录 ${_mandStoredEventsFor(activeObservationItem).length} 条'
+                                : '${_vbmappDurationText(activeObservation.elapsedSecondsAt(DateTime.now()))} · ${_activeMandObservationQualifiedCount(activeObservationItem)}/${_scoreCountThreshold(activeObservationItem, 1) ?? 5}',
+                            onJump: () {
+                              final String targetCode =
+                                  _sharedTimedMandPrimaryItemCodeFor(
+                                          activeObservationItem) ??
+                                      activeObservationItem.itemCode;
+                              _selectItem(
+                                _milestoneItems.firstWhere(
+                                  (_VbmappItem candidate) =>
+                                      candidate.itemCode == targetCode,
+                                  orElse: () => activeObservationItem,
+                                ),
+                              );
+                            },
+                            onQuickRecord: () =>
+                                unawaited(_openActiveMandQuickRecord()),
+                            onPrimaryAction: () {
+                              final DateTime now = DateTime.now();
+                              if (activeObservation.isRunning) {
+                                unawaited(
+                                  _updateMandObservation(
+                                    activeObservationItem,
+                                    activeObservation.pause(now),
+                                  ),
+                                );
+                                return;
+                              }
+                              unawaited(
+                                _updateMandObservation(
+                                  activeObservationItem,
+                                  activeObservation.resume(now),
+                                ),
+                              );
+                            },
+                            onFinish: () => unawaited(
+                              _confirmFinishActiveMandObservation(),
+                            ),
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 10),
                       Expanded(
-                        child: _VbmappWorkspace(
-                          item: item,
-                          score: _scoreFor(item),
-                          responseSchema: itemSchema,
-                          materialProfile: materialProfile,
-                          mandEvents: _mandEventsFor(item),
-                          mandObservation: _mandObservationFor(item),
-                          onAddMandEvent: () => unawaited(
-                            _openMandEventDialog(item),
+                        child: Padding(
+                          padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.stretch,
+                            children: <Widget>[
+                              SizedBox(
+                                width: 250,
+                                child: _VbmappModuleRail(
+                                  modules: _vbmappModules,
+                                  selectedCode: _selectedModuleCode,
+                                  selectedItemCode: item.itemCode,
+                                  items: selectedItems,
+                                  answeredCount: _answeredCountByModule,
+                                  isAnswered: (_VbmappItem item) =>
+                                      _scoreFor(item) != null,
+                                  onSelectModule: _selectModule,
+                                  onSelectItem: _selectItem,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: _VbmappWorkspace(
+                                  item: item,
+                                  score: _scoreFor(item),
+                                  responseSchema: itemSchema,
+                                  materialProfile: materialProfile,
+                                  mandEvents: _mandEventsFor(item),
+                                  mandObservation: _mandObservationFor(item),
+                                  onAddMandEvent: () => unawaited(
+                                    _openMandEventDialog(item),
+                                  ),
+                                  onSubmitMandEvent: (_VbmappMandEvent event) =>
+                                      unawaited(_addMandEvent(item, event)),
+                                  onDeleteMandEvent: (int index) =>
+                                      unawaited(_deleteMandEvent(item, index)),
+                                  onChangeMandObservation:
+                                      (_VbmappObservationTimerState
+                                              observation) =>
+                                          unawaited(
+                                    _updateMandObservation(item, observation),
+                                  ),
+                                  onSelectScore: _selectScore,
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              SizedBox(
+                                width: 278,
+                                child: _VbmappRightRail(
+                                  progressPercent: _progressPercent,
+                                  answered: _answeredCount,
+                                  total: _vbmappTotalItemCount,
+                                  selectedModule:
+                                      _moduleByCode(_selectedModuleCode),
+                                  scoreSnapshot: scoreSnapshot,
+                                ),
+                              ),
+                            ],
                           ),
-                          onSubmitMandEvent: (_VbmappMandEvent event) =>
-                              unawaited(_addMandEvent(item, event)),
-                          onDeleteMandEvent: (int index) =>
-                              unawaited(_deleteMandEvent(item, index)),
-                          onChangeMandObservation:
-                              (_VbmappObservationTimerState observation) =>
-                                  unawaited(
-                            _updateMandObservation(item, observation),
-                          ),
-                          onSelectScore: _selectScore,
                         ),
                       ),
-                      const SizedBox(width: 10),
-                      SizedBox(
-                        width: 278,
-                        child: _VbmappRightRail(
-                          progressPercent: _progressPercent,
-                          answered: _answeredCount,
-                          total: _vbmappTotalItemCount,
-                          selectedModule: _moduleByCode(_selectedModuleCode),
-                          scoreSnapshot: scoreSnapshot,
-                        ),
+                      _VbmappFooterDock(
+                        current: item.sequenceNo,
+                        total: _vbmappTotalItemCount,
+                        hasPrevious: item.sequenceNo > 1,
+                        hasNext: item.sequenceNo < _vbmappTotalItemCount,
+                        hasMissing: _answeredCount < _vbmappTotalItemCount,
+                        autoNext: _autoNext,
+                        onPrevious: _goPrevious,
+                        onNext: _goNext,
+                        onJumpMissing: _jumpFirstMissing,
+                        onToggleAutoNext: (bool value) =>
+                            setState(() => _autoNext = value),
                       ),
                     ],
-                  ),
-                ),
+                  );
+                },
               ),
-              _VbmappFooterDock(
-                current: item.sequenceNo,
-                total: _vbmappTotalItemCount,
-                hasPrevious: item.sequenceNo > 1,
-                hasNext: item.sequenceNo < _vbmappTotalItemCount,
-                hasMissing: _answeredCount < _vbmappTotalItemCount,
-                autoNext: _autoNext,
-                onPrevious: _goPrevious,
-                onNext: _goNext,
-                onJumpMissing: _jumpFirstMissing,
-                onToggleAutoNext: (bool value) =>
-                    setState(() => _autoNext = value),
-              ),
-            ],
+            ),
           ],
         ),
       ),
