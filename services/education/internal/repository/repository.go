@@ -56,6 +56,7 @@ func New(db *sql.DB) *Repository {
 	_ = repo.ensureScaleLibrarySchema(context.Background())
 	_ = ensurePEP3IEPMaterialTables(context.Background(), db)
 	_ = ensureVBMAPPMaterialLibraryTables(context.Background(), db)
+	_ = ensureVBMAPPResponseSchemaTables(context.Background(), db)
 	return repo
 }
 
@@ -258,6 +259,9 @@ func (repo *Repository) EnsureInfrastructureTables(ctx context.Context) error {
 		return err
 	}
 	if err := ensureAssessmentScaleTables(ctx, repo.db); err != nil {
+		return err
+	}
+	if err := ensureVBMAPPResponseSchemaTables(ctx, repo.db); err != nil {
 		return err
 	}
 	if err := ensureFaceCollectionTables(ctx, repo.db); err != nil {

@@ -178,6 +178,26 @@ func TestLoadGeneratedResponseSchemas(t *testing.T) {
 		t.Fatalf("unexpected MAND_09M timed config: %+v", mand9.SmartRules.MandTimedConfig)
 	}
 
+	mand12 := findMilestoneResponseSchema(t, milestones, "MAND_12M")
+	if mand12.SmartRules.MandEventConfig == nil ||
+		mand12.SmartRules.MandEventConfig.RecordListTitle != "有效要求记录" ||
+		!contains(mand12.SmartRules.MandEventConfig.EnvironmentOptions, "呈现物品") {
+		t.Fatalf("unexpected MAND_12M event config: %+v", mand12.SmartRules.MandEventConfig)
+	}
+	if mand12.AutoCompletion.ScoreStrategy != "count_qualified_unique_mand_events" {
+		t.Fatalf("MAND_12M scoring strategy should stay standard: %s", mand12.AutoCompletion.ScoreStrategy)
+	}
+
+	mand13 := findMilestoneResponseSchema(t, milestones, "MAND_13M")
+	if mand13.SmartRules.SharedObservation == nil ||
+		mand13.SmartRules.SharedObservation.GroupID != "mand_level3_timed_shared_v1" {
+		t.Fatalf("unexpected MAND_13M shared observation rule: %+v", mand13.SmartRules.SharedObservation)
+	}
+	if mand13.SmartRules.MandTimedConfig == nil ||
+		!contains(mand13.SmartRules.MandTimedConfig.AbilityOptions, "形容词") {
+		t.Fatalf("unexpected MAND_13M timed config: %+v", mand13.SmartRules.MandTimedConfig)
+	}
+
 	if barriers[0].UIPattern != "barrier_rubric_with_behavior_log" {
 		t.Fatalf("unexpected barrier ui pattern: %s", barriers[0].UIPattern)
 	}

@@ -292,6 +292,7 @@ type ResponseSchemaSmartRules struct {
 	SharedObservation *ResponseSchemaSharedObservationRule `json:"sharedObservation,omitempty"`
 	MandQualification *ResponseSchemaMandQualificationRule `json:"mandQualification,omitempty"`
 	MandTimedConfig   *ResponseSchemaMandTimedConfigRule   `json:"mandTimedConfig,omitempty"`
+	MandEventConfig   *ResponseSchemaMandEventConfigRule   `json:"mandEventConfig,omitempty"`
 	MandDistinct      *ResponseSchemaMandDistinctRule      `json:"mandDistinct,omitempty"`
 	MandPhrase        *ResponseSchemaMandPhraseRule        `json:"mandPhrase,omitempty"`
 }
@@ -317,11 +318,36 @@ type ResponseSchemaMandTimedConfigRule struct {
 	DefaultPromptMode          string   `json:"defaultPromptMode,omitempty"`
 	DefaultPresentation        string   `json:"defaultPresentation,omitempty"`
 	DefaultTargetKind          string   `json:"defaultTargetKind,omitempty"`
+	PresentationSelectorLabel  string   `json:"presentationSelectorLabel,omitempty"`
+	AbilitySelectorLabel       string   `json:"abilitySelectorLabel,omitempty"`
+	AbilityOptions             []string `json:"abilityOptions,omitempty"`
+	DefaultAbility             string   `json:"defaultAbility,omitempty"`
+	QuickPickFallback          []string `json:"quickPickFallback,omitempty"`
 	ShowPromptSelector         bool     `json:"showPromptSelector"`
 	PromptSelectorLabel        string   `json:"promptSelectorLabel,omitempty"`
 	PromptOptions              []string `json:"promptOptions,omitempty"`
 	MultiWordQualifiedMinCount int      `json:"multiWordQualifiedMinCount,omitempty"`
 	DisplayMinSlots            int      `json:"displayMinSlots,omitempty"`
+}
+
+type ResponseSchemaMandEventConfigRule struct {
+	RecordTitleSuffix   string   `json:"recordTitleSuffix,omitempty"`
+	RecordListTitle     string   `json:"recordListTitle,omitempty"`
+	MetricLabel         string   `json:"metricLabel,omitempty"`
+	InputLabel          string   `json:"inputLabel,omitempty"`
+	InputHint           string   `json:"inputHint,omitempty"`
+	QuickPicks          []string `json:"quickPicks,omitempty"`
+	Unit                string   `json:"unit,omitempty"`
+	MotivationContext   string   `json:"motivationContext,omitempty"`
+	CountReferenceText  string   `json:"countReferenceText,omitempty"`
+	PromptOptions       []string `json:"promptOptions,omitempty"`
+	EnvironmentOptions  []string `json:"environmentOptions,omitempty"`
+	FreeTextEnvironment bool     `json:"freeTextEnvironment,omitempty"`
+	AbilityOptions      []string `json:"abilityOptions,omitempty"`
+	TargetOptions       []string `json:"targetOptions,omitempty"`
+	DefaultTargetKind   string   `json:"defaultTargetKind,omitempty"`
+	DefaultEnvironment  string   `json:"defaultEnvironment,omitempty"`
+	DefaultResponseMode string   `json:"defaultResponseMode,omitempty"`
 }
 
 type ResponseSchemaMandDistinctRule struct {

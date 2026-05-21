@@ -11,6 +11,7 @@ import (
 	"sync"
 
 	"go-migration-platform/pkg/vbmappscore"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 const (
@@ -93,6 +94,10 @@ func (svc *Service) ScoreVBMAPP(input vbmappscore.AssessmentInput) (VBMAPPScoreR
 }
 
 func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, error) {
+	return svc.VBMAPPAssessmentSchemaForInstitution(0)
+}
+
+func (svc *Service) VBMAPPAssessmentSchemaForInstitution(instID int64) (VBMAPPAssessmentSchemaResponse, error) {
 	data, err := loadVBMAPPStaticData()
 	if err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, err
@@ -104,17 +109,9 @@ func (svc *Service) VBMAPPAssessmentSchema() (VBMAPPAssessmentSchemaResponse, er
 	if err := requireVBMAPPResponseSchemaFiles(dataDir); err != nil {
 		return VBMAPPAssessmentSchemaResponse{}, err
 	}
-	milestoneSchemas, err := vbmappscore.LoadMilestoneResponseSchemasFile(filepath.Join(dataDir, vbmappMilestoneSchemaFile))
+	milestoneSchemas, barrierSchemas, transitionSchemas, err := svc.loadMergedVBMAPPResponseSchemas(context.Background(), dataDir, instID)
 	if err != nil {
-		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP milestone response schemas: %w", err)
-	}
-	barrierSchemas, err := vbmappscore.LoadBarrierResponseSchemasFile(filepath.Join(dataDir, vbmappBarrierSchemaFile))
-	if err != nil {
-		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP barrier response schemas: %w", err)
-	}
-	transitionSchemas, err := vbmappscore.LoadTransitionResponseSchemasFile(filepath.Join(dataDir, vbmappTransitionSchemaFile))
-	if err != nil {
-		return VBMAPPAssessmentSchemaResponse{}, fmt.Errorf("load VB-MAPP transition response schemas: %w", err)
+		return VBMAPPAssessmentSchemaResponse{}, err
 	}
 	fieldTemplates, err := vbmappscore.LoadResponseFieldTemplatesFile(filepath.Join(dataDir, vbmappFieldTemplateFile))
 	if err != nil {
@@ -194,9 +191,249 @@ func mergeVBMAPPResponseMaterialProfile(fileProfile, dbProfile vbmappscore.Respo
 	return merged
 }
 
+func (svc *Service) loadMergedVBMAPPResponseSchemas(
+	ctx context.Context,
+	dataDir string,
+	instID int64,
+) ([]vbmappscore.MilestoneResponseSchema, []vbmappscore.BarrierResponseSchema, []vbmappscore.TransitionResponseSchema, error) {
+	milestoneSchemas, err := vbmappscore.LoadMilestoneResponseSchemasFile(filepath.Join(dataDir, vbmappMilestoneSchemaFile))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load VB-MAPP milestone response schemas: %w", err)
+	}
+	barrierSchemas, err := vbmappscore.LoadBarrierResponseSchemasFile(filepath.Join(dataDir, vbmappBarrierSchemaFile))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load VB-MAPP barrier response schemas: %w", err)
+	}
+	transitionSchemas, err := vbmappscore.LoadTransitionResponseSchemasFile(filepath.Join(dataDir, vbmappTransitionSchemaFile))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("load VB-MAPP transition response schemas: %w", err)
+	}
+	if svc == nil || svc.repo == nil {
+		return milestoneSchemas, barrierSchemas, transitionSchemas, nil
+	}
+	presets, dbErr := svc.repo.ListVBMAPPResponseSchemaPresets(ctx, vbmappScaleVersion)
+	if dbErr == nil && len(presets) > 0 {
+		milestoneSchemas, barrierSchemas, transitionSchemas, err = vbmappResponseSchemasFromPresets(presets)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+	} else if dbErr != nil && !isVBMAPPResponseSchemaFallbackError(dbErr) {
+		return nil, nil, nil, fmt.Errorf("load VB-MAPP DB response schema presets: %w", dbErr)
+	}
+	if instID <= 0 {
+		return milestoneSchemas, barrierSchemas, transitionSchemas, nil
+	}
+	overrides, dbErr := svc.repo.ListVBMAPPResponseSchemaOverrides(ctx, vbmappScaleVersion, instID)
+	if dbErr != nil {
+		if isVBMAPPResponseSchemaFallbackError(dbErr) {
+			return milestoneSchemas, barrierSchemas, transitionSchemas, nil
+		}
+		return nil, nil, nil, fmt.Errorf("load VB-MAPP DB response schema overrides: %w", dbErr)
+	}
+	milestoneSchemas, barrierSchemas, transitionSchemas, err = mergeVBMAPPInstitutionResponseSchemaOverrides(
+		milestoneSchemas,
+		barrierSchemas,
+		transitionSchemas,
+		overrides,
+	)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	return milestoneSchemas, barrierSchemas, transitionSchemas, nil
+}
+
+func vbmappResponseSchemasFromPresets(
+	presets []repository.VBMAPPResponseSchemaPreset,
+) ([]vbmappscore.MilestoneResponseSchema, []vbmappscore.BarrierResponseSchema, []vbmappscore.TransitionResponseSchema, error) {
+	milestones := make([]vbmappscore.MilestoneResponseSchema, 0)
+	barriers := make([]vbmappscore.BarrierResponseSchema, 0)
+	transitions := make([]vbmappscore.TransitionResponseSchema, 0)
+	for _, preset := range presets {
+		switch strings.TrimSpace(preset.ModuleCode) {
+		case "milestones":
+			var schema vbmappscore.MilestoneResponseSchema
+			if err := json.Unmarshal(preset.SchemaJSON, &schema); err != nil {
+				return nil, nil, nil, fmt.Errorf("decode VB-MAPP milestone schema preset %s: %w", preset.ItemCode, err)
+			}
+			milestones = append(milestones, schema)
+		case "barriers":
+			var schema vbmappscore.BarrierResponseSchema
+			if err := json.Unmarshal(preset.SchemaJSON, &schema); err != nil {
+				return nil, nil, nil, fmt.Errorf("decode VB-MAPP barrier schema preset %s: %w", preset.ItemCode, err)
+			}
+			barriers = append(barriers, schema)
+		case "transition":
+			var schema vbmappscore.TransitionResponseSchema
+			if err := json.Unmarshal(preset.SchemaJSON, &schema); err != nil {
+				return nil, nil, nil, fmt.Errorf("decode VB-MAPP transition schema preset %s: %w", preset.ItemCode, err)
+			}
+			transitions = append(transitions, schema)
+		}
+	}
+	return milestones, barriers, transitions, nil
+}
+
+func mergeVBMAPPInstitutionResponseSchemaOverrides(
+	milestones []vbmappscore.MilestoneResponseSchema,
+	barriers []vbmappscore.BarrierResponseSchema,
+	transitions []vbmappscore.TransitionResponseSchema,
+	overrides []repository.VBMAPPResponseSchemaOverride,
+) ([]vbmappscore.MilestoneResponseSchema, []vbmappscore.BarrierResponseSchema, []vbmappscore.TransitionResponseSchema, error) {
+	overrideByKey := make(map[string]json.RawMessage)
+	for _, override := range overrides {
+		moduleCode := strings.TrimSpace(override.ModuleCode)
+		itemCode := strings.TrimSpace(override.ItemCode)
+		if moduleCode == "" || itemCode == "" || len(override.OverrideJSON) == 0 {
+			continue
+		}
+		overrideByKey[moduleCode+"::"+itemCode] = override.OverrideJSON
+	}
+	for index := range milestones {
+		raw, ok := overrideByKey["milestones::"+milestones[index].MilestoneID]
+		if !ok {
+			continue
+		}
+		merged, err := mergeVBMAPPResponseSchemaOverride(milestones[index], raw)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge VB-MAPP milestone override %s: %w", milestones[index].MilestoneID, err)
+		}
+		milestones[index] = merged
+	}
+	for index := range barriers {
+		raw, ok := overrideByKey["barriers::"+barriers[index].BarrierCode]
+		if !ok {
+			continue
+		}
+		merged, err := mergeVBMAPPResponseSchemaOverride(barriers[index], raw)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge VB-MAPP barrier override %s: %w", barriers[index].BarrierCode, err)
+		}
+		barriers[index] = merged
+	}
+	for index := range transitions {
+		raw, ok := overrideByKey["transition::"+transitions[index].TransitionCode]
+		if !ok {
+			continue
+		}
+		merged, err := mergeVBMAPPResponseSchemaOverride(transitions[index], raw)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("merge VB-MAPP transition override %s: %w", transitions[index].TransitionCode, err)
+		}
+		transitions[index] = merged
+	}
+	return milestones, barriers, transitions, nil
+}
+
+func mergeVBMAPPResponseSchemaOverride[T any](base T, rawOverride json.RawMessage) (T, error) {
+	baseRaw, err := json.Marshal(base)
+	if err != nil {
+		return base, err
+	}
+	var baseMap map[string]any
+	if err := json.Unmarshal(baseRaw, &baseMap); err != nil {
+		return base, err
+	}
+	var overrideMap map[string]any
+	if err := json.Unmarshal(rawOverride, &overrideMap); err != nil {
+		return base, err
+	}
+	mergeAllowedVBMAPPResponseSchemaOverride(baseMap, overrideMap)
+	mergedRaw, err := json.Marshal(baseMap)
+	if err != nil {
+		return base, err
+	}
+	var out T
+	if err := json.Unmarshal(mergedRaw, &out); err != nil {
+		return base, err
+	}
+	return out, nil
+}
+
+func mergeAllowedVBMAPPResponseSchemaOverride(base map[string]any, override map[string]any) {
+	for _, key := range []string{"showPreparationEntry", "materialProfileId"} {
+		if value, ok := override[key]; ok {
+			base[key] = value
+		}
+	}
+	if itemDesign, ok := mapFromAny(override["itemDesign"]); ok {
+		base["itemDesign"] = itemDesign
+	}
+	overrideSmartRules, ok := mapFromAny(override["smartRules"])
+	if !ok {
+		return
+	}
+	baseSmartRules, _ := mapFromAny(base["smartRules"])
+	if baseSmartRules == nil {
+		baseSmartRules = map[string]any{}
+	}
+	if mandEventConfig, ok := mapFromAny(overrideSmartRules["mandEventConfig"]); ok {
+		baseSmartRules["mandEventConfig"] = mandEventConfig
+	}
+	if overrideTimedConfig, ok := mapFromAny(overrideSmartRules["mandTimedConfig"]); ok {
+		baseTimedConfig, _ := mapFromAny(baseSmartRules["mandTimedConfig"])
+		if baseTimedConfig == nil {
+			baseTimedConfig = map[string]any{}
+		}
+		for _, key := range []string{
+			"countMetricLabel",
+			"inputLabel",
+			"inputHint",
+			"targetOptions",
+			"defaultObservationHint",
+			"defaultPromptMode",
+			"defaultPresentation",
+			"defaultTargetKind",
+			"presentationSelectorLabel",
+			"abilitySelectorLabel",
+			"abilityOptions",
+			"defaultAbility",
+			"quickPickFallback",
+			"showPromptSelector",
+			"promptSelectorLabel",
+			"promptOptions",
+			"displayMinSlots",
+		} {
+			if value, ok := overrideTimedConfig[key]; ok {
+				baseTimedConfig[key] = value
+			}
+		}
+		baseSmartRules["mandTimedConfig"] = baseTimedConfig
+	}
+	base["smartRules"] = baseSmartRules
+}
+
+func mapFromAny(value any) (map[string]any, bool) {
+	out, ok := value.(map[string]any)
+	return out, ok
+}
+
 func (svc *Service) EnsureVBMAPPScaleData(ctx context.Context) error {
 	if svc == nil || svc.repo == nil {
 		return nil
+	}
+	forceSchemaReseed := os.Getenv("VBMAPP_RESPONSE_SCHEMA_RESEED") == "1"
+	if !forceSchemaReseed {
+		hasPresets, err := svc.repo.HasVBMAPPResponseSchemaPresets(ctx, vbmappScaleVersion)
+		if err != nil {
+			return err
+		}
+		if !hasPresets {
+			presets, err := loadVBMAPPResponseSchemaPresetsFromFiles()
+			if err != nil {
+				return err
+			}
+			if err := svc.repo.ReplaceVBMAPPResponseSchemaPresets(ctx, vbmappScaleVersion, presets, 0); err != nil {
+				return err
+			}
+		}
+	} else {
+		presets, err := loadVBMAPPResponseSchemaPresetsFromFiles()
+		if err != nil {
+			return err
+		}
+		if err := svc.repo.ReplaceVBMAPPResponseSchemaPresets(ctx, vbmappScaleVersion, presets, 0); err != nil {
+			return err
+		}
 	}
 	forceReseed := os.Getenv("VBMAPP_MATERIAL_LIBRARY_RESEED") == "1"
 	if !forceReseed {
@@ -213,6 +450,60 @@ func (svc *Service) EnsureVBMAPPScaleData(ctx context.Context) error {
 		return err
 	}
 	return svc.repo.ReplaceVBMAPPResponseMaterialProfiles(ctx, vbmappScaleVersion, profiles, 0)
+}
+
+func loadVBMAPPResponseSchemaPresetsFromFiles() ([]repository.VBMAPPResponseSchemaPreset, error) {
+	dataDir, err := resolveVBMAPPDataDir()
+	if err != nil {
+		return nil, err
+	}
+	milestones, err := vbmappscore.LoadMilestoneResponseSchemasFile(filepath.Join(dataDir, vbmappMilestoneSchemaFile))
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP milestone response schemas: %w", err)
+	}
+	barriers, err := vbmappscore.LoadBarrierResponseSchemasFile(filepath.Join(dataDir, vbmappBarrierSchemaFile))
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP barrier response schemas: %w", err)
+	}
+	transitions, err := vbmappscore.LoadTransitionResponseSchemasFile(filepath.Join(dataDir, vbmappTransitionSchemaFile))
+	if err != nil {
+		return nil, fmt.Errorf("load VB-MAPP transition response schemas: %w", err)
+	}
+	presets := make([]repository.VBMAPPResponseSchemaPreset, 0, len(milestones)+len(barriers)+len(transitions))
+	for _, schema := range milestones {
+		raw, err := json.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal VB-MAPP milestone response schema %s: %w", schema.MilestoneID, err)
+		}
+		presets = append(presets, repository.VBMAPPResponseSchemaPreset{
+			ModuleCode: "milestones",
+			ItemCode:   schema.MilestoneID,
+			SchemaJSON: raw,
+		})
+	}
+	for _, schema := range barriers {
+		raw, err := json.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal VB-MAPP barrier response schema %s: %w", schema.BarrierCode, err)
+		}
+		presets = append(presets, repository.VBMAPPResponseSchemaPreset{
+			ModuleCode: "barriers",
+			ItemCode:   schema.BarrierCode,
+			SchemaJSON: raw,
+		})
+	}
+	for _, schema := range transitions {
+		raw, err := json.Marshal(schema)
+		if err != nil {
+			return nil, fmt.Errorf("marshal VB-MAPP transition response schema %s: %w", schema.TransitionCode, err)
+		}
+		presets = append(presets, repository.VBMAPPResponseSchemaPreset{
+			ModuleCode: "transition",
+			ItemCode:   schema.TransitionCode,
+			SchemaJSON: raw,
+		})
+	}
+	return presets, nil
 }
 
 func loadVBMAPPResponseMaterialProfilesFromFiles() (map[string]vbmappscore.ResponseMaterialProfile, error) {
@@ -234,6 +525,16 @@ func isVBMAPPMaterialLibraryFallbackError(err error) bool {
 	return err == sql.ErrNoRows ||
 		strings.Contains(err.Error(), "vbmapp_material_profile") ||
 		strings.Contains(err.Error(), "vbmapp_material_item") ||
+		strings.Contains(err.Error(), "database is closed")
+}
+
+func isVBMAPPResponseSchemaFallbackError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return err == sql.ErrNoRows ||
+		strings.Contains(err.Error(), "vbmapp_response_schema_preset") ||
+		strings.Contains(err.Error(), "vbmapp_response_schema_override") ||
 		strings.Contains(err.Error(), "database is closed")
 }
 

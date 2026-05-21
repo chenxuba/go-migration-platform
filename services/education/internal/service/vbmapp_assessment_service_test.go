@@ -9,6 +9,7 @@ import (
 
 	"go-migration-platform/pkg/vbmappscore"
 	"go-migration-platform/services/education/internal/model"
+	"go-migration-platform/services/education/internal/repository"
 )
 
 func TestScoreVBMAPPWithGeneratedDraftsWhenPresent(t *testing.T) {
@@ -130,6 +131,82 @@ func TestVBMAPPAssessmentSchemaWithGeneratedDraftsWhenPresent(t *testing.T) {
 	}
 	if !containsString(schema.ResponseMaterialProfiles["potential_reinforcer_set"].QuickPicksByField["mand3_people"], "爸爸") {
 		t.Fatalf("expected MAND_03M people quick picks in schema response: %+v", schema.ResponseMaterialProfiles["potential_reinforcer_set"].QuickPicksByField)
+	}
+}
+
+func TestVBMAPPInstitutionResponseSchemaOverrideDoesNotChangeScoringRules(t *testing.T) {
+	milestones := []vbmappscore.MilestoneResponseSchema{
+		{
+			ModuleCode:  "milestones",
+			MilestoneID: "MAND_12M",
+			ScoreEvidence: vbmappscore.ResponseSchemaScoreEvidence{
+				OnePointCriteria:  "5 个",
+				HalfPointCriteria: "2 个",
+			},
+			AutoCompletion: vbmappscore.ResponseSchemaAutoCompletion{
+				ScoreStrategy:      "count_qualified_unique_mand_events",
+				ComputedIndicators: []string{"unique_mand_count"},
+			},
+			SmartRules: vbmappscore.ResponseSchemaSmartRules{
+				MandTimedConfig: &vbmappscore.ResponseSchemaMandTimedConfigRule{
+					PlannedMinutes: 60,
+					InputLabel:     "孩子提出的要求",
+				},
+			},
+		},
+	}
+	overrides := []repository.VBMAPPResponseSchemaOverride{
+		{
+			ModuleCode: "milestones",
+			ItemCode:   "MAND_12M",
+			OverrideJSON: []byte(`{
+				"scoreEvidence": {"onePointCriteria": "1 个"},
+				"autoCompletion": {"scoreStrategy": "institution_can_not_change_score"},
+				"smartRules": {
+					"mandTimedConfig": {
+						"plannedMinutes": 5,
+						"inputLabel": "机构自定义要求输入",
+						"targetOptions": ["物品", "动作"]
+					},
+					"mandEventConfig": {
+						"environmentOptions": ["呈现物品", "未呈现物品", "教室"]
+					},
+					"sharedObservation": {
+						"enabled": false
+					}
+				}
+			}`),
+		},
+	}
+
+	merged, _, _, err := mergeVBMAPPInstitutionResponseSchemaOverrides(
+		milestones,
+		nil,
+		nil,
+		overrides,
+	)
+	if err != nil {
+		t.Fatalf("merge overrides: %v", err)
+	}
+	got := merged[0]
+	if got.ScoreEvidence.OnePointCriteria != "5 个" {
+		t.Fatalf("score criteria should be locked, got %q", got.ScoreEvidence.OnePointCriteria)
+	}
+	if got.AutoCompletion.ScoreStrategy != "count_qualified_unique_mand_events" {
+		t.Fatalf("score strategy should be locked, got %q", got.AutoCompletion.ScoreStrategy)
+	}
+	if got.SmartRules.MandTimedConfig == nil || got.SmartRules.MandTimedConfig.PlannedMinutes != 60 {
+		t.Fatalf("planned minutes should be locked, got %+v", got.SmartRules.MandTimedConfig)
+	}
+	if got.SmartRules.MandTimedConfig.InputLabel != "机构自定义要求输入" {
+		t.Fatalf("expected safe timed UI override, got %+v", got.SmartRules.MandTimedConfig)
+	}
+	if got.SmartRules.MandEventConfig == nil ||
+		!containsString(got.SmartRules.MandEventConfig.EnvironmentOptions, "教室") {
+		t.Fatalf("expected mand event config override, got %+v", got.SmartRules.MandEventConfig)
+	}
+	if got.SmartRules.SharedObservation != nil {
+		t.Fatalf("shared observation should not be institution-overridable: %+v", got.SmartRules.SharedObservation)
 	}
 }
 

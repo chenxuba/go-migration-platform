@@ -150,7 +150,16 @@ func (handler *Handler) vbmappAssessmentSchema(w http.ResponseWriter, r *http.Re
 		httpx.WriteError(w, http.StatusMethodNotAllowed, "method not allowed", ctx.RequestID)
 		return
 	}
-	result, err := handler.service.VBMAPPAssessmentSchema()
+	instID := int64(0)
+	if rawInstID := strings.TrimSpace(r.URL.Query().Get("instId")); rawInstID != "" {
+		parsedInstID, parseErr := strconv.ParseInt(rawInstID, 10, 64)
+		if parseErr != nil || parsedInstID < 0 {
+			httpx.WriteError(w, http.StatusBadRequest, "invalid instId", ctx.RequestID)
+			return
+		}
+		instID = parsedInstID
+	}
+	result, err := handler.service.VBMAPPAssessmentSchemaForInstitution(instID)
 	if err != nil {
 		httpx.WriteError(w, http.StatusBadRequest, err.Error(), ctx.RequestID)
 		return
