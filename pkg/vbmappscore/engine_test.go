@@ -367,7 +367,7 @@ func TestScoreAutoCalculatesMAND05MFromEvidence(t *testing.T) {
 		events = append(events, map[string]any{
 			"utterance":    utterance,
 			"environment":  "呈现物品",
-			"promptLevel":  "无辅助",
+			"promptLevel":  "自发地",
 			"responseMode": "自发要求",
 			"functional":   true,
 		})
@@ -405,7 +405,7 @@ func TestScoreAutoCalculatesMAND05MFiltersInvisibleAndPromptedEvidence(t *testin
 		events = append(events, map[string]any{
 			"utterance":    utterance,
 			"environment":  "呈现物品",
-			"promptLevel":  "无辅助",
+			"promptLevel":  "自发地",
 			"responseMode": "自发要求",
 			"functional":   true,
 		})
@@ -414,7 +414,7 @@ func TestScoreAutoCalculatesMAND05MFiltersInvisibleAndPromptedEvidence(t *testin
 		map[string]any{
 			"utterance":    "球",
 			"environment":  "未呈现物品",
-			"promptLevel":  "无辅助",
+			"promptLevel":  "自发地",
 			"responseMode": "自发要求",
 			"functional":   true,
 		},

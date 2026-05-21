@@ -4056,8 +4056,15 @@ class _VbmappMand5InlinePanelState extends State<_VbmappMand5InlinePanel> {
 
   String _environment = '呈现物品';
   String _targetKind = '物品';
-  String _promptChoice = '无辅助';
+  String _promptChoice = '自发地';
   int? _selectedRecordIndex;
+
+  String get _currentPromptChoice {
+    if (_promptChoice == '提问下') {
+      return '提问下';
+    }
+    return '自发地';
+  }
 
   int get _onePointRequestCount => _scoreCountThreshold(widget.item, 1) ?? 10;
 
@@ -4067,7 +4074,7 @@ class _VbmappMand5InlinePanelState extends State<_VbmappMand5InlinePanel> {
 
   String get _scoreReference {
     return '参考：0个计0分，$_halfPointRequestCount个计0.5分，'
-        '$_onePointRequestCount个计1分；仅统计呈现物品条件下的无辅助不同要求。';
+        '$_onePointRequestCount个计1分；仅统计呈现物品条件下的自发不同要求，提问下记录保留但不计入有效要求。';
   }
 
   @override
@@ -4238,8 +4245,8 @@ class _VbmappMand5InlinePanelState extends State<_VbmappMand5InlinePanel> {
           flex: 4,
           child: _VbmappMandInlineChoiceGroup(
             label: '辅助',
-            value: _promptChoice,
-            values: const <String>['无辅助', '有额外辅助'],
+            value: _currentPromptChoice,
+            values: const <String>['提问下', '自发地'],
             onChanged: (String value) => setState(() {
               _promptChoice = value;
             }),
@@ -4315,15 +4322,15 @@ class _VbmappMand5InlinePanelState extends State<_VbmappMand5InlinePanel> {
         person: '',
         setting: '',
         example: '',
-        responseMode: '自发要求',
-        promptLevel: _promptChoice,
+        responseMode: _currentPromptChoice == '提问下' ? '提问下要求' : '自发要求',
+        promptLevel: _currentPromptChoice,
         functional: true,
       ),
     );
     _requestController.clear();
     setState(() {
       _selectedRecordIndex = null;
-      _promptChoice = '无辅助';
+      _promptChoice = '自发地';
     });
   }
 
@@ -7550,7 +7557,8 @@ bool _mandEventCountsForItem(
   }
   switch (item.itemCode) {
     case 'MAND_05M':
-      return event.environment.trim() == '呈现物品';
+      return event.environment.trim() == '呈现物品' &&
+          _mandInitiationText(event) != '提问下';
     case 'MAND_04M':
       return event.environment.trim() == '呈现物品' &&
           _mandInitiationText(event) != '提问下';

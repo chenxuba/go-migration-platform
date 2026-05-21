@@ -4435,8 +4435,8 @@ void main() {
     expect(find.text('有效 0/10'), findsOneWidget);
     expect(find.text('建议 0分'), findsOneWidget);
     expect(find.text('辅助'), findsOneWidget);
-    expect(find.text('无辅助'), findsOneWidget);
-    expect(find.text('有额外辅助'), findsOneWidget);
+    expect(find.text('提问下'), findsOneWidget);
+    expect(find.text('自发地'), findsOneWidget);
     expect(find.text('目标'), findsOneWidget);
 
     final Finder requestField = find.byType(TextField).first;
@@ -4468,7 +4468,7 @@ void main() {
 
     await tester.tap(find.text('呈现物品'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('有额外辅助'));
+    await tester.tap(find.text('提问下'));
     await tester.pumpAndSettle();
     await tester.enterText(requestField, '打开');
     await tester.tap(find.text('记录本次要求'));
@@ -4476,7 +4476,7 @@ void main() {
 
     expect(find.text('有效 8/10'), findsOneWidget);
 
-    await tester.tap(find.text('无辅助'));
+    await tester.tap(find.text('自发地'));
     await tester.pumpAndSettle();
     for (final String request in <String>['球', '打开']) {
       await tester.enterText(requestField, request);
