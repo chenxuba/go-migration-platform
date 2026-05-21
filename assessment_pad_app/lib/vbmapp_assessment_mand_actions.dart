@@ -114,7 +114,6 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
       _rebuildScoreDerivedState();
       _autoSaveText = '保存中...';
     });
-    _syncObservationTicker();
     await _saveMandEvidence(
       item,
       events,
@@ -517,26 +516,6 @@ extension _VbmappAssessmentMandActions on _VbmappAssessmentPageState {
         );
       }
     }
-  }
-
-  void _syncObservationTicker() {
-    _observationTicker?.cancel();
-    _observationTicker = null;
-    final _VbmappItem? activeItem = _activeMandObservationItem();
-    final _VbmappObservationTimerState? observation =
-        activeItem == null ? null : _mandObservationFor(activeItem);
-    if (observation == null || !observation.isRunning) {
-      return;
-    }
-    _observationTicker = Timer.periodic(const Duration(seconds: 1), (
-      Timer timer,
-    ) {
-      if (!mounted) {
-        timer.cancel();
-        return;
-      }
-      setState(() {});
-    });
   }
 
   Future<void> _openActiveMandQuickRecord() async {

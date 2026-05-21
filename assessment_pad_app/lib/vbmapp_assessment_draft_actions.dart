@@ -76,7 +76,6 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
       _autoSaveText = _draftId > 0 ? '草稿已载入' : '等待作答';
       _loading = false;
     });
-    _syncObservationTicker();
   }
 
   void _applyDraftDetail(VbmappDraftDetail detail) {
@@ -118,6 +117,7 @@ extension _VbmappAssessmentDraftActions on _VbmappAssessmentPageState {
           .indexWhere(
               (_VbmappItem item) => item.itemCode == firstMissing.itemCode);
       _selectedItemIndex = missingIndex < 0 ? 0 : missingIndex;
+      _selectedItemCode.value = _selectedItem.itemCode;
     }
   }
 

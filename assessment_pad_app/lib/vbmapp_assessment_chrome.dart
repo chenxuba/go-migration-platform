@@ -909,7 +909,10 @@ class _VbmappActiveObservationBar extends StatefulWidget {
     required this.tone,
     required this.observation,
     required this.statusLabel,
-    required this.summaryText,
+    required this.sharedSummaryMode,
+    required this.recordCount,
+    required this.qualifiedCount,
+    required this.onePointTarget,
     required this.onJump,
     required this.onQuickRecord,
     required this.onPrimaryAction,
@@ -919,7 +922,10 @@ class _VbmappActiveObservationBar extends StatefulWidget {
   final Color tone;
   final _VbmappObservationTimerState observation;
   final String statusLabel;
-  final String summaryText;
+  final bool sharedSummaryMode;
+  final int recordCount;
+  final int qualifiedCount;
+  final int onePointTarget;
   final VoidCallback onJump;
   final VoidCallback onQuickRecord;
   final VoidCallback onPrimaryAction;
@@ -972,9 +978,15 @@ class _VbmappActiveObservationBarState
   @override
   Widget build(BuildContext context) {
     final bool running = widget.observation.isRunning;
+    final String elapsedText = _vbmappDurationText(
+      widget.observation.elapsedSecondsAt(DateTime.now()),
+    );
     final String statusLabel = running
         ? widget.statusLabel
         : widget.statusLabel.replaceFirst('观察中', '观察暂停');
+    final String summaryText = widget.sharedSummaryMode
+        ? '$elapsedText · 已记录 ${widget.recordCount} 条'
+        : '$elapsedText · ${widget.qualifiedCount}/${widget.onePointTarget}';
     return Container(
       key: const ValueKey<String>('vbmapp-active-observation-bar'),
       height: 40,
@@ -1008,7 +1020,7 @@ class _VbmappActiveObservationBarState
           ),
           const SizedBox(width: 7),
           Text(
-            widget.summaryText,
+            summaryText,
             style: const TextStyle(
               color: _VbmappColors.ink,
               fontSize: 11.5,

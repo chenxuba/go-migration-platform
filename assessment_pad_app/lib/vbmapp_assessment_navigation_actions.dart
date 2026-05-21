@@ -10,11 +10,15 @@ extension _VbmappAssessmentNavigationActions on _VbmappAssessmentPageState {
       return;
     }
     final int normalizedIndex = itemIndex.clamp(0, items.length - 1);
-    final bool changed = _selectedModuleCode != moduleCode ||
-        _selectedItemIndex != normalizedIndex;
+    final bool moduleChanged = _selectedModuleCode != moduleCode;
+    final bool changed = moduleChanged || _selectedItemIndex != normalizedIndex;
     _selectedModuleCode = moduleCode;
     _selectedItemIndex = normalizedIndex;
     if (changed) {
+      _selectedItemCode.value = items[normalizedIndex].itemCode;
+      if (moduleChanged) {
+        _moduleRevision.value++;
+      }
       _selectionRevision.value++;
     }
   }

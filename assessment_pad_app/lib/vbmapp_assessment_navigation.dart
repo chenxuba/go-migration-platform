@@ -4,7 +4,7 @@ class _VbmappModuleRail extends StatefulWidget {
   const _VbmappModuleRail({
     required this.modules,
     required this.selectedCode,
-    required this.selectedItemCode,
+    required this.selectedItemCodeListenable,
     required this.items,
     required this.answeredCount,
     required this.isAnswered,
@@ -14,7 +14,7 @@ class _VbmappModuleRail extends StatefulWidget {
 
   final List<_VbmappModule> modules;
   final String selectedCode;
-  final String selectedItemCode;
+  final ValueNotifier<String> selectedItemCodeListenable;
   final List<_VbmappItem> items;
   final Map<String, int> answeredCount;
   final bool Function(_VbmappItem item) isAnswered;
@@ -30,19 +30,27 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
       <String, Set<String>>{};
   final Map<String, List<_VbmappRailGroup>> _groupCache =
       <String, List<_VbmappRailGroup>>{};
-  final GlobalKey _activeItemKey = GlobalKey();
   final Map<String, GlobalKey> _groupKeys = <String, GlobalKey>{};
+  final Map<String, GlobalKey> _itemKeys = <String, GlobalKey>{};
   final ScrollController _scrollController = ScrollController();
+  String _lastSelectedItemCode = '';
+  String _lastSelectedDomainName = '';
 
   @override
   void initState() {
     super.initState();
+    _lastSelectedItemCode = _selectedItemCode;
+    _lastSelectedDomainName = _selectedDomainName;
+    widget.selectedItemCodeListenable.addListener(_handleSelectedItemChanged);
     _ensureExpandedForSelection();
     _keepSelectedVisible();
   }
 
   @override
   void dispose() {
+    widget.selectedItemCodeListenable.removeListener(
+      _handleSelectedItemChanged,
+    );
     _scrollController.dispose();
     super.dispose();
   }
@@ -50,14 +58,24 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
   @override
   void didUpdateWidget(covariant _VbmappModuleRail oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (oldWidget.selectedItemCodeListenable !=
+        widget.selectedItemCodeListenable) {
+      oldWidget.selectedItemCodeListenable.removeListener(
+        _handleSelectedItemChanged,
+      );
+      widget.selectedItemCodeListenable.addListener(_handleSelectedItemChanged);
+    }
     _pruneExpandedDomains();
     _ensureExpandedForSelection();
     if (oldWidget.selectedCode != widget.selectedCode ||
-        oldWidget.selectedItemCode != widget.selectedItemCode ||
         oldWidget.items.length != widget.items.length) {
+      _lastSelectedItemCode = _selectedItemCode;
+      _lastSelectedDomainName = _selectedDomainName;
       _keepSelectedVisible();
     }
   }
+
+  String get _selectedItemCode => widget.selectedItemCodeListenable.value;
 
   Set<String> _expandedDomainsFor(String moduleCode) {
     return _expandedDomainsByModule.putIfAbsent(
@@ -75,22 +93,37 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
         .removeWhere((String name) => !validDomains.contains(name));
   }
 
-  void _ensureExpandedForSelection() {
+  bool _ensureExpandedForSelection() {
     final Set<String> expanded = _expandedDomainsFor(widget.selectedCode);
     _VbmappItem? selectedItem;
     for (final _VbmappItem item in widget.items) {
-      if (item.itemCode == widget.selectedItemCode) {
+      if (item.itemCode == _selectedItemCode) {
         selectedItem = item;
         break;
       }
     }
     if (selectedItem != null && selectedItem.domainName.trim().isNotEmpty) {
-      expanded.add(selectedItem.domainName.trim());
-      return;
+      return expanded.add(selectedItem.domainName.trim());
     }
     if (expanded.isEmpty && widget.items.isNotEmpty) {
-      expanded.add(widget.items.first.domainName.trim());
+      return expanded.add(widget.items.first.domainName.trim());
     }
+    return false;
+  }
+
+  void _handleSelectedItemChanged() {
+    if (_lastSelectedItemCode == _selectedItemCode) {
+      return;
+    }
+    _lastSelectedItemCode = _selectedItemCode;
+    final String nextDomainName = _selectedDomainName;
+    final bool domainChanged = nextDomainName != _lastSelectedDomainName;
+    _lastSelectedDomainName = nextDomainName;
+    final bool expandedChanged = _ensureExpandedForSelection();
+    if (expandedChanged) {
+      setState(() {});
+    }
+    _keepSelectedVisible(ensureGroupHeader: domainChanged || expandedChanged);
   }
 
   void _toggleDomain(String domainName) {
@@ -111,7 +144,7 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
 
   String get _selectedDomainName {
     for (final _VbmappItem item in widget.items) {
-      if (item.itemCode == widget.selectedItemCode) {
+      if (item.itemCode == _selectedItemCode) {
         return item.domainName.trim();
       }
     }
@@ -122,8 +155,14 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
     return _groupKeys.putIfAbsent(domainName, () => GlobalKey());
   }
 
-  void _keepSelectedVisible() {
-    _keepGroupHeaderVisible(_selectedDomainName);
+  GlobalKey _itemKeyFor(String itemCode) {
+    return _itemKeys.putIfAbsent(itemCode, () => GlobalKey());
+  }
+
+  void _keepSelectedVisible({bool ensureGroupHeader = true}) {
+    if (ensureGroupHeader) {
+      _keepGroupHeaderVisible(_selectedDomainName);
+    }
     _keepActiveItemVisible();
   }
 
@@ -152,10 +191,11 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted ||
           !_scrollController.hasClients ||
-          widget.selectedItemCode.trim().isEmpty) {
+          _selectedItemCode.trim().isEmpty) {
         return;
       }
-      final BuildContext? itemContext = _activeItemKey.currentContext;
+      final BuildContext? itemContext =
+          _itemKeys[_selectedItemCode]?.currentContext;
       if (itemContext == null) {
         return;
       }
@@ -251,14 +291,10 @@ class _VbmappModuleRailState extends State<_VbmappModuleRail> {
                             for (final _VbmappItem item
                                 in _groups[index].items) ...<Widget>[
                               _VbmappItemNavTile(
-                                key: item.itemCode == widget.selectedItemCode
-                                    ? _activeItemKey
-                                    : ValueKey<String>(
-                                        'vbmapp-nav-${item.itemCode}',
-                                      ),
+                                key: _itemKeyFor(item.itemCode),
                                 item: item,
-                                selected:
-                                    item.itemCode == widget.selectedItemCode,
+                                selectedItemCodeListenable:
+                                    widget.selectedItemCodeListenable,
                                 answered: widget.isAnswered(item),
                                 onTap: () => widget.onSelectItem(item),
                               ),
@@ -466,74 +502,86 @@ class _VbmappItemNavTile extends StatelessWidget {
   const _VbmappItemNavTile({
     super.key,
     required this.item,
-    required this.selected,
+    required this.selectedItemCodeListenable,
     required this.answered,
     required this.onTap,
   });
 
   final _VbmappItem item;
-  final bool selected;
+  final ValueNotifier<String> selectedItemCodeListenable;
   final bool answered;
   final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
-    final Color accent = item.color;
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          decoration: BoxDecoration(
-            color: selected ? accent.withOpacity(.12) : Colors.white,
+    return ValueListenableBuilder<String>(
+      valueListenable: selectedItemCodeListenable,
+      builder: (BuildContext context, String selectedItemCode, Widget? child) {
+        final bool selected = item.itemCode == selectedItemCode;
+        final Color accent = item.color;
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(
-              color:
-                  selected ? accent.withOpacity(.55) : _VbmappColors.lineSoft,
-            ),
-          ),
-          child: Row(
-            children: <Widget>[
-              Expanded(
-                child: Text(
-                  item.navCode,
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    color: selected ? _VbmappColors.ink : _VbmappColors.body,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w900,
-                  ),
+            child: Ink(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: selected ? accent.withOpacity(.12) : Colors.white,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: selected
+                      ? accent.withOpacity(.55)
+                      : _VbmappColors.lineSoft,
                 ),
               ),
-              if (answered)
-                Container(
-                  width: 20,
-                  height: 20,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: accent,
-                    shape: BoxShape.circle,
+              child: Row(
+                children: <Widget>[
+                  Expanded(
+                    child: Text(
+                      item.navCode,
+                      maxLines: 1,
+                      softWrap: false,
+                      style: TextStyle(
+                        color:
+                            selected ? _VbmappColors.ink : _VbmappColors.body,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                      ),
+                    ),
                   ),
-                  child: const Icon(Icons.check, color: Colors.white, size: 14),
-                )
-              else
-                Container(
-                  width: 20,
-                  height: 20,
-                  alignment: Alignment.center,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF6EF),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: _VbmappColors.line),
-                  ),
-                ),
-            ],
+                  if (answered)
+                    Container(
+                      width: 20,
+                      height: 20,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: accent,
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.check,
+                        color: Colors.white,
+                        size: 14,
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 20,
+                      height: 20,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFFFF6EF),
+                        shape: BoxShape.circle,
+                        border: Border.all(color: _VbmappColors.line),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }
